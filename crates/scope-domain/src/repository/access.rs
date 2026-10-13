@@ -1,6 +1,5 @@
 use super::{RepoLifecycleState, RepoRecord, Repository, RepositoryIncarnation};
 use crate::{
-    policy::{Principal, PrincipalKind, ScopePath},
     repository::collaboration::RepositoryMemberPermissions,
     views::{ViewId, Views},
 };
@@ -223,14 +222,6 @@ pub fn repository_push_policy_for_user_id(
 }
 
 impl Repository {
-    pub fn access_for_principal(&self, principal: &Principal) -> RepositoryAccess {
-        if principal.kind == PrincipalKind::Public {
-            return RepositoryAccess::public();
-        }
-
-        self.access_for_user_id(&principal.id)
-    }
-
     pub fn access_for_user_id(&self, user_id: &str) -> RepositoryAccess {
         repository_access_for_user_id(
             &self.record.owner_user_id,
@@ -243,30 +234,6 @@ impl Repository {
 
     pub fn can_read_view(&self, access: &RepositoryAccess, view: &ViewId) -> bool {
         access.can_read_view(self.repo_config.views(), view)
-    }
-
-    pub fn can_read_path(&self, principal: &Principal, path: &ScopePath) -> bool {
-        if principal.kind == PrincipalKind::Public {
-            return self.record.lifecycle_state == RepoLifecycleState::Ready
-                && self.repo_config.views.anyone().is_some_and(|view| {
-                    self.policy.can_read(path, view, self.repo_config.views())
-                });
-        }
-
-        let access = self.access_for_principal(principal);
-        match access.actor {
-            RepositoryActor::Owner => {
-                self.policy
-                    .can_read(path, &access.view, self.repo_config.views())
-            }
-            RepositoryActor::Member => {
-                self.record.lifecycle_state == RepoLifecycleState::Ready
-                    && self
-                        .policy
-                        .can_read(path, &access.view, self.repo_config.views())
-            }
-            RepositoryActor::Public => false,
-        }
     }
 
     pub fn push_policy_for_user_id(&self, user_id: &str) -> RepositoryPushPolicy {

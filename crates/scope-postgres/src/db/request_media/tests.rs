@@ -13,8 +13,9 @@ use scope_domain::{
         RequestActorRole, StartRequestInput,
         attachments::{
             RequestAttachmentDerivative, RequestAttachmentDerivativeKind,
-            RequestAttachmentPartReceipt, RequestAttachmentState, RequestAttachmentStoredObject,
-            RequestAttachmentTarget,
+            RequestAttachmentImageMetadata, RequestAttachmentPartReceipt, RequestAttachmentSource,
+            RequestAttachmentStagedPart, RequestAttachmentState, RequestAttachmentStoredObject,
+            RequestAttachmentTarget, RequestMediaChunk,
         },
     },
     views::ViewId,
@@ -23,6 +24,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 use std::time::Duration;
 
 const OWNER_ID: &str = "media_owner";
+const VIEWER_ID: &str = "media_viewer";
 const SOURCE_SHA256: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 struct Fixture {
@@ -45,6 +47,15 @@ fn fixture() -> Fixture {
     let repository_id = repository.record.id.clone();
     let mut catalog = CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner);
+    catalog.users.insert(
+        VIEWER_ID.to_string(),
+        UserAccount {
+            id: VIEWER_ID.to_string(),
+            handle: "media-viewer".to_string(),
+            email: "media-viewer@example.com".to_string(),
+            email_verified: true,
+        },
+    );
     catalog
         .repositories
         .insert(repository_id.clone(), repository);
@@ -102,8 +113,21 @@ async fn prepare_attachment(
         .unwrap()
 }
 
-fn part(attachment_id: &str, suffix: &str) -> StoredRequestAttachmentPart {
-    StoredRequestAttachmentPart {
+fn png_source() -> RequestAttachmentSource {
+    RequestAttachmentSource {
+        detected_media_type: "image/png".to_string(),
+        size_bytes: 4,
+        sha256: SOURCE_SHA256.to_string(),
+        image: Some(RequestAttachmentImageMetadata {
+            width: 1,
+            height: 1,
+        }),
+        video: None,
+    }
+}
+
+fn part(attachment_id: &str, suffix: &str) -> RequestAttachmentStagedPart {
+    RequestAttachmentStagedPart {
         receipt: RequestAttachmentPartReceipt {
             part_number: 1,
             size_bytes: 4,
@@ -438,14 +462,7 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
         replacement_lease.lease_generation,
         first_lease.lease_generation + 1
     );
-    let source = ValidatedRequestAttachmentSource {
-        detected_media_type: "image/png".to_string(),
-        size_bytes: 4,
-        sha256: SOURCE_SHA256.to_string(),
-        width: Some(1),
-        height: Some(1),
-        duration_millis: None,
-    };
+    let source = png_source();
     assert!(matches!(
         fixture
             .store
@@ -519,21 +536,14 @@ async fn successful_processing_completion_persists_derivative_with_repository_bu
             attachment_id: "completion_attachment".to_string(),
             lease_token: lease.lease_token,
             lease_generation: lease.lease_generation,
-            source: ValidatedRequestAttachmentSource {
-                detected_media_type: "image/png".to_string(),
-                size_bytes: 4,
-                sha256: SOURCE_SHA256.to_string(),
-                width: Some(1),
-                height: Some(1),
-                duration_millis: None,
-            },
+            source: png_source(),
             derivatives: vec![CompletedRequestAttachmentDerivative {
                 derivative: RequestAttachmentDerivative {
                     id: "derivative_completion_preview".to_string(),
                     kind: RequestAttachmentDerivativeKind::ImagePreview,
                     media_type: "image/webp".to_string(),
                     object: RequestAttachmentStoredObject {
-                        object_key: manifest_id.clone(),
+                        object_key: manifest_id,
                         size_bytes: 3,
                         sha256: derivative_sha256.clone(),
                     },
@@ -541,19 +551,13 @@ async fn successful_processing_completion_persists_derivative_with_repository_bu
                     height: Some(1),
                     duration_millis: None,
                 },
-                manifest: CompletedRequestMediaManifest {
-                    id: manifest_id,
-                    media_type: "image/webp".to_string(),
-                    size_bytes: 3,
-                    sha256: derivative_sha256.clone(),
-                    chunks: vec![RequestMediaChunk {
-                        index: 1,
-                        object_key: output_key.to_string(),
-                        plaintext_offset: 0,
-                        plaintext_size_bytes: 3,
-                        sha256: derivative_sha256,
-                    }],
-                },
+                chunks: vec![RequestMediaChunk {
+                    part_number: 1,
+                    plaintext_offset: 0,
+                    plaintext_bytes: 3,
+                    sha256: derivative_sha256,
+                    object_key: output_key.to_string(),
+                }],
             }],
             now_unix: 22,
         })
@@ -640,15 +644,12 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
     fixture
         .store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: "deleted_request".to_string(),
-                actor_user_id: OWNER_ID.to_string(),
-                event_id: "event_delete_request".to_string(),
-                now_unix: 22,
-            },
-            &crate::db::generated_ids::test_generated_id,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: "deleted_request".to_string(),
+            actor_user_id: OWNER_ID.to_string(),
+            event_id: "event_delete_request".to_string(),
+            now_unix: 22,
+        })
         .await
         .unwrap();
     assert!(
@@ -661,14 +662,7 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
             .is_none()
     );
 
-    let source = ValidatedRequestAttachmentSource {
-        detected_media_type: "image/png".to_string(),
-        size_bytes: 4,
-        sha256: SOURCE_SHA256.to_string(),
-        width: Some(1),
-        height: Some(1),
-        duration_millis: None,
-    };
+    let source = png_source();
     assert!(matches!(
         fixture
             .store
@@ -862,3 +856,6 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
     assert_ne!(replacement.attachment.id, prepared.attachment.id);
     assert_ne!(replacement.upload_id, prepared.upload_id);
 }
+
+mod access;
+mod cleanup;

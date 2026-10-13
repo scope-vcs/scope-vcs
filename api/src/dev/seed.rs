@@ -22,7 +22,7 @@ mod workflow_files;
 use git_segments::store_seed_git_pack;
 #[cfg(test)]
 pub(super) use git_segments::test_seed_git_segment_store;
-#[cfg(any(feature = "local-dev", feature = "smoke-seed"))]
+#[cfg(feature = "local-dev")]
 pub(crate) use request_discussions::seed_request_discussion_gallery;
 use request_revisions::SeedRequestRevision;
 #[cfg(feature = "local-dev")]
@@ -31,6 +31,7 @@ use scope_git::DEFAULT_GIT_BRANCH;
 use workflow_files::{PUBLIC_DEMO_CHECKS_WORKFLOW, PUBLIC_DEMO_LINT_WORKFLOW};
 
 use crate::error::ApiError;
+use crate::seed_user::{DevSeedUser, seed_user_account};
 use scope_domain::{
     account::UserAccount,
     content::SourceBlob,
@@ -45,6 +46,7 @@ use scope_domain::{
         canonical_request_ref, edit_request_identity, record_request_revision,
         record_working_request_upload, start_request,
     },
+    runs::catalog::{RepositoryWorkflowCatalog, RepositoryWorkflowFile},
 };
 use scope_storage::{ContentObjectKind, ObjectStore, content_object_for_bytes, object_key};
 use std::{
@@ -56,13 +58,6 @@ use std::{
 
 static SEED_TEMP_REPO_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct DevSeedUser {
-    pub(crate) email: String,
-    pub(crate) handle: String,
-}
-
-pub(crate) const DEV_SEED_USER_ID: &str = "scope_usr_dev_seed";
 const PUBLIC_DEMO_README_HTML: &str = r#"<!doctype html>
 <html lang="en">
 <head>
@@ -260,17 +255,37 @@ fn build_catalog(
                 .repository_landing_files
                 .insert(repo.record.id.clone(), landing);
         }
+        if let Some(workflow_catalog) = workflow_catalog(object_store, repo)? {
+            catalog
+                .repository_workflow_catalogs
+                .insert(repo.record.id.clone(), workflow_catalog);
+        }
     }
     Ok(catalog)
 }
 
-pub(crate) fn seed_user_account(seed_user: DevSeedUser) -> UserAccount {
-    UserAccount {
-        id: DEV_SEED_USER_ID.to_string(),
-        handle: seed_user.handle,
-        email: seed_user.email,
-        email_verified: true,
+fn workflow_catalog(
+    object_store: &SeedObjects,
+    repo: &Repository,
+) -> Result<Option<RepositoryWorkflowCatalog>, ApiError> {
+    let Some(head) = &repo.git_head else {
+        return Ok(None);
+    };
+    let files = repo
+        .live_files
+        .iter()
+        .filter(|(path, _)| path.as_str().starts_with("/.scope/runs/"))
+        .map(|(path, blob)| {
+            RepositoryWorkflowFile::from_source_blob(path.as_str(), blob, object_store.bytes(blob)?)
+                .map_err(ApiError::internal)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if files.is_empty() {
+        return Ok(None);
     }
+    RepositoryWorkflowCatalog::captured(&repo.record.id, &head.head_oid, head.change_version, files)
+        .map(Some)
+        .map_err(ApiError::internal)
 }
 
 #[cfg(any(test, feature = "local-dev"))]

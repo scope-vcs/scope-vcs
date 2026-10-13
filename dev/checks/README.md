@@ -44,5 +44,5 @@ and Windows remain build-only until native runners are available. Pull requests
 build only the Linux and Windows x64 targets; releases build all six. Every
 target builds on a GitHub-hosted runner. Run the
 installer check against an existing native build and matching bundle with
-`SCOPE_TEST_BINARY=/absolute/path/to/scope SCOPE_TEST_ARTIFACT=/absolute/path/to/scope-target.tar.gz node --test cli/distribution/install-smoke.test.mjs`.
-The matching `scope-cli-service` binary must be in the binary's directory.
+`SCOPE_TEST_BINARY=/absolute/path/to/scope SCOPE_TEST_ARTIFACT=/absolute/path/to/scope-target.tar.gz SCOPE_TEST_SERVICE=/absolute/path/to/scope-cli-service node --test cli/distribution/install-smoke.test.mjs`.
+Build the service with `cargo build -p scope-cli-downloads --release --locked`.

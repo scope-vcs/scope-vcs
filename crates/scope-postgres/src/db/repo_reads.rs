@@ -83,13 +83,12 @@ impl RepositoryStore {
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let repo = match entities::repository::Entity::find_by_id(id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         {
             Some(repo) => Some(repository_from_model(&tx, repo).await?),
             None => None,
         };
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(repo)
     }
 
@@ -99,11 +98,9 @@ impl RepositoryStore {
         handle: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<OwnerProfileRead>, PostgresError> {
-        let handle = handle.to_string();
-        let viewer_user_id = viewer_user_id.map(str::to_string);
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let profile = owner_profile_tx(&tx, &handle, viewer_user_id.as_deref()).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        let profile = owner_profile_tx(&tx, handle, viewer_user_id).await?;
+        tx.commit().await?;
         Ok(profile)
     }
 
@@ -114,12 +111,9 @@ impl RepositoryStore {
         name: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RepoSummaryRead>, PostgresError> {
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let viewer_user_id = viewer_user_id.map(str::to_string);
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let summary = repo_summary_tx(&tx, &owner, &name, viewer_user_id.as_deref()).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        let summary = repo_summary_tx(&tx, owner, name, viewer_user_id).await?;
+        tx.commit().await?;
         Ok(summary)
     }
 
@@ -131,28 +125,10 @@ impl RepositoryStore {
         viewer_user_id: Option<&str>,
         view: Option<&ViewId>,
     ) -> Result<Option<Vec<ProjectionViewFile>>, PostgresError> {
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let viewer_user_id = viewer_user_id.map(str::to_string);
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let files = repo_live_files_tx(&tx, &owner, &name, viewer_user_id.as_deref(), view).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        let files = repo_live_files_tx(&tx, owner, name, viewer_user_id, view).await?;
+        tx.commit().await?;
         Ok(files)
-    }
-
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_live_file_content"))]
-    pub async fn repo_live_file_content(
-        &self,
-        owner: &str,
-        name: &str,
-        viewer_user_id: Option<&str>,
-        view: Option<&ViewId>,
-        path: &ScopePath,
-    ) -> Result<Option<ProjectionViewFileContent>, PostgresError> {
-        Ok(self
-            .repo_live_file_with_landing_content(owner, name, viewer_user_id, view, path)
-            .await?
-            .map(|content| content.projected))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repo_live_file_with_landing_content"))]
@@ -164,21 +140,11 @@ impl RepositoryStore {
         view: Option<&ViewId>,
         path: &ScopePath,
     ) -> Result<Option<RepoLiveFileWithLandingContent>, PostgresError> {
-        let owner = owner.to_string();
-        let name = name.to_string();
-        let viewer_user_id = viewer_user_id.map(str::to_string);
-        let path = path.clone();
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let content = repo_live_file_with_landing_content_tx(
-            &tx,
-            &owner,
-            &name,
-            viewer_user_id.as_deref(),
-            view,
-            &path,
-        )
-        .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        let content =
+            repo_live_file_with_landing_content_tx(&tx, owner, name, viewer_user_id, view, path)
+                .await?;
+        tx.commit().await?;
         Ok(content)
     }
 }
@@ -194,8 +160,7 @@ where
     let Some(owner) = entities::user::Entity::find()
         .filter(entities::user::Column::Handle.eq(handle.to_string()))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };
@@ -398,8 +363,7 @@ where
         .filter(entities::repository_member::Column::RepoId.eq(row.id.clone()))
         .filter(entities::repository_member::Column::UserId.eq(user_id.to_string()))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };
@@ -429,8 +393,7 @@ where
         .filter(entities::repository_member::Column::RepoId.is_in(repo_ids))
         .filter(entities::repository_member::Column::UserId.eq(user_id.to_string()))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
 
     let mut permissions = BTreeMap::new();
     for member in members {
@@ -448,8 +411,7 @@ where
 {
     let row = entities::repository::Entity::find_by_id(repo_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| {
             PostgresError::internal_message("repository row disappeared while reading")
         })?;
@@ -621,8 +583,7 @@ async fn load_open_request_counts<C: ConnectionTrait>(
         .group_by(Column::RepoId)
         .into_model::<OpenRequestCount>()
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| (row.repo_id, row.count))
         .collect::<BTreeMap<_, _>>();

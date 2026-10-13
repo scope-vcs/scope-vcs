@@ -312,6 +312,18 @@ pub(crate) fn run_change_event(
 }
 
 impl crate::state::AppState {
+    pub(crate) async fn repository_incarnation(
+        &self,
+        repo_id: &str,
+    ) -> Result<Option<RepositoryIncarnation>, crate::error::ApiError> {
+        Ok(self
+            .metadata
+            .repositories()
+            .repository_record(repo_id)
+            .await?
+            .map(|record| record.incarnation()))
+    }
+
     pub(crate) async fn publish_repo_change(
         &self,
         incarnation: &RepositoryIncarnation,

@@ -13,25 +13,20 @@ const REPO_ID: &str = "workflow-owner/repo";
 const HEAD_OID: &str = "1111111111111111111111111111111111111111";
 const BLOB_OID: &str = "2222222222222222222222222222222222222222";
 
-async fn insert_repository(db: &DatabaseConnection, with_content_version: bool) {
-    let (column, value) = if with_content_version {
-        (", content_version", ", 7")
-    } else {
-        ("", "")
-    };
-    db.execute_unprepared(&format!(
+async fn insert_repository(db: &DatabaseConnection) {
+    db.execute_unprepared(
         "
         INSERT INTO scope_users (id, handle, email, email_verified)
         VALUES ('workflow-owner', 'workflow-owner', 'workflow@scope.test', TRUE);
         INSERT INTO scope_repositories (
             id, owner_handle, name, owner_user_id, publication_state,
-            change_version{column}, repo_config, policy, incarnation_id
+            change_version, content_version, repo_config, policy, incarnation_id
         ) VALUES (
             'workflow-owner/repo', 'workflow-owner', 'repo', 'workflow-owner', 'Ready',
-            7{value}, '{{}}'::jsonb, '{{}}'::jsonb, 'repoi_workflow_owner_repo'
+            7, 7, '{}'::jsonb, '{}'::jsonb, 'repoi_workflow_owner_repo'
         );
-        "
-    ))
+        ",
+    )
     .await
     .unwrap();
 }
@@ -51,10 +46,9 @@ async fn insert_captured_catalog(db: &DatabaseConnection) {
 #[tokio::test]
 async fn maintenance_reads_catalogs_from_the_canonical_pre_migration_schema() {
     let (target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(1))
-        .await
-        .unwrap();
-    insert_repository(db.as_ref(), false).await;
+    migrations::Migrator::up(db.as_ref(), None).await.unwrap();
+    replace_ledger(db.as_ref(), &BRIDGED_LEDGER.lines().collect::<Vec<_>>()).await;
+    insert_repository(db.as_ref()).await;
     let file = RepositoryWorkflowFile::from_content(
         "/.scope/runs/checks.yml",
         DEFAULT_GIT_FILE_MODE,
@@ -73,7 +67,7 @@ async fn maintenance_reads_catalogs_from_the_canonical_pre_migration_schema() {
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].repository_id(), REPO_ID);
     let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(plan.pending[0].name, "m0043_retire_git_manifests");
+    assert_eq!(plan.pending[0].name, LATEST_MIGRATIONS[0]);
 }
 
 #[tokio::test]
@@ -94,7 +88,7 @@ async fn repository_workflow_catalog_schema_enforces_identity_bounds_and_cascade
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap();
-    insert_repository(db.as_ref(), true).await;
+    insert_repository(db.as_ref()).await;
     insert_captured_catalog(db.as_ref()).await;
 
     db.execute_unprepared(&format!(
@@ -187,7 +181,7 @@ async fn repository_workflow_catalog_schema_caps_files_and_rejects_files_for_err
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap();
-    insert_repository(db.as_ref(), true).await;
+    insert_repository(db.as_ref()).await;
     insert_captured_catalog(db.as_ref()).await;
 
     db.execute_unprepared(&format!(

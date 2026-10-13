@@ -18,18 +18,6 @@ fn merge_route(request_id: &str) -> String {
     scope_api_contract::routes::repo_request_merge(TEST_REPO_OWNER, TEST_REPO_NAME, request_id)
 }
 
-async fn submit(app: axum::Router, request_id: &str, bearer: &str) {
-    let submitted = api_request(
-        app,
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests/{request_id}/submit"),
-        Some(bearer),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
-}
-
 async fn owner_request_push(
     label: &str,
     workflows: &[(&str, String)],
@@ -78,7 +66,7 @@ async fn owner_request_push_with_native_runs(
         "request change",
     )
     .unwrap();
-    submit(app, &request_id, &bearer).await;
+    submit_request(app, &request_id, &bearer).await;
     (state, request_id, server)
 }
 
@@ -453,7 +441,7 @@ async fn an_unlisted_owners_request_workflows_are_ignored() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn removing_the_owner_stops_admission_and_ends_the_wait_on_checks() {
-    let (mut state, request_id, _server) = owner_request_push(
+    let (state, request_id, _server) = owner_request_push(
         "request-checks-withdrawn",
         &[(".scope/runs/checks.yml", request_workflow())],
     )
@@ -462,22 +450,16 @@ async fn removing_the_owner_stops_admission_and_ends_the_wait_on_checks() {
     assert_eq!(started["state"], "started");
     let run_id = started["checks"][0]["run_id"].as_str().unwrap().to_string();
 
-    state.operator_token = Some(Arc::from("operator-secret"));
-    let removal = expect_json(
-        api_request(
-            router(state.clone()),
-            "DELETE",
-            &format!("/v1/admin/native-runs/accounts/{TEST_REPO_OWNER}"),
-            Some("Bearer operator-secret"),
-            None,
-        )
-        .await,
-        StatusCode::OK,
+    let removal = crate::use_cases::native_runs::remove_account(
+        &state.metadata,
+        &state.repo_events,
+        TEST_REPO_OWNER,
     )
-    .await;
-    assert_eq!(removal["removed"], true);
-    assert_eq!(removal["withdrawn_request_ids"][0], request_id.as_str());
-    assert_eq!(removal["canceled_run_ids"][0], run_id.as_str());
+    .await
+    .unwrap();
+    assert!(removal.removed);
+    assert_eq!(removal.withdrawn_evaluations[0].request_id, request_id);
+    assert_eq!(removal.canceled_runs[0].id, run_id);
 
     let withdrawn = checks(&state, &request_id, &bearer_header()).await;
     assert_eq!(withdrawn["state"], "configuration-error");

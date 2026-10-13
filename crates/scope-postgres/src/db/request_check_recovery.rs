@@ -21,7 +21,7 @@ impl RequestStore {
                     OR (evaluation.changes_github_workflows IS NULL AND evaluation.checks @> '[{"provider":"github"}]'::jsonb))
              ORDER BY request.id LIMIT $2"#,
              [after_id.map(str::to_string).into(), u64_to_i64(limit, "request check recovery page size")?.into()]
-        )).all(self.db.as_ref()).await.map_err(PostgresError::internal)?
+        )).all(self.db.as_ref()).await?
           .into_iter().map(entities::request::Model::try_into_domain).collect()
     }
 
@@ -31,7 +31,7 @@ impl RequestStore {
         request: &Request,
         changed: bool,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         super::locks::acquire_shared_repository_lock(&tx, incarnation.repository_id()).await?;
         super::acquire_aggregate_lock(&tx, "request", &request.id).await?;
         let repo = super::repository_access::load_repo_record(&tx, &request.repo_id).await?;
@@ -55,7 +55,7 @@ impl RequestStore {
         };
         evaluation.changes_github_workflows = Some(changed);
         super::request_checks::save_evaluation(&tx, &evaluation).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(true)
     }
 }

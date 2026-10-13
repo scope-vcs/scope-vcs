@@ -1,7 +1,7 @@
 use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
-    http::run_response::run_response,
+    http::run_response::{run_log_response, run_response},
     repo_events::{RepoChangeEvent, RepoChangeKind},
     state::AppState,
     use_cases::run_inspection::require_run_access,
@@ -14,7 +14,7 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
     },
 };
-use scope_api_contract::{ErrorResponse, RunEventsQuery, RunLogResponse};
+use scope_api_contract::{ErrorResponse, RunEventsQuery};
 use std::{
     convert::Infallible,
     time::{Duration, Instant},
@@ -128,15 +128,7 @@ async fn stream_run_events(
         let has_full_page = logs.len() == RUN_LOG_STREAM_PAGE_SIZE;
         for log in logs {
             cursor = log.position;
-            let response = RunLogResponse {
-                attempt_id: log.chunk.attempt_id,
-                job_key: log.job_key,
-                step_index: log.chunk.step_index,
-                position: log.position,
-                sequence: log.chunk.sequence,
-                text: log.chunk.text,
-                created_at_unix: log.chunk.created_at_unix,
-            };
+            let response = run_log_response(log);
             let event = match Event::default()
                 .event("log")
                 .id(cursor.to_string())

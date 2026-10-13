@@ -6,7 +6,7 @@ command="${2:?Maintenance command is required}"
 [[ "$#" == 2 ]]
 case "$command" in
   preflight|plan|verify|validate-workflow-catalogs) private_command=railway_private_read ;;
-  fence|drain-writers|apply|backfill-workflow-catalogs) private_command=railway_private_command ;;
+  fence|drain-writers|apply) private_command=railway_private_command ;;
   *) echo 'Unsupported private maintenance command.' >&2; exit 2 ;;
 esac
 if [[ -n "${SCOPE_ROLE_GRANTS_SQL:-}" ]]; then

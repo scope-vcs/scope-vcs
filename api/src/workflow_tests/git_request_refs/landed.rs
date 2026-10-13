@@ -41,15 +41,7 @@ async fn main_push_carrying_an_open_request_head_merges_only_that_request() {
         )
         .unwrap();
         if submit {
-            let submitted = api_request(
-                app.clone(),
-                "POST",
-                &format!("/v1/repos/{TEST_REPO_ID}/requests/{id}/submit"),
-                Some(&bearer),
-                Some("{}"),
-            )
-            .await;
-            assert_eq!(submitted.status(), StatusCode::OK);
+            submit_request(app.clone(), &id, &bearer).await;
         }
         if name == "carried-draft" {
             run_git(

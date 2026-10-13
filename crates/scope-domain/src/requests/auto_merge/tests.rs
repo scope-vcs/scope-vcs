@@ -1,9 +1,9 @@
 use super::*;
 use crate::{
-    content::SourceBlob,
     requests::{
-        GitHubCheckResults, NativeRequestCheck, RequestActorRole, RequestCheck,
-        RequestCheckEvaluationState, RequestCheckResults,
+        GitHubCheckResults, NativeRequestCheck, RequestCheck, RequestCheckEvaluationState,
+        RequestCheckResults,
+        fixtures::{self, source_blob},
     },
     runs::run::RunState,
 };
@@ -41,37 +41,17 @@ fn native_check(digest: char, run_id: Option<&str>) -> RequestCheck {
 
 fn open_request() -> Request {
     Request {
-        id: "request_1".into(),
-        repo_id: "owner/repo".into(),
-        name: "change".into(),
-        author_user_id: Some("author".into()),
-        author_role: RequestActorRole::Public,
-        view: crate::views::ViewId::public(),
-        base_version: 1,
         base: crate::requests::RequestBase::Main {
             review_base_oid: "c".repeat(40),
         },
         main_ancestor_oid: "c".repeat(40),
         head_oid: HEAD.into(),
-        git_snapshot: Some(SourceBlob {
-            content_ref: crate::content_ref::ContentRef::blob_sha256("snapshot"),
-            sha256: "sha256-snapshot".into(),
-            git_oid: HEAD.into(),
-            git_file_mode: "100644".into(),
-            size_bytes: 1,
-        }),
-        title: "Change".into(),
-        description_markdown: String::new(),
+        git_snapshot: Some(source_blob(HEAD)),
         activity_version: 2,
         submitted_at_unix: Some(2),
-        closed_at_unix: None,
-        closed_by_user_id: None,
-        merged_at_unix: None,
-        merged_by_user_id: None,
-        merged_head_oid: None,
-        merged_main_oid: None,
         created_at_unix: 1,
         updated_at_unix: 2,
+        ..fixtures::open_request()
     }
 }
 

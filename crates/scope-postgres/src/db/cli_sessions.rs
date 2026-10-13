@@ -28,8 +28,7 @@ where
     }
     .into_active_model()
     .insert(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     let user = load_user_by_id(conn, user_id).await?;
     Ok(SessionIdentity::from(&user))
 }
@@ -71,8 +70,7 @@ pub(super) async fn record_cli_session_use<C: ConnectionTrait>(
             .into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 

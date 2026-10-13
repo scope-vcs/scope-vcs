@@ -420,7 +420,6 @@ fn cgi_response(output: &[u8]) -> Response {
 fn checkout_with_new_commit(workspace: &TempDir, server: &TestServer, view: &str) -> PathBuf {
     let checkout = checkout_at_view_main(workspace, server, view);
     std::fs::write(checkout.join("agent.md"), "agent change\n").unwrap();
-    run_git(&checkout, ["add", "agent.md"]);
     commit_all(&checkout, "Agent change");
     checkout
 }

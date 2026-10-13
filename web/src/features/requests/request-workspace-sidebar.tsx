@@ -6,7 +6,7 @@ import type {
 } from '@/api/types.generated'
 import { NavigationSearch } from '@/components/navigation-search'
 import { Button } from '@/components/ui/button'
-import { TextSkeleton } from '@/components/ui/skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { cn } from '@/lib/utils'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { createPortal } from 'react-dom'

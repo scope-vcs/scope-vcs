@@ -70,7 +70,7 @@ function PermissionSummary({ permissions }: { permissions: RepositoryMemberPermi
   )
 }
 
-export function MemberViewRead({ viewName }: { viewName: string }) {
+function MemberViewRead({ viewName }: { viewName: string }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
       <span className="inline-flex items-center gap-2">

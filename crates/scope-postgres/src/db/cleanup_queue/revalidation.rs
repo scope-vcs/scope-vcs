@@ -25,25 +25,23 @@ impl CleanupStore {
             return Ok(SourceBlobCleanupDecision::StaleClaim);
         };
         let encoded = encode_content_ref(&blob.content_ref)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let job = entities::source_blob_cleanup_job::Entity::find_by_id(encoded.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let claim_is_live = job.is_some_and(|job| {
             job.generation == loaded.generation && job.completed_at_unix.is_none()
         });
         if !claim_is_live {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(SourceBlobCleanupDecision::StaleClaim);
         }
         let is_referenced = entities::object_reference::Entity::find()
             .filter(entities::object_reference::Column::ObjectKey.eq(encoded))
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .is_some();
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(if is_referenced {
             SourceBlobCleanupDecision::Referenced
         } else {
@@ -70,7 +68,6 @@ where
     let repositories = entities::repository::Entity::find()
         .filter(entities::repository::Column::Id.is_in(cleanup_repo_ids))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(repositories.into_iter().map(|repo| repo.id).collect())
 }

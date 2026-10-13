@@ -176,7 +176,7 @@ async fn public_request_missing_or_stale_main_catalog_never_records_no_checks() 
             state
                 .metadata
                 .repositories()
-                .corrupt_repository_workflow_catalog_source_for_tests(
+                .set_repository_workflow_catalog_source_for_tests(
                     TEST_REPO_ID,
                     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 )

@@ -3,6 +3,8 @@ use crate::db::github_workflow_runs::{
     GitHubWorkflowRunReference, github_workflow_runs_for_check_suites,
 };
 use crate::db::requests::tests::{postgres_store, start_public_request};
+use scope_domain::github_workflow_jobs::GitHubWorkflowStep;
+use scope_domain::requests::{GitHubCheckConclusion, GitHubCheckStatus};
 use scope_domain::{github_workflow_jobs::GitHubJobsRead, github_workflow_runs::GitHubWorkflowRun};
 
 const REPO: &str = "owner/repo";

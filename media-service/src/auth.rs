@@ -1,22 +1,21 @@
-use axum::http::{HeaderMap, header::AUTHORIZATION};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use axum::http::HeaderMap;
 use scope_api_contract::{
     RequestAttachmentMediaGrantClaims, RequestAttachmentMediaTarget,
     RequestAttachmentUploadGrantClaims,
 };
-use scope_service_runtime::http::ServiceError;
+use scope_service_runtime::{
+    grants::{BearerError, GrantDecoder, bearer_token},
+    http::ServiceError,
+};
 
 pub(crate) struct GrantVerifier {
-    key: DecodingKey,
+    decoder: GrantDecoder,
 }
 
 impl GrantVerifier {
     pub(crate) fn new(public_key_pem: &str) -> anyhow::Result<Self> {
-        if public_key_pem.trim().is_empty() {
-            anyhow::bail!("media grant public key is required");
-        }
         Ok(Self {
-            key: DecodingKey::from_ed_pem(public_key_pem.as_bytes())?,
+            decoder: GrantDecoder::from_public_key_pem(public_key_pem)?,
         })
     }
 
@@ -26,16 +25,14 @@ impl GrantVerifier {
         upload_id: &str,
         now_unix: u64,
     ) -> Result<RequestAttachmentUploadGrantClaims, ServiceError> {
-        let authorization = headers
-            .get(AUTHORIZATION)
-            .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| ServiceError::unauthorized("media upload grant is required"))?;
-        let token = authorization
-            .strip_prefix("Bearer ")
-            .filter(|token| !token.trim().is_empty())
-            .ok_or_else(|| ServiceError::unauthorized("media upload grant is malformed"))?;
-        let claims: RequestAttachmentUploadGrantClaims =
-            self.decode(token, "media upload grant is invalid")?;
+        let token = bearer_token(headers).map_err(|error| match error {
+            BearerError::Missing => ServiceError::unauthorized("media upload grant is required"),
+            BearerError::Malformed => ServiceError::unauthorized("media upload grant is malformed"),
+        })?;
+        let claims: RequestAttachmentUploadGrantClaims = self
+            .decoder
+            .decode(token)
+            .ok_or_else(|| ServiceError::unauthorized("media upload grant is invalid"))?;
         if claims.attachment_id.is_empty()
             || !claims.allows_part(upload_id, &claims.attachment_id, now_unix)
         {
@@ -56,8 +53,10 @@ impl GrantVerifier {
         if token.trim().is_empty() {
             return Err(ServiceError::unauthorized("media grant is required"));
         }
-        let claims: RequestAttachmentMediaGrantClaims =
-            self.decode(token, "media grant is invalid")?;
+        let claims: RequestAttachmentMediaGrantClaims = self
+            .decoder
+            .decode(token)
+            .ok_or_else(|| ServiceError::unauthorized("media grant is invalid"))?;
         if !claims.allows(attachment_id, target, now_unix) {
             return Err(ServiceError::unauthorized(
                 "media grant is expired or targets another object",
@@ -65,30 +64,17 @@ impl GrantVerifier {
         }
         Ok(claims)
     }
-
-    fn decode<T: serde::de::DeserializeOwned>(
-        &self,
-        token: &str,
-        invalid_message: &'static str,
-    ) -> Result<T, ServiceError> {
-        let mut validation = Validation::new(Algorithm::EdDSA);
-        validation.required_spec_claims.clear();
-        validation.validate_exp = false;
-        decode::<T>(token, &self.key, &validation)
-            .map(|data| data.claims)
-            .map_err(|_| ServiceError::unauthorized(invalid_message))
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::HeaderValue;
-    use jsonwebtoken::{EncodingKey, Header, encode};
+    use axum::http::{HeaderValue, header::AUTHORIZATION};
+    use scope_service_runtime::grants::test_keys::{PUBLIC_KEY_PEM, sign};
 
     #[test]
     fn ed25519_grants_enforce_expiry_upload_and_media_targets() {
-        let verifier = GrantVerifier::new(TEST_PUBLIC_KEY).unwrap();
+        let verifier = GrantVerifier::new(PUBLIC_KEY_PEM).unwrap();
         let upload = RequestAttachmentUploadGrantClaims {
             attachment_id: "att_1".to_string(),
             repository_id: "repo_1".to_string(),
@@ -97,7 +83,7 @@ mod tests {
             upload_id: "upload_1".to_string(),
             expires_at_unix: 100,
         };
-        let upload_token = token(&upload);
+        let upload_token = sign(&upload);
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
@@ -116,7 +102,7 @@ mod tests {
             target: target.clone(),
             expires_at_unix: 100,
         };
-        let media_token = token(&media);
+        let media_token = sign(&media);
         assert!(
             verifier
                 .verify_media(&media_token, "att_1", &target, 99)
@@ -140,16 +126,4 @@ mod tests {
                 .is_err()
         );
     }
-
-    fn token<T: serde::Serialize>(claims: &T) -> String {
-        encode(
-            &Header::new(Algorithm::EdDSA),
-            claims,
-            &EncodingKey::from_ed_pem(TEST_PRIVATE_KEY.as_bytes()).unwrap(),
-        )
-        .unwrap()
-    }
-
-    const TEST_PRIVATE_KEY: &str = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIGrD/e7uKYqSY4twDEsRfMMuLSrODf14dpTiTK6K1YI0\n-----END PRIVATE KEY-----\n";
-    const TEST_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA2+Jj2UvNCvQiUPNYRgSi0cJSPiJI6Rs6D0UTeEpQVj8=\n-----END PUBLIC KEY-----\n";
 }

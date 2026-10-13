@@ -9,7 +9,7 @@ use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
     github::{
-        GitHubApp, InstallationStatus,
+        InstallationStatus,
         setup_tokens::GrantedRepository,
         webhook::{
             GITHUB_EVENT_HEADER, GITHUB_SIGNATURE_HEADER, GitHubWebhookEvent,
@@ -22,8 +22,8 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
-        github_check_results, github_pushes, github_setup_checks::publish_setup_check_change,
-        github_workflow_jobs, github_workflow_runs, run_inspection::require_full_view_member,
+        github_check_results, github_pushes, github_workflow_jobs, github_workflow_runs,
+        run_inspection::require_full_view_member,
     },
 };
 use axum::{
@@ -55,8 +55,7 @@ pub(crate) async fn get_github_connection(
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    let (_, context) = maintainer(&state, &headers, &owner, &repo).await?;
     connection_response(&state, &context).await.map(Json)
 }
 
@@ -66,13 +65,12 @@ pub(crate) async fn start_github_authorization(
     Path((owner, repo)): Path<(String, String)>,
     Json(input): Json<GitHubAuthorizeRequest>,
 ) -> Result<Json<GitHubAuthorizeResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
-    let app = configured_app(&state)?;
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    let app = state.github_app()?;
     let setup_state = app.setup_tokens().setup_state(
         &context.record.owner_handle,
         &context.record.name,
-        &user.id,
+        &user_id,
         unix_now()?,
     );
     let callback = format!(
@@ -90,7 +88,7 @@ pub(crate) async fn complete_github_setup(
     Json(input): Json<GitHubSetupRequest>,
 ) -> Result<Json<GitHubSetupResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let app = configured_app(&state)?;
+    let app = state.github_app()?;
     let now = unix_now()?;
     let setup_state = app.setup_tokens().open_setup_state(&input.state, now)?;
     if setup_state.user_id != user.id {
@@ -137,13 +135,12 @@ pub(crate) async fn connect_github_repository(
     Path((owner, repo)): Path<(String, String)>,
     Json(input): Json<ConnectGitHubRepositoryRequest>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
-    let app = configured_app(&state)?;
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    let app = state.github_app()?;
     let grant = app
         .setup_tokens()
         .open_connect_grant(&input.grant, unix_now()?)?;
-    if grant.user_id != user.id || repo_id(&grant.owner, &grant.repo) != context.record.id {
+    if grant.user_id != user_id || repo_id(&grant.owner, &grant.repo) != context.record.id {
         return Err(ApiError::forbidden(
             "This GitHub setup was for another repository or account. Start again from repository settings.",
         ));
@@ -174,7 +171,7 @@ pub(crate) async fn connect_github_repository(
                 github_private: repository.private,
                 acknowledge_public: input.acknowledge_public,
                 run_import_count: input.run_import_count,
-                user_id: user.id,
+                user_id,
                 now_unix: unix_now()?,
             },
             async || {
@@ -188,10 +185,9 @@ pub(crate) async fn connect_github_repository(
             },
         )
         .await?;
-    publish_connection_change(&state, &incarnation).await;
-    state.github_push_wakeup.notify_one();
-    state.github_run_import_wakeup.notify_one();
-    connection_response(&state, &context).await.map(Json)
+    state.wakeups.github_pushes.notify_one();
+    state.wakeups.github_run_imports.notify_one();
+    changed(&state, &context, &incarnation).await
 }
 
 pub(crate) async fn disconnect_github_repository(
@@ -199,15 +195,13 @@ pub(crate) async fn disconnect_github_repository(
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
     let incarnation = state
         .metadata
         .repositories()
-        .disconnect_github_repository(&context.record.id, &user.id)
+        .disconnect_github_repository(&context.record.id, &user_id)
         .await?;
-    publish_connection_change(&state, &incarnation).await;
-    connection_response(&state, &context).await.map(Json)
+    changed(&state, &context, &incarnation).await
 }
 
 pub(crate) async fn set_github_required_checks(
@@ -216,15 +210,13 @@ pub(crate) async fn set_github_required_checks(
     Path((owner, repo)): Path<(String, String)>,
     Json(input): Json<SetGitHubRequiredChecksRequest>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
     let (_, incarnation) = state
         .metadata
         .repositories()
-        .set_github_required_checks(&context.record.id, &user.id, input.names)
+        .set_github_required_checks(&context.record.id, &user_id, input.names)
         .await?;
-    publish_connection_change(&state, &incarnation).await;
-    connection_response(&state, &context).await.map(Json)
+    changed(&state, &context, &incarnation).await
 }
 
 pub(crate) async fn confirm_public_github_repository(
@@ -232,16 +224,14 @@ pub(crate) async fn confirm_public_github_repository(
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
     let incarnation = state
         .metadata
         .repositories()
-        .acknowledge_public_github_repository(&context.record.id, &user.id)
+        .acknowledge_public_github_repository(&context.record.id, &user_id)
         .await?;
-    publish_connection_change(&state, &incarnation).await;
-    state.github_push_wakeup.notify_one();
-    connection_response(&state, &context).await.map(Json)
+    state.wakeups.github_pushes.notify_one();
+    changed(&state, &context, &incarnation).await
 }
 
 pub(crate) async fn start_github_setup_check(
@@ -249,17 +239,15 @@ pub(crate) async fn start_github_setup_check(
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
-    configured_app(&state)?;
-    state
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    state.github_app()?;
+    let (_, incarnation) = state
         .metadata
         .repositories()
-        .start_github_setup_check(&context.record.id, &user.id, unix_now()?)
+        .start_github_setup_check(&context.record.id, &user_id, unix_now()?)
         .await?;
-    state.github_push_wakeup.notify_one();
-    publish_setup_check_change(&state, &context.record.id).await?;
-    connection_response(&state, &context).await.map(Json)
+    state.wakeups.github_pushes.notify_one();
+    changed(&state, &context, &incarnation).await
 }
 
 pub(crate) async fn set_github_run_import_count(
@@ -268,15 +256,13 @@ pub(crate) async fn set_github_run_import_count(
     Path((owner, repo)): Path<(String, String)>,
     Json(input): Json<SetGitHubRunImportCountRequest>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
     let (_, incarnation) = state
         .metadata
         .repositories()
-        .set_github_run_import_count(&context.record.id, &user.id, input.count)
+        .set_github_run_import_count(&context.record.id, &user_id, input.count)
         .await?;
-    publish_connection_change(&state, &incarnation).await;
-    connection_response(&state, &context).await.map(Json)
+    changed(&state, &context, &incarnation).await
 }
 
 pub(crate) async fn start_github_run_import(
@@ -284,17 +270,15 @@ pub(crate) async fn start_github_run_import(
     headers: HeaderMap,
     Path((owner, repo)): Path<(String, String)>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let context = maintainer_access(&state, &owner, &repo, &user.id).await?;
-    configured_app(&state)?;
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    state.github_app()?;
     let (_, incarnation) = state
         .metadata
         .repositories()
-        .start_github_run_import(&context.record.id, &user.id, unix_now()?)
+        .start_github_run_import(&context.record.id, &user_id, unix_now()?)
         .await?;
-    state.github_run_import_wakeup.notify_one();
-    publish_connection_change(&state, &incarnation).await;
-    connection_response(&state, &context).await.map(Json)
+    state.wakeups.github_run_imports.notify_one();
+    changed(&state, &context, &incarnation).await
 }
 
 pub(crate) async fn get_github_workflow_runs(
@@ -309,7 +293,6 @@ pub(crate) async fn get_github_workflow_runs(
     let connection = repositories
         .github_connection(&context.record.id)
         .await?
-        .map(|read| read.connection)
         .filter(|_| state.github.is_some());
     let (RequestCheckProvider::GitHub, Some(connection)) = (
         RequestCheckProvider::for_repository(connection.as_ref()),
@@ -359,11 +342,7 @@ pub(crate) async fn get_github_workflow_names(
     let user = require_scope_user(&state, &headers).await?;
     let context = require_full_view_member(&state, &user.id, &owner, &repo).await?;
     let repositories = state.metadata.repositories();
-    let connection = repositories
-        .github_connection(&context.record.id)
-        .await?
-        .map(|read| read.connection);
-    let Some(connection) = connection else {
+    let Some(connection) = repositories.github_connection(&context.record.id).await? else {
         return Ok(Json(GitHubWorkflowNamesResponse {
             workflows: Vec::new(),
         }));
@@ -395,7 +374,7 @@ pub(crate) async fn receive_github_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<StatusCode, ApiError> {
-    let app = configured_app(&state)?;
+    let app = state.github_app()?;
     let signature = headers
         .get(GITHUB_SIGNATURE_HEADER)
         .and_then(|value| value.to_str().ok());
@@ -515,6 +494,26 @@ fn callback_origin(state: &AppState, web_origin: Option<&str>) -> Result<String,
     })
 }
 
+async fn maintainer(
+    state: &AppState,
+    headers: &HeaderMap,
+    owner: &str,
+    repo: &str,
+) -> Result<(String, RepositoryAccessContext), ApiError> {
+    let user = require_scope_user(state, headers).await?;
+    let context = maintainer_access(state, owner, repo, &user.id).await?;
+    Ok((user.id, context))
+}
+
+async fn changed(
+    state: &AppState,
+    context: &RepositoryAccessContext,
+    incarnation: &RepositoryIncarnation,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    publish_connection_change(state, incarnation).await;
+    connection_response(state, context).await.map(Json)
+}
+
 async fn maintainer_access(
     state: &AppState,
     owner: &str,
@@ -527,19 +526,14 @@ async fn maintainer_access(
     Ok(context)
 }
 
-fn configured_app(state: &AppState) -> Result<&GitHubApp, ApiError> {
-    state
-        .github
-        .as_deref()
-        .ok_or_else(|| ApiError::not_found("GitHub is not configured on this server"))
-}
-
 async fn connection_response(
     state: &AppState,
     context: &RepositoryAccessContext,
 ) -> Result<GitHubConnectionResponse, ApiError> {
     let repositories = state.metadata.repositories();
-    let read = repositories.github_connection(&context.record.id).await?;
+    let read = repositories
+        .github_connection_read(&context.record.id)
+        .await?;
     let required_checks = repositories
         .github_required_checks(&context.record.id)
         .await?;

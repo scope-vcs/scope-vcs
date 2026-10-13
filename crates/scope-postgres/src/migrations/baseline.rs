@@ -2,8 +2,8 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DbErr, Statement};
 use sea_orm_migration::{MigrationName, MigrationTrait, SchemaManager};
 use serde_json::Value;
 
-pub(super) const NAME: &str = "m0042_current_schema_baseline";
-const SCHEMA: &str = include_str!("current_schema.sql");
+pub(super) const NAME: &str = "m0084_current_schema_baseline";
+const SCHEMA: &str = include_str!("m0084_current_schema_baseline.sql");
 
 pub struct Migration;
 

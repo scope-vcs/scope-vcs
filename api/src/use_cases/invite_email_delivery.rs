@@ -1,3 +1,4 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     auth::tokens::{generate_repository_invite_token, random_token},
     error::ApiError,
@@ -175,27 +176,19 @@ fn escape_html(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
-impl AppState {
-    pub(crate) fn start_invite_email_delivery(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            loop {
-                let pass = async {
-                    state.metadata.admin().readiness_check().await?;
-                    deliver_due_invite_emails(&state, &unix_now).await
-                };
-                if let Err(error) = pass.await {
-                    tracing::warn!(
-                        error = %error.operator_diagnostic(),
-                        "invite email delivery pass failed; retrying"
-                    );
-                }
-                tokio::select! {
-                    _ = state.invite_email_wakeup.notified() => {},
-                    _ = tokio::time::sleep(POLL_INTERVAL) => {},
-                }
-            }
-        });
+impl BackgroundWork {
+    pub(crate) fn start_invite_email_delivery(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "invite email delivery pass",
+                cadence: Cadence::AfterPass {
+                    delay: POLL_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.invite_emails),
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move { deliver_due_invite_emails(&state, &unix_now).await },
+        );
     }
 }
 

@@ -77,8 +77,7 @@ where
             "repository change version",
         )?))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     if updated.rows_affected != 1 {
         return Err(PostgresError::internal_message(
             "repository changed under its lock during a collaboration change",
@@ -130,8 +129,7 @@ where
         .filter(entities::repository_member::Column::RepoId.eq(repo_id))
         .order_by_asc(entities::repository_member::Column::UserId)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::repository_member::Model::try_into_domain)
         .collect::<Result<Vec<RepositoryMember>, _>>()?;
@@ -140,8 +138,7 @@ where
         .order_by_asc(entities::repository_invite::Column::InvitedEmailNormalized)
         .order_by_asc(entities::repository_invite::Column::Id)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut link_hashes = BTreeMap::<String, Vec<String>>::new();
     if !invite_rows.is_empty() {
         let links = entities::repository_invite_link::Entity::find()
@@ -151,8 +148,7 @@ where
             )
             .order_by_asc(entities::repository_invite_link::Column::TokenHash)
             .all(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         for link in links {
             link_hashes
                 .entry(link.invite_id)
@@ -184,8 +180,7 @@ where
         entities::repository_member::Model::from_domain(member)?
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
 
     for invite in &collaboration.invitations {
@@ -221,8 +216,7 @@ where
                 (*user_id).to_string(),
             ))
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         }
     }
     for (user_id, member) in after_members {
@@ -237,13 +231,11 @@ where
             user_id.to_string(),
         ))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         entities::repository_member::Model::from_domain(member)?
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
 
     let before_invites = before
@@ -260,8 +252,7 @@ where
         if !after_invites.contains_key(invite_id) {
             entities::repository_invite::Entity::delete_by_id((*invite_id).to_string())
                 .exec(conn)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
         }
     }
     for (invite_id, invite) in after_invites {
@@ -276,8 +267,7 @@ where
             .into_active_model()
             .reset_all()
             .update(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let new_links = invite
             .link_hashes
             .iter()
@@ -299,8 +289,7 @@ where
     entities::repository_invite::Model::from_domain(invite)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     insert_repository_invite_links(conn, &invite.id, &invite.link_hashes).await
 }
 
@@ -323,7 +312,6 @@ where
         .into_active_model()
     }))
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }

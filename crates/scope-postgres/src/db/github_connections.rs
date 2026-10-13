@@ -1,5 +1,6 @@
 use super::{
     RepositoryStore, acquire_aggregate_lock,
+    entities::{decode_enum, encode_enum},
     github_run_imports::{
         delete_github_run_import, queue_github_run_import, save_run_import_count,
     },
@@ -11,17 +12,22 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     github_connection::{
-        ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus, GitHubDisconnectReason,
+        ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus,
         GitHubInstallationChange, GitHubRepositoryVisibility, acknowledge_public_github_repository,
         connect_github_repository, disconnect_github_repository,
     },
     github_run_import::GitHubRunImport,
-    repository::RepositoryIncarnation,
+    repository::{RepositoryIncarnation, access::RepositoryAccessContext},
     requests::{GitHubBranch, GitHubPushDestination},
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
+    ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, Statement,
+    TransactionTrait, Value,
 };
+
+const BY_REPO: &str = "WHERE connection.repo_id = $1";
+const CONNECTED_GITHUB_REPOSITORY: &str =
+    "WHERE connection.github_repository_id = $1 AND connection.status = 'Connected'";
 
 const SELECT_CONNECTION: &str = "SELECT connection.repo_id, connection.installation_id,
         connection.github_repository_id, connection.github_full_name,
@@ -52,17 +58,20 @@ struct ConnectionRow {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_connection_read"))]
+    pub async fn github_connection_read(
+        &self,
+        repo_id: &str,
+    ) -> Result<Option<GitHubConnectionRead>, PostgresError> {
+        load_connection(self.db.as_ref(), BY_REPO, [repo_id.into()]).await
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_connection"))]
     pub async fn github_connection(
         &self,
         repo_id: &str,
-    ) -> Result<Option<GitHubConnectionRead>, PostgresError> {
-        load_connection(
-            self.db.as_ref(),
-            "WHERE connection.repo_id = $1",
-            [repo_id.into()],
-        )
-        .await
+    ) -> Result<Option<GitHubConnection>, PostgresError> {
+        repository_github_connection(self.db.as_ref(), repo_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_connection_for_github_repository"))]
@@ -70,13 +79,7 @@ impl RepositoryStore {
         &self,
         github_repository_id: u64,
     ) -> Result<Option<GitHubConnection>, PostgresError> {
-        Ok(load_connection(
-            self.db.as_ref(),
-            "WHERE connection.github_repository_id = $1 AND connection.status = 'Connected'",
-            [u64_to_i64(github_repository_id, "GitHub repository id")?.into()],
-        )
-        .await?
-        .map(|read| read.connection))
+        connected_github_repository(self.db.as_ref(), github_repository_id, "").await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "connect_github_repository"))]
@@ -99,16 +102,9 @@ impl RepositoryStore {
         let context = repository_access(&tx, &repo_id, Some(&command.user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        let current = load_connection(&tx, "WHERE connection.repo_id = $1", [repo_id.into()])
-            .await?
-            .map(|read| read.connection);
-        let github_repository_link = load_connection(
-            &tx,
-            "WHERE connection.github_repository_id = $1 AND connection.status = 'Connected'",
-            [u64_to_i64(command.github_repository_id, "GitHub repository id")?.into()],
-        )
-        .await?
-        .map(|read| read.connection);
+        let current = repository_github_connection(&tx, &repo_id).await?;
+        let github_repository_link =
+            connected_github_repository(&tx, command.github_repository_id, "").await?;
         let run_import_count = command.run_import_count;
         let connection = connect_github_repository(
             context.access.clone(),
@@ -166,18 +162,13 @@ impl RepositoryStore {
         github_repository_id: u64,
         github_private: bool,
     ) -> Result<Option<RepositoryIncarnation>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let Some(read) = load_connection(
-            &tx,
-            "WHERE connection.github_repository_id = $1 AND connection.status = 'Connected'
-             FOR UPDATE OF connection",
-            [u64_to_i64(github_repository_id, "GitHub repository id")?.into()],
-        )
-        .await?
+        let tx = self.db.begin().await?;
+        let Some(mut connection) =
+            connected_github_repository(&tx, github_repository_id, " FOR UPDATE OF connection")
+                .await?
         else {
             return Ok(None);
         };
-        let mut connection = read.connection;
         if !connection.apply_visibility(github_private) {
             return Ok(None);
         }
@@ -185,7 +176,7 @@ impl RepositoryStore {
         let changed = load_repo_record(&tx, &connection.repository_id)
             .await?
             .map(|record| record.incarnation());
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(changed)
     }
 
@@ -195,20 +186,15 @@ impl RepositoryStore {
         repo_id: &str,
         user_id: &str,
     ) -> Result<RepositoryIncarnation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_shared_repository_lock(&tx, repo_id).await?;
-        acquire_aggregate_lock(&tx, "github-connection", repo_id).await?;
-        let context = repository_access(&tx, repo_id, Some(user_id))
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        let current = load_connection(&tx, "WHERE connection.repo_id = $1", [repo_id.into()])
-            .await?
-            .map(|read| read.connection);
+        let (tx, context) = self
+            .begin_github_change(repo_id, user_id, &["github-connection"])
+            .await?;
+        let current = repository_github_connection(&tx, repo_id).await?;
         let connection =
             acknowledge_public_github_repository(context.access.clone(), current.as_ref())?;
         save_visibility(&tx, &connection).await?;
         requeue_started_github_evaluations(&tx, &connection).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(context.incarnation())
     }
 
@@ -218,25 +204,19 @@ impl RepositoryStore {
         repo_id: &str,
         user_id: &str,
     ) -> Result<RepositoryIncarnation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_shared_repository_lock(&tx, repo_id).await?;
-        acquire_aggregate_lock(&tx, "github-connection", repo_id).await?;
-        let context = repository_access(&tx, repo_id, Some(user_id))
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-        let current = load_connection(&tx, "WHERE connection.repo_id = $1", [repo_id.into()])
-            .await?
-            .map(|read| read.connection);
+        let (tx, context) = self
+            .begin_github_change(repo_id, user_id, &["github-connection"])
+            .await?;
+        let current = repository_github_connection(&tx, repo_id).await?;
         disconnect_github_repository(context.access.clone(), current.as_ref())?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "DELETE FROM scope_github_connections WHERE repo_id = $1",
             [repo_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         delete_github_run_import(&tx, repo_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(context.incarnation())
     }
 
@@ -287,7 +267,7 @@ impl RepositoryStore {
                  WHERE repo_id = $1",
                 [
                     connection.repository_id.clone().into(),
-                    reason_name(reason).into(),
+                    encode_enum(reason)?.into(),
                     u64_to_i64(at_unix, "GitHub disconnection time")?.into(),
                 ],
             ))
@@ -300,6 +280,23 @@ impl RepositoryStore {
         }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(changed)
+    }
+
+    pub(super) async fn begin_github_change(
+        &self,
+        repo_id: &str,
+        user_id: &str,
+        aggregates: &[&str],
+    ) -> Result<(DatabaseTransaction, RepositoryAccessContext), PostgresError> {
+        let tx = self.db.begin().await?;
+        acquire_shared_repository_lock(&tx, repo_id).await?;
+        for aggregate in aggregates {
+            acquire_aggregate_lock(&tx, aggregate, repo_id).await?;
+        }
+        let context = repository_access(&tx, repo_id, Some(user_id))
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        Ok((tx, context))
     }
 }
 
@@ -351,16 +348,11 @@ async fn requeue_started_github_evaluations<C: ConnectionTrait>(
                 u64_to_i64(connection.github_repository_id, "GitHub repository id")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let destination = GitHubPushDestination::of(connection);
     for row in rows {
-        let request_id: String = row
-            .try_get("", "request_id")
-            .map_err(PostgresError::internal)?;
-        let tested_oid: String = row
-            .try_get("", "tested_oid")
-            .map_err(PostgresError::internal)?;
+        let request_id: String = row.try_get("", "request_id")?;
+        let tested_oid: String = row.try_get("", "tested_oid")?;
         super::github_pushes::queue_github_push(
             conn,
             &connection.repository_id,
@@ -386,8 +378,7 @@ async fn save_visibility<C: ConnectionTrait>(
             visibility_name(connection.visibility).into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -402,11 +393,23 @@ pub(super) async fn repository_github_connection<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
 ) -> Result<Option<GitHubConnection>, PostgresError> {
-    Ok(
-        load_connection(conn, "WHERE connection.repo_id = $1", [repo_id.into()])
-            .await?
-            .map(|read| read.connection),
+    Ok(load_connection(conn, BY_REPO, [repo_id.into()])
+        .await?
+        .map(|read| read.connection))
+}
+
+async fn connected_github_repository<C: ConnectionTrait>(
+    conn: &C,
+    github_repository_id: u64,
+    lock: &str,
+) -> Result<Option<GitHubConnection>, PostgresError> {
+    Ok(load_connection(
+        conn,
+        &format!("{CONNECTED_GITHUB_REPOSITORY}{lock}"),
+        [u64_to_i64(github_repository_id, "GitHub repository id")?.into()],
     )
+    .await?
+    .map(|read| read.connection))
 }
 
 async fn load_connection<C: ConnectionTrait>(
@@ -420,8 +423,7 @@ async fn load_connection<C: ConnectionTrait>(
         values,
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(ConnectionRow::into_domain)
     .transpose()
 }
@@ -431,7 +433,7 @@ fn connection_values(connection: &GitHubConnection) -> Result<Vec<Value>, Postgr
         GitHubConnectionStatus::Connected => ("Connected", None, None),
         GitHubConnectionStatus::Disconnected { reason, at_unix } => (
             "Disconnected",
-            Some(reason_name(reason)),
+            Some(encode_enum(reason)?),
             Some(u64_to_i64(at_unix, "GitHub disconnection time")?),
         ),
     };
@@ -443,7 +445,7 @@ fn connection_values(connection: &GitHubConnection) -> Result<Vec<Value>, Postgr
         connection.connected_by.clone().into(),
         u64_to_i64(connection.connected_at_unix, "GitHub connection time")?.into(),
         status.into(),
-        reason.map(str::to_string).into(),
+        reason.into(),
         at_unix.into(),
         visibility_name(connection.visibility).into(),
     ])
@@ -459,33 +461,16 @@ fn visibility_name(visibility: GitHubRepositoryVisibility) -> &'static str {
     }
 }
 
-fn reason_name(reason: GitHubDisconnectReason) -> &'static str {
-    match reason {
-        GitHubDisconnectReason::AppUninstalled => "AppUninstalled",
-        GitHubDisconnectReason::InstallationSuspended => "InstallationSuspended",
-        GitHubDisconnectReason::RepositoryRemoved => "RepositoryRemoved",
-    }
-}
-
 impl ConnectionRow {
     fn into_domain(self) -> Result<GitHubConnectionRead, PostgresError> {
         let status = match (
             self.status.as_str(),
-            self.disconnect_reason.as_deref(),
+            self.disconnect_reason,
             optional_i64_to_u64(self.disconnected_at_unix, "GitHub disconnection time")?,
         ) {
             ("Connected", None, None) => GitHubConnectionStatus::Connected,
             ("Disconnected", Some(reason), Some(at_unix)) => GitHubConnectionStatus::Disconnected {
-                reason: match reason {
-                    "AppUninstalled" => GitHubDisconnectReason::AppUninstalled,
-                    "InstallationSuspended" => GitHubDisconnectReason::InstallationSuspended,
-                    "RepositoryRemoved" => GitHubDisconnectReason::RepositoryRemoved,
-                    other => {
-                        return Err(PostgresError::internal_message(format!(
-                            "unknown GitHub disconnect reason {other}"
-                        )));
-                    }
-                },
+                reason: decode_enum(reason)?,
                 at_unix,
             },
             _ => {

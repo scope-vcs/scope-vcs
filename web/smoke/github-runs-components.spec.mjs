@@ -1,15 +1,6 @@
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import tailwindcss from '@tailwindcss/vite'
-
-const require = createRequire(import.meta.url)
+import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
 
 async function screenshot(page, options) {
   await page.mouse.move(0, 0)
@@ -19,36 +10,10 @@ async function screenshot(page, options) {
   await page.screenshot(options)
 }
 
-async function openFixture(t) {
-  const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-github-runs-'))
-  t.after(() => rm(cacheDir, { recursive: true, force: true }))
-  const server = await createServer({
-    cacheDir,
-    configFile: false,
-    root: fileURLToPath(new URL('./fixtures/github-runs', import.meta.url)),
-    plugins: [tailwindcss()],
-    server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } },
-    resolve: { alias: [
-      { find: '@clerk/tanstack-react-start', replacement: fileURLToPath(new URL('./fixtures/request-workspace/clerk.tsx', import.meta.url)) },
-      { find: '@', replacement: fileURLToPath(new URL('../src', import.meta.url)) },
-      ...['react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom/client', 'react']
-        .map((name) => ({ find: name, replacement: require.resolve(name) })),
-    ] },
-    oxc: { jsx: { runtime: 'automatic' } },
-  })
-  t.after(() => server.close())
-  await server.listen()
-  const browser = await chromium.launch({ headless: true })
-  t.after(() => browser.close())
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-  page.setDefaultTimeout(10_000)
-  const errors = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  return { base: server.resolvedUrls.local[0], errors, page }
-}
+const githubRunsFixture = { aliases: [fixtureClerk], tailwind: true }
 
 test('GitHub workflow runs open on Scope, keep their list across navigation and refresh in place', async (t) => {
-  const { base, errors, page } = await openFixture(t)
+  const { base, errors, page } = await openFixture(t, 'github-runs', githubRunsFixture)
 
   await page.goto(new URL('/octo/demo/runs', base).href, { timeout: 30_000 })
   const rows = page.locator('main li')
@@ -179,7 +144,7 @@ test('GitHub workflow runs open on Scope, keep their list across navigation and 
 })
 
 test('a GitHub run shows its jobs, steps and finished logs, follows job links and refreshes in place', async (t) => {
-  const { base, errors, page } = await openFixture(t)
+  const { base, errors, page } = await openFixture(t, 'github-runs', githubRunsFixture)
   const shots = process.env.SCOPE_COMPONENT_SCREENSHOT
   const job = (name) => page.getByRole('navigation', { name: 'Jobs' }).getByRole('button').filter({ hasText: name })
   const log = page.getByRole('region', { name: 'Log' })

@@ -1,7 +1,6 @@
 pub(crate) mod cache_client;
 mod completion;
 pub(crate) mod control;
-mod logs;
 mod sink;
 mod source;
 
@@ -11,7 +10,6 @@ mod tests;
 use crate::settings::RuntimeSettings;
 use anyhow::{Context as _, bail};
 use reqwest::blocking::{Client, Response};
-use scope_api_contract::AttemptCacheKeyMaterial;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -25,17 +23,6 @@ pub struct RuntimeClient {
     api_url: String,
     attempt_id: String,
     attempt_token: Arc<Mutex<Option<String>>>,
-    cache_access: Arc<Mutex<Option<CacheAccess>>>,
-    cache_keys: Arc<Mutex<Vec<AttemptCacheKeyMaterial>>>,
-    heartbeat_lock: Arc<Mutex<()>>,
-    #[cfg(test)]
-    heartbeat_started: Option<std::sync::mpsc::Sender<()>>,
-}
-
-#[derive(Clone)]
-struct CacheAccess {
-    endpoint: String,
-    grant: String,
 }
 
 impl RuntimeClient {
@@ -49,11 +36,6 @@ impl RuntimeClient {
             api_url: settings.api_url.clone(),
             attempt_id: settings.attempt_id.clone(),
             attempt_token: Arc::new(Mutex::new(None)),
-            cache_access: Arc::new(Mutex::new(None)),
-            cache_keys: Arc::new(Mutex::new(Vec::new())),
-            heartbeat_lock: Arc::new(Mutex::new(())),
-            #[cfg(test)]
-            heartbeat_started: None,
         })
     }
 
@@ -64,13 +46,6 @@ impl RuntimeClient {
             api_url: "http://127.0.0.1:1".to_string(),
             attempt_id: "test".to_string(),
             attempt_token: Arc::new(Mutex::new(Some("test".to_string()))),
-            cache_access: Arc::new(Mutex::new(Some(CacheAccess {
-                endpoint: "http://127.0.0.1:1".to_string(),
-                grant: "test".to_string(),
-            }))),
-            cache_keys: Arc::new(Mutex::new(Vec::new())),
-            heartbeat_lock: Arc::new(Mutex::new(())),
-            heartbeat_started: None,
         }
     }
 

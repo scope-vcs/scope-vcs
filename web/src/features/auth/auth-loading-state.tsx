@@ -1,5 +1,5 @@
 import { PendingSurface } from '@/components/pending-surface'
-import { BlockSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import type { ReactNode } from 'react'
 
 export function AuthSurface({

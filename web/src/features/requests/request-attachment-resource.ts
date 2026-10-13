@@ -1,10 +1,11 @@
 import type {
+  CreateRequestAttachmentMediaGrantResponse,
   RequestAttachmentLimitsResponse,
   RequestAttachmentResponse,
 } from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import { onViewerChange } from '../../lib/viewer-state'
-import { createRequestAttachmentScopeTracker } from './request-attachment-scope-tracker'
+import { repoResourceScopeOwner } from '../repo-detail/repo-resource-scope'
 
 export type RequestAttachmentResourceValue = {
   attachments: RequestAttachmentResponse[]
@@ -17,18 +18,29 @@ export const requestAttachmentResource = createCachedResource<RequestAttachmentR
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
-const scopeTracker = createRequestAttachmentScopeTracker({
-  maxOwners: 16,
-  removePreviousScope(previous) {
-    requestAttachmentResource.removeMatching(
-      (identity) => identity.startsWith(`${previous}\0`),
-    )
-  },
+export const requestAttachmentMediaGrantResource = createCachedResource<CreateRequestAttachmentMediaGrantResponse>({
+  maxEntries: 64,
 })
-onViewerChange(scopeTracker.reset)
+
+const MAX_TRACKED_OWNERS = 64
+const activeAccessScopes = new Map<string, string>()
+onViewerChange(() => activeAccessScopes.clear())
 
 export function activateRequestAttachmentResourceScope(accessScope: string) {
-  scopeTracker.activate(accessScope)
+  const owner = repoResourceScopeOwner(accessScope)
+  if (!owner) return
+  const previous = activeAccessScopes.get(owner)
+  if (previous && previous !== accessScope) {
+    const inPreviousScope = (identity: string) => identity.startsWith(`${previous}\0`)
+    requestAttachmentResource.removeMatching(inPreviousScope)
+    requestAttachmentMediaGrantResource.removeMatching(inPreviousScope)
+  }
+  activeAccessScopes.delete(owner)
+  activeAccessScopes.set(owner, accessScope)
+  if (activeAccessScopes.size > MAX_TRACKED_OWNERS) {
+    const oldest = activeAccessScopes.keys().next().value
+    if (oldest) activeAccessScopes.delete(oldest)
+  }
 }
 
 export function requestAttachmentResourceIdentity(

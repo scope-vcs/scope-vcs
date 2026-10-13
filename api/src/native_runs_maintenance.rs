@@ -1,11 +1,6 @@
-use crate::{
-    http::admin::{
-        NativeRunsAccountListResponse, NativeRunsAccountResponse, NativeRunsRemovalResponse,
-    },
-    repo_events::RepoChangeBus,
-    use_cases::native_runs,
-};
-use scope_postgres::db::MetadataStore;
+use crate::{repo_events::RepoChangeBus, use_cases::native_runs};
+use scope_postgres::db::{MetadataStore, NativeRunsAccountListing, NativeRunsWithdrawal};
+use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NativeRunsCommand {
@@ -68,6 +63,68 @@ pub async fn run_native_runs_command_for_maintenance(
         }
     };
     Ok(json)
+}
+
+#[derive(Debug, Serialize)]
+struct NativeRunsAccountListResponse {
+    accounts: Vec<NativeRunsAccountResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct NativeRunsAccountResponse {
+    handle: String,
+    user_id: String,
+    added_at_unix: u64,
+    note: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct NativeRunsRemovalResponse {
+    user_id: String,
+    removed: bool,
+    withdrawn_request_ids: Vec<String>,
+    canceled_run_ids: Vec<String>,
+}
+
+impl NativeRunsAccountListResponse {
+    fn from_listings(listings: Vec<NativeRunsAccountListing>) -> Self {
+        Self {
+            accounts: listings
+                .into_iter()
+                .map(NativeRunsAccountResponse::from_listing)
+                .collect(),
+        }
+    }
+}
+
+impl NativeRunsAccountResponse {
+    fn from_listing(listing: NativeRunsAccountListing) -> Self {
+        Self {
+            handle: listing.handle,
+            user_id: listing.account.user_id,
+            added_at_unix: listing.account.added_at_unix,
+            note: listing.account.note,
+        }
+    }
+}
+
+impl NativeRunsRemovalResponse {
+    fn from_withdrawal(withdrawal: NativeRunsWithdrawal) -> Self {
+        Self {
+            user_id: withdrawal.user_id,
+            removed: withdrawal.removed,
+            withdrawn_request_ids: withdrawal
+                .withdrawn_evaluations
+                .into_iter()
+                .map(|evaluation| evaluation.request_id)
+                .collect(),
+            canceled_run_ids: withdrawal
+                .canceled_runs
+                .into_iter()
+                .map(|run| run.id)
+                .collect(),
+        }
+    }
 }
 
 fn operator_error(error: crate::error::ApiError) -> anyhow::Error {

@@ -1,4 +1,4 @@
-use super::{AuthStore, entities};
+use super::{AuthStore, entities, integer_columns::u64_to_i64};
 use crate::error::PostgresError;
 use entities::clerk_user_deletion::{ActiveModel, Column, Entity};
 use scope_domain::account::deletion::{
@@ -21,8 +21,8 @@ impl AuthStore {
         claim_expires_at_unix: u64,
         limit: u64,
     ) -> Result<Vec<String>, PostgresError> {
-        let now = to_i64(now_unix)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let now = u64_to_i64(now_unix, "Clerk user deletion time")?;
+        let tx = self.db.begin().await?;
         let rows = Entity::find()
             .filter(Column::CompletedAtUnix.is_null())
             .filter(Column::NextAttemptAtUnix.lte(now))
@@ -36,17 +36,19 @@ impl AuthStore {
             .limit(limit)
             .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
             .all(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         let mut claimed = Vec::with_capacity(rows.len());
         for row in rows {
             claimed.push(row.clerk_user_id.clone());
             let mut active = row.into_active_model();
             active.claim_token = Set(Some(claim_token.to_string()));
-            active.claim_expires_at_unix = Set(Some(to_i64(claim_expires_at_unix)?));
-            active.update(&tx).await.map_err(PostgresError::internal)?;
+            active.claim_expires_at_unix = Set(Some(u64_to_i64(
+                claim_expires_at_unix,
+                "Clerk user deletion time",
+            )?));
+            active.update(&tx).await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(claimed)
     }
 
@@ -58,14 +60,16 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         Entity::update_many()
-            .col_expr(Column::CompletedAtUnix, Expr::value(to_i64(now_unix)?))
+            .col_expr(
+                Column::CompletedAtUnix,
+                Expr::value(u64_to_i64(now_unix, "Clerk user deletion time")?),
+            )
             .col_expr(Column::ClaimToken, Expr::value(Option::<String>::None))
             .col_expr(Column::ClaimExpiresAtUnix, Expr::value(Option::<i64>::None))
             .filter(Column::ClerkUserId.eq(clerk_user_id))
             .filter(Column::ClaimToken.eq(claim_token))
             .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -78,10 +82,9 @@ impl AuthStore {
             return Ok(());
         };
         Entity::delete_many()
-            .filter(Column::CompletedAtUnix.lte(to_i64(cutoff)?))
+            .filter(Column::CompletedAtUnix.lte(u64_to_i64(cutoff, "Clerk user deletion time")?))
             .exec(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -96,23 +99,21 @@ impl AuthStore {
         let Some(row) = Entity::find_by_id(clerk_user_id.to_string())
             .filter(Column::ClaimToken.eq(claim_token))
             .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
         else {
             return Ok(());
         };
         let attempts = u32::try_from(row.attempts).map_err(PostgresError::internal)?;
         let mut active: ActiveModel = row.into_active_model();
         active.attempts = Set(i32::try_from(attempts.saturating_add(1)).unwrap_or(i32::MAX));
-        active.next_attempt_at_unix =
-            Set(to_i64(clerk_user_deletion_retry_at(attempts, now_unix))?);
+        active.next_attempt_at_unix = Set(u64_to_i64(
+            clerk_user_deletion_retry_at(attempts, now_unix),
+            "Clerk user deletion time",
+        )?);
         active.claim_token = Set(None);
         active.claim_expires_at_unix = Set(None);
         active.last_error = Set(Some(error.chars().take(2000).collect()));
-        active
-            .update(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?;
+        active.update(self.db.as_ref()).await?;
         Ok(())
     }
 }
@@ -123,11 +124,6 @@ pub(super) async fn clerk_user_deletion_recorded<C: ConnectionTrait>(
 ) -> Result<bool, PostgresError> {
     Ok(Entity::find_by_id(clerk_user_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some())
-}
-
-fn to_i64(value: u64) -> Result<i64, PostgresError> {
-    i64::try_from(value).map_err(PostgresError::internal)
 }

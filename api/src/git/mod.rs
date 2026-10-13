@@ -3,7 +3,6 @@ pub(crate) mod cache;
 pub(crate) mod check_commit;
 pub(crate) mod command;
 pub(crate) mod content;
-mod context;
 mod credentials;
 pub(crate) mod http_backend;
 pub(crate) mod import;
@@ -18,9 +17,9 @@ pub(crate) mod restore;
 pub(crate) mod run_source;
 pub(crate) mod staging;
 pub(crate) mod storage;
+#[cfg(test)]
+pub(crate) mod test_repo;
 pub(crate) mod upload;
-
-pub(crate) use context::GitContext;
 
 pub(crate) use credentials::*;
 

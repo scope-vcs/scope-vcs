@@ -1,8 +1,13 @@
 use crate::{
-    MediaChunk, MediaObject, MediaStorageError, MediaStorageErrorKind, StagedMediaPart,
-    WriteAttempt, keys::staged_chunk_key,
+    MediaStorageError, MediaStorageErrorKind, WriteAttempt,
+    keys::staged_chunk_key,
+    manifest::{STAGED_KEY_PREFIX, validate_object},
 };
 use bytes::Bytes;
+use scope_domain::requests::attachments::{
+    REQUEST_MEDIA_CHUNK_BYTES, RequestAttachmentPartReceipt, RequestAttachmentStagedPart,
+    RequestMediaChunk, RequestMediaObject,
+};
 use scope_storage::{
     EncryptedObjectStore, EncryptionKey, ObjectBackend, ObjectStore, read_bounded,
 };
@@ -14,7 +19,7 @@ use tokio::{
 };
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
-pub const MAX_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_CHUNK_BYTES: usize = REQUEST_MEDIA_CHUNK_BYTES as usize;
 pub(crate) const MEDIA_KEY_ID: &str = "media";
 
 pub type MediaByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, MediaStorageError>> + Send>>;
@@ -54,7 +59,7 @@ impl MediaStorage {
         attempt: &WriteAttempt,
         part_number: u32,
         bytes: &[u8],
-    ) -> Result<StagedMediaPart, MediaStorageError> {
+    ) -> Result<RequestAttachmentStagedPart, MediaStorageError> {
         if bytes.is_empty() {
             return Err(MediaStorageError::invalid("media parts cannot be empty"));
         }
@@ -63,25 +68,24 @@ impl MediaStorage {
                 "media part exceeds the {MAX_CHUNK_BYTES} byte limit"
             )));
         }
-        let size_bytes = bytes.len() as u64;
-        let sha256 = hex::encode(Sha256::digest(bytes));
-        let object_key = staged_chunk_key(attempt, part_number)?;
-        Ok(StagedMediaPart {
-            part_number,
-            size_bytes,
-            sha256,
-            object_key,
+        Ok(RequestAttachmentStagedPart {
+            receipt: RequestAttachmentPartReceipt {
+                part_number,
+                size_bytes: bytes.len() as u64,
+                sha256: hex::encode(Sha256::digest(bytes)),
+            },
+            object_key: staged_chunk_key(attempt, part_number)?,
         })
     }
 
     pub async fn write_part(
         &self,
-        part: &StagedMediaPart,
+        part: &RequestAttachmentStagedPart,
         bytes: Vec<u8>,
     ) -> Result<(), MediaStorageError> {
-        if bytes.len() as u64 != part.size_bytes
-            || hex::encode(Sha256::digest(&bytes)) != part.sha256
-            || !part.object_key.starts_with("media/v1/staged/")
+        if bytes.len() as u64 != part.receipt.size_bytes
+            || hex::encode(Sha256::digest(&bytes)) != part.receipt.sha256
+            || !part.object_key.starts_with(STAGED_KEY_PREFIX)
         {
             return Err(MediaStorageError::invalid(
                 "media part bytes do not match the planned storage object",
@@ -96,14 +100,15 @@ impl MediaStorage {
         content_type: impl Into<String>,
         expected_bytes: u64,
         expected_sha256: &str,
-        parts: Vec<StagedMediaPart>,
-    ) -> Result<MediaObject, MediaStorageError> {
-        let object = MediaObject::new(
-            content_type,
-            expected_bytes,
-            expected_sha256,
-            chunks_in_part_order(parts),
-        )?;
+        parts: Vec<RequestAttachmentStagedPart>,
+    ) -> Result<RequestMediaObject, MediaStorageError> {
+        let object = RequestMediaObject::from_parts(content_type, expected_sha256, parts);
+        if object.plaintext_bytes != expected_bytes {
+            return Err(MediaStorageError::integrity(
+                "media manifest plaintext size does not match its chunks",
+            ));
+        }
+        validate_object(&object)?;
         let mut whole_digest = Sha256::new();
         for chunk in &object.chunks {
             let bytes = self.read_verified_chunk(chunk).await?;
@@ -119,10 +124,10 @@ impl MediaStorage {
 
     pub async fn read_range(
         &self,
-        object: &MediaObject,
+        object: &RequestMediaObject,
         range: RangeInclusive<u64>,
     ) -> Result<MediaByteStream, MediaStorageError> {
-        object.validate()?;
+        validate_object(object)?;
         let start = *range.start();
         let end = *range.end();
         if start > end || end >= object.plaintext_bytes {
@@ -165,7 +170,7 @@ impl MediaStorage {
 
     pub async fn download_to_writer<W>(
         &self,
-        object: &MediaObject,
+        object: &RequestMediaObject,
         writer: &mut W,
     ) -> Result<(), MediaStorageError>
     where
@@ -193,8 +198,11 @@ impl MediaStorage {
         })
     }
 
-    pub async fn delete_object(&self, object: &MediaObject) -> Result<(), MediaStorageError> {
-        object.validate()?;
+    pub async fn delete_object(
+        &self,
+        object: &RequestMediaObject,
+    ) -> Result<(), MediaStorageError> {
+        validate_object(object)?;
         for chunk in &object.chunks {
             self.delete_object_key(&chunk.object_key).await?;
         }
@@ -202,7 +210,7 @@ impl MediaStorage {
     }
 
     pub async fn delete_object_key(&self, object_key: &str) -> Result<(), MediaStorageError> {
-        if !object_key.starts_with("media/v1/staged/")
+        if !object_key.starts_with(STAGED_KEY_PREFIX)
             || object_key.len() > 1024
             || object_key.contains("//")
         {
@@ -214,7 +222,10 @@ impl MediaStorage {
         Ok(self.store.delete(object_key).await?)
     }
 
-    async fn read_verified_chunk(&self, chunk: &MediaChunk) -> Result<Vec<u8>, MediaStorageError> {
+    async fn read_verified_chunk(
+        &self,
+        chunk: &RequestMediaChunk,
+    ) -> Result<Vec<u8>, MediaStorageError> {
         let max_bytes = usize::try_from(chunk.plaintext_bytes)
             .map_err(|_| MediaStorageError::integrity("media chunk size is invalid"))?;
         let bytes = {
@@ -238,23 +249,4 @@ impl MediaStorage {
             .await
             .map_err(|_| MediaStorageError::internal("media storage operation pool is closed"))
     }
-}
-
-fn chunks_in_part_order(mut parts: Vec<StagedMediaPart>) -> Vec<MediaChunk> {
-    parts.sort_by_key(|part| part.part_number);
-    let mut offset = 0_u64;
-    parts
-        .into_iter()
-        .map(|part| {
-            let chunk = MediaChunk {
-                part_number: part.part_number,
-                plaintext_offset: offset,
-                plaintext_bytes: part.size_bytes,
-                sha256: part.sha256,
-                object_key: part.object_key,
-            };
-            offset = offset.saturating_add(part.size_bytes);
-            chunk
-        })
-        .collect()
 }

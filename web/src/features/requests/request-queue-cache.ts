@@ -14,7 +14,7 @@ export function requestQueueIdentity(scope: string, view: ViewId) {
   return JSON.stringify([scope, view])
 }
 
-export function requestQueueScope(identity: string): string | null {
+function requestQueueScope(identity: string): string | null {
   try {
     const value: unknown = JSON.parse(identity)
     return Array.isArray(value) && typeof value[0] === 'string' ? value[0] : null

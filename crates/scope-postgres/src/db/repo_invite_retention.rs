@@ -45,7 +45,7 @@ impl RepositoryStore {
         repo_id: &str,
         now_unix: u64,
     ) -> Result<Option<RepositoryCollaborationMutation<usize>>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(mut repo) = lock_collaboration_state(&tx, repo_id).await? else {
             return Ok(None);
         };
@@ -60,10 +60,9 @@ impl RepositoryStore {
                     .is_in(pruned.iter().map(|invite| invite.id.clone())),
             )
             .exec(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         save_collaboration_state(&tx, &before, &repo).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RepositoryCollaborationMutation::committed(
             &repo.record,
             pruned.len(),

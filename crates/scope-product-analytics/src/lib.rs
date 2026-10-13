@@ -56,6 +56,14 @@ impl ProductEvent {
         event
     }
 
+    pub fn cli_artifact_downloaded(target_triple: &str, os: &str, arch: &str) -> Self {
+        let mut event = Self::new("cli:artifact_download", ProductActor::System);
+        event.insert_string("target", target_triple);
+        event.insert_string("os", os);
+        event.insert_string("arch", arch);
+        event
+    }
+
     pub fn request_started(
         actor_user_id: &str,
         repository_id: &str,
@@ -380,6 +388,7 @@ impl AnalyticsEnvironment {
 pub enum EventSource {
     Api,
     Cli,
+    CliDownloads,
     Git,
     Worker,
 }
@@ -389,6 +398,7 @@ impl EventSource {
         match self {
             Self::Api => "api",
             Self::Cli => "cli",
+            Self::CliDownloads => "cli_downloads",
             Self::Git => "git",
             Self::Worker => "worker",
         }

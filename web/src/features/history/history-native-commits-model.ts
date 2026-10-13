@@ -3,7 +3,7 @@ import type { HistoryEntryDetailResponse } from '../../api/types.generated'
 import { shortOid } from '../../lib/short-oid'
 import { historyCommitTitle } from './history-row-labels'
 
-export type HistoryNativeCommitRow = {
+type HistoryNativeCommitRow = {
   oid: string
   shortOid: string
   title: string

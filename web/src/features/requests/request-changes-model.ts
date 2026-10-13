@@ -62,7 +62,6 @@ export function orderedRequestCommits(
       change_count: commit.change_count,
       logical_commit_id: commit.oid,
       message: commit.message,
-      parent_projected_id: commit.parent_oids[0] ?? null,
       projected_id: requestRevisionCommitId(revision.id, commit.oid),
     })))
 }

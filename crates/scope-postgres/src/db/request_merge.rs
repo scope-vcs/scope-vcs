@@ -1,6 +1,5 @@
 use super::{
-    GeneratedIdKind, GeneratedIdSource, MergeRequestContentCommand, RequestStore,
-    acquire_aggregate_lock,
+    GeneratedIdKind, MergeRequestContentCommand, RequestStore, acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_request_merge},
     entities,
     generated_ids::generate_id,
@@ -41,7 +40,6 @@ impl RequestStore {
     pub async fn merge_request_content(
         &self,
         command: MergeRequestContentCommand,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<MergeRequestContentMutation, PostgresError> {
         let MergeRequestContentCommand {
             owner,
@@ -62,7 +60,7 @@ impl RequestStore {
         } = command;
         let started = std::time::Instant::now();
         let repo_id = scope_domain::repository::repo_id(&owner, &name);
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         acquire_aggregate_lock(&tx, "request", &request_id).await?;
 
@@ -74,8 +72,7 @@ impl RequestStore {
             let row = entities::request_auto_merge_intent::Entity::find_by_id(&expected.intent_id)
                 .lock_exclusive()
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
                 .filter(|row| {
                     row.status == "Active"
                         && row.request_id == request.id
@@ -95,8 +92,7 @@ impl RequestStore {
                 .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
                 .lock_exclusive()
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
                 .map(StoredIntent::from_model)
                 .transpose()?
         };
@@ -122,7 +118,7 @@ impl RequestStore {
                     now_unix,
                 )?;
                 persist_existing_auto_merge_mutation(&tx, locked.model, &mutation).await?;
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
             }
             return Err(PostgresError::conflict(
                 "request changed since merge was prepared; retry merge",
@@ -132,8 +128,7 @@ impl RequestStore {
 
         let repo_row = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
         if locked_auto_merge.as_ref().is_some_and(|locked| {
             locked.intent.repository_incarnation_id != repo_row.incarnation_id
@@ -182,7 +177,7 @@ impl RequestStore {
                     now_unix,
                 )?;
                 persist_existing_auto_merge_mutation(&tx, locked.model.clone(), &mutation).await?;
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 return Err(PostgresError::permission_denied("repo maintainer required"));
             }
             match request_auto_merge_readiness(gate) {
@@ -200,7 +195,7 @@ impl RequestStore {
                     )?;
                     persist_existing_auto_merge_mutation(&tx, locked.model.clone(), &mutation)
                         .await?;
-                    tx.commit().await.map_err(PostgresError::internal)?;
+                    tx.commit().await?;
                     return Err(PostgresError::conflict(reason.message()));
                 }
             }
@@ -212,8 +207,7 @@ impl RequestStore {
         }
         let head = entities::git_head::Entity::find_by_id(repo_id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::conflict("repo has no accepted Git head"))?
             .try_into_domain()?;
         if head.frontier() != expected_git_frontier {
@@ -252,7 +246,6 @@ impl RequestStore {
             },
             origin,
             now_unix,
-            generated_ids,
         )
         .await?;
 
@@ -283,7 +276,7 @@ impl RequestStore {
             request_mutation
         };
         checks.ensure_fresh(now_unix.saturating_add(started.elapsed().as_secs()))?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(MergeRequestContentMutation {
             request: request_mutation,
             git_head,
@@ -314,7 +307,6 @@ pub(super) async fn complete_landed_requests(
     main_oid: &str,
     completion: LandedRequestCompletion,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<usize, PostgresError> {
     if completion.candidates.is_empty() {
         return Ok(0);
@@ -354,7 +346,7 @@ pub(super) async fn complete_landed_requests(
                 actor_is_maintainer: repo.access.is_maintainer(),
                 merged_head_oid: candidate.head_oid,
                 merged_main_oid: main_oid.to_string(),
-                merged_event_id: generate_id(generated_ids, GeneratedIdKind::RequestMergedEvent)?,
+                merged_event_id: generate_id(GeneratedIdKind::RequestMergedEvent)?,
                 now_unix,
             },
         )?;

@@ -171,6 +171,12 @@ pub fn postgres_error_kind(kind: scope_postgres::error::PostgresErrorKind) -> Er
     }
 }
 
+impl From<std::time::SystemTimeError> for ServiceError {
+    fn from(error: std::time::SystemTimeError) -> Self {
+        Self::internal(error.to_string())
+    }
+}
+
 #[cfg(feature = "postgres")]
 impl From<scope_postgres::error::PostgresError> for ServiceError {
     fn from(error: scope_postgres::error::PostgresError) -> Self {

@@ -105,8 +105,7 @@ impl RepositoryStore {
             entities::user::Entity::find()
                 .filter(entities::user::Column::Id.is_in(user_ids))
                 .all(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
                 .into_iter()
                 .map(|row| {
                     let user = row.try_into_domain()?;
@@ -115,7 +114,7 @@ impl RepositoryStore {
                 .collect::<Result<_, PostgresError>>()?
         };
         let invite_emails = latest_invite_emails(&tx, &collaboration.invitations).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RepositoryCollaborationRead {
             collaboration,
             users,
@@ -137,7 +136,7 @@ impl RepositoryStore {
         PostgresError,
     > {
         let now_unix = command.now_unix;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let mut repo = lock_owned_collaboration(&tx, &command.owner, &command.name).await?;
         let before = repo.clone();
         let invitee = user_by_normalized_email(&tx, &command.invited_email).await?;
@@ -167,7 +166,7 @@ impl RepositoryStore {
             Err(error) if error.kind == PostgresErrorKind::ResourceExhausted => None,
             Err(error) => return Err(error),
         };
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RepositoryCollaborationMutation::committed(
             &repo.record,
             (invite, email),
@@ -242,7 +241,7 @@ impl RepositoryStore {
         member_user_id: &str,
         now_unix: u64,
     ) -> Result<RepositoryCollaborationMutation<RepositoryMember>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let mut repo = lock_owned_collaboration(&tx, owner, name).await?;
         let before = repo.clone();
         let removed = remove_repository_member(&mut repo, owner_user_id, member_user_id)?;
@@ -256,7 +255,7 @@ impl RepositoryStore {
             now_unix,
         )
         .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RepositoryCollaborationMutation::committed(
             &repo.record,
             removed,
@@ -290,7 +289,7 @@ impl RepositoryStore {
         user: UserAccount,
         now_unix: u64,
     ) -> Result<(RepositoryAccessContext, AcceptRepositoryInviteOutcome), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let repo_id = repo_id_for_invite_link(&tx, link_hash)
             .await?
             .ok_or_else(|| PostgresError::not_found("repository invite not found"))?;
@@ -302,7 +301,7 @@ impl RepositoryStore {
         if matches!(outcome, AcceptRepositoryInviteOutcome::Accepted(_)) {
             save_collaboration_state(&tx, &before, &repo).await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         let access = repo.access_for_user_id(&user.id);
         Ok((
             RepositoryAccessContext {
@@ -324,16 +323,14 @@ where
 {
     let Some(link) = entities::repository_invite_link::Entity::find_by_id(link_hash.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };
     Ok(
         entities::repository_invite::Entity::find_by_id(link.invite_id)
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(|invite| invite.repo_id),
     )
 }
@@ -354,12 +351,12 @@ async fn mutate_collaboration<T>(
     name: &str,
     op: impl FnOnce(&mut CollaborationState) -> Result<T, DomainError>,
 ) -> Result<RepositoryCollaborationMutation<T>, PostgresError> {
-    let tx = store.db.begin().await.map_err(PostgresError::internal)?;
+    let tx = store.db.begin().await?;
     let mut repo = lock_owned_collaboration(&tx, owner, name).await?;
     let before = repo.clone();
     let value = op(&mut repo)?;
     save_collaboration_state(&tx, &before, &repo).await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(RepositoryCollaborationMutation::committed(
         &repo.record,
         value,
@@ -377,8 +374,7 @@ where
     entities::user::Entity::find()
         .filter(entities::user::Column::Email.eq(normalized))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::user::Model::try_into_domain)
         .transpose()
 }

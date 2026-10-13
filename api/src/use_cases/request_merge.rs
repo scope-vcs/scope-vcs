@@ -265,26 +265,23 @@ async fn persist_prepared_merge(
     let mutation = state
         .metadata
         .requests()
-        .merge_request_content(
-            MergeRequestContentCommand {
-                owner: command.owner.clone(),
-                name: command.repo_name.clone(),
-                request_id: command.request_id.clone(),
-                actor_user_id: command.actor_user_id.clone(),
-                expected_auto_merge: command.expected_auto_merge.clone(),
-                merged_event_id,
-                expected_git_frontier: prepared.expected_git_frontier,
-                expected_repo_change_version: prepared.expected_repo_change_version,
-                expected_request_head_oid: prepared.prepared_request_head_oid,
-                expected_merge_evidence: prepared.expected_merge_evidence,
-                update: prepared.update.into_reviewed_update(),
-                landing_file_mutation: prepared.landing_file_mutation,
-                workflow_catalog: prepared.workflow_catalog,
-                origin: prepared.origin,
-                now_unix,
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .merge_request_content(MergeRequestContentCommand {
+            owner: command.owner.clone(),
+            name: command.repo_name.clone(),
+            request_id: command.request_id.clone(),
+            actor_user_id: command.actor_user_id.clone(),
+            expected_auto_merge: command.expected_auto_merge.clone(),
+            merged_event_id,
+            expected_git_frontier: prepared.expected_git_frontier,
+            expected_repo_change_version: prepared.expected_repo_change_version,
+            expected_request_head_oid: prepared.prepared_request_head_oid,
+            expected_merge_evidence: prepared.expected_merge_evidence,
+            update: prepared.update.into_reviewed_update(),
+            landing_file_mutation: prepared.landing_file_mutation,
+            workflow_catalog: prepared.workflow_catalog,
+            origin: prepared.origin,
+            now_unix,
+        })
         .await;
     match mutation {
         Ok(mutation) => {

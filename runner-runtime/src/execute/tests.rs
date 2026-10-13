@@ -18,9 +18,15 @@ use std::{
 };
 
 const TEST_SYNC_TIMEOUT: Duration = Duration::from_secs(5);
+const SUCCEEDED: ExecutionOutcome = ExecutionOutcome::Succeeded {
+    logs_truncated: false,
+};
+const TRUNCATED: ExecutionOutcome = ExecutionOutcome::Succeeded {
+    logs_truncated: true,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Call {
+pub(super) enum Call {
     Start(u32),
     Append {
         step: u32,
@@ -38,7 +44,7 @@ enum Call {
     Abandon,
 }
 
-enum AppendAction {
+pub(super) enum AppendAction {
     Accepted,
     Truncated,
     Retryable,
@@ -51,7 +57,7 @@ enum AppendAction {
 }
 
 #[derive(Clone)]
-struct FakeSink {
+pub(super) struct FakeSink {
     state: Arc<FakeState>,
 }
 
@@ -65,7 +71,7 @@ struct FakeState {
 }
 
 impl FakeSink {
-    fn new(append_actions: impl IntoIterator<Item = AppendAction>) -> Self {
+    pub(super) fn new(append_actions: impl IntoIterator<Item = AppendAction>) -> Self {
         Self {
             state: Arc::new(FakeState {
                 calls: Mutex::new(Vec::new()),
@@ -89,7 +95,7 @@ impl FakeSink {
             .store(true, Ordering::Release);
     }
 
-    fn calls(&self) -> Vec<Call> {
+    pub(super) fn calls(&self) -> Vec<Call> {
         self.state.calls.lock().unwrap().clone()
     }
 
@@ -101,6 +107,37 @@ impl FakeSink {
             workspace.path(),
             SupervisorOptions::for_test(timeout),
         )
+    }
+
+    fn spawn(
+        &self,
+        job: WorkflowJob,
+        workspace: &std::path::Path,
+        timeout: Duration,
+    ) -> thread::JoinHandle<anyhow::Result<ExecutionOutcome>> {
+        let sink = self.clone();
+        let workspace = workspace.to_owned();
+        thread::spawn(move || {
+            run_steps_with_options(sink, &job, &workspace, SupervisorOptions::for_test(timeout))
+        })
+    }
+
+    fn texts(&self) -> Vec<String> {
+        self.calls()
+            .into_iter()
+            .filter_map(|call| match call {
+                Call::Append { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn completed_first_step(&self, logs_truncated: bool) -> bool {
+        self.calls().contains(&Call::CompleteStep {
+            step: 0,
+            exit_code: 0,
+            logs_truncated,
+        })
     }
 
     fn record(&self, call: Call) {
@@ -200,12 +237,7 @@ fn successful_steps_upload_bounded_chunks_with_global_sequences() {
 
     let outcome = sink.run(&job, Duration::from_secs(2)).unwrap();
 
-    assert_eq!(
-        outcome,
-        ExecutionOutcome::Succeeded {
-            logs_truncated: false
-        }
-    );
+    assert_eq!(outcome, SUCCEEDED);
     let calls = sink.calls();
     let appends = calls
         .iter()
@@ -228,11 +260,7 @@ fn successful_steps_upload_bounded_chunks_with_global_sequences() {
         (1..=appends.len() as u64).collect::<Vec<_>>()
     );
     assert!(appends.iter().all(|(_, _, bytes)| *bytes <= 64 * 1024));
-    assert!(calls.contains(&Call::CompleteStep {
-        step: 0,
-        exit_code: 0,
-        logs_truncated: false,
-    }));
+    assert!(sink.completed_first_step(false));
     assert!(calls.contains(&Call::CompleteStep {
         step: 1,
         exit_code: 0,
@@ -247,12 +275,7 @@ fn truncation_stops_uploads_but_completes_the_step_truthfully() {
 
     let outcome = sink.run(&job, Duration::from_secs(2)).unwrap();
 
-    assert_eq!(
-        outcome,
-        ExecutionOutcome::Succeeded {
-            logs_truncated: true
-        }
-    );
+    assert_eq!(outcome, TRUNCATED);
     let calls = sink.calls();
     assert_eq!(
         calls
@@ -261,11 +284,7 @@ fn truncation_stops_uploads_but_completes_the_step_truthfully() {
             .count(),
         1
     );
-    assert!(calls.contains(&Call::CompleteStep {
-        step: 0,
-        exit_code: 0,
-        logs_truncated: true,
-    }));
+    assert!(sink.completed_first_step(true));
 }
 
 #[test]
@@ -304,17 +323,8 @@ fn output_can_close_before_the_process_exits() {
 
     let outcome = sink.run(&job, Duration::from_secs(1)).unwrap();
 
-    assert_eq!(
-        outcome,
-        ExecutionOutcome::Succeeded {
-            logs_truncated: false
-        }
-    );
-    assert!(sink.calls().contains(&Call::CompleteStep {
-        step: 0,
-        exit_code: 0,
-        logs_truncated: false,
-    }));
+    assert_eq!(outcome, SUCCEEDED);
+    assert!(sink.completed_first_step(false));
 }
 
 #[test]
@@ -345,17 +355,8 @@ fn escaped_descendant_cannot_hold_output_capture_open() {
     }
 
     assert!(started.elapsed() < Duration::from_secs(1));
-    assert_eq!(
-        outcome,
-        ExecutionOutcome::Succeeded {
-            logs_truncated: false
-        }
-    );
-    assert!(sink.calls().contains(&Call::CompleteStep {
-        step: 0,
-        exit_code: 0,
-        logs_truncated: false,
-    }));
+    assert_eq!(outcome, SUCCEEDED);
+    assert!(sink.completed_first_step(false));
 }
 
 #[test]
@@ -382,15 +383,7 @@ fn step_completion_waits_for_a_late_truncation_response() {
     }]);
     let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("fast", "printf done")]);
-    let run_sink = sink.clone();
-    let run = thread::spawn(move || {
-        run_steps_with_options(
-            run_sink,
-            &job,
-            workspace.path(),
-            SupervisorOptions::for_test(Duration::from_secs(2)),
-        )
-    });
+    let run = sink.spawn(job, workspace.path(), Duration::from_secs(2));
 
     entered_receiver.recv_timeout(TEST_SYNC_TIMEOUT).unwrap();
     thread::sleep(Duration::from_millis(50));
@@ -402,17 +395,8 @@ fn step_completion_waits_for_a_late_truncation_response() {
     );
     release_sender.send(()).unwrap();
 
-    assert_eq!(
-        run.join().unwrap().unwrap(),
-        ExecutionOutcome::Succeeded {
-            logs_truncated: true
-        }
-    );
-    assert!(sink.calls().contains(&Call::CompleteStep {
-        step: 0,
-        exit_code: 0,
-        logs_truncated: true,
-    }));
+    assert_eq!(run.join().unwrap().unwrap(), TRUNCATED);
+    assert!(sink.completed_first_step(true));
 }
 
 #[test]
@@ -428,15 +412,7 @@ fn heartbeat_can_cancel_while_an_append_is_blocked() {
     .observe_cancellation_heartbeat(heartbeat_sender);
     let workspace = tempfile::tempdir().unwrap();
     let job = job(&[("slow", "head -c 100000 /dev/zero | tr '\\0' x; sleep 30")]);
-    let run_sink = sink.clone();
-    let run = thread::spawn(move || {
-        run_steps_with_options(
-            run_sink,
-            &job,
-            workspace.path(),
-            SupervisorOptions::for_test(Duration::from_secs(10)),
-        )
-    });
+    let run = sink.spawn(job, workspace.path(), Duration::from_secs(10));
 
     entered_receiver.recv_timeout(TEST_SYNC_TIMEOUT).unwrap();
     let started = Instant::now();
@@ -459,16 +435,8 @@ fn a_stalled_heartbeat_cannot_delay_process_timeout() {
     let sink = FakeSink::new([]);
     *sink.state.heartbeat_gate.lock().unwrap() = Some((entered, blocked));
     let workspace = tempfile::tempdir().unwrap();
-    let path = workspace.path().to_owned();
-    let run_sink = sink.clone();
-    let run = thread::spawn(move || {
-        run_steps_with_options(
-            run_sink,
-            &job(&[("deadline", "echo $$ > child.pid; sleep 30 & wait")]),
-            &path,
-            SupervisorOptions::for_test(Duration::from_millis(150)),
-        )
-    });
+    let job = job(&[("deadline", "echo $$ > child.pid; sleep 30 & wait")]);
+    let run = sink.spawn(job, workspace.path(), Duration::from_millis(150));
     received.recv_timeout(TEST_SYNC_TIMEOUT).unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
     while !sink.calls().contains(&Call::CompleteTimeout(false)) && Instant::now() < deadline {
@@ -546,20 +514,11 @@ fn producer_finishes_while_upload_is_blocked_and_spooled_logs_survive_exit_grace
         outcome: AppendLogOutcome::Accepted,
     }]);
     let workspace = tempfile::tempdir().unwrap();
-    let workspace_path = workspace.path().to_owned();
     let job = job(&[(
         "burst",
         "head -c 1048576 /dev/zero | tr '\\0' x; touch producer-finished",
     )]);
-    let run_sink = sink.clone();
-    let run = thread::spawn(move || {
-        run_steps_with_options(
-            run_sink,
-            &job,
-            &workspace_path,
-            SupervisorOptions::for_test(Duration::from_secs(5)),
-        )
-    });
+    let run = sink.spawn(job, workspace.path(), Duration::from_secs(5));
     entered_receiver.recv_timeout(TEST_SYNC_TIMEOUT).unwrap();
     let deadline = Instant::now() + Duration::from_secs(1);
     while !workspace.path().join("producer-finished").exists() && Instant::now() < deadline {
@@ -570,20 +529,8 @@ fn producer_finishes_while_upload_is_blocked_and_spooled_logs_survive_exit_grace
     release_sender.send(()).unwrap();
     let outcome = run.join().unwrap().unwrap();
     assert!(producer_finished, "producer waited for log upload");
-    assert_eq!(
-        outcome,
-        ExecutionOutcome::Succeeded {
-            logs_truncated: false
-        }
-    );
-    let output = sink
-        .calls()
-        .into_iter()
-        .filter_map(|call| match call {
-            Call::Append { text, .. } => Some(text),
-            _ => None,
-        })
-        .collect::<String>();
+    assert_eq!(outcome, SUCCEEDED);
+    let output = sink.texts().concat();
     assert_eq!(output, "x".repeat(1048576));
 }
 
@@ -597,20 +544,8 @@ fn batched_invalid_utf8_and_nul_upload_replacement_text_within_the_chunk_limit()
         let outcome = sink
             .run(&job(&[("bytes", command)]), Duration::from_secs(2))
             .unwrap();
-        assert_eq!(
-            outcome,
-            ExecutionOutcome::Succeeded {
-                logs_truncated: false
-            }
-        );
-        let chunks = sink
-            .calls()
-            .into_iter()
-            .filter_map(|call| match call {
-                Call::Append { text, .. } => Some(text),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        assert_eq!(outcome, SUCCEEDED);
+        let chunks = sink.texts();
         assert!(chunks.iter().all(|text| text.len() <= 64 * 1024));
         assert_eq!(chunks.concat(), "�".repeat(70000), "{command}");
     }

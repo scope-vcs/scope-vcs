@@ -21,7 +21,7 @@ pub enum RequestMergeOrigin {
 }
 
 impl RequestMergeOrigin {
-    pub fn into_logical_origin(self) -> LogicalCommitOrigin {
+    pub(crate) fn into_logical_origin(self) -> LogicalCommitOrigin {
         match self {
             Self::Canonical {
                 request_id,

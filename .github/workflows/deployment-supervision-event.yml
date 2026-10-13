@@ -25,10 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          repository: scope-vcs/release-supervisor
+          ref: 9a98202d5bcb718a26a9506068b5b6a98b8c368b
+          path: release-supervisor
       - name: Forward the verified Release event to T3 Connect
         env:
           GH_TOKEN: ${{ github.token }}
           SCOPE_DEPLOYMENT_WEBHOOK_URL: ${{ vars.SCOPE_DEPLOYMENT_WEBHOOK_URL }}
           SCOPE_DEPLOYMENT_WEBHOOK_SECRET: ${{ secrets.SCOPE_DEPLOYMENT_WEBHOOK_SECRET }}
-        run: python3 -B deploy/automation/deployment_webhook.py
+        run: python3 -B release-supervisor/deployment_webhook.py

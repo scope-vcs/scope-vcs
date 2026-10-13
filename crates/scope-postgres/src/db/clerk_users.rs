@@ -36,12 +36,12 @@ impl AuthStore {
         _now_unix: u64,
     ) -> Result<ClerkUserResolution, PostgresError> {
         let verified_email = verified_identity_email(identity)?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let identity_key = format!("{}:{}", identity.provider, identity.subject);
         acquire_aggregate_lock(&tx, "auth-identity", &identity_key).await?;
         acquire_aggregate_lock(&tx, "auth-email", &verified_email).await?;
         let resolution = resolve_clerk_user_in_tx(&tx, identity, &verified_email).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(resolution)
     }
 }
@@ -58,8 +58,7 @@ where
         .filter(entities::auth_identity::Column::Provider.eq(identity.provider.as_str()))
         .filter(entities::auth_identity::Column::Subject.eq(identity.subject.clone()))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };
@@ -105,8 +104,7 @@ where
         Some(user) => Some(user),
         None => entities::user::Entity::find_by_id(user_id.clone())
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::user::Model::try_into_domain)
             .transpose()?,
     };
@@ -132,8 +130,7 @@ where
         entities::user::Model::from_domain(&user)
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     entities::auth_identity::Model {
         provider: identity.provider.as_str().to_string(),
@@ -142,8 +139,7 @@ where
     }
     .into_active_model()
     .insert(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
 
     Ok(ClerkUserResolution {
         user,
@@ -159,7 +155,7 @@ where
     active.handle = Set(user.handle.clone());
     active.email = Set(user.email.clone());
     active.email_verified = Set(user.email_verified);
-    active.update(conn).await.map_err(PostgresError::internal)?;
+    active.update(conn).await?;
     Ok(())
 }
 
@@ -170,8 +166,7 @@ where
     entities::user::Entity::find()
         .filter(entities::user::Column::Email.eq(email.to_string()))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(|user| user.try_into_domain())
         .transpose()
 }
@@ -273,8 +268,7 @@ where
     let owner = entities::user::Entity::find()
         .filter(entities::user::Column::Handle.eq(handle.to_string()))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(owner.is_none_or(|user| user.id == user_id))
 }
 

@@ -59,9 +59,7 @@ async fn rolling_back_terminal_persistence_restores_request_invitees_push_and_ev
             .unwrap()
     );
     assert!(
-        store
-            .requests()
-            .latest_github_push("req_1")
+        crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
             .await
             .unwrap()
             .unwrap()
@@ -115,9 +113,7 @@ pub(crate) async fn assert_terminal_effects(store: &MetadataStore, event_id: &st
             .unwrap()
     );
     assert_eq!(
-        store
-            .requests()
-            .latest_github_push("req_1")
+        crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
             .await
             .unwrap()
             .unwrap()

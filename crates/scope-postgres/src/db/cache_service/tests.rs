@@ -1,10 +1,9 @@
 use super::*;
-use crate::db::{CatalogFixture, MetadataStore, TestDatabaseTarget};
-use scope_domain::{
-    account::UserAccount,
-    repository::{RepoLifecycleState, Repository},
-    views::ViewId,
+use crate::db::{
+    MetadataStore,
+    test_support::fixtures::{repository, store_with_repositories, user},
 };
+use scope_domain::views::ViewId;
 
 #[test]
 fn object_keys_are_repository_scoped_and_content_addressed() {
@@ -16,9 +15,7 @@ fn object_keys_are_repository_scoped_and_content_addressed() {
 
 #[tokio::test]
 async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
-    let target = TestDatabaseTarget::required().unwrap();
-    let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-    let repository_id = seed_repository(&store);
+    let (store, repository_id) = seeded_repository();
     let caches = store.caches();
     let now = 1_700_000_000_u64;
     let identity = "1".repeat(64);
@@ -244,9 +241,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
 
 #[tokio::test]
 async fn failed_deletions_store_bounded_errors_and_stay_retryable() {
-    let target = TestDatabaseTarget::required().unwrap();
-    let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-    let repository_id = seed_repository(&store);
+    let (store, repository_id) = seeded_repository();
     let caches = store.caches();
     let now = 1_700_000_000_u64;
     let identity = "5".repeat(64);
@@ -301,22 +296,9 @@ async fn failed_deletions_store_bounded_errors_and_stay_retryable() {
     assert_eq!(retried[0].attempts, 2);
 }
 
-fn seed_repository(store: &MetadataStore) -> String {
-    let owner = UserAccount {
-        id: "user_cache_owner".to_string(),
-        handle: "cache-owner".to_string(),
-        email: "cache-owner@example.com".to_string(),
-        email_verified: true,
-    };
-    let mut repository = Repository::new(&owner, "cache-repo", ViewId::private(), "repoi_test")
-        .expect("test repository is valid");
-    repository.record.lifecycle_state = RepoLifecycleState::Ready;
+fn seeded_repository() -> (MetadataStore, String) {
+    let owner = user("user_cache_owner", "cache-owner");
+    let repository = repository(&owner, "cache-repo", ViewId::private());
     let repository_id = repository.record.id.clone();
-    let mut catalog = CatalogFixture::default();
-    catalog.users.insert(owner.id.clone(), owner);
-    catalog
-        .repositories
-        .insert(repository_id.clone(), repository);
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
-    repository_id
+    (store_with_repositories([repository]), repository_id)
 }

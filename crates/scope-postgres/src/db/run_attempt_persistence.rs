@@ -15,8 +15,7 @@ pub(super) async fn run_repository(
 ) -> Result<RepositoryIncarnation, PostgresError> {
     entities::repository::Entity::find_by_id(run.workflow.repository_id().to_string())
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("run repository is missing"))
         .and_then(|row| {
             RepositoryIncarnation::new(row.id, row.incarnation_id).map_err(PostgresError::internal)
@@ -30,8 +29,7 @@ pub(super) async fn locked_run(
     entities::run::Entity::find_by_id(run_id.to_string())
         .lock_exclusive()
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("run not found"))?
         .try_into_domain()
 }
@@ -39,54 +37,31 @@ pub(super) async fn locked_run(
 pub(super) async fn locked_attempt_context(
     tx: &DatabaseTransaction,
     attempt_id: &str,
-) -> Result<(Run, RunJob, RunAttempt, Vec<RunAttemptStep>), PostgresError> {
-    let target = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
-        .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| PostgresError::not_found("run attempt not found"))?;
-    let run = entities::run::Entity::find_by_id(target.run_id.clone())
-        .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| PostgresError::not_found("run not found"))?
-        .try_into_domain()?;
-    let job = locked_job(tx, &target.run_id, &target.job_key).await?;
-    let attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
-        .lock_exclusive()
-        .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
-        .ok_or_else(|| PostgresError::not_found("run attempt not found"))?
-        .try_into_domain()?;
-    let steps = locked_attempt_steps(tx, attempt_id).await?;
-    Ok((run, job, attempt, steps))
-}
-
-pub(super) async fn locked_heartbeat_context(
-    tx: &DatabaseTransaction,
-    attempt_id: &str,
 ) -> Result<(Run, RunJob, RunAttempt), PostgresError> {
     let target = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("run attempt not found"))?;
     let job = locked_job(tx, &target.run_id, &target.job_key).await?;
     let run = entities::run::Entity::find_by_id(target.run_id.clone())
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("run not found"))?
         .try_into_domain()?;
-    let attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
+    let attempt = locked_attempt(tx, attempt_id).await?;
+    Ok((run, job, attempt))
+}
+
+pub(super) async fn locked_attempt(
+    tx: &DatabaseTransaction,
+    attempt_id: &str,
+) -> Result<RunAttempt, PostgresError> {
+    entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
         .lock_exclusive()
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("run attempt not found"))?
-        .try_into_domain()?;
-    Ok((run, job, attempt))
+        .try_into_domain()
 }
 
 pub(super) async fn locked_job(
@@ -97,8 +72,7 @@ pub(super) async fn locked_job(
     entities::run_job::Entity::find_by_id((run_id.to_string(), job_key.to_string()))
         .lock_exclusive()
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("run job not found"))?
         .try_into_domain()
 }
@@ -112,23 +86,7 @@ pub(super) async fn locked_jobs(
         .order_by_asc(entities::run_job::Column::JobKey)
         .lock_exclusive()
         .all(tx)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(entities::run_job::Model::try_into_domain)
-        .collect()
-}
-
-pub(super) async fn jobs_for_run(
-    tx: &DatabaseTransaction,
-    run_id: &str,
-) -> Result<Vec<RunJob>, PostgresError> {
-    entities::run_job::Entity::find()
-        .filter(entities::run_job::Column::RunId.eq(run_id))
-        .order_by_asc(entities::run_job::Column::JobKey)
-        .all(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::run_job::Model::try_into_domain)
         .collect()
@@ -140,8 +98,7 @@ pub(super) async fn attempt_run_id(
 ) -> Result<String, PostgresError> {
     let attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
         .one(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("run attempt not found"))?;
     Ok(attempt.run_id)
 }
@@ -155,8 +112,7 @@ pub(super) async fn locked_attempt_steps(
         .order_by_asc(entities::run_attempt_step::Column::StepIndex)
         .lock_exclusive()
         .all(tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::run_attempt_step::Model::try_into_domain)
         .collect()
@@ -165,8 +121,7 @@ pub(super) async fn locked_attempt_steps(
 pub(super) async fn save_run(tx: &DatabaseTransaction, run: &Run) -> Result<(), PostgresError> {
     entities::run::Entity::update(entities::run::ActiveModel::from_domain(run)?)
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -177,8 +132,7 @@ pub(super) async fn save_job(tx: &DatabaseTransaction, job: &RunJob) -> Result<(
             .reset_all(),
     )
     .exec(tx)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -202,8 +156,7 @@ pub(super) async fn save_attempt(
             .reset_all(),
     )
     .exec(tx)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -218,8 +171,7 @@ pub(super) async fn save_attempt_steps(
                 .reset_all(),
         )
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     }
     Ok(())
 }

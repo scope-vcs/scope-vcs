@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     db::{
-        CleanupStore, GeneratedIdKind, GeneratedIdSource, entities, generated_ids::generate_id,
+        CleanupStore, GeneratedIdKind, entities, generated_ids::generate_id,
         integer_columns::u64_to_i64,
     },
     error::PostgresError,
@@ -26,16 +26,15 @@ impl CleanupStore {
     pub async fn repo_storage_cleanup_batch(
         &self,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<RepoStorageCleanupBatch, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let loaded = claim_pending_repo_storage_cleanup_rows(&tx, now_unix, generated_ids).await?;
+        let tx = self.db.begin().await?;
+        let loaded = claim_pending_repo_storage_cleanup_rows(&tx, now_unix).await?;
         let pending = loaded
             .iter()
             .map(|row| row.cleanup.clone())
             .collect::<Vec<_>>();
         let live_repo_ids = live_repo_ids_for_cleanups(&tx, &pending).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(RepoStorageCleanupBatch {
             pending,
             live_repo_ids,
@@ -46,15 +45,14 @@ impl CleanupStore {
     pub async fn source_blob_cleanup_batch(
         &self,
         now_unix: u64,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<SourceBlobCleanupBatch, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let loaded = claim_pending_source_blob_cleanup_rows(&tx, now_unix, generated_ids).await?;
+        let tx = self.db.begin().await?;
+        let loaded = claim_pending_source_blob_cleanup_rows(&tx, now_unix).await?;
         let pending = loaded
             .iter()
             .map(|row| row.blob.clone())
             .collect::<Vec<_>>();
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(SourceBlobCleanupBatch { pending, loaded })
     }
 }
@@ -62,13 +60,12 @@ impl CleanupStore {
 async fn claim_pending_repo_storage_cleanup_rows<C>(
     conn: &C,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<Vec<LoadedRepoStorageCleanup>, PostgresError>
 where
     C: ConnectionTrait,
 {
     let now = u64_to_i64(now_unix, "current time")?;
-    let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
+    let generation = generate_id(GeneratedIdKind::CleanupGeneration)?;
     let claim_until = now
         .checked_add(CLEANUP_CLAIM_SECONDS)
         .ok_or_else(|| PostgresError::internal_message("cleanup claim time exceeds i64 range"))?;
@@ -100,8 +97,7 @@ where
         ),
     )
     .all(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(rows
         .into_iter()
         .map(|row| LoadedRepoStorageCleanup {
@@ -115,7 +111,6 @@ pub async fn claim_pending_repo_storage_cleanup<C>(
     conn: &C,
     cleanup_repo_id: &str,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<Option<RepoStorageCleanupClaim>, PostgresError>
 where
     C: ConnectionTrait,
@@ -126,8 +121,7 @@ where
             .filter(entities::repo_storage_cleanup_job::Column::CompletedAtUnix.is_null())
             .lock(LockType::Update)
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
     else {
         return Ok(None);
     };
@@ -139,13 +133,13 @@ where
     let claim_until = now_i64
         .checked_add(CLEANUP_CLAIM_SECONDS)
         .ok_or_else(|| PostgresError::internal_message("cleanup claim time exceeds i64 range"))?;
-    let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
+    let generation = generate_id(GeneratedIdKind::CleanupGeneration)?;
     let cleanup = row.clone().into_domain();
     let mut active = row.into_active_model();
     active.generation = Set(generation.clone());
     active.next_run_at_unix = Set(claim_until);
     active.updated_at_unix = Set(now_i64);
-    active.update(conn).await.map_err(PostgresError::internal)?;
+    active.update(conn).await?;
     Ok(Some(RepoStorageCleanupClaim {
         generation,
         claim_until,
@@ -155,13 +149,12 @@ where
 async fn claim_pending_source_blob_cleanup_rows<C>(
     conn: &C,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<Vec<LoadedSourceBlobCleanup>, PostgresError>
 where
     C: ConnectionTrait,
 {
     let now = u64_to_i64(now_unix, "current time")?;
-    let generation = generate_id(generated_ids, GeneratedIdKind::CleanupGeneration)?;
+    let generation = generate_id(GeneratedIdKind::CleanupGeneration)?;
     let claim_until = now
         .checked_add(CLEANUP_CLAIM_SECONDS)
         .ok_or_else(|| PostgresError::internal_message("cleanup claim time exceeds i64 range"))?;
@@ -193,8 +186,7 @@ where
         ),
     )
     .all(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     rows.into_iter()
         .map(|row| {
             let generation = row.generation.clone();

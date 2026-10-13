@@ -93,3 +93,11 @@ impl GitHubApp {
         webhook::signature_matches(self.webhook_secret.as_bytes(), signature, body)
     }
 }
+
+impl crate::state::AppState {
+    pub(crate) fn github_app(&self) -> Result<&GitHubApp, crate::error::ApiError> {
+        self.github.as_deref().ok_or_else(|| {
+            crate::error::ApiError::not_found("GitHub is not configured on this server")
+        })
+    }
+}

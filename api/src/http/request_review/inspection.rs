@@ -451,7 +451,7 @@ mod tests {
         parse_request_commit_display_metadata, parse_request_commit_identity,
         request_commit_identity,
     };
-    use crate::{error::ErrorKind, http::request_review::tests::git};
+    use crate::{error::ErrorKind, git::test_repo::pinned_identity_git as git};
     use scope_domain::{
         policy::{LabelRule, Policy, ScopePath},
         repository::access::RepositoryAccess,

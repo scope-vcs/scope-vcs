@@ -73,8 +73,7 @@ where
         "DELETE FROM scope_request_media_bindings WHERE request_id = $1 AND target_key = $2",
         [request_id.into(), target_key.clone().into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
 
     for binding in &projected {
         conn.execute_raw(Statement::from_sql_and_values(
@@ -93,16 +92,14 @@ where
                 super::persistence::as_i64(now_unix, "binding time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_attachments SET unbound_expires_at_unix = NULL
              WHERE id = $1",
             [binding.attachment_id.clone().into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     }
 
     let unbound_at = now_unix
@@ -123,8 +120,7 @@ where
                 super::persistence::as_i64(unbound_at, "unbound expiry")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     }
     for attachment_id in existing_ids.symmetric_difference(&referenced) {
         let attachment = attachments
@@ -158,8 +154,7 @@ where
         },
         [request_id.into(), target_key.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .into_iter()
     .map(|row| {
         row.try_get::<String>("", "attachment_id")

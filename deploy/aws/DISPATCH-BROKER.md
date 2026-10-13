@@ -25,9 +25,8 @@ registries do not receive those registry credentials.
   `AWS_REGION`. `SCOPE_CLOUD_RUN_MAX_CONCURRENCY` defaults to 20; set it to 0 to pause
   new admission while cancellation and terminal cleanup continue in batches of ten.
 - Admission takes only jobs of repositories whose owning account is on the native
-  runs allowlist. Operators manage it with `GET /v1/admin/native-runs/accounts` and
-  `PUT` or `DELETE /v1/admin/native-runs/accounts/{handle}` using
-  `SCOPE_OPERATOR_TOKEN`, or with `scope-maintenance native-runs list|add|remove`.
+  runs allowlist. Operators manage it with
+  `scope-maintenance native-runs list|add|remove`.
   An unlisted repository creates no runs and its requests report no checks. Removing
   an account cancels its repositories' unfinished runs: queued jobs end as canceled
   at once and running attempts stop at their next heartbeat. Requests still waiting

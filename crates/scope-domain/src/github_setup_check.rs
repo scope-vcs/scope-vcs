@@ -5,10 +5,12 @@ use crate::{
     repository::access::RepositoryAccess,
     requests::{GitHubBranch, NO_GITHUB_WORKFLOWS_STARTED},
 };
+use serde::{Deserialize, Serialize};
 
 pub const GITHUB_SETUP_CHECK_TIMEOUT_SECS: u64 = 15 * 60;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GitHubSetupCheckState {
     Pushing,
     Waiting,

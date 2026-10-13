@@ -1,11 +1,11 @@
 mod revision;
 pub(crate) use revision::GitRevision;
 
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 #[cfg(test)]
 use crate::git::command::run_git_output;
 use crate::{
     error::ApiError,
-    git::GitContext,
     git::{
         cache::{
             GitDerivedCacheCoordinator, GitDerivedCacheNamespace, GitRepoHandle,
@@ -17,6 +17,7 @@ use crate::{
             restore_git_pack_spans, run_timed_git_restore_phase,
         },
     },
+    state::AppState,
 };
 use scope_domain::repository::{
     RepositoryIncarnation,
@@ -32,6 +33,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tokio::time::MissedTickBehavior;
 
 static REPOSITORY_MATERIALIZATION_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 const MATERIALIZATION_PATH_HIT: u8 = 0;
@@ -158,9 +160,9 @@ impl RepositoryEngine {
         result
     }
 
-    pub(crate) async fn materialize_repository<C: GitContext>(
+    pub(crate) async fn materialize_repository(
         self: &Arc<Self>,
-        context: &C,
+        state: &AppState,
         incarnation: &RepositoryIncarnation,
         head: &GitHead,
         pack_spans: &[GitPackSpan],
@@ -185,7 +187,7 @@ impl RepositoryEngine {
         let built = Arc::new(AtomicBool::new(false));
         let materialization_path = Arc::new(AtomicU8::new(MATERIALIZATION_PATH_HIT));
         let engine_for_build = self.clone();
-        let context_for_build = context.clone();
+        let state_for_build = state.clone();
         let incarnation_for_build = incarnation.clone();
         let head_for_build = head.clone();
         let pack_spans_for_build = pack_spans.to_vec();
@@ -197,9 +199,7 @@ impl RepositoryEngine {
         let result = self.coordinate_repository(incarnation, is_ready, move || async move {
             let _build_repo_lease = build_repo_lease;
             built_for_build.store(true, Ordering::Relaxed);
-            let _permit = context_for_build
-                .runtime_budgets()
-                .try_git_materialization()?;
+            let _permit = state_for_build.runtime_budgets.try_git_materialization()?;
             match engine_for_build
                 .cache
                 .applied_sequence(&incarnation_for_build, &repo_path_for_build)
@@ -212,7 +212,7 @@ impl RepositoryEngine {
                         .store(MATERIALIZATION_PATH_CATCH_UP, Ordering::Relaxed);
                     engine_for_build
                         .catch_up(
-                            &context_for_build,
+                            &state_for_build,
                             &incarnation_for_build,
                             &head_for_build,
                             &pack_spans_for_build,
@@ -242,7 +242,7 @@ impl RepositoryEngine {
                         attempt
                     ));
                     if let Err(error) = restore_git_pack_spans(
-                        &context_for_build,
+                        &state_for_build,
                         &incarnation_for_build,
                         &head_for_build,
                         &pack_spans_for_build,
@@ -416,19 +416,6 @@ impl RepositoryEngine {
         result
     }
 
-    pub(crate) fn start_reaper(self: &Arc<Self>) {
-        let engine = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(5 * 60));
-            loop {
-                interval.tick().await;
-                if let Err(error) = engine.prune() {
-                    tracing::warn!(error = %error.operator_diagnostic(), "failed to prune local repository Git caches");
-                }
-            }
-        });
-    }
-
     async fn coordinate_repository<IsReady, Operation, OperationFuture>(
         self: &Arc<Self>,
         incarnation: &RepositoryIncarnation,
@@ -464,9 +451,9 @@ impl RepositoryEngine {
         )
     }
 
-    async fn catch_up<C: GitContext>(
+    async fn catch_up(
         &self,
-        context: &C,
+        state: &AppState,
         incarnation: &RepositoryIncarnation,
         head: &GitHead,
         pack_spans: &[GitPackSpan],
@@ -495,7 +482,7 @@ impl RepositoryEngine {
                 "repository Git cache missing tail starts after the required sequence",
             ));
         }
-        hydrate_git_pack_spans(context, repo_root, incarnation, &missing).await?;
+        hydrate_git_pack_spans(state, repo_root, incarnation, &missing).await?;
         advance_head_and_verify(
             repository_id,
             repo_root,
@@ -536,6 +523,22 @@ fn repository_coordination_key(incarnation: &RepositoryIncarnation) -> String {
         incarnation.repository_id(),
         incarnation.incarnation_id()
     )
+}
+
+impl BackgroundWork {
+    pub(crate) fn start_repository_cache_pruning(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "local repository Git cache pruning",
+                cadence: Cadence::Fixed {
+                    period: Duration::from_secs(5 * 60),
+                    missed_ticks: MissedTickBehavior::Burst,
+                },
+                readiness: Readiness::Ungated,
+            },
+            |state| async move { state.repository_engine.prune() },
+        );
+    }
 }
 
 #[cfg(test)]

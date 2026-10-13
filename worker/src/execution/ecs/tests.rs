@@ -23,18 +23,19 @@ async fn start_sends_only_attempt_and_bootstrap_to_the_broker() {
 #[tokio::test]
 async fn only_explicit_broker_rejection_is_a_safe_setup_failure() {
     let provider = fake::FakeEcs::new().await;
-    provider.reply(
-        StatusCode::OK,
-        json!({"status":"rejected", "reason":"authorization", "message":"authorization denied"}),
-        false,
-    );
-    assert!(matches!(
-        provider.client.start("attempt_1", "token").await,
-        Err(StartError::Rejected {
-            reason: RejectionReason::Authorization,
-            ..
-        })
-    ));
+    for (wire, expected) in [
+        ("capacity", RejectionReason::Capacity),
+        ("quota", RejectionReason::Quota),
+        ("permanent", RejectionReason::Permanent),
+        ("authorization", RejectionReason::Authorization),
+    ] {
+        let reply =
+            json!({"status":"rejected", "reason":wire, "message":"ECS rejected this attempt"});
+        provider.reply(StatusCode::OK, reply, false);
+        assert!(
+            matches!(provider.client.start("attempt_1", "token").await, Err(StartError::Rejected { reason, .. }) if reason == expected)
+        );
+    }
     for (status, reply, function_error) in [
         (
             StatusCode::OK,
@@ -63,6 +64,11 @@ async fn only_explicit_broker_rejection_is_a_safe_setup_failure() {
             false,
         ),
         (StatusCode::FORBIDDEN, json!({"message":"denied"}), false),
+        (
+            StatusCode::OK,
+            json!({"status":"rejected", "reason":"unknown", "message":"denied"}),
+            false,
+        ),
     ] {
         provider.reply(status, reply, function_error);
         assert!(matches!(
@@ -106,32 +112,15 @@ async fn retry_is_unblocked_only_after_broker_confirms_cleanup() {
 #[tokio::test]
 async fn stop_progress_is_explicit_and_cannot_confirm_cleanup() {
     let provider = fake::FakeEcs::new().await;
-    provider.reply(
-        StatusCode::OK,
-        json!({"status":"stopping", "stuck":false}),
-        false,
-    );
-    assert_eq!(
-        provider
-            .client
-            .stop_terminal_task("attempt_1")
-            .await
-            .unwrap(),
-        StopOutcome::Stopping { stuck: false }
-    );
-    provider.reply(
-        StatusCode::OK,
-        json!({"status":"stopping", "stuck":true}),
-        false,
-    );
-    assert_eq!(
-        provider
-            .client
-            .stop_terminal_task("attempt_1")
-            .await
-            .unwrap(),
-        StopOutcome::Stopping { stuck: true }
-    );
+    for stuck in [false, true] {
+        provider.reply(
+            StatusCode::OK,
+            json!({"status":"stopping", "stuck":stuck}),
+            false,
+        );
+        let outcome = provider.client.stop_terminal_task("attempt_1").await;
+        assert_eq!(outcome.unwrap(), StopOutcome::Stopping { stuck });
+    }
     provider.reply(StatusCode::OK, json!({"status":"stopping"}), false);
     assert!(
         provider
@@ -140,34 +129,6 @@ async fn stop_progress_is_explicit_and_cannot_confirm_cleanup() {
             .await
             .is_err()
     );
-}
-
-#[tokio::test]
-async fn capacity_and_quota_rejections_keep_distinct_reasons() {
-    let provider = fake::FakeEcs::new().await;
-    for (wire, expected) in [
-        ("capacity", RejectionReason::Capacity),
-        ("quota", RejectionReason::Quota),
-        ("permanent", RejectionReason::Permanent),
-    ] {
-        provider.reply(
-            StatusCode::OK,
-            json!({"status":"rejected", "reason":wire, "message":"ECS rejected this attempt"}),
-            false,
-        );
-        assert!(
-            matches!(provider.client.start("attempt_1", "token").await, Err(StartError::Rejected { reason, .. }) if reason == expected)
-        );
-    }
-    provider.reply(
-        StatusCode::OK,
-        json!({"status":"rejected", "reason":"unknown", "message":"denied"}),
-        false,
-    );
-    assert!(matches!(
-        provider.client.start("attempt_1", "token").await,
-        Err(StartError::Ambiguous(_))
-    ));
 }
 
 #[tokio::test]

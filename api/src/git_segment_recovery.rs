@@ -1,6 +1,8 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::repository::git::GitSegmentUploadState;
 use std::time::Duration;
+use tokio::time::MissedTickBehavior;
 
 const GIT_SEGMENT_STALE_SECONDS: u64 = 15 * 60;
 const GIT_SEGMENT_RECOVERY_BATCH_SIZE: u64 = 100;
@@ -87,20 +89,18 @@ async fn recover_stale_git_segments(state: &AppState) -> Result<(), ApiError> {
     Ok(())
 }
 
-impl AppState {
-    pub(crate) fn start_git_segment_recovery(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(GIT_SEGMENT_RECOVERY_INTERVAL);
-            loop {
-                interval.tick().await;
-                if let Err(error) = recover_stale_git_segments(&state).await {
-                    tracing::warn!(
-                        error = %error.into_operator_diagnostic(),
-                        "stale Git segment recovery failed"
-                    );
-                }
-            }
-        });
+impl BackgroundWork {
+    pub(crate) fn start_git_segment_recovery(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "stale Git segment recovery",
+                cadence: Cadence::Fixed {
+                    period: GIT_SEGMENT_RECOVERY_INTERVAL,
+                    missed_ticks: MissedTickBehavior::Burst,
+                },
+                readiness: Readiness::Ungated,
+            },
+            |state| async move { recover_stale_git_segments(&state).await },
+        );
     }
 }

@@ -75,7 +75,7 @@ set +x
 manifest=.github/deployment-services.json
 project_id="$(jq -er '.railway.projectId' "$manifest")"
 environment_id="$(jq -er '.environments.production.environmentId' "$manifest")"
-for component in api run-worker cache git-router media-api media-worker web; do
+for component in api run-worker git-router media-api media-worker web; do
   service_id="$(jq -er --arg component "$component" '.services[$component].id' "$manifest")"
   printf '%s: ' "$component"
   railway ssh --project "$project_id" --environment "$environment_id" \
@@ -103,7 +103,7 @@ railway logs --project "$project_id" --environment "$environment_id" \
 ```
 
 Find one of those IDs in Railway Traces and confirm it belongs to the exercised
-request and the expected deployed service. Inspect cache, Git router and media
+request and the expected deployed service. Inspect run cache, Git router and media
 spans when the exercised flow reaches them. For workers, inspect a real claimed
 job and its consumer span; idle polls intentionally produce no root traces.
 For web, confirm a real runtime request emits a span from `scope-web` rather

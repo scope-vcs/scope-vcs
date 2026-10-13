@@ -6,9 +6,6 @@ on:
       source_sha:
         type: string
         required: true
-      verified_successful_sha:
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -40,10 +37,7 @@ jobs:
         with:
           name: prepared-release-${{ inputs.source_sha }}
 
-      - name: Install Railway CLI
-        run: |
-          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
-          npm install -g "@railway/cli@$railway_cli_version"
+      - uses: ./.github/actions/install-railway-cli
 
       - name: Deploy to Railway
         id: transition
@@ -52,13 +46,11 @@ jobs:
           SCOPE_PREPARED_RELEASE_PATH: prepared-release.json
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-          RAILWAY_DEPLOY_MESSAGE: ${{ github.event.head_commit.message || github.workflow }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           SCOPE_DEPLOYMENT_COMPONENT: web
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha }}
-          SCOPE_VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
         run: |
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"

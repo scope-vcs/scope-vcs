@@ -72,18 +72,15 @@ async fn create_request(
     let mut git_snapshot = source_blob(state, snapshot);
     git_snapshot.git_oid = head_oid.to_string();
     requests
-        .record_working_request_upload(
-            RecordWorkingRequestUploadInput {
-                request_id: request_id.to_string(),
-                actor_user_id: author_user_id,
-                actor_can_edit: true,
-                expected_old_head_oid: None,
-                new_head_oid: head_oid.to_string(),
-                git_snapshot,
-                now_unix: 3,
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .record_working_request_upload(RecordWorkingRequestUploadInput {
+            request_id: request_id.to_string(),
+            actor_user_id: author_user_id,
+            actor_can_edit: true,
+            expected_old_head_oid: None,
+            new_head_oid: head_oid.to_string(),
+            git_snapshot,
+            now_unix: 3,
+        })
         .await
         .unwrap();
 }
