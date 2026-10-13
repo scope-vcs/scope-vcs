@@ -177,6 +177,17 @@ fn an_agent_request_edits_and_inspects_only_paths_the_agent_view_shows_or_may_cr
     }
     assert_eq!(inspection.label(&path("/src/new.rs"), &views), agent());
     assert!(!inspection.can_read(&path("/src/new.rs"), &ViewId::public(), &views));
+    let removed = path("/src/removed-visible.rs");
+    for labels in [[ViewId::public(), agent()], [agent(), ViewId::public()]] {
+        let mut reordered = history.clone();
+        reordered
+            .file_change_labels
+            .extend(labels.into_iter().map(|label| (removed.clone(), label)));
+        let inspected =
+            policy.for_request_paths(&config, &reordered, &view, std::slice::from_ref(&removed));
+        assert!(inspected.can_read(&removed, &view, &views));
+        assert_eq!(inspected.label(&removed, &views), agent());
+    }
     for protected in ["/.scope/RULES.md", "/AGENTS.md", "/.claude/settings.json"] {
         assert_eq!(
             paths.ensure_editable(&path(protected)),

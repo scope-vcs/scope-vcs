@@ -3,7 +3,11 @@ use crate::{
     views::{ViewId, Views},
 };
 use serde::{Deserialize, Serialize};
-use std::{borrow::Borrow, collections::BTreeMap, fmt};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -185,9 +189,9 @@ impl Policy {
         reader: &ViewId,
         paths: &[ScopePath],
     ) -> Self {
-        let mut historical_labels = BTreeMap::<&ScopePath, Vec<&ViewId>>::new();
+        let mut historical_labels = BTreeMap::<&ScopePath, BTreeSet<&ViewId>>::new();
         for (path, label) in &history.file_change_labels {
-            historical_labels.entry(path).or_default().push(label);
+            historical_labels.entry(path).or_default().insert(label);
         }
         for (path, old_label, new_label) in &history.visibility_changes {
             historical_labels
