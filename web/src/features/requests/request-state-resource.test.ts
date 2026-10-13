@@ -4,7 +4,7 @@ import type { RepoChangeEvent, RequestStateResponse } from '@/api/types.generate
 import { invalidateRepoResources } from '../repo-detail/repo-resource-invalidation'
 import { resetViewerState } from '../../lib/viewer-state'
 import { deferred } from './request-discussion-test-fixtures'
-import { loadRequestStateValue, reconcileRequestState, requestStateIdentity, requestStateResource } from './request-state-resource'
+import { loadMoreRequestChildren, loadRequestStateValue, reconcileRequestState, requestStateIdentity, requestStateResource } from './request-state-resource'
 
 const identity = requestStateIdentity('viewer-access', 'request')
 const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'repo', incarnation_id: 'incarnation', kind, version: 2 })
@@ -110,4 +110,49 @@ function state(head = 'head'): RequestStateResponse {
     },
     auto_merge: { request_id: 'request', revision_id: 'revision', head_oid: head, intent: { id: 'intent', actor: { id: 'user', handle: 'adam' }, revision_id: 'revision', head_oid: head, status: 'Active', reason: null, created_at_unix: 1, updated_at_unix: 1 }, waiting_reason: 'Checks are running.', can_enable: false, can_cancel: true },
   } as RequestStateResponse
+}
+
+
+test('related stack events refresh retained navigation without crossing viewer access scopes', () => {
+  const related = state()
+  related.detail.stack_navigation = { parent: null, ancestors: [stackNode('parent')], ancestors_unavailable: false, children: { requests: [stackNode('child')], next_cursor: null } }
+  requestStateResource.write(identity, { state: related })
+  const unrelated = requestStateIdentity('viewer-access', 'unrelated')
+  requestStateResource.write(unrelated, { state: state() })
+  const otherAccess = requestStateIdentity('other-access', 'request')
+  requestStateResource.write(otherAccess, { state: related })
+  for (const requestId of ['parent', 'child']) {
+    requestStateResource.write(identity, { state: related })
+    invalidateRepoResources('viewer-access', event({ RequestStateChanged: { request_id: requestId, view: 'public' } }))
+    assert.equal(requestStateResource.getSnapshot(identity).stale, true)
+    assert.equal(requestStateResource.peek(identity)?.state?.detail.stack_navigation.ancestors[0]?.title, 'parent')
+    assert.equal(requestStateResource.getSnapshot(unrelated).stale, false)
+    assert.equal(requestStateResource.getSnapshot(otherAccess).stale, false)
+  }
+})
+
+test('child pagination survives reopening and refresh refills loaded depth while rejecting late access results', async () => {
+  const initial = state()
+  initial.detail.stack_navigation = { parent: null, ancestors: [], ancestors_unavailable: false, children: { requests: [stackNode('first')], next_cursor: 'next' } }
+  requestStateResource.write(identity, { state: initial })
+  await loadMoreRequestChildren(identity, async () => ({ requests: [stackNode('second')], next_cursor: null }))
+  const reopen = mock.fn(async () => ({ state: initial }))
+  assert.deepEqual((await loadRequestStateValue(identity, reopen)).state?.detail.stack_navigation.children.requests.map((node) => node.id), ['first', 'second'])
+  assert.equal(reopen.mock.callCount(), 0)
+  requestStateResource.invalidate(identity)
+  const refill = mock.fn(async () => ({ requests: [stackNode('third')], next_cursor: null }))
+  const refreshed = await loadRequestStateValue(identity, async () => ({ state: initial }), refill)
+  assert.deepEqual(refreshed.state?.detail.stack_navigation.children.requests.map((node) => node.id), ['first', 'third'])
+  assert.equal(refill.mock.callCount(), 1)
+  requestStateResource.write(identity, { state: initial })
+  const response = deferred<{ requests: ReturnType<typeof stackNode>[]; next_cursor: null }>()
+  const pending = loadMoreRequestChildren(identity, () => response.promise)
+  resetViewerState()
+  response.resolve({ requests: [stackNode('private-child')], next_cursor: null })
+  await pending
+  assert.equal(requestStateResource.peek(identity), null)
+})
+
+function stackNode(id: string) {
+  return { id, name: id, title: id, state: 'Open' as const, stack_status: 'main' as const, stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
 }

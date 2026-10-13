@@ -5,6 +5,7 @@ use scope_domain::requests::{
 
 mod auto_merge;
 mod carried;
+mod navigation;
 mod reparent;
 
 #[tokio::test]

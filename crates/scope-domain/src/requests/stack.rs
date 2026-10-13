@@ -208,7 +208,7 @@ pub fn classify_request_stack(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestStackRefreshEffects {
     pub stop_auto_merge: Option<super::RequestAutoMergeStopReason>,
-    pub refresh_queue: bool,
+    pub reactivate_attention: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -234,7 +234,7 @@ pub fn mark_request_integration_conflict(
             request,
             effects: RequestStackRefreshEffects {
                 stop_auto_merge: None,
-                refresh_queue: false,
+                reactivate_attention: false,
             },
         });
     }
@@ -249,7 +249,7 @@ pub fn mark_request_integration_conflict(
         request,
         effects: RequestStackRefreshEffects {
             stop_auto_merge: Some(super::RequestAutoMergeStopReason::MergeConflict),
-            refresh_queue: changed,
+            reactivate_attention: changed,
         },
     })
 }
@@ -265,7 +265,7 @@ pub fn refresh_request_stack(
             request,
             effects: RequestStackRefreshEffects {
                 stop_auto_merge: None,
-                refresh_queue: false,
+                reactivate_attention: false,
             },
         });
     }
@@ -283,14 +283,12 @@ pub fn refresh_request_stack(
         .ok_or_else(|| DomainError::conflict("request stack exceeds 32 ancestors"))?;
     let depth_changed = request.stack_depth != depth;
     let status_changed = request.stack_status != status;
-    let refresh_queue = depth_changed
-        || (status_changed
-            && (request.stack_status.requires_restack() || status.requires_restack()));
+    let reactivate_attention = status_changed && status.requires_restack();
     if depth_changed || status_changed {
         request.stack_status = status;
         request.stack_depth = depth;
         request.updated_at_unix = request.updated_at_unix.max(now_unix);
-        if refresh_queue {
+        if reactivate_attention {
             advance_request_activity(&mut request)?;
         }
         request.validate_facts()?;
@@ -299,7 +297,7 @@ pub fn refresh_request_stack(
         request,
         effects: RequestStackRefreshEffects {
             stop_auto_merge: status.auto_merge_stop_reason(),
-            refresh_queue,
+            reactivate_attention,
         },
     })
 }
@@ -318,7 +316,6 @@ pub struct RetargetRequestAfterParentMergeInput {
 pub struct RequestRetargetEffects {
     pub rebind_check_context: bool,
     pub preserve_auto_merge_intent: bool,
-    pub refresh_queue: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -401,7 +398,6 @@ pub fn retarget_request_after_parent_merge(
         effects: RequestRetargetEffects {
             rebind_check_context: true,
             preserve_auto_merge_intent: true,
-            refresh_queue: true,
         },
     })
 }

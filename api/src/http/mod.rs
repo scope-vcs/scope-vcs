@@ -17,6 +17,7 @@ pub(crate) mod repos;
 pub(crate) mod request_attachments;
 pub(crate) mod request_auto_merge;
 pub(crate) mod request_checks;
+pub(crate) mod request_children;
 pub(crate) mod request_discussions;
 pub(crate) mod request_queue;
 pub(crate) mod request_ratings;

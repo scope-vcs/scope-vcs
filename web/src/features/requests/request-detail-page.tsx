@@ -29,6 +29,8 @@ import type {
   AuthorizeRequestAutoMergeInput,
   CancelRequestAutoMergeInput,
 } from './request-auto-merge-api'
+import { loadRequestChildrenForViewer } from '@/routes/-request-state-actions'
+import { loadMoreRequestChildren } from './request-state-resource'
 import { RequestStackContext } from './request-stack-context'
 import { RequestChecksSection } from './request-checks-section'
 import { RequestCiApproval } from './request-ci-approval'
@@ -121,6 +123,20 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     updateDescription,
     viewerId,
   } = props
+  const [childrenLoading, setChildrenLoading] = useState(false)
+  const [childrenError, setChildrenError] = useState<string | null>(null)
+  const loadChildren = async () => {
+    if (childrenLoading) return
+    setChildrenLoading(true)
+    setChildrenError(null)
+    try {
+      await loadMoreRequestChildren(identity, (cursor, signal) => loadRequestChildrenForViewer({ ...params, request_id: state.detail.request.id, cursor }, viewerId, signal))
+    } catch (error) {
+      setChildrenError(error instanceof Error ? error.message : 'Children are unavailable.')
+    } finally {
+      setChildrenLoading(false)
+    }
+  }
   const { request } = state.detail
   const serverDescription = request.description_markdown
   const activity = {
@@ -261,7 +277,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             {requestActions.error ?? autoMerge.error ?? stateError}
           </p>
         ) : null}
-        <RequestStackContext request={request} params={params} />
+        <RequestStackContext detail={state.detail} params={params} childrenLoading={childrenLoading} childrenError={childrenError} onLoadChildren={() => { void loadChildren() }} />
         <RequestChecksSection
           checks={checks.checks}
           error={checks.error}

@@ -14,7 +14,20 @@ fn detail_uses_server_capabilities_and_renders_invitees_and_submission() {
     }]))
     .unwrap();
 
-    let rendered = request_detail_lines(&request, &Views::builtin()).join("\n");
+    let rendered = request_detail_lines(
+        &request,
+        &scope_api_contract::RequestStackNavigationResponse {
+            parent: None,
+            ancestors: Vec::new(),
+            ancestors_unavailable: false,
+            children: scope_api_contract::RequestChildrenPageResponse {
+                requests: Vec::new(),
+                next_cursor: None,
+            },
+        },
+        &Views::builtin(),
+    )
+    .join("\n");
 
     assert!(rendered.contains("open"), "{rendered}");
     assert!(rendered.contains("submitted"), "{rendered}");

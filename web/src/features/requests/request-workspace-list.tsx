@@ -47,8 +47,8 @@ export function RequestWorkspaceList({
   ...rowProps
 }: RequestWorkspaceListProps) {
   if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
-  const rows = items.map(({ item, section }) => (
-    <RequestWorkspaceRow item={item} key={item.request.id} section={section} {...rowProps} />
+  const rows = items.map(({ item, section }, index) => (
+    <RequestWorkspaceRow item={item} key={item.request.id} section={section} stacked={adjacentStackRows(items[index - 1], { item, section }) || adjacentStackRows({ item, section }, items[index + 1])} {...rowProps} />
   ))
   return (
     <div className="request-workspace-rows">
@@ -111,9 +111,11 @@ function RequestWorkspaceRow({
   pendingId,
   selectedId,
   rail,
+  stacked,
 }: Pick<RequestWorkspaceListProps, 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
+  stacked: boolean
 }) {
   const hydrated = useHydrated()
   const { request, attention, author } = item
@@ -142,12 +144,15 @@ function RequestWorkspaceRow({
   const actionCount = actions.filter(({ visible }) => visible).length + Number(canSetAside)
   return (
     <article
-      className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
+      className={cn('request-workspace-row', selected && 'request-workspace-row--selected', stacked && 'request-workspace-row--stacked')}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-rail={rail ? '' : undefined}
       data-request-id={request.id}
       style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px` } as CSSProperties}
     >
+      {request.stack_parent ? <div className="request-workspace-row-parent text-[10px] text-muted-foreground">
+        {request.stack_parent.kind === 'available' ? <><span>Based on </span><Link className="underline-offset-4 hover:underline" params={{ ...params, requestId: request.stack_parent.request.id }} search={(current) => ({ view: current.view })} to="/$owner/$repo/requests/$requestId">{request.stack_parent.request.title}</Link></> : 'Unavailable dependency'}
+      </div> : null}
       <Link
         aria-current={selected ? 'page' : undefined}
         className="request-workspace-row-link"
@@ -171,11 +176,6 @@ function RequestWorkspaceRow({
           >
             {request.title}
           </span>
-          {request.stack_depth > 1 ? (
-            <span className="block truncate text-[10px] text-muted-foreground">
-              Layer {request.stack_depth} · {request.base.kind === 'request' ? `Parent ${request.base.request_id}` : 'Main'}
-            </span>
-          ) : null}
           <span className="request-workspace-row-meta mt-[3px] flex items-center gap-2 text-xs leading-[1.4]">
             <span
               className={cn(
@@ -234,4 +234,13 @@ function RequestWorkspaceRow({
       )}
     </article>
   )
+}
+
+function adjacentStackRows(left: RequestWorkspaceListProps['items'][number] | undefined, right: RequestWorkspaceListProps['items'][number] | undefined) {
+  if (!left || !right || left.section !== right.section) return false
+  const leftParent = left.item.request.stack_parent
+  const rightParent = right.item.request.stack_parent
+  const leftId = leftParent?.kind === 'available' ? leftParent.request.id : null
+  const rightId = rightParent?.kind === 'available' ? rightParent.request.id : null
+  return leftId === right.item.request.id || rightId === left.item.request.id || Boolean(leftId && leftId === rightId)
 }

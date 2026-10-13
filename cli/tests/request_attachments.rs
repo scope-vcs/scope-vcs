@@ -603,7 +603,9 @@ async fn repository() -> Json<Value> {
 
 async fn request_detail(State(state): State<Arc<Mutex<FixtureState>>>) -> Json<Value> {
     let description = state.lock().unwrap().current_description.clone();
-    Json(json!({"request":request_json(&description)}))
+    Json(
+        json!({"request":request_json(&description),"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})}),
+    )
 }
 
 async fn attachment_limits() -> Json<Value> {

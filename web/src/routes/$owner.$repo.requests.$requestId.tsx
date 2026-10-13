@@ -8,7 +8,7 @@ import { requestParamsForRoute } from '@/features/requests/request-route-data'
 import { loadRequestStateValue, requestRouteState, requestStateIdentity } from '@/features/requests/request-state-resource'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { getCurrentViewerId } from '@/lib/viewer-state'
-import { loadRequestState, loadRequestStateForViewer } from '@/routes/-request-state-actions'
+import { loadRequestChildrenForViewer, loadRequestState, loadRequestStateForViewer } from '@/routes/-request-state-actions'
 import { loadRequestDiscussionRoutePage } from '@/routes/-request-discussion-loader'
 import { createFileRoute, Outlet } from '@tanstack/react-router'
 import { useMemo } from 'react'
@@ -34,6 +34,7 @@ export const Route = createFileRoute('/$owner/$repo/requests/$requestId')({
       : requestRouteState(live, await loadRequestStateValue(
           requestStateIdentity(repoResourceScope(live.repo, viewerId), data.request_id),
           (signal) => loadRequestStateForViewer(data, viewerId, signal),
+          (cursor, signal) => loadRequestChildrenForViewer({ ...data, cursor }, viewerId, signal),
         ), viewerId)
     return { initial, discussionPage }
   },

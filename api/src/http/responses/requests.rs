@@ -81,6 +81,7 @@ pub(crate) fn request_list_item_response(
     );
     let request_head_oid = super::git_oid_response(request.head_oid)?;
     Ok(RequestListItemResponse {
+        stack_parent: None,
         id: request.id,
         name: request.name,
         title: request.title,
@@ -159,4 +160,48 @@ pub(crate) fn request_base_response(
 ) -> Result<scope_api_contract::RequestBase, ApiError> {
     base.try_into()
         .map_err(|error| ApiError::internal_message(format!("persisted {error}")))
+}
+
+pub(crate) fn request_stack_node_response(
+    node: scope_domain::requests::RequestStackNode,
+) -> Result<scope_api_contract::RequestStackNodeResponse, ApiError> {
+    Ok(scope_api_contract::RequestStackNodeResponse {
+        id: node.id,
+        name: node.name,
+        title: node.title,
+        state: node.state.into(),
+        stack_status: node.stack_status.into(),
+        stack_depth: node.stack_depth,
+        head_oid: git_oid_response(node.head_oid)?,
+        current_revision_id: node.current_revision_id,
+    })
+}
+
+pub(crate) fn request_stack_parent_response(
+    parent: scope_domain::requests::RequestStackParent,
+) -> Result<scope_api_contract::RequestStackParentResponse, ApiError> {
+    Ok(match parent {
+        scope_domain::requests::RequestStackParent::Available { request } => {
+            scope_api_contract::RequestStackParentResponse::Available {
+                request: request_stack_node_response(request)?,
+            }
+        }
+        scope_domain::requests::RequestStackParent::Unavailable => {
+            scope_api_contract::RequestStackParentResponse::Unavailable
+        }
+    })
+}
+
+pub(crate) fn request_children_page_response(
+    page: &scope_postgres::db::RequestChildrenPage,
+) -> Result<scope_api_contract::RequestChildrenPageResponse, ApiError> {
+    Ok(scope_api_contract::RequestChildrenPageResponse {
+        requests: page
+            .requests
+            .iter()
+            .cloned()
+            .map(request_stack_node_response)
+            .collect::<Result<_, _>>()?,
+        next_cursor: page.next_cursor.clone(),
+    })
 }

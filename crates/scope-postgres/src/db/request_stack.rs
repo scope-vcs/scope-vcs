@@ -380,11 +380,10 @@ async fn persist_refresh(
     } else {
         save_request_row(tx, &request).await?;
     }
-    if mutation.effects.refresh_queue {
-        super::request_attention::reactivate_attention_for_activity(
+    if mutation.effects.reactivate_attention {
+        super::request_attention::reactivate_attention_for_stack_blocker(
             tx,
             &request.id,
-            "",
             request.activity_version,
             now_unix,
         )
@@ -505,16 +504,6 @@ pub(super) async fn retarget_children(
             tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
                 "UPDATE scope_request_check_evaluations SET base_version = $2 WHERE id = (SELECT current_check_evaluation_id FROM scope_requests WHERE id = $1)",
                 [mutation.request.id.clone().into(), super::integer_columns::u64_to_i64(mutation.request.base_version, "request base version")?.into()])).await.map_err(PostgresError::internal)?;
-        }
-        if mutation.effects.refresh_queue {
-            super::request_attention::reactivate_attention_for_activity(
-                tx,
-                &mutation.request.id,
-                "",
-                mutation.request.activity_version,
-                now_unix,
-            )
-            .await?;
         }
         tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
             "UPDATE scope_request_auto_merge_intents SET next_attempt_at_unix = $2 WHERE request_id = $1 AND status = 'Active'",

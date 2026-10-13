@@ -84,7 +84,15 @@ fn request_start_metadata_failure_can_retry_push_without_creating_another_reques
         ])
         .output()
         .unwrap();
-    assert_eq!(success(output)["command"], "request.push");
+    let value = success(output);
+    assert_eq!(value["command"], "request.push");
+    assert_eq!(
+        value["result"]["stack_navigation"],
+        json!({
+            "parent":null,"ancestors":[],"ancestors_unavailable":false,
+            "children":{"requests":[],"next_cursor":null}
+        })
+    );
     assert_eq!(
         git_stdout(bare.path(), ["rev-parse", "refs/heads/fix-one"]),
         head

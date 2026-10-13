@@ -87,3 +87,40 @@ pub struct RequestComparisonResponse {
     pub files: Vec<CommitFileResponse>,
     pub inspection: RequestRevisionInspectionState,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestStackNodeResponse {
+    pub id: String,
+    pub name: String,
+    pub title: String,
+    pub state: crate::RequestState,
+    pub stack_status: RequestStackStatus,
+    pub stack_depth: u32,
+    pub head_oid: GitOid,
+    pub current_revision_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RequestStackParentResponse {
+    Available { request: RequestStackNodeResponse },
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestChildrenPageResponse {
+    pub requests: Vec<RequestStackNodeResponse>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestStackNavigationResponse {
+    pub parent: Option<RequestStackParentResponse>,
+    pub ancestors: Vec<RequestStackNodeResponse>,
+    pub ancestors_unavailable: bool,
+    pub children: RequestChildrenPageResponse,
+}

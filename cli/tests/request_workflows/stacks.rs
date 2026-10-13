@@ -628,16 +628,16 @@ pub(super) fn stack_server_with_base(
     let app = Router::new()
         .route("/v1/session", get(|| async { Json(support::session_response("usr_test", "owner", "test@example.test")) }))
         .route("/v1/repos/owner/repo", get(move || { let repo=repo.clone(); async move { Json(repo) } }))
-        .route("/v1/repos/owner/repo/requests/req_other", get(move || { let other=other.clone(); async move { Json(json!({"request":other})) } }))
+        .route("/v1/repos/owner/repo/requests/req_other", get(move || { let other=other.clone(); async move { Json(json!({"request":other,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})})) } }))
         .route("/v1/repos/owner/repo/requests/req_other/changes", get(|| async { Json(json!({"comparison":null,"review_revision_id":"rev_parent","revisions":[],"has_earlier_revisions":false})) }))
-        .route("/v1/repos/owner/repo/requests/req_parent", get(move || { let parent=parent.clone(); async move { Json(json!({"request":parent})) } }))
+        .route("/v1/repos/owner/repo/requests/req_parent", get(move || { let parent=parent.clone(); async move { Json(json!({"request":parent,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})})) } }))
         .route("/v1/repos/owner/repo/requests/req_parent/changes", get(move || { let revision=parent_revision_read.clone(); async move { Json(json!({"comparison":null,"review_revision_id":revision.lock().unwrap().clone(),"revisions":[],"has_earlier_revisions":false})) } }))
         .route("/v1/repos/owner/repo/requests", post(move |Json(body):Json<Value>| { let bodies=start_bodies.clone(); let child=start_child.clone(); async move { bodies.lock().unwrap().push(body); Json(json!({"request":child.lock().unwrap().clone()})) } }))
         .route("/v1/repos/owner/repo/requests/req_child", get(move || { let child=show_child.clone(); let bare=show_bare.clone(); async move {
             let mut request=child.lock().unwrap().clone();
             let head=Command::new("git").arg("--git-dir").arg(bare).args(["rev-parse","refs/heads/child"]).output().unwrap();
             request["head_oid"]=String::from_utf8_lossy(&head.stdout).trim().into();
-            Json(json!({"request":request}))
+            Json(json!({"request":request,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})}))
         } }))
         .route("/v1/repos/owner/repo/requests/req_child/changes", get(move |Query(query):Query<HashMap<String,String>>| { let child=history_child.clone(); let accepted=accepted_read.clone(); let bare=bare.clone(); let revisions=revisions.clone(); async move {
             if query.get("revision").is_some_and(|revision| revision == "rev_context") {

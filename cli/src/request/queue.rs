@@ -177,14 +177,7 @@ fn queue_row_line(row: &QueueRow, now_unix: u64) -> String {
         terminal_text(&request.id),
         terminal_text(&request.title),
         reason_label(&row.item),
-        match &request.base {
-            scope_api_contract::RequestBase::Main { .. } => "main".to_string(),
-            scope_api_contract::RequestBase::Request {
-                request_id,
-                revision_id,
-                ..
-            } => format!("{request_id}@{revision_id}"),
-        },
+        render::parent_label(request.stack_parent.as_ref()),
         request.stack_depth,
         request.stack_status
     )
@@ -382,7 +375,7 @@ mod tests {
                 "attention_at_unix": 1_000,
                 "request": {
                     "id": "req_one", "name": "fix-refs", "title": "Fix refs",
-                    "base":{"kind":"main","review_base_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base_version":1,"stack_status":"main","stack_depth":1,"author_role": "Public", "view": "public", "head_oid": "b".repeat(40),
+                    "base":{"kind":"main","review_base_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base_version":1,"stack_status":"main","stack_depth":1,"stack_parent":null,"author_role": "Public", "view": "public", "head_oid": "b".repeat(40),
                     "state": "Open", "submitted_at_unix": 10, "updated_at_unix": 20,
                     "mergeability": {
                         "status": "NotMaintainer",

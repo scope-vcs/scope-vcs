@@ -231,6 +231,7 @@ pub struct RequestListResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestDetailResponse {
+    pub stack_navigation: RequestStackNavigationResponse,
     pub request: RequestSummaryResponse,
 }
 
@@ -362,6 +363,7 @@ pub struct LeaveRequestResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestListItemResponse {
+    pub stack_parent: Option<RequestStackParentResponse>,
     pub base: RequestBase,
     pub base_version: u64,
     pub stack_status: RequestStackStatus,

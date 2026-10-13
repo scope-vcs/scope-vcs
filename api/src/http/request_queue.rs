@@ -129,6 +129,11 @@ pub(crate) async fn request_queue(
         .collect::<Vec<_>>();
     let checks =
         crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &rows).await?;
+    let mut parents = state
+        .metadata
+        .requests()
+        .request_stack_parents(&repo, viewer_user_id.as_deref(), &rows)
+        .await?;
     let requests = page
         .rows
         .into_iter()
@@ -144,17 +149,25 @@ pub(crate) async fn request_queue(
             let request_id = row.request.id.clone();
             Ok(RequestQueueItemResponse {
                 attention_at_unix: row.cursor.updated_at_unix,
-                request: request_list_item_response(
-                    row.request,
-                    &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
-                    &repo.views,
-                    current_main_oid.clone(),
-                    checks
-                        .get(&request_id)
-                        .copied()
-                        .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
-                    repo.record.lifecycle_state,
-                )?,
+                request: {
+                    let parent = parents
+                        .remove(&request_id)
+                        .map(super::responses::request_stack_parent_response)
+                        .transpose()?;
+                    let mut response = request_list_item_response(
+                        row.request,
+                        &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
+                        &repo.views,
+                        current_main_oid.clone(),
+                        checks
+                            .get(&request_id)
+                            .copied()
+                            .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
+                        repo.record.lifecycle_state,
+                    )?;
+                    response.stack_parent = parent;
+                    response
+                },
                 author,
                 attention: attention_response(
                     row.attention,

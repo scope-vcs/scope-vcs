@@ -415,5 +415,20 @@ pub fn reactivate_request_attention(
         })
 }
 
+pub fn reactivate_request_attention_for_stack_blocker(
+    attention: &RequestAttention,
+    new_activity_version: u64,
+    now_unix: u64,
+) -> Option<RequestAttention> {
+    if attention.state == RequestAttentionState::Snoozed
+        && attention
+            .snoozed_until_unix
+            .is_some_and(|until| until > now_unix)
+    {
+        return None;
+    }
+    reactivate_request_attention(attention, "", new_activity_version, now_unix)
+}
+
 #[cfg(test)]
 mod tests;
