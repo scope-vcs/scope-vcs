@@ -13,7 +13,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
       </header>
       <PageRail as="main" className="grid min-h-[calc(100dvh-var(--app-topbar))] items-center gap-12 py-12 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="hidden max-w-xl lg:block">
-          <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="section-label text-muted-foreground">
             Permissioned source control
           </div>
           <h1 className="mt-4 text-4xl font-semibold leading-[1.08] tracking-[-0.045em] text-foreground xl:text-5xl">

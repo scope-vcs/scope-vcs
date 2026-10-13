@@ -22,13 +22,13 @@ export function RequestDetailHeader({
   const queueItem = workspace?.selected ?? null
 
   return (
-    <header className="request-detail-header border-b border-border px-(--app-inset) pb-4 pt-6">
-      <h1 className="min-w-0 break-words text-[28px] font-medium leading-[1.1] tracking-[-0.03em] sm:text-[32px]">
+    <header className="request-detail-header px-(--app-inset) pb-2 pt-6">
+      <h1 className="min-w-0 break-words text-[28px] font-semibold leading-[1.15] tracking-[-0.025em] sm:text-[30px]">
         {request.title}
       </h1>
       <div className="request-detail-header-secondary mt-4">
-        <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs leading-5 text-muted-foreground">
-          <Badge stamp variant={requestMergeabilityTone(request)}>
+        <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[13px] leading-5 text-muted-foreground">
+          <Badge variant={requestMergeabilityTone(request)}>
             {requestMergeabilityLabel(request)}
           </Badge>
           <span className="flex min-w-0 items-center gap-1">

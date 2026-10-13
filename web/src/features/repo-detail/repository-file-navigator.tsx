@@ -12,11 +12,13 @@ export function RepositoryFileNavigator({
   onOpenNavigation,
   onSelectFile,
   selectedPath,
+  showVisibility,
 }: {
   files: RepoFileResponse[]
   onOpenNavigation: () => void
   onSelectFile: (path: string, pinned: boolean) => void
   selectedPath: string | null
+  showVisibility: boolean
 }) {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
@@ -93,7 +95,7 @@ export function RepositoryFileNavigator({
                   <span className="min-w-0 flex-1 break-all font-mono">
                     {displayRouteFilePath(file.path)}
                   </span>
-                  <VisibilityBadge compact visibility={file.label} />
+                  {showVisibility && <VisibilityBadge compact visibility={file.label} />}
                 </button>
               </li>
             ))}
@@ -107,12 +109,11 @@ export function RepositoryFileNavigator({
       )}
       <div hidden={searching}>
         <FileSystemTree
-          compactVisibility
           files={files}
-          metaColumnLabel={null}
           onActivateFile={(file) => onSelectFile(file.path, true)}
           onSelectFile={(file) => onSelectFile(file.path, false)}
           selectedFilePath={selectedPath}
+          showVisibility={showVisibility}
         />
       </div>
     </>

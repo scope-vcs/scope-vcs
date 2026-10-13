@@ -278,7 +278,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           <div className="request-detail-layout">
             <div
               className="request-detail-document pt-4"
-              data-state={request.state}
             >
               <RequestDescription
                 canEdit={request.permissions.can_edit_identity}

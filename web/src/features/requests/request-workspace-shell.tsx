@@ -67,7 +67,7 @@ export function RequestWorkspaceShell({
         />
         <section className="request-workspace-detail">{children}</section>
         {focus ? (
-          <p className="request-workspace-focus-hint label-mono">focus · f or esc to leave</p>
+          <p className="request-workspace-focus-hint text-xs">focus · f or esc to leave</p>
         ) : null}
       </div>
     </WorkbenchPane>

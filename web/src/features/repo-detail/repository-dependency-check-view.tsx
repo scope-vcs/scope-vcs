@@ -13,12 +13,12 @@ export function RepositoryDependencyCheckView({
 }) {
   if (presentation.kind === 'plain') {
     return (
-      <div aria-label="Repository dependency check" className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-(--app-inset) py-2.5 text-xs">
+      <div aria-label="Repository dependency check" className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-(--app-inset) py-2.5 text-xs">
         <span className={presentation.tone === 'warning' ? 'text-warning-strong' : 'text-muted-foreground'}>
           {presentation.label}
         </span>
         {presentation.meta && (
-          <span className="text-[11px] text-muted-foreground">{presentation.meta}</span>
+          <span className="text-xs text-muted-foreground">{presentation.meta}</span>
         )}
       </div>
     )
@@ -26,14 +26,14 @@ export function RepositoryDependencyCheckView({
 
   const { report } = presentation
   return (
-    <details aria-label="Repository dependency check" className="group/dependencies border-b border-border">
+    <details aria-label="Repository dependency check" className="group/dependencies">
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-(--app-inset) py-2.5 text-xs text-warning-strong hover:underline focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden="true"
           className="size-3.5 shrink-0 transition-transform group-open/dependencies:rotate-90"
         />
         <span>{presentation.label}</span>
-        <span className="ml-auto text-[11px] text-muted-foreground no-underline">
+        <span className="ml-auto text-xs text-muted-foreground no-underline">
           {presentation.meta}
         </span>
       </summary>
@@ -85,7 +85,7 @@ export function RepositoryDependencyCheckView({
             </ul>
           </div>
         )}
-        <p className="mt-3 max-w-4xl text-[11px] leading-4 text-muted-foreground">
+        <p className="mt-3 max-w-4xl text-xs leading-4 text-muted-foreground">
           {presentation.coverage}
         </p>
       </div>
@@ -110,7 +110,7 @@ function DependencyPath({
       onClick={() => onSelectFilePath(path)}
       type="button"
     >
-      <span className="mb-0.5 block font-sans text-[10px] text-muted-foreground">{viewName} file</span>
+      <span className="mb-0.5 block font-sans text-xs text-muted-foreground">{viewName} file</span>
       <span className={`block break-all ${visibility === 'public' ? 'text-success-strong' : 'text-danger-strong'}`}>{path}</span>
     </button>
   )

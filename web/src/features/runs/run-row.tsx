@@ -39,8 +39,8 @@ export function RunRow({
         <span className="truncate text-sm font-medium">
           {run.workflow_name}
         </span>
-        <span className="truncate font-mono text-xs text-muted-foreground">
-          #{run.git_oid.slice(0, 7)}
+        <span className="truncate text-xs text-muted-foreground">
+          <span className="font-mono">#{run.git_oid.slice(0, 7)}</span>
           <span className="text-muted-foreground/70">
             {' '}· {runTriggerLabel(run.trigger)}
           </span>

@@ -64,7 +64,7 @@ function WalkthroughStep({
 }) {
   return (
     <li className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 py-5">
-      <span aria-hidden className="pt-0.5 font-mono text-xs leading-5 text-muted-foreground">
+      <span aria-hidden className="pt-0.5 text-xs leading-5 tabular-nums text-muted-foreground">
         {number}
       </span>
       <div className="min-w-0">

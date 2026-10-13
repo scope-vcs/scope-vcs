@@ -13,7 +13,7 @@ export function NativeCommits({ detail }: { detail: HistoryEntryDetailResponse }
       <ol className="divide-y divide-border">
         {rows.map((row) => (
           <li className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 px-(--app-inset) py-2 text-xs" key={row.oid}>
-            <span className="select-all font-mono text-[11px] text-muted-foreground" title={row.oid}>
+            <span className="select-all font-mono text-xs text-muted-foreground" title={row.oid}>
               {row.shortOid}
             </span>
             <span className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">

@@ -75,11 +75,11 @@ export function ChangedFilesWorkbench({
       >
         {files.length ? (
           <FileSystemTree
-            compactVisibility
             expandFolders={expandFolders}
             files={files}
             getFileMeta={(file) => <Badge variant="neutral">{file.kind}</Badge>}
-            metaColumnLabel="change"
+            metaColumnLabel="Change"
+            showVisibility
             onSelectFile={(file) => {
               onSelectFile(file)
               navigation.setOpen(false)

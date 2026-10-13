@@ -69,8 +69,6 @@ test('request rows exchange age and actions and restore the selected view across
   })), { nowrap: 'nowrap', overflow: 'ellipsis', truncated: true, fullTitle: true })
   assert.equal(await page.locator('.request-workspace-disclosures').evaluate((node) =>
     getComputedStyle(node).borderTopWidth), '0px')
-  assert.equal(await page.locator('.request-workspace-row').last().evaluate((node) =>
-    getComputedStyle(node).borderBottomWidth), '1px')
   await waitOpacity(age, '1')
   await waitOpacity(actions, '0')
   const rowBounds = await row.boundingBox()

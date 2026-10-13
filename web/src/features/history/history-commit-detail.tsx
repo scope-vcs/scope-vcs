@@ -40,8 +40,8 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
         <h3 className="break-words text-sm font-semibold leading-5">
           {historyCommitTitle(commit)}
         </h3>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-muted-foreground">
-          <span>{commit.logical_commit_id}</span>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span className="font-mono">{commit.logical_commit_id}</span>
           {commit.author && (
             <>
               <span aria-hidden>·</span>

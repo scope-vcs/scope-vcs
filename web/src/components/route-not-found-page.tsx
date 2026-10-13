@@ -8,7 +8,7 @@ export function RouteNotFoundPage() {
     <main className="min-h-screen bg-background py-8 text-foreground">
       <PageRail className="py-20 sm:py-28">
         <div className="max-w-xl">
-          <p className="font-mono text-xs tracking-[0.18em] text-muted-foreground uppercase">
+          <p className="section-label text-muted-foreground">
             404 · Not found
           </p>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">

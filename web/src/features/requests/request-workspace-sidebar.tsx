@@ -273,7 +273,7 @@ export function RequestWorkspaceSidebar({
         </div>
         {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
         {actionError && (
-          <p className="py-2 pr-4 pl-(--request-workspace-row-inset) text-[11px] text-danger-strong" role="alert">
+          <p className="py-2 pr-4 pl-(--request-workspace-row-inset) text-xs text-danger-strong" role="alert">
             {actionError}
           </p>
         )}

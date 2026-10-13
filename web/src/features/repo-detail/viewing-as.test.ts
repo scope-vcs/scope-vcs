@@ -4,7 +4,12 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { repoViews } from '../../api/repo-views'
 import type { ViewDefinition } from '../../api/types.generated'
-import { parseViewingAsSearch, resolveViewingAs, viewingAsSearch } from './viewing-as'
+import {
+  parseViewingAsSearch,
+  resolveViewingAs,
+  viewHasMixedVisibility,
+  viewingAsSearch,
+} from './viewing-as'
 import { ViewingAsPicker } from './viewing-as-picker'
 
 const definitions: ViewDefinition[] = [
@@ -20,6 +25,12 @@ test('the requested view applies only when the reader may read it', () => {
   assert.equal(resolveViewingAs(views, 'agent', 'private'), 'agent')
   assert.equal(resolveViewingAs(views, 'agent', 'missing'), 'agent')
   assert.equal(resolveViewingAs(views, 'agent', undefined), 'agent')
+})
+
+test('visibility is mixed only when the view reads more than one label', () => {
+  assert.equal(viewHasMixedVisibility(views, 'public'), false)
+  assert.equal(viewHasMixedVisibility(views, 'agent'), true)
+  assert.equal(viewHasMixedVisibility(views, 'private'), true)
 })
 
 test('the URL names the view only when it differs from the reader view', () => {

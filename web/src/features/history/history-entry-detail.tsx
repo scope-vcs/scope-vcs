@@ -84,7 +84,7 @@ function metadataItems(detail: HistoryEntryDetailResponse, views: RepoViews): Re
     detail.kind === 'push' ? null : historyEntryKindLabel(detail.kind),
     detail.author,
     detail.occurred_at_unix === null ? null : <AbsoluteTimestamp value={detail.occurred_at_unix} />,
-    <span className="select-all font-mono text-[11px]" title={detail.source_id}>
+    <span className="select-all font-mono text-xs" title={detail.source_id}>
       {compactHistorySourceId(detail.source_id)}
     </span>,
     count || null,

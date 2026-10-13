@@ -76,7 +76,7 @@ export function RequestSnoozeMenu({
         role="menu"
         tabIndex={-1}
       >
-        <p className="px-2 pt-1 pb-0.5 text-[10px] text-muted-foreground">Snooze</p>
+        <p className="px-2 pt-1 pb-0.5 text-xs text-muted-foreground">Snooze</p>
         {REQUEST_SNOOZE_OPTIONS.map((option) => (
           <button
             className="flex w-full items-baseline justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
@@ -91,7 +91,7 @@ export function RequestSnoozeMenu({
             type="button"
           >
             <span>{option.label}</span>
-            <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+            <span className="text-xs text-muted-foreground tabular-nums">
               {openedAt && requestSnoozeLandingLabel(option.value, openedAt)}
             </span>
           </button>

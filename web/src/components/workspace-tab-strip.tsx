@@ -92,7 +92,7 @@ export function WorkspaceTabStrip({
   }
 
   return (
-    <div className="flex min-h-10 items-stretch gap-1 border-b border-border pr-3">
+    <div className="flex min-h-10 items-stretch gap-1 pr-3">
       <div
         aria-label={ariaLabel}
         className="scrollbar-none flex min-w-0 flex-1 items-stretch overflow-x-auto"
@@ -179,7 +179,7 @@ export function WorkspaceTabStrip({
         />
       )}
       {meta && (
-        <div className="flex shrink-0 items-center gap-2 pl-2 font-mono text-[11px] text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-2 pl-2 text-xs text-muted-foreground">
           {meta}
         </div>
       )}
@@ -223,7 +223,7 @@ function OverflowMenu({
       <button
         aria-expanded={open}
         aria-label={`${tabs.length} more open ${tabs.length === 1 ? 'file' : 'files'}`}
-        className="rounded border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+        className="rounded border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
         onClick={() => setOpen(!open)}
         onKeyDown={closeOnEscape}
         ref={triggerRef}

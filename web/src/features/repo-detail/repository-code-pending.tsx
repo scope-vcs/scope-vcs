@@ -16,13 +16,13 @@ export function RepositoryCodePending() {
     <WorkbenchPane>
       <WorkbenchBar
         actions={<BlockSkeleton className="h-8 w-24" />}
-        className="items-start border-b border-border"
+        className="min-h-0 items-start pb-0"
         summary={<TextSkeleton length="short" size="meta" />}
         title="Code"
       />
       <RepositoryLatestActivityPending />
       <FileWorkbench
-        className="lg:min-h-[calc(100dvh-var(--app-chrome))]"
+        className="border-t border-border lg:min-h-[calc(100dvh-var(--app-chrome))]"
         navigationOpen={navigationOpen}
         onNavigationOpenChange={setNavigationOpen}
         selectedPath={null}
