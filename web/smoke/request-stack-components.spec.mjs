@@ -110,6 +110,7 @@ test('private stack comparisons and public visible commits render selected files
   await retry.click()
   assert.deepEqual(await page.evaluate(() => window.calls.at(-1)), { kind: 'children' })
   await page.evaluate(() => window.setChildrenError(null))
+  await dependency.getByRole('alert').waitFor({ state: 'detached' })
   assert.equal(await dependency.getByRole('alert').count(), 0)
   await page.evaluate(() => window.setOpaque(true))
   await dependency.locator('p').filter({ hasText: 'Unavailable dependency' }).waitFor()
