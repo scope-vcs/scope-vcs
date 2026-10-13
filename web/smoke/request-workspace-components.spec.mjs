@@ -83,7 +83,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.mouse.move(700, 400)
   await waitOpacity(age, '1')
   await waitOpacity(actions, '0')
-  await page.getByRole('button', { name: 'Collapse requests sidebar' }).focus()
+  await page.getByRole('combobox', { name: 'Viewing as' }).focus()
   await page.keyboard.press('Tab')
   assert.equal(await row.getByRole('link').evaluate((node) => node === document.activeElement), true)
   await waitOpacity(age, '0')
@@ -160,11 +160,13 @@ test('request rows exchange age and actions and restore the selected view across
     await sidebarWidth(360)
     assert.equal(await sidebar.getAttribute('data-state'), 'open')
   }
+  const pinnedAvatars = await avatars()
   await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
   await sidebarWidth(96)
   await railClosed()
   const railX = (await sidebar.boundingBox()).x
   const closedAvatars = await avatars()
+  assert.deepEqual(closedAvatars.map(({ y }) => y), pinnedAvatars.map(({ y }) => y))
   assert.deepEqual(closedAvatars.map(({ x, width }) => x + width / 2 - railX), [48, 48, 48])
   const expand = await page.getByRole('button', { name: 'Expand requests sidebar' }).boundingBox()
   assert.equal(expand.x + expand.width / 2 - railX, 48)
