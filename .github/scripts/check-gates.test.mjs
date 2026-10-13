@@ -61,6 +61,7 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check advisories'));
   assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
   assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
+  assert.ok(cliCommands.includes('cargo test -p scope-cli-downloads --locked'));
   assert.ok(!cliCommands.some((command) => command.includes('--release')), cliCommands.join('\n'));
   const bundleCommands = commands('cli-bundle');
   assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope'));

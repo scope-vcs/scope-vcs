@@ -47,7 +47,7 @@ impl DistributionManifest {
             if target.artifact == requested {
                 Some(Download::Archive(target))
             } else if target.checksum_artifact() == requested {
-                Some(Download::Checksum(target))
+                Some(Download::Checksum)
             } else {
                 None
             }
@@ -55,12 +55,9 @@ impl DistributionManifest {
     }
 
     pub fn required_downloads(&self) -> impl Iterator<Item = String> + '_ {
-        self.targets.iter().flat_map(|target| {
-            [
-                target.artifact.clone(),
-                target.checksum_artifact().to_string(),
-            ]
-        })
+        self.targets
+            .iter()
+            .flat_map(|target| [target.artifact.clone(), target.checksum_artifact()])
     }
 }
 
@@ -73,14 +70,5 @@ impl DistributionTarget {
 #[derive(Clone, Copy, Debug)]
 pub enum Download<'a> {
     Archive(&'a DistributionTarget),
-    Checksum(&'a DistributionTarget),
-}
-
-impl Download<'_> {
-    pub fn file_name(self) -> String {
-        match self {
-            Self::Archive(target) => target.artifact.clone(),
-            Self::Checksum(target) => target.checksum_artifact(),
-        }
-    }
+    Checksum,
 }

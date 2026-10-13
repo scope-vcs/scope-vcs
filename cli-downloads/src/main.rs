@@ -125,7 +125,7 @@ async fn download(
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    match tokio::fs::read(state.artifact_dir.join(download.file_name())).await {
+    match tokio::fs::read(state.artifact_dir.join(&artifact)).await {
         Ok(bytes) => {
             if method == Method::GET
                 && let Download::Archive(target) = download
