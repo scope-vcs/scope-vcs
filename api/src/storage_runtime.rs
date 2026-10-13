@@ -24,6 +24,8 @@ pub(crate) struct StorageRuntime {
     pub(crate) runtime_budgets: Arc<RuntimeBudgets>,
     pub(crate) repository_engine: Arc<RepositoryEngine>,
     pub(crate) push_intent_signing_key: Arc<[u8]>,
+    #[cfg(test)]
+    pub(crate) test_object_backend: Arc<scope_storage::MemoryBackend>,
 }
 
 impl StorageRuntime {
@@ -57,8 +59,9 @@ impl StorageRuntime {
     }
 
     #[cfg(test)]
-    pub(crate) fn for_tests(object_backend: Arc<dyn ObjectBackend>) -> Self {
+    pub(crate) fn for_tests() -> Self {
         use scope_storage::{GitSegmentStoreConfig, MemoryBackend};
+        let object_backend = Arc::new(MemoryBackend::default());
         let data_dir = crate::persistence::test_data_dir();
         let git_segment_store = GitSegmentStore::new(
             Arc::new(MemoryBackend::default()),
@@ -67,10 +70,10 @@ impl StorageRuntime {
         )
         .unwrap();
         let object_store = Arc::new(EncryptedObjectStore::new(
-            object_backend,
+            object_backend.clone(),
             EncryptionKey::new("test", [7_u8; 32]).unwrap(),
         ));
-        Self::new(
+        let mut storage = Self::new(
             data_dir,
             object_store,
             git_segment_store,
@@ -78,7 +81,9 @@ impl StorageRuntime {
             crate::config::DEFAULT_GIT_CACHE_MAX_BYTES,
             Arc::from(b"scope-test-push-intent-signing-key".as_slice()),
         )
-        .unwrap()
+        .unwrap();
+        storage.test_object_backend = object_backend;
+        storage
     }
 
     fn new(
@@ -108,6 +113,8 @@ impl StorageRuntime {
             runtime_budgets,
             repository_engine,
             push_intent_signing_key,
+            #[cfg(test)]
+            test_object_backend: Arc::new(scope_storage::MemoryBackend::default()),
         })
     }
 }

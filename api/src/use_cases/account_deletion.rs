@@ -8,13 +8,9 @@ pub(crate) async fn delete_account(state: &AppState, user: &UserAccount) -> Resu
     let deleted = state
         .metadata
         .auth()
-        .delete_account(
-            &user.id,
-            unix_now()?,
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .delete_account(&user.id, unix_now()?)
         .await?;
-    state.clerk_user_deletion_wakeup.notify_one();
+    state.wakeups.clerk_user_deletion.notify_one();
     for repo in &deleted.deleted_repositories {
         state
             .publish_repo_change(

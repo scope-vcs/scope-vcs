@@ -42,8 +42,7 @@ where
 {
     entities::request_discussion::Entity::find_by_id(id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_discussion::Model::try_into_domain)
         .transpose()
 }
@@ -62,8 +61,7 @@ where
         .filter(entities::request_discussion::Column::AuthorUserId.eq(author_user_id))
         .filter(entities::request_discussion::Column::ClientDiscussionId.eq(client_discussion_id))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_discussion::Model::try_into_domain)
         .transpose()
 }
@@ -123,8 +121,7 @@ where
     }
     query
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request_discussion::Model::try_into_domain)
         .collect()
@@ -147,8 +144,7 @@ where
         .order_by_asc(entities::request_discussion::Column::Id)
         .limit(limit)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request_discussion::Model::try_into_domain)
         .collect()
@@ -197,8 +193,7 @@ where
                     .into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .iter()
         .map(reply_read_model)
         .collect::<Result<Vec<_>, _>>()?;
@@ -248,16 +243,12 @@ where
             sql,
             discussion_ids.iter().cloned().map(Into::into),
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut result = BTreeMap::<String, (u64, Vec<RequestDiscussionReplyReadModel>)>::new();
     for row in rows {
-        let discussion_id = row
-            .try_get::<String>("", "discussion_id")
-            .map_err(PostgresError::internal)?;
+        let discussion_id = row.try_get::<String>("", "discussion_id")?;
         let count = row
-            .try_get::<i64>("", "reply_count")
-            .map_err(PostgresError::internal)?
+            .try_get::<i64>("", "reply_count")?
             .try_into()
             .map_err(PostgresError::internal)?;
         let entry = result
@@ -269,26 +260,19 @@ where
 }
 
 fn reply_read_model(row: &QueryResult) -> Result<RequestDiscussionReplyReadModel, PostgresError> {
-    let reply = entities::request_discussion_reply::Model::from_query_result(row, "")
-        .map_err(PostgresError::internal)?
-        .try_into_domain()?;
+    let reply =
+        entities::request_discussion_reply::Model::from_query_result(row, "")?.try_into_domain()?;
     let reply_to = row
-        .try_get::<Option<String>>("", "target_id")
-        .map_err(PostgresError::internal)?
+        .try_get::<Option<String>>("", "target_id")?
         .map(|id| {
             Ok::<_, PostgresError>(RequestDiscussionReplyReferenceReadModel {
                 id,
                 position: row
-                    .try_get::<i64>("", "target_position")
-                    .map_err(PostgresError::internal)?
+                    .try_get::<i64>("", "target_position")?
                     .try_into()
                     .map_err(PostgresError::internal)?,
-                author_user_id: row
-                    .try_get("", "target_author_user_id")
-                    .map_err(PostgresError::internal)?,
-                body_markdown: row
-                    .try_get("", "target_body_markdown")
-                    .map_err(PostgresError::internal)?,
+                author_user_id: row.try_get("", "target_author_user_id")?,
+                body_markdown: row.try_get("", "target_body_markdown")?,
             })
         })
         .transpose()?;
@@ -348,17 +332,13 @@ where
             sql,
             values,
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut result = rows
         .into_iter()
         .map(|row| {
-            let id = row
-                .try_get::<String>("", "discussion_id")
-                .map_err(PostgresError::internal)?;
+            let id = row.try_get::<String>("", "discussion_id")?;
             let count = row
-                .try_get::<i64>("", "unread_replies")
-                .map_err(PostgresError::internal)?
+                .try_get::<i64>("", "unread_replies")?
                 .try_into()
                 .map_err(PostgresError::internal)?;
             Ok((id, count))
@@ -385,8 +365,7 @@ where
 {
     entities::request_discussion_reply::Entity::find_by_id(id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_discussion_reply::Model::try_into_domain)
         .transpose()
 }
@@ -405,8 +384,7 @@ where
         .filter(entities::request_discussion_reply::Column::AuthorUserId.eq(author_user_id))
         .filter(entities::request_discussion_reply::Column::ClientReplyId.eq(client_reply_id))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_discussion_reply::Model::try_into_domain)
         .transpose()
 }
@@ -429,8 +407,7 @@ where
         )
         .filter(entities::request_discussion_read_state::Column::UserId.eq(user_id))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| {
             let state = row.try_into_domain()?;
@@ -452,8 +429,7 @@ where
         user_id.to_string(),
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(entities::request_discussion_read_state::Model::try_into_domain)
     .transpose()
 }
@@ -465,8 +441,7 @@ where
     entities::request_discussion::Model::from_domain(value)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -494,8 +469,7 @@ where
             Expr::value(row.resolved_by_user_id),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     if result.rows_affected != 1 {
         return Err(PostgresError::internal_message(
             "request discussion missing during update",
@@ -511,8 +485,7 @@ where
     entities::request_discussion_reply::Model::from_domain(value)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -537,7 +510,6 @@ where
             .to_owned(),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }

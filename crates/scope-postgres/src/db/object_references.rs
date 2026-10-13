@@ -27,8 +27,7 @@ where
         .filter(entities::object_reference::Column::RefKind.eq(ref_kind.to_string()))
         .filter(entities::object_reference::Column::RefId.eq(ref_id.to_string()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     if let Some(object) = object {
         insert_object_reference(conn, ref_kind, ref_id, object).await?;
     }
@@ -51,8 +50,7 @@ where
     }
     .into_active_model()
     .insert(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -84,24 +82,21 @@ where
         ]))
         .filter(entities::object_reference::Column::RefId.starts_with(format!("{repo_id}:")))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
 
     if !request_ids.is_empty() {
         entities::object_reference::Entity::delete_many()
             .filter(entities::object_reference::Column::RefKind.eq("request_snapshot"))
             .filter(entities::object_reference::Column::RefId.is_in(request_ids.to_vec()))
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     if !revision_ids.is_empty() {
         entities::object_reference::Entity::delete_many()
             .filter(entities::object_reference::Column::RefKind.eq("request_revision_snapshot"))
             .filter(entities::object_reference::Column::RefId.is_in(revision_ids.to_vec()))
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     Ok(())
 }
@@ -115,8 +110,7 @@ where
 {
     entities::object_reference::Entity::find()
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| decode_content_ref(&row.object_key))
         .collect::<Result<_, _>>()

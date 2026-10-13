@@ -12,7 +12,7 @@ import type { GitHubConnectionResponse } from '@/api/types.generated'
 import type { RepoSummary, RepoLiveState, RepoMember, CliSession } from '@/api/types'
 import { WorkspaceFixture } from './workspace'
 import { ChangesResourceFixture, CoalescedResourceFixture } from './changes-resource'
-import './styles.css'
+import '../shared/styles.css'
 
 const initial = {
   id: 'owner/demo', owner_handle: 'owner', name: 'demo', lifecycle_state: 'Ready',

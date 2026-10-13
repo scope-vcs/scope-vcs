@@ -48,7 +48,7 @@ impl RepositoryStore {
         else {
             return Ok(None);
         };
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(context))
     }
 
@@ -66,7 +66,7 @@ impl RepositoryStore {
             return Ok(None);
         };
         let policy = load_policy(&tx, &context.record.id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RepositoryReadPolicy { context, policy }))
     }
 
@@ -81,7 +81,7 @@ impl RepositoryStore {
             return Ok(None);
         };
         if !context.can_read(public_files_visible) {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         }
         Ok(Some((tx, context)))
@@ -95,7 +95,7 @@ impl RepositoryStore {
         for _ in 0..3 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
             let Some(context) = repository_access(&tx, repo_id, viewer_user_id).await? else {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 return Ok(None);
             };
             let public_files_visible = if context.access.actor
@@ -104,7 +104,7 @@ impl RepositoryStore {
                     == scope_domain::repository::RepoLifecycleState::Ready
             {
                 let Some(public_view) = context.views.anyone() else {
-                    tx.commit().await.map_err(PostgresError::internal)?;
+                    tx.commit().await?;
                     return Ok(None);
                 };
                 let Some(view) = super::projection_read_models::live_projection_read_model(
@@ -115,7 +115,7 @@ impl RepositoryStore {
                 )
                 .await?
                 else {
-                    tx.commit().await.map_err(PostgresError::internal)?;
+                    tx.commit().await?;
                     self.ensure_live_projection_read_models(&context.incarnation(), public_view)
                         .await?;
                     continue;
@@ -140,7 +140,7 @@ impl RepositoryStore {
     ) -> Result<Option<RepositoryAccessContext>, PostgresError> {
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let context = repository_access(&tx, &repo_id(owner, name), viewer_user_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(context)
     }
 
@@ -178,7 +178,7 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
         ensure_current_context(context, &current)?;
         let policy = load_policy(&tx, &context.record.id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(policy)
     }
 
@@ -211,10 +211,9 @@ impl RepositoryStore {
             if view == current.views.full()
                 && let Some(head) = entities::git_head::Entity::find_by_id(&context.record.id)
                     .one(&tx)
-                    .await
-                    .map_err(PostgresError::internal)?
+                    .await?
             {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 return Ok(Some(head.head_oid));
             }
             let metadata = super::projection_read_models::live_projection_read_model(
@@ -224,7 +223,7 @@ impl RepositoryStore {
                 view,
             )
             .await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             if let Some(view) = metadata {
                 return Ok(view.head_oid);
             }
@@ -256,8 +255,7 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
                     user_id.to_string(),
                 ))
                 .one(conn)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
                 .map(entities::repository_member::Model::try_into_domain)
                 .transpose()?
                 .map(|member| member.permissions)
@@ -287,8 +285,7 @@ async fn load_policy<C: ConnectionTrait>(
         .column(entities::repository::Column::Policy)
         .into_tuple::<serde_json::Value>()
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("repo not found"))?;
     serde_json::from_value(policy).map_err(PostgresError::internal)
 }
@@ -315,8 +312,7 @@ pub(super) async fn load_repo_record<C: ConnectionTrait>(
         .filter(Column::Id.eq(repo_id))
         .into_model::<AccessRow>()
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };

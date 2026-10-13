@@ -2,7 +2,7 @@ import { HttpError, InvalidApiResponseError } from '../../api/http'
 import type { RepoLiveState } from '../../api/types'
 import { fetchServerFunction, StaleBuildError } from '../../lib/stale-build'
 
-export type RepoRouteState = RepoLiveState & { refreshId: string }
+type RepoRouteState = RepoLiveState & { refreshId: string }
 
 export type RepoRouteLoadResult = { live: RepoLiveState } | { unavailable: string }
 

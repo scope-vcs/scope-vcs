@@ -320,7 +320,6 @@ pub(super) async fn persist_request_ref_revision(
             expected_base_version,
             parent_facts,
             child_facts,
-            &crate::persistence_ids::generate_persistence_id,
         )
         .await;
     match mutation {

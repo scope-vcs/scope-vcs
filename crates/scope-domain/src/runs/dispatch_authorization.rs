@@ -71,99 +71,10 @@ fn ensure_run_alignment(run: &Run, attempt: &RunAttempt) -> Result<(), DomainErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runs::step::RunAttemptStep;
-    use crate::{
-        content::SourceBlob,
-        content_ref::ContentRef,
-        runs::{
-            job::create_run_jobs,
-            run::RunState,
-            source::{RunSource, RunTrigger},
-            workflow::{
-                definition::{
-                    CompiledWorkflow, ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep,
-                    WorkflowTriggers,
-                },
-                identity::{WorkflowIdentity, WorkflowPath},
-                revision::WorkflowRevision,
-            },
-        },
+    use crate::runs::{
+        fixtures::{IMAGE_DIGEST, dispatched_attempt},
+        run::RunState,
     };
-
-    const IMAGE_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-    fn workflow() -> WorkflowRevision {
-        let identity = WorkflowIdentity::new(
-            "repo-1",
-            WorkflowPath::parse("/.scope/runs/test.yml").unwrap(),
-        )
-        .unwrap();
-        let job = WorkflowJob::new(
-            WorkflowJobId::parse("checks").unwrap(),
-            vec![],
-            ContainerSpec::new(format!("rust@sha256:{IMAGE_DIGEST}")).unwrap(),
-            600,
-            vec![],
-            Default::default(),
-            vec![WorkflowStep::new("Test", "cargo test").unwrap()],
-        )
-        .unwrap();
-        WorkflowRevision::new(
-            identity,
-            CompiledWorkflow::new(
-                "Test",
-                WorkflowTriggers::new(true, false, false).unwrap(),
-                vec![job],
-            )
-            .unwrap(),
-        )
-        .unwrap()
-    }
-
-    fn run(revision: &WorkflowRevision) -> Run {
-        Run::new(
-            "run-1",
-            "manual:test",
-            revision.workflow().clone(),
-            revision.digest(),
-            RunTrigger::Manual,
-            Some("user-1".into()),
-            RunSource::ephemeral_git_bundle(SourceBlob {
-                content_ref: ContentRef::git_bundle_sha256("c".repeat(64)),
-                sha256: "c".repeat(64),
-                git_oid: "d".repeat(40),
-                git_file_mode: "100644".into(),
-                size_bytes: 42,
-            })
-            .unwrap(),
-            10,
-        )
-        .unwrap()
-    }
-
-    fn dispatched_attempt() -> (
-        WorkflowRevision,
-        Run,
-        RunJob,
-        RunAttempt,
-        Vec<RunAttemptStep>,
-    ) {
-        let revision = workflow();
-        let run = run(&revision);
-        let mut job = create_run_jobs(&run, &revision).unwrap().remove(0);
-        let (attempt, steps) = job
-            .dispatch(
-                &run,
-                revision.definition().only_job().unwrap(),
-                "attempt-1",
-                "b".repeat(64),
-                "runtime-1",
-                11,
-                911,
-            )
-            .unwrap();
-        (revision, run, job, attempt, steps)
-    }
 
     #[test]
     fn dispatch_authorization_preserves_custom_image_and_bootstrap_exchange() {

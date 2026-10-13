@@ -43,23 +43,18 @@ impl RepositoryStore {
         expected_repository_id: &str,
     ) -> Result<Option<RepositoryIncarnation>, PostgresError> {
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let Some(run) = entities::run::Entity::find_by_id(run_id)
-            .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
-        else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+        let Some(run) = entities::run::Entity::find_by_id(run_id).one(&tx).await? else {
+            tx.commit().await?;
             return Ok(None);
         };
         if run.repo_id != expected_repository_id {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         }
         let repository = entities::repository::Entity::find_by_id(&run.repo_id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+            .await?;
+        tx.commit().await?;
         repository
             .map(|row| RepositoryIncarnation::new(row.id, row.incarnation_id))
             .transpose()
@@ -76,7 +71,7 @@ impl RepositoryStore {
         let id = repo_id(owner, name);
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let context = git_push_context_for_id(&tx, &id, user_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(context)
     }
 
@@ -89,23 +84,21 @@ impl RepositoryStore {
         let id = repo_id(owner, name);
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let Some(record) = load_repo_record(&tx, &id).await? else {
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(None);
         };
         let first_push_token =
             entities::repository_first_push_token::Entity::find_by_id(id.clone())
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
                 .map(entities::repository_first_push_token::Model::try_into_domain)
                 .transpose()?;
         let git_push_token = entities::repository_git_push_token::Entity::find_by_id(id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::repository_git_push_token::Model::try_into_domain)
             .transpose()?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(GitPushCredentials {
             record,
             first_push_token,
@@ -119,26 +112,22 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
     id: &str,
     user_id: &str,
 ) -> Result<Option<GitPushContext>, PostgresError> {
-    let id = id.to_string();
-    let Some(repo_row) = entities::repository::Entity::find_by_id(id.clone())
+    let Some(repo_row) = entities::repository::Entity::find_by_id(id)
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
     else {
         return Ok(None);
     };
-    let head = entities::git_head::Entity::find_by_id(id.clone())
+    let head = entities::git_head::Entity::find_by_id(id)
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::git_head::Model::try_into_domain)
         .transpose()?;
-    let pack_spans = load_git_pack_spans(conn, &id).await?;
+    let pack_spans = load_git_pack_spans(conn, id).await?;
     let permissions =
-        entities::repository_member::Entity::find_by_id((id.clone(), user_id.to_string()))
+        entities::repository_member::Entity::find_by_id((id.to_string(), user_id.to_string()))
             .one(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::repository_member::Model::try_into_domain)
             .transpose()?
             .map(|member| member.permissions);
@@ -150,9 +139,9 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
         user_id,
     );
     let context = GitPushContext {
-        incarnation: RepositoryIncarnation::new(id.clone(), repo_row.incarnation_id)
+        incarnation: RepositoryIncarnation::new(id, repo_row.incarnation_id)
             .map_err(PostgresError::internal)?,
-        repo_id: id,
+        repo_id: id.to_string(),
         owner_user_id: repo_row.owner_user_id,
         lifecycle_state,
         access,

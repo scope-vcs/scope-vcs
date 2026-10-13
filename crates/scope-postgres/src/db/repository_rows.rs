@@ -1,5 +1,4 @@
 use super::{
-    GeneratedIdSource,
     collaboration_rows::{
         insert_repository_collaboration, load_repository_collaboration,
         save_repository_collaboration_delta,
@@ -25,7 +24,6 @@ pub async fn insert_repository<C>(
     conn: &C,
     repo: &Repository,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -33,8 +31,7 @@ where
     entities::repository::Model::from_domain(repo)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     insert_repository_fact_rows(conn, repo, now_unix).await?;
     insert_repository_history(conn, &repo.graph, &repo.visibility_change_sets).await?;
     insert_repository_live_files(conn, &repo.record.id, &repo.live_files).await?;
@@ -45,7 +42,6 @@ where
         &repo.record.id,
         repo.record.content_version,
         now_unix,
-        generated_ids,
     )
     .await?;
     Ok(())
@@ -56,7 +52,6 @@ pub async fn save_repository_delta<C>(
     before: &Repository,
     after: &Repository,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -69,7 +64,7 @@ where
     }
     save_repository_rows(conn, before, after, now_unix).await?;
     if content_changed {
-        refresh_content_read_models(conn, after, now_unix, generated_ids).await?;
+        refresh_content_read_models(conn, after, now_unix).await?;
     }
     Ok(())
 }
@@ -128,7 +123,7 @@ where
     set_if_changed!(repo_config, before_row.repo_config, row.repo_config);
     set_if_changed!(policy, before_row.policy, row.policy);
     if row_changed {
-        active.update(conn).await.map_err(PostgresError::internal)?;
+        active.update(conn).await?;
     }
 
     save_repository_fact_delta(conn, before, after, now_unix).await?;
@@ -159,7 +154,6 @@ pub(super) async fn refresh_content_read_models<C>(
     conn: &C,
     repo: &Repository,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -170,7 +164,6 @@ where
         &repo.record.id,
         repo.record.content_version,
         now_unix,
-        generated_ids,
     )
     .await?;
     enqueue_dependency_analysis_for_repository(conn, repo, now_unix).await
@@ -190,29 +183,25 @@ where
         entities::repository_first_push_token::Model::from_domain(&repo_id, token)?
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     if let Some(token) = repo.git_push_token.as_ref() {
         entities::repository_git_push_token::Model::from_domain(&repo_id, token)?
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     if let Some(head) = repo.git_head.as_ref() {
         entities::git_head::Model::from_domain(&repo_id, head)?
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     for span in &repo.git_pack_spans {
         entities::git_pack_span::Model::from_domain(&repo_id, span)?
             .into_active_model()
             .insert(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         publish_git_segment(conn, &repo_id, &span.segment, now_unix).await?;
     }
 
@@ -232,40 +221,34 @@ where
     if before.first_push_token != after.first_push_token {
         entities::repository_first_push_token::Entity::delete_by_id(repo_id.clone())
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if let Some(token) = &after.first_push_token {
             entities::repository_first_push_token::Model::from_domain(repo_id, token)?
                 .into_active_model()
                 .insert(conn)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
         }
     }
     if before.git_push_token != after.git_push_token {
         entities::repository_git_push_token::Entity::delete_by_id(repo_id.clone())
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if let Some(token) = &after.git_push_token {
             entities::repository_git_push_token::Model::from_domain(repo_id, token)?
                 .into_active_model()
                 .insert(conn)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
         }
     }
     if before.git_head != after.git_head {
         entities::git_head::Entity::delete_by_id(repo_id.clone())
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if let Some(head) = &after.git_head {
             entities::git_head::Model::from_domain(repo_id, head)?
                 .into_active_model()
                 .insert(conn)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
         }
     }
     let spans_are_append_only = after.git_pack_spans.len() >= before.git_pack_spans.len()
@@ -279,8 +262,7 @@ where
         entities::git_pack_span::Entity::delete_many()
             .filter(entities::git_pack_span::Column::RepoId.eq(repo_id.clone()))
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         for span in &before.git_pack_spans {
             if !retained_segment_ids.contains(span.segment.segment_id.as_str()) {
                 retire_git_segment(conn, &span.segment.segment_id, now_unix).await?;
@@ -290,8 +272,7 @@ where
             entities::git_pack_span::Model::from_domain(repo_id, span)?
                 .into_active_model()
                 .insert(conn)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             publish_git_segment(conn, repo_id, &span.segment, now_unix).await?;
         }
     } else {
@@ -299,8 +280,7 @@ where
             entities::git_pack_span::Model::from_domain(repo_id, span)?
                 .into_active_model()
                 .insert(conn)
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             publish_git_segment(conn, repo_id, &span.segment, now_unix).await?;
         }
     }
@@ -326,8 +306,7 @@ where
         .filter(entities::repository_first_push_token::Column::RepoId.is_in(repo_ids.to_vec()))
         .order_by_asc(entities::repository_first_push_token::Column::RepoId)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     for row in first_push_tokens {
         let repo_id = row.repo_id.clone();
         facts.entry(repo_id).or_default().first_push_token = Some(row.try_into_domain()?);
@@ -337,8 +316,7 @@ where
         .filter(entities::repository_git_push_token::Column::RepoId.is_in(repo_ids.to_vec()))
         .order_by_asc(entities::repository_git_push_token::Column::RepoId)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     for row in git_push_tokens {
         let repo_id = row.repo_id.clone();
         facts.entry(repo_id).or_default().git_push_token = Some(row.try_into_domain()?);
@@ -348,8 +326,7 @@ where
         .filter(entities::git_head::Column::RepoId.is_in(repo_ids.to_vec()))
         .order_by_asc(entities::git_head::Column::RepoId)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     for row in git_heads {
         let repo_id = row.repo_id.clone();
         facts.entry(repo_id).or_default().git_head = Some(row.try_into_domain()?);

@@ -37,8 +37,7 @@ async fn acquire_aggregate_lock_with_mode<C: ConnectionTrait>(
         "SELECT set_config('application_name', $1, true)",
         [format!("scope-test-lock:{namespace}").into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
 
     let key = format!("{namespace}:{id}");
     entities::metadata_lock::Entity::insert(entities::metadata_lock::ActiveModel {
@@ -51,19 +50,30 @@ async fn acquire_aggregate_lock_with_mode<C: ConnectionTrait>(
     )
     .try_insert()
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     let row = entities::metadata_lock::Entity::find_by_id(key)
         .lock(mode)
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     if row.is_none() {
         return Err(PostgresError::internal_message(
             "aggregate lock row disappeared during acquisition",
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+pub(super) async fn backend_pid(conn: &impl ConnectionTrait) -> i32 {
+    conn.query_one_raw(Statement::from_string(
+        DatabaseBackend::Postgres,
+        "SELECT pg_backend_pid() AS pid",
+    ))
+    .await
+    .unwrap()
+    .unwrap()
+    .try_get("", "pid")
+    .unwrap()
 }
 
 #[cfg(test)]

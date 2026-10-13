@@ -95,30 +95,6 @@ pub fn clone_with_bearer(
     )
 }
 
-pub fn fetch_scope_remote_with_bearer(
-    repo: &GitRepo,
-    destination: &str,
-    remote: &str,
-    branch: &str,
-    bearer_token: &str,
-    failure: &str,
-) -> anyhow::Result<()> {
-    let plan = git_fetch_auth_plan(
-        destination,
-        remote,
-        branch,
-        bearer_token,
-        inherited_git_config_count(),
-    );
-    run_git_plan_output(
-        plan,
-        Some(&repo.root),
-        "refresh Scope Git remote before push review",
-        failure,
-        GitRetrySafety::Idempotent,
-    )
-}
-
 pub fn fetch_scope_remote_refs_with_bearer(
     repo: &GitRepo,
     destination: &str,
@@ -175,13 +151,13 @@ pub fn fetch_scope_parent_with_bearer(
     Ok(String::from_utf8(output.stdout)?.trim().to_string())
 }
 
-pub fn fetch_scope_remote_with_bearer_cancellable(
+pub fn fetch_scope_remote_with_bearer(
     repo: &GitRepo,
     destination: &str,
     remote: &str,
     branch: &str,
     bearer_token: &str,
-    cancellation: &CancellationToken,
+    cancellation: Option<&CancellationToken>,
     failure: &str,
 ) -> anyhow::Result<()> {
     let plan = git_fetch_auth_plan(
@@ -192,13 +168,16 @@ pub fn fetch_scope_remote_with_bearer_cancellable(
         inherited_git_config_count(),
     );
     let mut command = git_command(plan, Some(&repo.root));
-    let output = run_cancellable(
-        &mut command,
-        None,
-        cancellation,
-        GIT_OPERATION_TIMEOUT,
-        MAX_GIT_STDOUT_BYTES,
-    )
+    let output = match cancellation {
+        Some(cancellation) => run_cancellable(
+            &mut command,
+            None,
+            cancellation,
+            GIT_OPERATION_TIMEOUT,
+            MAX_GIT_STDOUT_BYTES,
+        ),
+        None => command.output().map_err(Into::into),
+    }
     .context("refresh Scope Git remote before push review")?;
     finish_git_plan_output(output, failure, GitRetrySafety::Idempotent)
 }

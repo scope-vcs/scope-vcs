@@ -7,58 +7,27 @@ use crate::db::{
 #[tokio::test]
 async fn ordinary_startup_refuses_pending_maintenance_migration() {
     let (target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(1))
-        .await
-        .unwrap();
 
     let error = migrations::assert_exact_state(db.as_ref())
         .await
         .unwrap_err();
 
-    assert!(error.to_string().contains("m0043_retire_git_manifests"));
-    assert_eq!(applied_versions(&db).await.len(), 1);
+    assert!(error.to_string().contains("have not been applied"));
     let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(plan.pending[0].name, "m0043_retire_git_manifests");
-    assert_eq!(plan.applied, ["m0042_current_schema_baseline"]);
+    assert_eq!(plan.pending[0].name, LATEST_MIGRATIONS[0]);
+    assert!(plan.applied.is_empty());
 
     let api_error = match connect_postgres_store(target.schema_database_url()).await {
         Ok(_) => panic!("API must refuse a pending maintenance migration"),
         Err(error) => error,
     };
-    assert!(api_error.to_string().contains("does not match this binary"));
+    assert!(api_error.to_string().contains("have not been applied"));
     assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), plan);
-}
-
-#[tokio::test]
-async fn worker_history_grant_change_requires_maintenance_cutover() {
-    let (target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(17))
-        .await
-        .unwrap();
-
-    let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert!(!plan.exact);
-    assert_eq!(plan.pending[0].name, "m0059_worker_history_permissions");
-    assert!(plan.metadata_restore_safe);
-    assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
-    assert!(
-        connect_postgres_store(target.schema_database_url())
-            .await
-            .is_err()
-    );
-
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
-    assert!(migrations::plan(db.as_ref()).await.unwrap().exact);
 }
 
 #[tokio::test]
 async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     let (target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(1))
-        .await
-        .unwrap();
     let database_url = target.schema_database_url();
     let writer = connect_writer_database(&database_url, database_url.parse().unwrap())
         .await
@@ -127,40 +96,33 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
 
 #[tokio::test]
 async fn migration_statement_timeout_rolls_back_schema_and_ledger() {
+    use sea_orm::TransactionTrait;
+
     let (_target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(1))
+    let before = migrations::plan(db.as_ref()).await.unwrap();
+    let blocker = db.begin().await.unwrap();
+    blocker
+        .execute_unprepared(
+            "SELECT pg_advisory_xact_lock(hashtextextended('scope:metadata-extension:pg_trgm', 0))",
+        )
         .await
         .unwrap();
-    let before = migrations::plan(db.as_ref()).await.unwrap();
-    db.execute_unprepared(
-        "CREATE FUNCTION delay_migration_ledger() RETURNS trigger LANGUAGE plpgsql AS $$
-         BEGIN PERFORM pg_sleep(2); RETURN NEW; END $$;
-         CREATE TRIGGER delay_migration_ledger BEFORE INSERT ON seaql_migrations
-         FOR EACH ROW EXECUTE FUNCTION delay_migration_ledger();",
-    )
-    .await
-    .unwrap();
 
     let error = migrations::apply_in_maintenance(
         db.as_ref(),
         migrations::MigrationLimits {
-            lock_timeout_seconds: 1,
+            lock_timeout_seconds: 10,
             statement_timeout_seconds: 1,
         },
     )
     .await
     .unwrap_err();
+    blocker.rollback().await.unwrap();
+
     assert!(error.to_string().contains("statement timeout"), "{error}");
     assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), before);
-    assert!(
-        db.execute_unprepared("SELECT manifest_object_key FROM scope_git_heads")
-            .await
-            .is_ok()
-    );
-
-    db.execute_unprepared("DROP TRIGGER delay_migration_ledger ON seaql_migrations")
-        .await
-        .unwrap();
+    assert!(!relation_exists(db.as_ref(), "seaql_migrations").await);
+    assert!(!relation_exists(db.as_ref(), "scope_users").await);
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap();
@@ -200,11 +162,8 @@ async fn migration_lock_timeout_preserves_unapplied_inventory() {
 }
 
 #[tokio::test]
-async fn preflight_accepts_baseline_and_completed_cutover_without_reapplying_migrations() {
+async fn preflight_accepts_initialization_and_completed_cutover_without_reapplying_migrations() {
     let (_target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), Some(1))
-        .await
-        .unwrap();
     let before = migrations::plan(db.as_ref()).await.unwrap();
     assert_eq!(
         migrations::preflight(&db, Default::default())

@@ -5,7 +5,7 @@ import type {
 import type { RepoViews } from '../../api/repo-views'
 import { formatUnixDateUtc } from '../../lib/date-format'
 
-export type GitHubConnectionView =
+type GitHubConnectionView =
   | { kind: 'unconfigured' }
   | { kind: 'not_connected' }
   | { kind: 'connected'; name: string; url: string; detail: string }
@@ -29,7 +29,7 @@ export function githubConnectionView(github: GitHubConnectionResponse): GitHubCo
   }
 }
 
-export type GitHubVisibilityView =
+type GitHubVisibilityView =
   | { kind: 'public' }
   | { kind: 'unconfirmed'; canConfirm: boolean }
 

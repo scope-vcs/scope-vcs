@@ -370,13 +370,10 @@ mod tests {
     use crate::git::{
         command::{run_git, run_git_output},
         import::validate_pushed_file_path,
+        test_repo::TestRepo,
     };
     use scope_domain::{content::DEFAULT_GIT_FILE_MODE, policy::ScopePath};
-    use std::{
-        fs,
-        path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use std::fs;
 
     #[test]
     fn landing_file_mutation_distinguishes_unchanged_delete_and_oversized() {
@@ -407,17 +404,7 @@ mod tests {
 
     #[test]
     fn landing_file_upsert_reads_the_changed_git_blob() {
-        let repo = temp_repo_path("landing-file");
-        run_git(
-            None,
-            &[
-                "init",
-                "--initial-branch=main",
-                repo.to_string_lossy().as_ref(),
-            ],
-            "initializing landing file test repository",
-        )
-        .unwrap();
+        let repo = TestRepo::init();
         let bytes = b"<!doctype html><h1>fast</h1>";
         fs::write(repo.join("README.html"), bytes).unwrap();
         let output = run_git_output(
@@ -449,23 +436,11 @@ mod tests {
         assert_eq!(file.oid, oid);
         assert_eq!(file.content_bytes, bytes);
         assert_eq!(file.size_bytes, bytes.len() as u64);
-
-        fs::remove_dir_all(repo).unwrap();
     }
 
     #[test]
     fn workflow_files_read_multiple_blobs_in_tree_order() {
-        let repo = temp_repo_path("workflow-batch");
-        run_git(
-            None,
-            &[
-                "init",
-                "--initial-branch=main",
-                repo.to_string_lossy().as_ref(),
-            ],
-            "initializing workflow test repository",
-        )
-        .unwrap();
+        let repo = TestRepo::init();
         fs::create_dir_all(repo.join(".scope/runs")).unwrap();
         fs::write(repo.join(".scope/runs/first.yml"), b"first\n\0body").unwrap();
         fs::write(repo.join(".scope/runs/second.yaml"), b"second\nbody").unwrap();
@@ -495,14 +470,5 @@ mod tests {
             read_repository_workflow_files(&repo, tree_oid.trim()).unwrap(),
             ReadWorkflowFiles::Rejected(reason) if reason.contains("exceeds")
         ));
-        fs::remove_dir_all(repo).unwrap();
-    }
-
-    fn temp_repo_path(label: &str) -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("scope-{label}-{}-{nonce}", std::process::id()))
     }
 }

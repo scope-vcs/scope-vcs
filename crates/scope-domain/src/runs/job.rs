@@ -448,18 +448,6 @@ pub fn request_run_cancellation(
     if !run.request_cancellation(request_time)? {
         return Ok(false);
     }
-    for job in jobs
-        .iter_mut()
-        .filter(|job| matches!(job.state, RunJobState::Blocked | RunJobState::Queued))
-    {
-        let transition_time = now_unix.max(job.updated_at_unix);
-        job.state = RunJobState::Canceled;
-        job.updated_at_unix = transition_time;
-        job.completed_at_unix = Some(transition_time);
-        if let Some(retry) = job.capacity_retry.as_mut() {
-            retry.next_attempt_at_unix = None;
-        }
-    }
     derive_run_state(run, jobs, now_unix)?;
     Ok(true)
 }

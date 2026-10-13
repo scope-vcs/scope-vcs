@@ -49,13 +49,7 @@ async fn github_push_claim_and_completion_wait_for_rewritten_dependencies_then_r
     let child_facts = vec![fact(&publication.new_head_oid, &child, false)];
     let parent = store
         .requests()
-        .record_request_revision_with_stack(
-            publication,
-            parent.base_version,
-            None,
-            child_facts,
-            IDS,
-        )
+        .record_request_revision_with_stack(publication, parent.base_version, None, child_facts)
         .await
         .unwrap()
         .request;
@@ -98,7 +92,6 @@ async fn github_push_claim_and_completion_wait_for_rewritten_dependencies_then_r
             child.base_version,
             parent_facts(&store, &child).await,
             child_facts,
-            IDS,
         )
         .await
         .unwrap()

@@ -13,10 +13,7 @@ async fn discussion_commands_derive_actor_permissions_from_persisted_private_req
     upload.actor_user_id = "user_owner".into();
     store
         .requests()
-        .record_working_request_upload(
-            upload,
-            &super::super::super::generated_ids::test_generated_id,
-        )
+        .record_working_request_upload(upload)
         .await
         .unwrap();
 

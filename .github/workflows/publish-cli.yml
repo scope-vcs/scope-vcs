@@ -9,9 +9,6 @@ on:
       artifact_run_id:
         type: string
         default: ""
-      verified_successful_sha:
-        type: string
-        default: ""
 
 permissions:
   actions: read
@@ -101,15 +98,11 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: bash .github/scripts/prepare-railway-artifact.sh cli-downloads .railway-cli prepared-cli-release.json
 
-      - name: Install Railway CLI
-        run: |
-          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
-          npm install -g "@railway/cli@$railway_cli_version"
+      - uses: ./.github/actions/install-railway-cli
 
       - name: Deploy artifacts to Railway
         shell: bash
         env:
-          RAILWAY_DEPLOY_MESSAGE: ${{ github.event.head_commit.message || github.workflow }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           SCOPE_PREPARED_RELEASE_PATH: prepared-cli-release.json
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
@@ -117,7 +110,6 @@ jobs:
           SCOPE_DEPLOYMENT_COMPONENT: cli-downloads
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
-          SCOPE_VERIFIED_SUCCESSFUL_SHA: ${{ inputs.verified_successful_sha }}
         run: |
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"

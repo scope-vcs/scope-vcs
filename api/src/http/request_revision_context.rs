@@ -143,7 +143,6 @@ pub(crate) async fn publish(
                     context,
                     parent,
                     children,
-                    &crate::persistence_ids::generate_persistence_id,
                 )
                 .await
                 .map_err(ApiError::from)

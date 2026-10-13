@@ -1,10 +1,9 @@
 use crate::env_guard::{require_exact, required};
-use crate::storage_runtime::{StorageRuntime, StorageSource};
 use crate::{
     auth::cli::CliAuthService,
     config::{database_url_from_env, non_empty_env},
-    demo_seed::{DevSeedUser, catalog, seed_request_discussion_gallery, seed_user_account},
     persistence::unix_now,
+    seed_user::{DevSeedUser, seed_user_account},
 };
 use scope_postgres::db::MetadataStore;
 use std::{
@@ -61,8 +60,8 @@ impl Snapshot {
     }
 }
 
-pub async fn run(grant_only: bool) -> anyhow::Result<()> {
-    run_with_snapshot(Snapshot::from_env(), grant_only, async {
+pub async fn run() -> anyhow::Result<()> {
+    run_with_snapshot(Snapshot::from_env(), async {
         MetadataStore::connect(database_url_from_env()?).await
     })
     .await
@@ -70,42 +69,19 @@ pub async fn run(grant_only: bool) -> anyhow::Result<()> {
 
 async fn run_with_snapshot(
     snapshot: Snapshot,
-    grant_only: bool,
     connect: impl std::future::Future<Output = anyhow::Result<MetadataStore>>,
 ) -> anyhow::Result<()> {
     let target = validate(&snapshot)?;
     let mut exchange_token_file = create_exchange_token_file(&target.exchange_token_path)?;
-    let seed_user = seed_user_account(target.seed_user.clone());
+    let seed_user = seed_user_account(target.seed_user);
     let metadata = connect.await?;
-    if !grant_only {
-        let storage = StorageRuntime::from_env(StorageSource::S3).await?;
-        let fixture = catalog(
-            storage.object_store.as_ref(),
-            storage.git_segment_store.as_ref(),
-            target.seed_user,
-        )
-        .await
-        .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
-        metadata
-            .admin()
-            .replace_catalog_for_seed(fixture)
-            .await
-            .map_err(|error| anyhow::anyhow!("replacing staging smoke catalog: {error}"))?;
-        seed_request_discussion_gallery(&metadata)
-            .await
-            .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
-    }
     let now_unix = unix_now().map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
     let grant = CliAuthService::new(metadata.auth())
         .create_staging_smoke_exchange_grant(&seed_user, now_unix)
         .await
         .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
     write_exchange_token(&mut exchange_token_file, &grant.exchange_token)?;
-    if grant_only {
-        println!(r#"{{"exchangeGrantCreated":true}}"#);
-    } else {
-        println!(r#"{{"seeded":"dev/public-demo"}}"#);
-    }
+    println!(r#"{{"exchangeGrantCreated":true}}"#);
     Ok(())
 }
 
@@ -143,7 +119,7 @@ fn validate(snapshot: &Snapshot) -> anyhow::Result<Target> {
         expected_environment_name,
     )?;
     if snapshot.actual_environment_id.as_deref() == Some(production_environment_id) {
-        anyhow::bail!("refusing to replace the production catalog");
+        anyhow::bail!("refusing to issue a smoke login in the production environment");
     }
 
     let email = required(SEED_USER_EMAIL_ENV, &snapshot.seed_user_email)?;
@@ -250,7 +226,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn grant_only_preserves_existing_catalog_and_issues_redeemable_login() {
+    async fn preserves_existing_catalog_and_issues_redeemable_login() {
         use scope_domain::{account::UserAccount, repository::Repository, views::ViewId};
         use scope_postgres::db::{CatalogFixture, TestDatabaseTarget};
 
@@ -284,7 +260,7 @@ mod tests {
         let path = temp.path().join("exchange-token");
         let mut snapshot = valid_snapshot();
         snapshot.exchange_token_path = Some(path.to_str().unwrap().into());
-        run_with_snapshot(snapshot, true, std::future::ready(Ok(metadata.clone())))
+        run_with_snapshot(snapshot, std::future::ready(Ok(metadata.clone())))
             .await
             .unwrap();
 
@@ -293,7 +269,7 @@ mod tests {
             .repository("keep-owner", "keep-repo")
             .await
             .unwrap()
-            .expect("grant-only must retain the existing repository");
+            .expect("issuing a smoke login must retain the existing repository");
         assert_eq!(
             serde_json::to_value(retained).unwrap(),
             serde_json::to_value(repository).unwrap()
@@ -322,7 +298,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn grant_only_rejects_unreviewed_targets_before_side_effects() {
+    async fn rejects_unreviewed_targets_before_side_effects() {
         for mutate in [
             |snapshot: &mut Snapshot| snapshot.opt_in = None,
             |snapshot: &mut Snapshot| snapshot.actual_project_id = Some("wrong".into()),
@@ -337,7 +313,7 @@ mod tests {
             let mut snapshot = valid_snapshot();
             snapshot.exchange_token_path = Some(path.to_str().unwrap().into());
             mutate(&mut snapshot);
-            let result = run_with_snapshot(snapshot, true, async {
+            let result = run_with_snapshot(snapshot, async {
                 panic!("rejected target must not connect to the database")
             })
             .await;

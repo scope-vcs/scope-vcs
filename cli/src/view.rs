@@ -83,7 +83,7 @@ pub struct IncludeChange {
     pub remove: Option<ViewId>,
 }
 
-fn parse_view_id(value: &str) -> Result<ViewId, String> {
+pub fn parse_view_id(value: &str) -> Result<ViewId, String> {
     ViewId::parse(value).map_err(|error| error.message)
 }
 

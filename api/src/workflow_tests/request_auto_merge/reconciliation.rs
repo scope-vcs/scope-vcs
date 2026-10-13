@@ -80,10 +80,24 @@ async fn reconciliation_retries_a_transient_check_evaluation_failure() {
         .forget_request_check_evaluations_for_tests(&request_id)
         .await
         .unwrap();
+    let catalog_source = state
+        .metadata
+        .repositories()
+        .current_repository_workflow_catalog(TEST_REPO_ID)
+        .await
+        .unwrap()
+        .unwrap()
+        .catalog
+        .unwrap()
+        .source_head_oid()
+        .to_string();
     state
         .metadata
         .repositories()
-        .delete_repository_workflow_catalog_for_tests(TEST_REPO_ID)
+        .set_repository_workflow_catalog_source_for_tests(
+            TEST_REPO_ID,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        )
         .await
         .unwrap();
     crate::use_cases::request_auto_merge::authorize(
@@ -117,10 +131,12 @@ async fn reconciliation_retries_a_transient_check_evaluation_failure() {
             .is_none()
     );
     assert_eq!(reconcile(&state, first_attempt + 5).await, 0);
-    assert_eq!(
-        state.backfill_repository_workflow_catalogs().await.unwrap(),
-        1
-    );
+    state
+        .metadata
+        .repositories()
+        .set_repository_workflow_catalog_source_for_tests(TEST_REPO_ID, &catalog_source)
+        .await
+        .unwrap();
     assert_eq!(reconcile(&state, first_attempt + 10).await, 1);
     assert!(
         state

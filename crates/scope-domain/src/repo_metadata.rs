@@ -1,7 +1,7 @@
 use crate::{error::DomainError, repo_actions::ensure_repo_member, repository::Repository};
 
 pub const MAX_REPOSITORY_DESCRIPTION_CHARS: usize = 160;
-pub const MAX_REPOSITORY_WEBSITE_URL_CHARS: usize = 2048;
+const MAX_REPOSITORY_WEBSITE_URL_CHARS: usize = 2048;
 
 pub fn update_repo_metadata(
     repo: &mut Repository,

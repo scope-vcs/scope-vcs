@@ -87,7 +87,7 @@ impl RequestStore {
                 && repository.record.lifecycle_state == RepoLifecycleState::Ready
                 && repository.can_read_view(&repository.access.view)
             {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 super::history_reads::ensure_live_projection_read_models(
                     self.db.as_ref(),
                     &repository.incarnation(),
@@ -220,7 +220,7 @@ async fn read_request_state(
         children_limit,
     )
     .await?;
-    tx.commit().await.map_err(PostgresError::internal)?;
+    tx.commit().await?;
     Ok(RequestStateSnapshot {
         stack_navigation,
         children,

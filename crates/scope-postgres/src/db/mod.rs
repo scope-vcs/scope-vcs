@@ -28,6 +28,7 @@ mod git_transport_reads;
 mod github_check_runs;
 mod github_connections;
 mod github_pushes;
+mod github_read_queue;
 mod github_required_checks;
 mod github_run_imports;
 mod github_setup_checks;
@@ -46,8 +47,6 @@ mod locks;
 mod main_push_requests;
 mod maintenance;
 mod manual_runs;
-#[cfg(test)]
-mod migration_harness_tests;
 #[cfg(test)]
 mod migration_tests;
 mod native_runs;
@@ -139,15 +138,15 @@ pub use dependency_analysis::{
     DependencyAnalysisClaim, DependencyCompletion, DependencySnapshotFile,
 };
 pub use fast_push::ApplyContentOnlyPushCommand;
-pub use generated_ids::{GeneratedIdKind, GeneratedIdSource};
+use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::{GitPushContext, GitPushCredentials};
 pub use git_segments::RepositoryGitWriteLease;
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
-pub use github_pushes::{GitHubPushOutcome, GitHubPushStanding};
-pub use github_run_imports::GitHubRunImportOutcome;
+pub use github_pushes::GitHubPushStanding;
+pub use github_read_queue::GitHubJobOutcome;
 pub use github_setup_checks::GitHubSetupCheckRead;
 pub use github_workflow_job_log_reads::GitHubJobLogReadJob;
 pub use github_workflow_runs::{
@@ -206,12 +205,10 @@ pub use request_lifecycle_commands::{
 };
 pub use request_media::{
     CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
-    CompletedRequestMediaManifest, FailRequestAttachmentProcessingCommand,
-    FinishRequestAttachmentUploadCommand, MediaLeaseMutation, PrepareRequestAttachmentCommand,
-    PreparedRequestAttachment, RequestAttachmentCleanupReason, RequestMediaChunk,
-    RequestMediaManifest, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
-    StoredRequestAttachmentPart, ValidateRequestAttachmentSourceCommand,
-    ValidatedRequestAttachmentSource,
+    FailRequestAttachmentProcessingCommand, FinishRequestAttachmentUploadCommand,
+    MediaLeaseMutation, PrepareRequestAttachmentCommand, PreparedRequestAttachment,
+    RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+    ValidateRequestAttachmentSourceCommand,
 };
 pub use request_merge::{LandedRequestCandidate, LandedRequestCompletion};
 pub use request_queue::{
@@ -224,6 +221,7 @@ pub use request_stack::{
 };
 pub use request_state::RequestStateSnapshot;
 pub use run_admission::DispatchAdmission;
+pub use run_cache_authorization::CacheAttemptAccess;
 pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePreparationCommand};
 pub use run_details::{RunAttemptDetail, RunDetail};
 pub use run_dispatch::CloudTaskStop;
@@ -237,6 +235,4 @@ pub use stores::{
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::TestDatabaseTarget;
-pub use workflow_catalogs::{
-    CurrentRepositoryWorkflowCatalog, RepositoryWorkflowCatalogBackfillCandidate,
-};
+pub use workflow_catalogs::CurrentRepositoryWorkflowCatalog;

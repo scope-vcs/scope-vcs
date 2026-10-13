@@ -1,5 +1,8 @@
 use super::{definition::*, identity::*, observation::*};
-use crate::runs::workflow::{definition::WorkflowJobId, identity::WorkflowPath};
+use crate::runs::workflow::{
+    definition::{ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep},
+    identity::{WorkflowIdentity, WorkflowPath},
+};
 
 fn workflow_namespace(path: &str, job: &str) -> CacheNamespace {
     CacheNamespace::workflow(
@@ -132,6 +135,32 @@ fn identity_is_partitioned_by_every_semantic_component() {
             "b".repeat(64),
         )
         .is_err()
+    );
+}
+
+#[test]
+fn job_identity_accepts_only_caches_the_job_declares() {
+    let path = "/.scope/runs/test.yml";
+    let workflow = WorkflowIdentity::new("repo-1", WorkflowPath::parse(path).unwrap()).unwrap();
+    let job = WorkflowJob::new(
+        WorkflowJobId::parse("checks").unwrap(),
+        vec![],
+        ContainerSpec::new(format!("alpine@sha256:{}", "a".repeat(64))).unwrap(),
+        600,
+        vec![cache("cargo")],
+        Default::default(),
+        vec![WorkflowStep::new("Test", "true").unwrap()],
+    )
+    .unwrap();
+
+    let derived =
+        CacheIdentity::for_job(&workflow, &job, "cargo", "a".repeat(64), "b".repeat(64)).unwrap();
+    assert_eq!(
+        derived,
+        identity("repo-1", path, "checks", cache("cargo"), 'a', 'b')
+    );
+    assert!(
+        CacheIdentity::for_job(&workflow, &job, "npm", "a".repeat(64), "b".repeat(64)).is_err()
     );
 }
 

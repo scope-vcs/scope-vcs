@@ -38,8 +38,7 @@ impl NativeRunsStore {
                  JOIN scope_users users ON users.id = account.user_id
                  ORDER BY users.handle",
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .iter()
             .map(listing_from_row)
             .collect()
@@ -52,7 +51,7 @@ impl NativeRunsStore {
         note: Option<String>,
         now_unix: u64,
     ) -> Result<NativeRunsAddition, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let user_id = user_id_for_handle(&tx, handle).await?;
         let account = NativeRunsAccount::new(user_id, note, now_unix)?;
         let row = tx
@@ -69,12 +68,11 @@ impl NativeRunsStore {
                     handle.into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::internal_message("native runs listing was not stored"))?;
         let listing = listing_from_row(&row)?;
         let repositories = owned_repositories(&tx, &listing.account.user_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(NativeRunsAddition {
             listing,
             repositories,
@@ -87,7 +85,7 @@ impl NativeRunsStore {
         handle: &str,
         now_unix: u64,
     ) -> Result<NativeRunsWithdrawal, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let user_id = user_id_for_handle(&tx, handle).await?;
         let removed = tx
             .execute_raw(Statement::from_sql_and_values(
@@ -95,11 +93,10 @@ impl NativeRunsStore {
                 "DELETE FROM scope_native_runs_accounts WHERE user_id = $1",
                 [user_id.clone().into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .rows_affected()
             > 0;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         withdrawal::settle(self.db.as_ref(), &user_id, removed, now_unix).await
     }
 
@@ -136,8 +133,7 @@ async fn availability<C: ConnectionTrait>(
             ),
             [repository_id.into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .is_some();
     Ok(NativeRunsAvailability::for_owner(listed))
 }
@@ -149,8 +145,7 @@ async fn owned_repositories<C: ConnectionTrait>(
     entities::repository::Entity::find()
         .filter(entities::repository::Column::OwnerUserId.eq(user_id))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| {
             RepositoryIncarnation::new(row.id, row.incarnation_id).map_err(PostgresError::internal)
@@ -167,29 +162,20 @@ async fn user_id_for_handle(
         "SELECT id FROM scope_users WHERE handle = $1",
         [handle.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .ok_or_else(|| PostgresError::not_found("account not found"))?
     .try_get::<String>("", "id")
     .map_err(PostgresError::internal)
 }
 
 fn listing_from_row(row: &QueryResult) -> Result<NativeRunsAccountListing, PostgresError> {
-    let added_at_unix = row
-        .try_get::<i64>("", "added_at_unix")
-        .map_err(PostgresError::internal)?;
+    let added_at_unix = row.try_get::<i64>("", "added_at_unix")?;
     Ok(NativeRunsAccountListing {
         account: NativeRunsAccount {
-            user_id: row
-                .try_get::<String>("", "user_id")
-                .map_err(PostgresError::internal)?,
+            user_id: row.try_get::<String>("", "user_id")?,
             added_at_unix: integer_columns::i64_to_u64(added_at_unix, "listing time")?,
-            note: row
-                .try_get::<Option<String>>("", "note")
-                .map_err(PostgresError::internal)?,
+            note: row.try_get::<Option<String>>("", "note")?,
         },
-        handle: row
-            .try_get::<String>("", "handle")
-            .map_err(PostgresError::internal)?,
+        handle: row.try_get::<String>("", "handle")?,
     })
 }

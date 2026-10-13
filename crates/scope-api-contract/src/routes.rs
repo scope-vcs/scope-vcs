@@ -216,10 +216,6 @@ routes! {
     internal {
         HEALTH = "/healthz";
         READINESS = "/readyz";
-        ADMIN_CLEANUP = "/v1/admin/cleanup";
-        ADMIN_CLEANUP_DRAIN = "/v1/admin/cleanup/drain";
-        ADMIN_NATIVE_RUNS_ACCOUNTS = "/v1/admin/native-runs/accounts";
-        ADMIN_NATIVE_RUNS_ACCOUNT = "/v1/admin/native-runs/accounts/{handle}";
         CLI_BROWSER_LOGIN = "/v1/cli/browser-login";
         CLI_BROWSER_LOGIN_EXCHANGE = "/v1/cli/browser-login/{request_id}/exchange",
             cli_browser_login_exchange(request_id: &str);
@@ -238,6 +234,12 @@ routes! {
             attempt_cache_preparations(attempt_id: &str);
         ATTEMPT_CACHE_FINALIZATIONS = "/v1/runtime-protocol/attempts/{attempt_id}/cache-observations/finalizations",
             attempt_cache_finalizations(attempt_id: &str);
+        ATTEMPT_CACHE_RESTORE = "/v1/runtime-protocol/attempts/{attempt_id}/caches/restore",
+            attempt_cache_restore(attempt_id: &str);
+        ATTEMPT_CACHE_UPLOAD_PREPARE = "/v1/runtime-protocol/attempts/{attempt_id}/caches/uploads/prepare",
+            attempt_cache_upload_prepare(attempt_id: &str);
+        ATTEMPT_CACHE_UPLOAD_COMMIT = "/v1/runtime-protocol/attempts/{attempt_id}/caches/uploads/commit",
+            attempt_cache_upload_commit(attempt_id: &str);
         ATTEMPT_RECOVERY_STATUS = "/v1/runtime-protocol/attempts/{attempt_id}/recovery-status",
             attempt_recovery_status(attempt_id: &str);
         ATTEMPT_SOURCE = "/v1/runtime-protocol/attempts/{attempt_id}/source",
@@ -338,6 +340,10 @@ mod tests {
             (
                 attempt_cache_finalizations("attempt/with space"),
                 "/v1/runtime-protocol/attempts/attempt%2Fwith%20space/cache-observations/finalizations",
+            ),
+            (
+                attempt_cache_upload_commit("attempt/with space"),
+                "/v1/runtime-protocol/attempts/attempt%2Fwith%20space/caches/uploads/commit",
             ),
             (
                 attempt_step_complete("attempt/with space", 3),

@@ -32,26 +32,15 @@ impl GitHubAppConfig {
     }
 
     fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> anyhow::Result<Option<Self>> {
-        let [
-            app_id,
-            slug,
-            private_key,
-            client_id,
-            client_secret,
-            webhook_secret,
-        ] = GITHUB_APP_ENV.map(|name| lookup(name).map(|value| value.trim().to_string()));
-        let values = [
-            &app_id,
-            &slug,
-            &private_key,
-            &client_id,
-            &client_secret,
-            &webhook_secret,
-        ];
+        let values = GITHUB_APP_ENV.map(|name| {
+            lookup(name)
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        });
         let missing = GITHUB_APP_ENV
             .iter()
-            .zip(values)
-            .filter(|(_, value)| value.as_deref().is_none_or(str::is_empty))
+            .zip(&values)
+            .filter(|(_, value)| value.is_none())
             .map(|(name, _)| *name)
             .collect::<Vec<_>>();
         if missing.len() == GITHUB_APP_ENV.len() {
@@ -63,7 +52,14 @@ impl GitHubAppConfig {
                 missing.join(", ")
             );
         }
-        let app_id = app_id.unwrap_or_default();
+        let [
+            app_id,
+            slug,
+            private_key,
+            client_id,
+            client_secret,
+            webhook_secret,
+        ] = values.map(Option::unwrap_or_default);
         let app_id = app_id
             .parse::<u64>()
             .ok()
@@ -73,11 +69,11 @@ impl GitHubAppConfig {
             })?;
         Ok(Some(Self {
             app_id,
-            slug: slug.unwrap_or_default(),
-            private_key: pem_with_newlines(private_key.unwrap_or_default()),
-            client_id: client_id.unwrap_or_default(),
-            client_secret: client_secret.unwrap_or_default(),
-            webhook_secret: webhook_secret.unwrap_or_default(),
+            slug,
+            private_key: pem_with_newlines(private_key),
+            client_id,
+            client_secret,
+            webhook_secret,
         }))
     }
 }

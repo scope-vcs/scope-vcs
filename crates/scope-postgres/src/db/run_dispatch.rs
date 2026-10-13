@@ -1,17 +1,11 @@
 use super::integer_columns;
-#[cfg(any(test, feature = "seeding"))]
-use super::run_state_sql::{queued_job_state, run_active_states};
 use super::{
     DispatchClaim, RunStore, entities,
-    run_attempt_persistence::{
-        jobs_for_run, locked_job, locked_run, run_repository, save_job, save_run,
-    },
+    run_attempt_persistence::{locked_job, locked_run, save_job, save_run},
     run_state_sql::{attempt_active_states, attempt_terminal_states},
     runs::{unique_conflict, workflow_revision_for_run},
 };
 use crate::error::PostgresError;
-#[cfg(any(test, feature = "seeding"))]
-use scope_domain::runs::job::RunJobState;
 use scope_domain::runs::job::reconcile_run;
 #[cfg(any(test, feature = "seeding"))]
 use sea_orm::TransactionTrait;
@@ -102,15 +96,12 @@ impl RunStore {
                         .into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         rows.into_iter()
             .map(|row| {
                 Ok(CloudTaskStop {
-                    attempt_id: row.try_get("", "id").map_err(PostgresError::internal)?,
-                    external_run_id: row
-                        .try_get("", "external_run_id")
-                        .map_err(PostgresError::internal)?,
+                    attempt_id: row.try_get("", "id")?,
+                    external_run_id: row.try_get("", "external_run_id")?,
                 })
             })
             .collect()
@@ -127,8 +118,7 @@ impl RunStore {
                 "UPDATE scope_run_attempts SET runner_stop_claimed_at_unix = NULL WHERE id = $1 AND runner_stop_completed_at_unix IS NULL",
                 [attempt_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         Ok(())
     }
 
@@ -154,8 +144,7 @@ impl RunStore {
                         .into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if result.rows_affected() != 1 {
             return Err(PostgresError::conflict(
                 "cloud task stop claim is missing or already complete",
@@ -187,73 +176,13 @@ impl RunStore {
                 ),
                 [attempt_id.into(), now_unix.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if result.rows_affected() != 1 {
             return Err(PostgresError::conflict(
                 "cloud task absence requires an untracked terminal attempt",
             ));
         }
         Ok(())
-    }
-
-    #[cfg(any(test, feature = "seeding"))]
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "next_dispatchable_job"))]
-    pub async fn next_dispatchable_job(
-        &self,
-    ) -> Result<Option<super::runs::DispatchOffer>, PostgresError> {
-        let Some(row) = self
-            .db
-            .query_one_raw(Statement::from_string(
-                DatabaseBackend::Postgres,
-                format!(
-                    "SELECT job.run_id, job.job_key
-                 FROM scope_run_jobs job
-                 JOIN scope_runs run ON run.id = job.run_id
-                 WHERE job.state = {queued}
-                   AND run.state IN ({runs})
-                   AND run.cancellation_requested = FALSE
-                   AND NOT EXISTS (
-                     SELECT 1 FROM scope_run_attempts previous
-                     WHERE previous.run_id = job.run_id
-                       AND previous.job_key = job.job_key
-                       AND previous.state IN ({attempts})
-                       AND previous.runner_stop_completed_at_unix IS NULL
-                   )
-                 ORDER BY job.created_at_unix, job.run_id, job.job_key
-                 LIMIT 1",
-                    queued = queued_job_state(),
-                    runs = run_active_states(),
-                    attempts = attempt_terminal_states(),
-                ),
-            ))
-            .await
-            .map_err(PostgresError::internal)?
-        else {
-            return Ok(None);
-        };
-        let run_id = row
-            .try_get::<String>("", "run_id")
-            .map_err(PostgresError::internal)?;
-        let job_key = row
-            .try_get::<String>("", "job_key")
-            .map_err(PostgresError::internal)?;
-        let job = entities::run_job::Entity::find_by_id((run_id.clone(), job_key))
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("run job not found"))?
-            .try_into_domain()?;
-        let run = entities::run::Entity::find_by_id(run_id)
-            .one(self.db.as_ref())
-            .await
-            .map_err(PostgresError::internal)?
-            .ok_or_else(|| PostgresError::not_found("run not found"))?
-            .try_into_domain()?;
-        Ok(
-            (job.state == RunJobState::Queued && !run.cancellation_requested)
-                .then_some(super::runs::DispatchOffer { run, job }),
-        )
     }
 
     #[cfg(any(test, feature = "seeding"))]
@@ -269,7 +198,7 @@ impl RunStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         super::run_admission::lock_admission(&tx).await?;
         let claim = self
             .dispatch_in_transaction(
@@ -283,7 +212,7 @@ impl RunStore {
                 lease_expires_at_unix,
             )
             .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(claim)
     }
 
@@ -301,8 +230,7 @@ impl RunStore {
     ) -> Result<DispatchClaim, PostgresError> {
         let run_snapshot = entities::run::Entity::find_by_id(run_id.to_string())
             .one(tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::not_found("run not found"))?
             .try_into_domain()?;
         let mut job = locked_job(tx, run_id, job_key).await?;
@@ -340,29 +268,28 @@ impl RunStore {
                 .map(IntoActiveModel::into_active_model),
         )
         .exec(tx)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
         save_job(tx, &job).await?;
         let mut run = locked_run(tx, run_id).await?;
         if run.cancellation_requested || run.state.is_terminal() {
             return Err(PostgresError::conflict("run is no longer dispatchable"));
         }
-        let mut jobs = jobs_for_run(tx, run_id).await?;
+        let mut jobs = super::run_operations::required_run_jobs(tx, run_id).await?;
         if let Some(stored) = jobs.iter_mut().find(|stored| stored.key == job.key) {
             *stored = job.clone();
         }
         reconcile_run(&mut run, &mut jobs, &workflow_revision, now_unix)
             .map_err(PostgresError::from)?;
         save_run(tx, &run).await?;
-        let repository = run_repository(tx, &run).await?;
-        Ok(DispatchClaim {
-            repository,
+        super::run_attempt_mutations::dispatch_claim(
+            tx,
             run,
             job,
             attempt,
             steps,
             workflow_revision,
-        })
+        )
+        .await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_external_run_id"))]
@@ -384,8 +311,7 @@ impl RunStore {
                AND (external_run_id IS NULL OR external_run_id = $2)",
                 [attempt_id.into(), external_run_id.into()],
             ))
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
         if result.rows_affected() != 1 {
             return Err(PostgresError::conflict(
                 "attempt cannot accept the external run id",

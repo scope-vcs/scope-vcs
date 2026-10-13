@@ -8,7 +8,7 @@ const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', 
 function fixture() {
   const sourceSha = 'a'.repeat(40);
   const prepared = { schemaVersion: 1, sourceSha, components: Object.fromEntries(
-    ['api', 'run-worker', 'cache', 'git-router', 'media-api', 'media-worker', 'web'].map(component => [component, {
+    ['api', 'run-worker', 'git-router', 'media-api', 'media-worker', 'web'].map(component => [component, {
       sourceSha, serviceId: manifest.services[component].id,
       image: `ghcr.io/scope-vcs/${component}@sha256:${'b'.repeat(64)}`,
     }]),

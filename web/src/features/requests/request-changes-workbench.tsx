@@ -6,7 +6,8 @@ import type {
 } from '@/api/types.generated'
 import type { LoadRequestRevisionDiffInput } from '@/api/requests'
 import { PendingSurface } from '@/components/pending-surface'
-import { BlockSkeleton, TextSkeleton } from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import {
   historyDiffCacheKey,
   historyDiffResource,

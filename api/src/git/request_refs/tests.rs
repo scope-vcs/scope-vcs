@@ -1,4 +1,5 @@
 use super::*;
+use crate::git::test_repo::TestRepo;
 use scope_domain::views::ViewId;
 
 #[test]
@@ -66,13 +67,7 @@ fn request_ref_store_head_must_match_advertised_old_head() {
 
 #[test]
 fn request_ref_head_must_be_commit_object_not_annotated_tag() {
-    let repo = temp_repo_path("tag-object");
-    run_git(
-        None,
-        &["init", "-b", "main", repo.to_string_lossy().as_ref()],
-        "init test repo",
-    )
-    .unwrap();
+    let repo = TestRepo::init();
     run_git(
         Some(&repo),
         &[
@@ -110,18 +105,11 @@ fn request_ref_head_must_be_commit_object_not_annotated_tag() {
     ensure_request_ref_oid_is_commit(&repo, head.trim()).unwrap();
     let error = ensure_request_ref_oid_is_commit(&repo, tag.trim()).unwrap_err();
     assert!(error.public_message().contains("must point at commits"));
-    let _ = fs::remove_dir_all(repo);
 }
 
 #[test]
 fn main_import_ref_listing_ignores_seeded_named_requests() {
-    let repo = temp_repo_path("main-import-named-requests");
-    run_git(
-        None,
-        &["init", "-b", "main", repo.to_string_lossy().as_ref()],
-        "init test repo",
-    )
-    .unwrap();
+    let repo = TestRepo::init();
     run_git(
         Some(&repo),
         &[
@@ -148,23 +136,12 @@ fn main_import_ref_listing_ignores_seeded_named_requests() {
     let refs = crate::git::import::git_refs(&repo).unwrap();
     assert_eq!(refs.len(), 1);
     assert_eq!(refs[0].0, "refs/heads/main");
-    let _ = fs::remove_dir_all(repo);
 }
 
 fn git_stdout(repo: &FsPath, args: &[&str]) -> String {
     let output = run_git_output(Some(repo), args, "read test git stdout").unwrap();
     assert!(output.status.success());
     String::from_utf8(output.stdout).unwrap()
-}
-
-fn temp_repo_path(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!(
-        "scope-vcs-request-ref-{label}-{}-{}",
-        std::process::id(),
-        unix_now().unwrap()
-    ));
-    let _ = fs::remove_dir_all(&path);
-    path
 }
 
 #[test]

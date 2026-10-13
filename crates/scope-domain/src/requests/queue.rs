@@ -90,7 +90,7 @@ pub struct RequestAttention {
 }
 
 impl RequestAttention {
-    pub fn next_revision(existing: Option<&Self>) -> u64 {
+    fn next_revision(existing: Option<&Self>) -> u64 {
         existing.map_or(1, |attention| attention.revision + 1)
     }
 }

@@ -11,8 +11,6 @@ use scope_domain::{
 };
 use sea_orm::TransactionTrait;
 
-const IDS: &dyn GeneratedIdSource = &super::super::generated_ids::test_generated_id;
-
 async fn load(store: &MetadataStore, id: &str) -> Request {
     store.requests().request_by_id(id).await.unwrap().unwrap()
 }
@@ -115,7 +113,6 @@ async fn start(store: &MetadataStore, id: &str, base: RequestBase, now: u64) -> 
             request.base_version,
             parent_facts(store, &request).await,
             Vec::new(),
-            IDS,
         )
         .await
         .unwrap();
@@ -185,7 +182,6 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
             parent.base_version,
             None,
             Vec::new(),
-            IDS,
         )
         .await
         .unwrap_err();
@@ -195,13 +191,7 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
     let child_facts = vec![fact(&publication.new_head_oid, &child, true)];
     store
         .requests()
-        .record_request_revision_with_stack(
-            publication,
-            parent.base_version,
-            None,
-            child_facts,
-            IDS,
-        )
+        .record_request_revision_with_stack(publication, parent.base_version, None, child_facts)
         .await
         .unwrap();
     let extended = load(&store, "child").await;
@@ -225,7 +215,6 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
             child.base_version,
             parent_facts(&store, &child).await,
             vec![fact(&child.head_oid, &grandchild, true)],
-            IDS,
         )
         .await
         .unwrap_err();
@@ -249,7 +238,6 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
             current_parent.base_version,
             None,
             child_facts,
-            IDS,
         )
         .await
         .unwrap();
@@ -286,15 +274,12 @@ async fn parent_publication_requires_complete_child_evidence_and_preserves_exten
     );
     store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: parent.id,
-                actor_user_id: "user_owner".into(),
-                event_id: "close".into(),
-                now_unix: 15,
-            },
-            IDS,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: parent.id,
+            actor_user_id: "user_owner".into(),
+            event_id: "close".into(),
+            now_unix: 15,
+        })
         .await
         .unwrap();
     let closed = load(&store, "child").await;
@@ -319,13 +304,7 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
     let child_facts = vec![fact(&publication.new_head_oid, &child, true)];
     let parent = store
         .requests()
-        .record_request_revision_with_stack(
-            publication,
-            parent.base_version,
-            None,
-            child_facts,
-            IDS,
-        )
+        .record_request_revision_with_stack(publication, parent.base_version, None, child_facts)
         .await
         .unwrap()
         .request;
@@ -352,7 +331,6 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
             context.clone(),
             parent_facts(&store, &child).await,
             Vec::new(),
-            IDS,
         )
         .await
         .unwrap();
@@ -360,15 +338,12 @@ async fn committed_context_receipt_survives_parent_close_and_rejects_changed_pay
     assert_ne!(accepted.revision.id, context.expected_revision_id);
     store
         .requests()
-        .close_request(
-            CloseRequestCommand {
-                request_id: parent.id,
-                actor_user_id: "user_owner".into(),
-                event_id: "close".into(),
-                now_unix: 12,
-            },
-            IDS,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: parent.id,
+            actor_user_id: "user_owner".into(),
+            event_id: "close".into(),
+            now_unix: 12,
+        })
         .await
         .unwrap();
     let receipt = store
@@ -469,7 +444,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     let mut stale = fact(&parent.head_oid, &child, true);
     stale.base_version += 1;
     assert!(
-        retarget_children(&tx, &merged.request, &[stale], 14, IDS)
+        retarget_children(&tx, &merged.request, &[stale], 14)
             .await
             .is_err()
     );
@@ -495,7 +470,6 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
         &merged.request,
         &[fact(&parent.head_oid, &child, true)],
         14,
-        IDS,
     )
     .await
     .unwrap();

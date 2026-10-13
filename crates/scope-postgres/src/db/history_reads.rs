@@ -20,12 +20,11 @@ pub(super) async fn ensure_live_projection_read_models(
     incarnation: &RepositoryIncarnation,
     view: &ViewId,
 ) -> Result<(), PostgresError> {
-    let tx = db.begin().await.map_err(PostgresError::internal)?;
+    let tx = db.begin().await?;
     acquire_aggregate_lock(&tx, "repository", incarnation.repository_id()).await?;
     let row = entities::repository::Entity::find_by_id(incarnation.repository_id())
         .one(&tx)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::not_found("repo not found"))?;
     if row.incarnation_id != incarnation.incarnation_id() {
         return Err(PostgresError::conflict(
@@ -127,10 +126,10 @@ pub(super) async fn append_history_entries<C: ConnectionTrait>(
         }
         conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             format!("INSERT INTO scope_repository_history_payloads (repo_id,payload_hash,payload) VALUES {} ON CONFLICT DO NOTHING", payload_rows.join(",")), payload_values,
-        )).await.map_err(PostgresError::internal)?;
+        )).await?;
         conn.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             format!("INSERT INTO scope_repository_history_entries (repo_id,audience,position,source_id,payload_hash) VALUES {}", entry_rows.join(",")), entry_values,
-        )).await.map_err(PostgresError::internal)?;
+        )).await?;
     }
     Ok(())
 }
@@ -144,8 +143,7 @@ pub(super) async fn delete_history_payloads<C: ConnectionTrait>(
         "DELETE FROM scope_repository_history_payloads WHERE repo_id=$1",
         [repo_id.into()],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 
@@ -194,7 +192,7 @@ impl RepositoryStore {
             )
             .await?
             else {
-                tx.commit().await.map_err(PostgresError::internal)?;
+                tx.commit().await?;
                 self.ensure_live_projection_read_models(incarnation, view)
                     .await?;
                 continue;
@@ -217,7 +215,7 @@ impl RepositoryStore {
                         DatabaseBackend::Postgres,
                         "SELECT position FROM scope_repository_history_entries WHERE repo_id=$1 AND audience=$2 AND position=$3",
                         [incarnation.repository_id().into(), view.as_str().into(), position.into()],
-                    )).await.map_err(PostgresError::internal)?
+                    )).await?
                         .ok_or_else(|| PostgresError::invalid_input("history cursor boundary is no longer available"))?;
                     Some(position)
                 }
@@ -254,15 +252,12 @@ impl RepositoryStore {
                     sql,
                     values,
                 ))
-                .await
-                .map_err(PostgresError::internal)?;
+                .await?;
             let next_boundary = if rows.len() > limit as usize {
                 Some(RepositoryHistoryBoundary {
                     generation: generation.clone(),
                     position: integer_columns::i64_to_u64(
-                        rows[limit as usize - 1]
-                            .try_get("", "position")
-                            .map_err(PostgresError::internal)?,
+                        rows[limit as usize - 1].try_get("", "position")?,
                         "history position",
                     )?,
                 })
@@ -271,27 +266,20 @@ impl RepositoryStore {
             };
             let neighbors = match (entry_source_id, rows.first()) {
                 (Some(_), Some(row)) => Some(RepositoryHistoryNeighbors {
-                    older_source_id: row
-                        .try_get("", "older_source_id")
-                        .map_err(PostgresError::internal)?,
-                    newer_source_id: row
-                        .try_get("", "newer_source_id")
-                        .map_err(PostgresError::internal)?,
+                    older_source_id: row.try_get("", "older_source_id")?,
+                    newer_source_id: row.try_get("", "newer_source_id")?,
                 }),
                 _ => None,
             };
             let mut entries = rows
                 .into_iter()
                 .map(|row| {
-                    serde_json::from_value::<HistoryEntry>(
-                        row.try_get("", "payload")
-                            .map_err(PostgresError::internal)?,
-                    )
-                    .map_err(PostgresError::internal)
+                    serde_json::from_value::<HistoryEntry>(row.try_get("", "payload")?)
+                        .map_err(PostgresError::internal)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             entries.truncate(limit as usize);
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(RepositoryHistoryPage {
                 view: HistoryView {
                     repo_id: incarnation.repository_id().to_string(),

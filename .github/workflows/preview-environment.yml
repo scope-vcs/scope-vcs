@@ -145,13 +145,15 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/preview-pull-request.mjs build artifacts/prepared-release.json
 
+      - uses: ./.github/actions/install-railway-cli
+        if: steps.recheck.outputs.action == 'delete'
+
       - name: Delete the preview of a pull request that stopped qualifying
         if: steps.recheck.outputs.action == 'delete'
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
           node .github/scripts/preview-environment.mjs delete "$PULL_REQUEST"
 
       - name: Extract maintenance binary
@@ -167,9 +169,8 @@ jobs:
             echo "SCOPE_RAILWAY_PROJECT_ID=$(jq -er '.railway.projectId' .github/deployment-services.json)"
           } >> "$GITHUB_ENV"
 
-      - name: Install Railway CLI
+      - uses: ./.github/actions/install-railway-cli
         if: steps.recheck.outputs.action == 'deploy'
-        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
 
       - name: Create or update the preview copy of staging
         id: environment
@@ -299,9 +300,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/preview-pull-request.mjs cleanup "$PULL_REQUEST"
 
-      - name: Install Railway CLI
+      - uses: ./.github/actions/install-railway-cli
         if: steps.recheck.outputs.action == 'delete'
-        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
 
       - name: Delete the pull request environment
         id: delete

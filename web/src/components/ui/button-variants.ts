@@ -18,8 +18,8 @@ const sizes = {
   "icon-sm": "size-8",
 } as const
 
-export type ButtonVariant = keyof typeof variants
-export type ButtonSize = keyof typeof sizes
+type ButtonVariant = keyof typeof variants
+type ButtonSize = keyof typeof sizes
 export type ButtonVariantProps = { variant?: ButtonVariant; size?: ButtonSize }
 
 export function buttonVariants({

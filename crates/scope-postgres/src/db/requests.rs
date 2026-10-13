@@ -1,6 +1,5 @@
 use super::{
-    CloseRequestCommand, EditRequestIdentityCommand, GeneratedIdSource, RequestStore,
-    acquire_aggregate_lock,
+    CloseRequestCommand, EditRequestIdentityCommand, RequestStore, acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
     object_references::delete_object_reference,
     request_access::{
@@ -17,7 +16,7 @@ use super::{
         delete_request_rows, insert_request_event_row, insert_request_row, latest_request_events,
         public_draft_count, request_by_id, request_by_name, request_event_by_id,
         request_events_after_position, request_events_by_request_id, request_list_page,
-        requests_by_repo_author, requests_by_repo_id, save_request_row,
+        requests_by_repo_id, save_request_row,
     },
 };
 use sea_orm::TransactionTrait;
@@ -46,8 +45,7 @@ impl RequestStore {
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_by_id"))]
     pub async fn request_by_id(&self, request_id: &str) -> Result<Option<Request>, PostgresError> {
-        let request_id = request_id.to_string();
-        request_by_id(self.db.as_ref(), &request_id).await
+        request_by_id(self.db.as_ref(), request_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_by_name"))]
@@ -56,26 +54,12 @@ impl RequestStore {
         repo_id: &str,
         request_name: &str,
     ) -> Result<Option<Request>, PostgresError> {
-        let repo_id = repo_id.to_string();
-        let request_name = request_name.to_string();
-        request_by_name(self.db.as_ref(), &repo_id, &request_name).await
+        request_by_name(self.db.as_ref(), repo_id, request_name).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_by_repo_id"))]
     pub async fn requests_by_repo_id(&self, repo_id: &str) -> Result<Vec<Request>, PostgresError> {
-        let repo_id = repo_id.to_string();
-        requests_by_repo_id(self.db.as_ref(), &repo_id).await
-    }
-
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_by_repo_author"))]
-    pub async fn requests_by_repo_author(
-        &self,
-        repo_id: &str,
-        author_user_id: &str,
-    ) -> Result<Vec<Request>, PostgresError> {
-        let repo_id = repo_id.to_string();
-        let author_user_id = author_user_id.to_string();
-        requests_by_repo_author(self.db.as_ref(), &repo_id, &author_user_id).await
+        requests_by_repo_id(self.db.as_ref(), repo_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_events_by_request_id"))]
@@ -83,8 +67,7 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Vec<RequestEvent>, PostgresError> {
-        let request_id = request_id.to_string();
-        request_events_by_request_id(self.db.as_ref(), &request_id).await
+        request_events_by_request_id(self.db.as_ref(), request_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_events_after_position"))]
@@ -111,7 +94,7 @@ impl RequestStore {
         &self,
         input: StartRequestInput,
     ) -> Result<StartRequestMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &input.repo_id).await?;
         let mut graph_ids = super::request_stack::ancestry(&tx, &input.base)
             .await?
@@ -159,7 +142,7 @@ impl RequestStore {
         }
         insert_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation)
     }
 
@@ -167,9 +150,8 @@ impl RequestStore {
     pub async fn record_working_request_upload(
         &self,
         input: RecordWorkingRequestUploadInput,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<WorkingRequestUploadMutation, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
@@ -180,14 +162,9 @@ impl RequestStore {
             .branch_mutable;
         let mutation = record_working_request_upload(request, input)?;
         save_request_row(&tx, &mutation.request).await?;
-        queue_pending_source_blob_deletion_rows(
-            &tx,
-            mutation.orphan_objects.clone(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects.clone(), now_unix)
+            .await?;
+        tx.commit().await?;
         Ok(mutation)
     }
 
@@ -195,20 +172,13 @@ impl RequestStore {
     pub async fn record_request_revision(
         &self,
         input: RecordRequestRevisionInput,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<RequestRevisionMutation, PostgresError> {
         let observed = self
             .request_by_id(&input.request_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
-        self.record_request_revision_with_stack(
-            input,
-            observed.base_version,
-            None,
-            Vec::new(),
-            generated_ids,
-        )
-        .await
+        self.record_request_revision_with_stack(input, observed.base_version, None, Vec::new())
+            .await
     }
 
     pub async fn record_request_revision_with_stack(
@@ -217,17 +187,9 @@ impl RequestStore {
         expected_base_version: u64,
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<RequestRevisionMutation, PostgresError> {
-        self.publish_request_revision(
-            input,
-            expected_base_version,
-            facts,
-            children,
-            None,
-            generated_ids,
-        )
-        .await
+        self.publish_request_revision(input, expected_base_version, facts, children, None)
+            .await
     }
 
     pub async fn record_request_revision_context(
@@ -236,7 +198,6 @@ impl RequestStore {
         context: super::RequestRevisionContextPublication,
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<RequestRevisionMutation, PostgresError> {
         self.publish_request_revision(
             input,
@@ -244,7 +205,6 @@ impl RequestStore {
             facts,
             children,
             Some(context),
-            generated_ids,
         )
         .await
     }
@@ -256,7 +216,6 @@ impl RequestStore {
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
         context: Option<super::RequestRevisionContextPublication>,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<RequestRevisionMutation, PostgresError> {
         let observed = self
             .request_by_id(&input.request_id)
@@ -362,13 +321,8 @@ impl RequestStore {
             mutation.revision.created_at_unix,
         )
         .await?;
-        queue_pending_source_blob_deletion_rows(
-            &tx,
-            mutation.orphan_objects.clone(),
-            now_unix,
-            generated_ids,
-        )
-        .await?;
+        queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects.clone(), now_unix)
+            .await?;
         super::request_stack::refresh_children(&tx, &mutation.request, &children, now_unix).await?;
         if let Some(context) = &context {
             super::request_revision_context::save_receipt(&tx, context, &mutation).await?;
@@ -390,7 +344,7 @@ impl RequestStore {
                 command.now_unix,
             )
         });
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -427,7 +381,7 @@ impl RequestStore {
             )
             .await?;
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation)
     }
 
@@ -435,7 +389,6 @@ impl RequestStore {
     pub async fn close_request(
         &self,
         command: CloseRequestCommand,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<CloseRequestMutation, PostgresError> {
         let now_unix = command.now_unix;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
@@ -472,7 +425,6 @@ impl RequestStore {
                     revisions,
                     orphan_objects.clone(),
                     now_unix,
-                    generated_ids,
                 )
                 .await?;
             }
@@ -492,7 +444,7 @@ impl RequestStore {
                 }
             }
         }
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(mutation)
     }
 }
@@ -504,16 +456,9 @@ pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
     revisions: &[RequestRevision],
     orphan_objects: Vec<SourceBlob>,
     now_unix: u64,
-    generated_ids: &dyn GeneratedIdSource,
 ) -> Result<(), PostgresError> {
-    super::cleanup_queue::queue_pending_request_ref_cleanup(
-        tx,
-        incarnation,
-        request,
-        now_unix,
-        generated_ids,
-    )
-    .await?;
+    super::cleanup_queue::queue_pending_request_ref_cleanup(tx, incarnation, request, now_unix)
+        .await?;
     super::github_pushes::queue_github_branch_deletion(tx, &request.repo_id, &request.id, now_unix)
         .await?;
     tombstone_request_attachments(tx, &request.id, now_unix).await?;
@@ -521,7 +466,7 @@ pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
         delete_object_reference(tx, "request_revision_snapshot", &revision.id).await?;
     }
     delete_request_rows(tx, &request.id).await?;
-    queue_pending_source_blob_deletion_rows(tx, orphan_objects, now_unix, generated_ids).await
+    queue_pending_source_blob_deletion_rows(tx, orphan_objects, now_unix).await
 }
 
 #[cfg(test)]
