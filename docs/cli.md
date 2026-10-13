@@ -180,7 +180,27 @@ current head and retained selection. `--abort` refuses to reset a completed
 rebase blindly; inspect the backup and current HEAD before manual recovery.
 After inspecting a completed replay, `scope request push` consumes the pending
 selection only for its original repository, remote and destination request.
-A stale publication leaves that selection available for recovery.
+A stale publication leaves that selection available for recovery. If main or
+the selected parent moved, discard only the stale selection after inspecting the
+completed replay:
+
+```sh
+scope request restack --discard-selection --json
+git fetch scope +refs/heads/main:refs/remotes/scope/main
+git rebase --onto refs/remotes/scope/main <reported-selected-base-full-oid>
+scope request push --base main
+```
+
+For a request base, fetch its current branch into `refs/scope/parents/`, replay
+from the reported previous selected OID onto that fetched head, and use
+`scope request push --base <request-name-or-id>`. Verify the fetched head matches
+`scope request show --request <request-name-or-id>` before replaying.
+`--discard-selection` requires the original branch and no active Git operation.
+It preserves HEAD, resolved files, refs, and the backup. JSON reports
+`result.status: "selection_discarded"` with the preserved head and old selected
+base. It cannot combine with `--onto`, `--continue`, or `--abort`. An ambiguous
+same-head publication receipt remains available for its original retry; this
+action does not discard that receipt or authorize a server update.
 
 Manual Git restacks can publish an explicit base without the helper:
 

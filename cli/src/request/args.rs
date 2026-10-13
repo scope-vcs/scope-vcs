@@ -100,6 +100,8 @@ pub(super) struct RequestPushArgs {
 
 #[derive(Parser)]
 pub(super) struct RequestRestackArgs {
+    #[arg(long, conflicts_with_all = ["onto", "continue_rebase", "abort"], help = "Discard only the pending base selection, preserving the replay and backup")]
+    pub(super) discard_selection: bool,
     #[arg(long, help = "Scope Git remote for the attached request")]
     pub(super) remote: Option<String>,
     #[arg(long, conflicts_with_all = ["continue_rebase", "abort"], help = "Replay onto an Open request or main")]

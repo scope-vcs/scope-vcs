@@ -14,9 +14,9 @@ pub(super) fn run(
     args: RequestRestackArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     let pending = state::load(repo)?;
-    if args.continue_rebase || args.abort {
+    if args.continue_rebase || args.abort || args.discard_selection {
         let pending = pending.ok_or_else(|| {
-            crate::error::CliError::usage("there is no restack to continue or abort")
+            crate::error::CliError::usage("there is no pending restack selection")
         })?;
         if args
             .remote
@@ -28,7 +28,11 @@ pub(super) fn run(
             )
             .into());
         }
-        return resume(repo, pending, args.abort);
+        return if args.discard_selection {
+            discard_selection(repo, pending)
+        } else {
+            resume(repo, pending, args.abort)
+        };
     }
     if let Some(pending) = pending {
         return Err(recovery(
@@ -177,6 +181,26 @@ fn resume(
     finish(repo, pending, abort)
 }
 
+fn discard_selection(
+    repo: &GitRepo,
+    pending: PendingRestack,
+) -> anyhow::Result<RequestCommandOutcome> {
+    crate::git_repo::require_no_git_operation(repo)
+        .map_err(|error| recovery(repo, &pending, "verify_git_operation", &error.to_string()))?;
+    if current_branch(repo)? != pending.branch {
+        return Err(recovery(
+            repo,
+            &pending,
+            "verify_branch",
+            "return to the original restack branch before discarding its selection",
+        ));
+    }
+    let head = head_oid(repo)?;
+    state::clear(repo)
+        .map_err(|error| recovery(repo, &pending, "clear_selection", &error.to_string()))?;
+    Ok(restack_outcome(pending, head, "selection_discarded"))
+}
+
 fn finish(
     repo: &GitRepo,
     pending: PendingRestack,
@@ -210,6 +234,14 @@ fn finish(
     } else {
         "ready_to_publish"
     };
+    Ok(restack_outcome(pending, head, status))
+}
+
+fn restack_outcome(
+    pending: PendingRestack,
+    head: String,
+    status: &'static str,
+) -> RequestCommandOutcome {
     let lines = vec![
         format!("Request {} restack: {status}", pending.request_id),
         format!(
@@ -217,13 +249,16 @@ fn finish(
             pending.backup_ref,
             short_oid(&pending.original_head)
         ),
-        if aborted {
-            "The original head was restored.".to_string()
-        } else {
-            format!(
+        match status {
+            "aborted" => "The original head was restored.".to_string(),
+            "selection_discarded" => format!(
+                "Preserved HEAD {head}. Inspect the new base, run git rebase --onto <new-base> {}, then scope request push --base <request|main>.",
+                stack::base_head(&pending.selected.base)
+            ),
+            _ => format!(
                 "Inspect the replay, then run scope request push --remote {} --request {}",
                 pending.remote, pending.request_id
-            )
+            ),
         },
     ];
     let result = RestackResult {
@@ -237,11 +272,11 @@ fn finish(
         backup_ref: pending.backup_ref,
         remote: pending.remote,
     };
-    Ok(RequestCommandOutcome::new(
+    RequestCommandOutcome::new(
         "request.restack",
         RequestCommandResult::Restack(result),
         lines,
-    ))
+    )
 }
 
 pub(super) fn recovery(
@@ -261,6 +296,7 @@ pub(super) fn recovery(
         "head_oid": head_oid(repo).ok(),
         "continue_command": ["scope", "request", "restack", "--continue"],
         "abort_command": ["scope", "request", "restack", "--abort"],
+        "discard_selection_command": ["scope", "request", "restack", "--discard-selection"],
         "publish_command": ["scope", "request", "push", "--remote", pending.remote, "--request", pending.request_id],
     })).into()
 }

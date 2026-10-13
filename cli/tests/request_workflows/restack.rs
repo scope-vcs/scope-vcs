@@ -209,6 +209,16 @@ fn restack_conflict_can_continue_staged_resolutions_or_abort_to_the_backup() {
         );
         assert!(layer.checkout.path().join(".git/rebase-merge").exists());
         if !abort {
+            let refused = layer.command(&["--discard-selection"]);
+            assert_eq!(refused.status.code(), Some(5), "{refused:?}");
+            assert!(
+                layer
+                    .checkout
+                    .path()
+                    .join(".git/scope-restack.json")
+                    .exists()
+            );
+            assert!(layer.checkout.path().join(".git/rebase-merge").exists());
             fs::write(
                 layer.checkout.path().join("parent.txt"),
                 "resolved child edit\n",
@@ -328,4 +338,163 @@ fn restack_refuses_unsafe_initial_states_without_mutating_the_branch() {
             .is_empty()
         );
     }
+}
+
+#[test]
+fn discarding_a_stale_selection_preserves_resolutions_and_allows_a_fresh_main_selection() {
+    use std::os::unix::fs::PermissionsExt;
+    let layer = Layer::new(true, false, true);
+    let conflict = layer.command(&["--onto", "main"]);
+    assert_eq!(conflict.status.code(), Some(5), "{conflict:?}");
+    fs::write(
+        layer.checkout.path().join("parent.txt"),
+        "resolved child edit\n",
+    )
+    .unwrap();
+    run_git(layer.checkout.path(), ["add", "parent.txt"]);
+    let replayed = success(layer.command(&["--continue"]));
+    let preserved_head = git_stdout(layer.checkout.path(), ["rev-parse", "HEAD"]);
+    let prior_selection = replayed["result"]["selected_base"]["review_base_oid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let backup = replayed["result"]["backup_ref"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let advanced_main = git_stdout(
+        layer.checkout.path(),
+        [
+            "commit-tree",
+            &format!("{}^{{tree}}", layer.main),
+            "-p",
+            &layer.main,
+            "-m",
+            "Advance main after selecting the restack base",
+        ],
+    );
+    run_git(
+        layer.checkout.path(),
+        [
+            "push",
+            layer.bare.path().to_str().unwrap(),
+            &format!("{advanced_main}:refs/heads/main"),
+        ],
+    );
+    let hook = layer.bare.path().join("hooks/pre-receive");
+    fs::write(
+        &hook,
+        "#!/bin/sh\nprintf 'publication rejected\\n' >&2\nexit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).unwrap();
+    run_git(
+        layer.checkout.path(),
+        [
+            "update-ref",
+            "refs/remotes/scope/child",
+            &layer.original_head,
+        ],
+    );
+    let rejected = layer
+        .transport
+        .command(&layer.server, layer.checkout.path())
+        .args(["--json", "request", "push"])
+        .output()
+        .unwrap();
+    assert_eq!(rejected.status.code(), Some(5), "{rejected:?}");
+    assert!(
+        layer
+            .checkout
+            .path()
+            .join(".git/scope-restack.json")
+            .exists()
+    );
+    run_git(
+        layer.checkout.path(),
+        ["switch", "-c", "other-recovery-branch"],
+    );
+    let wrong_branch = layer.command(&["--discard-selection"]);
+    assert_eq!(wrong_branch.status.code(), Some(5), "{wrong_branch:?}");
+    assert!(
+        layer
+            .checkout
+            .path()
+            .join(".git/scope-restack.json")
+            .exists()
+    );
+    run_git(layer.checkout.path(), ["switch", "child"]);
+    let receipt_key = "scope.request-req_child.revisionContext";
+    run_git(
+        layer.checkout.path(),
+        ["config", receipt_key, "opaque pending receipt"],
+    );
+    let discarded = success(layer.command(&["--discard-selection"]));
+    assert_eq!(discarded["result"]["status"], "selection_discarded");
+    assert_eq!(discarded["result"]["head_oid"], preserved_head);
+    assert_eq!(
+        discarded["result"]["selected_base"],
+        replayed["result"]["selected_base"]
+    );
+    assert_eq!(discarded["result"]["backup_ref"], backup);
+    assert!(
+        !layer
+            .checkout
+            .path()
+            .join(".git/scope-restack.json")
+            .exists()
+    );
+    assert_eq!(
+        git_stdout(layer.checkout.path(), ["rev-parse", "HEAD"]),
+        preserved_head
+    );
+    assert_eq!(
+        git_stdout(layer.checkout.path(), ["rev-parse", &backup]),
+        layer.original_head
+    );
+    assert_eq!(
+        git_stdout(
+            layer.checkout.path(),
+            ["rev-parse", "refs/remotes/scope/child"]
+        ),
+        layer.original_head
+    );
+    assert_eq!(
+        fs::read_to_string(layer.checkout.path().join("parent.txt")).unwrap(),
+        "resolved child edit\n"
+    );
+    layer.assert_binding();
+    assert_eq!(
+        git_stdout(layer.checkout.path(), ["config", "--get", receipt_key]),
+        "opaque pending receipt"
+    );
+    run_git(layer.checkout.path(), ["config", "--unset", receipt_key]);
+    run_git(
+        layer.checkout.path(),
+        ["rebase", "--onto", &advanced_main, &prior_selection],
+    );
+    assert_eq!(
+        git_stdout(layer.checkout.path(), ["rev-parse", "HEAD^"]),
+        advanced_main
+    );
+    layer.transport.capture_request_headers();
+    let headers = layer.checkout.path().join("fresh-main-headers");
+    let refreshed = layer
+        .transport
+        .command(&layer.server, layer.checkout.path())
+        .env("SCOPE_STACK_HEADERS", &headers)
+        .args(["--json", "request", "push", "--base", "main"])
+        .output()
+        .unwrap();
+    assert_eq!(refreshed.status.code(), Some(5), "{refreshed:?}");
+    assert!(
+        fs::read_to_string(headers)
+            .unwrap()
+            .contains(&format!("Scope-Request-Base: main:{advanced_main}"))
+    );
+    assert_eq!(
+        fs::read_to_string(layer.checkout.path().join("parent.txt")).unwrap(),
+        "resolved child edit\n"
+    );
+    layer.assert_binding();
 }

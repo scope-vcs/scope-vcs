@@ -44,12 +44,7 @@ pub fn rebase_original_head(repo: &GitRepo) -> anyhow::Result<Option<String>> {
     Ok(None)
 }
 
-pub fn require_rebase_ready(
-    repo: &GitRepo,
-    branch: &str,
-    base: &str,
-    head: &str,
-) -> anyhow::Result<()> {
+pub fn require_no_git_operation(repo: &GitRepo) -> anyhow::Result<()> {
     let directory = git_worktree_directory(repo)?;
     for name in [
         "rebase-merge",
@@ -66,6 +61,16 @@ pub fn require_rebase_ready(
             );
         }
     }
+    Ok(())
+}
+
+pub fn require_rebase_ready(
+    repo: &GitRepo,
+    branch: &str,
+    base: &str,
+    head: &str,
+) -> anyhow::Result<()> {
+    require_no_git_operation(repo)?;
     let worktrees = git_output_in_repo(repo, &["worktree", "list", "--porcelain", "-z"])?;
     if !worktrees.status.success() {
         bail!("inspect Git worktrees failed");
