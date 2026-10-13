@@ -11,8 +11,10 @@ use scope_postgres::db::MetadataStore;
 use std::{path::Path, time::Duration};
 
 fn main() -> anyhow::Result<()> {
-    let telemetry =
-        scope_service_runtime::init_telemetry("media-worker", "scope_media_worker=info,scope_postgres=info")?;
+    let telemetry = scope_service_runtime::init_telemetry(
+        "media-worker",
+        "scope_media_worker=info,scope_postgres=info",
+    )?;
     let result = run_command();
     telemetry.shutdown();
     result
