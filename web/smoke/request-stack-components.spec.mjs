@@ -123,7 +123,7 @@ test('same-view stack comparisons render child layers at the parent pin without 
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto(new URL(`/adam/demo/requests/child/changes?view=${view}`, server.resolvedUrls.local[0]).href)
     const visibleDependency = page.getByRole('region', { name: 'Request dependency' })
-    assert.equal(await visibleDependency.getByRole('link', { name: 'Parent foundation' }).getAttribute('href'), '/adam/demo/requests/parent')
+    assert.equal(await visibleDependency.getByRole('link', { name: 'Parent foundation' }).getAttribute('href'), `/adam/demo/requests/parent?view=${view}`)
     assert.equal(await visibleDependency.locator('[title="parent-revision"]').textContent(), 'Pinned revision parent-revision · aaaaaaaaaaaa')
     assert.equal(await page.getByRole('button', { name: 'Request layer', exact: true }).getAttribute('aria-current'), 'page')
     assert.equal(await page.getByRole('button', { name: 'parent.ts', exact: true }).count(), 0)
