@@ -512,6 +512,14 @@ export type RequestBase = { "kind": "main", review_base_oid: GitOid, } | { "kind
 
 export type RequestStackStatus = "main" | "waiting_for_parent" | "parent_extended" | "parent_rewritten" | "parent_closed" | "ancestor_blocked" | "integration_conflict";
 
+export type RequestStackNodeResponse = { id: string, name: string, title: string, state: RequestState, stack_status: RequestStackStatus, stack_depth: number, head_oid: GitOid, current_revision_id: string | null, };
+
+export type RequestStackParentResponse = { "kind": "available", request: RequestStackNodeResponse, } | { "kind": "unavailable" };
+
+export type RequestStackNavigationResponse = { parent: RequestStackParentResponse | null, ancestors: Array<RequestStackNodeResponse>, ancestors_unavailable: boolean, children: RequestChildrenPageResponse, };
+
+export type RequestChildrenPageResponse = { requests: Array<RequestStackNodeResponse>, next_cursor: string | null, };
+
 export type RequestComparisonMode = "request" | "push" | "commit";
 
 export type RequestComparisonResponse = { revision_id: string, mode: RequestComparisonMode, base_oid: GitOid | null, head_oid: GitOid | null, files: Array<CommitFileResponse>, inspection: RequestRevisionInspectionState, };
