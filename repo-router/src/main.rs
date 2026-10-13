@@ -1,4 +1,14 @@
-use scope_repo_router::{RouterConfig, router};
+mod app;
+mod backend_selection;
+mod config;
+mod discovery;
+mod proxy;
+mod rendezvous;
+mod replay;
+mod repository_path;
+
+use app::router;
+use config::RouterConfig;
 use scope_service_runtime::{init_telemetry, port_from_env, serve};
 
 fn main() -> anyhow::Result<()> {

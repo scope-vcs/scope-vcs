@@ -43,14 +43,10 @@ async fn drain_orphan_objects(
     object_store: &dyn ObjectStore,
 ) -> anyhow::Result<SourceBlobCleanupReport> {
     let now_unix = super::unix_now()?;
-    let report = scope_content_lifecycle::drain_source_blob_cleanup(
-        metadata,
-        object_store,
-        now_unix,
-        &super::generate_persistence_id,
-    )
-    .await
-    .map_err(|error| anyhow::anyhow!("draining orphan object jobs: {}", error.message))?;
+    let report =
+        scope_content_lifecycle::drain_source_blob_cleanup(metadata, object_store, now_unix)
+            .await
+            .map_err(|error| anyhow::anyhow!("draining orphan object jobs: {}", error.message))?;
     for failure in &report.failed_object_deletes {
         tracing::warn!(
             object_key = %scope_storage::object_key(&failure.blob),

@@ -1,8 +1,7 @@
 mod support;
 
-use scope_media_storage::{
-    MAX_CHUNK_BYTES, MediaObject, MediaStorage, MediaStorageErrorKind, WriteAttempt,
-};
+use scope_domain::requests::attachments::RequestMediaObject;
+use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, MediaStorageErrorKind, WriteAttempt};
 use scope_storage::{MemoryBackend, ObjectBackend};
 use std::sync::Arc;
 use tokio_stream::StreamExt;
@@ -37,7 +36,7 @@ async fn metadata_encrypted_chunks_and_key_restore_into_an_independent_store() {
     for (key, encrypted_bytes) in encrypted_backup {
         restored_bucket.put(&key, encrypted_bytes).await.unwrap();
     }
-    let restored_manifest: MediaObject = serde_json::from_slice(&metadata_backup).unwrap();
+    let restored_manifest: RequestMediaObject = serde_json::from_slice(&metadata_backup).unwrap();
     let restored = MediaStorage::encrypted(restored_bucket.clone(), recovery_key, 1).unwrap();
     let mut stream = restored
         .read_range(

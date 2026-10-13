@@ -213,7 +213,7 @@ pub(super) async fn complete_view_main_push(
         staging_repo,
     )
     .await;
-    state.auto_merge_wakeup.notify_one();
+    state.wakeups.auto_merge.notify_one();
     Ok(ViewMainPushOutcome::Landed)
 }
 

@@ -15,7 +15,6 @@ commands:
   drain-writers               terminate sessions holding the shared writer fence
   validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
-  backfill-workflow-catalogs  idempotently rebuild repository workflow catalogs
   native-runs list            list the accounts whose repositories may use native runs
   native-runs add <handle> [note]
                               list an account, or replace its note
@@ -77,12 +76,6 @@ async fn main() -> anyhow::Result<()> {
             apply_maintenance_migrations(database_url.clone(), migration_limits()?).await?;
             verify_schema(database_url).await?;
             println!(r#"{{"exact":true,"migration":"applied"}}"#);
-        }
-        "backfill-workflow-catalogs" => {
-            verify_schema(database_url.clone()).await?;
-            let stored =
-                api::backfill_repository_workflow_catalogs_for_maintenance(database_url).await?;
-            println!(r#"{{"workflowCatalogsBackfilled":{stored}}}"#);
         }
         "fence" => {
             verify_writer_fence_available(database_url).await?;

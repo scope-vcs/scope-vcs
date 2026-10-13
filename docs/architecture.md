@@ -6,7 +6,7 @@ layers.
 
 ## Dependency direction
 
-The root Cargo workspace contains nineteen packages and excludes `cli/`, which
+The root Cargo workspace contains eighteen packages and excludes `cli/`, which
 is a separate workspace. Current `cargo metadata` gives these internal
 dependencies:
 
@@ -17,19 +17,17 @@ dependencies:
 | `scope-git-process` | Git subprocess lifetime, limits, reaping, and telemetry | none |
 | `scope-storage` | Object backends (S3, filesystem, memory), the framed encryption envelope, verified object reads, presigning, and bounded Git segment ingest, restore, and cleanup | `scope-domain`, `scope-git-process` |
 | `scope-api-contract` | API routes and serialized API/runtime DTOs | `scope-domain` |
-| `scope-cache-contract` | Cache grant and endpoint DTOs | `scope-cache-domain` |
 | `scope-run-config` | Workflow YAML decoding and compilation | `scope-domain` |
 | `scope-git` | Projection identity and Git snapshot preparation/materialization | `scope-domain`, optionally `scope-storage` |
 | `scope-postgres` | Metadata stores, migrations, read models, and transaction owners | `scope-domain`, `scope-cache-domain`, `scope-git`, `scope-run-config` |
-| `scope-media-storage` | Encrypted, chunked attachment storage and media object manifests | `scope-storage` |
+| `scope-media-storage` | Encrypted, chunked attachment storage for the domain media object manifests | `scope-domain`, `scope-storage` |
 | `scope-media-service` | Grant-authorized attachment upload and media delivery | `scope-api-contract`, `scope-domain`, `scope-media-storage`, `scope-storage`, `scope-postgres` |
 | `scope-media-worker` | Attachment validation, derivative generation, and media cleanup | `scope-domain`, `scope-media-storage`, `scope-storage`, `scope-postgres` |
 | `scope-content-lifecycle` | Shared source-blob cleanup orchestration | `scope-domain`, `scope-storage`, `scope-postgres` |
 | `api` | Authentication, HTTP/SSE delivery, application use cases, and composition | the contracts, domain crates, orchestration crate, and infrastructure adapters |
 | `worker` | Run control, Git compaction, and cleanup polling | domain, API contract, orchestration, and infrastructure adapters |
-| `scope-cache-service` | Cache authorization, signed transfers, and reconciliation | cache contract/domain, object store, Postgres |
 | `scope-repo-router` | Repository Git/HTTP routing proxy | none |
-| `scope-runner-runtime` | Claimed-job setup, cache transfer, process execution, logs, and completion | API/cache contracts and domain crates |
+| `scope-runner-runtime` | Claimed-job setup, cache transfer, process execution, logs, and completion | API contract and domain crates |
 
 The dependency rules are:
 
@@ -40,8 +38,7 @@ The dependency rules are:
   storage consumer; it does not own subprocess policy.
 - Contract crates may depend only on their corresponding domain crate.
 - Reusable crates do not depend on application packages, including `api`,
-  `worker`, the cache and media services, the media worker, and
-  `scope-runner-runtime`.
+  `worker`, the media service, the media worker, and `scope-runner-runtime`.
 - Shared application orchestration must have at least two real application
   consumers. `scope-content-lifecycle` is currently consumed by both `api` and
   `worker`.
@@ -110,9 +107,9 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
 - `request_merge.rs` for preparing, validating, persisting, publishing, and
   cleaning up a request merge;
 - `request_auto_merge.rs` for reconciling durable authorization for one request
-  revision through the existing merge use case. `request_auto_merge_runtime.rs`
-  supervises polling in the API process; database leases allow multiple API
-  processes to share the work and recover abandoned attempts;
+  revision through the existing merge use case and polling for it in the API
+  process; database leases allow multiple API processes to share the work and
+  recover abandoned attempts;
 - `invite_email_delivery.rs` for sending queued repository invite emails. It
   creates the invite link at send time, so only the link's hash is ever stored,
   sends through `invite_mailer.rs` (Resend, keyed per email so a repeated
@@ -141,15 +138,24 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   retries; and `github_check_results.rs` for reading GitHub's check runs when
   a webhook names a tested commit and for the reconciler that reads pending
   ones a delivery missed;
-- `public_check_commits.rs` for building the check commit GitHub tests for a
+- `view_check_commits.rs` for building the check commit GitHub tests for a
   public contribution, the contribution merged onto private main in a
   temporary private staging repository, at evaluation and again at push;
 - `request_revision_inspection.rs` for shared Git revision membership checks
   and raw diff execution used by review and discussion anchors;
 - `run_control.rs` and `run_inspection.rs` for run mutations and authorized run,
   detail, and log reads;
-- `native_runs.rs` for the operator-managed list of accounts that may use
-  Scope's hosted runner. `scope-domain/src/runs/availability.rs` owns the rule:
+- `run_caches.rs` for the runner cache endpoints and cache reconciliation. The
+  runtime-protocol cache routes authenticate the attempt token, derive the
+  allowed cache identity from the claimed job through
+  `scope-domain/src/runs/cache/identity.rs`, persist metadata through
+  `scope-postgres/src/db/cache_service.rs`, and presign object transfers
+  against the cache bucket (`SCOPE_CACHE_BUCKET_*`, labeled by
+  `SCOPE_CACHE_BACKEND`). Reconciliation claims expired uploads, references and
+  deletions with expiring database claims, so every API replica can run it;
+- `native_runs.rs` for the list of accounts that may use Scope's hosted
+  runner, which operators manage with `scope-maintenance native-runs`.
+  `scope-domain/src/runs/availability.rs` owns the rule:
   a repository may create native runs only while its owning account is listed.
   Run creation, retry, push-to-main triggers, request CI evaluation, and
   admission share-lock the listing in `scope-postgres/src/db/native_runs.rs`.
@@ -158,6 +164,13 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   unfinished runs; and
 - `content_cleanup.rs` for repository-storage cleanup and source-blob cleanup
   coordination.
+
+API background loops, such as auto-merge, request check recovery, GitHub
+pushes and reads, invite email delivery, Clerk user deletion, retention, run
+cache reconciliation, and recovery sweeps, are declared next to the use case
+they drive and run on the single runner in `api/src/background_work.rs`. It owns the cadence, wakeups,
+optional schema-readiness gating, panic isolation, and shutdown;
+`AppState::start_background_work` starts them all once.
 
 `api/src/github/` owns the Scope GitHub App: its configuration, app and
 installation tokens (installation tokens are cached until shortly before they
@@ -176,15 +189,13 @@ The other applications remain narrow:
 
 - `worker/` runs independent control, compaction, and cleanup roles and pauses
   them when the schema is not ready.
-- `cache-service/` verifies cache grants, persists cache metadata, issues signed
-  object transfers, and runs reconciliation.
 - `media-service/` authorizes upload and media requests with grants and uses
   `scope-media-storage` for encrypted chunk storage.
 - `media-worker/` validates uploaded originals, generates derivatives, and
   cleans up media objects.
-- `runner-runtime/` converts a claimed wire workflow in `workflow.rs`, uses the
-  control-plane client under `api/`, cache behavior under `cache/`, and process
-  supervision under `execute/`.
+- `runner-runtime/` validates the claimed wire workflow through the contract's
+  `runs/runtime.rs` conversion, uses the control-plane client under `api/`,
+  cache behavior under `cache/`, and process supervision under `execute/`.
 - `web/` consumes generated TypeScript API types and owns browser delivery.
 
 Frontend server data belongs to persistent resource owners under each feature.
@@ -203,11 +214,7 @@ to `.output/client-chunk-graph.json`, outside the served `public` directory.
 `web/scripts/check-client-bundle.mjs` gzips every emitted script and fails when
 the entry chunks plus their static imports exceed 300 KiB, or when any single
 chunk exceeds 512 KiB. The caps and their references are constants at the top of
-that script. `web/smoke/request-mermaid-components.budget.mjs` separately caps the
-lazy JavaScript for a cold diagram render at 256 KiB and the render at 1,000 ms.
-`pnpm test:smoke` runs `*.budget.mjs` files one at a time after the concurrent
-`*.spec.mjs` suite, so wall-clock budgets never share the CPU with other browser
-tests.
+that script.
 
 ## Reading important behavior
 
@@ -260,9 +267,10 @@ retention. Cleanup still understands retired manifest references so queued
 objects can be removed.
 
 Every database starts from the current schema baseline and advances through the
-numbered migrations after it; a ledger outside that prefix is refused. The
-migration inventory, writer fence, schema comparison, and recovery steps are
-documented in
+numbered migrations after it; a ledger outside that prefix is refused. A
+database on the exact previous inventory adopts the baseline through a one-time
+maintenance bridge after its schema matches. The migration inventory, bridge,
+writer fence, schema comparison, and recovery steps are documented in
 [the schema baseline runbook](operations/current-schema-baseline.md).
 
 ## Standalone CLI workspace

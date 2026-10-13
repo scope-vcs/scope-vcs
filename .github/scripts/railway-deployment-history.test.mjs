@@ -7,7 +7,7 @@ test('deployment inventory failures cannot authorize the no-history branch', () 
     set -euo pipefail
     source .github/scripts/railway-backend-control.sh
     railway_scope=()
-    railway_inventory_read() { printf '%s' "$TEST_HISTORY_RESPONSE"; return "$TEST_HISTORY_STATUS"; }
+    railway_read() { printf '%s' "$TEST_HISTORY_RESPONSE"; return "$TEST_HISTORY_STATUS"; }
     history="$(service_has_deployment_history service)" || exit $?
     if [[ "$history" == 0 ]]; then echo authorize-bootstrap; else echo require-existing-writer; fi
   `], { encoding: 'utf8', timeout: 60_000, env: {

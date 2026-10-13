@@ -121,8 +121,7 @@ where
     query
         .into_model::<RequestListModel>()
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(RequestListModel::try_into_read_model)
         .collect()
@@ -218,8 +217,7 @@ where
 {
     entities::request::Entity::find_by_id(request_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request::Model::try_into_domain)
         .transpose()
 }
@@ -236,8 +234,7 @@ where
         .filter(entities::request::Column::RepoId.eq(repo_id.to_string()))
         .filter(entities::request::Column::Name.eq(request_name.to_string()))
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request::Model::try_into_domain)
         .transpose()
 }
@@ -250,8 +247,7 @@ where
         .filter(entities::request::Column::RepoId.eq(repo_id.to_string()))
         .order_by_asc(entities::request::Column::Id)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request::Model::try_into_domain)
         .collect()
@@ -273,8 +269,7 @@ pub(super) async fn public_draft_count<C: ConnectionTrait>(
         .filter(entities::request::Column::ClosedAtUnix.is_null())
         .filter(entities::request::Column::MergedAtUnix.is_null())
         .count(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     usize::try_from(count).map_err(PostgresError::internal)
 }
 
@@ -292,8 +287,7 @@ pub(super) async fn open_request_counts_by_view<C: ConnectionTrait>(
         .group_by(entities::request::Column::Audience)
         .into_tuple::<(String, i64)>()
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|(view, count)| {
             Ok((
@@ -301,26 +295,6 @@ pub(super) async fn open_request_counts_by_view<C: ConnectionTrait>(
                 usize::try_from(count).map_err(PostgresError::internal)?,
             ))
         })
-        .collect()
-}
-
-pub async fn requests_by_repo_author<C>(
-    conn: &C,
-    repo_id: &str,
-    author_user_id: &str,
-) -> Result<Vec<Request>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    entities::request::Entity::find()
-        .filter(entities::request::Column::RepoId.eq(repo_id.to_string()))
-        .filter(entities::request::Column::AuthorUserId.eq(author_user_id.to_string()))
-        .order_by_asc(entities::request::Column::Id)
-        .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(entities::request::Model::try_into_domain)
         .collect()
 }
 
@@ -336,8 +310,7 @@ where
         .order_by_asc(entities::request_event::Column::CreatedAtUnix)
         .order_by_asc(entities::request_event::Column::Position)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request_event::Model::try_into_domain)
         .collect()
@@ -361,8 +334,7 @@ where
         .order_by_asc(entities::request_event::Column::Position)
         .limit(limit)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request_event::Model::try_into_domain)
         .collect()
@@ -381,8 +353,7 @@ where
         .order_by_desc(entities::request_event::Column::Position)
         .limit(limit)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request_event::Model::try_into_domain)
         .collect::<Result<Vec<_>, _>>()?;
@@ -399,8 +370,7 @@ where
 {
     entities::request_event::Entity::find_by_id(event_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_event::Model::try_into_domain)
         .transpose()
 }
@@ -412,8 +382,7 @@ where
     entities::request::Model::from_domain(request)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     replace_object_reference(
         conn,
         "request_snapshot",
@@ -431,17 +400,14 @@ where
     entities::request_invitee::Entity::delete_many()
         .filter(entities::request_invitee::Column::RequestId.eq(request_id.to_string()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::request_event::Entity::delete_many()
         .filter(entities::request_event::Column::RequestId.eq(request_id.to_string()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     entities::request::Entity::delete_by_id(request_id.to_string())
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     delete_object_reference(conn, "request_snapshot", request_id).await?;
     Ok(())
 }
@@ -507,8 +473,7 @@ where
             Expr::value(row.updated_at_unix),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     if result.rows_affected == 0 {
         return Err(PostgresError::internal_message(
             "request row missing during update",
@@ -534,8 +499,7 @@ where
     entities::request_event::Model::from_domain(event)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 

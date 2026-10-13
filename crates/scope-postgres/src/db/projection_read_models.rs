@@ -29,8 +29,7 @@ pub(super) async fn repository_views<C: ConnectionTrait>(
 ) -> Result<Views, PostgresError> {
     let row = entities::repository::Entity::find_by_id(repo_id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .ok_or_else(|| PostgresError::internal_message("repository is missing"))?;
     let config: RepoConfig = super::decode_json(row.repo_config)?;
     Ok(config.views)
@@ -46,14 +45,12 @@ where
     entities::projection_read_model::Entity::delete_many()
         .filter(entities::projection_read_model::Column::RepoId.eq(repo_id.to_string()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     super::history_reads::delete_history_payloads(conn, repo_id).await?;
     entities::projection_file::Entity::delete_many()
         .filter(entities::projection_file::Column::RepoId.eq(repo_id.to_string()))
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     Ok(())
 }
 
@@ -89,8 +86,7 @@ where
     entities::projection_file::Entity::find()
         .filter(entities::projection_file::Column::RepoId.eq(repo_id.to_string()))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| {
             let content = row.try_into_content()?;
@@ -114,8 +110,7 @@ where
         view.as_str().to_string(),
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .filter(|row| row.current() && row.repo_version == repo_version))
 }
 
@@ -141,8 +136,7 @@ where
     ))
     .filter(entities::projection_file::Column::Path.eq(path.as_str().to_string()))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     match row {
         Some(row) => {
             let content = row.try_into_content()?;
@@ -178,8 +172,7 @@ where
         .filter(view_condition(&views, view))
         .order_by_asc(entities::projection_file::Column::Path)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let expected_file_count = usize::try_from(model.file_count)
         .map_err(|_| PostgresError::internal_message("projection file count cannot be negative"))?;
     if rows.len() != expected_file_count {

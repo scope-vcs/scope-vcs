@@ -1,5 +1,5 @@
 use super::{
-    GeneratedIdSource, RepositoryMutationResult, RepositoryStore, acquire_aggregate_lock,
+    RepositoryMutationResult, RepositoryStore, acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_content_push},
     entities,
     request_merge::{LandedRequestCandidate, LandedRequestCompletion, complete_landed_requests},
@@ -38,7 +38,6 @@ impl RepositoryStore {
     pub async fn apply_content_only_push(
         &self,
         command: ApplyContentOnlyPushCommand,
-        generated_ids: &dyn GeneratedIdSource,
     ) -> Result<
         Option<RepositoryMutationResult<scope_domain::repository::git::GitHead>>,
         PostgresError,
@@ -57,12 +56,11 @@ impl RepositoryStore {
             now_unix,
         } = command;
         let repo_id = scope_domain::repository::repo_id(&owner, &name);
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let repo_row = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
         if repo_row.incarnation_id != incarnation.incarnation_id()
             || repo_row.id != incarnation.repository_id()
@@ -78,8 +76,7 @@ impl RepositoryStore {
         }
         let head = entities::git_head::Entity::find_by_id(repo_id.clone())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .ok_or_else(|| PostgresError::conflict("repo has no accepted Git head"))?
             .try_into_domain()?;
         if head.frontier() != expected_git_frontier {
@@ -91,8 +88,7 @@ impl RepositoryStore {
             .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
             .filter(entities::repository_member::Column::UserId.eq(author_id.clone()))
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::repository_member::Model::try_into_domain)
             .transpose()?
             .map(|member| member.permissions);
@@ -121,7 +117,6 @@ impl RepositoryStore {
             },
             push_trigger_input,
             now_unix,
-            generated_ids,
         )
         .await?;
         let completed_landed_requests = complete_landed_requests(
@@ -133,10 +128,9 @@ impl RepositoryStore {
                 candidates: landed_request_candidates,
             },
             now_unix,
-            generated_ids,
         )
         .await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RepositoryMutationResult {
             result: git_head,
             completed_landed_requests,

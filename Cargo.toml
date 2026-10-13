@@ -1,13 +1,11 @@
 [workspace]
 members = [
     "api",
-    "cache-service",
     "media-worker",
     "media-service",
     "crates/scope-media-storage",
     "repo-router",
     "crates/scope-api-contract",
-    "crates/scope-cache-contract",
     "crates/scope-cache-domain",
     "crates/scope-content-lifecycle",
     "crates/scope-domain",
@@ -86,7 +84,6 @@ url = "2.5.8"
 xmlparser = "0.13.6"
 
 scope_api_contract = { package = "scope-api-contract", path = "crates/scope-api-contract" }
-scope_cache_contract = { package = "scope-cache-contract", path = "crates/scope-cache-contract" }
 scope_cache_domain = { package = "scope-cache-domain", path = "crates/scope-cache-domain" }
 scope_content_lifecycle = { package = "scope-content-lifecycle", path = "crates/scope-content-lifecycle" }
 scope_domain = { package = "scope-domain", path = "crates/scope-domain" }

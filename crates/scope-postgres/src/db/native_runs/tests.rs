@@ -2,9 +2,11 @@ use crate::{
     db::{
         DispatchAdmission, MetadataStore, RecordRequestChecksCommand,
         requests::tests::postgres_store,
-        test_support::fixtures::{repository, source_blob, store_with_repositories, user},
+        test_support::fixtures::{
+            manual_run, manual_workflow, repository, store_with_repositories, user,
+        },
     },
-    error::PostgresErrorKind,
+    error::{PostgresError, PostgresErrorKind},
 };
 use scope_domain::{
     requests::{
@@ -12,17 +14,7 @@ use scope_domain::{
         RequestCheckEvaluationState, StartRequestInput,
     },
     runs::{
-        availability::NATIVE_RUNS_UNAVAILABLE,
-        run::{Run, RunState},
-        source::{RunSource, RunTrigger},
-        workflow::{
-            definition::{
-                CompiledWorkflow, ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep,
-                WorkflowTriggers,
-            },
-            identity::{WorkflowIdentity, WorkflowPath},
-            revision::WorkflowRevision,
-        },
+        availability::NATIVE_RUNS_UNAVAILABLE, run::RunState, workflow::revision::WorkflowRevision,
     },
     views::ViewId,
 };
@@ -30,46 +22,37 @@ use scope_domain::{
 const OWNER_ID: &str = "user_native_owner";
 const OWNER_HANDLE: &str = "native-owner";
 
-fn workflow(repository_id: &str) -> WorkflowRevision {
-    WorkflowRevision::new(
-        WorkflowIdentity::new(
-            repository_id,
-            WorkflowPath::parse("/.scope/runs/test.yml").unwrap(),
-        )
-        .unwrap(),
-        CompiledWorkflow::new(
-            "Test",
-            WorkflowTriggers::new(true, false, false).unwrap(),
-            vec![
-                WorkflowJob::new(
-                    WorkflowJobId::parse("checks").unwrap(),
-                    vec![],
-                    ContainerSpec::new(format!("rust@sha256:{}", "a".repeat(64))).unwrap(),
-                    600,
-                    vec![],
-                    Default::default(),
-                    vec![WorkflowStep::new("Test", "cargo test").unwrap()],
-                )
-                .unwrap(),
-            ],
-        )
-        .unwrap(),
-    )
-    .unwrap()
+fn run(revision: &WorkflowRevision, id: &str) -> scope_domain::runs::run::Run {
+    manual_run(revision, id, OWNER_ID)
 }
 
-fn run(revision: &WorkflowRevision, id: &str) -> Run {
-    Run::new(
-        id,
-        id,
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some(OWNER_ID.into()),
-        RunSource::ephemeral_git_bundle(source_blob(&"d".repeat(40), &"c".repeat(64), 42)).unwrap(),
-        10,
-    )
-    .unwrap()
+async fn record_checks(
+    store: &MetadataStore,
+    revision: &WorkflowRevision,
+    evaluation: RequestCheckEvaluation,
+) -> Result<(), PostgresError> {
+    store
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
+            evaluation,
+            revisions: vec![revision.clone()],
+            runs: Vec::new(),
+            push_to_github: false,
+        })
+        .await
+        .map(|_| ())
 }
 
 fn unlisted_store() -> (MetadataStore, WorkflowRevision) {
@@ -78,7 +61,7 @@ fn unlisted_store() -> (MetadataStore, WorkflowRevision) {
         "native-repo",
         ViewId::private(),
     );
-    let revision = workflow(&repo.record.id);
+    let revision = manual_workflow(&repo.record.id);
     (store_with_repositories([repo]), revision)
 }
 
@@ -216,7 +199,7 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
         .add_account("owner", None, 1)
         .await
         .unwrap();
-    let revision = workflow("owner/repo");
+    let revision = manual_workflow("owner/repo");
     for (request_id, head_oid) in [("waiting", "a"), ("settled", "b")] {
         let head_oid = head_oid.repeat(40);
         store
@@ -249,28 +232,7 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
             RequestCheckEvaluation::no_checks(request_id, &head_oid, 3)
         }
         .unwrap();
-        store
-            .requests()
-            .record_request_checks(RecordRequestChecksCommand {
-                expected_canonical_main_oid: store
-                    .requests()
-                    .request_check_base("owner/repo")
-                    .await
-                    .unwrap(),
-                repository_incarnation: store
-                    .repositories()
-                    .repository_record("owner/repo")
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .incarnation(),
-                evaluation,
-                revisions: vec![revision.clone()],
-                runs: Vec::new(),
-                push_to_github: false,
-            })
-            .await
-            .unwrap();
+        record_checks(&store, &revision, evaluation).await.unwrap();
     }
 
     let removal = store
@@ -314,34 +276,16 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
         .await
         .unwrap();
 
-    let refused = store
-        .requests()
-        .record_request_checks(RecordRequestChecksCommand {
-            expected_canonical_main_oid: store
-                .requests()
-                .request_check_base("owner/repo")
-                .await
-                .unwrap(),
-            repository_incarnation: store
-                .repositories()
-                .repository_record("owner/repo")
-                .await
-                .unwrap()
-                .unwrap()
-                .incarnation(),
-            evaluation: RequestCheckEvaluation::awaiting_approval(
-                "settled",
-                "c".repeat(40),
-                vec![RequestCheck::Native(NativeRequestCheck::for_revision(
-                    &revision,
-                ))],
-                11,
-            )
-            .unwrap(),
-            revisions: vec![revision],
-            runs: Vec::new(),
-            push_to_github: false,
-        })
+    let evaluation = RequestCheckEvaluation::awaiting_approval(
+        "settled",
+        "c".repeat(40),
+        vec![RequestCheck::Native(NativeRequestCheck::for_revision(
+            &revision,
+        ))],
+        11,
+    )
+    .unwrap();
+    let refused = record_checks(&store, &revision, evaluation)
         .await
         .unwrap_err();
     assert_eq!(refused.message, NATIVE_RUNS_UNAVAILABLE);

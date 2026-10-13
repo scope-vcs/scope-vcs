@@ -7,8 +7,9 @@ use std::{
 
 #[allow(dead_code)]
 #[path = "../../src/test_support.rs"]
-mod temp_dir;
-pub(crate) use temp_dir::TempDir;
+mod test_support;
+#[allow(unused_imports)]
+pub(crate) use test_support::{TempDir, commit_all, repository_response, run_git};
 
 pub fn scope_command(cwd: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_scope"));
@@ -47,39 +48,7 @@ pub fn scope_failure_with_code<const N: usize>(
 pub fn create_repo_with_head(cwd: &Path) {
     run_git(cwd, ["-c", "init.defaultBranch=main", "init"]);
     fs::write(cwd.join("README.md"), "initial\n").unwrap();
-    run_git(cwd, ["add", "README.md"]);
     commit_all(cwd, "initial");
-}
-
-#[allow(dead_code)]
-pub fn commit_all(cwd: &Path, message: &str) {
-    run_git(
-        cwd,
-        [
-            "-c",
-            "user.email=scope@example.test",
-            "-c",
-            "user.name=Scope Test",
-            "commit",
-            "-m",
-            message,
-        ],
-    );
-}
-
-#[allow(dead_code)]
-pub fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) {
-    let output = Command::new("git")
-        .current_dir(cwd)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
 }
 
 pub fn assert_failure(output: &Output, action: &str) {
@@ -190,7 +159,15 @@ pub fn git_stdout(
 }
 
 #[allow(dead_code)]
-#[path = "../../src/test_fixtures.rs"]
-mod fixtures;
-#[allow(unused_imports)]
-pub use fixtures::{repository_response, session_response};
+pub fn session_response(id: &str, handle: &str, email: &str) -> serde_json::Value {
+    serde_json::to_value(scope_api_contract::AccountSessionResponse {
+        identity: None,
+        user: Some(scope_api_contract::UserResponse {
+            id: id.into(),
+            handle: handle.into(),
+            email: email.into(),
+            email_verified: true,
+        }),
+    })
+    .unwrap()
+}

@@ -9,7 +9,7 @@ if [[ "$1" == "status" ]]; then
   STATES="$states" node -e '
 const fs = require("node:fs");
 const states = JSON.parse(process.env.STATES);
-const paths = {"scope-api":"api","scope-worker":"worker","scope-cache-service":"cache-service","scope-repo-router":"repo-router","scope-media":"media-service","scope-media-worker":"media-service","scope-web":"web"};
+const paths = {"scope-api":"api","scope-worker":"worker","scope-repo-router":"repo-router","scope-media":"media-service","scope-media-worker":"media-service","scope-web":"web"};
 const instances = states.map(s => {
   const deploy = JSON.parse(fs.readFileSync(`${paths[s.id]}/railway.json`,"utf8")).deploy;
   const deployment = {id:s.deploymentId,status:s.status,deploymentStopped:s.deploymentStopped,
@@ -17,18 +17,17 @@ const instances = states.map(s => {
     instances:[...Array.from({length:s.replicas?.running||0},()=>({status:"RUNNING"})),...Array.from({length:s.replicas?.crashed||0},()=>({status:"CRASHED"}))]};
   return {node:{serviceId:s.id,serviceName:s.name,numReplicas:s.replicas?.configured,latestDeployment:deployment,activeDeployments:s.deploymentId ? [deployment] : []}};
 });
-console.log(JSON.stringify({id:"11111111-1111-4111-8111-111111111111",environments:{edges:[{node:{id:"22222222-2222-4222-8222-222222222222",name:"production",serviceInstances:{edges:instances}}}]},services:{edges:[...Object.entries(paths).map(([id])=>({node:{id,name:({"scope-worker":"scope-run-worker","scope-cache-service":"scope-cache","scope-repo-router":"scope-git-router","scope-media":"scope-media-api"})[id] || id}})),{node:{id:"scope-postgres",name:"scope-postgres"}}]}}));
+console.log(JSON.stringify({id:"11111111-1111-4111-8111-111111111111",environments:{edges:[{node:{id:"22222222-2222-4222-8222-222222222222",name:"production",serviceInstances:{edges:instances}}}]},services:{edges:[...Object.entries(paths).map(([id])=>({node:{id,name:({"scope-worker":"scope-run-worker","scope-repo-router":"scope-git-router","scope-media":"scope-media-api"})[id] || id}})),{node:{id:"scope-postgres",name:"scope-postgres"}}]}}));
 '
   exit 0
 fi
 
 if [[ "$1 $2" == "environment config" ]]; then
-  stored_api_region="${FAKE_STORED_API_REGION:-us-east4-eqdc4a}"
   router_config='{}'
   if [[ "${FAKE_ROUTER_CONFIGURED:-1}" == "1" || -f "$FAKE_RAILWAY_STATE/router-scale" ]]; then
     router_config='{"groupId":"runtime-group","deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}}'
   fi
-  printf '{"services":{"scope-api":{"deploy":{"multiRegionConfig":{"%s":{"numReplicas":1}}}},"scope-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-web":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-repo-router":%s}}\n' "$stored_api_region" "$router_config"
+  printf '{"services":{"scope-api":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-media-worker":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-web":{"deploy":{"multiRegionConfig":{"us-east4-eqdc4a":{"numReplicas":1}}}},"scope-repo-router":%s}}\n' "$router_config"
   exit 0
 fi
 
@@ -53,13 +52,12 @@ if [[ "$1" == "api" && "$2" == *"serviceInstance"* ]]; then
     jq -cn --arg image "$(cat "$FAKE_RAILWAY_STATE/image-$service")" '{data:{serviceInstance:{source:{image:$image,repo:null}}}}'
   else
     component="${service#scope-}"
-    [[ "$component" != cache-service ]] || component=cache
     case "$component" in
       worker) component=run-worker ;;
       repo-router) component=git-router ;;
       media) component=media-api ;;
     esac
-    deployed="$(FAKE_IMMUTABLE_ACTIVATION=1 "$0" up "$FAKE_UPLOAD_ROOT/$component" --service "$service")"
+    deployed="$("$0" up "$FAKE_UPLOAD_ROOT/$component" --service "$service")"
     jq -c '{data:{serviceInstanceDeployV2:.deploymentId}}' <<< "$deployed"
   fi
   exit 0
@@ -207,7 +205,7 @@ if [[ "$1 $2" == "deployment list" ]]; then
     image=""
     [[ ! -f "$FAKE_RAILWAY_STATE/image-$service" ]] || image="$(cat "$FAKE_RAILWAY_STATE/image-$service")"
     old_status=REMOVED
-    if [[ "${FAKE_DELAY_REMOVE_UNTIL_ROUTER:-0}" == "1" && "$service" == scope-cache-service \
+    if [[ "${FAKE_DELAY_REMOVE_UNTIL_ROUTER:-0}" == "1" && "$service" == scope-media \
       && ! -f "$FAKE_RAILWAY_STATE/up-scope-repo-router" ]]; then
       old_status=SUCCESS
     fi
@@ -228,7 +226,7 @@ const env = process.env;
 const marked = (kind, id) => existsSync(`${env.FAKE_RAILWAY_STATE}/${kind}-${id}`);
 const region = "us-east4-eqdc4a";
 const names = {
-  "scope-api": "scope-api", "scope-worker": "scope-run-worker", "scope-cache-service": "scope-cache",
+  "scope-api": "scope-api", "scope-worker": "scope-run-worker",
   "scope-media": "scope-media-api", "scope-media-worker": "scope-media-worker",
   "scope-repo-router": "scope-git-router", "scope-web": "scope-web",
 };
@@ -236,14 +234,14 @@ const replicas = (configured = 1, running = configured, crashed = 0) => ({
   configured, running, crashed, exited: configured - running - crashed, total: configured,
 });
 function serviceState(id, name) {
-  const coreWriter = ["scope-api", "scope-worker", "scope-cache-service"].includes(id);
+  const coreWriter = ["scope-api", "scope-worker", "scope-media"].includes(id);
   const up = marked("up", id);
   const stopped = id !== "scope-repo-router" && marked("stopped", id);
   const state = {
     id, name, status: "SUCCESS", deploymentId: `${up ? "new" : "old"}-${id}`,
     deploymentStopped: stopped, replicas: replicas(),
   };
-  if (!["scope-cache-service", "scope-web"].includes(id)) {
+  if (id !== "scope-web") {
     state.regions = [{ name: id === "scope-api" ? env.FAKE_API_REGION || region : region, configured: 1 }];
   }
   if (id !== "scope-web" && marked("no-history", id) && !up) {
@@ -296,8 +294,6 @@ if [[ "$1" == "up" ]]; then
   if [[ "${FAKE_REQUIRE_PARALLEL_PAIR:-0}" == "1" ]]; then
     counterpart=""
     case "$service" in
-      scope-cache-service) counterpart=scope-media ;;
-      scope-media) counterpart=scope-cache-service ;;
       scope-worker) counterpart=scope-media-worker ;;
       scope-media-worker) counterpart=scope-worker ;;
     esac
@@ -323,13 +319,8 @@ if [[ "$1" == "up" ]]; then
   fi
   if [[ "${FAKE_CRASH_UP_SERVICE:-}" == "$service" ]]; then
     touch "$FAKE_RAILWAY_STATE/up-${service}" "$FAKE_RAILWAY_STATE/crashed-${service}"
-    rm -f "$FAKE_RAILWAY_STATE/stopped-${service}"
+    rm -f "$FAKE_RAILWAY_STATE/stopped-${service}" "$FAKE_RAILWAY_STATE/gate-${service}"
     printf '{"deploymentId":"new-%s"}\n' "$service"
-    exit 0
-  fi
-  if [[ -f "$FAKE_RAILWAY_STATE/up-${service}" && "${FAKE_IMMUTABLE_ACTIVATION:-0}" != "1" ]]; then
-    touch "$FAKE_RAILWAY_STATE/skipped-${service}"
-    printf '{"deploymentId":"skip-%s"}\n' "$service"
     exit 0
   fi
   touch "$FAKE_RAILWAY_STATE/up-${service}"
@@ -438,7 +429,6 @@ if (action === 'snapshot') {
 } else if (action === 'restore') {
   if (!gate.previous) throw new Error('Missing original gate snapshot');
   gate.phase = 'restored';
-  // Restoring config does not reopen service or restart removed predecessors.
 } else throw new Error(`Unknown gate action ${action}`);
 trace(`gate ${action} ${gate.serviceId}`);
 fs.writeFileSync(file, JSON.stringify(gate));

@@ -7,80 +7,25 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use sea_orm_migration::MigratorTrait;
 use std::sync::Arc;
 
+mod baseline_bridge;
 mod cache_schema;
 mod current_schema_baseline;
-mod custom_views;
 mod fresh_schema;
-mod git_manifest_retirement;
 mod git_segment_schema;
 mod github_connections;
 mod github_request_checks;
 mod github_run_imports;
 mod github_setup_checks_and_workflow_runs;
-mod github_workflow_run_list;
 mod maintenance_cutover;
-mod native_runs_accounts;
-mod provider_neutral_request_checks;
 mod public_check_commits;
-mod public_request_check_source;
-mod repo_config_version;
-mod repository_content_version;
 mod repository_invite_emails;
-mod repository_invite_links;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
-mod request_revision_rewrites;
-mod request_run_source_base;
-mod request_views;
 mod run_attempt_active_indexes;
-mod run_execution_invariants;
 mod run_state_constraints;
-mod view_ids;
 
-const LATEST_MIGRATIONS: &[&str] = &[
-    "m0042_current_schema_baseline",
-    "m0043_retire_git_manifests",
-    "m0044_request_attention",
-    "m0045_dependency_analysis",
-    "m0046_drop_attempt_token_expiry",
-    "m0047_drop_git_manifest_orphan_jobs",
-    "m0048_run_attempt_active_state_indexes",
-    "m0049_run_execution_invariants",
-    "m0050_cache_upload_cleanup_leases",
-    "m0051_request_media_budget_release",
-    "m0052_retire_apply_changes_permission",
-    "m0053_request_ref_cleanup",
-    "m0054_request_attention_revision",
-    "m0055_request_checks",
-    "m0056_request_auto_merge",
-    "m0057_repository_invite_links",
-    "m0058_repository_invite_emails",
-    "m0059_worker_history_permissions",
-    "m0060_capacity_retries",
-    "m0061_public_request_check_source",
-    "m0062_request_run_source_base",
-    "m0063_account_deletion",
-    "m0064_repository_content_version",
-    "m0065_request_revision_rewrites",
-    "m0066_native_runs_accounts",
-    "m0067_provider_neutral_request_checks",
-    "m0068_github_connections",
-    "m0069_github_request_checks",
-    "m0070_github_setup_checks_and_workflow_runs",
-    "m0071_public_check_commits",
-    "m0072_github_run_imports",
-    "m0073_github_workflow_jobs",
-    "m0074_history_path_indexes",
-    "m0075_incremental_projection_read_models",
-    "m0076_view_ids",
-    "m0077_custom_views",
-    "m0078_repo_config_version",
-    "m0079_request_views",
-    "m0080_github_workflow_job_reads",
-    "m0081_github_job_log_reads",
-    "m0082_github_workflow_run_list",
-    "m0083_request_workflow_changes",
-];
+const LATEST_MIGRATIONS: &[&str] = &["m0084_current_schema_baseline"];
+const BRIDGED_LEDGER: &str = include_str!("../migrations/m0084_bridged_ledger.txt");
 
 pub(super) async fn isolated_database() -> (
     TestDatabaseTarget,
@@ -115,6 +60,21 @@ pub(super) async fn applied_versions(db: &DatabaseConnection) -> Vec<String> {
     .into_iter()
     .map(|row| row.try_get::<String>("", "version").unwrap())
     .collect()
+}
+
+pub(super) async fn replace_ledger(db: &DatabaseConnection, ledger: &[&str]) {
+    db.execute_unprepared("DELETE FROM seaql_migrations")
+        .await
+        .unwrap();
+    for name in ledger {
+        db.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO seaql_migrations (version, applied_at) VALUES ($1, 1)",
+            [(*name).into()],
+        ))
+        .await
+        .unwrap();
+    }
 }
 
 async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
@@ -211,7 +171,7 @@ async fn exact_state_check_is_read_only_and_rejects_behind_and_ahead() {
         .await
         .unwrap();
     db.execute_unprepared(
-        "DELETE FROM seaql_migrations WHERE version = 'm0042_current_schema_baseline'",
+        "DELETE FROM seaql_migrations WHERE version = 'm0084_current_schema_baseline'",
     )
     .await
     .unwrap();
@@ -220,10 +180,28 @@ async fn exact_state_check_is_read_only_and_rejects_behind_and_ahead() {
     db.execute_unprepared(
         "
             INSERT INTO seaql_migrations (version, applied_at)
-            VALUES ('m0042_current_schema_baseline', 0), ('m9999_unknown', 0)
+            VALUES ('m0084_current_schema_baseline', 0), ('m9999_unknown', 0)
         ",
     )
     .await
     .unwrap();
     assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
+}
+
+#[tokio::test]
+async fn migration_plan_declares_metadata_restore_safety_for_pending_changes() {
+    let (_target, db, _lease) = isolated_database().await;
+    let plan = migrations::plan(db.as_ref()).await.unwrap();
+    assert!(plan.metadata_restore_safe);
+    assert_eq!(plan.pending.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&plan).unwrap()["metadataRestoreSafe"],
+        true
+    );
+    migrations::apply_in_maintenance(db.as_ref(), Default::default())
+        .await
+        .unwrap();
+    let plan = migrations::plan(db.as_ref()).await.unwrap();
+    assert!(plan.metadata_restore_safe);
+    assert!(plan.exact);
 }

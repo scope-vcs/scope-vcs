@@ -18,10 +18,8 @@ prepare_maintenance_gates() {
       > "$gates_directory/$component.json"
     maintenance_gate snapshot "$gates_directory/$component.json"
   done
-  jq -n --slurpfile api "$gates_directory/api.json" \
-    --slurpfile media "$gates_directory/media-api.json" \
-    --slurpfile router "$gates_directory/git-router.json" --slurpfile web "$gates_directory/web.json" \
-    '{api:$api[0],"media-api":$media[0],"git-router":$router[0],web:$web[0]}' > "$gates_directory/snapshots.json"
+  jq -s '{api: .[0], "media-api": .[1], "git-router": .[2], web: .[3]}' \
+    "$gates_directory"/{api,media-api,git-router,web}.json > "$gates_directory/snapshots.json"
 }
 
 recover_maintenance_gates() {

@@ -1,15 +1,14 @@
 use super::{
-    RepositoryStore, acquire_aggregate_lock, entities,
+    RepositoryStore,
+    entities::{self, decode_enum, encode_enum},
     github_connections::repository_github_connection,
     github_pushes::{queue_github_push, queue_pushed_branch_deletion},
     github_workflow_runs::branch_workflow_runs,
     integer_columns::{i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u64_to_i64},
-    locks::acquire_shared_repository_lock,
-    repository_access::repository_access,
 };
 use crate::error::PostgresError;
 use scope_domain::{
-    github_setup_check::{GitHubSetupCheck, GitHubSetupCheckState, start_github_setup_check},
+    github_setup_check::{GitHubSetupCheck, start_github_setup_check},
     repository::RepositoryIncarnation,
     requests::GitHubPushDestination,
 };
@@ -48,18 +47,14 @@ impl RepositoryStore {
         user_id: &str,
         now_unix: u64,
     ) -> Result<(GitHubSetupCheck, RepositoryIncarnation), PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_shared_repository_lock(&tx, repo_id).await?;
-        acquire_aggregate_lock(&tx, "github-setup-check", repo_id).await?;
-        let context = repository_access(&tx, repo_id, Some(user_id))
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        let (tx, context) = self
+            .begin_github_change(repo_id, user_id, &["github-setup-check"])
+            .await?;
         let connection = repository_github_connection(&tx, repo_id).await?;
         let current = load_check(&tx, repo_id, false).await?;
         let main_oid = entities::git_head::Entity::find_by_id(repo_id)
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(|head| head.head_oid);
         let check = start_github_setup_check(
             context.access.clone(),
@@ -85,7 +80,7 @@ impl RepositoryStore {
             ..check
         };
         save_check(&tx, &check).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok((check, context.incarnation()))
     }
 
@@ -96,7 +91,7 @@ impl RepositoryStore {
         push_id: &str,
         run_ids: Vec<u64>,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(mut check) = load_check(&tx, repo_id, true).await? else {
             return Ok(false);
         };
@@ -104,7 +99,7 @@ impl RepositoryStore {
             return Ok(false);
         }
         save_check(&tx, &check).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(true)
     }
 
@@ -148,8 +143,7 @@ impl RepositoryStore {
                     serde_json::json!(suites).into(),
                 ],
             ))
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .into_iter()
             .map(|row| row.try_get("", "name").map_err(PostgresError::internal))
             .collect::<Result<_, _>>()?;
@@ -176,8 +170,7 @@ impl RepositoryStore {
             [u64_to_i64(limit, "GitHub setup check batch size")?.into()],
         ))
         .all(self.db.as_ref())
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(SetupCheckRow::into_domain)
         .collect()
@@ -190,7 +183,7 @@ impl RepositoryStore {
         commit_oid: &str,
         now_unix: u64,
     ) -> Result<Option<GitHubSetupCheck>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self.db.begin().await?;
         let Some(mut check) = load_check(&tx, repo_id, true)
             .await?
             .filter(|check| check.commit_oid == commit_oid)
@@ -210,7 +203,7 @@ impl RepositoryStore {
         }
         save_check(&tx, &check).await?;
         queue_pushed_branch_deletion(&tx, repo_id, &GitHubSetupCheck::branch(), now_unix).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(check))
     }
 }
@@ -253,8 +246,7 @@ async fn load_check<C: ConnectionTrait>(
         [repo_id.into()],
     ))
     .one(conn)
-    .await
-    .map_err(PostgresError::internal)?
+    .await?
     .map(SetupCheckRow::into_domain)
     .transpose()
 }
@@ -277,7 +269,7 @@ async fn save_check<C: ConnectionTrait>(
         [
             check.repository_id.clone().into(),
             check.commit_oid.clone().into(),
-            state_name(check.state).into(),
+            encode_enum(check.state)?.into(),
             u64_to_i64(check.started_at_unix, "GitHub setup check start")?.into(),
             optional_u64_to_i64(check.finished_at_unix, "GitHub setup check end")?.into(),
             check.last_error.clone().into(),
@@ -290,18 +282,8 @@ async fn save_check<C: ConnectionTrait>(
                 .into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
-}
-
-fn state_name(state: GitHubSetupCheckState) -> &'static str {
-    match state {
-        GitHubSetupCheckState::Pushing => "pushing",
-        GitHubSetupCheckState::Waiting => "waiting",
-        GitHubSetupCheckState::Finished => "finished",
-        GitHubSetupCheckState::Failed => "failed",
-    }
 }
 
 impl SetupCheckRow {
@@ -310,17 +292,7 @@ impl SetupCheckRow {
             repository_id: self.repo_id,
             github_repository_id: i64_to_u64(self.github_repository_id, "GitHub repository id")?,
             commit_oid: self.commit_oid,
-            state: match self.state.as_str() {
-                "pushing" => GitHubSetupCheckState::Pushing,
-                "waiting" => GitHubSetupCheckState::Waiting,
-                "finished" => GitHubSetupCheckState::Finished,
-                "failed" => GitHubSetupCheckState::Failed,
-                other => {
-                    return Err(PostgresError::internal_message(format!(
-                        "unknown GitHub setup check state {other}"
-                    )));
-                }
-            },
+            state: decode_enum(self.state)?,
             started_at_unix: i64_to_u64(self.started_at_unix, "GitHub setup check start")?,
             finished_at_unix: optional_i64_to_u64(self.finished_at_unix, "GitHub setup check end")?,
             last_error: self.last_error,

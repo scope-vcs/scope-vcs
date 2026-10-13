@@ -3,11 +3,8 @@ import test from 'node:test'
 import { resetViewerState } from '../../lib/viewer-state'
 import { invalidateRepoResources } from '../repo-detail/repo-resource-invalidation'
 import {
-  activateRequestAttachmentMediaScope,
+  activateRequestAttachmentResourceScope as activate,
   requestAttachmentMediaGrantResource,
-} from './request-attachment-media-resource'
-import {
-  activateRequestAttachmentResourceScope,
   requestAttachmentResource,
   requestAttachmentResourceIdentity,
 } from './request-attachment-resource'
@@ -44,16 +41,15 @@ test('invalidation retains valid metadata while a processing refresh runs or fai
 
 const scope = (repo = 'repo', viewer = 'viewer', access = 'Public') =>
   JSON.stringify([repo, viewer, { actor: access }])
+const maxOwners = 64
 const owners = [
   {
-    name: 'metadata', resource: requestAttachmentResource, maxOwners: 16,
-    activate: activateRequestAttachmentResourceScope,
+    name: 'metadata', resource: requestAttachmentResource,
     identity: requestAttachmentResourceIdentity,
     seed: (key: string) => requestAttachmentResource.write(key, resourceValue('Processing')),
   },
   {
-    name: 'media grants', resource: requestAttachmentMediaGrantResource, maxOwners: 64,
-    activate: activateRequestAttachmentMediaScope,
+    name: 'media grants', resource: requestAttachmentMediaGrantResource,
     identity: (scope: string, id: string) => `${scope}\0${id}\0${JSON.stringify({ kind: 'derivative', derivative_id: 'preview' })}`,
     seed: (key: string) => requestAttachmentMediaGrantResource.write(key, {
       media_url: '/media/attachment', grant: 'grant', expires_at_unix: 100,
@@ -62,7 +58,7 @@ const owners = [
 ]
 
 for (const owner of owners) {
-  const { resource, maxOwners, activate, seed } = owner
+  const { resource, seed } = owner
   const key = (accessScope: string, id = 'request') => owner.identity(accessScope, id)
 
   test(`${owner.name}: scope reuse retains data and changes remove only the previous scope`, () => {
@@ -116,25 +112,6 @@ for (const owner of owners) {
     }
     for (const previous of anonymous.slice(0, -1)) assert.equal(resource.peek(key(previous)), null)
     assert.notEqual(resource.peek(key(anonymous.at(-1)!)), null)
-  })
-
-  test(`${owner.name}: activation leaves the other resource's state alone`, () => {
-    const other = owners.find((candidate) => candidate !== owner)!
-    const previous = scope()
-    const next = scope('repo', 'viewer', 'Member')
-    const otherKey = other.identity(previous, 'request')
-    activate(previous)
-    other.activate(previous)
-    seed(key(previous))
-    other.seed(otherKey)
-    activate(next)
-    assert.equal(resource.peek(key(previous)), null)
-    assert.notEqual(other.resource.peek(otherKey), null)
-    seed(key(previous))
-    activate(next)
-    assert.notEqual(resource.peek(key(previous)), null)
-    other.activate(next)
-    assert.equal(other.resource.peek(otherKey), null)
   })
 }
 

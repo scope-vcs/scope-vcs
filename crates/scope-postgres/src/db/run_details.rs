@@ -33,8 +33,7 @@ impl RunStore {
         let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let Some(run) = entities::run::Entity::find_by_id(run_id.to_string())
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .map(entities::run::Model::try_into_domain)
             .transpose()?
         else {
@@ -43,7 +42,7 @@ impl RunStore {
         let workflow_revision = super::runs::workflow_revision_for_run(&tx, &run).await?;
         let jobs = super::run_operations::required_run_jobs(&tx, run_id).await?;
         let attempts = run_attempt_details_with(&tx, run_id).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(Some(RunDetail {
             run,
             jobs,
@@ -60,19 +59,13 @@ async fn run_attempt_details_with<C>(
 where
     C: ConnectionTrait,
 {
-    let max_attempts = u64::from(MAX_RUN_ATTEMPTS)
-        .checked_mul(u64::try_from(MAX_WORKFLOW_JOBS).map_err(|_| {
-            PostgresError::internal_message("workflow job limit does not fit the database query")
-        })?)
-        .ok_or_else(|| PostgresError::internal_message("run attempt query limit overflow"))?;
     let attempts = entities::run_attempt::Entity::find()
         .filter(entities::run_attempt::Column::RunId.eq(run_id))
         .order_by_desc(entities::run_attempt::Column::CreatedAtUnix)
         .order_by_desc(entities::run_attempt::Column::Number)
-        .limit(max_attempts)
+        .limit(MAX_RUN_ATTEMPTS as u64 * MAX_WORKFLOW_JOBS as u64)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     if attempts.is_empty() {
         return Ok(Vec::new());
     }
@@ -85,35 +78,28 @@ where
         .order_by_asc(entities::run_attempt_step::Column::AttemptId)
         .order_by_asc(entities::run_attempt_step::Column::StepIndex)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let cache_models = entities::run_attempt_cache::Entity::find()
         .filter(entities::run_attempt_cache::Column::AttemptId.is_in(attempt_ids.clone()))
         .order_by_asc(entities::run_attempt_cache::Column::AttemptId)
         .order_by_asc(entities::run_attempt_cache::Column::CacheName)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let cache_setup_models = entities::run_attempt_cache_setup::Entity::find()
         .filter(entities::run_attempt_cache_setup::Column::AttemptId.is_in(attempt_ids.clone()))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let mut steps_by_attempt = HashMap::<String, Vec<RunAttemptStep>>::new();
     for step in step_models {
         let attempt_id = step.attempt_id.clone();
-        steps_by_attempt
-            .entry(attempt_id)
-            .or_default()
-            .push(step.try_into_domain()?);
+        let step = step.try_into_domain()?;
+        steps_by_attempt.entry(attempt_id).or_default().push(step);
     }
     let mut caches_by_attempt = HashMap::<String, Vec<AttemptCacheObservation>>::new();
     for cache in cache_models {
         let attempt_id = cache.attempt_id.clone();
-        caches_by_attempt
-            .entry(attempt_id)
-            .or_default()
-            .push(cache.try_into_domain()?);
+        let cache = cache.try_into_domain()?;
+        caches_by_attempt.entry(attempt_id).or_default().push(cache);
     }
     let mut cache_setups_by_attempt = cache_setup_models
         .into_iter()

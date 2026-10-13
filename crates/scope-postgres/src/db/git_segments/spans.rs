@@ -20,8 +20,7 @@ where
         .filter(entities::git_pack_span::Column::RepoId.eq(repo_id))
         .order_by_asc(entities::git_pack_span::Column::FirstSequence)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let segment_ids = rows
         .iter()
         .map(|row| row.segment_id.clone())
@@ -32,8 +31,7 @@ where
         entities::git_segment_upload::Entity::find()
             .filter(entities::git_segment_upload::Column::SegmentId.is_in(segment_ids))
             .all(conn)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
     };
     let mut segments = uploads
         .into_iter()
@@ -79,7 +77,6 @@ where
                 u64_to_i64(now_unix, "Git segment publication time")?.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     require_one_transition(result.rows_affected(), &segment.segment_id, "published")
 }

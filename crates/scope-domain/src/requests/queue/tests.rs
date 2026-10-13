@@ -1,7 +1,6 @@
 use super::*;
 use crate::error::DomainErrorKind;
-use crate::requests::RequestActorRole;
-use crate::views::ViewId;
+use crate::requests::fixtures::open_request;
 
 #[test]
 fn groups_split_active_rows_by_who_acts_next() {
@@ -289,31 +288,5 @@ fn attention(request: &Request, state: RequestAttentionState) -> RequestAttentio
         snoozed_until_unix: None,
         updated_at_unix: 1,
         revision: 1,
-    }
-}
-
-fn open_request() -> Request {
-    Request {
-        id: "request".into(),
-        repo_id: "repo".into(),
-        name: "request".into(),
-        author_user_id: Some("author".into()),
-        author_role: RequestActorRole::Public,
-        view: ViewId::public(),
-        base_main_oid: "0".repeat(40),
-        head_oid: "1".repeat(40),
-        git_snapshot: None,
-        title: "Request".into(),
-        description_markdown: String::new(),
-        activity_version: 3,
-        submitted_at_unix: Some(1),
-        closed_at_unix: None,
-        closed_by_user_id: None,
-        merged_at_unix: None,
-        merged_by_user_id: None,
-        merged_head_oid: None,
-        merged_main_oid: None,
-        created_at_unix: 1,
-        updated_at_unix: 1,
     }
 }

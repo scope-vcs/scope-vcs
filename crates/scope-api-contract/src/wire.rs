@@ -71,16 +71,6 @@ impl From<DomainSessionIdentity> for SessionIdentity {
     }
 }
 
-impl From<SessionIdentity> for DomainSessionIdentity {
-    fn from(value: SessionIdentity) -> Self {
-        Self {
-            user_id: value.user_id,
-            email: value.email,
-            email_verified: value.email_verified,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(try_from = "String", into = "String")]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]

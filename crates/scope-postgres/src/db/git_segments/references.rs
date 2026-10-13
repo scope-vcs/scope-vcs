@@ -26,8 +26,7 @@ where
                 ref_id.into(),
             ],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     }
     Ok(())
 }
@@ -70,8 +69,7 @@ where
             u64_to_i64(now_unix, "Git segment reference release time")?.into(),
         ],
     ))
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     Ok(())
 }
 

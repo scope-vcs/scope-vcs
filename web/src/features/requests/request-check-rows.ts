@@ -16,7 +16,7 @@ export type RequestCheckRow = {
   run: { id: string; hash?: string } | null
 }
 
-export type RequestChecksSummary = {
+type RequestChecksSummary = {
   lead: { state: 'failed' | 'running' | 'succeeded'; text: string } | null
   counts: string | null
   startError: { text: string; failed: boolean } | null
@@ -94,7 +94,7 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
   return { lead, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
 }
 
-export type RequestCheckGroup =
+type RequestCheckGroup =
   | { kind: 'workflow'; key: string; name: string; runId: string; jobs: RequestCheckRow[] }
   | { kind: 'native'; key: string; row: RequestCheckRow }
   | { kind: 'unassigned'; key: string; jobs: RequestCheckRow[] }

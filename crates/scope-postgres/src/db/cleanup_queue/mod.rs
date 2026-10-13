@@ -1,8 +1,8 @@
-pub mod claim;
-pub mod completion;
+pub(crate) mod claim;
+pub(crate) mod completion;
 mod mapping;
-pub mod queue;
-pub mod revalidation;
+pub(crate) mod queue;
+mod revalidation;
 pub mod types;
 
 mod request_refs;

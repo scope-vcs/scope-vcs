@@ -2,8 +2,6 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-python3 -B -m unittest discover -s deploy/automation -p 'test_*.py'
-
 node --test dev/analytics/*.test.mjs
 bash -n .github/scripts/scan-image.sh
 node --test .github/scripts/scan-report.test.mjs
@@ -14,7 +12,7 @@ node --test .github/scripts/check-backend-binary-sizes.test.mjs
 node --test .github/scripts/check-production-backups.test.mjs
 node --test .github/scripts/production-deployment-progress.test.mjs
 node --test .github/scripts/plan-production-deployment.test.mjs
-node --test .github/scripts/railway-deployment-history.test.mjs
+node --test .github/scripts/railway-deployment-history.test.mjs .github/scripts/railway-production-target.test.mjs
 node --test .github/scripts/verify-staging-target.test.mjs
 node --test .github/scripts/stop-railway-writers.test.mjs
 node --test .github/scripts/preview-environment.test.mjs .github/scripts/preview-pull-request.test.mjs
@@ -46,7 +44,6 @@ node --test .github/scripts/release-cutover-journal.test.mjs
 node --test .github/scripts/recovery-preparation-trust.test.mjs
 node --test .github/scripts/release-selection.test.mjs
 node --test .github/scripts/staging-resume.test.mjs
-node --test .github/scripts/rehearse-release.test.mjs
 node --test .github/scripts/staging-smoke-seed.test.mjs
 node --test .github/scripts/extract-railway-release.test.mjs
 node --test .github/scripts/extract-railway-maintenance.test.mjs
@@ -66,7 +63,6 @@ python3 deploy/aws/recovery/storage.test.py
 python3 -m unittest discover -s deploy/aws/recovery/tests -p test_transport.py
 python3 -m unittest discover -s deploy/aws/recovery/tests -p test_references.py
 bash -n deploy/aws/recovery/remote-snapshot.sh
-node --test deploy/postgres/prepare-cutover.test.mjs
 
 node --test .github/scripts/smoke-tools-evidence.test.mjs
 node --test .github/scripts/railway-predecessor-teardown.test.mjs

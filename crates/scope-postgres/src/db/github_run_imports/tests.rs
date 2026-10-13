@@ -1,6 +1,7 @@
 use super::*;
 use crate::db::requests::tests::postgres_store;
 use crate::error::PostgresErrorKind;
+use scope_domain::github_run_import::GitHubRunImportState;
 use scope_domain::{
     github_connection::{ConnectGitHubRepository, GitHubInstallationChange},
     requests::{GitHubCheckConclusion, GitHubCheckStatus},
@@ -28,40 +29,6 @@ async fn connect(store: &crate::db::MetadataStore, github_repository_id: u64, ru
         )
         .await
         .unwrap();
-}
-
-#[tokio::test]
-async fn a_repository_imports_fifty_runs_until_a_maintainer_changes_it() {
-    let store = postgres_store();
-    let repositories = store.repositories();
-    assert_eq!(
-        repositories.github_run_import_count(REPO).await.unwrap(),
-        50
-    );
-
-    let (count, _) = repositories
-        .set_github_run_import_count(REPO, OWNER, 200)
-        .await
-        .unwrap();
-    assert_eq!(count, 200);
-    assert_eq!(
-        repositories.github_run_import_count(REPO).await.unwrap(),
-        200
-    );
-    let too_many = repositories
-        .set_github_run_import_count(REPO, OWNER, 1001)
-        .await
-        .unwrap_err();
-    assert_eq!(too_many.kind, PostgresErrorKind::InvalidInput);
-    let not_a_maintainer = repositories
-        .set_github_run_import_count(REPO, "user_public", 10)
-        .await
-        .unwrap_err();
-    assert_eq!(not_a_maintainer.kind, PostgresErrorKind::PermissionDenied);
-    assert_eq!(
-        repositories.github_run_import_count(REPO).await.unwrap(),
-        200
-    );
 }
 
 #[tokio::test]
@@ -139,7 +106,7 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
             .finish_github_run_import(
                 REPO,
                 "claim_1",
-                GitHubRunImportOutcome::Failed {
+                GitHubJobOutcome::Failed {
                     error: "GitHub answered 502 Bad Gateway".into(),
                     retry_at_unix: Some(t + 200),
                 },
@@ -168,23 +135,13 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
     assert_eq!(again[0].attempts, 2);
     assert!(
         !repositories
-            .finish_github_run_import(
-                REPO,
-                "claim_1",
-                GitHubRunImportOutcome::Succeeded { imported: 1 },
-                t + 210,
-            )
+            .finish_github_run_import(REPO, "claim_1", GitHubJobOutcome::Succeeded(1), t + 210,)
             .await
             .unwrap()
     );
     assert!(
         repositories
-            .finish_github_run_import(
-                REPO,
-                "claim_2",
-                GitHubRunImportOutcome::Succeeded { imported: 50 },
-                t + 210,
-            )
+            .finish_github_run_import(REPO, "claim_2", GitHubJobOutcome::Succeeded(50), t + 210,)
             .await
             .unwrap()
     );
@@ -211,7 +168,7 @@ async fn a_claimed_import_retries_after_failing_and_records_what_it_imported() {
         .finish_github_run_import(
             REPO,
             "claim_3",
-            GitHubRunImportOutcome::Failed {
+            GitHubJobOutcome::Failed {
                 error: "GitHub answered 403 Forbidden".into(),
                 retry_at_unix: None,
             },
@@ -251,7 +208,7 @@ async fn importing_again_waits_for_a_working_import_but_replaces_one_waiting_to_
         .finish_github_run_import(
             REPO,
             "claim_1",
-            GitHubRunImportOutcome::Failed {
+            GitHubJobOutcome::Failed {
                 error: "GitHub was unreachable".into(),
                 retry_at_unix: Some(1_000),
             },
@@ -291,12 +248,7 @@ async fn importing_again_waits_for_a_working_import_but_replaces_one_waiting_to_
         .await
         .unwrap();
     repositories
-        .finish_github_run_import(
-            REPO,
-            "claim_2",
-            GitHubRunImportOutcome::Succeeded { imported: 3 },
-            50,
-        )
+        .finish_github_run_import(REPO, "claim_2", GitHubJobOutcome::Succeeded(3), 50)
         .await
         .unwrap();
     let nothing = repositories

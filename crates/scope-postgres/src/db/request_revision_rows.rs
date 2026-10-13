@@ -19,8 +19,7 @@ where
 {
     entities::request_revision::Entity::find_by_id(id.to_string())
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_revision::Model::try_into_domain)
         .transpose()
 }
@@ -37,8 +36,7 @@ where
         .order_by_desc(entities::request_revision::Column::Position)
         .order_by_desc(entities::request_revision::Column::Id)
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_revision::Model::try_into_domain)
         .transpose()
 }
@@ -57,8 +55,7 @@ where
         .order_by_desc(entities::request_revision::Column::Position)
         .order_by_desc(entities::request_revision::Column::Id)
         .one(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .map(entities::request_revision::Model::try_into_domain)
         .transpose()
 }
@@ -76,8 +73,7 @@ where
     entities::request_revision::Entity::find()
         .filter(entities::request_revision::Column::RequestId.is_in(request_ids.iter().cloned()))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(entities::request_revision::Model::try_into_domain)
         .collect()
@@ -97,8 +93,7 @@ where
         .filter(entities::request_revision::Column::RequestId.eq(request_id))
         .into_tuple::<(String, i64)>()
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|(id, position)| Ok((id, i64_to_u64(position, "request revision position")?)))
         .collect()
@@ -120,8 +115,7 @@ where
         .order_by_desc(entities::request_revision::Column::Id)
         .limit(fetch_limit)
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     let has_earlier_revisions = models.len() > limit as usize;
     models.truncate(limit as usize);
     let mut revisions = models
@@ -157,8 +151,7 @@ where
     entities::request_revision::Model::from_domain(value)?
         .into_active_model()
         .insert(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     replace_object_reference(
         conn,
         "request_revision_snapshot",

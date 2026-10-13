@@ -1,13 +1,22 @@
+mod cleanup;
+mod codec;
+mod config;
+mod health;
+mod jobs;
+mod lease;
+mod process;
+mod runtime;
+mod scratch;
+
 use anyhow::Context as _;
-use scope_media_worker::{
-    cleanup,
-    codec::{CodecOutput, CodecPipeline, DerivativeKind, MediaKind},
-    config::{CodecLimits, CodecPrograms, WorkerSettings},
-    health::WorkerHealth,
-    jobs,
-    scratch::ScratchSpace,
+use codec::{CodecOutput, CodecPipeline};
+use config::{CodecLimits, CodecPrograms, WorkerSettings};
+use health::WorkerHealth;
+use scope_domain::requests::attachments::{
+    RequestAttachmentDerivativeKind as DerivativeKind, RequestAttachmentKind as MediaKind,
 };
 use scope_postgres::db::MetadataStore;
+use scratch::ScratchSpace;
 use std::{path::Path, time::Duration};
 
 fn main() -> anyhow::Result<()> {
@@ -130,12 +139,12 @@ async fn codec_info() -> anyhow::Result<()> {
 
 async fn codec_self_test(fixture_dir: &Path) -> anyhow::Result<()> {
     let cases = [
-        ("fixture.png", MediaKind::Image, false),
-        ("fixture.jpg", MediaKind::Image, false),
-        ("fixture.webp", MediaKind::Image, false),
-        ("fixture.gif", MediaKind::Image, false),
-        ("fixture.heic", MediaKind::Image, false),
-        ("fixture-oriented.jpg", MediaKind::Image, true),
+        ("fixture.png", MediaKind::Photo, false),
+        ("fixture.jpg", MediaKind::Photo, false),
+        ("fixture.webp", MediaKind::Photo, false),
+        ("fixture.gif", MediaKind::Photo, false),
+        ("fixture.heic", MediaKind::Photo, false),
+        ("fixture-oriented.jpg", MediaKind::Photo, true),
         ("fixture.mp4", MediaKind::Video, false),
         ("fixture-1080p.mp4", MediaKind::Video, false),
         ("fixture.mov", MediaKind::Video, false),
@@ -174,8 +183,7 @@ async fn codec_self_test(fixture_dir: &Path) -> anyhow::Result<()> {
     let oversized_work = output_root.join("fixture-oversize.png");
     std::fs::create_dir(&oversized_work)?;
     match pipeline.process(&oversized, &oversized_work).await {
-        Err(error)
-            if error.kind == scope_media_worker::codec::CodecFailureKind::MediaLimitExceeded => {}
+        Err(error) if error.kind == codec::CodecFailureKind::MediaLimitExceeded => {}
         Ok(_) => anyhow::bail!("oversized synthetic fixture was accepted"),
         Err(error) => anyhow::bail!("oversized synthetic fixture failed incorrectly: {error}"),
     }
@@ -201,7 +209,7 @@ fn assert_fixture(
         anyhow::bail!("{name} was classified as the wrong media kind");
     }
     match expected_kind {
-        MediaKind::Image => {
+        MediaKind::Photo => {
             let preview = output.derivatives.as_slice();
             if preview.len() != 1 || preview[0].kind != DerivativeKind::ImagePreview {
                 anyhow::bail!("{name} did not produce exactly one image preview");

@@ -7,7 +7,7 @@ import type { RequestActionController } from '@/features/requests/use-request-ac
 import type { RequestAutoMergeController } from '@/features/requests/use-request-auto-merge'
 import { createRoot } from 'react-dom/client'
 import { useState } from 'react'
-import './styles.css'
+import '../shared/styles.css'
 
 const headOid = 'a'.repeat(40)
 const revisionId = 'revision-7d9f2f1b'

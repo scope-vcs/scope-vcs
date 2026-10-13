@@ -24,7 +24,6 @@ on:
           - changed
           - all
           - runner-image
-          - cache
           - run-worker
           - media-worker
           - git-router
@@ -64,7 +63,6 @@ jobs:
       deployed_components: ${{ steps.progress.outputs.deployments }}
       runner_image: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['runner-image'] || false) || steps.plan.outputs.runner_image }}
       backend_selected: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components).backend || false) || steps.plan.outputs.backend_selected }}
-      cache: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['cache'] || false) || steps.plan.outputs.cache }}
       worker: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['run-worker'] || false) || steps.plan.outputs.worker }}
       media_worker: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['media-worker'] || false) || steps.plan.outputs.media_worker }}
       router: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['git-router'] || false) || steps.plan.outputs.router }}
@@ -230,8 +228,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Install Railway CLI
-        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+      - uses: ./.github/actions/install-railway-cli
       - name: Verify current production before preparing a cutover
         id: verify
         env:
@@ -241,7 +238,7 @@ jobs:
           SCOPE_REPLACE_FAILED_WEB_RUN_ID: ${{ inputs.replace_failed_web_run_id }}
           SCOPE_REPLACE_REDEPLOYED_COMPONENT: ${{ inputs.replace_redeployed_component }}
           SCOPE_RELEASE_COMPONENTS: >-
-            {"cache":${{ needs.plan.outputs.cache }},"run-worker":${{ needs.plan.outputs.worker }},
+            {"run-worker":${{ needs.plan.outputs.worker }},
             "media-worker":${{ needs.plan.outputs.media_worker }},"git-router":${{ needs.plan.outputs.router }},
             "media-api":${{ needs.plan.outputs.media }},"api":${{ needs.plan.outputs.api }},
             "web":${{ needs.plan.outputs.web }},"cli-downloads":${{ needs.plan.outputs.cli }}}
@@ -309,8 +306,7 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
-      - name: Install Railway CLI
-        run: npm install -g "@railway/cli@$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
+      - uses: ./.github/actions/install-railway-cli
       - name: Validate production baseline schema and migration plan
         env:
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
@@ -322,7 +318,7 @@ jobs:
               "$(jq -er '.environments.production.environmentId' "$manifest")" preflight > production-migration-plan.json
           jq -e . production-migration-plan.json >/dev/null
           if jq -e '.pending | length > 0' production-migration-plan.json >/dev/null; then
-            jq -e '.components | has("api") and has("run-worker") and has("cache") and has("git-router") and has("media-api") and has("media-worker") and has("web")' prepared-release.json >/dev/null || {
+            jq -e '.components | has("api") and has("run-worker") and has("git-router") and has("media-api") and has("media-worker") and has("web")' prepared-release.json >/dev/null || {
               echo 'Pending migrations require the full application release. Run Release with scope all.' >&2
               exit 1
             }
@@ -374,7 +370,6 @@ jobs:
     uses: ./.github/workflows/deploy-backend.yml
     with:
       source_sha: ${{ needs.plan.outputs.release_sha }}
-      deploy_cache: ${{ needs.plan.outputs.cache == 'true' }}
       deploy_worker: ${{ needs.plan.outputs.worker == 'true' }}
       deploy_media_worker: ${{ needs.plan.outputs.media_worker == 'true' }}
       deploy_router: ${{ needs.plan.outputs.router == 'true' }}
@@ -405,7 +400,6 @@ jobs:
     uses: ./.github/workflows/deploy-web.yml
     with:
       source_sha: ${{ needs.plan.outputs.release_sha }}
-      verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}').web || '' }}
     secrets: inherit
 
   cli-deploy:
@@ -429,8 +423,6 @@ jobs:
       deployments: write
       packages: write
     uses: ./.github/workflows/publish-cli.yml
-    with:
-      verified_successful_sha: ${{ fromJSON(needs.plan.outputs.deployed_revisions || '{}')['cli-downloads'] || '' }}
     secrets: inherit
 
   production-health-gate:
@@ -471,11 +463,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/production-deployment-progress.mjs read
 
-      - name: Install Railway CLI
+      - uses: ./.github/actions/install-railway-cli
         if: needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true'
-        run: |
-          railway_cli_version="$(jq -r '.railway.cliVersion' .github/deployment-services.json)"
-          npm install -g "@railway/cli@$railway_cli_version"
 
       - name: Verify exact live production deployments
         if: needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true'
@@ -504,7 +493,7 @@ jobs:
           LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           MAINTENANCE_WARNING: ${{ needs.backend-deploy.outputs.maintenance_warning }}
           RELEASE_COMPONENTS: >-
-            {"runner-image":${{ needs.plan.outputs.runner_image }},"cache":${{ needs.plan.outputs.cache }},
+            {"runner-image":${{ needs.plan.outputs.runner_image }},
             "run-worker":${{ needs.plan.outputs.worker }},"media-worker":${{ needs.plan.outputs.media_worker }},
             "git-router":${{ needs.plan.outputs.router }},"media-api":${{ needs.plan.outputs.media }},
             "api":${{ needs.plan.outputs.api }},"web":${{ needs.plan.outputs.web }},"cli-downloads":${{ needs.plan.outputs.cli }}}

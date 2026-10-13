@@ -13,17 +13,13 @@ async fn content_fence_serializes_publication_with_delete_revalidation() {
     let blob = blob("fenced-publication");
     store
         .cleanup()
-        .queue_pending_source_blob_deletions(
-            vec![blob.clone()],
-            now(),
-            &super::generated_ids::test_generated_id,
-        )
+        .queue_pending_source_blob_deletions(vec![blob.clone()], now())
         .await
         .unwrap();
     make_source_blob_cleanup_due(&store, &blob.content_ref).await;
     let batch = store
         .cleanup()
-        .source_blob_cleanup_batch(now(), &super::generated_ids::test_generated_id)
+        .source_blob_cleanup_batch(now())
         .await
         .unwrap();
 
@@ -75,25 +71,21 @@ async fn cleanup_claims_are_bounded_and_failed_work_is_backed_off() {
     let blob = blob("retry-blob");
     store
         .cleanup()
-        .queue_pending_source_blob_deletions(
-            vec![blob.clone()],
-            now(),
-            &super::generated_ids::test_generated_id,
-        )
+        .queue_pending_source_blob_deletions(vec![blob.clone()], now())
         .await
         .unwrap();
     make_source_blob_cleanup_due(&store, &blob.content_ref).await;
 
     let claimed = store
         .cleanup()
-        .source_blob_cleanup_batch(now(), &super::generated_ids::test_generated_id)
+        .source_blob_cleanup_batch(now())
         .await
         .unwrap();
     assert_eq!(claimed.pending, vec![blob.clone()]);
     assert!(
         store
             .cleanup()
-            .source_blob_cleanup_batch(now(), &super::generated_ids::test_generated_id)
+            .source_blob_cleanup_batch(now())
             .await
             .unwrap()
             .pending
@@ -103,34 +95,24 @@ async fn cleanup_claims_are_bounded_and_failed_work_is_backed_off() {
 
     store
         .cleanup()
-        .finish_source_blob_cleanup(
-            claimed,
-            std::slice::from_ref(&blob),
-            now(),
-            &super::generated_ids::test_generated_id,
-        )
+        .finish_source_blob_cleanup(claimed, std::slice::from_ref(&blob), now())
         .await
         .unwrap();
     let immediate_retry = store
         .cleanup()
-        .source_blob_cleanup_batch(now(), &super::generated_ids::test_generated_id)
+        .source_blob_cleanup_batch(now())
         .await
         .unwrap();
     assert_eq!(immediate_retry.pending, vec![blob.clone()]);
     store
         .cleanup()
-        .finish_source_blob_cleanup(
-            immediate_retry,
-            std::slice::from_ref(&blob),
-            now(),
-            &super::generated_ids::test_generated_id,
-        )
+        .finish_source_blob_cleanup(immediate_retry, std::slice::from_ref(&blob), now())
         .await
         .unwrap();
     assert!(
         store
             .cleanup()
-            .source_blob_cleanup_batch(now(), &super::generated_ids::test_generated_id)
+            .source_blob_cleanup_batch(now())
             .await
             .unwrap()
             .pending
@@ -147,29 +129,25 @@ async fn reclaimed_source_blob_rejects_stale_completion() {
     let content_ref = blob.content_ref.clone();
     store
         .cleanup()
-        .queue_pending_source_blob_deletions(
-            vec![blob],
-            now(),
-            &super::generated_ids::test_generated_id,
-        )
+        .queue_pending_source_blob_deletions(vec![blob], now())
         .await
         .unwrap();
     make_source_blob_cleanup_due(&store, &content_ref).await;
     let stale = store
         .cleanup()
-        .source_blob_cleanup_batch(now(), &super::generated_ids::test_generated_id)
+        .source_blob_cleanup_batch(now())
         .await
         .unwrap();
     make_source_blob_cleanup_due(&store, &content_ref).await;
     let current = store
         .cleanup()
-        .source_blob_cleanup_batch(now(), &super::generated_ids::test_generated_id)
+        .source_blob_cleanup_batch(now())
         .await
         .unwrap();
 
     store
         .cleanup()
-        .finish_source_blob_cleanup(stale, &[], now(), &super::generated_ids::test_generated_id)
+        .finish_source_blob_cleanup(stale, &[], now())
         .await
         .unwrap();
     let row = entities::source_blob_cleanup_job::Entity::find_by_id(
@@ -182,12 +160,7 @@ async fn reclaimed_source_blob_rejects_stale_completion() {
     assert!(row.completed_at_unix.is_none());
     store
         .cleanup()
-        .finish_source_blob_cleanup(
-            current,
-            &[],
-            now(),
-            &super::generated_ids::test_generated_id,
-        )
+        .finish_source_blob_cleanup(current, &[], now())
         .await
         .unwrap();
 }

@@ -39,18 +39,6 @@ pub(super) async fn private_file_repository(
     (state, fake, source)
 }
 
-async fn submit_public_request(state: &AppState) {
-    let submitted = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/submit"),
-        Some(&bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL)),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
-}
-
 async fn approve(state: &AppState, head: &str) -> Response {
     api_request(
         router(state.clone()),
@@ -94,7 +82,12 @@ async fn approved_contribution(
         request_push_checkout(state, label, PUBLIC_SUBJECT, PUBLIC_EMAIL).await;
     push_change(&source, &remote, REQUEST_REF, path, content, "contribute").unwrap();
     let head = git_head_oid(&source);
-    submit_public_request(state).await;
+    submit_request(
+        router(state.clone()),
+        REQUEST_ID,
+        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
+    )
+    .await;
     expect_json(approve(state, &head).await, StatusCode::OK).await;
     (source, remote, server, head)
 }
@@ -140,7 +133,12 @@ async fn a_public_contribution_is_tested_merged_onto_private_main() {
     )
     .unwrap();
     let head = git_head_oid(&source);
-    submit_public_request(&state).await;
+    submit_request(
+        router(state.clone()),
+        REQUEST_ID,
+        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
+    )
+    .await;
     let branch = format!("scope/requests/{REQUEST_ID}");
 
     assert_eq!(push_pass(&state, unix_now()).await, 0);
@@ -267,7 +265,12 @@ async fn a_contribution_that_conflicts_with_private_code_reports_it_and_pushes_n
         "contribute",
     )
     .unwrap();
-    submit_public_request(&state).await;
+    submit_request(
+        router(state.clone()),
+        REQUEST_ID,
+        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
+    )
+    .await;
 
     let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
     let view = checks(&state, REQUEST_ID, &member).await;
@@ -307,7 +310,12 @@ async fn a_check_commit_is_private_code_and_waits_for_a_public_repository_to_be_
     )
     .unwrap();
     let head = git_head_oid(&source);
-    submit_public_request(&state).await;
+    submit_request(
+        router(state.clone()),
+        REQUEST_ID,
+        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
+    )
+    .await;
     expect_json(approve(&state, &head).await, StatusCode::OK).await;
     make_github_repository_public(&fake);
     let branch = format!("scope/requests/{REQUEST_ID}");
@@ -555,17 +563,6 @@ async fn a_contribution_that_new_private_main_conflicts_with_reports_it() {
     );
 }
 
-pub(super) async fn tested_commit(state: &AppState, head: &str) -> String {
-    state
-        .metadata
-        .requests()
-        .request_check_evaluation(REQUEST_ID, head)
-        .await
-        .unwrap()
-        .unwrap()
-        .tested_oid
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
     let (mut state, _owner_source) =
@@ -593,15 +590,7 @@ async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
     .unwrap();
     let head = git_head_oid(&source);
     let branch = format!("scope/requests/{REQUEST_ID}");
-    let submitted = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}/submit"),
-        Some(&public),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
+    submit_request(router(state.clone()), REQUEST_ID, &public).await;
 
     assert_eq!(push_pass(&state, unix_now()).await, 0);
     assert_eq!(fake.branch_head(&branch), None);
@@ -683,7 +672,7 @@ async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
     assert_eq!(approved["state"], "started");
     assert_eq!(approved["github_push"]["state"], "sending");
     assert_eq!(push_pass(&state, unix_now()).await, 1);
-    let tested = tested_commit(&state, &head).await;
+    let tested = tested_oid(&state, &head).await;
     assert_ne!(tested, head);
     assert_eq!(fake.branch_head(&branch), Some(tested));
 

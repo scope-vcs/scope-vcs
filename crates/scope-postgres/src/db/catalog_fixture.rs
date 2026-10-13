@@ -8,6 +8,7 @@ use scope_domain::{
         Request, RequestDiscussion, RequestDiscussionReadState, RequestDiscussionReply,
         RequestEvent, RequestRevision,
     },
+    runs::catalog::RepositoryWorkflowCatalog,
     views::ViewId,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,6 +19,7 @@ pub struct CatalogFixture {
     pub native_runs_accounts: BTreeSet<String>,
     pub repositories: BTreeMap<String, Repository>,
     pub repository_landing_files: BTreeMap<String, RepositoryLandingFile>,
+    pub repository_workflow_catalogs: BTreeMap<String, RepositoryWorkflowCatalog>,
     pub git_segment_uploads: Vec<GitSegmentUpload>,
     pub requests: BTreeMap<String, Request>,
     pub request_revisions: BTreeMap<String, RequestRevision>,

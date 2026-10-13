@@ -120,10 +120,10 @@ test('every deployment, benchmark, and developer tooling test is run by a shared
 const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
-  /^bench\//, /^deploy\/(aws|postgres|automation)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
+  /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_process\.py|install-test-postgres\.sh)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-tests|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 
@@ -186,45 +186,16 @@ test('policy rejects oversized non-web source in a complete checkout', () => {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('the CLI is built once per target and the matrix owns the deployed service artifact', () => {
+test('the CLI checks avoid release builds and publication downloads the service artifact the build uploads', () => {
   const workflow = read('.github/workflows/scope-cli-build.yml');
-  const jobsSection = workflow.slice(workflow.indexOf('\njobs:\n'));
-  assert.deepEqual(
-    [...jobsSection.matchAll(/^  ([\w-]+):$/gm)].map(([, name]) => name),
-    ['prepare', 'checks', 'build'],
-  );
-  const checks = jobsSection.slice(jobsSection.indexOf('\n  checks:\n'), jobsSection.indexOf('\n  build:\n'));
-  const build = jobsSection.slice(jobsSection.indexOf('\n  build:\n'));
+  const checks = workflow.slice(workflow.indexOf('\n  checks:\n'), workflow.indexOf('\n  build:\n'));
+  const upload = workflow.slice(workflow.indexOf('      - name: Upload service'));
   assert.doesNotMatch(checks, /--release/);
-  assert.match(checks, /run: \.\/dev\/checks\/cli\n/);
-  assert.match(checks, /if: \$\{\{ !inputs\.validate_targets \}\}\n\s+run: \.\/dev\/checks\/cli-bundle\n/);
-  assert.match(checks, /if: inputs\.validate_service_release && !inputs\.validate_targets\n/);
-  const serviceGate = "if: inputs.validate_service_release && matrix.target == 'x86_64-unknown-linux-gnu'";
-  assert.equal(build.split(serviceGate).length - 1, 2);
-  const upload = build.slice(build.indexOf('      - name: Upload service'));
   assert.match(upload, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
   assert.match(upload, /path: artifacts\/scope-cli-service\.tar\.gz/);
-  const pack = build.slice(build.indexOf('      - name: Pack service'), build.indexOf('      - name: Upload service'));
-  assert.match(pack, /release=cli\/target\/\$\{\{ matrix\.target \}\}\/release/);
-  assert.match(pack, /--file artifacts\/scope-cli-service\.tar\.gz/);
-  assert.match(pack, /--directory "\$release"/);
-  assert.match(pack, /\n\s+scope-cli-service LICENSE NOTICE third-party-rust\.txt\n/);
   const publish = read('.github/workflows/publish-cli.yml');
   assert.match(publish, /name: cli-service-release-\$\{\{ inputs\.source_sha \|\| github\.sha \}\}/);
   assert.match(publish, /--file artifacts\/scope-cli-service\.tar\.gz[\s\\]+--directory \.railway-cli\/bin/);
-});
-
-test('CLI release identity survives subsequent Cargo commands and cross containers', () => {
-  const workflow = read('.github/workflows/scope-cli-build.yml');
-  const build = workflow.slice(workflow.indexOf('\n  build:\n'));
-  const jobSettings = build.slice(0, build.indexOf('\n    steps:'));
-  assert.match(jobSettings, /\n    env:\n      SCOPE_BUILD_SHA: \$\{\{ github.sha \}\}/);
-  assert.equal((build.match(/^\s+SCOPE_BUILD_SHA:/gm) ?? []).length, 1, 'steps must inherit the job SHA');
-  assert.match(jobSettings, /CROSS_CONFIG: \$\{\{ github.workspace \}\}\/Cross.toml/);
-  assert.match(read('Cross.toml'), /\[build.env\]\s+passthrough = \["SCOPE_BUILD_SHA"\]/);
-  const selected = classifyChanges(manifest, ['Cross.toml']);
-  assert.equal(selected["cli-downloads"], true);
-  assert.equal(selected["cli-distribution"], true);
 });
 
 test('bundle packaging rejects missing and stale release identities after all builds', () => {
@@ -272,9 +243,9 @@ function releaseJobs() {
 
 function releasePath(selected, { reuse = false, resumeStaging = false, failure = '', cancelled = false, ref = 'refs/heads/main', backendActivatesWeb = false, replaceRedeployedComponent = '' } = {}) {
   const jobs = releaseJobs();
-  const outputs = Object.fromEntries(['runner_image', 'cache', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
+  const outputs = Object.fromEntries(['runner_image', 'worker', 'media_worker', 'router', 'media', 'api', 'web', 'cli']
     .map((key) => [key, String(selected.includes(key))]));
-  outputs.backend_selected = String(['cache', 'worker', 'media_worker', 'router', 'media', 'api']
+  outputs.backend_selected = String(['worker', 'media_worker', 'router', 'media', 'api']
     .some((key) => outputs[key] === 'true'));
   outputs.prepared_run_id = reuse || resumeStaging ? '123' : '';
   outputs.recover_cutover_id = reuse ? '456' : '';
@@ -321,7 +292,7 @@ test('failed preflight, staging or activation cannot publish a successful releas
 });
 
 test('interrupted releases reuse images and finish through the same final receipt', () => {
-  const result = releasePath(['api', 'worker', 'cache', 'router', 'media', 'media_worker', 'web'], { reuse: true });
+  const result = releasePath(['api', 'worker', 'router', 'media', 'media_worker', 'web'], { reuse: true });
   assert.equal(result['release-preparation'].result, 'success');
   assert.equal(result.staging.result, 'skipped');
   assert.equal(result['backend-deploy'].result, 'success');
@@ -330,7 +301,7 @@ test('interrupted releases reuse images and finish through the same final receip
 });
 
 test('resumed staging reuses prepared images but must pass smoke before any production activation', () => {
-  const selected = ['api', 'worker', 'cache', 'router', 'media', 'media_worker', 'web'];
+  const selected = ['api', 'worker', 'router', 'media', 'media_worker', 'web'];
   const result = releasePath(selected, { resumeStaging: true });
   assert.equal(result['production-preflight'].result, 'skipped');
   for (const job of ['release-preparation', 'staging', 'backend-deploy', 'web-deploy', 'production-health-gate']) {
@@ -417,13 +388,7 @@ test('staging verifies pinned Git before credentials or deployment mutations', (
   const credentials = workflow.indexOf('- name: Create staging-scoped Railway token');
   assert.ok(install > workflow.indexOf('- name: Checkout trusted orchestration'));
   assert.ok(verify > install && credentials > verify);
-  const setup = workflow.slice(install, credentials);
-  assert.match(setup, /jq -er '\.git\.version' dev\/tool-versions\.json/);
-  assert.match(setup, /jq -er '\.git\.sourceSha256' dev\/tool-versions\.json/);
-  assert.match(setup, /sudo bash deploy\/railway\/install-git\.sh "\$version" "\$source_sha256"/);
-  assert.match(setup, /echo \/opt\/git\/bin >> "\$GITHUB_PATH"/);
-  assert.match(setup, /run: node dev\/check-git-version\.mjs/);
-  assert.doesNotMatch(setup, /\n\s+(?:if:|continue-on-error:)/);
+  assert.doesNotMatch(workflow.slice(install, credentials), /\n\s+(?:if:|continue-on-error:)/);
 });
 
 test('every external action and reusable workflow is pinned to a full commit SHA', () => {

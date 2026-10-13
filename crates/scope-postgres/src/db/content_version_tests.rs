@@ -1,16 +1,12 @@
 use crate::db::{
     CatalogFixture, CreateRepositoryInviteMutation, MetadataStore, RepositoryMutation,
-    TestDatabaseTarget, generated_ids::test_generated_id,
-    projection_read_models::live_projection_read_model,
+    projection_read_models::live_projection_read_model, test_support::fixtures,
 };
 use scope_domain::{
     account::UserAccount,
-    content::SourceBlob,
-    content_ref::ContentRef,
-    policy::{Policy, ScopePath},
-    projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
+    policy::Policy,
     repo_metadata::update_repo_metadata,
-    repository::{RepoLifecycleState, Repository, collaboration::RepositoryMemberPermissions},
+    repository::{Repository, collaboration::RepositoryMemberPermissions},
     views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
@@ -18,50 +14,23 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 const NOW: u64 = 1_700_000_000;
 
 fn owner() -> UserAccount {
-    UserAccount {
-        id: "owner".into(),
-        handle: "owner".into(),
-        email: "owner@example.com".into(),
-        email_verified: true,
-    }
+    fixtures::user("owner", "owner")
 }
 
 async fn fixture() -> (MetadataStore, Repository) {
-    let store =
-        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let owner = owner();
-    let mut repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_repo").unwrap();
-    repo.record.lifecycle_state = RepoLifecycleState::Ready;
-    let path = ScopePath::parse("/README.md").unwrap();
-    let blob = SourceBlob {
-        content_ref: ContentRef::git_bundle_sha256("bundle"),
-        sha256: "hash".into(),
-        git_oid: "1".repeat(40),
-        git_file_mode: "100644".into(),
-        size_bytes: 5,
-    };
-    repo.graph.commits.push(LogicalCommit {
-        occurred_at_unix: None,
-        id: "logical_0".into(),
-        origin: LogicalCommitOrigin::CanonicalPush {
-            source_head_oid: "1".repeat(40),
-        },
-        author_id: owner.id.clone(),
-        message: "Add readme".into(),
-        changes: vec![FileChange {
-            path: path.clone(),
-            old_content: None,
-            new_content: Some(blob.clone()),
-            label: ViewId::public(),
-        }],
-    });
-    repo.live_files.insert(path, blob);
+    let mut repo = fixtures::repository(&owner, "repo", ViewId::public());
+    let commit = fixtures::canonical_commit(&owner.id, 0, "/README.md", ViewId::public());
+    let change = &commit.changes[0];
+    repo.live_files
+        .insert(change.path.clone(), change.new_content.clone().unwrap());
+    repo.graph.commits.push(commit);
     let mut catalog = CatalogFixture::default();
     catalog.users.insert(owner.id.clone(), owner);
     catalog
         .repositories
         .insert(repo.record.id.clone(), repo.clone());
-    store.admin().seed_catalog_for_tests(catalog).unwrap();
+    let store = fixtures::seeded_store(catalog);
     store
         .jobs()
         .run_ready_outbox_jobs("content-version", 10, &|| Ok(NOW))
@@ -111,7 +80,7 @@ async fn invites_and_metadata_edits_keep_projections_and_history_current() {
         .unwrap();
     store
         .repositories()
-        .mutate_repository("owner", "repo", NOW, &test_generated_id, |repo| {
+        .mutate_repository("owner", "repo", NOW, |repo| {
             update_repo_metadata(repo, "owner", Some("A description".into()), None)?;
             Ok(RepositoryMutation::new(()))
         })

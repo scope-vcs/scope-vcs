@@ -46,7 +46,6 @@ ENV SCOPE_MEDIA_HEIF_CONVERT=/opt/libheif/bin/heif-convert \
 WORKDIR /scope
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY api ./api
-COPY cache-service ./cache-service
 COPY crates ./crates
 COPY media-service ./media-service
 COPY media-worker/Cargo.toml ./media-worker/Cargo.toml
@@ -69,6 +68,7 @@ LABEL org.opencontainers.image.source="https://github.com/scope-vcs/scope-vcs"
 
 ARG OPENSSL_VERSION=3.5.7-1~deb13u3
 ARG PCRE2_VERSION=10.46-1~deb13u3
+ARG LIBRSVG_VERSION=2.60.0+dfsg-1+deb13u1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -79,6 +79,7 @@ RUN apt-get update \
         "openssl=${OPENSSL_VERSION}" \
         "openssl-provider-legacy=${OPENSSL_VERSION}" \
         "libpcre2-8-0=${PCRE2_VERSION}" \
+        "librsvg2-2=${LIBRSVG_VERSION}" \
     && rm -rf /var/lib/apt/lists/* \
     && echo /opt/libheif/lib > /etc/ld.so.conf.d/libheif.conf \
     && mkdir -p /tmp/scope-media-worker /scope/licenses \

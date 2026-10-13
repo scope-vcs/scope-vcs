@@ -1,9 +1,5 @@
-import {
-  BlockSkeleton,
-  LineSkeleton,
-  TextSkeleton,
-  type LineSkeletonLength,
-} from '@/components/ui/skeleton'
+import { LineSkeleton, type LineSkeletonLength } from '@/components/ui/line-skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { cn } from '@/lib/utils'
 
 const PENDING_DIFF_LINES: {
@@ -37,21 +33,6 @@ export function DiffSkeleton() {
           <LineSkeleton length={line.length} />
         </div>
       ))}
-    </div>
-  )
-}
-
-export function DiffDrawerSkeleton() {
-  return (
-    <div className="h-full min-h-[340px] bg-background">
-      <div className="flex min-h-14 items-center gap-3 border-b border-border px-3 py-2.5">
-        <BlockSkeleton className="size-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <TextSkeleton length="medium" />
-          <TextSkeleton length="tiny" size="meta" />
-        </div>
-      </div>
-      <DiffSkeleton />
     </div>
   )
 }

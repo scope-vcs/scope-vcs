@@ -1,6 +1,6 @@
 use super::{AttemptMutation, DispatchClaim, RunStore};
 use crate::error::PostgresError;
-use scope_domain::runs::step::StepConclusion;
+use scope_domain::runs::{attempt::RunAttempt, step::StepConclusion};
 
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_attempt_step"))]
@@ -28,42 +28,22 @@ impl RunStore {
         logs_truncated: bool,
         now_unix: u64,
     ) -> Result<AttemptMutation, PostgresError> {
+        let complete = |_: &_, job: &mut _, attempt: &mut RunAttempt, steps: &mut _| {
+            attempt.complete_step(
+                job,
+                steps,
+                token_hash,
+                step_index,
+                conclusion,
+                logs_truncated,
+                now_unix,
+            )
+        };
         if matches!(conclusion, StepConclusion::Failed { .. }) {
-            let mut transitioned = false;
-            let claim = self
-                .mutate_attempt(attempt_id, |_, job, attempt, steps| {
-                    transitioned = !attempt.state.is_terminal();
-                    attempt.complete_step(
-                        job,
-                        steps,
-                        token_hash,
-                        step_index,
-                        conclusion,
-                        logs_truncated,
-                        now_unix,
-                    )
-                })
-                .await?;
-            Ok(AttemptMutation {
-                claim,
-                transitioned,
-            })
+            self.mutate_attempt(attempt_id, complete).await
         } else {
-            let claim = self
-                .mutate_active_attempt(attempt_id, |_, job, attempt, steps| {
-                    attempt.complete_step(
-                        job,
-                        steps,
-                        token_hash,
-                        step_index,
-                        conclusion,
-                        logs_truncated,
-                        now_unix,
-                    )
-                })
-                .await?;
             Ok(AttemptMutation {
-                claim,
+                claim: self.mutate_active_attempt(attempt_id, complete).await?,
                 transitioned: false,
             })
         }

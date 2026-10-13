@@ -66,7 +66,7 @@ test("only completed forward activation or verified restoration clears the guard
 test("incomplete preparation fails before creating closure intent", async () => {
   const store = storage();
   const incomplete = structuredClone(prepared);
-  delete incomplete.components.cache;
+  delete incomplete.components["git-router"];
   await assert.rejects(beginCutover({ prepared: incomplete, baseline, previous: {} }, store.request));
   assert.equal(store.deployments.length, 0);
 });

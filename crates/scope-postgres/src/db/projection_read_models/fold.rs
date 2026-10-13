@@ -135,8 +135,7 @@ where
         view.as_str().to_string(),
     ))
     .exec(conn)
-    .await
-    .map_err(PostgresError::internal)?;
+    .await?;
     build_views_from_start(
         conn,
         repo_id,
@@ -158,8 +157,7 @@ where
     let assigned = entities::repository_member::Entity::find()
         .filter(entities::repository_member::Column::RepoId.eq(repo_id.to_string()))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .map(|row| row.try_into_domain().map(|member| member.permissions.view))
         .collect::<Result<BTreeSet<_>, _>>()?;
@@ -182,8 +180,7 @@ where
     let (defined, removed): (Vec<_>, Vec<_>) = entities::projection_read_model::Entity::find()
         .filter(entities::projection_read_model::Column::RepoId.eq(repo_id.to_string()))
         .all(conn)
-        .await
-        .map_err(PostgresError::internal)?
+        .await?
         .into_iter()
         .partition(|row| views.iter().any(|view| view.id.as_str() == row.audience));
     if !removed.is_empty() {
@@ -194,8 +191,7 @@ where
                     .is_in(removed.into_iter().map(|row| row.audience)),
             )
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     Ok(defined)
 }
@@ -413,8 +409,7 @@ where
             .to_owned(),
         )
         .exec(conn)
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
     super::super::history_reads::append_history_entries(
         conn,
         repo_id,
@@ -445,8 +440,7 @@ where
             .filter(entities::projection_file::Column::RepoId.eq(repo_id.to_string()))
             .filter(entities::projection_file::Column::PathKey.is_in(removed))
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     let rows = after
         .iter()
@@ -486,8 +480,7 @@ where
                 .to_owned(),
             )
             .exec(conn)
-            .await
-            .map_err(PostgresError::internal)?;
+            .await?;
     }
     Ok(())
 }

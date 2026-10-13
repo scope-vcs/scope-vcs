@@ -1,7 +1,7 @@
 import type { RepositoryMemberPermissions, ViewId } from '../../api/types.generated'
 import type { RepoViews } from '../../api/repo-views'
 
-export type MemberPermissionKey = 'can_change_file_visibility' | 'can_push'
+type MemberPermissionKey = 'can_change_file_visibility' | 'can_push'
 
 export const defaultPermissions: RepositoryMemberPermissions = {
   can_change_file_visibility: false,

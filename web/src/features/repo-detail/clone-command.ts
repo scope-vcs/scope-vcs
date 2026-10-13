@@ -1,6 +1,6 @@
 import type { RepositoryActor, ViewId } from '../../api/types.generated'
 
-export type CloneCommand = {
+type CloneCommand = {
   copyLabel: string
   label: string
   value: string

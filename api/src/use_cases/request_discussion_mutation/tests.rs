@@ -81,15 +81,12 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
     let position = mutation.reply.position;
 
     requests
-        .close_request(
-            CloseRequestCommand {
-                request_id: "request_reply".to_string(),
-                actor_user_id: "owner".to_string(),
-                event_id: "event_request_deleted".to_string(),
-                now_unix: 4,
-            },
-            &crate::persistence_ids::generate_persistence_id,
-        )
+        .close_request(CloseRequestCommand {
+            request_id: "request_reply".to_string(),
+            actor_user_id: "owner".to_string(),
+            event_id: "event_request_deleted".to_string(),
+            now_unix: 4,
+        })
         .await
         .unwrap();
     let mut receiver = state.repo_events.subscribe("owner/repo");

@@ -18,7 +18,7 @@ import type {
   GitHubWorkflowRunResponse,
   GitHubWorkflowStepResponse,
 } from '@/api/types.generated'
-import './styles.css'
+import '../shared/styles.css'
 
 const now = Math.floor(Date.now() / 1000)
 function run(id: number, overrides: Partial<GitHubWorkflowRunResponse>): GitHubWorkflowRunResponse {
@@ -61,7 +61,7 @@ Object.assign(window, {
   setNextRuns: (runs: GitHubWorkflowRunListResponse) => { nextRuns = runs },
   clearLoads: () => { loads.length = 0 },
   finishLoad: () => resolvers.shift()?.(),
-  emitRunsChanged: () => invalidateRepoResources(repoResourceScope(live.repo, 'adam'), {
+  emitRunsChanged: () => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), {
     repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: 'GitHubWorkflowRunsChanged',
   }),
 })
@@ -123,7 +123,7 @@ Object.assign(window, {
     const finished = { ...runningJob, status: 'completed' as const, conclusion: 'success' as const, completed_at_unix: now }
     runDetail = { ...runDetail, jobs: runDetail.jobs.map((listed) => listed.id === 103 ? finished : listed) }
   },
-  emitRunChanged: (githubRunId: number) => invalidateRepoResources(repoResourceScope(live.repo, 'adam'), {
+  emitRunChanged: (githubRunId: number) => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), {
     repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: { GitHubWorkflowRunChanged: { github_run_id: githubRunId } },
   }),
 })
@@ -214,7 +214,7 @@ function Run() {
   }
   return <GitHubWorkflowRunDetailPage
     initialDetail={initialDetail}
-    initialScope={repoResourceScope(live.repo, 'adam')}
+    initialScope={repoResourceScope(live.repo, 'viewer')}
     key={runId}
     loadDetail={() => loadRunDetail(runId!)}
     loadLog={loadJobLog}

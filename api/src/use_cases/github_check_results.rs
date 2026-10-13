@@ -1,3 +1,4 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     error::ApiError,
     persistence::unix_now,
@@ -13,6 +14,7 @@ use scope_domain::{
 };
 use scope_postgres::db::GitHubCheckCommit;
 use std::{collections::BTreeSet, time::Duration};
+use tokio::time::MissedTickBehavior;
 
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
 const PENDING_REFRESH_SECS: u64 = 2 * 60;
@@ -59,7 +61,13 @@ pub(crate) async fn confirm_recent_github_checks(
     else {
         return Ok(());
     };
-    let Some(connection) = connected(state, &request.repo_id).await? else {
+    let Some(connection) = state
+        .metadata
+        .repositories()
+        .github_connection(&request.repo_id)
+        .await?
+        .filter(GitHubConnection::is_connected)
+    else {
         return Ok(());
     };
     let read_at = state
@@ -89,25 +97,12 @@ fn check_commit(connection: &GitHubConnection, commit_oid: &str) -> GitHubCheckC
     }
 }
 
-async fn connected(state: &AppState, repo_id: &str) -> Result<Option<GitHubConnection>, ApiError> {
-    Ok(state
-        .metadata
-        .repositories()
-        .github_connection(repo_id)
-        .await?
-        .map(|read| read.connection)
-        .filter(GitHubConnection::is_connected))
-}
-
 pub(crate) async fn refresh_commit_checks(
     state: &AppState,
     connection: &GitHubConnection,
     commit_oid: &str,
 ) -> Result<(), ApiError> {
-    let app = state
-        .github
-        .as_deref()
-        .ok_or_else(|| ApiError::not_found("GitHub is not configured on this server"))?;
+    let app = state.github_app()?;
     let commit = check_commit(connection, commit_oid);
     let requests = state.metadata.requests();
     let started_at = unix_now()?;
@@ -134,10 +129,8 @@ pub(crate) async fn refresh_commit_checks(
     {
         return Ok(());
     }
-    if let Some(record) = state
-        .metadata
-        .repositories()
-        .repository_record(&connection.repository_id)
+    if let Some(incarnation) = state
+        .repository_incarnation(&connection.repository_id)
         .await?
     {
         let associated = requests
@@ -157,18 +150,18 @@ pub(crate) async fn refresh_commit_checks(
         {
             state
                 .publish_request_summary_refresh(
-                    &record.incarnation(),
+                    &incarnation,
                     RepoChangeReason::RequestChecksUpdated,
                 )
                 .await;
         }
         for request in associated {
             state
-                .publish_known_request_state_refresh(&record.incarnation(), &request)
+                .publish_known_request_state_refresh(&incarnation, &request)
                 .await;
         }
     }
-    state.auto_merge_wakeup.notify_one();
+    state.wakeups.auto_merge.notify_one();
     Ok(())
 }
 
@@ -197,9 +190,12 @@ pub(crate) async fn reconcile_github_checks_once(
         {
             continue;
         }
-        let Some(connection) = connected(state, &commit.repo_id)
+        let Some(connection) = state
+            .metadata
+            .repositories()
+            .github_connection(&commit.repo_id)
             .await?
-            .filter(|connection| connection.github_repository_id == commit.github_repository_id)
+            .filter(|connection| connection.is_connected_to(commit.github_repository_id))
         else {
             continue;
         };
@@ -248,32 +244,26 @@ async fn any_checks_pending(
     }))
 }
 
-impl AppState {
-    pub(crate) fn start_github_check_reconciliation(&self) {
-        let state = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(RECONCILE_INTERVAL);
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                interval.tick().await;
-                let pass = async {
-                    state.metadata.admin().readiness_check().await?;
-                    let now = unix_now()?;
-                    let checks = reconcile_github_checks_once(&state, now).await;
-                    let setup_checks =
-                        github_setup_checks::reconcile_github_setup_checks_once(&state, now).await;
-                    let workflow_runs =
-                        github_workflow_runs::retry_github_workflow_run_reads_once(&state, now)
-                            .await;
-                    checks.and(setup_checks).and(workflow_runs)
-                };
-                if let Err(error) = pass.await {
-                    tracing::warn!(
-                        error = %error.operator_diagnostic(),
-                        "GitHub check reconciliation failed; retrying"
-                    );
-                }
-            }
-        });
+impl BackgroundWork {
+    pub(crate) fn start_github_check_reconciliation(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "GitHub check reconciliation",
+                cadence: Cadence::Fixed {
+                    period: RECONCILE_INTERVAL,
+                    missed_ticks: MissedTickBehavior::Skip,
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move {
+                let now = unix_now()?;
+                let checks = reconcile_github_checks_once(&state, now).await;
+                let setup_checks =
+                    github_setup_checks::reconcile_github_setup_checks_once(&state, now).await;
+                let workflow_runs =
+                    github_workflow_runs::retry_github_workflow_run_reads_once(&state, now).await;
+                checks.and(setup_checks).and(workflow_runs)
+            },
+        );
     }
 }

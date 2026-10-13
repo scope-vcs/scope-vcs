@@ -1,67 +1,11 @@
 use super::*;
 use crate::db::{
     MetadataStore,
-    test_support::fixtures::{repository, source_blob, store_with_native_run_repositories, user},
-};
-use scope_domain::{
-    runs::{
-        run::Run,
-        source::{RunSource, RunTrigger},
-        step::SetupFailureMessage,
-        workflow::{
-            definition::{
-                CompiledWorkflow, ContainerSpec, WorkflowJob, WorkflowJobId, WorkflowStep,
-                WorkflowTriggers,
-            },
-            identity::{WorkflowIdentity, WorkflowPath},
-            revision::WorkflowRevision,
-        },
+    test_support::fixtures::{
+        manual_run, manual_workflow, repository, store_with_native_run_repositories, user,
     },
-    views::ViewId,
 };
-const IMAGE_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-fn workflow(repository_id: &str) -> WorkflowRevision {
-    let identity = WorkflowIdentity::new(
-        repository_id,
-        WorkflowPath::parse("/.scope/runs/test.yml").unwrap(),
-    )
-    .unwrap();
-    let job = WorkflowJob::new(
-        WorkflowJobId::parse("checks").unwrap(),
-        vec![],
-        ContainerSpec::new(format!("rust@sha256:{IMAGE_DIGEST}")).unwrap(),
-        600,
-        vec![],
-        Default::default(),
-        vec![WorkflowStep::new("Test", "cargo test").unwrap()],
-    )
-    .unwrap();
-    WorkflowRevision::new(
-        identity,
-        CompiledWorkflow::new(
-            "Test",
-            WorkflowTriggers::new(true, false, false).unwrap(),
-            vec![job],
-        )
-        .unwrap(),
-    )
-    .unwrap()
-}
-
-fn run(revision: &WorkflowRevision, id: &str) -> Run {
-    Run::new(
-        id,
-        id,
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some("user_cache_owner".into()),
-        RunSource::ephemeral_git_bundle(source_blob(&"d".repeat(40), &"c".repeat(64), 42)).unwrap(),
-        10,
-    )
-    .unwrap()
-}
+use scope_domain::{runs::step::SetupFailureMessage, views::ViewId};
 
 async fn fixture(count: usize) -> MetadataStore {
     let repo = repository(
@@ -71,11 +15,12 @@ async fn fixture(count: usize) -> MetadataStore {
     );
     let repository_id = repo.record.id.clone();
     let store = store_with_native_run_repositories([repo]);
-    let revision = workflow(&repository_id);
+    let revision = manual_workflow(&repository_id);
     for index in 0..count {
+        let run = manual_run(&revision, &format!("run-{index:03}"), "user_cache_owner");
         store
             .runs()
-            .enqueue_run(run(&revision, &format!("run-{index:03}")), revision.clone())
+            .enqueue_run(run, revision.clone())
             .await
             .unwrap();
     }

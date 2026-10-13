@@ -77,7 +77,7 @@ accordingly and record any retention change in the
 
 ## Configuration
 
-Production sets `POSTHOG_PROJECT_TOKEN` on api, run-worker, cache, git-router,
+Production sets `POSTHOG_PROJECT_TOKEN` on api, run-worker, git-router,
 media-api, media-worker, and web, using the same project as product analytics.
 Product analytics additionally requires `SCOPE_ANALYTICS_ENVIRONMENT`, so
 setting the token alone on a service exports telemetry without capturing
@@ -96,7 +96,7 @@ set +x
 manifest=.github/deployment-services.json
 project_id="$(jq -er '.railway.projectId' "$manifest")"
 environment_id="$(jq -er '.environments.production.environmentId' "$manifest")"
-for component in api run-worker cache git-router media-api media-worker web; do
+for component in api run-worker git-router media-api media-worker web; do
   service_id="$(jq -er --arg component "$component" '.services[$component].id' "$manifest")"
   printf '%s: ' "$component"
   railway ssh --project "$project_id" --environment "$environment_id" \

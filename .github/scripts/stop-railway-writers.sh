@@ -15,7 +15,6 @@ production_environment_id="$(jq -er '.environments.production.environmentId' "$m
 staging_environment_id="$(jq -er '.environments.staging.environmentId' "$manifest_path")"
 worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
 api_service="$(jq -er '.services.api.id' "$manifest_path")"
-cache_service="$(jq -er '.services.cache.id' "$manifest_path")"
 media_service="$(jq -er '.services["media-api"].id | strings | select(length > 0)' "$manifest_path")"
 media_worker_service="$(jq -er '.services["media-worker"].id | strings | select(length > 0)' "$manifest_path")"
 
@@ -103,13 +102,6 @@ wait_until_stopped() {
   return 1
 }
 
-stop_service "$api_service"
-stop_service "$worker_service"
-stop_service "$cache_service"
-stop_service "$media_service"
-stop_service "$media_worker_service"
-wait_until_stopped "$api_service"
-wait_until_stopped "$worker_service"
-wait_until_stopped "$cache_service"
-wait_until_stopped "$media_service"
-wait_until_stopped "$media_worker_service"
+writers=("$api_service" "$worker_service" "$media_service" "$media_worker_service")
+for service in "${writers[@]}"; do stop_service "$service"; done
+for service in "${writers[@]}"; do wait_until_stopped "$service"; done

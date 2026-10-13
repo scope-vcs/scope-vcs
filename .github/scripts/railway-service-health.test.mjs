@@ -238,7 +238,7 @@ test("production verification binds every live service to durable Railway eviden
   );
 
   const incompleteConfigs = { ...serviceConfigs };
-  delete incompleteConfigs.cache;
+  delete incompleteConfigs["git-router"];
   assert.throws(
     () => verifyProductionRailwayServices({
       deployments,
@@ -246,7 +246,7 @@ test("production verification binds every live service to durable Railway eviden
       serviceConfigs: incompleteConfigs,
       services,
     }),
-    /cache is missing expected Railway config/,
+    /git-router is missing expected Railway config/,
   );
 
   delete deployments.web;
@@ -266,7 +266,7 @@ test("production CLI verifies canonical receipts against the checked-in manifest
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const manifest = JSON.parse(readFileSync(new URL("../deployment-services.json", import.meta.url), "utf8"));
   const configPaths = {
-    cache: "cache-service/railway.json", "run-worker": "worker/railway.json",
+    "run-worker": "worker/railway.json",
     "git-router": "repo-router/railway.json", "media-api": "media-service/railway.json",
     "media-worker": "media-worker/railway.json", api: "api/railway.json", web: "web/railway.json",
   };

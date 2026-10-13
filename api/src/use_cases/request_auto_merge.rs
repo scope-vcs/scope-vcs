@@ -1,7 +1,8 @@
 use crate::{
+    background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness},
     error::{ApiError, ErrorKind},
     persistence::unix_now,
-    persistence_ids::{generate_persistence_id, generate_prefixed_id},
+    persistence_ids::generate_prefixed_id,
     state::AppState,
     use_cases::{
         request_checks,
@@ -16,6 +17,9 @@ use scope_domain::{
     },
 };
 use scope_postgres::db::{AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand};
+use std::time::Duration;
+
+const RECONCILE_INTERVAL: Duration = Duration::from_secs(5);
 
 pub(crate) async fn authorize(
     state: &AppState,
@@ -38,7 +42,7 @@ pub(crate) async fn authorize(
         })
         .await?;
     publish_change(state, &mutation.intent).await?;
-    state.auto_merge_wakeup.notify_one();
+    state.wakeups.auto_merge.notify_one();
     Ok(())
 }
 
@@ -76,18 +80,31 @@ const CLAIM_SECONDS: u64 = 10 * 60;
 const BATCH_SIZE: u64 = 8;
 const CHECK_AGAIN_SECONDS: u64 = 5;
 
+impl BackgroundWork {
+    pub(crate) fn start_request_auto_merge(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "request auto-merge reconciliation",
+                cadence: Cadence::AfterPass {
+                    delay: RECONCILE_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.auto_merge),
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move { reconcile_once(&state, unix_now()?).await },
+        );
+    }
+}
+
 pub(crate) async fn reconcile_once(state: &AppState, now_unix: u64) -> Result<usize, ApiError> {
     let claims = state
         .metadata
         .requests()
-        .claim_due_request_auto_merges(
-            scope_postgres::db::ClaimDueRequestAutoMergesCommand {
-                now_unix,
-                lease_expires_at_unix: now_unix.saturating_add(CLAIM_SECONDS),
-                limit: BATCH_SIZE,
-            },
-            &generate_persistence_id,
-        )
+        .claim_due_request_auto_merges(scope_postgres::db::ClaimDueRequestAutoMergesCommand {
+            now_unix,
+            lease_expires_at_unix: now_unix.saturating_add(CLAIM_SECONDS),
+            limit: BATCH_SIZE,
+        })
         .await?;
     let count = claims.len();
     for claim in claims {

@@ -22,9 +22,11 @@ impl RunStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<AppendRunLogResult, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        let (run, job, mut attempt, steps) =
+        let tx = self.db.begin().await?;
+        let (run, job, mut attempt) =
             super::run_attempt_persistence::locked_attempt_context(&tx, &chunk.attempt_id).await?;
+        let steps =
+            super::run_attempt_persistence::locked_attempt_steps(&tx, &chunk.attempt_id).await?;
         attempt
             .authenticate(&job, token_hash, now_unix)
             .map_err(PostgresError::from)?;
@@ -41,8 +43,7 @@ impl RunStore {
             .order_by_desc(entities::run_log::Column::Sequence)
             .into_tuple::<i64>()
             .one(&tx)
-            .await
-            .map_err(PostgresError::internal)?
+            .await?
             .unwrap_or(0);
         let sequence = i64::try_from(chunk.sequence)
             .map_err(|_| PostgresError::invalid_input("run log sequence is too large"))?;
@@ -51,8 +52,7 @@ impl RunStore {
                 .filter(entities::run_log::Column::AttemptId.eq(&chunk.attempt_id))
                 .filter(entities::run_log::Column::Sequence.eq(sequence))
                 .one(&tx)
-                .await
-                .map_err(PostgresError::internal)?
+                .await?
         {
             let position = integer_columns::i64_to_u64(existing.position, "run log position")?;
             let existing_run_id = existing.run_id.clone();
@@ -67,7 +67,7 @@ impl RunStore {
                     "run log sequence is already used by different content",
                 ));
             }
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Ok(AppendRunLogResult {
                 log: StoredRunLog {
                     position,
@@ -90,7 +90,7 @@ impl RunStore {
             .map_err(PostgresError::from)?
         {
             super::run_attempt_persistence::save_attempt(&tx, &attempt).await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
+            tx.commit().await?;
             return Err(PostgresError::resource_exhausted(
                 "run attempt log limit reached",
             ));
@@ -102,8 +102,7 @@ impl RunStore {
                 'scope:run-log:' || current_schema() || ':' || $1, 0))",
             [run.id.clone().into()],
         ))
-        .await
-        .map_err(PostgresError::internal)?;
+        .await?;
 
         let mut model = entities::run_log::Model::from_domain(&run.id, &chunk)?.into_active_model();
         model.position = NotSet;
@@ -115,7 +114,7 @@ impl RunStore {
             })?;
         let position = integer_columns::i64_to_u64(inserted.last_insert_id, "run log position")?;
         super::run_attempt_persistence::save_attempt(&tx, &attempt).await?;
-        tx.commit().await.map_err(PostgresError::internal)?;
+        tx.commit().await?;
         Ok(AppendRunLogResult {
             log: StoredRunLog {
                 position,

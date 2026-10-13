@@ -151,7 +151,6 @@ async fn process_next(
             DEPENDENCY_ANALYZER_VERSION,
             now,
             LEASE_SECONDS,
-            &crate::generate_persistence_id,
         )
         .await?
     else {
@@ -221,7 +220,7 @@ async fn analyze_claimed(
                 cancel_analysis(&cancellation, task).await;
                 break Err(anyhow::anyhow!("dependency analysis exceeded its total deadline"));
             }
-            _ = crate::shutdown_signal() => {
+            _ = scope_service_runtime::shutdown_signal() => {
                 cancel_analysis(&cancellation, task).await;
                 return Ok(PollOutcome::Shutdown);
             }

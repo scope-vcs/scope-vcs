@@ -24,7 +24,6 @@ export type VisibilityState = ViewId | 'Mixed'
 export type CommitSummary = {
   projected_id: string
   logical_commit_id: string
-  parent_projected_id: string | null
   author: string | null
   message: string
   change_count: number

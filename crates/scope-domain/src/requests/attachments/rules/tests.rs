@@ -44,15 +44,17 @@ fn uploaded() -> RequestAttachment {
     .unwrap()
 }
 
-fn processing_lease(attachment: &RequestAttachment) -> RequestAttachmentProcessingLease {
-    RequestAttachmentProcessingLease {
-        attachment_id: attachment.id.clone(),
-        repository_id: attachment.repository_id.clone(),
-        request_id: attachment.request_id.clone(),
-        lease_token: "lease_1".into(),
-        lease_generation: 2,
-        attempt: 1,
-        lease_expires_at_unix: 100,
+fn source(
+    detected_media_type: &str,
+    image: Option<RequestAttachmentImageMetadata>,
+    video: Option<RequestAttachmentVideoMetadata>,
+) -> RequestAttachmentSource {
+    RequestAttachmentSource {
+        detected_media_type: detected_media_type.into(),
+        size_bytes: 10,
+        sha256: "a".repeat(64),
+        image,
+        video,
     }
 }
 
@@ -213,60 +215,51 @@ fn binding_comes_only_from_markdown_and_cannot_cross_targets() {
 }
 
 #[test]
-fn source_validation_enforces_detected_kind_pixel_and_duration_limits() {
+fn source_validation_enforces_identity_detected_kind_pixel_and_duration_limits() {
     let upload = uploaded();
-    let lease = processing_lease(&upload);
+    let video = |duration_millis| {
+        Some(RequestAttachmentVideoMetadata {
+            width: 1920,
+            height: 1080,
+            duration_millis,
+        })
+    };
+    let photo = Some(RequestAttachmentImageMetadata {
+        width: 100,
+        height: 80,
+    });
     assert!(
-        mark_processing_source_validated(
-            &upload,
-            &lease,
-            "lease_1",
-            2,
-            "video/mp4".into(),
-            None,
-            Some(RequestAttachmentVideoMetadata {
-                width: 10,
-                height: 10,
-                duration_millis: 1,
-            }),
-            20,
-        )
-        .is_err()
+        mark_processing_source_validated(&upload, source("video/mp4", None, video(1)), 20).is_err()
     );
     assert!(
         mark_processing_source_validated(
             &upload,
-            &lease,
-            "lease_1",
-            2,
-            "image/png".into(),
-            Some(RequestAttachmentImageMetadata {
-                width: 10_000,
-                height: 10_000,
-            }),
-            None,
+            source(
+                "image/png",
+                Some(RequestAttachmentImageMetadata {
+                    width: 10_000,
+                    height: 10_000,
+                }),
+                None,
+            ),
             20,
         )
         .is_err()
+    );
+    let mut mismatched = source("image/png", photo, None);
+    mismatched.size_bytes = 11;
+    assert_eq!(
+        mark_processing_source_validated(&upload, mismatched, 20).unwrap_err(),
+        DomainError::conflict("validated source does not match prepared attachment")
     );
     let mut video_upload = upload;
     video_upload.kind = RequestAttachmentKind::Video;
     video_upload.declared_media_type = "video/mp4".into();
-    let video_lease = processing_lease(&video_upload);
     assert!(
         mark_processing_source_validated(
             &video_upload,
-            &video_lease,
-            "lease_1",
-            2,
-            "video/mp4".into(),
-            None,
-            Some(RequestAttachmentVideoMetadata {
-                width: 1920,
-                height: 1080,
-                duration_millis: 600_001,
-            }),
-            20,
+            source("video/mp4", None, video(600_001)),
+            20
         )
         .is_err()
     );
@@ -276,18 +269,16 @@ fn source_validation_enforces_detected_kind_pixel_and_duration_limits() {
 fn validated_photo_becomes_ready_with_an_immutable_preview() {
     let upload = uploaded();
     assert!(!upload.original_is_grantable());
-    let lease = processing_lease(&upload);
     let ready = validate_processing_completion(
         &upload,
-        &lease,
-        "lease_1",
-        2,
-        "image/png".into(),
-        Some(RequestAttachmentImageMetadata {
-            width: 100,
-            height: 80,
-        }),
-        None,
+        source(
+            "image/png",
+            Some(RequestAttachmentImageMetadata {
+                width: 100,
+                height: 80,
+            }),
+            None,
+        ),
         photo_preview(),
         20,
     )
@@ -296,46 +287,6 @@ fn validated_photo_becomes_ready_with_an_immutable_preview() {
     assert_eq!(ready.state, RequestAttachmentState::Ready);
     assert!(ready.original_is_grantable());
     assert_eq!(ready.derivatives.len(), 1);
-}
-
-#[test]
-fn stale_processing_lease_cannot_publish() {
-    let upload = uploaded();
-    let lease = processing_lease(&upload);
-    let image = Some(RequestAttachmentImageMetadata {
-        width: 100,
-        height: 80,
-    });
-    let current = validate_processing_completion(
-        &upload,
-        &lease,
-        "lease_1",
-        2,
-        "image/png".into(),
-        image.clone(),
-        None,
-        photo_preview(),
-        20,
-    )
-    .unwrap();
-    assert_eq!(current.state, RequestAttachmentState::Ready);
-
-    let stale = validate_processing_completion(
-        &upload,
-        &lease,
-        "stale",
-        2,
-        "image/png".into(),
-        image,
-        None,
-        photo_preview(),
-        20,
-    )
-    .unwrap_err();
-    assert_eq!(
-        stale,
-        DomainError::conflict("stale request attachment processing lease")
-    );
 }
 
 #[test]

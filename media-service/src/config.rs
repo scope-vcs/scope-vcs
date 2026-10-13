@@ -1,4 +1,5 @@
 use scope_media_storage::MediaStorageSettings;
+use scope_service_runtime::http::ServiceEndpoint;
 use scope_storage::config::required_env as required;
 
 const DATABASE_URL: &str = "DATABASE_URL";
@@ -39,32 +40,23 @@ impl Settings {
     }
 }
 
-fn validate_origin(origin: String) -> anyhow::Result<String> {
-    validate_origin_url(MEDIA_ALLOWED_ORIGIN, &origin)?;
-    Ok(origin)
-}
+const HTTP_LOOPBACK_ORIGINS: [&str; 3] = ["http://localhost", "http://127.0.0.1", "http://[::1]"];
 
-fn validate_origin_url(name: &str, value: &str) -> anyhow::Result<()> {
-    let parsed = url::Url::parse(value).map_err(|_| anyhow::anyhow!("{name} is not a URL"))?;
-    let local = matches!(
-        parsed.host(),
-        Some(url::Host::Domain("localhost"))
-            | Some(url::Host::Ipv4(std::net::Ipv4Addr::LOCALHOST))
-            | Some(url::Host::Ipv6(std::net::Ipv6Addr::LOCALHOST))
-    );
-    let secure = parsed.scheme() == "https" || (parsed.scheme() == "http" && local);
-    if !secure
-        || parsed.cannot_be_a_base()
-        || parsed.username() != ""
-        || parsed.password().is_some()
-        || parsed.path() != "/"
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-        || parsed.origin().ascii_serialization() != value
-    {
-        anyhow::bail!("{name} must be an exact HTTPS origin, or an HTTP loopback origin")
+fn validate_origin(origin: String) -> anyhow::Result<String> {
+    let exact =
+        ServiceEndpoint::parse_origin(&origin).is_ok_and(|endpoint| endpoint.as_str() == origin);
+    let strict_loopback = !origin.starts_with("http:")
+        || HTTP_LOOPBACK_ORIGINS.iter().any(|loopback| {
+            origin
+                .strip_prefix(loopback)
+                .is_some_and(|port| port.is_empty() || port.starts_with(':'))
+        });
+    if !(exact && strict_loopback) {
+        anyhow::bail!(
+            "{MEDIA_ALLOWED_ORIGIN} must be an exact HTTPS origin, or an HTTP loopback origin"
+        )
     }
-    Ok(())
+    Ok(origin)
 }
 
 #[cfg(test)]
@@ -83,6 +75,8 @@ mod tests {
         assert!(validate_origin("http://127.0.0.1:3000".to_string()).is_ok());
         assert!(validate_origin("http://[::1]:3000".to_string()).is_ok());
         assert!(validate_origin("http://localhost.attacker:3000".to_string()).is_err());
+        assert!(validate_origin("http://127.0.0.2:3000".to_string()).is_err());
+        assert!(validate_origin("https://scopevcs.com:443".to_string()).is_err());
         assert!(validate_origin("https://scopevcs.com/path".to_string()).is_err());
     }
 }

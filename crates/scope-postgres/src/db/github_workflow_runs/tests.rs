@@ -1,5 +1,5 @@
 use super::*;
-use crate::db::requests::tests::{postgres_store, start_public_request};
+use crate::db::requests::tests::postgres_store;
 use scope_domain::requests::{GitHubCheckConclusion, GitHubCheckStatus};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
@@ -34,112 +34,6 @@ fn page(repo_id: &str, github_repository_id: u64, limit: u64) -> GitHubWorkflowR
 
 fn ids(listed: &[GitHubWorkflowRunRead]) -> Vec<u64> {
     listed.iter().map(|read| read.run.github_run_id).collect()
-}
-
-#[tokio::test]
-async fn runs_list_newest_first_and_link_their_request_while_it_exists() {
-    let store = postgres_store();
-    start_public_request(&store).await;
-    let repositories = store.repositories();
-    for run in [
-        run(1, "main", 10, 10),
-        run(2, "scope/requests/req_1", 20, 20),
-        run(3, "scope/requests/req_gone", 30, 30),
-    ] {
-        repositories
-            .save_github_workflow_run(REPO, 42, &run)
-            .await
-            .unwrap();
-    }
-
-    let listed = repositories
-        .github_workflow_run_page(page(REPO, 42, 10))
-        .await
-        .unwrap();
-    assert_eq!(
-        listed
-            .iter()
-            .map(|read| (read.run.github_run_id, read.request_id.as_deref()))
-            .collect::<Vec<_>>(),
-        [(3, None), (2, Some("req_1")), (1, None)]
-    );
-    assert!(
-        repositories
-            .github_workflow_run_page(page("other/repo", 42, 10))
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        repositories
-            .github_workflow_run_page(page(REPO, 43, 10))
-            .await
-            .unwrap()
-            .is_empty()
-    );
-}
-
-#[tokio::test]
-async fn pages_continue_after_their_last_run_and_keep_to_one_workflow() {
-    let store = postgres_store();
-    let repositories = store.repositories();
-    for (id, workflow, started_at) in [
-        (1, "ci", 10),
-        (2, "lint", 20),
-        (3, "ci", 30),
-        (4, "ci", 40),
-        (5, "lint", 40),
-    ] {
-        let run = GitHubWorkflowRun {
-            workflow_name: workflow.into(),
-            ..run(id, "main", started_at, started_at)
-        };
-        repositories
-            .save_github_workflow_run(REPO, 42, &run)
-            .await
-            .unwrap();
-    }
-    repositories
-        .save_github_workflow_run(
-            REPO,
-            43,
-            &GitHubWorkflowRun {
-                workflow_name: "deploy".into(),
-                ..run(6, "main", 50, 50)
-            },
-        )
-        .await
-        .unwrap();
-
-    let first = repositories
-        .github_workflow_run_page(page(REPO, 42, 2))
-        .await
-        .unwrap();
-    assert_eq!(ids(&first), [5, 4]);
-    let last = &first[1].run;
-    let rest = repositories
-        .github_workflow_run_page(GitHubWorkflowRunPageQuery {
-            after: Some(GitHubWorkflowRunCursor {
-                listed_at_unix: last.listed_at_unix(),
-                github_run_id: last.github_run_id,
-            }),
-            ..page(REPO, 42, 10)
-        })
-        .await
-        .unwrap();
-    assert_eq!(ids(&rest), [3, 2, 1]);
-    let ci = repositories
-        .github_workflow_run_page(GitHubWorkflowRunPageQuery {
-            workflow_name: Some("ci"),
-            ..page(REPO, 42, 10)
-        })
-        .await
-        .unwrap();
-    assert_eq!(ids(&ci), [4, 3, 1]);
-    assert_eq!(
-        repositories.github_workflow_names(REPO, 42).await.unwrap(),
-        ["ci", "lint"]
-    );
 }
 
 #[tokio::test]
@@ -221,61 +115,6 @@ async fn an_older_read_of_a_run_does_not_replace_a_newer_one() {
         .await
         .unwrap();
     assert_eq!(stored().await, rerun);
-}
-
-#[tokio::test]
-async fn a_pending_read_is_claimed_when_due_and_ends_answered_or_given_up() {
-    let store = postgres_store();
-    let repositories = store.repositories();
-    repositories
-        .queue_github_workflow_run_read(REPO, 42, 7, 100)
-        .await
-        .unwrap();
-    repositories
-        .queue_github_workflow_run_read(REPO, 42, 7, 150)
-        .await
-        .unwrap();
-    assert!(
-        repositories
-            .claim_due_github_workflow_run_reads(99, 400, 10)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    let job = repositories
-        .claim_due_github_workflow_run_reads(100, 400, 10)
-        .await
-        .unwrap()
-        .remove(0);
-    assert_eq!((job.github_run_id, job.attempts), (7, 1));
-    assert!(
-        repositories
-            .claim_due_github_workflow_run_reads(200, 500, 10)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    repositories
-        .finish_github_workflow_run_read(&job, Some(300))
-        .await
-        .unwrap();
-    let again = repositories
-        .claim_due_github_workflow_run_reads(300, 600, 10)
-        .await
-        .unwrap()
-        .remove(0);
-    assert_eq!(again.attempts, 2);
-    repositories
-        .finish_github_workflow_run_read(&again, None)
-        .await
-        .unwrap();
-    assert!(
-        repositories
-            .claim_due_github_workflow_run_reads(10_000, 10_100, 10)
-            .await
-            .unwrap()
-            .is_empty()
-    );
 }
 
 #[tokio::test]

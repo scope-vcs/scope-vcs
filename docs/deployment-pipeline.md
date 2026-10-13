@@ -59,8 +59,8 @@ second list of function IDs.
 
 ## Activation and retries
 
-After writer closure and schema verification, cache and media API activation can
-run together, followed by the two workers. API readiness still precedes router
+After writer closure and schema verification, media API activation runs first,
+followed by the two workers together. API readiness still precedes router
 activation. Each component keeps separate deployment evidence. Predecessor removal
 is checked at a shared bounded barrier after activation instead of blocking each
 next service. The parent waits for both concurrent children before failure cleanup.
@@ -68,7 +68,7 @@ The unfenced rolling path retains sequential activation.
 
 Read-only maintenance SSH calls (plan, preflight, verify, catalog validation,
 runtime verification, and the production readiness audit) make up to three
-attempts when SSH reports a transport failure; migrations, backfills, writer
+attempts when SSH reports a transport failure; migrations, writer
 fencing and draining, restores, dumps, and seeding never retry one. Runner base
 image pushes also make up to three attempts. Release image preparation,
 maintenance binary extraction, maintenance runtime publication, and the staging
@@ -124,7 +124,7 @@ GitHub records without silently excluding old active releases.
 
 The external GitHub observer checks expected daily starts and active-session
 progress. Idle daytime needs no recurring heartbeat or model prompt. The
-[operations guide](../deploy/automation/OPERATIONS.md) describes signing,
+[operations guide](https://github.com/scope-vcs/release-supervisor/blob/main/OPERATIONS.md) describes signing,
 observable process deadlines, dispatch intents, failure diagnostics, and the
 verified single-owner cutover from the installed systemd minute timer.
 
@@ -161,9 +161,8 @@ even when deployment times out, and the pull request comment reports failures.
 
 The first deployment copies staging with `skipInitialDeploys`. Railway does not
 copy sealed variables, so the workflow generates the Postgres administrator
-password, one login per runtime role, encryption keys, grant signing keys, and
-the operator token, and points bucket credentials at the environment's own
-bucket instances. It switches Railway tracing on for every service except
+password, one login per runtime role, encryption keys, and grant signing keys,
+and points bucket credentials at the environment's own bucket instances. It switches Railway tracing on for every service except
 Postgres, with automatic instrumentation for `scope-web`, before anything
 deploys. Railway also copies staging's unsealed variables. The preview keeps
 only the settings reviewed in `KEPT_STAGING_SETTINGS` and its own variables and
@@ -178,7 +177,7 @@ the administrator login, sets each role's password, and switches itself to
 `scope_migrator`. Every deployment then redeploys maintenance so it runs with
 its stored login, and follows the staging path: stop writers, migrate as
 `scope_migrator`, refresh grants from the revision's own role policy, then
-activate cache, media, worker, API, router, and web. Deployment and SSH use a
+activate media, worker, API, router, and web. Deployment and SSH use a
 project token scoped to the preview environment.
 
 Railway copies staging only once. A preview that predates a service the
@@ -207,3 +206,19 @@ carried deployment keeps Railway's injected variables. Follow the
 after release. Preserve normal forward recovery if a transition fails. At actual
 release completion, create T3 checks for one hour and 24 hours later as
 described in [observability follow-up](observability.md#follow-up-after-release).
+
+## Main checks
+
+After the aggregate check has been committed to main, configure protection using
+the checked-in payload and enable GitHub auto-merge:
+
+```sh
+gh api --method PUT repos/scope-vcs/scope-vcs/branches/main/protection --input .github/main-protection.json
+gh api --method PATCH repos/scope-vcs/scope-vcs -F allow_auto_merge=true
+```
+
+This requires the GitHub Actions `Required PR checks` result, including for
+administrators, without reviewer approvals, up-to-date branch rebuilds, merge
+queues, or post-merge CI. Force pushes and main deletion are disabled. Read the
+settings back after applying them. Local tests remain required for explicitly
+authorized direct-main changes made before protection is enabled.

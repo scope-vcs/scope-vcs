@@ -5,7 +5,7 @@ export interface LensFrame {
   rotation: number
 }
 
-export interface Box {
+interface Box {
   left: number
   top: number
   right: number

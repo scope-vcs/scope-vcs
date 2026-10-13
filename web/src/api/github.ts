@@ -69,82 +69,50 @@ export async function completeGitHubSetupForRequest(
   )
 }
 
-export async function connectRepoGitHubForRequest(
-  data: ConnectRepoGitHubInput,
-): Promise<GitHubConnectionResponse> {
-  return createApiClient().post(
-    repoRoute(ApiRouteTemplates.repoGitHub, data),
-    GitHubConnectionResponseValidator,
-    {
-      auth: 'required',
-      body: {
-        grant: data.grant,
-        github_repository_id: data.github_repository_id,
-        acknowledge_public: data.acknowledge_public,
-        run_import_count: data.run_import_count,
-      },
-    },
-  )
-}
-
-export async function setRepoGitHubRequiredChecksForRequest(
-  data: SetRepoGitHubRequiredChecksInput,
-): Promise<GitHubConnectionResponse> {
-  return createApiClient().put(
-    repoRoute(ApiRouteTemplates.repoGitHubRequiredChecks, data),
-    GitHubConnectionResponseValidator,
-    { auth: 'required', body: { names: data.names } },
-  )
-}
-
-export async function confirmRepoGitHubPublicForRequest(
+function changeRepoGitHub(
+  method: 'delete' | 'post' | 'put',
+  template: string,
   data: RepoParams,
+  body?: unknown,
 ): Promise<GitHubConnectionResponse> {
-  return createApiClient().post(
-    repoRoute(ApiRouteTemplates.repoGitHubPublicConfirmation, data),
+  return createApiClient()[method](
+    repoRoute(template, data),
     GitHubConnectionResponseValidator,
-    { auth: 'required' },
+    { auth: 'required', body },
   )
 }
 
-export async function disconnectRepoGitHubForRequest(
-  data: RepoParams,
-): Promise<GitHubConnectionResponse> {
-  return createApiClient().delete(
-    repoRoute(ApiRouteTemplates.repoGitHub, data),
-    GitHubConnectionResponseValidator,
-    { auth: 'required' },
-  )
+export async function connectRepoGitHubForRequest(data: ConnectRepoGitHubInput) {
+  return changeRepoGitHub('post', ApiRouteTemplates.repoGitHub, data, {
+    grant: data.grant,
+    github_repository_id: data.github_repository_id,
+    acknowledge_public: data.acknowledge_public,
+    run_import_count: data.run_import_count,
+  })
 }
 
-export async function startRepoGitHubSetupCheckForRequest(
-  data: RepoParams,
-): Promise<GitHubConnectionResponse> {
-  return createApiClient().post(
-    repoRoute(ApiRouteTemplates.repoGitHubSetupCheck, data),
-    GitHubConnectionResponseValidator,
-    { auth: 'required' },
-  )
+export async function setRepoGitHubRequiredChecksForRequest(data: SetRepoGitHubRequiredChecksInput) {
+  return changeRepoGitHub('put', ApiRouteTemplates.repoGitHubRequiredChecks, data, { names: data.names })
 }
 
-export async function setRepoGitHubRunImportCountForRequest(
-  data: SetRepoGitHubRunImportCountInput,
-): Promise<GitHubConnectionResponse> {
-  return createApiClient().put(
-    repoRoute(ApiRouteTemplates.repoGitHubRunImport, data),
-    GitHubConnectionResponseValidator,
-    { auth: 'required', body: { count: data.count } },
-  )
+export async function confirmRepoGitHubPublicForRequest(data: RepoParams) {
+  return changeRepoGitHub('post', ApiRouteTemplates.repoGitHubPublicConfirmation, data)
 }
 
-export async function startRepoGitHubRunImportForRequest(
-  data: RepoParams,
-): Promise<GitHubConnectionResponse> {
-  return createApiClient().post(
-    repoRoute(ApiRouteTemplates.repoGitHubRunImport, data),
-    GitHubConnectionResponseValidator,
-    { auth: 'required' },
-  )
+export async function disconnectRepoGitHubForRequest(data: RepoParams) {
+  return changeRepoGitHub('delete', ApiRouteTemplates.repoGitHub, data)
+}
+
+export async function startRepoGitHubSetupCheckForRequest(data: RepoParams) {
+  return changeRepoGitHub('post', ApiRouteTemplates.repoGitHubSetupCheck, data)
+}
+
+export async function setRepoGitHubRunImportCountForRequest(data: SetRepoGitHubRunImportCountInput) {
+  return changeRepoGitHub('put', ApiRouteTemplates.repoGitHubRunImport, data, { count: data.count })
+}
+
+export async function startRepoGitHubRunImportForRequest(data: RepoParams) {
+  return changeRepoGitHub('post', ApiRouteTemplates.repoGitHubRunImport, data)
 }
 
 export async function loadRepoGitHubWorkflowRunsForRequest(

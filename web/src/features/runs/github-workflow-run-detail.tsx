@@ -9,7 +9,6 @@ import { WorkbenchPane } from '@/components/page-header'
 import { formatUnixDate, formatUnixDateUtc } from '@/lib/date-format'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { useHydrated } from '@/lib/use-hydrated'
-import { cn } from '@/lib/utils'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
@@ -30,13 +29,18 @@ import {
 import { RunDuration } from './run-duration'
 import { useRunJobHash } from './run-job-hash'
 import { jobKeyForHash, runJobPanelId } from './run-job-ids'
-import { RUN_JOB_ITEM_CLASS, RUN_JOB_LIST_CLASS, runJobButtonClass } from './run-job-layout'
-import { RUN_TONE_TEXT_CLASS, RunStatusIcon } from './run-status-icon'
-import { runDurationLead, runStatus } from './run-status'
+import { RUN_JOB_ITEM_CLASS, RUN_JOB_LIST_CLASS, RUN_LINK_CLASS, runJobButtonClass } from './run-layout'
+import { RunStatusIcon } from './run-status-icon'
+import { runDurationLead } from './run-status'
 import { RunDetailPageError } from './repository-run-detail-page'
 import { RunDetailPagePending } from './run-detail-pending'
-
-const LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
+import {
+  LiveUpdatesPaused,
+  RUN_HEADER_META_CLASS,
+  RunHeaderDot,
+  RunHeaderStatus,
+  RunHeaderTitle,
+} from './run-detail-header'
 
 type GitHubWorkflowRunDetailPageProps = {
   initialDetail: GitHubWorkflowRunDetailResponse | null
@@ -199,24 +203,12 @@ function GitHubWorkflowRunHeader({
 
   return (
     <header className="px-4 py-3">
-      <h1 className="flex min-w-0 items-baseline gap-1.5 text-[15px] leading-[22px]">
-        <Link
-          className="text-muted-foreground hover:text-foreground"
-          params={{ owner: params.owner, repo: params.repo }}
-          to="/$owner/$repo/runs"
-        >
-          Runs
-        </Link>
-        <span aria-hidden="true" className="text-muted-foreground/50">/</span>
-        <span className="truncate font-semibold tracking-[-0.01em]">{run.workflow_name}</span>
-      </h1>
-      <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-        <span
-          className={cn('inline-flex items-center gap-1.5', RUN_TONE_TEXT_CLASS[runStatus(result.state).tone])}
-          suppressHydrationWarning
+      <RunHeaderTitle name={run.workflow_name} params={params} />
+      <p className={RUN_HEADER_META_CLASS}>
+        <RunHeaderStatus
+          state={result.state}
           title={started === null ? undefined : `Started ${formatDate(started)}`}
         >
-          <RunStatusIcon state={result.state} />
           {started === null ? (
             <span className="first-letter:uppercase">{result.label}</span>
           ) : (
@@ -225,13 +217,13 @@ function GitHubWorkflowRunHeader({
               <RunDuration end={run.status === 'completed' ? run.updated_at_unix : null} start={started} />
             </span>
           )}
-        </span>
+        </RunHeaderStatus>
         {run.branch ? (
           <span className="min-w-0 max-w-full truncate">
-            <span aria-hidden="true" className="mr-1.5 opacity-50">·</span>
+            <RunHeaderDot />
             {run.request_id ? (
               <Link
-                className={LINK_CLASS}
+                className={RUN_LINK_CLASS}
                 params={{ owner: params.owner, repo: params.repo, requestId: run.request_id }}
                 title="Open the request"
                 to="/$owner/$repo/requests/$requestId"
@@ -242,29 +234,15 @@ function GitHubWorkflowRunHeader({
           </span>
         ) : null}
         <span className="whitespace-nowrap">
-          <span aria-hidden="true" className="mr-1.5 opacity-50">·</span>
+          <RunHeaderDot />
           <code>{run.head_oid.slice(0, 7)}</code>
         </span>
         <span className="whitespace-nowrap">
-          <span aria-hidden="true" className="mr-1.5 opacity-50">·</span>
+          <RunHeaderDot />
           {run.event}
         </span>
       </p>
-      {error ? (
-        <p
-          className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-          role="status"
-        >
-          <span>Live updates paused. {error}</span>
-          <button
-            className="underline underline-offset-2 hover:text-foreground"
-            onClick={onRetry}
-            type="button"
-          >
-            Retry now
-          </button>
-        </p>
-      ) : null}
+      <LiveUpdatesPaused error={error} onRetry={onRetry} />
     </header>
   )
 }

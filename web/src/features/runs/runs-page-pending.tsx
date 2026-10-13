@@ -1,16 +1,13 @@
 import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
-import {
-  BlockSkeleton,
-  TextSkeleton,
-  type TextSkeletonLength,
-} from '@/components/ui/skeleton'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
 import {
   RUN_ROW_CLASS,
   RUN_ROW_DURATION_CLASS,
   RUN_ROW_PRIMARY_CLASS,
   RUN_ROW_TIMESTAMP_CLASS,
-} from './run-row-layout'
+} from './run-layout'
 
 const RUN_LENGTHS: TextSkeletonLength[] = ['medium', 'short', 'long', 'medium', 'medium']
 const PENDING_RUNS = Array.from({ length: 16 }, (_, row) => ({

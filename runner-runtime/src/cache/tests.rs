@@ -3,7 +3,7 @@ use super::{
     files::set_modified,
     finalize::save_cache,
     identity::{MAX_CACHE_KEY_FILE_BYTES, digest_inputs_at, open_key_file},
-    types::{CacheFinalizationOutcome, PreparedCache},
+    types::PreparedCache,
 };
 use crate::api::RuntimeClient;
 use scope_domain::runs::cache::definition::CacheKeyInputs;
@@ -253,17 +253,18 @@ fn archive_hash_counts_only_bytes_accepted_by_partial_writes() {
 #[test]
 fn exact_hit_skips_archive_hash_and_upload() {
     let cache = PreparedCache {
+        key: scope_api_contract::AttemptCacheKey {
+            cache_name: "cargo".to_string(),
+            compatibility_inputs_digest: "b".repeat(64),
+            exact_inputs_digest: "c".repeat(64),
+        },
         exact_digest: "a".repeat(64),
-        compatibility_group_digest: "b".repeat(64),
         path: PathBuf::from("/path/that/does/not/exist"),
         exact_hit: true,
         sources: None,
     };
 
-    assert!(matches!(
-        save_cache(&RuntimeClient::disconnected_for_cache_tests(), &cache),
-        CacheFinalizationOutcome::Ready
-    ));
+    save_cache(&RuntimeClient::disconnected_for_cache_tests(), &cache).unwrap();
 }
 
 #[test]

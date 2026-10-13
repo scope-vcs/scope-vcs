@@ -19,7 +19,7 @@ const registryCredentials = { username: 'registry-user', password: 'registry-pas
 
 function stagingCopy() {
   const services = Object.fromEntries(Object.values(ids).map((id) => [id, {}]));
-  for (const component of ['api', 'web', 'cache', 'git-router', 'media-api']) {
+  for (const component of ['api', 'web', 'git-router', 'media-api']) {
     services[ids[component]] = { networking: { serviceDomains: { [`${manifest.services[component].name}-pr-7.up.railway.app`]: {} } } };
   }
   const variables = Object.fromEntries(Object.values(ids).map((id) => [id, {}]));
@@ -31,7 +31,6 @@ function stagingCopy() {
   });
   Object.assign(variables[ids.web], { PAGENT_SOURCE_TOKEN: 'pagent-staging-token', PAGENT_ENABLED: 'false' });
   Object.assign(variables[ids['run-worker']], { SCOPE_ANALYTICS_DSN: 'postgresql://reader:staging-pw@${{scope-postgres.RAILWAY_PRIVATE_DOMAIN}}/x' });
-  Object.assign(variables[ids.cache], { SCOPE_CACHE_GRANT_PUBLIC_KEY: 'staging-public-key' });
   Object.assign(variables[ids['media-api']], { SCOPE_MEDIA_GRANT_PUBLIC_KEY: 'staging-public-key' });
   Object.assign(variables[ids.maintenance], { SCOPE_BUCKET_NAME: 'scope-blobs-staging' });
   return { services, variables };
@@ -129,7 +128,7 @@ test('generated secrets have the formats the services parse', () => {
   const secrets = generatePreviewSecrets();
   assert.equal(Buffer.from(secrets.objectEncryptionKey, 'base64').length, 32);
   assert.equal(Buffer.from(secrets.mediaEncryptionKey, 'base64').length, 32);
-  for (const pair of [secrets.cacheGrant, secrets.mediaGrant]) {
+  for (const pair of [secrets.mediaGrant]) {
     assert.equal(createPrivateKey(pair.privateKey).asymmetricKeyType, 'ed25519');
     assert.equal(createPublicKey(pair.privateKey).export({ type: 'spki', format: 'pem' }), pair.publicKey);
   }
@@ -139,7 +138,7 @@ test('generated secrets have the formats the services parse', () => {
 
 test('first provisioning points every service at preview domains, buckets, and fresh keys', () => {
   const secrets = generatePreviewSecrets();
-  const domains = { api: 'a.up.railway.app', web: 'w.up.railway.app', cache: 'c.up.railway.app', 'git-router': 'g.up.railway.app', 'media-api': 'm.up.railway.app' };
+  const domains = { api: 'a.up.railway.app', web: 'w.up.railway.app', 'git-router': 'g.up.railway.app', 'media-api': 'm.up.railway.app' };
   const variables = previewVariables({ manifest, domains, current: stagingCopy().variables, secrets, clerk });
   assert.equal(variables[ids.api].SCOPE_APP_ORIGIN, 'https://w.up.railway.app');
   assert.equal(variables[ids.api].CLERK_AUTHORIZED_PARTIES, 'https://w.up.railway.app');
@@ -153,7 +152,7 @@ test('first provisioning points every service at preview domains, buckets, and f
   assert.equal(variables[ids['media-api']].SCOPE_MEDIA_ALLOWED_ORIGIN, 'https://w.up.railway.app');
   assert.equal(variables[ids.maintenance].SCOPE_BUCKET_NAME, '${{scope-blobs.BUCKET}}');
   assert.equal(variables[ids.maintenance].DATABASE_URL, '${{scope-postgres.DATABASE_URL}}');
-  assert.equal(variables[ids.cache].SCOPE_CACHE_GRANT_PUBLIC_KEY, secrets.cacheGrant.publicKey);
+  assert.equal(variables[ids.api].SCOPE_CACHE_BUCKET_SECRET_ACCESS_KEY, '${{scope-cache-blobs.SECRET_ACCESS_KEY}}');
   assert.equal(variables[ids['media-api']].SCOPE_MEDIA_GRANT_PUBLIC_KEY, secrets.mediaGrant.publicKey);
   for (const component of ['api', 'run-worker', 'maintenance']) {
     assert.equal(variables[ids[component]].SCOPE_OBJECT_ENCRYPTION_KEY, secrets.objectEncryptionKey);
@@ -170,7 +169,7 @@ test('first provisioning points every service at preview domains, buckets, and f
 });
 
 test('later provisioning keeps keys and passwords that already protect preview data', () => {
-  const domains = { api: 'a', web: 'w', cache: 'c', 'git-router': 'g', 'media-api': 'm' };
+  const domains = { api: 'a', web: 'w', 'git-router': 'g', 'media-api': 'm' };
   const first = previewVariables({ manifest, domains, current: stagingCopy().variables, secrets: generatePreviewSecrets(), clerk });
   const current = Object.fromEntries(Object.values(ids).map((id) => [id, { ...stagingCopy().variables[id], ...first[id] }]));
   const second = previewVariables({ manifest, domains, current, secrets: generatePreviewSecrets(), clerk });
@@ -198,7 +197,7 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.deepEqual(railway.state.volumes, [{ serviceId: ids.postgres, mountPath: '/var/lib/postgresql/data' }]);
   assert.equal(railway.state.tracing[ids.postgres], undefined);
   assert.deepEqual(railway.state.tracing[ids.web], { tracingEnabled: false, autoInstrumentationEnabled: false });
-  for (const component of ['api', 'run-worker', 'cache', 'git-router', 'media-api', 'media-worker', 'maintenance']) {
+  for (const component of ['api', 'run-worker', 'git-router', 'media-api', 'media-worker', 'maintenance']) {
     assert.deepEqual(railway.state.tracing[ids[component]], { tracingEnabled: false });
   }
   assert.deepEqual(railway.state.deployments, [ids.postgres, ids.maintenance, ids.maintenance]);
@@ -245,7 +244,7 @@ test('deletes only the pull request preview and tolerates an absent one', () => 
 });
 
 test('previews keep only reviewed staging settings and their own variables', () => {
-  const managed = previewVariables({ manifest, domains: { api: 'a', web: 'w', cache: 'c', 'git-router': 'g', 'media-api': 'm' },
+  const managed = previewVariables({ manifest, domains: { api: 'a', web: 'w', 'git-router': 'g', 'media-api': 'm' },
     current: {}, secrets: generatePreviewSecrets(), clerk });
   const current = stagingCopy().variables;
   current[ids.api].SCOPE_FUTURE_SETTING = 'unreviewed';
@@ -268,16 +267,16 @@ test('stops provisioning when Railway cannot list a service variables', () => {
 });
 
 test('repairing a partial secret group reuses the value services still hold', () => {
-  const domains = { api: 'a', web: 'w', cache: 'c', 'git-router': 'g', 'media-api': 'm' };
+  const domains = { api: 'a', web: 'w', 'git-router': 'g', 'media-api': 'm' };
   const original = generatePreviewSecrets();
   const first = previewVariables({ manifest, domains, current: stagingCopy().variables, secrets: original, clerk });
   const current = Object.fromEntries(Object.values(ids).map((id) => [id, { ...stagingCopy().variables[id], ...first[id] }]));
   delete current[ids.maintenance].SCOPE_OBJECT_ENCRYPTION_KEY;
-  current[ids.cache].SCOPE_CACHE_GRANT_PUBLIC_KEY = 'stale';
+  current[ids['media-api']].SCOPE_MEDIA_GRANT_PUBLIC_KEY = 'stale';
   const repaired = changedVariables(previewVariables({ manifest, domains, current, secrets: generatePreviewSecrets(), clerk }), current);
   assert.deepEqual(repaired, {
     [ids.maintenance]: { SCOPE_OBJECT_ENCRYPTION_KEY: original.objectEncryptionKey },
-    [ids.cache]: { SCOPE_CACHE_GRANT_PUBLIC_KEY: original.cacheGrant.publicKey },
+    [ids['media-api']]: { SCOPE_MEDIA_GRANT_PUBLIC_KEY: original.mediaGrant.publicKey },
   });
 
   current[ids.maintenance].SCOPE_OBJECT_ENCRYPTION_KEY = generatePreviewSecrets().objectEncryptionKey;

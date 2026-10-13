@@ -7,6 +7,7 @@ repository.workspace = true
 
 [features]
 postgres = ["dep:scope_postgres"]
+test-support = []
 
 [dependencies]
 anyhow.workspace = true
@@ -14,8 +15,11 @@ axum.workspace = true
 axum-tracing-opentelemetry.workspace = true
 opentelemetry-appender-tracing.workspace = true
 bytes.workspace = true
+getrandom.workspace = true
+hex.workspace = true
 http.workspace = true
 http-body = "1.0"
+jsonwebtoken.workspace = true
 opentelemetry.workspace = true
 opentelemetry-http.workspace = true
 opentelemetry-otlp.workspace = true
@@ -23,8 +27,9 @@ opentelemetry_sdk.workspace = true
 reqwest = { workspace = true, features = ["blocking", "rustls"] }
 scope_api_contract.workspace = true
 scope_postgres = { workspace = true, optional = true }
+serde.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["macros", "net", "signal"] }
+tokio = { workspace = true, features = ["macros", "net", "signal", "time"] }
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true

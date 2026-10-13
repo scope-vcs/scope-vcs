@@ -4,7 +4,7 @@ export const GITHUB_TRIGGER_SNIPPET = `on:
   push:
     branches: ['scope/**']`
 
-export type GitHubSetupCheckView = {
+type GitHubSetupCheckView = {
   running: boolean
   status: string
   problem: string | null

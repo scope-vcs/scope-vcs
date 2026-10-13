@@ -23,19 +23,9 @@ if [[ ! "$preview_environment_id" =~ ^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$
   exit 1
 fi
 
-node --input-type=module - "$prepared_release" "$manifest_path" "$maintenance_binary" <<'NODE'
-import { readFileSync } from 'node:fs';
-import { validatePreparedRelease, validateMaintenanceArtifact } from './.github/scripts/railway-artifact.mjs';
-const [path, manifestPath, binary] = process.argv.slice(2);
-const prepared = JSON.parse(readFileSync(path));
-const manifest = JSON.parse(readFileSync(manifestPath));
-validatePreparedRelease(prepared, {
-  sourceSha: process.env.SCOPE_DEPLOYMENT_SOURCE_SHA,
-  services: manifest.services,
-  components: ['cache', 'media-api', 'run-worker', 'media-worker', 'api', 'git-router', 'web'],
-});
-validateMaintenanceArtifact(prepared, readFileSync(binary));
-NODE
+node .github/scripts/railway-artifact.mjs validate "$prepared_release" "$source_sha" \
+  media-api run-worker media-worker api git-router web >/dev/null
+node .github/scripts/railway-artifact.mjs verify-maintenance "$prepared_release" "$maintenance_binary" >/dev/null
 
 run_maintenance() {
   bash .github/scripts/railway-private-maintenance.sh "$preview_environment_id" "$1"
@@ -43,16 +33,14 @@ run_maintenance() {
 run_maintenance plan >/dev/null
 run_maintenance validate-workflow-catalogs
 run_maintenance apply
-run_maintenance backfill-workflow-catalogs
 run_maintenance verify
 
 evidence_dir="$(mktemp -d)"
 trap 'rm -rf "$evidence_dir"' EXIT
 export RAILWAY_PROJECT_ID="$project_id"
 export SCOPE_RAILWAY_ENVIRONMENT_ID="$preview_environment_id"
-export RAILWAY_DEPLOY_MESSAGE="Preview $SCOPE_DEPLOYMENT_SOURCE_SHA"
 
-for component in cache media-api run-worker media-worker api git-router web; do
+for component in media-api run-worker media-worker api git-router web; do
   service="$(jq -er --arg component "$component" '.services[$component].id' "$manifest_path")"
   export SCOPE_DEPLOYMENT_COMPONENT="$component"
   export SCOPE_DEPLOYMENT_EVIDENCE_PATH="$evidence_dir/$component.jsonl"
