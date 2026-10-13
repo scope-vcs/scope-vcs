@@ -4,10 +4,8 @@ const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com'
 const OTLP_REDIRECT_VARIABLE =
   /^OTEL_EXPORTER_OTLP_(?:(?:TRACES|LOGS)_)?(?:ENDPOINT|HEADERS)$/
 
-export type TelemetryDisabledReason =
-  | 'unconfigured'
-  | 'invalid-host'
-  | 'foreign-otlp-variables'
+export const INJECTED_OTLP_VARIABLES_MESSAGE =
+  'PostHog telemetry export disabled because Railway still injects OTEL_EXPORTER_OTLP endpoint or header variables; disable Railway tracing for this service'
 
 export type TelemetryConfig =
   | {
@@ -17,18 +15,17 @@ export type TelemetryConfig =
     resourceAttributes: Record<string, string>
     tracesUrl: string
   }
-  | { enabled: false; reason: TelemetryDisabledReason }
+  | { enabled: false; reason: 'unconfigured' | 'injected-otlp-variables' }
 
 export function getTelemetryConfig(
   runtime: RuntimeEnvironment = process.env,
 ): TelemetryConfig {
   const token = trimmed(runtime.POSTHOG_PROJECT_TOKEN)
-  if (!token) return disabled('unconfigured')
+  if (!token) return { enabled: false, reason: 'unconfigured' }
   if (Object.keys(runtime).some((name) => OTLP_REDIRECT_VARIABLE.test(name) && trimmed(runtime[name]))) {
-    return disabled('foreign-otlp-variables')
+    return { enabled: false, reason: 'injected-otlp-variables' }
   }
-  const host = canonicalHost(runtime.POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST)
-  if (!host) return disabled('invalid-host')
+  const host = (trimmed(runtime.POSTHOG_HOST) ?? DEFAULT_POSTHOG_HOST).replace(/\/+$/, '')
 
   return {
     enabled: true,
@@ -39,21 +36,6 @@ export function getTelemetryConfig(
   }
 }
 
-export function telemetryDisabledMessage(reason: TelemetryDisabledReason) {
-  switch (reason) {
-    case 'unconfigured':
-      return null
-    case 'invalid-host':
-      return 'Telemetry export is disabled because POSTHOG_HOST is not an http(s) origin.'
-    case 'foreign-otlp-variables':
-      return 'Telemetry export is disabled because Railway-injected OTEL_EXPORTER_OTLP endpoint or header variables are present and would redirect data or leak credentials.'
-  }
-}
-
-function disabled(reason: TelemetryDisabledReason): TelemetryConfig {
-  return { enabled: false, reason }
-}
-
 function resourceAttributes(runtime: RuntimeEnvironment) {
   const attributes: Record<string, string> = { 'service.name': 'web' }
   const release = trimmed(runtime.SCOPE_ANALYTICS_RELEASE)
@@ -61,28 +43,6 @@ function resourceAttributes(runtime: RuntimeEnvironment) {
   const environment = trimmed(runtime.RAILWAY_ENVIRONMENT_NAME)
   if (environment) attributes['deployment.environment.name'] = environment
   return attributes
-}
-
-function canonicalHost(value: string) {
-  const normalized = trimmed(value)
-  if (!normalized) return null
-
-  try {
-    const url = new URL(normalized)
-    if (
-      (url.protocol !== 'https:' && url.protocol !== 'http:') ||
-      url.username ||
-      url.password ||
-      url.pathname !== '/' ||
-      url.search ||
-      url.hash
-    ) {
-      return null
-    }
-    return url.origin
-  } catch {
-    return null
-  }
 }
 
 function trimmed(value: string | undefined) {

@@ -39,16 +39,6 @@ test('uses the configured host and describes the deployment', () => {
   })
 })
 
-test('stays off when the host is not an http origin', () => {
-  for (const host of ['posthog', 'ftp://eu.i.posthog.com', 'https://user:secret@eu.i.posthog.com', 'https://eu.i.posthog.com/proxy']) {
-    assert.deepEqual(
-      getTelemetryConfig({ POSTHOG_HOST: host, POSTHOG_PROJECT_TOKEN: 'phc_public' }),
-      { enabled: false, reason: 'invalid-host' },
-      host,
-    )
-  }
-})
-
 test('stays off when injected OTLP variables would redirect the export', () => {
   for (const name of [
     'OTEL_EXPORTER_OTLP_ENDPOINT',
@@ -60,7 +50,7 @@ test('stays off when injected OTLP variables would redirect the export', () => {
   ]) {
     assert.deepEqual(
       getTelemetryConfig({ POSTHOG_PROJECT_TOKEN: 'phc_public', [name]: 'https://railway.example' }),
-      { enabled: false, reason: 'foreign-otlp-variables' },
+      { enabled: false, reason: 'injected-otlp-variables' },
       name,
     )
   }

@@ -10,7 +10,7 @@ import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
 import { BatchSpanProcessor, NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 import { AllowedAttributesExporter } from './telemetry-allowed-attributes'
-import { getTelemetryConfig, telemetryDisabledMessage } from './telemetry-config'
+import { getTelemetryConfig, INJECTED_OTLP_VARIABLES_MESSAGE } from './telemetry-config'
 import { requestTraceSampler } from './telemetry-sampler'
 import { registerTelemetryShutdown } from './telemetry-shutdown'
 
@@ -67,7 +67,6 @@ if (config.enabled) {
   registerTelemetryShutdown(async () => {
     await Promise.allSettled([tracerProvider.shutdown(), loggerProvider.shutdown()])
   })
-} else {
-  const message = telemetryDisabledMessage(config.reason)
-  if (message) console.error(message)
+} else if (config.reason === 'injected-otlp-variables') {
+  console.error(INJECTED_OTLP_VARIABLES_MESSAGE)
 }

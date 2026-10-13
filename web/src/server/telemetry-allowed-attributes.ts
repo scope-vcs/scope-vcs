@@ -28,7 +28,7 @@ export class AllowedAttributesExporter implements SpanExporter {
   }
 }
 
-export function keepAllowedAttributes(span: ReadableSpan): ReadableSpan {
+function keepAllowedAttributes(span: ReadableSpan): ReadableSpan {
   return {
     attributes: Object.fromEntries(
       Object.entries(span.attributes).filter(([name]) => EXPORTED_ATTRIBUTES.has(name)),
