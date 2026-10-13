@@ -343,8 +343,17 @@ fn update_demo(
     let internal_notes = blob(object_store, UPDATE_DEMO_INTERNAL_NOTES)?;
     let internal_path = ScopePath::parse("/internal/notes.md").map_err(ApiError::internal)?;
     repo.policy
-        .add_rule(LabelRule::private(internal_path.clone()))
+        .add_rule(LabelRule::private(
+            ScopePath::parse("/internal").map_err(ApiError::internal)?,
+        ))
         .map_err(ApiError::internal)?;
+    repo.repo_config
+        .files
+        .rules
+        .push(scope_domain::repo_config::RepoConfigFileRule {
+            path: "/internal/**".to_string(),
+            view: ViewId::private(),
+        });
     let release_guide = blob(object_store, UPDATE_DEMO_RELEASE_GUIDE)?;
     repo.graph.commits.push(commit(
         &repo,
