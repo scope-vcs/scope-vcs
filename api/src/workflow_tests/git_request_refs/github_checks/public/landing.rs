@@ -421,6 +421,37 @@ async fn extended_public_parent_requires_explicit_main_restack_and_keeps_prior_c
     let fixture = PublicStack::create("github-public-stack-extended").await;
     let original = fixture.revision().await;
     let comparison = fixture.comparison(None).await;
+    fixture.approve_child().await;
+    assert_eq!(push_pass(&fixture.state, unix_now()).await, 1);
+    let old_checks = fixture
+        .evaluation(&fixture.child_id, &fixture.child_head)
+        .await;
+    fixture.green(&old_checks.tested_oid, 10).await;
+    let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
+    let auto_path = scope_api_contract::routes::repo_request_auto_merge(
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &fixture.child_id,
+    );
+    let enabled = expect_json(
+        api_request(
+            router(fixture.state.clone()),
+            "POST",
+            &auto_path,
+            Some(&member),
+            Some(
+                &serde_json::json!({
+                    "expected_revision_id": original.id,
+                    "expected_head_oid": fixture.child_head,
+                })
+                .to_string(),
+            ),
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(enabled["intent"]["status"], "Active");
     run_git(
         Some(&fixture.source),
         &["reset", "--hard", &fixture.parent_head],
@@ -453,6 +484,38 @@ async fn extended_public_parent_requires_explicit_main_restack_and_keeps_prior_c
     assert_eq!(child.base.review_base_oid(), fixture.parent_head);
     assert_eq!(fixture.revision().await, original);
     assert_eq!(fixture.comparison(None).await, comparison);
+    let stopped = expect_json(
+        api_request(
+            router(fixture.state.clone()),
+            "GET",
+            &auto_path,
+            Some(&member),
+            None,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(stopped["intent"]["id"], enabled["intent"]["id"]);
+    assert_eq!(stopped["intent"]["status"], "Stopped");
+    assert_eq!(stopped["intent"]["reason"], "NeedsMainUpdate");
+    crate::use_cases::request_checks::reconcile_request_checks_once(
+        &fixture.state,
+        &mut Default::default(),
+    )
+    .await
+    .unwrap();
+    let renewed = fixture
+        .evaluation(&fixture.child_id, &fixture.child_head)
+        .await;
+    assert_ne!(renewed.tested_oid, old_checks.tested_oid);
+    push_pass(&fixture.state, unix_now()).await;
+    assert_eq!(
+        fixture
+            .fake
+            .branch_head(&format!("scope/requests/{}", fixture.child_id)),
+        Some(old_checks.tested_oid)
+    );
     assert_eq!(
         merge(&fixture.state, &fixture.child_id).await.status(),
         StatusCode::CONFLICT
@@ -461,6 +524,33 @@ async fn extended_public_parent_requires_explicit_main_restack_and_keeps_prior_c
         Some(&fixture.source),
         &["reset", "--hard", &fixture.child_head],
         "restore child",
+    )
+    .unwrap();
+    let rejected = push_change(
+        &fixture.source,
+        &fixture.remote,
+        "refs/heads/landing-child",
+        "child.txt",
+        "uncontained child update\n",
+        "plain update without accepted main",
+    );
+    assert!(
+        rejected.is_err(),
+        "a plain non-containing head must not clear NeedsMainUpdate"
+    );
+    assert!(
+        String::from_utf8_lossy(&rejected.unwrap_err().stderr)
+            .contains("request must contain current view main before recovering")
+    );
+    assert_eq!(
+        stored_request(&fixture.state, &fixture.child_id).await,
+        child
+    );
+    assert_eq!(fixture.revision().await, original);
+    run_git(
+        Some(&fixture.source),
+        &["reset", "--hard", &fixture.child_head],
+        "restore accepted child",
     )
     .unwrap();
     run_git(
