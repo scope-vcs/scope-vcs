@@ -25,7 +25,16 @@ export function invalidateRepoSummaryResources(scope: string) {
   invalidateRequestQueues(scope)
 }
 
-export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, summaryPending = false) {
+type RepoResourceInvalidation = {
+  summaryPending?: boolean
+  versioned?: boolean
+}
+
+export function invalidateRepoResources(
+  scope: string,
+  event?: RepoChangeEvent,
+  { summaryPending = false, versioned = false }: RepoResourceInvalidation = {},
+) {
   const changed = event && typeof event.kind === 'object' && 'RunChanged' in event.kind ? event.kind.RunChanged : null
   if (changed?.change === 'LogsAppended') return
   const repositoryChanged = event && typeof event.kind === 'object' && 'RepositoryChanged' in event.kind
@@ -44,13 +53,15 @@ export function invalidateRepoResources(scope: string, event?: RepoChangeEvent, 
     repoSettingsResource.invalidate(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     historyFeedResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     historyEntryResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAttachmentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    repositoryActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    repositoryDependencyResource.invalidate(scope)
+    if (repositoryChanged || !versioned) {
+      repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+      repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+      repositoryActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+      repositoryDependencyResource.invalidate(scope)
+    }
     runWorkflowsResource.invalidate(scope)
     requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     refreshRequestState(scope)

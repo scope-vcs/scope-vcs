@@ -206,9 +206,24 @@ test('connection and lag recovery invalidate retained resources only in their sc
   }
 })
 
+test('versioned resyncs leave content-versioned resources to the reloaded repository version', () => {
+  for (const kind of ['Connected', 'Lagged', undefined] as const) {
+    seed()
+    invalidateRepoResources('viewer-a', kind && event(kind), { versioned: true })
+    assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
+    assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
+    assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
+    assert.equal(historyFeedResource.getSnapshot('viewer-a\0public\0all').stale, true)
+  }
+  seed()
+  invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'push' } }), { versioned: true })
+  assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
+  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
+})
+
 test('a pending summary owns queue reconciliation while other resources refresh immediately', () => {
   seed()
-  invalidateRepoResources('viewer-a', event('Lagged'), true)
+  invalidateRepoResources('viewer-a', event('Lagged'), { summaryPending: true })
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
   invalidateRepoSummaryResources('viewer-a')
