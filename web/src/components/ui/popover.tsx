@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { autoPopoverOffset } from '../popover-position'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 
 type PopoverTriggerProps = {
@@ -29,7 +30,7 @@ export function Popover({
   trigger: (props: PopoverTriggerProps) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
-  const [flipped, setFlipped] = useState(false)
+  const [autoOffset, setAutoOffset] = useState(0)
   const panelRef = useRef<HTMLDialogElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -56,9 +57,27 @@ export function Popover({
   }, [open])
 
   useLayoutEffect(() => {
-    if (!open || align !== 'auto' || !panelRef.current || !triggerRef.current) return
-    const left = triggerRef.current.getBoundingClientRect().left
-    setFlipped(left + panelRef.current.offsetWidth > document.documentElement.clientWidth)
+    const panel = panelRef.current
+    const root = rootRef.current
+    if (!open || align !== 'auto' || !panel || !root) return
+    const updateOffset = () => {
+      const anchor = root.getBoundingClientRect()
+      setAutoOffset(autoPopoverOffset({
+        anchorLeft: anchor.left,
+        anchorWidth: anchor.width,
+        panelWidth: panel.offsetWidth,
+        viewportWidth: document.documentElement.clientWidth,
+      }))
+    }
+    updateOffset()
+    const observer = new ResizeObserver(updateOffset)
+    observer.observe(root)
+    observer.observe(panel)
+    window.addEventListener('resize', updateOffset)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateOffset)
+    }
   }, [align, open])
 
   function close() {
@@ -86,12 +105,13 @@ export function Popover({
           aria-label={label}
           className={cn(
             'absolute top-full z-50 m-0 mt-1 max-w-none rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-[var(--shadow-pop)]',
-            ALIGN_CLASS[align === 'auto' ? (flipped ? 'end' : 'start') : align],
+            align === 'auto' ? 'right-auto' : ALIGN_CLASS[align],
             className,
           )}
           id={panelId}
           open
           ref={panelRef}
+          style={align === 'auto' ? { left: autoOffset } : undefined}
         >
           {panel(close)}
         </dialog>

@@ -8,6 +8,7 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { loadRepositoryLatestActivity } from '@/routes/-repo-activity-actions'
 import { Link } from '@tanstack/react-router'
 import { useCallback } from 'react'
+import { cn } from '@/lib/utils'
 import { repoResourceScope } from './repo-resource-scope'
 import { repositoryActivityIdentity, repositoryActivityResource } from './repository-activity-resource'
 import { HistoryMenu } from '@/features/history/history-menu'
@@ -38,7 +39,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   }
   if (current.status === 'failed') {
     return (
-      <div className="flex items-center gap-3 px-(--app-inset) pb-3 pt-2.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <output>Latest change unavailable.</output>
         <button className="rounded underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" onClick={current.retry} type="button">
           Retry latest change
@@ -50,9 +51,12 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   if (!entry) return null
   const message = entry.message.split('\n', 1)[0] || 'Repository updated'
   return (
-    <div aria-label="Latest repository change" className="flex flex-wrap items-center gap-x-4 gap-y-2 px-(--app-inset) pb-3 pt-2.5 text-xs">
+    <div
+      aria-label="Latest repository change"
+      className={cn('flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs', !current.error && 'sm:flex-nowrap')}
+    >
       <Link
-        className="min-w-0 basis-full truncate rounded font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:flex-1 sm:basis-auto"
+        className="min-w-0 basis-full truncate rounded text-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:basis-auto"
         params={{ ...params, entryId: entry.source_id }}
         search={viewingAsSearch(selectedView, reader)}
         title={message}
@@ -60,7 +64,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       >
         {message}
       </Link>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground sm:flex-none">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground">
         {entry.author && <span className="max-w-40 truncate" title={entry.author}>{entry.author}</span>}
         {entry.occurred_at_unix !== null && <RelativeTimestamp value={entry.occurred_at_unix} />}
         {headOid && (
@@ -69,7 +73,9 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
           </span>
         )}
       </div>
-      <HistoryMenu params={params} />
+      <div className="ml-auto sm:ml-0">
+        <HistoryMenu params={params} />
+      </div>
       {current.error && <button className="basis-full text-left underline" onClick={current.retry} type="button">Could not refresh latest change. Retry</button>}
     </div>
   )
@@ -78,14 +84,13 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
 export function RepositoryLatestActivityPending({ onRetry }: { onRetry?: () => void }) {
   return (
     <PendingSurface label="Loading latest repository change" onRetry={onRetry}>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-(--app-inset) pb-3 pt-2.5 text-xs">
-        <span className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
+        <span className="flex h-5 basis-full items-center sm:basis-auto">
           <TextSkeleton length="long" size="meta" />
         </span>
-        <span className="flex-1 sm:flex-none">
+        <span className="flex h-4 items-center">
           <TextSkeleton length="short" size="meta" />
         </span>
-        <TextSkeleton length="tiny" size="meta" />
       </div>
     </PendingSurface>
   )

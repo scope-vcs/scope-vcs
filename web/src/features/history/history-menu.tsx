@@ -29,6 +29,7 @@ export function HistoryMenu({
 
   return (
     <Popover
+      align="auto"
       className="w-[min(30rem,calc(100vw-3rem))] p-0"
       label="Repository history"
       panel={(close) => (

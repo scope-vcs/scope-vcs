@@ -14,7 +14,9 @@ test('public repository exposes only its projected source', async () => {
   await withPage(repoPath, async (page) => {
     await assertCurrentRepoSection(page, 'Code')
     await assertPageHeading(page, 'Code')
-    await page.getByText('2 files', { exact: true }).waitFor()
+    const fileList = page.getByLabel('Repository file navigator')
+    await fileList.getByRole('heading', { name: 'Files', exact: true }).waitFor()
+    await fileList.getByText('2', { exact: true }).waitFor()
     await page.getByRole('tab', { name: 'README.html' }).waitFor()
     await page.getByRole('button', { name: 'README.html', exact: true }).waitFor()
     const previewButton = page.getByRole('radio', { name: 'Preview', exact: true })

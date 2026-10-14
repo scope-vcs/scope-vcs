@@ -155,7 +155,7 @@ test('views without a README or any files open deliberately without guessing a f
         ? 'No README in this view. Browse the files or use Find file to get started.'
         : 'Run scope push --main from the CLI to add files to this repository.', { exact: true }).waitFor()
       assert.equal(fileRequests, 0)
-      assert.equal(await page.getByText('Resources', { exact: true }).count(), 0)
+      assert.equal(await page.getByRole('region', { name: 'About' }).getByRole('button').count(), 0)
     }, { prepare: fulfillTree, viewport })
   }
 })
@@ -190,27 +190,21 @@ test('visible project resources open through file tabs and reopen a closed selec
   })
   await withPage('/', async (page) => {
     await navigateFromHome(page, repoPath)
-    await page.getByText('Resources', { exact: true }).click()
-    await page.getByRole('button', { name: 'Contributing', exact: true }).waitFor()
-    assert.equal(await page.getByRole('button', { name: 'Security policy', exact: true }).count(), 0)
-    await page.getByRole('button', { name: 'License', exact: true }).click()
+    const about = page.getByRole('region', { name: 'About' })
+    await about.getByRole('button', { name: 'Contributing', exact: true }).waitFor()
+    assert.equal(await about.getByRole('button', { name: 'Security policy', exact: true }).count(), 0)
+    await about.getByRole('button', { name: 'License', exact: true }).click()
     await page.getByRole('tab', { name: 'LICENSE', exact: true }).waitFor()
     await page.locator('pre code').filter({ hasText: 'Fixture license' }).waitFor()
     await page.getByTitle('Close LICENSE', { exact: true }).click()
     await page.getByText('Select a file to inspect its contents.', { exact: true }).waitFor()
-    await page.getByText('Resources', { exact: true }).click()
-    await page.getByRole('button', { name: 'License', exact: true }).click()
+    await about.getByRole('button', { name: 'License', exact: true }).click()
     await page.getByRole('tab', { name: 'LICENSE', exact: true }).waitFor()
     await page.locator('pre code').filter({ hasText: 'Fixture license' }).waitFor()
-    for (const width of [390, 320]) {
-      await page.setViewportSize({ width, height: 844 })
-      await page.getByText('Resources', { exact: true }).click()
-      const bounds = await page.getByRole('button', { name: 'License', exact: true }).evaluate((element) => {
-        const menu = element.parentElement.getBoundingClientRect()
-        return { left: menu.left, right: menu.right }
-      })
-      assert(bounds.left >= 0 && bounds.right <= width, `Resources menu overflowed at ${width}px`)
-      await page.keyboard.press('Escape')
-    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByRole('button', { name: 'files LICENSE', exact: true }).click()
+    await about.getByRole('button', { name: 'Contributing', exact: true }).click()
+    await page.getByRole('tab', { name: '.github/CONTRIBUTING.md', exact: true }).waitFor()
+    await assertMobileFilesCollapsed(page, '.github/CONTRIBUTING.md')
   }, { prepare: fulfillResources, viewport })
 })

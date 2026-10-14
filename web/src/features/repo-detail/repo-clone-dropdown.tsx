@@ -45,14 +45,12 @@ export function RepoCloneDropdown({
         <Button size="sm" type="button" variant="secondary" {...props}>
           <Code2 className="size-3.5" />
           <span>Clone</span>
-          <span className="-my-2 ml-1 flex h-8 items-center border-l border-border pl-2">
-            <ChevronDown
-              className={cn(
-                'size-3.5 text-muted-foreground transition-transform',
-                props['aria-expanded'] && 'rotate-180',
-              )}
-            />
-          </span>
+          <ChevronDown
+            className={cn(
+              'size-3.5 text-muted-foreground transition-transform',
+              props['aria-expanded'] && 'rotate-180',
+            )}
+          />
         </Button>
       )}
     />

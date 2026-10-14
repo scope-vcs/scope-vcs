@@ -1,5 +1,5 @@
 import type { RepoContent, RepoParams } from '@/api/types'
-import type { RepoFileContentResponse } from '@/api/types.generated'
+import type { RepoFileContentResponse, RepoSummaryResponse } from '@/api/types.generated'
 import { PanelState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
 import { PendingSurface } from '@/components/pending-surface'
@@ -42,6 +42,7 @@ import {
   SourceCodeSkeleton,
   SourceTabStripSkeleton,
 } from './repository-code-skeletons'
+import { RepositoryAbout } from './repository-about'
 import { RepositoryFileNavigator } from './repository-file-navigator'
 import { useViewingAs } from './use-viewing-as'
 
@@ -52,6 +53,7 @@ export function RepositoryCodeView({
   file,
   onSelectFilePath,
   params,
+  repo,
   selectedPath,
   workspaceTabs,
 }: {
@@ -59,6 +61,7 @@ export function RepositoryCodeView({
   file: CachedResource<RepoFileContentResponse>
   onSelectFilePath: (path: string) => void
   params: RepoParams
+  repo: RepoSummaryResponse
   selectedPath: string | null
   workspaceTabs: ReturnType<typeof useWorkspaceTabs>
 }) {
@@ -120,6 +123,11 @@ export function RepositoryCodeView({
               <FileNavigatorSkeleton showVisibility={hasMixedVisibility} />
             </PendingSurface>
           )}
+          <RepositoryAbout
+            files={tree?.files ?? []}
+            onSelectFilePath={(path) => selectFile(path, false)}
+            repo={repo}
+          />
         </div>
         <SourcePane
           availablePaths={availablePaths}
