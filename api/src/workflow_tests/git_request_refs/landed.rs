@@ -135,6 +135,9 @@ async fn landed_request_is_complete_when_main_push_persistence_returns() {
             .metadata
             .requests()
             .start_request(StartRequestInput {
+                base: scope_domain::requests::RequestBase::Main {
+                    review_base_oid: (base_head).clone(),
+                },
                 id: REQUEST_ID.into(),
                 repo_id: TEST_REPO_ID.into(),
                 name: REQUEST_NAME.into(),
@@ -201,6 +204,7 @@ async fn landed_request_is_complete_when_main_push_persistence_returns() {
             &test_owner_id(),
             &test_repo_incarnation(),
             vec![scope_postgres::db::LandedRequestCandidate {
+                stack_children: Vec::new(),
                 request_id: REQUEST_ID.into(),
                 head_oid: main_oid.clone(),
             }],

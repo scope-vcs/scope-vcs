@@ -79,6 +79,9 @@ async fn start_request(fixture: &Fixture, request_id: &str, name: &str, now_unix
             author_role: RequestActorRole::Owner,
             author_view: ViewId::private(),
             view: ViewId::public(),
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: "base".to_string(),
+            },
             main_ancestor_oid: "base".to_string(),
             event_id: format!("event_start_{request_id}"),
             now_unix,

@@ -55,6 +55,9 @@ async fn create_request(
     let requests = state.metadata.requests();
     requests
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: (REQUEST_HEAD.to_string()).clone(),
+            },
             id: request_id.to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: request_id.replace('_', "-"),

@@ -11,7 +11,7 @@ import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
 const migrationsDir = new URL('../../crates/scope-postgres/src/migrations/', import.meta.url);
 const baselineMigration = 'm0084_current_schema_baseline.sql';
-const appliedMigrations = [];
+const appliedMigrations = ['m0084_request_review_bases.rs', 'm0085_request_check_identity.rs', 'm0086_private_request_stacks.rs'];
 
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)
@@ -111,6 +111,14 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
       query('SET ROLE scope_migrator;', role, false);
       query('UPDATE seaql_migrations SET version = version;', role, false);
       query('CREATE ROLE forbidden;', role, false);
+    }
+    query(`SELECT * FROM scope_request_revision_context_receipts;
+      INSERT INTO scope_request_revision_context_receipts SELECT * FROM scope_request_revision_context_receipts WHERE false;
+      UPDATE scope_request_revision_context_receipts SET payload_digest = payload_digest;
+      DELETE FROM scope_request_revision_context_receipts WHERE false;`, 'scope_api');
+    for (const role of Object.keys(grants).filter((role) => role !== 'scope_api')) {
+      query('SELECT * FROM scope_request_revision_context_receipts;', role, false);
+      query('INSERT INTO scope_request_revision_context_receipts SELECT * FROM scope_request_revision_context_receipts WHERE false;', role, false);
     }
     query('SELECT * FROM scope_cache_objects FOR UPDATE; DELETE FROM scope_cache_uploads;', 'scope_api');
     query('SELECT * FROM scope_cli_sessions;', 'scope_run_worker', false);

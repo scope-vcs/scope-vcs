@@ -4,8 +4,8 @@ import {
   parseLoadDiscussionsInput,
 } from '@/api/request-inputs'
 import {
-  type LoadRequestRevisionCommitInput,
-  loadRequestRevisionCommitFileDiffForRequest,
+  type LoadRequestRevisionDiffInput,
+  loadRequestRevisionFileDiffForRequest,
   loadRequestRevisionsForRequest,
 } from '@/api/requests'
 import { EmptyState } from '@/components/empty-state'
@@ -15,7 +15,7 @@ import {
   loadRequestDiscussionsForRequest,
 } from '@/features/requests/request-discussion-api'
 import { loadDiscussionReferencePage, selectedDiscussionReferenceQuery } from '@/features/requests/request-changes-discussion-references'
-import { requestChangesSelectionIdentity, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
+import { requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
 import { useRequestChangesResource } from '@/features/requests/use-request-changes-resource'
 import {
   RequestChangesWorkbench,
@@ -30,6 +30,7 @@ import {
 } from '@/features/requests/request-changes-model'
 import { useRequestState } from '@/features/requests/request-state-context'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
+import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { parseRouteFilePathSearch } from '@/lib/route-file'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
@@ -69,7 +70,7 @@ const loadChangesPage = createServerFn({ method: 'GET' })
 
 const loadRevisionDiff = createServerFn({ method: 'GET' })
   .validator(parseLoadRequestRevisionDiffInput)
-  .handler(({ data }) => loadRequestRevisionCommitFileDiffForRequest(data, getRequest().signal))
+  .handler(({ data }) => loadRequestRevisionFileDiffForRequest(data, getRequest().signal))
 
 const loadRevisions = createServerFn({ method: 'GET' })
   .validator(parseLoadRequestRevisionsInput)
@@ -80,7 +81,7 @@ const loadDiscussions = createServerFn({ method: 'GET' })
   .handler(({ data }) => loadDiscussionReferencePage(data, loadRequestDiscussionsForRequest))
 
 const loadDiffForView = (
-  data: LoadRequestRevisionCommitInput & { path: string },
+  data: LoadRequestRevisionDiffInput,
   signal?: AbortSignal,
 ) => loadRevisionDiff({ data, signal })
 const loadDiscussionsForView = (data: LoadDiscussionsInput) =>
@@ -90,16 +91,16 @@ export const Route = createFileRoute(
   '/$owner/$repo/requests/$requestId/changes',
 )({
   validateSearch: (search: Record<string, unknown>): RequestChangesSearch => ({
+    comparison: search.comparison === 'push' ? 'push' : search.comparison === 'commit' ? 'commit' : search.comparison === 'request' ? 'request' : search.commit ? 'commit' : undefined,
     commit: searchText(search.commit),
     path: parseRouteFilePathSearch(search.path),
     revision: searchText(search.revision),
   }),
-  loaderDeps: ({ search }) => ({ commit: search.commit, revision: search.revision }),
+  loaderDeps: ({ search }) => requestChangesQuery(search),
   loader: async ({ deps: selectionSearch, params }) => {
     const input = {
       ...requestParamsForRoute(params),
-      commit_oid: selectionSearch.commit,
-      revision_id: selectionSearch.revision,
+      ...selectionSearch,
     }
     if (typeof window !== 'undefined') return null
     return loadChangesPage({ data: input })
@@ -115,6 +116,7 @@ function RequestChangesRoute() {
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
   const live = useRepoLayout()
+  const views = useRepoViews()
   const { owner, repo, requestId } = params
   const requestParams = useMemo(
     () => requestParamsForRoute({ owner, repo, requestId }),
@@ -122,19 +124,23 @@ function RequestChangesRoute() {
   )
   const { userId, isLoaded } = useAuth()
   const scope = isLoaded ? repoResourceScope(live.repo, userId ?? null) : null
+  const allowRequestComparison = live.repo.access.view === views.full
+  const query = useMemo(
+    () => requestChangesQuery({ comparison: search.comparison, commit: search.commit, revision: search.revision }, allowRequestComparison ? 'request' : 'push'),
+    [allowRequestComparison, search.comparison, search.commit, search.revision],
+  )
   const identity = scope
-    ? requestChangesSelectionIdentity(scope, requestId, search.revision, search.commit)
+    ? requestChangesSelectionIdentity(scope, requestId, query.revision_id, query.commit_oid, query.comparison)
     : null
   const load = useCallback(
     (signal: AbortSignal) => loadRevisions({
       data: {
         ...requestParams,
-        commit_oid: search.commit,
-        revision_id: search.revision,
+        ...query,
       },
       signal,
     }),
-    [requestParams, search.commit, search.revision],
+    [requestParams, query],
   )
   const { initial, resource } = useRequestChangesResource({
     access: JSON.stringify(live.repo.access),
@@ -148,12 +154,12 @@ function RequestChangesRoute() {
     ? requestChangeSelection(revisions.revisions, revisions.review_revision_id, search)
     : null
   const pin = useMemo(
-    () => requestRevisionPin(selection?.revision ?? null, selection?.commit ?? null, search.revision),
-    [search.revision, selection?.commit, selection?.revision],
+    () => requestRevisionPin(selection?.revision ?? null, query.comparison === 'commit' ? selection?.commit ?? null : null, search.revision),
+    [search.revision, selection?.commit, selection?.revision, query.comparison],
   )
   useEffect(() => {
     if (!pin || !scope || !revisions) return
-    retainPinnedRequestChanges(scope, requestId, pin, revisions)
+    retainPinnedRequestChanges(scope, requestId, { ...pin, comparison: query.comparison }, revisions)
     void navigate({
       params,
       replace: true,
@@ -161,7 +167,7 @@ function RequestChangesRoute() {
       search: (current) => ({ ...current, ...pin }),
       to: '/$owner/$repo/requests/$requestId/changes',
     })
-  }, [navigate, params, pin, requestId, revisions, scope])
+  }, [navigate, params, pin, requestId, revisions, scope, query.comparison])
 
   if (!page.state) return null
 
@@ -176,6 +182,7 @@ function RequestChangesRoute() {
         ? (
             <RequestChangesWorkbench
               accessScope={scope}
+              allowRequestComparison={allowRequestComparison}
               view={live.repo.access.view}
               initialDiscussionReferences={initial?.discussionReferences ?? { commitKey: null, page: null }}
               loadDiff={loadDiffForView}

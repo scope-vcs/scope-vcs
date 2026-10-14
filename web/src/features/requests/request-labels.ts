@@ -15,6 +15,7 @@ const EVENT_LABELS = {
   Started: 'Started',
   Submitted: 'Submitted',
   RevisionPushed: 'Revision pushed',
+  BaseRetargeted: 'Parent landed',
   Merged: 'Merged',
   Closed: 'Closed',
   IdentityEdited: 'Request edited',
@@ -39,6 +40,11 @@ const MERGEABILITY = {
   ChecksPending: { label: 'Waiting for CI', tone: 'info' },
   ChecksFailed: { label: 'CI failed', tone: 'danger' },
   ChecksConfigurationError: { label: 'CI needs configuration', tone: 'danger' },
+  WaitingForParent: { label: 'Waiting for parent', tone: 'info' },
+  ParentRewritten: { label: 'Parent rewritten', tone: 'warning' },
+  ParentClosed: { label: 'Parent closed', tone: 'warning' },
+  AncestorBlocked: { label: 'Ancestor blocked', tone: 'warning' },
+  IntegrationConflict: { label: 'Integration conflict', tone: 'danger' },
 } as const satisfies Record<
   RequestSummaryResponse['mergeability']['status'],
   { label: string; tone: BadgeVariant }
@@ -116,6 +122,7 @@ export function requestEventBody(event: RequestEventResponse) {
       .filter(Boolean)
       .join('\n')
   }
+  if ('BaseRetargeted' in payload) return 'The parent landed. This request now targets main with its saved review comparison.'
   if ('Closed' in payload) return shortOid(payload.Closed.head_oid)
   if ('Merged' in payload) {
     return `${shortOid(payload.Merged.head_oid)} → ${shortOid(payload.Merged.main_oid)}`

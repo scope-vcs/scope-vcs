@@ -337,6 +337,9 @@ async fn public_repo_stream_drops_private_request_identifiers() {
         .metadata
         .requests()
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()).clone(),
+            },
             id: "req_private_stream".to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: "private-stream".to_string(),
@@ -355,6 +358,9 @@ async fn public_repo_stream_drops_private_request_identifiers() {
         .metadata
         .requests()
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()).clone(),
+            },
             id: "req_public_stream".to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: "public-stream".to_string(),

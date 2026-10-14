@@ -35,6 +35,9 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
     let requests = state.metadata.requests();
     requests
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: ("a".repeat(40)).clone(),
+            },
             id: "request_reply".to_string(),
             repo_id: "owner/repo".to_string(),
             name: "reply".to_string(),

@@ -4,6 +4,7 @@ import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerend
 import type { ApproveRequestChecksInput, ReviewFileDiff, RequestParams } from './types'
 import type {
   RequestChecksResponse,
+  RequestComparisonMode,
   RequestQueuePageResponse,
   RequestRatingResponse,
   RequestRatingsResponse,
@@ -72,17 +73,50 @@ export async function rateRequestForRequest(
 }
 
 export async function loadRequestRevisionsForRequest(
-  data: RequestParams & { commit_oid?: string; revision_id?: string },
+  data: RequestParams & { commit_oid?: string; revision_id?: string; comparison?: RequestComparisonMode },
 ): Promise<RequestRevisionListResponse> {
   const search = new URLSearchParams()
   if (data.revision_id) search.set('revision', data.revision_id)
   if (data.commit_oid) search.set('commit', data.commit_oid)
+  if (data.comparison) search.set('comparison', data.comparison)
   const path = requestRoute(ApiRouteTemplates.repoRequestRevisions, data)
   return createApiClient().get(
     search.size > 0 ? `${path}?${search}` : path,
     RequestRevisionListResponseValidator,
     { auth: 'optional' },
   )
+}
+
+export type { RequestComparisonMode } from './types.generated'
+
+export type LoadRequestRevisionDiffInput = RequestParams & {
+  comparison: RequestComparisonMode
+  commit_oid?: string
+  revision_id: string
+  path: string
+}
+
+export async function loadRequestRevisionFileDiffForRequest(
+  data: LoadRequestRevisionDiffInput,
+  signal?: AbortSignal,
+): Promise<ReviewFileDiff> {
+  if (data.comparison === 'commit') {
+    if (!data.commit_oid) throw new Error('Select a commit.')
+    return loadRequestRevisionCommitFileDiffForRequest({ ...data, commit_oid: data.commit_oid }, signal)
+  }
+  const path = buildApiPath(ApiRouteTemplates.repoRequestRevisionFileDiff, {
+    owner: data.owner,
+    repo: data.repo,
+    request_id: data.request_id,
+    revision_id: data.revision_id,
+  })
+  const search = new URLSearchParams({ comparison: data.comparison, path: data.path })
+  const diff = await createApiClient().get(
+    `${path}?${search}`,
+    ReviewFileDiffResponseValidator,
+    { auth: 'optional', signal },
+  )
+  return renderReviewFileDiff(diff, signal)
 }
 
 export type LoadRequestRevisionCommitInput = RequestParams & {

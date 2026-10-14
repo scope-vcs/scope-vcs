@@ -39,6 +39,7 @@ fn revise(git_facts: RequestRevisionGitFacts) -> RequestRevisionMutation {
         uploaded_request(),
         false,
         RecordRequestRevisionInput {
+            new_base: None,
             request_id: "request_change".to_string(),
             actor_user_id: "author".to_string(),
             actor_can_edit: true,
@@ -74,7 +75,7 @@ fn revision_records_snapshot_without_manufacturing_a_discussion() {
     assert_eq!(
         RequestComparison::push(&mutation.revision, ViewId::private())
             .membership()
-            .excluded_ancestor_oid(),
+            .excluded_ancestor_oids()[0],
         "head-1"
     );
 }
@@ -118,7 +119,7 @@ fn rewritten_revision_lists_its_commits_after_the_new_base() {
     assert_eq!(
         RequestComparison::push(&mutation.revision, ViewId::private())
             .membership()
-            .excluded_ancestor_oid(),
+            .excluded_ancestor_oids()[0],
         "main-2"
     );
 }
@@ -146,6 +147,7 @@ fn review_revision_is_newest_unless_an_existing_revision_is_pinned() {
 
 fn revision(id: &str, position: u64) -> RequestRevision {
     RequestRevision {
+        base_version: 1,
         id: id.to_string(),
         request_id: "request".to_string(),
         position,

@@ -82,6 +82,9 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
             author_role: RequestActorRole::Public,
             author_view: ViewId::public(),
             view: ViewId::public(),
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            },
             main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             event_id: event_id.into(),
             now_unix: 2,
@@ -97,6 +100,7 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
     store
         .requests()
         .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
             request_id: request_id.into(),
             actor_user_id: "user_public".into(),
             actor_can_edit: true,
@@ -130,6 +134,7 @@ async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &st
     store
         .requests()
         .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
             request_id: request_id.into(),
             actor_user_id: "user_public".into(),
             actor_can_edit: true,
@@ -415,6 +420,7 @@ async fn recovery_pages_advance_past_unrepaired_requests_and_restart_from_the_be
         store
             .requests()
             .record_request_revision(RecordRequestRevisionInput {
+                new_base: None,
                 request_id: request_id.into(),
                 actor_user_id: "user_public".into(),
                 actor_can_edit: true,

@@ -1,5 +1,6 @@
-import type { CommitSummary } from '@/api/types'
-import type { RequestRevisionListResponse } from '@/api/types.generated'
+import { displayRouteFilePath } from '../../lib/route-file'
+import type { CommitDetail, CommitSummary } from '@/api/types'
+import type { RequestRevisionListResponse, ViewId } from '@/api/types.generated'
 import type { RequestDiscussion } from './request-discussion-types'
 
 type RequestChangeSelection = {
@@ -116,4 +117,97 @@ export function discussionsForRequestCommit(
       return commitOid === revision.commits.at(-1)?.oid
     })
     .sort((left, right) => left.opened_position - right.opened_position)
+}
+
+export function requestChangesPresentation(
+  revisions: RequestRevisionListResponse,
+  search: RequestChangeSelection & { comparison?: 'request' | 'push' | 'commit' },
+  view: ViewId,
+  repoId: string,
+  allowRequestComparison: boolean,
+) {
+  const selection = requestChangeSelection(revisions.revisions, revisions.review_revision_id, search)
+  const selectedRevision = selection.revision
+  const requestedMode = search.comparison ?? (search.commit ? 'commit' : revisions.comparison?.mode ?? (allowRequestComparison ? 'request' : 'push'))
+  const mode = !allowRequestComparison && requestedMode === 'request' ? 'push' : requestedMode
+  const comparison = revisions.comparison
+  const aggregate = allowRequestComparison && selectedRevision && comparison?.revision_id === selectedRevision.id && comparison.mode === mode
+    && (mode !== 'commit' || comparison.head_oid === selection.commit)
+    ? comparison : null
+  const usesCommitFiles = mode === 'commit' || !allowRequestComparison
+  const commits = orderedRequestCommits(selectedRevision ? [selectedRevision] : [])
+  const selectedCommitOid = usesCommitFiles ? selection.commit : null
+  const selectedCommitId = selectedRevision && selectedCommitOid
+    ? requestRevisionCommitId(selectedRevision.id, selectedCommitOid)
+    : null
+  const commitSummary = selectedRevision?.commits.find(
+    ({ oid }) => oid === selectedCommitOid,
+  ) ?? null
+  const selectedCommitSummary = commitSummary && aggregate
+    ? {
+        ...commitSummary,
+        files: aggregate.files,
+        files_truncated: aggregate.inspection !== 'Complete',
+      }
+    : commitSummary
+  const selectedCommit = usesCommitFiles && selectedRevision && selectedCommitSummary
+    ? commitDetail(selectedRevision.id, selectedCommitSummary, view, repoId)
+    : aggregate ? comparisonDetail(aggregate, view, repoId) : null
+  const error = aggregate?.inspection === 'Unavailable'
+    ? 'This comparison could not be inspected.'
+    : usesCommitFiles || !selectedRevision
+      ? selection.error
+      : !aggregate ? 'This comparison could not be inspected.' : null
+  return {
+    aggregate,
+    commits: usesCommitFiles ? commits : selectedCommit ? [selectedCommit] : [],
+    diffMode: usesCommitFiles ? 'commit' as const : mode,
+    error,
+    mode,
+    selectedCommit,
+    selectedCommitId,
+    selectedCommitOid,
+    selectedCommitSummary,
+    selectedRevision,
+  }
+}
+
+function commitDetail(
+  revisionId: string,
+  commit: RequestRevisionListResponse['revisions'][number]['commits'][number],
+  view: ViewId,
+  repoId: string,
+): CommitDetail {
+  return {
+    view,
+    author: commit.author,
+    change_count: commit.change_count,
+    files_truncated: commit.files_truncated,
+    files: commit.files.map((file) => ({
+      ...file,
+      path: `/${displayRouteFilePath(file.path)}`,
+    })),
+    logical_commit_id: commit.oid,
+    message: commit.message,
+    projected_id: requestRevisionCommitId(revisionId, commit.oid),
+    repo_id: repoId,
+  }
+}
+
+function comparisonDetail(
+  comparison: NonNullable<RequestRevisionListResponse['comparison']>,
+  view: ViewId,
+  repoId: string,
+): CommitDetail {
+  return {
+    view,
+    repo_id: repoId,
+    projected_id: `${comparison.revision_id}:${comparison.mode}:${comparison.base_oid}:${comparison.head_oid}`,
+    logical_commit_id: comparison.head_oid ?? '',
+    author: null,
+    message: comparison.mode === 'request' ? 'Request layer' : 'Changes in this push',
+    change_count: comparison.files.length,
+    files_truncated: comparison.inspection !== 'Complete',
+    files: comparison.files.map((file) => ({ ...file, path: `/${displayRouteFilePath(file.path)}` })),
+  }
 }

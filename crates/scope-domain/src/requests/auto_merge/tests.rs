@@ -57,6 +57,7 @@ fn open_request() -> Request {
 
 fn revision(head_oid: &str) -> RequestRevision {
     RequestRevision {
+        base_version: 1,
         id: "revision_1".into(),
         request_id: "request_1".into(),
         position: 2,

@@ -13,7 +13,7 @@ pub(super) enum RequestCommand {
     #[command(about = "Start a draft request and create its local branch")]
     Start(RequestStartArgs),
     #[command(about = "Push the current commit to a request branch")]
-    Push(RequestTargetArgs),
+    Push(RequestPushArgs),
     #[command(about = "Submit a request to its maintainers")]
     Submit(RequestSubmitArgs),
     #[command(about = "Close a request")]
@@ -60,6 +60,8 @@ pub(super) enum RequestCommand {
 
 #[derive(Parser)]
 pub(super) struct RequestStartArgs {
+    #[arg(long, help = "Open parent request name or ID in the same private view")]
+    pub(super) base: Option<String>,
     #[arg(
         help = "Stable kebab-case request name, also the Git branch unless --current-branch is set"
     )]
@@ -75,6 +77,17 @@ pub(super) struct RequestStartArgs {
     pub(super) current_branch: bool,
     #[arg(long, value_parser = parse_view, help = "Request view: any view you can read (defaults to your repository view)")]
     pub(super) view: Option<ViewId>,
+}
+
+#[derive(Parser)]
+pub(super) struct RequestPushArgs {
+    #[command(flatten)]
+    pub(super) target: RequestTargetArgs,
+    #[arg(
+        long,
+        help = "Explicitly pin the current revision of the same parent after manual restacking"
+    )]
+    pub(super) base_revision: Option<String>,
 }
 
 #[derive(Args)]
@@ -330,6 +343,12 @@ pub(super) struct RequestCiArgs {
 
 #[derive(Parser)]
 pub(super) struct RequestDiffArgs {
+    #[arg(
+        long,
+        value_enum,
+        help = "Compare the pinned request layer, one push, or one commit"
+    )]
+    pub(super) comparison: Option<ComparisonArg>,
     #[command(flatten)]
     pub(super) target: RequestTargetArgs,
     #[arg(
@@ -345,10 +364,37 @@ pub(super) struct RequestDiffArgs {
     pub(super) commit: Option<String>,
     #[arg(
         long,
-        requires = "commit",
+        requires = "revision",
         help = "Show the old and new content for this file"
     )]
     pub(super) path: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, ValueEnum)]
+pub(super) enum ComparisonArg {
+    Request,
+    Push,
+    Commit,
+}
+
+impl From<scope_api_contract::RequestComparisonMode> for ComparisonArg {
+    fn from(mode: scope_api_contract::RequestComparisonMode) -> Self {
+        match mode {
+            scope_api_contract::RequestComparisonMode::Request => Self::Request,
+            scope_api_contract::RequestComparisonMode::Push => Self::Push,
+            scope_api_contract::RequestComparisonMode::Commit => Self::Commit,
+        }
+    }
+}
+
+impl ComparisonArg {
+    pub(super) fn wire(self) -> &'static str {
+        match self {
+            Self::Request => "request",
+            Self::Push => "push",
+            Self::Commit => "commit",
+        }
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]

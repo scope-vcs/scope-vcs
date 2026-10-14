@@ -164,12 +164,22 @@ fn queue_row_line(row: &QueueRow, now_unix: u64) -> String {
         ' '
     };
     format!(
-        "{marker}{:>5}  {} ({}) — {} · {}",
+        "{marker}{:>5}  {} ({}) — {} · {} · base {} · depth {} · {:?}",
         render::wait_label(Some(row.item.attention_at_unix), now_unix),
         terminal_text(&request.name),
         terminal_text(&request.id),
         terminal_text(&request.title),
-        reason_label(&row.item)
+        reason_label(&row.item),
+        match &request.base {
+            scope_api_contract::RequestBase::Main { .. } => "main".to_string(),
+            scope_api_contract::RequestBase::Request {
+                request_id,
+                revision_id,
+                ..
+            } => format!("{request_id}@{revision_id}"),
+        },
+        request.stack_depth,
+        request.stack_status
     )
 }
 
@@ -365,7 +375,7 @@ mod tests {
                 "attention_at_unix": 1_000,
                 "request": {
                     "id": "req_one", "name": "fix-refs", "title": "Fix refs",
-                    "author_role": "Public", "view": "public", "head_oid": "b".repeat(40),
+                    "base":{"kind":"main","review_base_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base_version":1,"stack_status":"main","stack_depth":1,"author_role": "Public", "view": "public", "head_oid": "b".repeat(40),
                     "state": "Open", "submitted_at_unix": 10, "updated_at_unix": 20,
                     "mergeability": {
                         "status": "NotMaintainer",
@@ -393,7 +403,7 @@ mod tests {
         let fresh = queue_row_line(&row(item("new_activity", serde_json::Value::Null)), 4_600);
         assert_eq!(
             fresh,
-            "●   1h  fix-refs (req_one) — Fix refs · New reply or revision"
+            "●   1h  fix-refs (req_one) — Fix refs · New reply or revision · base main · depth 1 · Main"
         );
         let claimed = queue_row_line(
             &row(item(
@@ -404,7 +414,7 @@ mod tests {
         );
         assert_eq!(
             claimed,
-            "   <1m  fix-refs (req_one) — Fix refs · Reviewing: @dana"
+            "   <1m  fix-refs (req_one) — Fix refs · Reviewing: @dana · base main · depth 1 · Main"
         );
     }
 

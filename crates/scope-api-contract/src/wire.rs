@@ -184,6 +184,7 @@ wire_enum!(RequestActorRole => DomainRequestActorRole { Public, Member, Owner })
 
 wire_enum!(RequestState => DomainRequestState { Draft, Open, Closed, Merged });
 wire_enum!(RequestEventKind => DomainRequestEventKind {
+    BaseRetargeted,
     Started,
     Submitted,
     RevisionPushed,
@@ -198,6 +199,11 @@ wire_enum!(RequestEventKind => DomainRequestEventKind {
     AutoMergeFulfilled,
 });
 wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
+    WaitingForParent,
+    ParentRewritten,
+    ParentClosed,
+    AncestorBlocked,
+    IntegrationConflict,
     Ready,
     RepositoryNotReady,
     Draft,
@@ -269,6 +275,11 @@ impl From<DomainRequestIdentityAuditFact> for RequestIdentityAuditFact {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub enum RequestEventPayload {
+    BaseRetargeted {
+        old_base: crate::RequestBase,
+        landed_head_oid: String,
+        main_oid: String,
+    },
     Started {
         identity: RequestIdentityAuditFact,
     },
@@ -321,9 +332,20 @@ pub enum RequestEventPayload {
     },
 }
 
-impl From<DomainRequestEventPayload> for RequestEventPayload {
-    fn from(value: DomainRequestEventPayload) -> Self {
-        match value {
+impl TryFrom<DomainRequestEventPayload> for RequestEventPayload {
+    type Error = crate::GitOidParseError;
+
+    fn try_from(value: DomainRequestEventPayload) -> Result<Self, Self::Error> {
+        Ok(match value {
+            DomainRequestEventPayload::BaseRetargeted {
+                old_base,
+                landed_head_oid,
+                main_oid,
+            } => Self::BaseRetargeted {
+                old_base: old_base.try_into()?,
+                landed_head_oid,
+                main_oid,
+            },
             DomainRequestEventPayload::Started { identity } => Self::Started {
                 identity: identity.into(),
             },
@@ -391,7 +413,7 @@ impl From<DomainRequestEventPayload> for RequestEventPayload {
                 head_oid,
                 main_oid,
             },
-        }
+        })
     }
 }
 

@@ -31,6 +31,9 @@ async fn a_reader_reconciles_a_committed_request_change_without_its_notification
         .metadata
         .requests()
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: ("a".repeat(40)).clone(),
+            },
             id: request_id.to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: "missed-notification".to_string(),

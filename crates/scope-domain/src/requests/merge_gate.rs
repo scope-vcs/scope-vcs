@@ -2,6 +2,7 @@ pub const GITHUB_CHECK_MERGE_FRESHNESS_SECS: u64 = 60;
 
 use super::access::request_merger;
 use super::{Request, RequestChecksOutcome, RequestState, RequestViewer};
+use crate::error::DomainError;
 use crate::repository::{
     RepoLifecycleState,
     access::{MainPushMode, RepositoryAccess},
@@ -23,6 +24,11 @@ pub enum RequestMergeabilityStatus {
     ChecksPending,
     ChecksFailed,
     ChecksConfigurationError,
+    WaitingForParent,
+    ParentRewritten,
+    ParentClosed,
+    AncestorBlocked,
+    IntegrationConflict,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,6 +124,7 @@ pub struct RequestMergeSubject<'a> {
     pub view: &'a ViewId,
     pub state: RequestState,
     pub has_git_snapshot: bool,
+    pub stack_status: super::RequestStackStatus,
 }
 
 impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
@@ -127,6 +134,7 @@ impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
             view: &request.view,
             state: request.state(),
             has_git_snapshot: request.git_snapshot.is_some(),
+            stack_status: request.stack_status,
         }
     }
 }
@@ -167,6 +175,9 @@ pub(super) fn evaluate_request_merge(
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
         ),
+        RequestState::Open if subject.stack_status != super::RequestStackStatus::Main => {
+            return request_stack_mergeability(subject.stack_status).unwrap();
+        }
         RequestState::Open => match checks {
             RequestChecksOutcome::Clear => (RequestMergeabilityStatus::Ready, None),
             RequestChecksOutcome::NotEvaluated => (
@@ -192,6 +203,79 @@ pub(super) fn evaluate_request_merge(
         },
     };
     RequestMergeability { status, reason }
+}
+
+fn request_stack_mergeability(status: super::RequestStackStatus) -> Option<RequestMergeability> {
+    let mergeability = match status {
+        super::RequestStackStatus::Main => return None,
+        super::RequestStackStatus::WaitingForParent | super::RequestStackStatus::ParentExtended => {
+            RequestMergeabilityStatus::WaitingForParent
+        }
+        super::RequestStackStatus::ParentRewritten => RequestMergeabilityStatus::ParentRewritten,
+        super::RequestStackStatus::ParentClosed => RequestMergeabilityStatus::ParentClosed,
+        super::RequestStackStatus::AncestorBlocked => RequestMergeabilityStatus::AncestorBlocked,
+        super::RequestStackStatus::IntegrationConflict => {
+            RequestMergeabilityStatus::IntegrationConflict
+        }
+    };
+    Some(RequestMergeability {
+        status: mergeability,
+        reason: status.blocking_reason(),
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequestMainPushCompletion {
+    Complete,
+    DeferUntilParentLands,
+}
+
+pub fn request_main_push_completion(
+    request: &Request,
+    contains_request_head: bool,
+) -> Result<RequestMainPushCompletion, DomainError> {
+    validate_containing_main_head(contains_request_head)?;
+    if matches!(request.base, super::RequestBase::Request { .. }) {
+        return Ok(RequestMainPushCompletion::DeferUntilParentLands);
+    }
+    validate_request_merge_execution(
+        request,
+        super::MergeRequestLanding::ContainingMain {
+            contains_request_head,
+        },
+    )?;
+    Ok(RequestMainPushCompletion::Complete)
+}
+
+fn validate_containing_main_head(contains_request_head: bool) -> Result<(), DomainError> {
+    if !contains_request_head {
+        return Err(DomainError::conflict(
+            "containing main must contain the request head",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_request_merge_execution(
+    request: &Request,
+    landing: super::MergeRequestLanding,
+) -> Result<(), DomainError> {
+    if let super::MergeRequestLanding::ContainingMain {
+        contains_request_head,
+    } = landing
+    {
+        validate_containing_main_head(contains_request_head)?;
+        if !matches!(request.base, super::RequestBase::Main { .. }) {
+            return Err(DomainError::conflict("parent request must land first"));
+        }
+        if request.stack_status == super::RequestStackStatus::IntegrationConflict {
+            return Ok(());
+        }
+    }
+    if let Some(decision) = request_stack_mergeability(request.stack_status) {
+        return Err(DomainError::conflict(decision.reason.unwrap()));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

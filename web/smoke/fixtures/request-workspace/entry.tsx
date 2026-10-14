@@ -18,7 +18,7 @@ const titles = [
   'Request without available actions',
 ]
 const items = titles.map((title, index) => ({
-  request: { id: `request-${index}`, title },
+  request: { id: `request-${index}`, title, base: { kind: 'main', review_base_oid: 'a'.repeat(40) }, base_version: 1, stack_status: 'main', stack_depth: 1 },
   author: { handle: 'adam' },
   attention: { group: 'needs_you', reason: 'authored', can_set_aside: index < 2 },
   attention_at_unix: Math.floor(Date.now() / 1000) - index * 480,

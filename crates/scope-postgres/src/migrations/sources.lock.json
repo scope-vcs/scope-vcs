@@ -2,5 +2,6 @@
   "m0084_bridged_ledger.txt": "1dd9f28a083911a952108567862711b834ad79f43daa28eeda870056f217ba2b",
   "m0084_current_schema_baseline.sql": "d0810cea8f62a57d1d0f6e26fa895f356bfcfa5a10ac7698621a3caeee64dd07",
   "m0084_request_review_bases.rs": "d2d1ecf325e5c636ada92b53aa00bb107dd9edb3904e42dfea073861f34db079",
-  "m0085_request_check_identity.rs": "f66c019c2e14ad3e3396b56ee600c0414b5fef9a8ee7f3b02ed7ba7fa18b5cff"
+  "m0085_request_check_identity.rs": "f66c019c2e14ad3e3396b56ee600c0414b5fef9a8ee7f3b02ed7ba7fa18b5cff",
+  "m0086_private_request_stacks.rs": "70820bb1a51c16859e2a6b456a303e220784e89dc2d0bb6cad328ab93a512eaf"
 }

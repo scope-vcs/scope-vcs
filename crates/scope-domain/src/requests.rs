@@ -1,5 +1,7 @@
 use crate::error::DomainError;
 
+mod stack;
+pub use stack::*;
 mod base;
 pub use base::RequestBase;
 pub mod comparison;
@@ -16,7 +18,8 @@ pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 pub mod merge_gate;
 pub use merge_gate::{
     GITHUB_CHECK_MERGE_FRESHNESS_SECS, MergeGateAuthority, MergeGateDecision, MergeGateInput,
-    RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus, evaluate_merge_gate,
+    RequestMainPushCompletion, RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus,
+    evaluate_merge_gate, request_main_push_completion,
 };
 mod access;
 pub use access::{
@@ -112,8 +115,8 @@ pub use ratings::{
 };
 mod submission;
 pub use submission::{
-    MergeRequestInput, RequestLifecycleMutation, SubmitRequestInput, lands_with_main,
-    merge_request, submit_request,
+    MergeRequestInput, MergeRequestLanding, RequestLifecycleMutation, SubmitRequestInput,
+    lands_with_main, merge_request, submit_request,
 };
 
 pub const REQUEST_REF_PREFIX: &str = "refs/heads/";

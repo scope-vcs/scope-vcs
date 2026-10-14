@@ -85,3 +85,90 @@ fn narrow_view_merge_authority_requires_the_current_author_and_push_grant() {
         );
     }
 }
+
+#[test]
+fn clear_checks_cannot_authorize_a_child_before_containing_parent_landing() {
+    use crate::requests::RequestStackStatus;
+    let views = Views::builtin();
+    let viewer = RequestViewer::new(
+        access(RepositoryActor::Owner, ViewId::private(), true),
+        Some("owner"),
+        false,
+    );
+    let mut request = open_request();
+    request.view = ViewId::private();
+    for (stack_status, expected) in [
+        (RequestStackStatus::Main, RequestMergeabilityStatus::Ready),
+        (
+            RequestStackStatus::WaitingForParent,
+            RequestMergeabilityStatus::WaitingForParent,
+        ),
+        (
+            RequestStackStatus::ParentExtended,
+            RequestMergeabilityStatus::WaitingForParent,
+        ),
+        (
+            RequestStackStatus::ParentRewritten,
+            RequestMergeabilityStatus::ParentRewritten,
+        ),
+        (
+            RequestStackStatus::ParentClosed,
+            RequestMergeabilityStatus::ParentClosed,
+        ),
+        (
+            RequestStackStatus::AncestorBlocked,
+            RequestMergeabilityStatus::AncestorBlocked,
+        ),
+        (
+            RequestStackStatus::IntegrationConflict,
+            RequestMergeabilityStatus::IntegrationConflict,
+        ),
+    ] {
+        request.stack_status = stack_status;
+        let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {
+            repository_lifecycle: RepoLifecycleState::Ready,
+            subject: (&request).into(),
+            viewer: &viewer,
+            views: &views,
+            checks: RequestChecksOutcome::Clear,
+        });
+        assert_eq!(gate.request_mergeability().unwrap().status, expected);
+        assert_eq!(
+            gate.authority().is_some(),
+            stack_status == RequestStackStatus::Main
+        );
+    }
+}
+
+#[test]
+fn containing_main_completion_requires_head_proof_and_defers_every_unlanded_parent() {
+    use crate::requests::{RequestBase, RequestStackStatus};
+    let mut child = open_request();
+    child.view = crate::views::ViewId::private();
+    child.base = RequestBase::Request {
+        request_id: "parent".into(),
+        revision_id: "parent-revision".into(),
+        head_oid: "parent-head".into(),
+    };
+    child.stack_depth = 2;
+    for status in [
+        RequestStackStatus::WaitingForParent,
+        RequestStackStatus::ParentExtended,
+        RequestStackStatus::ParentRewritten,
+        RequestStackStatus::ParentClosed,
+        RequestStackStatus::AncestorBlocked,
+        RequestStackStatus::IntegrationConflict,
+    ] {
+        child.stack_status = status;
+        assert_eq!(
+            request_main_push_completion(&child, false)
+                .unwrap_err()
+                .message,
+            "containing main must contain the request head"
+        );
+        assert_eq!(
+            request_main_push_completion(&child, true).unwrap(),
+            RequestMainPushCompletion::DeferUntilParentLands
+        );
+    }
+}

@@ -1,14 +1,13 @@
 use crate::{
     error::ApiError,
     git::{
-        command::{run_git, run_git_output},
+        command::run_git,
         import::{
             PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
             reviewed_update_from_staging_repo,
         },
         projection_repo::verify_projection_materialization,
         repository_git::RepositoryGit,
-        request_merge_tree::{MergedTree, merge_request_tree},
         request_ref_view_safety::{RequestView, validate_view_request_merge_range},
         request_refs::{
             RequestViewBases, attach_visible_request_refs, clone_without_shared_objects,
@@ -45,7 +44,9 @@ use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
 use scope_storage::StagedGitSegment;
 
 mod failures;
+mod tree;
 pub(crate) use failures::RequestMergeFailure;
+use tree::{MergeMainFailure, merge_main_oid_for_execution};
 
 pub(crate) struct MergeRequestCommand {
     pub(crate) owner: String,
@@ -77,6 +78,7 @@ pub(crate) struct PreparedRequestMerge {
     pub(crate) expected_repo_change_version: u64,
     pub(crate) prepared_request_head_oid: String,
     pub(crate) expected_merge_evidence: ExpectedRequestMergeEvidence,
+    pub(crate) stack_children: Vec<scope_postgres::db::RequestStackChildFacts>,
     pub(crate) origin: RequestMergeOrigin,
     pub(crate) landing_file_mutation: RepositoryLandingFileMutation,
     pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
@@ -276,6 +278,7 @@ async fn persist_prepared_merge(
             expected_repo_change_version: prepared.expected_repo_change_version,
             expected_request_head_oid: prepared.prepared_request_head_oid,
             expected_merge_evidence: prepared.expected_merge_evidence,
+            stack_children: prepared.stack_children,
             update: prepared.update.into_reviewed_update(),
             landing_file_mutation: prepared.landing_file_mutation,
             workflow_catalog: prepared.workflow_catalog,
@@ -450,6 +453,14 @@ async fn prepare_request_merge_for_execution(
             &["update-ref", "-d", &request_ref],
             "removing prepared request branch",
         )?;
+        let stack_children = super::request_stack_landing::prepare_stack_landing(
+            state,
+            &repo.incarnation(),
+            request,
+            &staging_repo,
+            &merged_main_oid,
+        )
+        .await?;
         let PreparedReceivePackUpdate {
             update,
             staged_segment,
@@ -512,6 +523,7 @@ async fn prepare_request_merge_for_execution(
             return Err(RequestMergeFailure::from(error));
         }
         Ok(PreparedRequestMerge {
+            stack_children,
             repository_id: repo.record.id.clone(),
             repository_incarnation: repo.incarnation(),
             expected_git_frontier: current.frontier(),
@@ -528,6 +540,32 @@ async fn prepare_request_merge_for_execution(
     }
     .await;
     let cleanup = remove_dir_if_exists(&staging_repo);
+    if matches!(&prepared, Err(RequestMergeFailure::MergeConflict(_))) {
+        match state
+            .metadata
+            .requests()
+            .mark_request_integration_conflict(
+                &request.id,
+                actor_user_id,
+                &request.head_oid,
+                request.base_version,
+                &current.head_oid,
+                unix_now()?,
+            )
+            .await
+        {
+            Ok(_) => {
+                state
+                    .publish_request_summary_refresh(
+                        &repo.incarnation(),
+                        RepoChangeReason::RequestStackUpdated,
+                    )
+                    .await
+            }
+            Err(error) if error.kind == scope_postgres::error::PostgresErrorKind::Conflict => {}
+            Err(error) => return Err(ApiError::from(error).into()),
+        }
+    }
     match (prepared, cleanup) {
         (Ok(value), Ok(())) => Ok(value),
         (Err(error), _) => Err(error),
@@ -609,79 +647,6 @@ fn merge_main_oid(
         request_name,
     )
     .map_err(MergeMainFailure::into_api_error)
-}
-
-enum MergeMainFailure {
-    Conflict(ApiError),
-    Other(ApiError),
-}
-
-impl MergeMainFailure {
-    #[cfg(test)]
-    fn into_api_error(self) -> ApiError {
-        match self {
-            Self::Conflict(error) | Self::Other(error) => error,
-        }
-    }
-}
-
-impl From<ApiError> for MergeMainFailure {
-    fn from(error: ApiError) -> Self {
-        Self::Other(error)
-    }
-}
-
-fn merge_main_oid_for_execution(
-    repo: &std::path::Path,
-    request_base_oid: &str,
-    current_main_oid: &str,
-    request_head_oid: &str,
-    request_name: &str,
-) -> Result<String, MergeMainFailure> {
-    run_git(
-        Some(repo),
-        &["config", "user.name", "Scope"],
-        "configuring request merge author",
-    )?;
-    run_git(
-        Some(repo),
-        &["config", "user.email", "merge@scope.local"],
-        "configuring request merge email",
-    )?;
-    let tree_oid =
-        match merge_request_tree(repo, request_base_oid, current_main_oid, request_head_oid)? {
-            MergedTree::Clean(tree_oid) => tree_oid,
-            MergedTree::Conflict(diagnostic) => {
-                return Err(MergeMainFailure::Conflict(ApiError::conflict(format!(
-                    "request cannot merge cleanly: {diagnostic}"
-                ))));
-            }
-        };
-    let message = format!("Merge request {request_name}");
-    let commit = run_git_output(
-        Some(repo),
-        &[
-            "commit-tree",
-            &tree_oid,
-            "-p",
-            current_main_oid,
-            "-p",
-            request_head_oid,
-            "-m",
-            &message,
-        ],
-        "creating request merge commit",
-    )?;
-    if !commit.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "creating request merge commit: {}",
-            String::from_utf8_lossy(&commit.stderr).trim()
-        ))
-        .into());
-    }
-    Ok(String::from_utf8(commit.stdout)
-        .map_err(ApiError::internal)
-        .map(|value| value.trim().to_string())?)
 }
 
 #[cfg(test)]

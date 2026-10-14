@@ -172,6 +172,11 @@ function RequestWorkspaceRow({
           >
             {request.title}
           </span>
+          {request.stack_depth > 1 ? (
+            <span className="block truncate text-[10px] text-muted-foreground">
+              Layer {request.stack_depth} · {request.base.kind === 'request' ? `Parent ${request.base.request_id}` : 'Main'}
+            </span>
+          ) : null}
           <span className="request-workspace-row-meta mt-[3px] flex items-center gap-2 text-xs leading-[1.4]">
             <span
               className={cn(

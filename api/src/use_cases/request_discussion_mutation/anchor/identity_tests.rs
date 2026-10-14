@@ -76,6 +76,7 @@ fn commit_paths_accept_a_root_commit() {
 fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
     let fixture = fixture();
     let revision = RequestRevision {
+        base_version: 1,
         id: "revision-1".to_string(),
         request_id: "request-1".to_string(),
         position: 1,

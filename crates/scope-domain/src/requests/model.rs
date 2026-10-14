@@ -26,6 +26,8 @@ pub struct Request {
     pub view: crate::views::ViewId,
     pub base: super::RequestBase,
     pub base_version: u64,
+    pub stack_status: super::RequestStackStatus,
+    pub stack_depth: u32,
     pub main_ancestor_oid: String,
     pub head_oid: String,
     pub git_snapshot: Option<SourceBlob>,
@@ -100,6 +102,7 @@ pub enum RequestEventKind {
     Started,
     Submitted,
     RevisionPushed,
+    BaseRetargeted,
     Merged,
     Closed,
     IdentityEdited,
@@ -131,6 +134,11 @@ pub enum RequestEventPayload {
         old_head_oid: String,
         new_head_oid: String,
         note: Option<String>,
+    },
+    BaseRetargeted {
+        old_base: super::RequestBase,
+        landed_head_oid: String,
+        main_oid: String,
     },
     Merged {
         head_oid: String,
@@ -191,6 +199,35 @@ pub struct RequestTimelineMutation {
 }
 
 pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
+    match &request.base {
+        super::RequestBase::Main { .. }
+            if request.stack_depth != 1
+                || !matches!(
+                    request.stack_status,
+                    super::RequestStackStatus::Main
+                        | super::RequestStackStatus::IntegrationConflict
+                ) =>
+        {
+            return Err(DomainError::conflict(
+                "main requests require layer depth one",
+            ));
+        }
+        super::RequestBase::Request {
+            request_id,
+            revision_id,
+            head_oid,
+        } if request_id.is_empty()
+            || revision_id.is_empty()
+            || head_oid.is_empty()
+            || request_id == &request.id
+            || request.stack_depth < 2
+            || request.stack_depth > super::REQUEST_STACK_MAX_DEPTH
+            || request.stack_status == super::RequestStackStatus::Main =>
+        {
+            return Err(DomainError::conflict("invalid request parent pin"));
+        }
+        _ => {}
+    }
     if request.base_version == 0 || request.base.review_base_oid().is_empty() {
         return Err(DomainError::conflict(
             "request requires a versioned review base",

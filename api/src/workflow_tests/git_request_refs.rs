@@ -136,6 +136,9 @@ async fn start_request_for_author(
         .metadata
         .requests()
         .start_request(StartRequestInput {
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: main_ancestor_oid.clone(),
+            },
             id: REQUEST_ID.to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: REQUEST_NAME.to_string(),
@@ -157,6 +160,8 @@ async fn insert_private_request_for_public_user(state: &AppState) {
         .metadata
         .requests()
         .insert_request_for_tests(Request {
+            stack_status: scope_domain::requests::RequestStackStatus::Main,
+            stack_depth: 1,
             id: PRIVATE_REQUEST_ID.to_string(),
             repo_id: TEST_REPO_ID.to_string(),
             name: "private-request".to_string(),

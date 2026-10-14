@@ -280,6 +280,32 @@ pub(crate) async fn start_request(
     let main_ancestor_oid = current_main_oid_for_view(&state, &repo, view.clone())
         .await?
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
+    let base = match input.base {
+        Some(scope_api_contract::RequestBase::Request {
+            request_id,
+            revision_id,
+            head_oid,
+        }) => scope_domain::requests::RequestBase::Request {
+            request_id,
+            revision_id,
+            head_oid: head_oid.as_str().to_string(),
+        },
+        Some(scope_api_contract::RequestBase::Main { review_base_oid })
+            if review_base_oid.as_str() == main_ancestor_oid =>
+        {
+            scope_domain::requests::RequestBase::Main {
+                review_base_oid: review_base_oid.as_str().to_string(),
+            }
+        }
+        Some(scope_api_contract::RequestBase::Main { .. }) => {
+            return Err(ApiError::conflict(
+                "main-based request must start at current main",
+            ));
+        }
+        None => scope_domain::requests::RequestBase::Main {
+            review_base_oid: main_ancestor_oid.clone(),
+        },
+    };
     let current_main_oid = current_main_oid_for_context(&state, &repo.context).await?;
     let request_id = crate::persistence_ids::generate_prefixed_id("req")?;
     let now_unix = unix_now()?;
@@ -295,6 +321,7 @@ pub(crate) async fn start_request(
             author_role: request_actor_role(access.clone()),
             author_view: access.view.clone(),
             view,
+            base,
             main_ancestor_oid,
             event_id: crate::persistence_ids::generate_prefixed_id("event_request_started")?,
             now_unix,

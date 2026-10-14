@@ -3,6 +3,7 @@ use crate::requests::{RequestBase, fixtures::source_blob};
 
 fn revision() -> RequestRevision {
     RequestRevision {
+        base_version: 1,
         id: "revision".into(),
         request_id: "request".into(),
         position: 2,
@@ -25,16 +26,19 @@ fn request_review_and_push_history_have_distinct_boundaries() {
     let request = RequestComparison::request(&revision, ViewId::private());
     let push = RequestComparison::push(&revision, ViewId::private());
     assert_eq!(
-        request.membership().excluded_ancestor_oid(),
+        request.membership().excluded_ancestor_oids()[0],
         "saved-review-base"
     );
-    assert_eq!(push.membership().excluded_ancestor_oid(), "previous-head");
+    assert_eq!(
+        push.membership().excluded_ancestor_oids()[0],
+        "previous-head"
+    );
     assert_eq!(request.membership().head_oid(), "head");
     assert_eq!(push.membership().head_oid(), "head");
     revision.rewrote_history = true;
     let rewrite = RequestComparison::push(&revision, ViewId::private());
     assert_eq!(
-        rewrite.membership().excluded_ancestor_oid(),
+        rewrite.membership().excluded_ancestor_oids()[0],
         "saved-review-base"
     );
     revision.main_ancestor_oid = "new-main".into();
@@ -100,4 +104,25 @@ fn commit_comparison_uses_its_first_parent_and_keeps_revision_and_view_identity(
         comparison.identity(),
         RequestComparison::push(&revision, ViewId::private()).identity()
     );
+}
+
+#[test]
+fn extending_push_excludes_new_parent_history_as_well_as_previous_child_head() {
+    let mut revision = revision();
+    revision.base = RequestBase::Request {
+        request_id: "parent".into(),
+        revision_id: "parent-revision".into(),
+        head_oid: "new-parent-head".into(),
+    };
+    let comparison = RequestComparison::push(&revision, ViewId::private());
+    assert_eq!(
+        comparison.membership().excluded_ancestor_oids(),
+        &["previous-head", "new-parent-head"]
+    );
+    let parent_commit = RequestCommitMembershipFacts {
+        exists: true,
+        ancestor_of_head: true,
+        ancestor_of_excluded_boundary: true,
+    };
+    assert!(!comparison.membership().contains_commit(parent_commit));
 }

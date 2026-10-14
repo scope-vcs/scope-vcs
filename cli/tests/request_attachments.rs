@@ -729,7 +729,7 @@ fn request_json(description: &str) -> Value {
     json!({
         "id":"req_one","name":"fix-one","title":"Fix one","description_markdown":description,
         "author_user_id":"usr_test","author_role":"Owner","view":"private",
-        "base":{"kind":"main","review_base_oid":OID},"base_version":1,"main_ancestor_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,
+        "base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"main_ancestor_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,
         "submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,
         "merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,
         "created_at_unix":1,"updated_at_unix":2,"invitees":[],

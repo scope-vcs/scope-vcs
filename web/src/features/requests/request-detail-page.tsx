@@ -29,6 +29,7 @@ import type {
   AuthorizeRequestAutoMergeInput,
   CancelRequestAutoMergeInput,
 } from './request-auto-merge-api'
+import { RequestStackContext } from './request-stack-context'
 import { RequestChecksSection } from './request-checks-section'
 import { RequestCiApproval } from './request-ci-approval'
 import { RequestDetailHeader } from './request-detail-header'
@@ -260,6 +261,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             {requestActions.error ?? autoMerge.error ?? stateError}
           </p>
         ) : null}
+        <RequestStackContext request={request} params={params} />
         <RequestChecksSection
           checks={checks.checks}
           error={checks.error}

@@ -161,6 +161,12 @@ routes! {
             );
         REPO_FILES = "/v1/repos/{owner}/{repo}/files" => "repoFiles";
         REPO_FILE_CONTENT = "/v1/repos/{owner}/{repo}/files/content" => "repoFileContent";
+        REPO_REQUEST_REVISION_CONTEXT = "/v1/repos/{owner}/{repo}/requests/{request_id}/revision-context"
+            => "repoRequestRevisionContext",
+            repo_request_revision_context(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_REVISION_FILE_DIFF = "/v1/repos/{owner}/{repo}/requests/{request_id}/changes/{revision_id}/file-diff"
+            => "repoRequestRevisionFileDiff",
+            repo_request_revision_file_diff(owner: &str, repo: &str, request_id: &str, revision_id: &str);
         REPO_REQUEST_REVISIONS = "/v1/repos/{owner}/{repo}/requests/{request_id}/changes"
             => "repoRequestRevisions",
             repo_request_revisions(owner: &str, repo: &str, request_id: &str);

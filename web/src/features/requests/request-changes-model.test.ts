@@ -8,6 +8,7 @@ import {
   requestCommitForListId,
   requestChangeSelection,
   requestRevisionPin,
+  requestChangesPresentation,
 } from './request-changes-model'
 import type { RequestRevisionListResponse } from '@/api/types.generated'
 
@@ -137,6 +138,61 @@ test('orders matching commit and revision discussions chronologically', () => {
   )
 })
 
+for (const view of ['public', 'restricted']) {
+  test(`${view} push changes retain visible commit files when aggregate inspection is absent`, () => {
+    const response: RequestRevisionListResponse = {
+      comparison: null,
+      has_earlier_revisions: false,
+      review_revision_id: 'revision-1',
+      revisions,
+    }
+    for (const search of [{}, { comparison: 'push' as const }, { comparison: 'request' as const }]) {
+      const model = requestChangesPresentation(response, search, view, 'repo', false)
+      assert.equal(model.error, null)
+      assert.equal(model.mode, 'push')
+      assert.equal(model.diffMode, 'commit')
+      assert.equal(model.selectedCommitOid, 'commit-b')
+      assert.equal(model.selectedCommit?.message, 'Commit commit-b')
+      assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/commit-b.txt'])
+      assert.deepEqual(model.commits.map(({ logical_commit_id }) => logical_commit_id), ['commit-b', 'commit-a'])
+    }
+    const selected = requestChangesPresentation(response, { comparison: 'push', commit: 'commit-a' }, view, 'repo', false)
+    assert.equal(selected.selectedCommitOid, 'commit-a')
+    assert.deepEqual(selected.selectedCommit?.files.map(({ path }) => path), ['/commit-a.txt'])
+  })
+}
+
+test('private commit comparison uses inspected files while retaining the bounded commit metadata', () => {
+  const bounded = revision('revision-budget', 1, ['commit-selected'])
+  const commit = bounded.commits[0]
+  const inspectedFiles = commit.files
+  commit.files = []
+  commit.change_count = 501
+  commit.files_truncated = true
+  const response: RequestRevisionListResponse = {
+    comparison: {
+      revision_id: bounded.id,
+      mode: 'commit',
+      base_oid: 'base',
+      head_oid: commit.oid,
+      files: inspectedFiles,
+      inspection: 'Incomplete',
+    },
+    has_earlier_revisions: false,
+    review_revision_id: bounded.id,
+    revisions: [bounded],
+  }
+  const model = requestChangesPresentation(response, { comparison: 'commit', commit: commit.oid }, 'private', 'repo', true)
+  assert.equal(model.error, null)
+  assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/commit-selected.txt'])
+  assert.deepEqual(model.selectedCommitSummary?.files.map(({ path }) => path), ['commit-selected.txt'])
+  assert.equal(model.selectedCommit?.change_count, 501)
+  assert.equal(model.selectedCommit?.files_truncated, true)
+  assert.equal(model.selectedCommit?.author, commit.author)
+  assert.equal(model.selectedCommit?.message, commit.message)
+  assert.equal(model.selectedCommit?.logical_commit_id, commit.oid)
+})
+
 function revision(
   id: string,
   position: number,
@@ -144,6 +200,8 @@ function revision(
   inspection: RequestRevisionListResponse['revisions'][number]['inspection'] = 'Complete',
 ) {
   return {
+    base: { kind: 'main' as const, review_base_oid: 'base' },
+    base_version: 1,
     actor: { handle: 'adam', id: 'user-1' },
     commits: commits.map((oid) => ({
       author: 'Adam <adam@example.com>',

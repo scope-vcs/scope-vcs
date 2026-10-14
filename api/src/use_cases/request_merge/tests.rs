@@ -1,5 +1,5 @@
 use super::*;
-use crate::git::test_repo::TestRepo;
+use crate::git::{command::run_git_output, test_repo::TestRepo};
 use std::{fs, path::Path};
 
 #[test]

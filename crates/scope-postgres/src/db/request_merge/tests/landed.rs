@@ -16,6 +16,7 @@ const PUSH_PATHS: [PushPath; 2] = [PushPath::ContentOnly, PushPath::General];
 
 fn candidate(id: &str) -> LandedRequestCandidate {
     LandedRequestCandidate {
+        stack_children: Vec::new(),
         request_id: id.into(),
         head_oid: REQUEST_HEAD.into(),
     }

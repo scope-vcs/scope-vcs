@@ -134,6 +134,7 @@ pub(super) async fn record_github_checks(
     let request = stored_request(state, request_id).await;
     let revision = requests
         .record_request_revision(scope_domain::requests::RecordRequestRevisionInput {
+            new_base: None,
             request_id: request.id.clone(),
             actor_user_id: test_owner_id(),
             actor_can_edit: true,

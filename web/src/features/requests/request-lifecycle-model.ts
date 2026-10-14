@@ -8,14 +8,15 @@ export function canMergeRequest(request: RequestSummaryResponse) {
   return request.permissions.can_merge && request.mergeability.status === 'Ready'
 }
 
-export function checksHoldRequestMerge(request: RequestSummaryResponse) {
+export function requestMergeHeld(request: RequestSummaryResponse) {
   return request.permissions.can_merge &&
-    request.mergeability.status.startsWith('Checks')
+    (request.mergeability.status.startsWith('Checks') ||
+      ['WaitingForParent', 'ParentRewritten', 'ParentClosed', 'AncestorBlocked', 'IntegrationConflict'].includes(request.mergeability.status))
 }
 
 export function hasRequestLifecycleActions(request: RequestSummaryResponse) {
   return request.permissions.can_submit || canMergeRequest(request) ||
-    checksHoldRequestMerge(request)
+    requestMergeHeld(request)
 }
 
 export function hasRequestAutoMergeActions(

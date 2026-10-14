@@ -282,6 +282,14 @@ pub fn router(state: AppState) -> Router {
             get(http::request_review::list_request_revisions),
         )
         .route(
+            routes::REPO_REQUEST_REVISION_CONTEXT,
+            post(http::request_revision_context::publish),
+        )
+        .route(
+            routes::REPO_REQUEST_REVISION_FILE_DIFF,
+            get(http::request_review::get_request_revision_file_diff),
+        )
+        .route(
             routes::REPO_REQUEST_REVISION_COMMIT_FILE_DIFF,
             get(http::request_review::get_request_revision_commit_file_diff),
         )

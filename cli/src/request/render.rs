@@ -175,6 +175,23 @@ pub(super) fn request_detail_lines(request: &RequestSummaryResponse, views: &Vie
             short_oid(&request.head_oid)
         ),
     ];
+    lines.push(format!(
+        "  stack: depth {} · {:?}",
+        request.stack_depth, request.stack_status
+    ));
+    lines.push(match &request.base {
+        scope_api_contract::RequestBase::Main { review_base_oid } => {
+            format!("  base: main @ {}", short_oid(review_base_oid))
+        }
+        scope_api_contract::RequestBase::Request {
+            request_id,
+            revision_id,
+            head_oid,
+        } => format!(
+            "  base: {request_id} @ {revision_id} ({})",
+            short_oid(head_oid)
+        ),
+    });
     if !request.description_markdown.trim().is_empty() {
         lines.push(format!(
             "  description: {}",
@@ -226,6 +243,15 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
     let mut lines = Vec::new();
     for event in events {
         let action = match &event.payload {
+            RequestEventPayload::BaseRetargeted {
+                landed_head_oid,
+                main_oid,
+                ..
+            } => format!(
+                "Parent landed · head {} · main {}",
+                short_oid(landed_head_oid),
+                short_oid(main_oid)
+            ),
             RequestEventPayload::Started { .. } => "Started request".to_string(),
             RequestEventPayload::Submitted { head_oid } => {
                 format!("Submitted · head {}", short_oid(head_oid))
@@ -475,6 +501,14 @@ fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> String {
             .reason
             .clone()
             .unwrap_or_else(|| "request branch has not been pushed".to_string()),
+        RequestMergeabilityStatus::WaitingForParent
+        | RequestMergeabilityStatus::ParentRewritten
+        | RequestMergeabilityStatus::ParentClosed
+        | RequestMergeabilityStatus::AncestorBlocked
+        | RequestMergeabilityStatus::IntegrationConflict => mergeability
+            .reason
+            .clone()
+            .unwrap_or_else(|| "request dependency blocks merge".to_string()),
         RequestMergeabilityStatus::ChecksNotEvaluated
         | RequestMergeabilityStatus::ChecksAwaitingApproval
         | RequestMergeabilityStatus::ChecksPending

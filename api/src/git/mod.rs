@@ -270,6 +270,13 @@ async fn receive_pack_request(
     request: Request,
     access: ReceivePackAccess,
 ) -> Response {
+    let base_publication =
+        match crate::use_cases::request_base_publication::RequestBasePublicationHeaders::parse(
+            &headers,
+        ) {
+            Ok(publication) => publication,
+            Err(error) => return git_error_response(error),
+        };
     let content_type = headers
         .get(CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -292,9 +299,12 @@ async fn receive_pack_request(
         &state,
         &org,
         &repo,
-        request.into_body(),
-        content_length,
-        content_type,
+        ReceivePackBody {
+            body: request.into_body(),
+            content_length,
+            content_type,
+        },
+        base_publication,
         access,
     )
     .await
@@ -432,26 +442,34 @@ pub(crate) async fn handle_git_receive_pack(
     Ok(cgi.into_response())
 }
 
+struct ReceivePackBody {
+    body: Body,
+    content_length: Option<u64>,
+    content_type: Option<String>,
+}
+
 async fn handle_git_receive_pack_body(
     state: &AppState,
     owner: &str,
     repo_name: &str,
-    body: Body,
-    content_length: Option<u64>,
-    content_type: Option<String>,
+    input: ReceivePackBody,
+    base_publication: Option<
+        crate::use_cases::request_base_publication::RequestBasePublicationHeaders,
+    >,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
-    let preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
+    let mut preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
+    preparation.base_publication = base_publication;
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo.clone());
     let receive_started_at = Instant::now();
     let cgi = git_http_backend_streaming(
         &staging_repo,
         "git-receive-pack",
-        body,
-        content_length,
+        input.body,
+        input.content_length,
         MAX_RECEIVE_PACK_BYTES,
-        content_type,
+        input.content_type,
         &remote_user,
     )
     .await?;

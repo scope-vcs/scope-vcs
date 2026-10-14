@@ -19,11 +19,18 @@ pub struct SubmitRequestInput {
     pub now_unix: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MergeRequestLanding {
+    NativeMerge,
+    ContainingMain { contains_request_head: bool },
+}
+
 #[derive(Clone, Debug)]
 pub struct MergeRequestInput {
     pub request_id: String,
     pub actor_user_id: String,
     pub actor_is_maintainer: bool,
+    pub landing: MergeRequestLanding,
     pub merged_head_oid: String,
     pub merged_main_oid: String,
     pub merged_event_id: String,
@@ -87,6 +94,7 @@ pub fn merge_request(
     if request.state() != RequestState::Open {
         return Err(DomainError::conflict("only open requests can be merged"));
     }
+    super::merge_gate::validate_request_merge_execution(request, input.landing)?;
     if input.merged_head_oid != request.head_oid {
         return Err(DomainError::conflict(
             "request branch changed before merge completed",
@@ -94,6 +102,7 @@ pub fn merge_request(
     }
 
     let mut next = request.clone();
+    next.stack_status = super::RequestStackStatus::Main;
     next.merged_at_unix = Some(input.now_unix);
     next.merged_by_user_id = Some(input.actor_user_id.clone());
     next.merged_head_oid = Some(input.merged_head_oid.clone());
@@ -118,7 +127,7 @@ pub fn merge_request(
 }
 
 pub fn lands_with_main(request: &Request) -> bool {
-    request.state() == RequestState::Open && request.head_oid != request.main_ancestor_oid
+    request.state() == RequestState::Open && request.head_oid != request.base.review_base_oid()
 }
 
 fn validate_command(request: &Request, request_id: &str, actor: &str) -> Result<(), DomainError> {
@@ -153,3 +162,6 @@ fn append_event(
         created_at_unix: now,
     })
 }
+
+#[cfg(test)]
+mod tests;

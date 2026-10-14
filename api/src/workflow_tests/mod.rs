@@ -88,6 +88,7 @@ mod request_attachments;
 mod request_attention;
 mod request_auto_merge;
 mod request_discussions;
+mod request_stacks_publication;
 mod requests;
 mod run_inspection;
 mod run_resources;

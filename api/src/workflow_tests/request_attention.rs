@@ -223,6 +223,7 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
         .metadata
         .requests()
         .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
             request_id: "req_attention_activity".to_string(),
             actor_user_id: author_id,
             actor_can_edit: true,

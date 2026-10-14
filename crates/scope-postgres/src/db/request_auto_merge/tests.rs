@@ -514,6 +514,7 @@ async fn open_request_with_revision(store: &super::super::MetadataStore) -> Stri
     store
         .requests()
         .record_request_revision(RecordRequestRevisionInput {
+            new_base: None,
             request_id: "req_1".into(),
             actor_user_id: "user_public".into(),
             actor_can_edit: true,

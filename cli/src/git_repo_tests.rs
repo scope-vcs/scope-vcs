@@ -59,6 +59,7 @@ fn authenticated_git_plans_keep_secrets_in_numbered_environment_config() {
             "refs/heads/requests/fix",
             "0987654321098765432109876543210987654321",
             "scope_cli_secret",
+            &[],
             Some(2),
         ),
         &[

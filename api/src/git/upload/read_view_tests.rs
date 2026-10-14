@@ -9,6 +9,8 @@ use scope_domain::{content::SourceBlob, requests::RequestActorRole};
 
 fn request(name: &str, head: &str, git_snapshot: Option<SourceBlob>) -> Request {
     Request {
+        stack_status: scope_domain::requests::RequestStackStatus::Main,
+        stack_depth: 1,
         id: format!("request-{name}"),
         repo_id: "repo".into(),
         name: name.into(),

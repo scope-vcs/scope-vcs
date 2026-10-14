@@ -15,6 +15,10 @@ const calls: unknown[] = []
 Object.assign(window, { calls })
 
 const request = {
+  base: { kind: 'main', review_base_oid: 'b'.repeat(40) },
+  base_version: 1,
+  stack_status: 'main',
+  stack_depth: 1,
   author_role: 'Member',
   view: 'private',
   head_oid: headOid,

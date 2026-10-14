@@ -41,9 +41,10 @@ export function discussionReferenceQuery(
 }
 
 export function selectedDiscussionReferenceQuery(
-  params: RequestParams & { commit_oid?: string; revision_id?: string },
+  params: RequestParams & { commit_oid?: string; revision_id?: string; comparison?: string },
   revisions: RequestRevisionListResponse,
 ) {
+  if (params.comparison !== 'commit' && !params.commit_oid) return null
   const { revision, commit } = requestChangeSelection(
     revisions.revisions,
     revisions.review_revision_id,

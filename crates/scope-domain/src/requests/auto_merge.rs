@@ -168,7 +168,13 @@ pub fn request_auto_merge_readiness(gate: super::MergeGateDecision) -> RequestAu
         RequestMergeabilityStatus::MissingRequestBranch => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::RequestBranchMissing)
         }
-        RequestMergeabilityStatus::Draft | RequestMergeabilityStatus::Merged => {
+        RequestMergeabilityStatus::WaitingForParent
+        | RequestMergeabilityStatus::ParentRewritten
+        | RequestMergeabilityStatus::ParentClosed
+        | RequestMergeabilityStatus::AncestorBlocked
+        | RequestMergeabilityStatus::IntegrationConflict
+        | RequestMergeabilityStatus::Draft
+        | RequestMergeabilityStatus::Merged => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::RequestChanged)
         }
     }
@@ -402,6 +408,9 @@ fn request_auto_merge_eligibility(
         return Err(DomainError::forbidden(
             "auto-merge needs someone who may merge this request",
         ));
+    }
+    if matches!(request.base, super::RequestBase::Request { .. }) {
+        return Err(DomainError::conflict("stack auto-merge is not available"));
     }
     if request.state() != RequestState::Open {
         return Err(DomainError::conflict(

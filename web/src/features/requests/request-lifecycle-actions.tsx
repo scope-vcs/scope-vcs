@@ -7,7 +7,7 @@ import { RequestConfirmDialog } from './request-confirm-dialog'
 import { RequestAutoMergeActions } from './request-auto-merge-actions'
 import {
   canMergeRequest,
-  checksHoldRequestMerge,
+  requestMergeHeld,
   hasRequestAutoMergeActions,
   hasRequestLifecycleActions,
   requestSubmitsForReview,
@@ -39,7 +39,7 @@ export function RequestLifecycleActions({
   const busy = actions.pending !== null || autoMerge.pending !== null
   const permissions = request.permissions
   const canMerge = canMergeRequest(request)
-  const checksHoldMerge = checksHoldRequestMerge(request)
+  const mergeHeld = requestMergeHeld(request)
   const publicRequest = requestSubmitsForReview(request)
   const submitLabel = publicRequest ? 'Request review' : 'Mark ready'
 
@@ -74,9 +74,9 @@ export function RequestLifecycleActions({
           request={request}
           viewerId={viewerId}
         />
-        {checksHoldMerge && !autoMerge.status.can_enable &&
+        {mergeHeld && !autoMerge.status.can_enable &&
           autoMerge.status.intent?.status !== 'Active' ? (
-          <Button disabled size="sm" type="button" variant="success">
+          <Button disabled size="sm" title={request.mergeability.reason ?? request.mergeability.status} type="button" variant="success">
             Merge
           </Button>
         ) : null}

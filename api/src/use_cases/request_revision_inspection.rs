@@ -154,8 +154,15 @@ pub(crate) fn request_commit_membership_facts(
     const ACTION: &str = "validating request revision commit";
     let ancestor_of_head =
         exists && git_is_ancestor(raw_repo, commit_oid, range.head_oid(), ACTION)?;
-    let ancestor_of_excluded_boundary = ancestor_of_head
-        && git_is_ancestor(raw_repo, commit_oid, range.excluded_ancestor_oid(), ACTION)?;
+    let mut ancestor_of_excluded_boundary = false;
+    if ancestor_of_head {
+        for boundary in range.excluded_ancestor_oids() {
+            if git_is_ancestor(raw_repo, commit_oid, boundary, ACTION)? {
+                ancestor_of_excluded_boundary = true;
+                break;
+            }
+        }
+    }
     Ok(RequestCommitMembershipFacts {
         exists,
         ancestor_of_head,
