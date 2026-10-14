@@ -74,14 +74,18 @@ export function RepositoryFileNavigator({
             setActiveIndex(0)
           }}
           onKeyDown={(event) => {
-            if (!searching || !matches.length) return
+            if (!query.trim()) return
+            const fresh = query === deferredQuery
+            const results = fresh ? matches : matchingRepositoryFiles(files, query).shown
+            const selected = fresh ? active : 0
+            if (!results.length) return
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
               event.preventDefault()
               const direction = event.key === 'ArrowDown' ? 1 : -1
-              setActiveIndex((active + direction + matches.length) % matches.length)
+              setActiveIndex((selected + direction + results.length) % results.length)
             } else if (event.key === 'Enter') {
               event.preventDefault()
-              openFile(matches[active].path)
+              openFile(results[selected].path)
             }
           }}
           onOpen={onOpenNavigation}
