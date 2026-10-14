@@ -45,6 +45,56 @@ fn groups_split_active_rows_by_who_acts_next() {
 }
 
 #[test]
+fn next_step_follows_mergeability_for_the_author_and_attention_for_others() {
+    use RequestAttentionReason as Reason;
+    use RequestMergeabilityStatus as Status;
+    use RequestQueueNextStep as Step;
+    let author = Some("author");
+    for (status, expected) in [
+        (Status::Ready, Step::Merge),
+        (Status::ChecksFailed, Step::FixChecks),
+        (Status::ChecksConfigurationError, Step::FixChecks),
+        (Status::IntegrationConflict, Step::Update),
+        (Status::NeedsMainUpdate, Step::Update),
+        (Status::ParentRewritten, Step::Update),
+        (Status::ParentClosed, Step::Update),
+        (Status::ChecksPending, Step::Wait),
+        (Status::WaitingForParent, Step::Wait),
+        (Status::Draft, Step::Wait),
+    ] {
+        assert_eq!(
+            request_queue_next_step(author, author, Reason::NewActivity, status),
+            expected,
+            "{status:?}"
+        );
+    }
+    for (reason, expected) in [
+        (Reason::Invited, Step::Review),
+        (Reason::Claimed, Step::Review),
+        (Reason::Unclaimed, Step::Review),
+        (Reason::NewActivity, Step::Reply),
+        (Reason::Restored, Step::Revisit),
+        (Reason::SnoozeExpired, Step::Revisit),
+        (Reason::ClaimedElsewhere, Step::Wait),
+        (Reason::Merged, Step::Done),
+    ] {
+        assert_eq!(
+            request_queue_next_step(author, Some("reviewer"), reason, Status::ChecksFailed),
+            expected,
+            "{reason:?}"
+        );
+    }
+    assert_eq!(
+        request_queue_next_step(author, author, Reason::Closed, Status::Closed),
+        Step::Done
+    );
+    assert_eq!(
+        request_queue_next_step(None, None, Reason::Open, Status::Ready),
+        Step::Wait
+    );
+}
+
+#[test]
 fn personal_set_aside_precedes_retained_claim_and_other_activity_reactivates() {
     let request = open_request();
     let waiting = attention(&request, RequestAttentionState::Waiting);

@@ -8,7 +8,7 @@ import { NavigationSearch } from '@/components/navigation-search'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { cn } from '@/lib/utils'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronRight, CircleCheck, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import {
   useCallback,
@@ -30,6 +30,7 @@ import {
 import {
   REQUEST_ATTENTION_GROUP_LABELS,
   REQUEST_ATTENTION_GROUP_ORDER,
+  REQUEST_MERGE_STEP_LABELS,
   requestAgeLabel,
   requestAttentionLabel,
   type RequestAttentionGroup,
@@ -40,6 +41,13 @@ import './request-workspace-sidebar.css'
 type QueueRow = { item: RequestQueueItemResponse; section: RequestQueueSection }
 
 const RAIL_AVATARS = 6
+
+const FOLDED_LABELS = {
+  needs_you: 'need you',
+  waiting: 'waiting',
+  unclaimed: 'unclaimed',
+  set_aside: 'set aside',
+} as const
 
 const EMPTY_LABELS: Record<RequestAttentionGroup, string> = {
   needs_you: 'You’re caught up.',
@@ -89,7 +97,7 @@ export function RequestWorkspaceSidebar({
   const aside = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
-  const [hint, setHint] = useState<{ id: string; left: number; top: number; now: number } | null>(null)
+  const [hint, setHint] = useState<{ key: string; left: number; top: number; now: number } | null>(null)
   const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
   const openRail = useCallback(() => {
     setOpen(true)
@@ -156,12 +164,15 @@ export function RequestWorkspaceSidebar({
     else if (state === 'open' && target.closest('a')) close()
   }
   function showHint(event: ReactPointerEvent | FocusEvent) {
-    const row = (event.target as Element).closest<HTMLElement>('.request-workspace-row[data-rail]')
-    const avatar = row?.querySelector('.request-workspace-row-avatar')
-    if (state !== 'closed' || !row?.dataset.requestId || !avatar) return setHint(null)
-    const { top, height } = avatar.getBoundingClientRect()
+    const target = (event.target as Element).closest<HTMLElement>(
+      '[data-rail-hint], .request-workspace-row[data-rail]',
+    )
+    const anchor = target?.dataset.railHint ? target : target?.querySelector('.request-workspace-row-avatar')
+    const key = target?.dataset.railHint ?? target?.dataset.requestId
+    if (state !== 'closed' || !key || !anchor) return setHint(null)
+    const { top, height } = anchor.getBoundingClientRect()
     setHint({
-      id: row.dataset.requestId,
+      key,
       left: event.currentTarget.getBoundingClientRect().right + 3,
       top: top + height / 2,
       now: Math.floor(Date.now() / 1000),
@@ -186,6 +197,7 @@ export function RequestWorkspaceSidebar({
   const activeHasMore = Boolean(pages?.active.next_cursor)
   const activeCount = (value: number) => pages ? `${value}${activeHasMore ? '+' : ''}` : null
   const needsYou = grouped.needs_you
+  const caughtUp = Boolean(pages) && needsYou.length === 0 && !activeHasMore
   const current = searching
     ? undefined
     : allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
@@ -216,9 +228,34 @@ export function RequestWorkspaceSidebar({
   ]
   const railed = needsYou.filter(
     (row, index) => index < RAIL_AVATARS || row.item.request.id === selectedId,
-  ).length
-  const folded = allRows.length - railed - Number(Boolean(current))
-  const hinted = hint && state === 'closed' ? allRows.find((row) => row.item.request.id === hint.id) : undefined
+  )
+  const foldedGroups = (Object.keys(FOLDED_LABELS) as (keyof typeof FOLDED_LABELS)[])
+    .map((group) => ({
+      group,
+      count: grouped[group].filter((row) => row !== current && !railed.includes(row)).length,
+    }))
+    .filter(({ count }) => count > 0)
+  const folded = foldedGroups.reduce((total, { count }) => total + count, 0)
+  const hinted = hint && state === 'closed' ? railHint(hint.key, hint.now) : undefined
+  function railHint(key: string, now: number) {
+    if (key === 'needs-you')
+      return {
+        title: `${REQUEST_ATTENTION_GROUP_LABELS.needs_you} · ${activeCount(needsYou.length)}`,
+        details: caughtUp ? [EMPTY_LABELS.needs_you] : [],
+      }
+    if (key === 'folded')
+      return {
+        title: `${folded} more open`,
+        details: foldedGroups.map(({ group, count }) => `${count} ${FOLDED_LABELS[group]}`),
+      }
+    const row = allRows.find((row) => row.item.request.id === key)
+    if (!row) return undefined
+    const label = REQUEST_MERGE_STEP_LABELS[row.item.next_step] ?? requestAttentionLabel(row.item, true)
+    return {
+      title: row.item.request.title,
+      details: [`${label} · ${requestAgeLabel(row.item.attention_at_unix, now, true)}`],
+    }
+  }
   return (
     <aside
       aria-label="Requests workspace"
@@ -240,11 +277,12 @@ export function RequestWorkspaceSidebar({
             className="request-workspace-rail-hint"
             style={{ left: hint.left, top: hint.top }}
           >
-            <span className="block font-medium">{hinted.item.request.title}</span>
-            <span className="block text-muted-foreground">
-              {requestAttentionLabel(hinted.item, true)} ·{' '}
-              {requestAgeLabel(hinted.item.attention_at_unix, hint.now, true)}
-            </span>
+            <span className="block font-medium">{hinted.title}</span>
+            {hinted.details.map((detail) => (
+              <span className="block text-muted-foreground" key={detail}>
+                {detail}
+              </span>
+            ))}
           </div>,
           document.body,
         )}
@@ -268,7 +306,7 @@ export function RequestWorkspaceSidebar({
             type="button"
             variant="ghost"
           >
-            {state === 'closed' ? <ChevronRight aria-hidden="true" /> : <ChevronLeft aria-hidden="true" />}
+            {state === 'closed' ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
           </Button>
         </div>
         {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
@@ -302,8 +340,11 @@ export function RequestWorkspaceSidebar({
             <>
               {(maintainer || needsYou.length > 0) && (
                 <section className="request-workspace-needs-you">
-                  <h2 className="request-workspace-group-label text-foreground">
+                  <h2 className="request-workspace-group-label text-foreground" data-rail-hint="needs-you">
                     <span>{REQUEST_ATTENTION_GROUP_LABELS.needs_you}</span>
+                    {caughtUp && (
+                      <CircleCheck aria-hidden="true" className="request-workspace-rail-caught-up" />
+                    )}
                     <GroupCount count={activeCount(needsYou.length)} />
                   </h2>
                   <RequestWorkspaceList
@@ -333,12 +374,13 @@ export function RequestWorkspaceSidebar({
                 <>
                   <hr className="request-workspace-rail-rule" />
                   <button
-                    aria-label={`Show ${folded} more requests`}
+                    aria-label={`Show ${folded} more open requests`}
                     className="request-workspace-rail-more"
+                    data-rail-hint="folded"
                     onClick={openRail}
                     type="button"
                   >
-                    +{Math.min(folded, 99)}
+                    {folded > 99 ? '99+' : `+${folded}`}
                   </button>
                 </>
               )}

@@ -1,4 +1,4 @@
-use super::{Request, RequestState};
+use super::{Request, RequestMergeabilityStatus, RequestState};
 use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +46,63 @@ pub fn request_queue_group(
             | Reason::SnoozeExpired => RequestQueueGroup::NeedsYou,
             _ => RequestQueueGroup::Waiting,
         },
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestQueueNextStep {
+    Review,
+    Reply,
+    Revisit,
+    Merge,
+    FixChecks,
+    Update,
+    Wait,
+    Done,
+}
+
+pub fn request_queue_next_step(
+    author_user_id: Option<&str>,
+    viewer_user_id: Option<&str>,
+    reason: RequestAttentionReason,
+    mergeability: RequestMergeabilityStatus,
+) -> RequestQueueNextStep {
+    use RequestAttentionReason as Reason;
+    use RequestMergeabilityStatus as Status;
+    if viewer_user_id.is_some() && author_user_id == viewer_user_id {
+        return match mergeability {
+            Status::Ready => RequestQueueNextStep::Merge,
+            Status::ChecksFailed | Status::ChecksConfigurationError => {
+                RequestQueueNextStep::FixChecks
+            }
+            Status::IntegrationConflict
+            | Status::NeedsMainUpdate
+            | Status::ParentRewritten
+            | Status::ParentClosed => RequestQueueNextStep::Update,
+            Status::Closed | Status::Merged => RequestQueueNextStep::Done,
+            Status::RepositoryNotReady
+            | Status::Draft
+            | Status::NotMaintainer
+            | Status::MissingRequestBranch
+            | Status::ChecksNotEvaluated
+            | Status::ChecksAwaitingApproval
+            | Status::ChecksPending
+            | Status::WaitingForParent
+            | Status::AncestorBlocked => RequestQueueNextStep::Wait,
+        };
+    }
+    match reason {
+        Reason::Invited | Reason::Claimed | Reason::Unclaimed => RequestQueueNextStep::Review,
+        Reason::NewActivity => RequestQueueNextStep::Reply,
+        Reason::Restored | Reason::SnoozeExpired => RequestQueueNextStep::Revisit,
+        Reason::Authored
+        | Reason::ClaimedElsewhere
+        | Reason::Waiting
+        | Reason::Snoozed
+        | Reason::Settled
+        | Reason::Open => RequestQueueNextStep::Wait,
+        Reason::Closed | Reason::Merged => RequestQueueNextStep::Done,
     }
 }
 

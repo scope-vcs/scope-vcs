@@ -2,6 +2,7 @@ use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
     responses::{
         recorded_actor_response, request_actor_summary_response, request_list_item_response,
+        request_list_row_mergeability,
     },
 };
 use crate::auth::scope::require_scope_user;
@@ -23,7 +24,7 @@ use scope_api_contract::{
 };
 use scope_domain::requests::{
     REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, RequestQueueClassification,
-    RequestQueueSection, RequestViewer, request_queue_group,
+    RequestQueueSection, RequestViewer, request_queue_group, request_queue_next_step,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -147,18 +148,28 @@ pub(crate) async fn request_queue(
                 .transpose()?;
             let activity_version = row.request.activity_version;
             let request_id = row.request.id.clone();
+            let mergeability = request_list_row_mergeability(
+                &row.request,
+                &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
+                &repo.views,
+                checks
+                    .get(&request_id)
+                    .copied()
+                    .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
+                repo.record.lifecycle_state,
+            );
+            let next_step = request_queue_next_step(
+                row.request.author_user_id.as_deref(),
+                viewer_user_id.as_deref(),
+                row.attention.reason,
+                mergeability.status,
+            );
             Ok(RequestQueueItemResponse {
                 attention_at_unix: row.cursor.updated_at_unix,
                 request: request_list_item_response(
                     row.request,
-                    &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
-                    &repo.views,
+                    mergeability,
                     current_main_oid.clone(),
-                    checks
-                        .get(&request_id)
-                        .copied()
-                        .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
-                    repo.record.lifecycle_state,
                     parents.remove(&request_id),
                 )?,
                 author,
@@ -168,6 +179,7 @@ pub(crate) async fn request_queue(
                     access.is_maintainer(),
                 ),
                 claimer,
+                next_step: next_step.into(),
             })
         })
         .collect::<Result<Vec<_>, ApiError>>()?;

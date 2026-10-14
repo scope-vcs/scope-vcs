@@ -384,7 +384,8 @@ mod tests {
                     "can_claim": false, "can_set_aside": true, "can_restore": false,
                     "can_release": false
                 },
-                "claimer": claimer
+                "claimer": claimer,
+                "next_step": "reply"
             }))
             .unwrap()
         };

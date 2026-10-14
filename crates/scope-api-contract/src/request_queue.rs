@@ -1,6 +1,6 @@
 use crate::{
     RequestActorSummaryResponse, RequestAttentionReason, RequestAttentionState,
-    RequestListItemResponse, RequestQueueGroup,
+    RequestListItemResponse, RequestQueueGroup, RequestQueueNextStep,
 };
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +21,8 @@ pub struct RequestQueueItemResponse {
     pub author: Option<RequestActorSummaryResponse>,
     pub attention: RequestAttentionResponse,
     pub claimer: Option<RequestActorSummaryResponse>,
+    /// What the viewer does next: mergeability on their own requests, attention on others'.
+    pub next_step: RequestQueueNextStep,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

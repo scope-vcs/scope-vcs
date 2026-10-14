@@ -7,8 +7,8 @@ use scope_api_contract::{
 };
 use scope_domain::{
     requests::{
-        Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject, RequestViewer,
-        request_list_mergeability, request_mergeability, request_policy,
+        Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject, RequestMergeability,
+        RequestViewer, request_list_mergeability, request_mergeability, request_policy,
     },
     views::Views,
 };
@@ -60,16 +60,14 @@ fn request_summary_response(
     })
 }
 
-pub(crate) fn request_list_item_response(
-    request: RequestListRow,
+pub(crate) fn request_list_row_mergeability(
+    request: &RequestListRow,
     viewer: &RequestViewer<'_>,
     views: &Views,
-    current_main_oid: Option<String>,
     checks: RequestChecksOutcome,
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
-    parent: Option<scope_domain::requests::RequestStackParent>,
-) -> Result<RequestListItemResponse, crate::error::ApiError> {
-    let decision = request_list_mergeability(
+) -> RequestMergeability {
+    request_list_mergeability(
         RequestMergeSubject {
             author_user_id: request.author_user_id.as_deref(),
             view: &request.view,
@@ -81,7 +79,15 @@ pub(crate) fn request_list_item_response(
         views,
         checks,
         repository_lifecycle,
-    );
+    )
+}
+
+pub(crate) fn request_list_item_response(
+    request: RequestListRow,
+    decision: RequestMergeability,
+    current_main_oid: Option<String>,
+    parent: Option<scope_domain::requests::RequestStackParent>,
+) -> Result<RequestListItemResponse, crate::error::ApiError> {
     let request_head_oid = super::git_oid_response(request.head_oid)?;
     Ok(RequestListItemResponse {
         stack_parent: parent.map(request_stack_parent_response).transpose()?,

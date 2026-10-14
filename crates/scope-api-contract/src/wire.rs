@@ -19,6 +19,7 @@ use scope_domain::{
         RequestIdentityAuditFact as DomainRequestIdentityAuditFact,
         RequestMergeabilityStatus as DomainRequestMergeabilityStatus,
         RequestQueueGroup as DomainRequestQueueGroup,
+        RequestQueueNextStep as DomainRequestQueueNextStep,
         RequestQueueSection as DomainRequestQueueSection, RequestState as DomainRequestState,
     },
 };
@@ -249,6 +250,13 @@ wire_enum!(
     RequestAttentionReason => DomainRequestAttentionReason {
         Authored, Invited, Claimed, Unclaimed, ClaimedElsewhere, NewActivity, Restored,
         SnoozeExpired, Waiting, Snoozed, Settled, Open, Closed, Merged
+    }
+);
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestQueueNextStep => DomainRequestQueueNextStep {
+        Review, Reply, Revisit, Merge, FixChecks, Update, Wait, Done
     }
 );
 wire_enum!(RequestDiscussionStatus => DomainRequestDiscussionStatus { Open, Resolved });

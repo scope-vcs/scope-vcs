@@ -8,6 +8,7 @@ import type {
   RequestAttentionReason,
   RequestQueueGroup,
   RequestQueueItemResponse,
+  RequestQueueNextStep,
 } from '../../api/types.generated'
 
 const REASONS: Record<RequestAttentionReason, string> = {
@@ -53,6 +54,12 @@ export const REQUEST_ATTENTION_GROUP_LABELS: Record<RequestAttentionGroup, strin
   unclaimed: 'Unclaimed',
   set_aside: 'Set aside',
   done: 'Done',
+}
+
+export const REQUEST_MERGE_STEP_LABELS: Partial<Record<RequestQueueNextStep, string>> = {
+  merge: 'Ready to merge',
+  fix_checks: 'Checks failed',
+  update: 'Needs an update',
 }
 
 export function requestHasNewActivity(item: RequestQueueItemResponse) {

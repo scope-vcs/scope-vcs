@@ -456,6 +456,8 @@ export type RequestQueueSection = "active" | "unclaimed" | "set_aside" | "done";
 
 export type RequestQueueGroup = "needs_you" | "waiting" | "unclaimed" | "set_aside" | "done";
 
+export type RequestQueueNextStep = "review" | "reply" | "revisit" | "merge" | "fix_checks" | "update" | "wait" | "done";
+
 export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled";
 
 export type RequestAttentionReason = "authored" | "invited" | "claimed" | "unclaimed" | "claimed_elsewhere" | "new_activity" | "restored" | "snooze_expired" | "waiting" | "snoozed" | "settled" | "open" | "closed" | "merged";
@@ -478,7 +480,11 @@ export type RequestQueueItemResponse = { attention_at_unix: number, request: Req
 /**
  * Null once that account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+author: RequestActorSummaryResponse | null, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null,
+/**
+ * What the viewer does next: mergeability on their own requests, attention on others'.
+ */
+next_step: RequestQueueNextStep, };
 
 export type RequestQueuePageResponse = { requests: Array<RequestQueueItemResponse>, next_cursor: string | null, next_attention_at_unix: number | null, };
 
