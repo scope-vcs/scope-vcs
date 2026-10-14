@@ -227,7 +227,7 @@ scope request push --base main
 ```
 
 `--base-revision` selects the same parent's current saved revision. `--base`
-selects an Open request in the same private full view or current main. These
+selects an Open request in the same exact view or current main. These
 options are mutually exclusive. A selection supplied after a native restack
 must agree with its retained selection. Ordinary pushes without a selection
 retain their parent pin. Main-based requests continue advancing their review

@@ -9,9 +9,21 @@ use std::collections::BTreeSet;
 pub const REQUEST_STACK_MAX_ANCESTORS: u32 = 32;
 pub const REQUEST_STACK_MAX_DEPTH: u32 = REQUEST_STACK_MAX_ANCESTORS + 1;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RequestStackStatus {
+macro_rules! request_stack_statuses {
+    ($($status:ident),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        pub enum RequestStackStatus {
+            $($status),+
+        }
+
+        impl RequestStackStatus {
+            pub const ALL: &'static [Self] = &[$(Self::$status),+];
+        }
+    };
+}
+
+request_stack_statuses! {
     Main,
     WaitingForParent,
     ParentExtended,

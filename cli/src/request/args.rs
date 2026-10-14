@@ -62,7 +62,7 @@ pub(super) enum RequestCommand {
 
 #[derive(Parser)]
 pub(super) struct RequestStartArgs {
-    #[arg(long, help = "Open parent request name or ID in the same private view")]
+    #[arg(long, help = "Open parent request name or ID in the same view")]
     pub(super) base: Option<String>,
     #[arg(
         help = "Stable kebab-case request name, also the Git branch unless --current-branch is set"

@@ -441,19 +441,12 @@ pub(super) async fn latest_github_push<C: ConnectionTrait>(
 
 fn blocked_stack_statuses() -> Result<String, PostgresError> {
     use scope_domain::requests::RequestStackStatus;
-    let statuses = [
-        RequestStackStatus::Main,
-        RequestStackStatus::WaitingForParent,
-        RequestStackStatus::ParentExtended,
-        RequestStackStatus::ParentRewritten,
-        RequestStackStatus::ParentClosed,
-        RequestStackStatus::AncestorBlocked,
-        RequestStackStatus::IntegrationConflict,
-    ]
-    .into_iter()
-    .filter(|status| status.requires_restack())
-    .map(super::entities::encode_enum)
-    .collect::<Result<Vec<_>, _>>()?;
+    let statuses = RequestStackStatus::ALL
+        .iter()
+        .copied()
+        .filter(|status| status.requires_restack())
+        .map(super::entities::encode_enum)
+        .collect::<Result<Vec<_>, _>>()?;
     serde_json::to_string(&statuses).map_err(PostgresError::internal)
 }
 
