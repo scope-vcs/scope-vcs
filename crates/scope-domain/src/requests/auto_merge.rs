@@ -27,6 +27,9 @@ pub enum RequestAutoMergeStopReason {
     ChecksConfigurationError,
     MergeConflict,
     RequestBranchMissing,
+    ParentRewritten,
+    ParentClosed,
+    AncestorBlocked,
 }
 
 impl RequestAutoMergeStopReason {
@@ -39,6 +42,9 @@ impl RequestAutoMergeStopReason {
             Self::ChecksConfigurationError => "The request CI could not be configured",
             Self::MergeConflict => "The request no longer merges cleanly with main",
             Self::RequestBranchMissing => "The request branch is unavailable",
+            Self::ParentRewritten => "The parent no longer contains the pinned revision",
+            Self::ParentClosed => "The parent request was closed",
+            Self::AncestorBlocked => "An ancestor request is blocked",
         }
     }
 }
@@ -101,6 +107,7 @@ pub enum RequestAutoMergeWaitingReason {
     CheckEvaluationMissing,
     ChecksAwaitingApproval,
     ChecksPending,
+    WaitingForParent,
 }
 
 impl RequestAutoMergeWaitingReason {
@@ -109,6 +116,7 @@ impl RequestAutoMergeWaitingReason {
             Self::CheckEvaluationMissing => "Waiting for CI evaluation",
             Self::ChecksAwaitingApproval => "Waiting for CI approval",
             Self::ChecksPending => "Waiting for CI to finish",
+            Self::WaitingForParent => "Waiting for the parent request to land",
         }
     }
 }
@@ -168,13 +176,22 @@ pub fn request_auto_merge_readiness(gate: super::MergeGateDecision) -> RequestAu
         RequestMergeabilityStatus::MissingRequestBranch => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::RequestBranchMissing)
         }
-        RequestMergeabilityStatus::WaitingForParent
-        | RequestMergeabilityStatus::ParentRewritten
-        | RequestMergeabilityStatus::ParentClosed
-        | RequestMergeabilityStatus::AncestorBlocked
-        | RequestMergeabilityStatus::IntegrationConflict
-        | RequestMergeabilityStatus::Draft
-        | RequestMergeabilityStatus::Merged => {
+        RequestMergeabilityStatus::WaitingForParent => {
+            RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::WaitingForParent)
+        }
+        RequestMergeabilityStatus::ParentRewritten => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ParentRewritten)
+        }
+        RequestMergeabilityStatus::ParentClosed => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ParentClosed)
+        }
+        RequestMergeabilityStatus::AncestorBlocked => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::AncestorBlocked)
+        }
+        RequestMergeabilityStatus::IntegrationConflict => {
+            RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::MergeConflict)
+        }
+        RequestMergeabilityStatus::Draft | RequestMergeabilityStatus::Merged => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::RequestChanged)
         }
     }
@@ -188,6 +205,7 @@ pub struct AuthorizeRequestAutoMergeInput {
     pub request_id: String,
     pub actor_user_id: String,
     pub actor_can_merge: bool,
+    pub readiness: RequestAutoMergeReadiness,
     pub expected_revision_id: String,
     pub expected_head_oid: String,
     pub event_id: String,
@@ -219,8 +237,14 @@ pub fn request_auto_merge_can_enable(
     actor_can_merge: bool,
 ) -> bool {
     readiness.waiting_reason().is_some()
-        && request_auto_merge_eligibility(request, revision, current_intent, actor_can_merge)
-            .is_ok()
+        && request_auto_merge_eligibility(
+            request,
+            revision,
+            current_intent,
+            actor_can_merge,
+            readiness,
+        )
+        .is_ok()
 }
 
 pub fn request_auto_merge_can_cancel(
@@ -272,6 +296,7 @@ pub fn authorize_request_auto_merge(
         Some(revision),
         current_intent,
         input.actor_can_merge,
+        input.readiness,
     )?;
     if revision.id != input.expected_revision_id || request.head_oid != input.expected_head_oid {
         return Err(DomainError::conflict(
@@ -403,6 +428,7 @@ fn request_auto_merge_eligibility(
     revision: Option<&RequestRevision>,
     current_intent: Option<&RequestAutoMergeIntent>,
     actor_can_merge: bool,
+    readiness: RequestAutoMergeReadiness,
 ) -> Result<(), DomainError> {
     if !actor_can_merge {
         return Err(DomainError::forbidden(
@@ -410,7 +436,26 @@ fn request_auto_merge_eligibility(
         ));
     }
     if matches!(request.base, super::RequestBase::Request { .. }) {
-        return Err(DomainError::conflict("stack auto-merge is not available"));
+        if !request.view.is_private() {
+            return Err(DomainError::forbidden(
+                "stack auto-merge requires the private full view",
+            ));
+        }
+        if !matches!(
+            request.stack_status,
+            super::RequestStackStatus::WaitingForParent | super::RequestStackStatus::ParentExtended
+        ) {
+            return Err(DomainError::conflict(
+                request
+                    .stack_status
+                    .auto_merge_stop_reason()
+                    .unwrap_or(RequestAutoMergeStopReason::RequestChanged)
+                    .message(),
+            ));
+        }
+    }
+    if let RequestAutoMergeReadiness::Stop(reason) = readiness {
+        return Err(DomainError::conflict(reason.message()));
     }
     if request.state() != RequestState::Open {
         return Err(DomainError::conflict(

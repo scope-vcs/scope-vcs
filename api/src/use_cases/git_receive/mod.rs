@@ -414,6 +414,7 @@ async fn complete_main_push(
         "git receive-pack main update persisted"
     );
     if persisted.completed_landed_requests > 0 {
+        state.wakeups.auto_merge.notify_one();
         state
             .publish_request_summary_refresh(
                 &committed_incarnation,

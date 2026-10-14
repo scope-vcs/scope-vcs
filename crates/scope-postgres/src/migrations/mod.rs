@@ -3,6 +3,7 @@ mod bridge;
 mod m0084_request_review_bases;
 mod m0085_request_check_identity;
 mod m0086_private_request_stacks;
+mod m0087_stack_auto_merge_stop_reasons;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -60,6 +61,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0086_private_request_stacks::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0087_stack_auto_merge_stop_reasons::Migration),
             metadata_restore_safe: true,
         },
     ]

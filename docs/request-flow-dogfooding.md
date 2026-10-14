@@ -15,6 +15,15 @@ rebase through staged `restack --continue` and `restack --abort`, then recover a
 closed parent with `restack --onto main`. Confirm the backup, original head,
 selected base and retained upstream before publishing the replay.
 
+For a private A → B → C stack, authorize each layer separately with
+`scope request merge --request <name> --auto --yes`. Record each saved revision
+and head, and confirm B and C report “Waiting for the parent request to land”.
+A parent extension must preserve the child’s authorization and pin; a child
+rewrite or reparent must stop it. Rewritten or closed parents and blocked
+ancestors must report their specific stop reason. Land A, then verify B and C
+advance only after their own required checks and native merge gate pass.
+Authorization on one layer supplies no authorization to another.
+
 A released service must support the request-base Git headers before this workflow
 can exercise hosted publication. Record a missing deployed capability as a
 Scope dogfood limitation; it does not block GitHub delivery. Do not start Scope
@@ -34,7 +43,7 @@ to test native merge: it may receive only commits already merged on GitHub main.
 | Push to another request | Target head advances; current branch identity and upstream remain unchanged | CLI request workflow recovery test |
 | Contributor and maintainer review | Draft visibility, checkout, diff, discussions, and access agree | Two-actor contribution integration |
 | CI and revised heads | Contributor heads reach `scope/requests/<id>` only after maintainer approval; the request shows the GitHub CI results for the same commit that a pull request would run; required results block merge; a result for an older head does not count; a new head gets fresh results | Two-actor contribution integration and API request-check and GitHub check tests |
-| Auto merge | Authorization binds to a revision; cancellation, failed CI, and newer revisions stop it | Two-actor contribution integration and API auto-merge tests |
+| Auto merge | Each layer authorizes its own revision and head; children wait for parents; cancellation, failed CI, child revisions, and invalid dependencies stop it | Two-actor contribution integration and API auto-merge tests |
 | Native merge | Correct files reach main; private files remain private; conflicting main changes stop merge | Two-actor contribution integration and API auto-merge tests |
 | Close and interrupted responses | Inspect state before retry; authorized repeat close distinguishes closed/merged; concurrent close has one transition; unauthorized actors remain denied | Two-actor contribution integration, domain and API close tests |
 | Browser/CLI agreement | Inspect the same request and revision in both, including navigation and reopening after changes | Seeded web request smoke tests plus a paired browser/CLI exercise |

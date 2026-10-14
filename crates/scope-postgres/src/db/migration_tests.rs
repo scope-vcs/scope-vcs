@@ -25,12 +25,14 @@ mod request_review_bases;
 mod request_stacks;
 mod run_attempt_active_indexes;
 mod run_state_constraints;
+mod stack_auto_merge;
 
 const LATEST_MIGRATIONS: &[&str] = &[
     "m0084_current_schema_baseline",
     "m0084_request_review_bases",
     "m0085_request_check_identity",
     "m0086_private_request_stacks",
+    "m0087_stack_auto_merge_stop_reasons",
 ];
 const BRIDGED_LEDGER: &str = include_str!("../migrations/m0084_bridged_ledger.txt");
 

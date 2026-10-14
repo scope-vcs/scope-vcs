@@ -302,15 +302,16 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
         RequestStackStatus::ParentExtended
     );
     assert_eq!(extension.request.base, child.base);
-    assert!(!extension.effects.stop_auto_merge);
+    assert_eq!(extension.effects.stop_auto_merge, None);
     assert!(!extension.effects.refresh_queue);
-    for (facts, expected) in [
+    for (facts, expected, stop_reason) in [
         (
             RequestParentGitFacts {
                 parent_contains_pin: false,
                 ..clean
             },
             RequestStackStatus::ParentRewritten,
+            crate::requests::RequestAutoMergeStopReason::ParentRewritten,
         ),
         (
             RequestParentGitFacts {
@@ -318,6 +319,7 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
                 ..clean
             },
             RequestStackStatus::AncestorBlocked,
+            crate::requests::RequestAutoMergeStopReason::AncestorBlocked,
         ),
         (
             RequestParentGitFacts {
@@ -325,6 +327,7 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
                 ..clean
             },
             RequestStackStatus::IntegrationConflict,
+            crate::requests::RequestAutoMergeStopReason::MergeConflict,
         ),
     ] {
         let blocked = refresh_request_stack(
@@ -335,7 +338,7 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
         )
         .unwrap();
         assert_eq!(blocked.request.stack_status, expected);
-        assert!(blocked.effects.stop_auto_merge);
+        assert_eq!(blocked.effects.stop_auto_merge, Some(stop_reason));
         assert!(blocked.effects.refresh_queue);
         assert_eq!(
             blocked.request.activity_version,
@@ -348,7 +351,7 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
             child.updated_at_unix + 30,
         )
         .unwrap();
-        assert!(!repaired.effects.stop_auto_merge);
+        assert_eq!(repaired.effects.stop_auto_merge, None);
         assert!(repaired.effects.refresh_queue);
     }
     parent.closed_at_unix = Some(parent.updated_at_unix);
@@ -363,7 +366,10 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
         closed.request.stack_status,
         RequestStackStatus::ParentClosed
     );
-    assert!(closed.effects.stop_auto_merge);
+    assert_eq!(
+        closed.effects.stop_auto_merge,
+        Some(crate::requests::RequestAutoMergeStopReason::ParentClosed)
+    );
     assert!(closed.effects.refresh_queue);
     parent.stack_depth = REQUEST_STACK_MAX_DEPTH;
     assert!(
@@ -384,7 +390,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
     )
     .unwrap();
     assert_eq!(unmarked.request, public);
-    assert!(!unmarked.effects.stop_auto_merge);
+    assert_eq!(unmarked.effects.stop_auto_merge, None);
     assert!(!unmarked.effects.refresh_queue);
     let original = revision(&request);
     let marked = mark_request_integration_conflict(
@@ -402,7 +408,10 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
     assert_eq!(marked.request.head_oid, request.head_oid);
     assert_eq!(marked.request.git_snapshot, request.git_snapshot);
     assert_eq!(marked.request.base_version, original.base_version);
-    assert!(marked.effects.stop_auto_merge);
+    assert_eq!(
+        marked.effects.stop_auto_merge,
+        Some(crate::requests::RequestAutoMergeStopReason::MergeConflict)
+    );
     assert!(marked.effects.refresh_queue);
     assert_eq!(
         marked.request.activity_version,

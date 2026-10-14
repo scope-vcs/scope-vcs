@@ -2,8 +2,8 @@ use super::*;
 use anyhow::Context as _;
 use sea_orm::DbErr;
 use std::{
-    collections::{HashMap, HashSet},
-    sync::Mutex,
+    collections::HashMap,
+    sync::{Mutex, Weak},
     time::Duration,
 };
 
@@ -12,7 +12,7 @@ const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
 const BACKEND_STARTUP_ALLOWANCE: Duration = Duration::from_secs(5);
 const INSUFFICIENT_PRIVILEGE: &str = "42501";
 
-type ProcessDatabases = Mutex<HashMap<String, HashSet<String>>>;
+type ProcessDatabases = Mutex<HashMap<String, HashMap<String, Weak<DatabaseConnection>>>>;
 static PROCESS_DATABASES: OnceLock<ProcessDatabases> = OnceLock::new();
 static EXIT_HOOK: OnceLock<Result<(), i32>> = OnceLock::new();
 
@@ -52,6 +52,12 @@ async fn clone_test_database(target: &TestDatabaseTarget) -> anyhow::Result<Arc<
             return Err(error.into());
         }
     };
+
+    register_process_database(
+        &target.database_url,
+        &database_name,
+        Arc::downgrade(&database),
+    )?;
 
     Ok(Arc::new(TestSchemaLease {
         database,
@@ -120,7 +126,7 @@ async fn create_database(
     database_name: &str,
     template_name: &str,
 ) -> anyhow::Result<()> {
-    register_process_database(admin_url, database_name)?;
+    register_process_database(admin_url, database_name, Weak::new())?;
     let admin = match Database::connect(admin_url).await {
         Ok(admin) => admin,
         Err(error) => {
@@ -154,7 +160,11 @@ async fn create_database(
     Ok(())
 }
 
-fn register_process_database(admin_url: &str, database_name: &str) -> anyhow::Result<()> {
+fn register_process_database(
+    admin_url: &str,
+    database_name: &str,
+    database: Weak<DatabaseConnection>,
+) -> anyhow::Result<()> {
     match EXIT_HOOK.get_or_init(|| {
         let result = unsafe { libc::atexit(cleanup_process_databases_at_exit) };
         (result == 0).then_some(()).ok_or(result)
@@ -168,7 +178,7 @@ fn register_process_database(admin_url: &str, database_name: &str) -> anyhow::Re
         .expect("test database registry should not be poisoned")
         .entry(admin_url.to_owned())
         .or_default()
-        .insert(database_name.to_owned());
+        .insert(database_name.to_owned(), database);
     Ok(())
 }
 
@@ -189,7 +199,9 @@ fn unregister_process_database(admin_url: &str, database_name: &str) {
 }
 
 extern "C" fn cleanup_process_databases_at_exit() {
-    let _ = std::panic::catch_unwind(cleanup_process_databases);
+    if std::panic::catch_unwind(cleanup_process_databases).is_err() {
+        eprintln!("PostgreSQL test database process cleanup panicked");
+    }
 }
 
 fn cleanup_process_databases() {
@@ -204,32 +216,53 @@ fn cleanup_process_databases() {
     servers.sort_unstable();
     servers.dedup();
 
-    let completed = run_test_future(async move {
+    let cleanup = run_test_future(async move {
         tokio::time::timeout(EXIT_CLEANUP_TIMEOUT, async move {
             let mut cleanups = tokio::task::JoinSet::new();
             for (admin_url, database_name) in databases {
                 cleanups.spawn(async move {
-                    drop_database(&admin_url, &database_name).await;
+                    let result = try_drop_database(&admin_url, &database_name).await;
+                    (database_name, result)
                 });
             }
-            while cleanups.join_next().await.is_some() {}
+            let mut failures = 0;
+            while let Some(cleanup) = cleanups.join_next().await {
+                match cleanup {
+                    Ok((_, Ok(()))) => {}
+                    Ok((name, Err(error))) => {
+                        failures += 1;
+                        eprintln!("test database cleanup failed for {name}: {error}");
+                    }
+                    Err(error) => {
+                        failures += 1;
+                        eprintln!("test database cleanup task failed: {error}");
+                    }
+                }
+            }
+            failures
         })
         .await
-        .is_ok()
     });
-    if !completed {
-        let remaining = registered_process_databases();
-        let names = remaining
-            .iter()
-            .map(|(_, name)| name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        eprintln!(
-            "PostgreSQL test database cleanup exceeded {} seconds with {} process-owned databases still registered: {names}. A later test process sweeps them once they are an hour old",
-            EXIT_CLEANUP_TIMEOUT.as_secs(),
-            remaining.len()
-        );
-        return;
+    match cleanup {
+        Ok(0) => {}
+        Ok(failures) => {
+            eprintln!("PostgreSQL test database process cleanup failed for {failures} tasks");
+            return;
+        }
+        Err(_) => {
+            let remaining = registered_process_databases();
+            let names = remaining
+                .iter()
+                .map(|(_, name)| name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            eprintln!(
+                "PostgreSQL test database cleanup exceeded {} seconds with {} process-owned databases still registered: {names}. A later test process sweeps them once they are an hour old",
+                EXIT_CLEANUP_TIMEOUT.as_secs(),
+                remaining.len()
+            );
+            return;
+        }
     }
     run_test_future(async move {
         let deadline = tokio::time::Instant::now() + stale_cleanup::SWEEP_BUDGET;
@@ -249,7 +282,7 @@ fn registered_process_databases() -> Vec<(String, String)> {
         .lock()
         .expect("test database registry should not be poisoned")
         .iter()
-        .flat_map(|(admin_url, names)| names.iter().map(|name| (admin_url.clone(), name.clone())))
+        .flat_map(|(admin_url, names)| names.keys().map(|name| (admin_url.clone(), name.clone())))
         .collect()
 }
 
@@ -283,6 +316,17 @@ async fn try_drop_database(admin_url: &str, database_name: &str) -> anyhow::Resu
         .acquire()
         .await
         .expect("test database cleanup semaphore should stay open");
+    let database = PROCESS_DATABASES.get().and_then(|databases| {
+        databases
+            .lock()
+            .expect("test database registry should not be poisoned")
+            .get(admin_url)
+            .and_then(|names| names.get(database_name))
+            .and_then(Weak::upgrade)
+    });
+    if let Some(database) = database {
+        drop(database.get_postgres_connection_pool().close());
+    }
     let admin = Database::connect(admin_url).await?;
     let drop_result = drop_once_backends_are_terminable(&admin, database_name).await;
     let close_result = admin.close().await;
@@ -345,172 +389,4 @@ fn unique_database_name(kind: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const EXIT_CLEANUP_CHILD: &str = "SCOPE_TEST_DATABASE_EXIT_CLEANUP_CHILD";
-
-    #[test]
-    fn database_url_replaces_database_and_preserves_query() {
-        assert_eq!(
-            database_url(
-                "postgres://scope:scope@localhost:5432/scope_test?sslmode=disable",
-                "scope_test_db_1"
-            )
-            .unwrap(),
-            "postgres://scope:scope@localhost:5432/scope_test_db_1?sslmode=disable"
-        );
-    }
-
-    #[test]
-    fn template_databases_isolate_targets_and_preserve_live_reopens() {
-        let target = TestDatabaseTarget::required().unwrap();
-        let first = connect_postgres_test_store(&target).unwrap();
-        let other = connect_postgres_test_store(&TestDatabaseTarget::required().unwrap()).unwrap();
-        let database = Arc::clone(&first.db);
-        run_test_future(async move {
-            database
-                .execute_unprepared(
-                    "INSERT INTO scope_users (id, handle, email, email_verified) VALUES ('template_fixture', 'template_fixture', 'template-fixture@scope.test', TRUE)",
-                )
-                .await
-                .unwrap();
-        });
-
-        let reopened = connect_postgres_test_store(&target).unwrap();
-        assert!(Arc::ptr_eq(&first.db, &reopened.db));
-        drop(first);
-        run_test_future(async move {
-            for (store, expected) in [(reopened, 1_i64), (other, 0_i64)] {
-                let row = store
-                    .db
-                    .query_one_raw(Statement::from_string(
-                        store.db.get_database_backend(),
-                        "SELECT current_database() AS database, (SELECT count(*) FROM scope_users WHERE id = 'template_fixture') AS count".to_owned(),
-                    ))
-                    .await
-                    .unwrap()
-                    .unwrap();
-                assert!(
-                    row.try_get::<String>("", "database")
-                        .unwrap()
-                        .starts_with("scope_test_db_")
-                );
-                assert_eq!(row.try_get::<i64>("", "count").unwrap(), expected);
-                crate::migrations::assert_exact_state(store.db.as_ref())
-                    .await
-                    .unwrap();
-            }
-        });
-
-        let fresh = connect_postgres_test_store(&target).unwrap();
-        run_test_future(async move {
-            let count = fresh
-                .db
-                .query_one_raw(Statement::from_string(
-                    fresh.db.get_database_backend(),
-                    "SELECT count(*) AS count FROM scope_users".to_owned(),
-                ))
-                .await
-                .unwrap()
-                .unwrap()
-                .try_get::<i64>("", "count")
-                .unwrap();
-            assert_eq!(count, 0);
-        });
-    }
-
-    #[test]
-    fn process_exit_removes_only_its_registered_databases() {
-        if std::env::var_os(EXIT_CLEANUP_CHILD).is_some() {
-            let store =
-                connect_postgres_test_store(&TestDatabaseTarget::required().unwrap()).unwrap();
-            std::mem::forget(store);
-            return;
-        }
-
-        let target = TestDatabaseTarget::required().unwrap();
-        let external_database = unique_database_name("external_process");
-        let admin_url = target.database_url.clone();
-        let external_name = external_database.clone();
-        run_test_future(async move {
-            let admin = Database::connect(&admin_url).await.unwrap();
-            execute(
-                &admin,
-                format!(
-                    "CREATE DATABASE {} TEMPLATE template0",
-                    quote_pg_ident(&external_name)
-                ),
-            )
-            .await
-            .unwrap();
-            admin.close().await.unwrap();
-        });
-
-        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
-        command
-            .arg("--exact")
-            .arg(
-                "db::test_support::database_templates::tests::process_exit_removes_only_its_registered_databases",
-            )
-            .env(EXIT_CLEANUP_CHILD, "1")
-            .env("SCOPE_TEST_DATABASE_URL", &target.database_url)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        let child = command.spawn().unwrap();
-        let child_id = child.id();
-        let child = child.wait_with_output().unwrap();
-        assert!(
-            child.status.success(),
-            "cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&child.stdout),
-            String::from_utf8_lossy(&child.stderr)
-        );
-
-        let admin_url = target.database_url.clone();
-        let external_name = external_database.clone();
-        let databases = run_test_future(async move {
-            let admin = Database::connect(&admin_url).await.unwrap();
-            let deadline = tokio::time::Instant::now() + EXIT_CLEANUP_TIMEOUT;
-            let databases = loop {
-                let databases = admin
-                    .query_all_raw(Statement::from_string(
-                        admin.get_database_backend(),
-                        "SELECT datname FROM pg_database".to_owned(),
-                    ))
-                    .await
-                    .unwrap()
-                    .into_iter()
-                    .map(|row| row.try_get::<String>("", "datname").unwrap())
-                    .collect::<Vec<_>>();
-                let child_database_remains = databases.iter().any(|name| {
-                    name.starts_with(&format!("scope_test_db_{child_id}_"))
-                        || name.starts_with(&format!("scope_test_template_{child_id}_"))
-                });
-                if !child_database_remains || tokio::time::Instant::now() >= deadline {
-                    break databases;
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            };
-            execute(
-                &admin,
-                format!(
-                    "DROP DATABASE {} WITH (FORCE)",
-                    quote_pg_ident(&external_name)
-                ),
-            )
-            .await
-            .unwrap();
-            admin.close().await.unwrap();
-            databases
-        });
-        assert!(databases.contains(&external_database));
-        assert!(
-            databases.iter().all(
-                |name| !name.starts_with(&format!("scope_test_db_{child_id}_"))
-                    && !name.starts_with(&format!("scope_test_template_{child_id}_"))
-            ),
-            "cleanup child left a registered database behind: {databases:?}"
-        );
-    }
-}
+mod tests;

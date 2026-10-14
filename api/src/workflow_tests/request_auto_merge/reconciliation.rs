@@ -243,3 +243,108 @@ async fn reconciliation_stops_when_the_authorizing_member_loses_access() {
     );
     assert_eq!(live_file_content(&state, "/auto-merge.txt").await, None);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn configuration_failure_stays_stopped_if_the_evaluation_later_clears() {
+    let request_id = "req_auto_merge_failed_checks";
+    let (state, revision_id) = open_owner_request(request_id).await;
+    let request = state
+        .metadata
+        .requests()
+        .request_for_tests(request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let revision = state
+        .metadata
+        .requests()
+        .request_revision(request_id, &revision_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let context = RequestCheckContext::for_revision(&request, &revision).unwrap();
+    let app = router(state.clone());
+    let active = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
+    assert_eq!(active["intent"]["status"], "Active");
+    assert_eq!(active["waiting_reason"], "Waiting for CI evaluation");
+    let attempt_time = unix_now() + 1;
+    state
+        .metadata
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_base(TEST_REPO_ID)
+                .await
+                .unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
+            evaluation: RequestCheckEvaluation::configuration_error(
+                &context,
+                "invalid request workflow",
+                attempt_time,
+            )
+            .unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+            push_to_github: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(reconcile(&state, attempt_time).await, 0);
+    let stopped = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
+    assert_stopped(&stopped, "ChecksConfigurationError");
+
+    state
+        .metadata
+        .requests()
+        .forget_request_check_evaluations_for_tests(request_id)
+        .await
+        .unwrap();
+    state
+        .metadata
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            expected_canonical_main_oid: state
+                .metadata
+                .requests()
+                .request_check_base(TEST_REPO_ID)
+                .await
+                .unwrap(),
+            repository_incarnation: state
+                .metadata
+                .repositories()
+                .repository_record(TEST_REPO_ID)
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
+            evaluation: RequestCheckEvaluation::no_checks(&context, attempt_time + 1).unwrap(),
+            revisions: Vec::new(),
+            runs: Vec::new(),
+            push_to_github: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        state
+            .metadata
+            .requests()
+            .request_check_evaluation(request_id, SECOND_HEAD)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        scope_domain::requests::RequestCheckEvaluationState::NoChecks
+    );
+    assert_eq!(reconcile(&state, attempt_time + 2).await, 0);
+    let still_stopped = auto_merge_json(app, "GET", request_id, None, StatusCode::OK).await;
+    assert_stopped(&still_stopped, "ChecksConfigurationError");
+}

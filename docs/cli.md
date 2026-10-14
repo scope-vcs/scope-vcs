@@ -257,6 +257,23 @@ ends that authorization. Cancel an active authorization with
 used together. Existing request targeting and `--json` output work for both
 operations.
 
+Authorize each layer of a private stack separately:
+
+```bash
+scope request merge --request layer-a --auto --yes
+scope request merge --request layer-b --auto --yes
+scope request merge --request layer-c --auto --yes
+```
+
+Each authorization names that layer’s exact saved revision and head. Child
+layers report “Waiting for the parent request to land” until their parent lands;
+authorizing a parent does not authorize its children. Parent extensions preserve
+the child’s authorization and review pin. A new child revision, rewrite, or
+reparent ends its authorization; rewritten or closed parents and blocked
+ancestors stop it. Landing still requires the authorized head’s required checks to pass and the
+current native merge gate to allow it. Inspect each layer with
+`scope request show --request <name>` before authorizing it again.
+
 `scope request list` is your attention queue, grouped the way the web sidebar
 groups it: Needs you, Waiting on others, and Unclaimed. Use
 `--section set-aside` or `--section done` for requests you set aside or that

@@ -9,6 +9,7 @@ use crate::{
 };
 
 mod check_failures;
+mod stacks;
 
 const HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 fn check_context(request_id: &str, head: &str) -> crate::requests::RequestCheckContext {
@@ -82,6 +83,7 @@ fn authorize_input() -> AuthorizeRequestAutoMergeInput {
         request_id: "request_1".into(),
         actor_user_id: "maintainer".into(),
         actor_can_merge: true,
+        readiness: RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::ChecksPending),
         expected_revision_id: "revision_1".into(),
         expected_head_oid: HEAD.into(),
         event_id: "event_auto_merge_enabled".into(),
@@ -349,6 +351,16 @@ fn readiness(
     let mut request = open_request();
     request.id = request_id.to_string();
     request.head_oid = head_oid.to_string();
+    request_readiness(
+        &request,
+        crate::requests::request_checks_outcome(request_id, head_oid, evaluation, results),
+    )
+}
+
+fn request_readiness(
+    request: &Request,
+    checks: crate::requests::RequestChecksOutcome,
+) -> RequestAutoMergeReadiness {
     let access = crate::repository::access::RepositoryAccess {
         actor: crate::repository::access::RepositoryActor::Owner,
         view: crate::views::ViewId::private(),
@@ -362,12 +374,10 @@ fn readiness(
     request_auto_merge_readiness(crate::requests::evaluate_merge_gate(
         crate::requests::MergeGateInput::RequestMerge {
             repository_lifecycle: crate::repository::RepoLifecycleState::Ready,
-            subject: (&request).into(),
+            subject: request.into(),
             viewer: &viewer,
             views: &views,
-            checks: crate::requests::request_checks_outcome(
-                request_id, head_oid, evaluation, results,
-            ),
+            checks,
         },
     ))
 }

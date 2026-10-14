@@ -20,6 +20,9 @@ wire_enum!(RequestAutoMergeStopReason => DomainRequestAutoMergeStopReason {
     ChecksConfigurationError,
     MergeConflict,
     RequestBranchMissing,
+    ParentRewritten,
+    ParentClosed,
+    AncestorBlocked,
 });
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -70,9 +73,29 @@ mod tests {
             serde_json::to_value(RequestAutoMergeIntentStatus::Active).unwrap(),
             "Active"
         );
-        assert_eq!(
-            serde_json::to_value(RequestAutoMergeStopReason::ChecksFailed).unwrap(),
-            "ChecksFailed"
-        );
+        for (reason, wire_name) in [
+            (
+                DomainRequestAutoMergeStopReason::ChecksFailed,
+                "ChecksFailed",
+            ),
+            (
+                DomainRequestAutoMergeStopReason::ParentRewritten,
+                "ParentRewritten",
+            ),
+            (
+                DomainRequestAutoMergeStopReason::ParentClosed,
+                "ParentClosed",
+            ),
+            (
+                DomainRequestAutoMergeStopReason::AncestorBlocked,
+                "AncestorBlocked",
+            ),
+        ] {
+            let wire = RequestAutoMergeStopReason::from(reason);
+            assert_eq!(serde_json::to_value(wire).unwrap(), wire_name);
+            let decoded: RequestAutoMergeStopReason =
+                serde_json::from_value(serde_json::json!(wire_name)).unwrap();
+            assert_eq!(DomainRequestAutoMergeStopReason::from(decoded), reason);
+        }
     }
 }

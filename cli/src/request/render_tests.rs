@@ -39,13 +39,16 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
         json!({"AutoMergeCancelled": {"intent_id": "ami_one", "revision_id": "rev_one", "head_oid": oid('b')}}),
         json!({"AutoMergeStopped": {"intent_id": "ami_two", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "ChecksFailed"}}),
         json!({"AutoMergeFulfilled": {"intent_id": "ami_three", "revision_id": "rev_one", "head_oid": oid('b'), "main_oid": oid('c')}}),
+        json!({"AutoMergeStopped": {"intent_id": "ami_four", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "ParentRewritten"}}),
+        json!({"AutoMergeStopped": {"intent_id": "ami_five", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "ParentClosed"}}),
+        json!({"AutoMergeStopped": {"intent_id": "ami_six", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "AncestorBlocked"}}),
     ];
     let activity: RequestActivityPageResponse = serde_json::from_value(json!({
         "events": payloads.into_iter().enumerate().rev().map(|(i, payload)| event(i as u64 + 1, payload)).collect::<Vec<_>>(),
-        "through_position": 12
+        "through_position": 15
     })).unwrap();
     let lines = request_activity_lines(&activity);
-    assert_eq!(lines.len(), 12);
+    assert_eq!(lines.len(), 15);
     for (line, label) in lines.iter().zip([
         "Started request",
         "Submitted",
@@ -59,6 +62,9 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
         "Canceled auto-merge",
         "Stopped auto-merge",
         "Fulfilled auto-merge",
+        "Stopped auto-merge",
+        "Stopped auto-merge",
+        "Stopped auto-merge",
     ]) {
         assert!(line.starts_with(label), "{line}");
         assert!(!line.chars().any(char::is_control), "{line:?}");
@@ -67,6 +73,13 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
     let main_oid = oid('c');
     assert!(lines[3].contains(short_oid(&main_oid)));
     assert!(lines[10].contains("CI failed"), "{}", lines[10]);
+    for (line, reason) in lines[12..].iter().zip([
+        "the parent request was rewritten",
+        "the parent request was closed",
+        "an ancestor request is blocked",
+    ]) {
+        assert!(line.contains(reason), "{line}");
+    }
 }
 
 #[test]

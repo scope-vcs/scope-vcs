@@ -218,6 +218,7 @@ pub(crate) async fn merge_request_inner(
     let mutation = persist_prepared_merge(state, command, merged_event_id, now_unix, prepared)
         .await
         .map_err(RequestMergeFailure::Other)?;
+    state.wakeups.auto_merge.notify_one();
 
     state.product_analytics.capture(analytics_event);
     let incarnation = repo.incarnation();

@@ -47,5 +47,28 @@ test('auto-merge confirms one revision and stays usable on desktop and mobile', 
   await page.evaluate(() => window.setAutoMergeIntentStatus('Stopped'))
   await page.getByRole('button', { name: 'Enable auto-merge' }).waitFor()
   assert.equal(await page.getByText(/Authorized by/).count(), 0)
+  await page.evaluate(() => window.selectStackWaiting())
+  await page.getByRole('heading', { name: 'Handle quoted paths in child layer', exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Merge', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Enable auto-merge' }).click()
+  const stackDialog = page.getByRole('alertdialog')
+  await stackDialog.getByText('a'.repeat(40), { exact: true }).waitFor()
+  await stackDialog.getByRole('button', { name: 'Enable auto-merge' }).click()
+  await page.getByText('Auto-merge enabled', { exact: true }).waitFor()
+  const waiting = page.getByText(/Authorized by you/)
+  assert.equal(await waiting.textContent(), 'Authorized by you · aaaaaaaaaaaa · Waiting for the parent request to land')
+  assert.deepEqual(await page.evaluate(() => window.calls[2]), {
+    expected_head_oid: 'a'.repeat(40),
+    expected_revision_id: 'revision-7d9f2f1b',
+  })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  const waitingBounds = await waiting.boundingBox()
+  assert(waitingBounds.x >= 0 && waitingBounds.x + waitingBounds.width <= 390)
+  const lineHeight = await waiting.evaluate((element) => parseFloat(getComputedStyle(element).lineHeight))
+  assert(waitingBounds.height > lineHeight, 'parent waiting text must wrap within the mobile footer')
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    const path = process.env.SCOPE_COMPONENT_SCREENSHOT.replace(/\.png$/, '')
+    await page.screenshot({ path: `${path}-stack.png`, fullPage: true })
+  }
   assert.deepEqual(errors, [])
 })
