@@ -34,6 +34,7 @@ async fn revision_window_bounds_recent_rows_and_keeps_an_explicit_older_revision
             .requests()
             .record_request_revision(RecordRequestRevisionInput {
                 new_base: None,
+                new_base_stack_depth: None,
                 request_id: "req_1".to_string(),
                 actor_user_id: "user_public".to_string(),
                 actor_can_edit: true,
@@ -80,6 +81,7 @@ async fn rewritten_revision_moves_the_stored_request_base() {
         .requests()
         .record_request_revision(RecordRequestRevisionInput {
             new_base: None,
+            new_base_stack_depth: None,
             request_id: "req_1".to_string(),
             actor_user_id: "user_public".to_string(),
             actor_can_edit: true,
@@ -512,6 +514,7 @@ async fn close_draft_request_deletes_request_and_events() {
         .requests()
         .record_request_revision(RecordRequestRevisionInput {
             new_base: None,
+            new_base_stack_depth: None,
             request_id: "req_1".to_string(),
             actor_user_id: "user_public".to_string(),
             actor_can_edit: false,

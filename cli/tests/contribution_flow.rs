@@ -506,6 +506,16 @@ impl Actor {
             .expect("clone stdout must contain exactly one JSON result");
         assert_command(&cloned, "clone");
         assert_eq!(string_at(&cloned, "/result/repository"), repository);
+        run_git(&self.repo, ["config", "--local", "user.name", self.handle]);
+        run_git(
+            &self.repo,
+            [
+                "config",
+                "--local",
+                "user.email",
+                &format!("{}@example.test", self.handle),
+            ],
+        );
     }
 
     fn clone_to(&self, name: &str) -> PathBuf {

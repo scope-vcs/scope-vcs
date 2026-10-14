@@ -185,10 +185,10 @@ impl RequestStore {
         &self,
         input: RecordRequestRevisionInput,
         expected_base_version: u64,
-        parent: Option<super::RequestParentPublicationFacts>,
+        facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
-        self.publish_request_revision(input, expected_base_version, parent, children, None)
+        self.publish_request_revision(input, expected_base_version, facts, children, None)
             .await
     }
 
@@ -196,13 +196,13 @@ impl RequestStore {
         &self,
         input: RecordRequestRevisionInput,
         context: super::RequestRevisionContextPublication,
-        parent: super::RequestParentPublicationFacts,
+        facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
         self.publish_request_revision(
             input,
             context.expected_base_version,
-            Some(parent),
+            facts,
             children,
             Some(context),
         )
@@ -213,7 +213,7 @@ impl RequestStore {
         &self,
         input: RecordRequestRevisionInput,
         expected_base_version: u64,
-        parent: Option<super::RequestParentPublicationFacts>,
+        facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
         context: Option<super::RequestRevisionContextPublication>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
@@ -223,11 +223,13 @@ impl RequestStore {
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &observed.repo_id).await?;
-        super::request_stack::lock_graph(&tx, &observed).await?;
-        let (repo, request) =
-            lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
-        if let Some(context) = &context {
-            if let Some(accepted) = super::request_revision_context::receipt(
+        let request = request_by_id(&tx, &input.request_id)
+            .await?
+            .filter(|request| request.repo_id == observed.repo_id)
+            .ok_or_else(|| PostgresError::not_found("request not found"))?;
+        let repo = repo_by_id(&tx, &request.repo_id, &input.actor_user_id).await?;
+        if let Some(context) = &context
+            && let Some(accepted) = super::request_revision_context::receipt(
                 &tx,
                 &repo,
                 &request,
@@ -235,31 +237,38 @@ impl RequestStore {
                 context,
             )
             .await?
-            {
-                tx.commit().await.map_err(PostgresError::internal)?;
-                return Ok(accepted);
-            }
+        {
+            tx.commit().await.map_err(PostgresError::internal)?;
+            return Ok(accepted);
+        }
+        super::request_stack::lock_graph(&tx, &request, input.new_base.as_ref()).await?;
+        if let Some(context) = &context {
             super::request_revision_context::validate(
                 &tx,
                 &request,
                 &input,
                 context,
-                parent.as_ref(),
+                facts.as_ref(),
             )
             .await?;
         }
         let selected_base = input.new_base.as_ref().unwrap_or(&request.base);
-        let current_parent = super::request_stack::validate_publication(
+        let publication = super::request_stack::validate_publication(
             &tx,
             &request,
             selected_base,
             expected_base_version,
             input.new_base.is_some(),
-            parent.as_ref(),
+            facts.as_ref(),
+            &input.git_facts,
         )
         .await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
         let mut input = input;
+        input.new_base_stack_depth = match input.new_base.as_ref() {
+            Some(scope_domain::requests::RequestBase::Request { .. }) => Some(publication.depth),
+            _ => None,
+        };
         let now_unix = input.now_unix;
         input.actor_can_edit = request_policy_for_user(&tx, &repo, &request, &input.actor_user_id)
             .await?
@@ -268,7 +277,7 @@ impl RequestStore {
         let active_auto_merge = lock_active_intent_for_request(&tx, &request.id).await?;
         let actor_user_id = input.actor_user_id.clone();
         let mut mutation = record_request_revision(request, event_id_exists, input)?;
-        if let Some(parent) = current_parent.as_ref() {
+        if let Some(parent) = publication.parent.as_ref() {
             let evidence = parent.stack_status.requires_restack();
             let integration_conflict = mutation.request.stack_status
                 == scope_domain::requests::RequestStackStatus::IntegrationConflict;
@@ -387,7 +396,7 @@ impl RequestStore {
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
         acquire_aggregate_lock(&tx, "repository", &observed.repo_id).await?;
-        super::request_stack::lock_graph(&tx, &observed).await?;
+        super::request_stack::lock_graph(&tx, &observed, None).await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;

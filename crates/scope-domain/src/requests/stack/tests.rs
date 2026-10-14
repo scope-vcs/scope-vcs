@@ -47,6 +47,27 @@ fn child(parent: &Request) -> Request {
     child
 }
 
+fn publication_input(request: &Request) -> RecordRequestRevisionInput {
+    RecordRequestRevisionInput {
+        new_base: None,
+        new_base_stack_depth: None,
+        request_id: request.id.clone(),
+        actor_user_id: "author".into(),
+        actor_can_edit: true,
+        expected_old_head_oid: Some(request.head_oid.clone()),
+        new_head_oid: request.head_oid.clone(),
+        git_snapshot: source_blob(&request.head_oid),
+        git_facts: RequestRevisionGitFacts {
+            contains_old_head: true,
+            contained_main_oid: Some(request.main_ancestor_oid.clone()),
+            contained_main_descends_from_base: true,
+        },
+        event_id: "publication".into(),
+        body: None,
+        now_unix: request.updated_at_unix + 1,
+    }
+}
+
 #[test]
 fn parent_pin_rejects_wrong_revision_view_cycles_and_overdepth() {
     let parent = parent();
@@ -223,23 +244,8 @@ fn containing_landing_preserves_child_evidence_and_separate_main_ancestor() {
 fn ordinary_child_push_retains_pin_and_explicit_repin_records_same_head() {
     let parent = parent();
     let child = child(&parent);
-    let input = RecordRequestRevisionInput {
-        new_base: None,
-        request_id: child.id.clone(),
-        actor_user_id: "author".into(),
-        actor_can_edit: true,
-        expected_old_head_oid: Some(child.head_oid.clone()),
-        new_head_oid: child.head_oid.clone(),
-        git_snapshot: source_blob(&child.head_oid),
-        git_facts: RequestRevisionGitFacts {
-            contains_old_head: true,
-            contained_main_oid: Some("new-main".into()),
-            contained_main_descends_from_base: true,
-        },
-        event_id: "push".into(),
-        body: None,
-        now_unix: child.updated_at_unix + 1,
-    };
+    let mut input = publication_input(&child);
+    input.git_facts.contained_main_oid = Some("new-main".into());
     let push = record_request_revision(child.clone(), false, input.clone()).unwrap();
     assert_eq!(push.request.base, child.base);
     assert_eq!(push.request.main_ancestor_oid, "new-main");
@@ -253,6 +259,7 @@ fn ordinary_child_push_retains_pin_and_explicit_repin_records_same_head() {
         false,
         RecordRequestRevisionInput {
             new_base: Some(new_base.clone()),
+            new_base_stack_depth: Some(2),
             ..input
         },
     )
@@ -419,23 +426,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
         )
         .is_err()
     );
-    let input = RecordRequestRevisionInput {
-        new_base: None,
-        request_id: request.id.clone(),
-        actor_user_id: "author".into(),
-        actor_can_edit: true,
-        expected_old_head_oid: Some(request.head_oid.clone()),
-        new_head_oid: request.head_oid.clone(),
-        git_snapshot: source_blob(&request.head_oid),
-        git_facts: RequestRevisionGitFacts {
-            contains_old_head: true,
-            contained_main_oid: Some(request.main_ancestor_oid.clone()),
-            contained_main_descends_from_base: true,
-        },
-        event_id: "publication".into(),
-        body: None,
-        now_unix: request.updated_at_unix + 2,
-    };
+    let input = publication_input(&marked.request);
     let unchanged = record_request_revision(marked.request.clone(), false, input.clone()).unwrap();
     assert_eq!(
         unchanged.request.stack_status,
@@ -447,6 +438,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
         false,
         RecordRequestRevisionInput {
             new_base: None,
+            new_base_stack_depth: None,
             new_head_oid: new_head.into(),
             git_snapshot: source_blob(new_head),
             ..input
@@ -456,3 +448,5 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
     assert_eq!(repaired.request.stack_status, RequestStackStatus::Main);
     assert_eq!(repaired.revision.new_head_oid, new_head);
 }
+
+mod base_selection;

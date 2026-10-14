@@ -58,7 +58,7 @@ pub struct RequestRevisionContextRequest {
     pub expected_head_oid: GitOid,
     pub expected_revision_id: String,
     pub expected_base_version: u64,
-    pub expected_parent_base_version: u64,
+    pub expected_parent_base_version: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -131,36 +131,102 @@ parent to land. An extension that still contains the saved pin is informational:
 ordinary pushes retain that pin and the child keeps its existing review and CI.
 A rewritten or closed parent blocks landing until the author repairs the child.
 
-Manual Git restacking is available before the native restack helper. Start with a
-clean worktree and read the child's saved parent head and the parent's current
-revision and head from these reports. The child’s `result.request.base.head_oid`
-is the saved pin. The parent’s `result.request.head_oid` and
-`result.auto_merge.revision_id` identify its current head and saved revision:
+Restack replays only the child's commits after its saved review base. It keeps
+its request association and upstream and leaves remote publication explicit:
 
 ```sh
-scope request show --request parser-ui --json
-scope request show --request parser-core --json
 scope request checkout --request parser-ui
-git branch backup/parser-ui-before-restack
-git fetch scope +refs/heads/parser-core:refs/scope/parents/parser-core
-git rev-parse refs/scope/parents/parser-core
-git rebase --onto <current-parent-full-oid> <saved-parent-full-oid>
-git diff <current-parent-full-oid>...HEAD
-scope request push --base-revision <current-parent-revision-id>
+scope request restack
+git diff <selected-base-full-oid>...HEAD
+scope request push
 scope request diff
 ```
 
-Replace `scope` with the request's configured remote and verify the fetched head
-matches the parent's reported full OID before rebasing. When Git credentials are
-unavailable, `scope request checkout --request parser-core --branch inspect-parent`
-fetches the parent through the CLI bearer transport; return to the child before
-creating its backup and rebasing. Resolve conflicts with `git add` and
-`git rebase --continue`, or return to the original state with `git rebase --abort`.
-The explicit revision must be the same parent's current saved revision. A race
-with another publication stops the push. Even if rebasing leaves HEAD unchanged,
-`--base-revision` publishes a revision context with a committed retry receipt.
-After a lost response, retry the same head and revision. For a closed parent,
-create a new main-based replacement request; this slice has no reparent helper.
+With no `--onto`, restack selects the current saved parent revision, or current
+main for a main-based request. Parent extensions do not require restacking; use
+it voluntarily to include fix-ups. Recover from a closed parent or choose a new
+parent explicitly:
+
+```sh
+scope request restack --onto main
+scope request restack --onto parser-core-v2
+```
+
+The initial command requires a clean worktree and index, an attached Scope
+request branch, no competing Git operation, and sole worktree ownership of that
+branch. It fetches the selected base through the CLI session and preserves the
+request's required main ancestry. A parent that predates that ancestry must be
+updated first, or select main. Merge commits in the child's replay range require
+manual restacking with preserved merge history; the helper refuses them before
+rewriting the branch.
+
+Git owns conflict progress. Stage resolutions, then continue or abort:
+
+```sh
+git add <resolved-files>
+scope request restack --continue
+scope request restack --abort
+```
+
+A conflict returns exit 5 with `recovery` fields naming the original head and
+base, selected base, backup ref, and continuation, abort and publication
+commands. Successful JSON output uses `command: "request.restack"` and
+`result.status: "ready_to_publish"` or `"aborted"`. Abort verifies that Git
+restored the original head before clearing the pending selection. Backup refs
+remain under `refs/scope/restacks/` for inspection.
+
+If Git completed before the helper was interrupted, `--continue` reports the
+current head and retained selection. `--abort` refuses to reset a completed
+rebase blindly; inspect the backup and current HEAD before manual recovery.
+After inspecting a completed replay, `scope request push` consumes the pending
+selection only for its original repository, remote and destination request.
+A stale publication leaves that selection available for recovery. If main or
+the selected parent moved, discard only the stale selection after inspecting the
+completed replay:
+
+```sh
+scope request restack --discard-selection --json
+git fetch scope +refs/heads/main:refs/remotes/scope/main
+git rebase --onto refs/remotes/scope/main <reported-selected-base-full-oid>
+scope request push --base main
+```
+
+For a request base, fetch its current branch into `refs/scope/parents/`, replay
+from the reported previous selected OID onto that fetched head, and use
+`scope request push --base <request-name-or-id>`. Verify the fetched head matches
+`scope request show --request <request-name-or-id>` before replaying.
+`--discard-selection` requires the original branch and no active Git operation.
+It preserves HEAD, resolved files, refs, and the backup. JSON reports
+`result.status: "selection_discarded"` with the preserved head and old selected
+base. It cannot combine with `--onto`, `--continue`, or `--abort`. An ambiguous
+same-head publication receipt remains available for its original retry; this
+action does not discard that receipt or authorize a server update.
+
+Manual Git restacks can publish an explicit base without the helper:
+
+```sh
+scope request push --base-revision <current-parent-revision-id>
+scope request push --base parser-core-v2
+scope request push --base main
+```
+
+`--base-revision` selects the same parent's current saved revision. `--base`
+selects an Open request in the same private full view or current main. These
+options are mutually exclusive. A selection supplied after a native restack
+must agree with its retained selection. Ordinary pushes without a selection
+retain their parent pin. Main-based requests continue advancing their review
+base through contained main history; the source branch never supplies a new
+parent.
+Targeted pushes keep the source branch's association and upstream.
+
+Changed-head publication saves the head and base together. A fresh Draft may
+restack before its first saved revision, but an unchanged head cannot publish a
+new base without saved child evidence. Keep the pending selection, commit the
+child's own changes, then run `scope request push` to save its first revision.
+Same-head base changes use a committed revision-context receipt. After a lost response, retry
+the same head and selection so the saved operation key recovers the original
+receipt. Recovery returns Conflict if a newer publication prevents confirmation
+of the current intended head and base.
 
 Every push to a request evaluates CI for its current revision. In a repository
 connected to GitHub, CI uses the required check names from repository

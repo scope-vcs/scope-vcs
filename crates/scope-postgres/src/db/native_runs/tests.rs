@@ -326,6 +326,7 @@ async fn record_check_revision(
         .requests()
         .record_request_revision(RecordRequestRevisionInput {
             new_base: None,
+            new_base_stack_depth: None,
             request_id: request_id.into(),
             actor_user_id: "user_public".into(),
             actor_can_edit: true,

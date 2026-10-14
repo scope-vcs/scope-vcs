@@ -68,6 +68,7 @@ pub struct WorkingRequestUploadMutation {
 #[derive(Clone, Debug)]
 pub struct RecordRequestRevisionInput {
     pub new_base: Option<super::RequestBase>,
+    pub new_base_stack_depth: Option<u32>,
     pub request_id: String,
     pub actor_user_id: String,
     pub actor_can_edit: bool,
@@ -256,35 +257,52 @@ pub fn record_request_revision(
     }
     validate_expected_head(&request, input.expected_old_head_oid.as_deref())?;
     validate_snapshot_head(&input.git_snapshot, &input.new_head_oid)?;
+    if input.new_base.as_ref() == Some(&request.base) && input.new_head_oid == request.head_oid {
+        return Err(DomainError::conflict(
+            "revision context requires a changed review base",
+        ));
+    }
     let old_head_oid = request.head_oid.clone();
     let main_ancestor_oid =
         request_main_ancestor_after_revision(&request, &input.git_facts).to_string();
-    let base = match input.new_base {
+    let selected_base = input.new_base.is_some();
+    let (base, stack_depth) = match input.new_base {
         Some(base) => {
-            super::validate_request_repin(&request.base, &base)?;
-            base
+            let depth = super::stack::validate_request_base_selection(
+                &request,
+                &base,
+                input.new_base_stack_depth,
+                &input.git_facts,
+            )?;
+            (base, depth)
         }
-        None => match &request.base {
-            super::RequestBase::Main { .. } => super::RequestBase::Main {
-                review_base_oid: main_ancestor_oid.clone(),
-            },
-            base => base.clone(),
-        },
+        None => {
+            if input.new_base_stack_depth.is_some() {
+                return Err(DomainError::conflict(
+                    "stack depth requires an explicit parent selection",
+                ));
+            }
+            let base = match &request.base {
+                super::RequestBase::Main { .. } => super::RequestBase::Main {
+                    review_base_oid: main_ancestor_oid.clone(),
+                },
+                base => base.clone(),
+            };
+            (base, request.stack_depth)
+        }
     };
-    if base != request.base {
+    let base_changed = base != request.base;
+    if base_changed {
         request.base_version = request
             .base_version
             .checked_add(1)
             .ok_or_else(|| DomainError::conflict("request base version overflow"))?;
         request.base = base;
-        request.stack_status = if matches!(request.base, super::RequestBase::Main { .. }) {
-            super::RequestStackStatus::Main
-        } else {
-            super::RequestStackStatus::WaitingForParent
-        };
     }
-    if request.stack_status == super::RequestStackStatus::IntegrationConflict
-        && old_head_oid != input.new_head_oid
+    if selected_base
+        || base_changed
+        || (request.stack_status == super::RequestStackStatus::IntegrationConflict
+            && old_head_oid != input.new_head_oid)
     {
         request.stack_status = if matches!(request.base, super::RequestBase::Main { .. }) {
             super::RequestStackStatus::Main
@@ -292,6 +310,7 @@ pub fn record_request_revision(
             super::RequestStackStatus::WaitingForParent
         };
     }
+    request.stack_depth = stack_depth;
     request.main_ancestor_oid = main_ancestor_oid;
     request.head_oid = input.new_head_oid.clone();
     let old_git_snapshot = request.git_snapshot.replace(input.git_snapshot.clone());

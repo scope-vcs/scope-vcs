@@ -19,7 +19,7 @@ pub struct RequestRevisionContextPublication {
     pub expected_head_oid: String,
     pub expected_base_version: u64,
     pub base: RequestBase,
-    pub expected_parent_base_version: u64,
+    pub expected_parent_base_version: Option<u64>,
 }
 
 impl RequestStore {
@@ -98,11 +98,22 @@ pub(super) async fn validate(
     request: &Request,
     input: &RecordRequestRevisionInput,
     context: &RequestRevisionContextPublication,
-    parent: Option<&super::RequestParentPublicationFacts>,
+    facts: Option<&super::RequestBasePublicationFacts>,
 ) -> Result<(), PostgresError> {
     let revision = super::request_revision_rows::latest_revision_for_request(tx, &request.id)
         .await?
         .ok_or_else(|| PostgresError::conflict("request has no saved revision"))?;
+    let parent_matches = match (&context.base, context.expected_parent_base_version, facts) {
+        (
+            RequestBase::Request { .. },
+            Some(expected),
+            Some(super::RequestBasePublicationFacts::Request(parent)),
+        ) => parent.base_version == expected,
+        (RequestBase::Main { .. }, None, Some(super::RequestBasePublicationFacts::Main { .. })) => {
+            true
+        }
+        _ => false,
+    };
     if context.operation_key.trim().is_empty()
         || context.operation_key.len() > 200
         || revision.id != context.expected_revision_id
@@ -112,7 +123,7 @@ pub(super) async fn validate(
         || request.base_version != context.expected_base_version
         || input.new_base.as_ref() != Some(&context.base)
         || input.git_snapshot != revision.git_snapshot
-        || parent.is_none_or(|parent| parent.base_version != context.expected_parent_base_version)
+        || !parent_matches
     {
         return Err(PostgresError::conflict(
             "request changed during revision-context publication",

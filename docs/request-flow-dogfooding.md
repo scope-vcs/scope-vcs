@@ -6,10 +6,14 @@ exercised. GitHub remains authoritative for this repository's merges and release
 
 Private stack exercises use the seeded local service or a designated native
 Scope repository. The [CLI workflow](cli.md#contribute-and-review) covers pinned
-start, child review, manual restacking and `push --base-revision`. Inspect a parent
+start, child review, `restack`, explicit `push --base` and `push --base-revision`. Inspect a parent
 extension without repinning, then exercise rewrite recovery and a lost response
 followed by parent landing. A committed revision receipt must recover even when
-the live child has already retargeted to main.
+the live child has already retargeted to main. A later child publication must
+return Conflict rather than rewind local tracking. Exercise a real conflicting
+rebase through staged `restack --continue` and `restack --abort`, then recover a
+closed parent with `restack --onto main`. Confirm the backup, original head,
+selected base and retained upstream before publishing the replay.
 
 A released service must support the request-base Git headers before this workflow
 can exercise hosted publication. Record a missing deployed capability as a

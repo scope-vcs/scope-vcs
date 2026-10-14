@@ -197,6 +197,7 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
     );
     let mut detail = request();
     detail["main_ancestor_oid"] = base.clone().into();
+    detail["base"]["review_base_oid"] = base.clone().into();
     detail["head_oid"] = base.clone().into();
     detail["mergeability"]["current_main_oid"] = base.clone().into();
     detail["mergeability"]["request_head_oid"] = base.clone().into();
@@ -360,6 +361,7 @@ fn request_push_without_a_seen_head_only_builds_on_the_current_head() {
 
     let mut detail = request();
     detail["main_ancestor_oid"] = base.clone().into();
+    detail["base"]["review_base_oid"] = base.clone().into();
     detail["head_oid"] = someone_else.clone().into();
     detail["mergeability"]["current_main_oid"] = base.clone().into();
     detail["mergeability"]["request_head_oid"] = someone_else.clone().into();

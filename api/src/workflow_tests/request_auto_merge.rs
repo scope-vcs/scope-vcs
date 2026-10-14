@@ -111,6 +111,7 @@ async fn record_revision(
         .requests()
         .record_request_revision(RecordRequestRevisionInput {
             new_base: None,
+            new_base_stack_depth: None,
             request_id: request_id.to_string(),
             actor_user_id: actor_user_id.to_string(),
             actor_can_edit: true,

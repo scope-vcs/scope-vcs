@@ -516,7 +516,7 @@ export type RequestComparisonMode = "request" | "push" | "commit";
 
 export type RequestComparisonResponse = { revision_id: string, mode: RequestComparisonMode, base_oid: GitOid | null, head_oid: GitOid | null, files: Array<CommitFileResponse>, inspection: RequestRevisionInspectionState, };
 
-export type RequestRevisionContextRequest = { operation_key: string, base: RequestBase, expected_head_oid: GitOid, expected_revision_id: string, expected_base_version: number, expected_parent_base_version: number, };
+export type RequestRevisionContextRequest = { operation_key: string, base: RequestBase, expected_head_oid: GitOid, expected_revision_id: string, expected_base_version: number, expected_parent_base_version: number | null, };
 
 export type RequestRevisionContextResponse = { request: RequestSummaryResponse, revision_id: string, };
 

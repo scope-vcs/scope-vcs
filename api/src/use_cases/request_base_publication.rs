@@ -12,95 +12,24 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     requests::{Request, RequestBase, RequestRevision, RequestState, canonical_request_ref},
 };
-use scope_postgres::db::{RequestParentPublicationFacts, RequestStackChildFacts};
+use scope_postgres::db::{
+    RequestBasePublicationFacts, RequestParentPublicationFacts, RequestStackChildFacts,
+};
 use std::path::Path;
+
+mod headers;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RequestBasePublication {
     pub(crate) base: RequestBase,
     pub(crate) expected_base_version: u64,
-    pub(crate) expected_parent_base_version: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RequestBasePublicationHeaders {
-    pub(crate) parent_request_id: String,
-    pub(crate) parent_revision_id: String,
+    pub(crate) base: RequestBase,
     pub(crate) expected_base_version: u64,
-    pub(crate) expected_parent_base_version: u64,
-    pub(crate) expected_parent_head_oid: String,
-}
-
-impl RequestBasePublicationHeaders {
-    pub(crate) fn parse(headers: &HeaderMap) -> Result<Option<Self>, ApiError> {
-        let names = [
-            "scope-request-base",
-            "scope-request-base-version",
-            "scope-request-parent-base-version",
-            "scope-request-parent-head",
-        ];
-        let mut values = Vec::with_capacity(names.len());
-        for name in names {
-            let mut entries = headers.get_all(name).iter();
-            let value = entries.next();
-            if entries.next().is_some() {
-                return Err(ApiError::bad_request(
-                    "duplicate request base publication header",
-                ));
-            }
-            values.push(
-                value.map(|value| value.to_str()).transpose().map_err(|_| {
-                    ApiError::bad_request("invalid request base publication header")
-                })?,
-            );
-        }
-        if values.iter().all(Option::is_none) {
-            return Ok(None);
-        }
-        let values = values
-            .into_iter()
-            .collect::<Option<Vec<_>>>()
-            .ok_or_else(|| {
-                ApiError::bad_request("request base publication requires all four headers")
-            })?;
-        let (parent_request_id, parent_revision_id) = values[0]
-            .strip_prefix("request:")
-            .and_then(|value| value.split_once('@'))
-            .filter(|(request, revision)| valid_id(request) && valid_id(revision))
-            .ok_or_else(|| ApiError::bad_request("invalid request base selection"))?;
-        let expected_base_version = parse_version(values[1])?;
-        let expected_parent_base_version = parse_version(values[2])?;
-        let head = values[3];
-        if head.len() != 40 || !head.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(ApiError::bad_request("invalid request parent head"));
-        }
-        Ok(Some(Self {
-            parent_request_id: parent_request_id.to_string(),
-            parent_revision_id: parent_revision_id.to_string(),
-            expected_base_version,
-            expected_parent_base_version,
-            expected_parent_head_oid: head.to_ascii_lowercase(),
-        }))
-    }
-}
-
-fn valid_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 255
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
-}
-
-fn parse_version(value: &str) -> Result<u64, ApiError> {
-    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(ApiError::bad_request("invalid request base version"));
-    }
-    value
-        .parse::<u64>()
-        .ok()
-        .filter(|version| *version > 0)
-        .ok_or_else(|| ApiError::bad_request("invalid request base version"))
+    pub(crate) expected_parent_base_version: Option<u64>,
 }
 
 pub(crate) async fn prepare_request_base_publication(
@@ -113,23 +42,71 @@ pub(crate) async fn prepare_request_base_publication(
 ) -> Result<
     (
         Option<RequestBasePublication>,
-        Option<RequestParentPublicationFacts>,
+        Option<RequestBasePublicationFacts>,
     ),
     ApiError,
 > {
-    let RequestBase::Request { request_id, .. } = &request.base else {
-        if headers.is_some() {
-            return Err(ApiError::conflict(
-                "request base publication must select the existing parent",
+    if let Some(headers) = &headers {
+        if !request.view.is_private() {
+            return Err(ApiError::forbidden(
+                "explicit base publication requires the private view",
             ));
         }
-        return Ok((None, None));
-    };
-    if !request.view.is_private() {
-        return Err(ApiError::conflict(
-            "request stacks require the private view",
-        ));
+        if headers.expected_base_version != request.base_version {
+            return Err(ApiError::conflict(
+                "request base publication context changed; refresh and retry",
+            ));
+        }
     }
+    let selected_base = headers
+        .as_ref()
+        .map_or(&request.base, |headers| &headers.base);
+    let RequestBase::Request {
+        request_id,
+        head_oid,
+        ..
+    } = selected_base
+    else {
+        let Some(headers) = headers else {
+            return Ok((None, None));
+        };
+        if headers.expected_parent_base_version.is_some() {
+            return Err(ApiError::bad_request(
+                "main selection cannot carry a parent version",
+            ));
+        }
+        let RequestBase::Main { review_base_oid } = &headers.base else {
+            return Err(ApiError::bad_request("main selection requires a main base"));
+        };
+        let main_head = restore_current_main(state, incarnation, staging_repo).await?;
+        if review_base_oid != &main_head {
+            return Err(ApiError::conflict(
+                "main moved; refresh and retry base publication",
+            ));
+        }
+        let path = staging_repo.to_path_buf();
+        let main = main_head.clone();
+        let head = new_head_oid.to_string();
+        let contains = blocking::run(move || {
+            git_is_ancestor(&path, &main, &head, "checking selected main ancestry")
+        })
+        .await?;
+        if !contains {
+            return Err(ApiError::conflict(
+                "request branch must contain its selected main",
+            ));
+        }
+        return Ok((
+            Some(RequestBasePublication {
+                base: headers.base,
+                expected_base_version: headers.expected_base_version,
+            }),
+            Some(RequestBasePublicationFacts::Main {
+                main_head_oid: main_head,
+                child_contains_main: true,
+            }),
+        ));
+    };
     let parent = state
         .metadata
         .requests()
@@ -148,42 +125,29 @@ pub(crate) async fn prepare_request_base_publication(
         .latest_request_revision(&parent.id)
         .await?
         .ok_or_else(|| ApiError::conflict("parent request has no current revision"))?;
+    let current_base = RequestBase::Request {
+        request_id: parent.id.clone(),
+        revision_id: revision.id.clone(),
+        head_oid: parent.head_oid.clone(),
+    };
     if revision.new_head_oid != parent.head_oid {
         return Err(ApiError::conflict(
             "parent request revision changed; retry publication",
         ));
     }
-    let publication = if let Some(headers) = headers {
-        if headers.parent_request_id != parent.id
-            || headers.parent_revision_id != revision.id
-            || headers.expected_parent_head_oid != parent.head_oid
-            || headers.expected_parent_base_version != parent.base_version
-            || headers.expected_base_version != request.base_version
-        {
-            return Err(ApiError::conflict(
-                "request base publication context changed; refresh and retry",
-            ));
-        }
-        Some(RequestBasePublication {
-            base: RequestBase::Request {
-                request_id: parent.id.clone(),
-                revision_id: revision.id.clone(),
-                head_oid: parent.head_oid.clone(),
-            },
-            expected_base_version: headers.expected_base_version,
-            expected_parent_base_version: headers.expected_parent_base_version,
-        })
-    } else {
-        None
-    };
+    if let Some(headers) = &headers
+        && (headers.base != current_base
+            || headers.expected_parent_base_version != Some(parent.base_version))
+    {
+        return Err(ApiError::conflict(
+            "request base publication context changed; refresh and retry",
+        ));
+    }
     restore_request_objects(state, incarnation, &parent, &revision, staging_repo).await?;
-    restore_request_pin(state, incarnation, request, staging_repo).await?;
-    let pin = publication
-        .as_ref()
-        .map_or(request.base.review_base_oid(), |publication| {
-            publication.base.review_base_oid()
-        })
-        .to_string();
+    if headers.is_none() {
+        restore_request_pin(state, incarnation, request, staging_repo).await?;
+    }
+    let pin = head_oid.clone();
     let parent_head = parent.head_oid.clone();
     let path = staging_repo.to_path_buf();
     let new_head = new_head_oid.to_string();
@@ -194,9 +158,9 @@ pub(crate) async fn prepare_request_base_publication(
         ))
     })
     .await?;
-    if !parent_contains_pin && publication.is_none() {
+    if !parent_contains_pin {
         return Err(ApiError::conflict(
-            "parent history was rewritten; publish an explicit base revision",
+            "parent history was rewritten; publish an explicit base selection",
         ));
     }
     if !child_contains_pin {
@@ -204,19 +168,60 @@ pub(crate) async fn prepare_request_base_publication(
             "request branch must contain its selected parent pin",
         ));
     }
-    let facts = RequestParentPublicationFacts {
+    let facts = RequestBasePublicationFacts::Request(RequestParentPublicationFacts {
         request_id: parent.id,
         revision_id: revision.id,
         head_oid: parent.head_oid,
-        base_version: publication
-            .as_ref()
-            .map_or(parent.base_version, |publication| {
-                publication.expected_parent_base_version
-            }),
+        base_version: parent.base_version,
         parent_contains_pin,
         child_contains_pin,
-    };
-    Ok((publication, Some(facts)))
+    });
+    Ok((
+        headers.map(|headers| RequestBasePublication {
+            base: headers.base,
+            expected_base_version: headers.expected_base_version,
+        }),
+        Some(facts),
+    ))
+}
+
+pub(crate) async fn restore_current_main(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    staging_repo: &Path,
+) -> Result<String, ApiError> {
+    let (head, spans) = state
+        .metadata
+        .repositories()
+        .repository_content_source(incarnation)
+        .await?;
+    let head = head.ok_or_else(|| ApiError::conflict("repository has no accepted main"))?;
+    let source = state
+        .repository_engine
+        .materialize_repository(state, incarnation, &head, &spans)
+        .await?;
+    let main = head.head_oid.clone();
+    let path = staging_repo.to_path_buf();
+    blocking::run(move || {
+        let refspec = format!("{}:refs/scope/internal/base-main", head.head_oid);
+        run_git(
+            Some(&path),
+            &[
+                "fetch",
+                "--no-tags",
+                source.as_ref().to_string_lossy().as_ref(),
+                &refspec,
+            ],
+            "restoring selected main objects",
+        )?;
+        run_git(
+            Some(&path),
+            &["update-ref", "-d", "refs/scope/internal/base-main"],
+            "removing main base preparation ref",
+        )
+    })
+    .await?;
+    Ok(main)
 }
 
 pub(crate) async fn request_stack_child_publication_facts(

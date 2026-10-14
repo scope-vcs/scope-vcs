@@ -2,14 +2,15 @@ use crate::{
     auth::scope::require_scope_user,
     error::ApiError,
     git::request_refs::{
-        create_request_receive_pack_staging_repo, with_request_revision_store_repo,
+        create_request_receive_pack_staging_repo, request_revision_git_facts,
+        with_request_revision_store_repo,
     },
     persistence::unix_now,
     persistence_ids::generate_prefixed_id,
     state::AppState,
     use_cases::request_base_publication::{
         RequestBasePublicationHeaders, prepare_request_base_publication,
-        request_stack_child_publication_facts,
+        request_stack_child_publication_facts, restore_current_main,
     },
 };
 use axum::{
@@ -18,7 +19,8 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{RequestRevisionContextRequest, RequestRevisionContextResponse};
-use scope_domain::requests::{RecordRequestRevisionInput, RequestBase, RequestRevisionGitFacts};
+use scope_domain::requests::{RecordRequestRevisionInput, RequestBase};
+use scope_postgres::db::RequestBasePublicationFacts;
 use scope_postgres::db::RequestRevisionContextPublication;
 use scope_product_analytics::ProductEvent;
 
@@ -39,11 +41,9 @@ pub(crate) async fn publish(
             revision_id,
             head_oid: head_oid.as_str().to_string(),
         },
-        scope_api_contract::RequestBase::Main { .. } => {
-            return Err(ApiError::conflict(
-                "revision context may only repin the existing parent",
-            ));
-        }
+        scope_api_contract::RequestBase::Main { review_base_oid } => RequestBase::Main {
+            review_base_oid: review_base_oid.as_str().to_string(),
+        },
     };
     let context = RequestRevisionContextPublication {
         operation_key: input.operation_key,
@@ -87,20 +87,10 @@ pub(crate) async fn publish(
         )
         .await?;
         let publication = async {
-            let RequestBase::Request {
-                request_id: parent_request_id,
-                revision_id: parent_revision_id,
-                head_oid: parent_head,
-            } = &base
-            else {
-                return Err(ApiError::conflict("revision context requires a parent pin"));
-            };
             let publication_headers = RequestBasePublicationHeaders {
-                parent_request_id: parent_request_id.clone(),
-                parent_revision_id: parent_revision_id.clone(),
+                base: base.clone(),
                 expected_base_version: context.expected_base_version,
                 expected_parent_base_version: context.expected_parent_base_version,
-                expected_parent_head_oid: parent_head.clone(),
             };
             let (_, parent) = prepare_request_base_publication(
                 &state,
@@ -111,8 +101,19 @@ pub(crate) async fn publish(
                 &request.head_oid,
             )
             .await?;
-            let parent = parent
-                .ok_or_else(|| ApiError::conflict("revision context requires parent evidence"))?;
+            let main = match &parent {
+                Some(RequestBasePublicationFacts::Main { main_head_oid, .. }) => {
+                    main_head_oid.clone()
+                }
+                _ => restore_current_main(&state, &incarnation, &staging).await?,
+            };
+            let path = staging.clone();
+            let old_main = request.main_ancestor_oid.clone();
+            let head = request.head_oid.clone();
+            let git_facts = crate::git::blocking::run(move || {
+                request_revision_git_facts(&path, &old_main, &head, &head, Some(&main))
+            })
+            .await?;
             let children = request_stack_child_publication_facts(
                 &state,
                 &incarnation,
@@ -132,12 +133,9 @@ pub(crate) async fn publish(
                         expected_old_head_oid: Some(context.expected_head_oid.clone()),
                         new_head_oid: context.expected_head_oid.clone(),
                         new_base: Some(base),
+                        new_base_stack_depth: None,
                         git_snapshot: revision.git_snapshot.clone(),
-                        git_facts: RequestRevisionGitFacts {
-                            contains_old_head: true,
-                            contained_main_oid: None,
-                            contained_main_descends_from_base: false,
-                        },
+                        git_facts,
                         event_id: event_id.clone(),
                         body: None,
                         now_unix: unix_now()?,
