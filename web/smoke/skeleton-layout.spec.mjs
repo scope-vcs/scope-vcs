@@ -175,7 +175,7 @@ function measureLayout() {
   const dividers = new Set()
   const mainRect = main?.getBoundingClientRect()
   for (const element of main?.querySelectorAll('*') ?? []) {
-    if (!visible(element) || element.closest('.sr-only, .animate-spin')) continue
+    if (!visible(element) || element.closest('.sr-only, .animate-spin, [data-slot="site-footer"]')) continue
     const rect = element.getBoundingClientRect()
     if (rect.bottom < mainRect.top || rect.top > innerHeight) continue
     if (element.matches('[data-slot="skeleton"], svg, img, input, textarea, select')) {
