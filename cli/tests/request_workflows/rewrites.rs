@@ -37,7 +37,7 @@ fn adopted_branch_compares_with_scope_request_despite_external_upstream() {
     fs::write(dir.path().join("fix.txt"), "first\n").unwrap();
     let head = commit_all(dir.path(), "First request commit");
     let mut started = request();
-    started["base_main_oid"] = base.clone().into();
+    started["main_ancestor_oid"] = base.clone().into();
     started["head_oid"] = base.clone().into();
     started["mergeability"]["current_main_oid"] = base.clone().into();
     started["mergeability"]["request_head_oid"] = base.into();
@@ -196,7 +196,7 @@ fn request_push_replaces_amended_history_unless_someone_else_pushed() {
         ],
     );
     let mut detail = request();
-    detail["base_main_oid"] = base.clone().into();
+    detail["main_ancestor_oid"] = base.clone().into();
     detail["head_oid"] = base.clone().into();
     detail["mergeability"]["current_main_oid"] = base.clone().into();
     detail["mergeability"]["request_head_oid"] = base.clone().into();
@@ -359,7 +359,7 @@ fn request_push_without_a_seen_head_only_builds_on_the_current_head() {
     let someone_else = git_stdout(other.path(), ["rev-parse", "HEAD"]);
 
     let mut detail = request();
-    detail["base_main_oid"] = base.clone().into();
+    detail["main_ancestor_oid"] = base.clone().into();
     detail["head_oid"] = someone_else.clone().into();
     detail["mergeability"]["current_main_oid"] = base.clone().into();
     detail["mergeability"]["request_head_oid"] = someone_else.clone().into();

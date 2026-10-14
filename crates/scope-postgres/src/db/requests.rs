@@ -163,6 +163,7 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
+        super::request_checks::clear_current_evaluation(&tx, &mutation.request.id).await?;
         let mutation = if let Some(stored) = active_auto_merge {
             let stopped = stop_request_auto_merge(
                 &mutation.request,

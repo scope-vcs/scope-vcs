@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime_budgets::RuntimeBudgets;
+use crate::use_cases::request_revision_inspection::request_commit_membership_facts;
 use scope_domain::policy::Policy;
 use scope_domain::views::{ViewId, Views};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
@@ -21,10 +22,26 @@ pub(super) fn request_revision_commit_files(
     revision: &RequestRevision,
     commit_oid: &str,
 ) -> Result<InspectedRequestCommitFiles, ApiError> {
-    if !commit_belongs_to_revision(raw_repo, revision, commit_oid)? {
+    let comparison = RequestComparison::push(revision, access.view.clone());
+    let membership =
+        request_commit_membership_facts(raw_repo, comparison.membership(), commit_oid)?;
+    if !comparison.membership().contains_commit(membership) {
         return Err(ApiError::not_found("request revision commit not found"));
     }
-    let inspected = inspect_request_commit(raw_repo, policy, views, access, commit_oid)?;
+    let identity = request_commit_identity(raw_repo, commit_oid)?;
+    let comparison = comparison.commit(
+        commit_oid.to_string(),
+        membership,
+        identity.parent_oids.first().cloned(),
+    )?;
+    let inspected = inspect_request_commit_with_identity(
+        raw_repo,
+        policy,
+        views,
+        access,
+        &comparison.identity().head_oid,
+        identity,
+    )?;
     let commit = inspected
         .commit
         .ok_or_else(|| ApiError::not_found("request revision commit not found"))?;
@@ -43,6 +60,17 @@ pub(super) fn inspect_request_commit(
     commit_oid: &str,
 ) -> Result<InspectedRequestCommit, ApiError> {
     let identity = request_commit_identity(raw_repo, commit_oid)?;
+    inspect_request_commit_with_identity(raw_repo, policy, views, access, commit_oid, identity)
+}
+
+fn inspect_request_commit_with_identity(
+    raw_repo: &FsPath,
+    policy: &Policy,
+    views: &Views,
+    access: RepositoryAccess,
+    commit_oid: &str,
+    identity: RequestCommitIdentity,
+) -> Result<InspectedRequestCommit, ApiError> {
     let changes = inspect_request_changes(
         &request_commit_changes(raw_repo, commit_oid)?,
         policy,

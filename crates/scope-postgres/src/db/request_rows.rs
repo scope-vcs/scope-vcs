@@ -425,8 +425,20 @@ where
             Expr::value(row.description_markdown),
         )
         .col_expr(
-            entities::request::Column::BaseMainOid,
-            Expr::value(row.base_main_oid),
+            entities::request::Column::MainAncestorOid,
+            Expr::value(row.main_ancestor_oid),
+        )
+        .col_expr(
+            entities::request::Column::BaseKind,
+            Expr::value(row.base_kind),
+        )
+        .col_expr(
+            entities::request::Column::ReviewBaseOid,
+            Expr::value(row.review_base_oid),
+        )
+        .col_expr(
+            entities::request::Column::BaseVersion,
+            Expr::value(row.base_version),
         )
         .col_expr(
             entities::request::Column::HeadOid,

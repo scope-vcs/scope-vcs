@@ -1,5 +1,7 @@
 mod baseline;
 mod bridge;
+mod m0084_request_review_bases;
+mod m0085_request_check_identity;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -42,10 +44,20 @@ struct RegisteredMigration {
 }
 
 fn migration_registry() -> Vec<RegisteredMigration> {
-    vec![RegisteredMigration {
-        migration: Box::new(baseline::Migration),
-        metadata_restore_safe: true,
-    }]
+    vec![
+        RegisteredMigration {
+            migration: Box::new(baseline::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0084_request_review_bases::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0085_request_check_identity::Migration),
+            metadata_restore_safe: true,
+        },
+    ]
 }
 
 #[derive(Clone, Copy, Debug)]

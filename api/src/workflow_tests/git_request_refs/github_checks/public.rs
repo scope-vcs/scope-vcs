@@ -445,7 +445,13 @@ async fn a_late_renewal_onto_the_same_private_main_queues_no_second_push() {
         "contribution\n",
     )
     .await;
-    let old = tested_oid(&state, &head).await;
+    let old = state
+        .metadata
+        .requests()
+        .request_check_evaluation(REQUEST_ID, &head)
+        .await
+        .unwrap()
+        .unwrap();
     push_main_change(
         &state,
         &owner_source,
@@ -473,7 +479,50 @@ async fn a_late_renewal_onto_the_same_private_main_queues_no_second_push() {
         .await
         .unwrap()
         .unwrap();
-    assert_ne!(renewed.tested_oid, old);
+    assert_ne!(renewed.tested_oid, old.tested_oid);
+    let requests = state.metadata.requests();
+    assert!(
+        requests
+            .requests_testing_github_commit(TEST_REPO_ID, &old.tested_oid)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        requests
+            .current_github_evaluations_testing(TEST_REPO_ID, &old.tested_oid)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        requests
+            .current_github_evaluations_testing(TEST_REPO_ID, &renewed.tested_oid)
+            .await
+            .unwrap(),
+        std::slice::from_ref(&renewed)
+    );
+    assert!(
+        requests
+            .github_commit_is_watched(TEST_REPO_ID, &old.tested_oid)
+            .await
+            .unwrap()
+    );
+    let candidates = requests
+        .github_check_refresh_candidates(unix_now() + 1_000, 20)
+        .await
+        .unwrap();
+    assert!(
+        candidates
+            .iter()
+            .all(|candidate| candidate.commit.commit_oid != old.tested_oid)
+    );
+    assert!(
+        candidates
+            .iter()
+            .any(|candidate| candidate.request_id == REQUEST_ID
+                && candidate.commit.commit_oid == renewed.tested_oid)
+    );
 
     let late = state
         .metadata
@@ -496,7 +545,8 @@ async fn a_late_renewal_onto_the_same_private_main_queues_no_second_push() {
                 .incarnation(),
             request_id: REQUEST_ID.into(),
             head_oid: head.clone(),
-            replaced_tested_oid: renewed.tested_oid.clone(),
+            expected_evaluation_id: old.id,
+            replaced_tested_oid: old.tested_oid,
             tested: GitHubTestedCommit::CheckCommit {
                 oid: renewed.tested_oid.clone(),
                 base: renewed.check_commit_base.clone().unwrap(),

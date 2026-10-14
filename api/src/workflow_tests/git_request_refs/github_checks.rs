@@ -131,6 +131,48 @@ pub(super) async fn record_github_checks(
     names: &[&str],
 ) {
     let requests = state.metadata.requests();
+    let request = stored_request(state, request_id).await;
+    let revision = requests
+        .record_request_revision(scope_domain::requests::RecordRequestRevisionInput {
+            request_id: request.id.clone(),
+            actor_user_id: test_owner_id(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some(request.head_oid.clone()),
+            new_head_oid: head.into(),
+            git_snapshot: request.git_snapshot.clone().unwrap(),
+            git_facts: scope_domain::requests::RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
+            },
+            event_id: format!("event_{request_id}_checks"),
+            body: None,
+            now_unix: unix_now(),
+        })
+        .await
+        .unwrap()
+        .revision;
+    let context =
+        scope_domain::requests::RequestCheckContext::for_revision(&request, &revision).unwrap();
+    let required = names
+        .iter()
+        .map(|name| name.to_string())
+        .collect::<Vec<_>>();
+    let mut evaluation = scope_domain::requests::RequestCheckPlan::evaluate_github(
+        &request,
+        &context,
+        &scope_domain::views::Views::builtin(),
+        scope_domain::requests::GitHubRequestChecks {
+            github_repository_id: GITHUB_REPOSITORY_ID,
+            tested: scope_domain::requests::GitHubTestedCommit::Head,
+            required_check_names: &required,
+        },
+        None,
+        unix_now(),
+    )
+    .unwrap()
+    .evaluation;
+    evaluation.approve(Vec::new(), unix_now()).unwrap();
     requests
         .record_request_checks(RecordRequestChecksCommand {
             expected_canonical_main_oid: requests.request_check_base(TEST_REPO_ID).await.unwrap(),
@@ -139,18 +181,7 @@ pub(super) async fn record_github_checks(
                 .await
                 .unwrap()
                 .unwrap(),
-            evaluation: scope_domain::requests::RequestCheckEvaluation::started(
-                request_id,
-                head,
-                names
-                    .iter()
-                    .map(|name| scope_domain::requests::RequestCheck::GitHub {
-                        name: name.to_string(),
-                    })
-                    .collect(),
-                unix_now(),
-            )
-            .unwrap(),
+            evaluation,
             revisions: Vec::new(),
             runs: Vec::new(),
             push_to_github: false,
@@ -493,10 +524,58 @@ async fn a_repository_reconnected_to_another_github_repository_ignores_the_old_r
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
 
+    let requests = state.metadata.requests();
+    let previous = requests
+        .request_check_evaluation(&request.request_id, &head)
+        .await
+        .unwrap()
+        .unwrap();
     reconnect_test_repository(state, GITHUB_REPOSITORY_ID + 1, "octo/other", 0).await;
+    assert!(
+        requests
+            .request_check_evaluation(&request.request_id, &head)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksNotEvaluated"
+    );
+    let mut recovery_cursor = Default::default();
+    assert_eq!(
+        crate::use_cases::request_checks::reconcile_request_checks_once(
+            state,
+            &mut recovery_cursor
+        )
+        .await
+        .unwrap(),
+        1
+    );
     let checks = request.checks().await;
     assert_eq!(checks["checks"][0]["status"], serde_json::Value::Null);
     assert_eq!(checks["mergeability"]["status"], "ChecksPending");
+    let renewed = requests
+        .request_check_evaluation(&request.request_id, &head)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(renewed.id, previous.id);
+    assert_eq!(renewed.github_repository_id, Some(GITHUB_REPOSITORY_ID + 1));
+    assert_eq!(renewed.revision_id, previous.revision_id);
+    assert_eq!(renewed.checks, previous.checks);
+    state
+        .metadata
+        .admin()
+        .execute_for_tests(&format!(
+            "DO $$ BEGIN IF NOT EXISTS (
+            SELECT 1 FROM scope_request_check_evaluations
+            WHERE id = '{}' AND github_repository_id = {}
+        ) THEN RAISE EXCEPTION 'previous destination evidence was discarded'; END IF; END $$",
+            previous.id, GITHUB_REPOSITORY_ID,
+        ))
+        .await
+        .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -600,6 +679,11 @@ async fn a_push_gives_up_when_the_connection_changes_and_reconnecting_sends_it_a
     let request = owner_request("github-checks-connection-changed", &[REQUIRED_CHECK]).await;
     let (state, fake) = (&request.state, &request.fake);
     let requests = state.metadata.requests();
+    let original_evaluation = requests
+        .request_check_evaluation(&request.request_id, &request.head())
+        .await
+        .unwrap()
+        .unwrap();
     let now = unix_now();
     let push = requests
         .claim_due_github_pushes("claim", now, now + 600, 1)
@@ -617,6 +701,14 @@ async fn a_push_gives_up_when_the_connection_changes_and_reconnecting_sends_it_a
     assert_eq!(request.checks().await["github_push"]["state"], "failed");
 
     connect_test_repository(state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 0).await;
+    assert_eq!(
+        requests
+            .request_check_evaluation(&request.request_id, &request.head())
+            .await
+            .unwrap()
+            .unwrap(),
+        original_evaluation
+    );
     assert_eq!(request.checks().await["github_push"]["state"], "sending");
     assert_eq!(push_pass(state, unix_now()).await, 1);
     assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));

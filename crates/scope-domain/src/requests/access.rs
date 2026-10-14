@@ -1,10 +1,10 @@
+use super::merge_gate::{RequestMergeSubject, RequestMergeability, evaluate_request_merge};
 use super::{
     Request, RequestActorRole, RequestState, checks::RequestChecksOutcome,
     lifecycle::ensure_request_close_allowed,
 };
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
 use crate::views::{ViewId, Views};
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestViewer<'a> {
@@ -48,27 +48,6 @@ pub struct RequestPolicyDecision {
     pub branch_mutable: bool,
     pub counts_as_open: bool,
     pub permissions: RequestPermissions,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RequestMergeabilityStatus {
-    Ready,
-    Draft,
-    Closed,
-    Merged,
-    NotMaintainer,
-    MissingRequestBranch,
-    ChecksNotEvaluated,
-    ChecksAwaitingApproval,
-    ChecksPending,
-    ChecksFailed,
-    ChecksConfigurationError,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RequestMergeability {
-    pub status: RequestMergeabilityStatus,
-    pub reason: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -204,7 +183,7 @@ pub fn request_policy(
     }
 }
 
-fn request_merger(
+pub(super) fn request_merger(
     viewer: &RequestViewer<'_>,
     author_user_id: Option<&str>,
     request_view: &ViewId,
@@ -216,79 +195,14 @@ fn request_merger(
             || (author && viewer.access.can_push && &viewer.access.view == request_view))
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct RequestMergeSubject<'a> {
-    pub author_user_id: Option<&'a str>,
-    pub view: &'a ViewId,
-    pub state: RequestState,
-    pub has_git_snapshot: bool,
-}
-
-impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
-    fn from(request: &'a Request) -> Self {
-        Self {
-            author_user_id: request.author_user_id.as_deref(),
-            view: &request.view,
-            state: request.state(),
-            has_git_snapshot: request.git_snapshot.is_some(),
-        }
-    }
-}
-
 pub fn request_list_mergeability(
     subject: RequestMergeSubject<'_>,
     viewer: &RequestViewer<'_>,
     views: &Views,
     checks: RequestChecksOutcome,
+    repository_lifecycle: crate::repository::RepoLifecycleState,
 ) -> RequestMergeability {
-    let (status, reason) = match subject.state {
-        RequestState::Closed => (RequestMergeabilityStatus::Closed, Some("request is closed")),
-        RequestState::Merged => (RequestMergeabilityStatus::Merged, Some("request is merged")),
-        RequestState::Draft => (
-            RequestMergeabilityStatus::Draft,
-            Some("request is not submitted"),
-        ),
-        RequestState::Open if !viewer.access.is_maintainer() => (
-            RequestMergeabilityStatus::NotMaintainer,
-            Some("repo maintainer required"),
-        ),
-        RequestState::Open
-            if !request_merger(viewer, subject.author_user_id, subject.view, views) =>
-        {
-            (
-                RequestMergeabilityStatus::NotMaintainer,
-                Some("merging needs a maintainer who reads the full view"),
-            )
-        }
-        RequestState::Open if !subject.has_git_snapshot => (
-            RequestMergeabilityStatus::MissingRequestBranch,
-            Some("request branch has not been pushed"),
-        ),
-        RequestState::Open => match checks {
-            RequestChecksOutcome::Clear => (RequestMergeabilityStatus::Ready, None),
-            RequestChecksOutcome::NotEvaluated => (
-                RequestMergeabilityStatus::ChecksNotEvaluated,
-                Some("CI has not been evaluated for this commit yet"),
-            ),
-            RequestChecksOutcome::AwaitingApproval => (
-                RequestMergeabilityStatus::ChecksAwaitingApproval,
-                Some("CI is waiting for a maintainer to start it"),
-            ),
-            RequestChecksOutcome::Pending => (
-                RequestMergeabilityStatus::ChecksPending,
-                Some("CI has not finished"),
-            ),
-            RequestChecksOutcome::Failed => (
-                RequestMergeabilityStatus::ChecksFailed,
-                Some("a required result did not succeed"),
-            ),
-            RequestChecksOutcome::ConfigurationError => (
-                RequestMergeabilityStatus::ChecksConfigurationError,
-                Some("the request head's CI cannot run as configured"),
-            ),
-        },
-    };
-    RequestMergeability { status, reason }
+    evaluate_request_merge(repository_lifecycle, subject, viewer, views, checks)
 }
 
 pub fn request_mergeability(
@@ -296,6 +210,7 @@ pub fn request_mergeability(
     viewer: &RequestViewer<'_>,
     views: &Views,
     checks: RequestChecksOutcome,
+    repository_lifecycle: crate::repository::RepoLifecycleState,
 ) -> RequestMergeability {
-    request_list_mergeability(request.into(), viewer, views, checks)
+    request_list_mergeability(request.into(), viewer, views, checks, repository_lifecycle)
 }

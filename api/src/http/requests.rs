@@ -20,8 +20,7 @@ use scope_api_contract::{
     AddRequestInviteeRequest, EditRequestIdentityRequest, LeaveRequestResponse,
     MergeRequestRequest, RemoveRequestInviteeRequest, RequestActorSummaryResponse,
     RequestCloseResponse, RequestDetailResponse, RequestInviteeMutationResponse,
-    RequestInviteeResponse, RequestListResponse, RequestMergeabilityResponse,
-    RequestMutationResponse, RequestPermissionsResponse, RequestSummaryResponse,
+    RequestInviteeResponse, RequestListResponse, RequestMutationResponse, RequestSummaryResponse,
     StartRequestRequest, SubmitRequestRequest,
 };
 use scope_domain::views::{ViewId, Views};
@@ -29,8 +28,8 @@ use scope_domain::{
     repository::access::{RepositoryAccess, RepositoryAccessContext},
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
-        RequestChecksOutcome, RequestViewer, StartRequestInput, request_actor_role,
-        request_mergeability, request_policy, validate_start_request_view,
+        RequestChecksOutcome, RequestViewer, StartRequestInput, request_actor_role, request_policy,
+        validate_start_request_view,
     },
 };
 use scope_postgres::db::{EditRequestIdentityCommand, RepositoryReadPolicy};
@@ -101,6 +100,7 @@ pub(crate) async fn list_requests(
                 &repo.views,
                 current_main_oid.clone(),
                 checks,
+                repo.record.lifecycle_state,
             )
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
@@ -163,6 +163,7 @@ pub(crate) async fn submit_request(
         viewer,
         &repo.views,
         current_main_oid,
+        repo.record.lifecycle_state,
     )
     .await?;
     Ok(Json(RequestMutationResponse { request }))
@@ -209,6 +210,7 @@ async fn merge_response(
         viewer,
         &result.views,
         current_main_oid,
+        scope_domain::repository::RepoLifecycleState::Ready,
     )
     .await?;
     Ok(Json(RequestMutationResponse { request }))
@@ -241,9 +243,15 @@ pub(crate) async fn close_request(
             let current_main_oid = current_main_oid_for_context(&state, &repo).await?;
             let viewer =
                 request_viewer(&state, &request.id, access.clone(), Some(&user.id)).await?;
-            let request =
-                request_response_for_viewer(&state, request, viewer, &repo.views, current_main_oid)
-                    .await?;
+            let request = request_response_for_viewer(
+                &state,
+                request,
+                viewer,
+                &repo.views,
+                current_main_oid,
+                repo.record.lifecycle_state,
+            )
+            .await?;
             Ok(Json(RequestCloseResponse {
                 deleted: false,
                 request: Some(request),
@@ -269,7 +277,7 @@ pub(crate) async fn start_request(
         &repo.context.views,
     )
     .map_err(|error| ApiError::forbidden(error.message))?;
-    let base_main_oid = current_main_oid_for_view(&state, &repo, view.clone())
+    let main_ancestor_oid = current_main_oid_for_view(&state, &repo, view.clone())
         .await?
         .ok_or_else(|| ApiError::conflict("repo has no main branch to base a request on"))?;
     let current_main_oid = current_main_oid_for_context(&state, &repo.context).await?;
@@ -287,7 +295,7 @@ pub(crate) async fn start_request(
             author_role: request_actor_role(access.clone()),
             author_view: access.view.clone(),
             view,
-            base_main_oid,
+            main_ancestor_oid,
             event_id: crate::persistence_ids::generate_prefixed_id("event_request_started")?,
             now_unix,
         },
@@ -301,6 +309,7 @@ pub(crate) async fn start_request(
         viewer,
         &repo.context.views,
         current_main_oid,
+        repo.context.record.lifecycle_state,
     )
     .await?;
     Ok(Json(RequestMutationResponse { request }))
@@ -348,6 +357,7 @@ pub(crate) async fn edit_request_identity(
         viewer,
         &repo.views,
         current_main_oid,
+        repo.record.lifecycle_state,
     )
     .await?;
     Ok(Json(RequestMutationResponse { request }))
@@ -484,8 +494,15 @@ async fn invitee_mutation_response(
         Some(viewer_user_id),
     )
     .await?;
-    let request =
-        request_response_for_viewer(state, request, viewer, &repo.views, current_main_oid).await?;
+    let request = request_response_for_viewer(
+        state,
+        request,
+        viewer,
+        &repo.views,
+        current_main_oid,
+        repo.record.lifecycle_state,
+    )
+    .await?;
     let invitee = request_invitee_response(invitee);
     Ok(Json(RequestInviteeMutationResponse { request, invitee }))
 }
@@ -544,6 +561,7 @@ async fn request_response_for_viewer(
     viewer: RequestViewer<'_>,
     views: &Views,
     current_main_oid: Option<String>,
+    repository_lifecycle: scope_domain::repository::RepoLifecycleState,
 ) -> Result<RequestSummaryResponse, ApiError> {
     let policy = request_policy(&request, viewer.clone(), views);
     let invitees = if views.anyone() == Some(&request.view) && policy.exact_visible {
@@ -561,42 +579,15 @@ async fn request_response_for_viewer(
     let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
         .await?
         .outcome;
-    request_response(request, viewer, views, current_main_oid, invitees, checks)
-}
-
-pub(crate) fn request_response(
-    request: Request,
-    viewer: RequestViewer<'_>,
-    views: &Views,
-    current_main_oid: Option<String>,
-    invitees: Vec<RequestInviteeResponse>,
-    checks: scope_domain::requests::RequestChecksOutcome,
-) -> Result<RequestSummaryResponse, ApiError> {
-    let policy = request_policy(&request, viewer.clone(), views);
-    let can_view_activity = policy.activity_stream_visible;
-    let decision = policy.permissions;
-    let permissions = RequestPermissionsResponse {
-        can_view_activity,
-        can_open_discussion: decision.can_open_discussion,
-        can_reply_to_discussion: decision.can_reply_to_discussion,
-        can_wait_after_reply: decision.can_wait_after_reply,
-        can_edit_identity: decision.can_edit_identity,
-        can_pull_branch: decision.can_pull_branch,
-        can_push_branch: decision.can_push_branch,
-        can_submit: decision.can_submit,
-        can_manage_invitees: decision.can_manage_invitees,
-        can_leave_request: decision.can_leave_request,
-        can_close: decision.can_close,
-        can_merge: decision.can_merge,
-    };
-    let decision = request_mergeability(&request, &viewer, views, checks);
-    let mergeability = RequestMergeabilityResponse {
-        status: decision.status.into(),
-        current_main_oid: current_main_oid.map(git_oid_response).transpose()?,
-        request_head_oid: git_oid_response(request.head_oid.clone())?,
-        reason: decision.reason.map(str::to_string),
-    };
-    request_summary_response(request, invitees, permissions, mergeability)
+    request_response(
+        request,
+        viewer,
+        views,
+        current_main_oid,
+        invitees,
+        checks,
+        repository_lifecycle,
+    )
 }
 
 async fn current_main_oid_for_view(

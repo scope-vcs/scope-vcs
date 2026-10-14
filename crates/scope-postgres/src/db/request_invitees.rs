@@ -596,7 +596,7 @@ mod tests {
                 author_role: RequestActorRole::Public,
                 author_view: ViewId::public(),
                 view: ViewId::public(),
-                base_main_oid: "base".to_string(),
+                main_ancestor_oid: "base".to_string(),
                 event_id: format!("event_{request_id}"),
                 now_unix: 2,
             })

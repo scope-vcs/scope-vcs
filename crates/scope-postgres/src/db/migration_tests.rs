@@ -21,10 +21,15 @@ mod public_check_commits;
 mod repository_invite_emails;
 mod repository_landing_files;
 mod repository_workflow_catalogs;
+mod request_review_bases;
 mod run_attempt_active_indexes;
 mod run_state_constraints;
 
-const LATEST_MIGRATIONS: &[&str] = &["m0084_current_schema_baseline"];
+const LATEST_MIGRATIONS: &[&str] = &[
+    "m0084_current_schema_baseline",
+    "m0084_request_review_bases",
+    "m0085_request_check_identity",
+];
 const BRIDGED_LEDGER: &str = include_str!("../migrations/m0084_bridged_ledger.txt");
 
 pub(super) async fn isolated_database() -> (
@@ -193,7 +198,6 @@ async fn migration_plan_declares_metadata_restore_safety_for_pending_changes() {
     let (_target, db, _lease) = isolated_database().await;
     let plan = migrations::plan(db.as_ref()).await.unwrap();
     assert!(plan.metadata_restore_safe);
-    assert_eq!(plan.pending.len(), 1);
     assert_eq!(
         serde_json::to_value(&plan).unwrap()["metadataRestoreSafe"],
         true

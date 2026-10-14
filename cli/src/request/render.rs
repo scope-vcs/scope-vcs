@@ -171,7 +171,7 @@ pub(super) fn request_detail_lines(request: &RequestSummaryResponse, views: &Vie
             "  branch: {} · base {} {} · head {}",
             request.name,
             view_label(views, &request.view),
-            short_oid(&request.base_main_oid),
+            short_oid(&request.main_ancestor_oid),
             short_oid(&request.head_oid)
         ),
     ];
@@ -466,6 +466,7 @@ fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> String {
         RequestMergeabilityStatus::Closed => "closed".to_string(),
         RequestMergeabilityStatus::Merged => "merged".to_string(),
         RequestMergeabilityStatus::Draft => "draft".to_string(),
+        RequestMergeabilityStatus::RepositoryNotReady => "repository not ready".to_string(),
         RequestMergeabilityStatus::NotMaintainer => mergeability
             .reason
             .clone()

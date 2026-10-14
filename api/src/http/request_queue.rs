@@ -153,6 +153,7 @@ pub(crate) async fn request_queue(
                         .get(&request_id)
                         .copied()
                         .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
+                    repo.record.lifecycle_state,
                 )?,
                 author,
                 attention: attention_response(

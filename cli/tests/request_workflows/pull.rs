@@ -17,7 +17,7 @@ fn pull_fast_forwards_a_checked_out_request_alias_and_preserves_divergence() {
         ],
     );
     let mut detail = request();
-    detail["base_main_oid"] = head.clone().into();
+    detail["main_ancestor_oid"] = head.clone().into();
     detail["head_oid"] = head.clone().into();
     detail["permissions"]["can_pull_branch"] = true.into();
     detail["mergeability"]["current_main_oid"] = head.clone().into();

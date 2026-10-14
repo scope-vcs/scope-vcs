@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     requests::{
         GitHubCheckResults, NativeRequestCheck, RequestCheck, RequestCheckEvaluationState,
+        RequestCheckResults,
         fixtures::{self, source_blob},
     },
     runs::run::RunState,
@@ -10,6 +11,11 @@ use crate::{
 mod check_failures;
 
 const HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+fn check_context(request_id: &str, head: &str) -> crate::requests::RequestCheckContext {
+    crate::requests::RequestCheckContext::new(request_id, "revision_1", head, 1, "c".repeat(40))
+        .unwrap()
+}
+
 const OTHER_HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 fn results(native_runs: &[(&str, RunState)]) -> RequestCheckResults {
@@ -35,6 +41,10 @@ fn native_check(digest: char, run_id: Option<&str>) -> RequestCheck {
 
 fn open_request() -> Request {
     Request {
+        base: crate::requests::RequestBase::Main {
+            review_base_oid: "c".repeat(40),
+        },
+        main_ancestor_oid: "c".repeat(40),
         head_oid: HEAD.into(),
         git_snapshot: Some(source_blob(HEAD)),
         activity_version: 2,
@@ -53,7 +63,10 @@ fn revision(head_oid: &str) -> RequestRevision {
         actor_user_id: Some("author".into()),
         old_head_oid: "base".into(),
         new_head_oid: head_oid.into(),
-        base_main_oid: "base".into(),
+        base: crate::requests::RequestBase::Main {
+            review_base_oid: "c".repeat(40),
+        },
+        main_ancestor_oid: "c".repeat(40),
         rewrote_history: false,
         git_snapshot: open_request().git_snapshot.unwrap(),
         created_at_unix: 2,
@@ -211,18 +224,23 @@ fn a_terminal_check_result_stops_the_intent_permanently() {
 #[test]
 fn unattended_readiness_requires_an_explicit_evaluation() {
     assert_eq!(
-        request_auto_merge_readiness("request_1", HEAD, None, &results(&[])),
+        readiness("request_1", HEAD, None, &results(&[])),
         RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::CheckEvaluationMissing)
     );
-    let no_checks = RequestCheckEvaluation::no_checks("request_1", HEAD, 3).unwrap();
+    let no_checks =
+        RequestCheckEvaluation::no_checks(&check_context("request_1", HEAD), 3).unwrap();
     assert_eq!(
-        request_auto_merge_readiness("request_1", HEAD, Some(&no_checks), &results(&[])),
+        readiness("request_1", HEAD, Some(&no_checks), &results(&[])),
         RequestAutoMergeReadiness::Ready
     );
-    let configuration_error =
-        RequestCheckEvaluation::configuration_error("request_1", HEAD, "bad workflow", 3).unwrap();
+    let configuration_error = RequestCheckEvaluation::configuration_error(
+        &check_context("request_1", HEAD),
+        "bad workflow",
+        3,
+    )
+    .unwrap();
     assert_eq!(
-        request_auto_merge_readiness("request_1", HEAD, Some(&configuration_error), &results(&[])),
+        readiness("request_1", HEAD, Some(&configuration_error), &results(&[])),
         RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksConfigurationError)
     );
 }
@@ -230,14 +248,13 @@ fn unattended_readiness_requires_an_explicit_evaluation() {
 #[test]
 fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
     let evaluation = RequestCheckEvaluation::started(
-        "request_1",
-        HEAD,
+        &check_context("request_1", HEAD),
         vec![native_check('c', Some("run_1"))],
         3,
     )
     .unwrap();
     assert_eq!(
-        request_auto_merge_readiness(
+        readiness(
             "request_1",
             HEAD,
             Some(&evaluation),
@@ -246,7 +263,7 @@ fn terminal_run_failure_is_a_stop_even_if_a_retry_could_later_succeed() {
         RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksFailed)
     );
     assert_eq!(
-        request_auto_merge_readiness(
+        readiness(
             "request_1",
             HEAD,
             Some(&evaluation),
@@ -307,8 +324,7 @@ fn auto_merge_is_offered_only_while_checks_are_undecided() {
 #[test]
 fn evaluation_state_is_explicitly_interpreted() {
     let awaiting = RequestCheckEvaluation::awaiting_approval(
-        "request_1",
-        HEAD,
+        &check_context("request_1", HEAD),
         vec![native_check('d', None)],
         3,
     )
@@ -318,8 +334,39 @@ fn evaluation_state_is_explicitly_interpreted() {
         RequestCheckEvaluationState::AwaitingApproval
     );
     assert_eq!(
-        request_auto_merge_readiness("request_1", HEAD, Some(&awaiting), &results(&[]))
-            .waiting_reason_message(),
+        readiness("request_1", HEAD, Some(&awaiting), &results(&[])).waiting_reason_message(),
         Some("Waiting for CI approval")
     );
+}
+
+fn readiness(
+    request_id: &str,
+    head_oid: &str,
+    evaluation: Option<&RequestCheckEvaluation>,
+    results: &RequestCheckResults,
+) -> RequestAutoMergeReadiness {
+    let mut request = open_request();
+    request.id = request_id.to_string();
+    request.head_oid = head_oid.to_string();
+    let access = crate::repository::access::RepositoryAccess {
+        actor: crate::repository::access::RepositoryActor::Owner,
+        view: crate::views::ViewId::private(),
+        can_push: true,
+        can_change_file_visibility: true,
+        can_manage_members: true,
+        can_delete_repo: true,
+    };
+    let viewer = crate::requests::RequestViewer::new(access, Some("maintainer"), false);
+    let views = crate::views::Views::builtin();
+    request_auto_merge_readiness(crate::requests::evaluate_merge_gate(
+        crate::requests::MergeGateInput::RequestMerge {
+            repository_lifecycle: crate::repository::RepoLifecycleState::Ready,
+            subject: (&request).into(),
+            viewer: &viewer,
+            views: &views,
+            checks: crate::requests::request_checks_outcome(
+                request_id, head_oid, evaluation, results,
+            ),
+        },
+    ))
 }

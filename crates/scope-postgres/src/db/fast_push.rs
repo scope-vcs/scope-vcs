@@ -101,6 +101,20 @@ impl RepositoryStore {
             &author_id,
             current_config.views(),
         );
+        let main_gate = scope_domain::requests::evaluate_merge_gate(
+            scope_domain::requests::MergeGateInput::AuthorizedMainPush {
+                repository_lifecycle: publication_state,
+                access: &push_policy.access,
+                views: current_config.views(),
+            },
+        );
+        if main_gate.authority()
+            != Some(scope_domain::requests::MergeGateAuthority::AuthorizedMainPush)
+        {
+            return Err(PostgresError::permission_denied(
+                main_gate.reason().unwrap_or("main push access required"),
+            ));
+        }
         authorize_reviewed_update(ReviewedUpdateAuthorization {
             access: push_policy.access,
             push_mode: push_policy.mode,

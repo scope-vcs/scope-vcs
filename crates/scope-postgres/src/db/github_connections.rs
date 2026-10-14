@@ -90,7 +90,7 @@ impl RepositoryStore {
     ) -> Result<(GitHubConnection, RepositoryIncarnation), E> {
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let repo_id = command.repository_id.clone();
-        acquire_shared_repository_lock(&tx, &repo_id).await?;
+        acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         acquire_aggregate_lock(&tx, "github-connection", &repo_id).await?;
         acquire_aggregate_lock(
             &tx,
@@ -145,6 +145,7 @@ impl RepositoryStore {
                 "this GitHub repository is already connected to another Scope repository",
             )
         })?;
+        invalidate_request_check_destinations(&tx, &connection).await?;
         requeue_started_github_evaluations(&tx, &connection).await?;
         save_run_import_count(&tx, &connection.repository_id, run_import_count).await?;
         match GitHubRunImport::queue(&connection, run_import_count, connection.connected_at_unix) {
@@ -299,6 +300,28 @@ impl RepositoryStore {
     }
 }
 
+async fn invalidate_request_check_destinations<C: ConnectionTrait>(
+    conn: &C,
+    connection: &GitHubConnection,
+) -> Result<(), PostgresError> {
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_requests request SET current_check_evaluation_id = NULL
+         FROM scope_request_check_evaluations evaluation
+         WHERE request.repo_id = $1
+           AND request.current_check_evaluation_id = evaluation.id
+           AND request.merged_at_unix IS NULL AND request.closed_at_unix IS NULL
+           AND evaluation.github_repository_id IS DISTINCT FROM $2",
+        [
+            connection.repository_id.clone().into(),
+            u64_to_i64(connection.github_repository_id, "GitHub repository id")?.into(),
+        ],
+    ))
+    .await
+    .map_err(PostgresError::internal)?;
+    Ok(())
+}
+
 async fn requeue_started_github_evaluations<C: ConnectionTrait>(
     conn: &C,
     connection: &GitHubConnection,
@@ -311,15 +334,19 @@ async fn requeue_started_github_evaluations<C: ConnectionTrait>(
               FROM scope_request_check_evaluations evaluation
               JOIN scope_requests request
                 ON request.id = evaluation.request_id
-               AND request.head_oid = evaluation.head_oid
+               AND request.current_check_evaluation_id = evaluation.id
              WHERE request.repo_id = $1
                AND request.merged_at_unix IS NULL
                AND request.closed_at_unix IS NULL
                AND evaluation.state = 'started'
+               AND evaluation.github_repository_id = $2
                AND evaluation.checks @? '$[*] ? (@.provider == "github")'
              ORDER BY evaluation.request_id
             "#,
-            [connection.repository_id.clone().into()],
+            [
+                connection.repository_id.clone().into(),
+                u64_to_i64(connection.github_repository_id, "GitHub repository id")?.into(),
+            ],
         ))
         .await?;
     let destination = GitHubPushDestination::of(connection);

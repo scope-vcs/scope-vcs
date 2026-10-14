@@ -325,7 +325,7 @@ async fn main_push_skips_candidates_that_moved_closed_disappeared_or_are_drafts(
                 "empty" => store
                     .requests()
                     .mutate_request_for_tests("req_1", |request| {
-                        request.head_oid = request.base_main_oid.clone()
+                        request.head_oid = request.main_ancestor_oid.clone()
                     })
                     .await
                     .unwrap(),

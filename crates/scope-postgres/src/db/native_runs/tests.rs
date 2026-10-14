@@ -3,15 +3,16 @@ use crate::{
         DispatchAdmission, MetadataStore, RecordRequestChecksCommand,
         requests::tests::postgres_store,
         test_support::fixtures::{
-            manual_run, manual_workflow, repository, store_with_repositories, user,
+            manual_run, manual_workflow, repository, source_blob, store_with_repositories, user,
         },
     },
     error::{PostgresError, PostgresErrorKind},
 };
 use scope_domain::{
     requests::{
-        NativeRequestCheck, RequestActorRole, RequestCheck, RequestCheckEvaluation,
-        RequestCheckEvaluationState, StartRequestInput,
+        NativeRequestCheck, RecordRequestRevisionInput, RequestActorRole, RequestCheck,
+        RequestCheckContext, RequestCheckEvaluation, RequestCheckEvaluationState,
+        RequestRevisionGitFacts, StartRequestInput,
     },
     runs::{
         availability::NATIVE_RUNS_UNAVAILABLE, run::RunState, workflow::revision::WorkflowRevision,
@@ -213,23 +214,24 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
                 author_role: RequestActorRole::Public,
                 author_view: ViewId::public(),
                 view: ViewId::public(),
-                base_main_oid: head_oid.clone(),
+                main_ancestor_oid: head_oid.clone(),
                 event_id: format!("{request_id}-event"),
                 now_unix: 2,
             })
             .await
             .unwrap();
+        record_check_revision(&store, request_id, &head_oid, 3).await;
+        let context = saved_check_context(&store, request_id, &head_oid).await;
         let evaluation = if request_id == "waiting" {
             RequestCheckEvaluation::awaiting_approval(
-                request_id,
-                &head_oid,
+                &context,
                 vec![RequestCheck::Native(NativeRequestCheck::for_revision(
                     &revision,
                 ))],
                 3,
             )
         } else {
-            RequestCheckEvaluation::no_checks(request_id, &head_oid, 3)
+            RequestCheckEvaluation::no_checks(&context, 3)
         }
         .unwrap();
         record_checks(&store, &revision, evaluation).await.unwrap();
@@ -268,17 +270,10 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
         .unwrap();
     assert_eq!(settled.state, RequestCheckEvaluationState::NoChecks);
 
-    store
-        .requests()
-        .mutate_request_for_tests("settled", |request| {
-            request.head_oid = "c".repeat(40);
-        })
-        .await
-        .unwrap();
+    record_check_revision(&store, "settled", &"c".repeat(40), 11).await;
 
     let evaluation = RequestCheckEvaluation::awaiting_approval(
-        "settled",
-        "c".repeat(40),
+        &saved_check_context(&store, "settled", &"c".repeat(40)).await,
         vec![RequestCheck::Native(NativeRequestCheck::for_revision(
             &revision,
         ))],
@@ -289,4 +284,59 @@ async fn removal_turns_waiting_checks_into_configuration_errors() {
         .await
         .unwrap_err();
     assert_eq!(refused.message, NATIVE_RUNS_UNAVAILABLE);
+}
+
+async fn saved_check_context(
+    store: &MetadataStore,
+    request_id: &str,
+    head_oid: &str,
+) -> RequestCheckContext {
+    let request = store
+        .requests()
+        .request_by_id(request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let revision = store
+        .requests()
+        .latest_request_revision(request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(request.head_oid, head_oid);
+    RequestCheckContext::for_revision(&request, &revision).unwrap()
+}
+
+async fn record_check_revision(
+    store: &MetadataStore,
+    request_id: &str,
+    head_oid: &str,
+    now_unix: u64,
+) {
+    let request = store
+        .requests()
+        .request_by_id(request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    store
+        .requests()
+        .record_request_revision(RecordRequestRevisionInput {
+            request_id: request_id.into(),
+            actor_user_id: "user_public".into(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some(request.head_oid),
+            new_head_oid: head_oid.into(),
+            git_snapshot: source_blob(head_oid, &"b".repeat(64), 1),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
+            },
+            event_id: format!("{request_id}-revision-{now_unix}"),
+            body: None,
+            now_unix,
+        })
+        .await
+        .unwrap();
 }

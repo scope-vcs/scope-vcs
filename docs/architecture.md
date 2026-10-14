@@ -71,6 +71,25 @@ They return mutations and required effects. They do not receive or mutate
 repository-wide maps. Postgres loads those facts under the appropriate locks,
 checks replay identity, and persists the returned changes.
 
+`requests/comparison.rs` resolves request, push, and commit comparisons from a
+saved revision. `RequestBase::Main` owns its review base, while
+`main_ancestor_oid` records the accepted-main history contained by the head.
+A new revision freezes both; moving the live request cannot change an older
+revision's comparison. Push inspection retains its existing old-head boundary
+for extensions and saved review-base boundary for rewrites. Commit patches
+retain their first-parent meaning.
+
+`requests/merge_gate.rs` composes lifecycle, access, snapshot, and checks for
+list, detail, manual merge, and auto-merge. Authorized full-view main publication
+uses a separate authority outcome in that evaluator; it does not report request
+checks as passed. Narrow-view main pushes still become ordinary requests.
+
+Request check evaluations have immutable identities tied to revision, review
+base, tested commit, provider destination, and recorded check requirements.
+The current request selects its active evaluation. Approval and run results
+advance within that identity; a replacement check commit creates a new one.
+Live base versions fence concurrent changes but do not define the tested tree.
+
 `crates/scope-api-contract/` owns serialized request/response shapes, runtime
 protocol DTOs, and route construction. Public contract fields use wire-owned
 types rather than exposing domain enums or structs. Explicit conversions to and
@@ -239,7 +258,14 @@ Follow these paths from application coordination to durable rules and storage:
   enqueues projection rebuild and push-trigger work in the same transaction.
 - `repo_mutation.rs` owns the reviewed main-push transaction.
 - `request_merge.rs` owns the merge transaction, combining accepted content
-  with the request lifecycle mutation.
+  with the request lifecycle mutation. Manual and automatic merges recheck the
+  shared domain gate under repository and request locks. The transaction compares
+  the prepared revision, base version, evaluation identity and tested commit.
+  GitHub evidence additionally requires the same destination and settled, fresh
+  read sequence, protected by connection and refresh-row locks. Network reads
+  finish before those locks; changed evidence requires fresh preparation.
+  Locked evidence carries its expiry through publication waits and checks it
+  again immediately before commit, rolling back writes if confirmation expired.
 - `request_auto_merge.rs` owns authorization, cancellation, claims, and terminal
   intent transitions. Request, membership, check, and run transactions stop
   affected intents atomically. The final merge transaction revalidates the
