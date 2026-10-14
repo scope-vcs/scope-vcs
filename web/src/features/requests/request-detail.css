@@ -70,7 +70,7 @@
 }
 
 @media (max-width: 700px) {
-  .request-detail-pane {
+  #main-content {
     padding-bottom: var(--request-action-clearance, 0);
   }
 }

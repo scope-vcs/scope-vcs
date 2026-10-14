@@ -19,7 +19,7 @@ const THEME_ICONS: Record<ThemePreference, typeof Sun> = {
 
 export function SiteFooter() {
   return (
-    <footer className="mt-auto border-t border-border">
+    <footer className="border-t border-border">
       <PageRail className="flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-3 py-3 text-xs text-muted-foreground">
         <SiteLinks className="flex flex-wrap gap-x-5 gap-y-1 [&_a:hover]:text-foreground" label="Site" />
         <ThemeSwitch />

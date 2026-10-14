@@ -19,13 +19,15 @@ export function AppShell({
       </a>
       {header?.()}
       <main
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain outline-none [scrollbar-gutter:stable] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [scrollbar-gutter:stable] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-scroll-restoration-id={MAIN_CONTENT_ID}
         id={MAIN_CONTENT_ID}
         tabIndex={-1}
       >
-        {children}
-        <SiteFooter />
+        <div className="grid min-h-full grid-cols-[minmax(0,1fr)] grid-rows-[1fr_auto]">
+          <div className="min-w-0">{children}</div>
+          <SiteFooter />
+        </div>
       </main>
     </div>
   )

@@ -4,7 +4,7 @@ import {
   loadRepoInviteForRequest,
 } from '@/api/repo-settings'
 import { PageHeader } from '@/components/page-header'
-import { ApplicationPendingShell } from '@/components/pending-surface'
+import { ApplicationPendingShell } from '@/components/application-pending-shell'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { InvitePage } from '@/features/invites/invite-page'

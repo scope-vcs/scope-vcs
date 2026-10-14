@@ -19,7 +19,8 @@ import {
   UserRound,
   UserRoundMinus,
 } from 'lucide-react'
-import { type CSSProperties, type ReactNode, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { mainScrollContainer } from '@/components/main-content'
 import { RequestActivityDrawer } from './request-activity-drawer'
 import type {
   RequestActionCommand,
@@ -179,6 +180,14 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
   if (rail && detailsOpen) setDetailsOpen(false)
   const [lifecycleBar, setLifecycleBar] = useState<HTMLDivElement | null>(null)
   const actionClearance = useElementHeight(lifecycleBar)
+  useLayoutEffect(() => {
+    const main = mainScrollContainer()
+    if (!main) return
+    main.style.setProperty('--request-action-clearance', `${actionClearance}px`)
+    return () => {
+      main.style.removeProperty('--request-action-clearance')
+    }
+  }, [actionClearance])
   const canClaim = workspace?.selected?.attention.reason === 'unclaimed' &&
     workspace.selected.attention.can_claim
   const canRelease = workspace?.selected?.attention.can_release ?? false
@@ -203,7 +212,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       <div
         className="request-detail-pane scope-content-enter w-full"
         ref={paneRef}
-        style={{ '--request-action-clearance': `${actionClearance}px` } as CSSProperties}
       >
         <RequestDetailHeader
           actions={

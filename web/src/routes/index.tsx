@@ -1,6 +1,6 @@
 import { loadCliInstallStateForRequest } from '@/api/cli-install'
 import { loadAuthenticatedAccountForRequest } from '@/api/profile'
-import { ApplicationPendingShell } from '@/components/pending-surface'
+import { ApplicationPendingShell } from '@/components/application-pending-shell'
 import { MarketingLandingPage } from '@/features/marketing/marketing-landing-page'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'

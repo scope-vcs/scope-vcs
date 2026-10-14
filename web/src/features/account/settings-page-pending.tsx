@@ -1,4 +1,4 @@
-import { ApplicationPendingShell } from '@/components/pending-surface'
+import { ApplicationPendingShell } from '@/components/application-pending-shell'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { ProfileSection } from './profile-section'

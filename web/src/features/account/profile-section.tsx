@@ -3,6 +3,7 @@ import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useAuth, useClerk, useUser } from '@clerk/tanstack-react-start'
 import { Check, LogOut } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { SettingsSection } from './settings-sections'
 import { useAccountSession } from './use-account-session'
 
@@ -12,6 +13,11 @@ export function ProfileSection() {
   const { user: clerkUser } = useUser()
   const session = useAccountSession(userId ?? null)
   const user = session.value?.account?.user ?? null
+  const clerkEmail = clerkUser?.primaryEmailAddress
+  useRefreshWhenChanged(
+    clerkEmail ? `${clerkEmail.emailAddress}\0${clerkEmail.verification?.status}` : null,
+    session.retry,
+  )
 
   return (
     <SettingsSection id="profile" title="Profile">
@@ -63,4 +69,14 @@ export function ProfileSection() {
       </div>
     </SettingsSection>
   )
+}
+
+function useRefreshWhenChanged(key: string | null, refresh: () => void) {
+  const seen = useRef(key)
+  useEffect(() => {
+    if (key === null || key === seen.current) return
+    const changed = seen.current !== null
+    seen.current = key
+    if (changed) refresh()
+  }, [key, refresh])
 }

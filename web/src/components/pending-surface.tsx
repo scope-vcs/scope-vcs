@@ -1,6 +1,3 @@
-import { ApplicationTopbar } from '@/components/application-topbar'
-import { AppShell } from '@/components/app-shell'
-import { PageRail } from '@/components/page-header'
 import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
 import { cn } from '@/lib/utils'
 import { useRouter } from '@tanstack/react-router'
@@ -104,28 +101,6 @@ function SlowNote({ label, onRetry }: { label: string; onRetry?: () => void }) {
         </>
       ) : null}
     </div>
-  )
-}
-
-export function ApplicationPendingShell({
-  children,
-  contextLabel,
-  label,
-}: {
-  children?: ReactNode
-  contextLabel?: string
-  label: string
-}) {
-  return (
-    <AppShell
-      header={() => (
-        <ApplicationTopbar contextLabel={contextLabel} />
-      )}
-    >
-      <PageRail className="min-h-full">
-        <PendingSurface label={label}>{children}</PendingSurface>
-      </PageRail>
-    </AppShell>
   )
 }
 

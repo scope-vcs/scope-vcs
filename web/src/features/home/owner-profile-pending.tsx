@@ -1,5 +1,5 @@
 import { PageHeader } from '@/components/page-header'
-import { ApplicationPendingShell } from '@/components/pending-surface'
+import { ApplicationPendingShell } from '@/components/application-pending-shell'
 import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
 
 const REPOSITORY_LENGTHS: TextSkeletonLength[] = ['medium', 'short', 'long', 'medium']
