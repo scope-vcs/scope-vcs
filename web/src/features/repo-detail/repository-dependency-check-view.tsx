@@ -1,32 +1,17 @@
 import { ChevronRight } from 'lucide-react'
 import type { RepoViews } from '../../api/repo-views'
-import type { DependencyCheckPresentation } from './repository-dependency-model'
+import type { DependencyCheckDetails, DependencyCheckPresentation } from './repository-dependency-model'
 
-export function RepositoryDependencyCheckView({
-  onSelectFilePath,
-  presentation,
-  views,
-}: {
+export type DependencyCheckViewProps = {
   onSelectFilePath: (path: string) => void
   presentation: DependencyCheckPresentation
   views: Pick<RepoViews, 'name'>
-}) {
-  if (presentation.kind === 'plain') {
-    return (
-      <div aria-label="Repository dependency check" className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 px-(--app-inset) py-2.5 text-xs">
-        <span className={presentation.tone === 'warning' ? 'text-warning-strong' : 'text-muted-foreground'}>
-          {presentation.label}
-        </span>
-        {presentation.meta && (
-          <span className="text-xs text-muted-foreground">{presentation.meta}</span>
-        )}
-      </div>
-    )
-  }
+}
 
-  const { report } = presentation
+export function RepositoryDependencyLeak({ onSelectFilePath, presentation, views }: DependencyCheckViewProps) {
+  if (presentation.kind !== 'leak') return null
   return (
-    <details aria-label="Repository dependency check" className="group/dependencies">
+    <details aria-label="Repository dependency check" className="group/dependencies border-t border-border">
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-(--app-inset) py-2.5 text-xs text-warning-strong hover:underline focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
         <ChevronRight
           aria-hidden="true"
@@ -38,58 +23,74 @@ export function RepositoryDependencyCheckView({
         </span>
       </summary>
       <div className="pr-(--app-inset) pb-4 pl-[calc(var(--app-inset)+1.625rem)] text-xs">
-        {report.findings.length > 0 && (
-          <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto">
-            {report.findings.map((finding, index) => (
-              <li
-                className="grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-center gap-2 border-t border-border py-2.5 sm:gap-4"
-                key={`${finding.source_path}\0${finding.target_path}\0${index}`}
-              >
-                <DependencyPath
-                  visibility="public"
-                  onSelectFilePath={onSelectFilePath}
-                  path={finding.source_path}
-                  viewName={views.name('public')}
-                />
-                <span aria-label="imports" className="text-center text-muted-foreground">→</span>
-                <DependencyPath
-                  visibility="private"
-                  onSelectFilePath={onSelectFilePath}
-                  path={finding.target_path}
-                  viewName={views.name('private')}
-                />
+        <DependencyCheckDetailsBody details={presentation.details} onSelectFilePath={onSelectFilePath} views={views} />
+      </div>
+    </details>
+  )
+}
+
+export function DependencyCheckDetailsBody({
+  details: { coverage, report },
+  onSelectFilePath,
+  views,
+}: {
+  details: DependencyCheckDetails
+  onSelectFilePath: (path: string) => void
+  views: Pick<RepoViews, 'name'>
+}) {
+  return (
+    <>
+      {report.findings.length > 0 && (
+        <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto">
+          {report.findings.map((finding, index) => (
+            <li
+              className="grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-center gap-2 border-t border-border py-2.5 sm:gap-4"
+              key={`${finding.source_path}\0${finding.target_path}\0${index}`}
+            >
+              <DependencyPath
+                visibility="public"
+                onSelectFilePath={onSelectFilePath}
+                path={finding.source_path}
+                viewName={views.name('public')}
+              />
+              <span aria-label="imports" className="text-center text-muted-foreground">→</span>
+              <DependencyPath
+                visibility="private"
+                onSelectFilePath={onSelectFilePath}
+                path={finding.target_path}
+                viewName={views.name('private')}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+      {report.gaps.length > 0 && (
+        <div className={report.findings.length > 0 ? 'mt-3' : undefined}>
+          <p className="font-medium text-foreground">Coverage gaps</p>
+          <ul aria-label="Dependency check coverage gaps" className="mt-1 max-h-48 max-w-4xl overflow-y-auto">
+            {report.gaps.map((gap, index) => (
+              <li className="border-t border-border py-2 text-muted-foreground" key={`${gap.path}\0${index}`}>
+                {gap.path === '.' ? (
+                  <span className="mr-2 font-medium text-foreground">Repository</span>
+                ) : (
+                  <button
+                    className="mr-2 break-all rounded text-left font-mono text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                    onClick={() => onSelectFilePath(gap.path)}
+                    type="button"
+                  >
+                    {gap.path}
+                  </button>
+                )}
+                <span>{gap.reason}</span>
               </li>
             ))}
           </ul>
-        )}
-        {report.gaps.length > 0 && (
-          <div className={report.findings.length > 0 ? 'mt-3' : undefined}>
-            <p className="font-medium text-foreground">Coverage gaps</p>
-            <ul aria-label="Dependency check coverage gaps" className="mt-1 max-h-48 max-w-4xl overflow-y-auto">
-              {report.gaps.map((gap, index) => (
-                <li className="border-t border-border py-2 text-muted-foreground" key={`${gap.path}\0${index}`}>
-                  {gap.path === '.' ? (
-                    <span className="mr-2 font-medium text-foreground">Repository</span>
-                  ) : (
-                    <button
-                      className="mr-2 break-all rounded text-left font-mono text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-                      onClick={() => onSelectFilePath(gap.path)}
-                      type="button"
-                    >
-                      {gap.path}
-                    </button>
-                  )}
-                  <span>{gap.reason}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <p className="mt-3 max-w-4xl text-xs leading-4 text-muted-foreground">
-          {presentation.coverage}
-        </p>
-      </div>
-    </details>
+        </div>
+      )}
+      <p className="mt-3 max-w-4xl text-xs leading-4 text-muted-foreground">
+        {coverage}
+      </p>
+    </>
   )
 }
 

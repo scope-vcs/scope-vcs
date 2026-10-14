@@ -2,20 +2,17 @@ import type { RepositoryDependencyCheckResponse } from '../../api/types.generate
 
 type DependencyReport = NonNullable<RepositoryDependencyCheckResponse['report']>
 
+export type DependencyCheckDetails = {
+  coverage: string
+  report: DependencyReport
+}
+
 export type DependencyCheckPresentation =
-  | {
-      kind: 'plain'
-      label: string
-      meta: string | null
-      tone: 'muted' | 'warning'
-    }
-  | {
-      coverage: string
-      kind: 'report'
-      label: string
-      meta: string
-      report: DependencyReport
-    }
+  | { kind: 'hidden' }
+  | { kind: 'status'; label: string; details: DependencyCheckDetails | null }
+  | { kind: 'leak'; label: string; meta: string; details: DependencyCheckDetails }
+
+const UNAVAILABLE = 'Dependency check unavailable'
 
 export function dependencyCheckPresentation({
   response,
@@ -26,67 +23,26 @@ export function dependencyCheckPresentation({
   refreshError: string | null
   refreshing: boolean
 }): DependencyCheckPresentation {
-  if (response?.status === 'Unsupported') {
-    return {
-      kind: 'plain',
-      label: 'Dependency check does not support these source files yet',
-      meta: null,
-      tone: 'muted',
-    }
+  if (response?.status === 'Unsupported') return { kind: 'hidden' }
+  const failed = refreshError !== null || response?.status === 'Failed'
+  if (!response?.report) {
+    return failed ? { kind: 'status', label: UNAVAILABLE, details: null } : { kind: 'hidden' }
   }
-  if (!response?.report) return reportlessPresentation(response, refreshError)
   const report = response.report
+  const updating = refreshing || response.status === 'Updating' || response.status === 'Pending'
+  const details = { coverage: dependencyCoverage(report, failed || updating), report }
 
-  const staleReason = staleReportReason(response, refreshError, refreshing)
-  const incomplete = report.gaps.length > 0
-  if (report.findings.length === 0 && !incomplete && staleReason === null) {
+  if (report.findings.length > 0) {
     return {
-      kind: 'plain',
-      label: 'No public → private imports found',
-      meta: 'JS/TS only',
-      tone: 'muted',
+      details,
+      kind: 'leak',
+      label: `${report.public_file_count} public ${report.public_file_count === 1 ? 'file imports' : 'files import'} private files`,
+      meta: failed ? 'Update failed' : updating ? 'Updating…' : 'JS/TS only',
     }
   }
-
-  return {
-    coverage: dependencyCoverage(report, staleReason !== null),
-    kind: 'report',
-    label: report.findings.length > 0
-      ? `${report.public_file_count} public ${report.public_file_count === 1 ? 'file imports' : 'files import'} private files`
-      : incomplete ? 'Dependency check incomplete' : 'No public → private imports found',
-    meta: staleReason ?? (incomplete ? 'Check incomplete' : 'JS/TS only'),
-    report,
-  }
-}
-
-function reportlessPresentation(
-  response: RepositoryDependencyCheckResponse | null,
-  refreshError: string | null,
-): DependencyCheckPresentation {
-  if (refreshError || response?.status === 'Failed') {
-    return {
-      kind: 'plain',
-      label: 'Dependency check unavailable',
-      meta: null,
-      tone: 'warning',
-    }
-  }
-  return {
-    kind: 'plain',
-    label: 'Checking JS/TS imports…',
-    meta: null,
-    tone: 'muted',
-  }
-}
-
-function staleReportReason(
-  response: RepositoryDependencyCheckResponse,
-  refreshError: string | null,
-  refreshing: boolean,
-) {
-  if (refreshError || response.status === 'Failed') return 'Update failed'
-  if (refreshing || response.status === 'Updating' || response.status === 'Pending') return 'Updating…'
-  return null
+  if (report.gaps.length > 0) return { details, kind: 'status', label: 'Dependency check incomplete' }
+  if (failed) return { details, kind: 'status', label: UNAVAILABLE }
+  return { kind: 'hidden' }
 }
 
 function dependencyCoverage(report: DependencyReport, stale: boolean) {

@@ -139,13 +139,13 @@ export function WorkbenchBar({
       {summary ? (
         <>
           <h1 className="sr-only">{title}</h1>
-          <div className="min-w-0 text-sm text-muted-foreground">{summary}</div>
+          <div className="min-w-0 flex-[1_1_20rem] text-sm text-muted-foreground">{summary}</div>
         </>
       ) : (
         <h1 className="text-sm font-semibold">{title}</h1>
       )}
       {actions && (
-        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
           {actions}
         </div>
       )}

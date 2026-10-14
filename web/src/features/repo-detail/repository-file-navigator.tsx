@@ -44,6 +44,10 @@ export function RepositoryFileNavigator({
 
   return (
     <>
+      <div className="mb-2 flex items-baseline justify-between gap-2 px-2 text-xs">
+        <h2 className="font-medium">Files</h2>
+        <span className="text-muted-foreground">{files.length}</span>
+      </div>
       <div className="mb-2">
         <NavigationSearch
           clearLabel="Clear file search"

@@ -4,23 +4,20 @@ import { useCachedResource } from '@/lib/use-cached-resource'
 import { loadRepositoryDependencies } from '@/routes/-repo-dependency-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useCallback } from 'react'
-import { RepositoryDependencyCheckView } from './repository-dependency-check-view'
 import { useRepoViews } from './repo-layout-context'
-import { dependencyCheckPresentation } from './repository-dependency-model'
+import { dependencyCheckPresentation, type DependencyCheckPresentation } from './repository-dependency-model'
 import {
   repositoryDependencyIdentity,
   repositoryDependencyResource,
 } from './repository-dependency-resource'
 
-export function RepositoryDependencyCheck({
-  onSelectFilePath,
+export function useRepositoryDependencyCheck({
   params,
   repo,
 }: {
-  onSelectFilePath: (path: string) => void
   params: RepoParams
   repo: RepoSummaryResponse
-}) {
+}): DependencyCheckPresentation {
   const { isLoaded, userId } = useAuth()
   const views = useRepoViews()
   const { owner, repo: repoName } = params
@@ -40,16 +37,10 @@ export function RepositoryDependencyCheck({
     version: String(repo.content_version),
   })
 
-  if (!identity) return null
-  return (
-    <RepositoryDependencyCheckView
-      onSelectFilePath={onSelectFilePath}
-      presentation={dependencyCheckPresentation({
-        refreshError: resource.error,
-        refreshing: resource.refreshing,
-        response: resource.value,
-      })}
-      views={views}
-    />
-  )
+  if (!identity) return { kind: 'hidden' }
+  return dependencyCheckPresentation({
+    refreshError: resource.error,
+    refreshing: resource.refreshing,
+    response: resource.value,
+  })
 }

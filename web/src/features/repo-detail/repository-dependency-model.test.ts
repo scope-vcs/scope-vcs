@@ -3,146 +3,95 @@ import test from 'node:test'
 import type { RepositoryDependencyCheckResponse } from '../../api/types.generated'
 import { dependencyCheckPresentation } from './repository-dependency-model'
 
-function response(
-  overrides: Partial<RepositoryDependencyCheckResponse> = {},
-): RepositoryDependencyCheckResponse {
-  return {
-    error: null,
-    report: {
-      analyzed_file_count: 4,
-      analyzer_version: '1',
-      commit_oid: 'a71c9f2e817d',
-      findings: [
-        { source_path: 'src/app.ts', target_path: 'internal/auth.ts' },
-        { source_path: 'src/app.ts', target_path: 'internal/billing.ts' },
-      ],
-      gaps: [],
-      public_file_count: 1,
-      unsupported_files: ['src/main.rs'],
-    },
-    status: 'Ready',
-    ...overrides,
-  }
+type Report = NonNullable<RepositoryDependencyCheckResponse['report']>
+
+const leakingReport: Report = {
+  analyzed_file_count: 4,
+  analyzer_version: '1',
+  commit_oid: 'a71c9f2e817d',
+  findings: [
+    { source_path: 'src/app.ts', target_path: 'internal/auth.ts' },
+    { source_path: 'src/app.ts', target_path: 'internal/billing.ts' },
+  ],
+  gaps: [],
+  public_file_count: 1,
+  unsupported_files: ['src/main.rs'],
+}
+const clearReport: Report = { ...leakingReport, findings: [], public_file_count: 0 }
+const incompleteReport: Report = {
+  ...clearReport,
+  gaps: [{ path: 'src/loader.ts', reason: 'variable import target' }],
 }
 
-test('uses the distinct public file count while retaining every finding', () => {
-  const presentation = dependencyCheckPresentation({
-    refreshError: null,
-    refreshing: false,
-    response: response(),
+function present(
+  overrides: Partial<RepositoryDependencyCheckResponse> | null,
+  { refreshError = null, refreshing = false }: { refreshError?: string | null; refreshing?: boolean } = {},
+) {
+  return dependencyCheckPresentation({
+    refreshError,
+    refreshing,
+    response: overrides && { error: null, report: leakingReport, status: 'Ready', ...overrides },
   })
+}
 
-  assert.equal(presentation.kind, 'report')
-  if (presentation.kind !== 'report') return
+test('public files importing private files are a leak with every finding retained', () => {
+  const presentation = present({})
+  assert.equal(presentation.kind, 'leak')
+  if (presentation.kind !== 'leak') return
   assert.equal(presentation.label, '1 public file imports private files')
-  assert.equal(presentation.report.findings.length, 2)
   assert.equal(presentation.meta, 'JS/TS only')
+  assert.equal(presentation.details.report.findings.length, 2)
   assert.equal(
-    presentation.coverage,
+    presentation.details.coverage,
     'Checked main at a71c9f2 · 4 JS/TS files analyzed. 1 other source file was not checked.',
   )
 })
 
-test('does not call an incomplete zero-finding report clear', () => {
-  const report = response().report!
-  const presentation = dependencyCheckPresentation({
-    refreshError: null,
-    refreshing: false,
-    response: response({
-      report: {
-        ...report,
-        findings: [],
-        gaps: [{ path: 'src/loader.ts', reason: 'variable import target' }],
-        public_file_count: 0,
-      },
-    }),
-  })
-
-  assert.equal(presentation.kind, 'report')
-  if (presentation.kind !== 'report') return
-  assert.equal(presentation.label, 'Dependency check incomplete')
-  assert.equal(presentation.meta, 'Check incomplete')
-  assert.deepEqual(presentation.report.gaps, [
-    { path: 'src/loader.ts', reason: 'variable import target' },
-  ])
-})
-
-test('shows a quiet, scoped clear result only for a complete report', () => {
-  const report = response().report!
-  assert.deepEqual(dependencyCheckPresentation({
-    refreshError: null,
-    refreshing: false,
-    response: response({ report: { ...report, findings: [], public_file_count: 0 } }),
-  }), {
-    kind: 'plain',
-    label: 'No public → private imports found',
-    meta: 'JS/TS only',
-    tone: 'muted',
-  })
-})
-
-test('retains findings and clear reports during updates and failures', () => {
-  const report = response().report!
+test('a leak stays visible while its report updates or fails to refresh', () => {
   const states = [
-    { status: 'Ready', refreshing: true, refreshError: null, meta: 'Updating…' },
-    { status: 'Updating', refreshing: false, refreshError: null, meta: 'Updating…' },
-    { status: 'Ready', refreshing: false, refreshError: 'request failed', meta: 'Update failed' },
-  ] as const
-
-  for (const findings of [report.findings, []]) {
-    for (const { status, refreshing, refreshError, meta } of states) {
-      const retained = { ...report, findings, public_file_count: findings.length ? 1 : 0 }
-      const presentation = dependencyCheckPresentation({
-        refreshError,
-        refreshing,
-        response: response({ report: retained, status }),
-      })
-
-      assert.equal(presentation.kind, 'report')
-      if (presentation.kind !== 'report') return
-      assert.equal(presentation.report, retained)
-      assert.equal(presentation.label, findings.length
-        ? '1 public file imports private files'
-        : 'No public → private imports found')
-      assert.equal(presentation.meta, meta)
-      assert.match(presentation.coverage, /^Showing main at a71c9f2/)
-    }
+    { overrides: {}, refresh: { refreshing: true }, meta: 'Updating…' },
+    { overrides: { status: 'Updating' as const }, refresh: {}, meta: 'Updating…' },
+    { overrides: {}, refresh: { refreshError: 'request failed' }, meta: 'Update failed' },
+  ]
+  for (const { overrides, refresh, meta } of states) {
+    const presentation = present(overrides, refresh)
+    assert.equal(presentation.kind, 'leak')
+    if (presentation.kind !== 'leak') return
+    assert.equal(presentation.meta, meta)
+    assert.match(presentation.details.coverage, /^Showing main at a71c9f2.*These results may have changed\.$/)
   }
 })
 
-test('renders first-run, failed, and unsupported states without a report', () => {
-  assert.equal(dependencyCheckPresentation({
-    refreshError: null, refreshing: false, response: null,
-  }).label, 'Checking JS/TS imports…')
-  assert.equal(dependencyCheckPresentation({
-    refreshError: null, refreshing: false, response: response({ report: null, status: 'Failed' }),
-  }).label, 'Dependency check unavailable')
-  assert.equal(dependencyCheckPresentation({
-    refreshError: 'request failed', refreshing: false, response: null,
-  }).label, 'Dependency check unavailable')
-  assert.equal(dependencyCheckPresentation({
-    refreshError: null, refreshing: false, response: response({ report: null, status: 'Unsupported' }),
-  }).label, 'Dependency check does not support these source files yet')
+test('an incomplete zero-finding report is a status with its gaps, never hidden as clear', () => {
+  const presentation = present({ report: incompleteReport })
+  assert.equal(presentation.kind, 'status')
+  if (presentation.kind !== 'status') return
+  assert.equal(presentation.label, 'Dependency check incomplete')
+  assert.deepEqual(presentation.details?.report.gaps, incompleteReport.gaps)
 })
 
-test('unsupported status wins over a preserved zero-file report', () => {
-  const report = response().report!
-  assert.deepEqual(dependencyCheckPresentation({
-    refreshError: null,
-    refreshing: false,
-    response: response({
-      report: {
-        ...report,
-        analyzed_file_count: 0,
-        findings: [],
-        public_file_count: 0,
-      },
-      status: 'Unsupported',
-    }),
-  }), {
-    kind: 'plain',
-    label: 'Dependency check does not support these source files yet',
-    meta: null,
-    tone: 'muted',
+test('a failed check is a status, keeping the last clear report when one exists', () => {
+  assert.deepEqual(present({ report: null, status: 'Failed' }), {
+    details: null,
+    kind: 'status',
+    label: 'Dependency check unavailable',
   })
+  assert.deepEqual(present(null, { refreshError: 'request failed' }), {
+    details: null,
+    kind: 'status',
+    label: 'Dependency check unavailable',
+  })
+  const stale = present({ report: clearReport }, { refreshError: 'request failed' })
+  assert.equal(stale.kind, 'status')
+  if (stale.kind !== 'status') return
+  assert.equal(stale.label, 'Dependency check unavailable')
+  assert.equal(stale.details?.report, clearReport)
+})
+
+test('clear, updating-clear, first-run, and unsupported checks stay hidden', () => {
+  assert.deepEqual(present({ report: clearReport }), { kind: 'hidden' })
+  assert.deepEqual(present({ report: clearReport }, { refreshing: true }), { kind: 'hidden' })
+  assert.deepEqual(present(null), { kind: 'hidden' })
+  assert.deepEqual(present({ report: null, status: 'Pending' }), { kind: 'hidden' })
+  assert.deepEqual(present({ status: 'Unsupported' }), { kind: 'hidden' })
 })

@@ -8,8 +8,9 @@ import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
 import { RepositoryCodeView } from './repository-code-view'
-import { RepositoryContext } from './repository-context'
-import { RepositoryDependencyCheck } from './repository-dependency-check'
+import { useRepositoryDependencyCheck } from './repository-dependency-check'
+import { RepositoryDependencyLeak } from './repository-dependency-check-view'
+import { RepositoryDependencyStatus } from './repository-dependency-status'
 import { RepositoryLatestActivity } from './repository-latest-activity'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
 import { displayRouteFilePath } from '@/lib/route-file'
@@ -35,6 +36,7 @@ export function RepoDetailPage({
   const workspaceTabs = useWorkspaceTabs({ activeId: selectedPath })
   const { view } = useViewingAs()
   const views = useRepoViews()
+  const dependencyCheck = useRepositoryDependencyCheck({ params, repo })
 
   function selectResource(path: string) {
     workspaceTabs.open(displayRouteFilePath(path), false)
@@ -44,9 +46,13 @@ export function RepoDetailPage({
   return (
     <WorkbenchPane>
       <WorkbenchBar
-        className="min-h-0 items-start pb-0"
         actions={(
           <>
+            <RepositoryDependencyStatus
+              onSelectFilePath={selectResource}
+              presentation={dependencyCheck}
+              views={views}
+            />
             <RepoViewingAsPicker />
             {repo.lifecycle_state === 'Ready' && (content.value ? (
               <RepoCloneDropdown
@@ -64,28 +70,20 @@ export function RepoDetailPage({
             />
           </>
         )}
-        summary={(
-          <RepositoryContext
-            content={content.value}
-            contentLoading={content.status === 'loading'}
-            onSelectFilePath={selectResource}
-            repo={repo}
-            view={view}
-          />
-        )}
+        summary={<RepositoryLatestActivity params={params} repo={repo} />}
         title="Code"
       />
-      <RepositoryLatestActivity params={params} repo={repo} />
-      <RepositoryDependencyCheck
+      <RepositoryDependencyLeak
         onSelectFilePath={selectResource}
-        params={params}
-        repo={repo}
+        presentation={dependencyCheck}
+        views={views}
       />
       <RepositoryCodeView
         content={content}
         file={file}
         onSelectFilePath={onSelectFilePath}
         params={params}
+        repo={repo}
         selectedPath={selectedPath}
         workspaceTabs={workspaceTabs}
       />
