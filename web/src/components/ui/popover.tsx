@@ -57,14 +57,27 @@ export function Popover({
   }, [open])
 
   useLayoutEffect(() => {
-    if (!open || align !== 'auto' || !panelRef.current || !rootRef.current) return
-    const anchor = rootRef.current.getBoundingClientRect()
-    setAutoOffset(autoPopoverOffset({
-      anchorLeft: anchor.left,
-      anchorWidth: anchor.width,
-      panelWidth: panelRef.current.offsetWidth,
-      viewportWidth: document.documentElement.clientWidth,
-    }))
+    const panel = panelRef.current
+    const root = rootRef.current
+    if (!open || align !== 'auto' || !panel || !root) return
+    const updateOffset = () => {
+      const anchor = root.getBoundingClientRect()
+      setAutoOffset(autoPopoverOffset({
+        anchorLeft: anchor.left,
+        anchorWidth: anchor.width,
+        panelWidth: panel.offsetWidth,
+        viewportWidth: document.documentElement.clientWidth,
+      }))
+    }
+    updateOffset()
+    const observer = new ResizeObserver(updateOffset)
+    observer.observe(root)
+    observer.observe(panel)
+    window.addEventListener('resize', updateOffset)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateOffset)
+    }
   }, [align, open])
 
   function close() {

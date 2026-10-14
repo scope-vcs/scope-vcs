@@ -64,7 +64,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       >
         {message}
       </Link>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground sm:shrink-0">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground">
         {entry.author && <span className="max-w-40 truncate" title={entry.author}>{entry.author}</span>}
         {entry.occurred_at_unix !== null && <RelativeTimestamp value={entry.occurred_at_unix} />}
         {headOid && (
