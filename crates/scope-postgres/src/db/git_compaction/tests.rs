@@ -1,6 +1,7 @@
 use super::*;
 use crate::db::{MetadataStore, TestDatabaseTarget};
 use crate::error::PostgresErrorKind;
+use crate::job_trace::test_support::queued_by;
 use scope_domain::repository::git::{GitSegmentRef, GitSegmentUploadState};
 use sea_orm::{ActiveModelTrait, IntoActiveModel};
 
@@ -635,5 +636,36 @@ async fn adapter_preserves_compaction_validation_diagnostics() {
     assert_eq!(
         error.message,
         "Git compaction replacement must cover exactly the selected pack spans"
+    );
+}
+
+#[tokio::test]
+async fn a_claim_carries_the_latest_traced_schedule() {
+    let store =
+        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
+    seed_scheduled_repo(&store).await;
+    for (traceparent, now_unix) in [
+        (Some("trace-first"), 10),
+        (Some("trace-latest"), 11),
+        (None, 12),
+    ] {
+        let schedule = schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 1, now_unix);
+        match traceparent {
+            Some(traceparent) => queued_by(traceparent, schedule).await,
+            None => schedule.await,
+        }
+        .unwrap();
+    }
+
+    let claim = store
+        .jobs()
+        .claim_git_compaction("worker-a", u64::MAX, 20, 10)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        claim.queued_trace,
+        QueuedTrace::from_column(Some("trace-latest".into()))
     );
 }

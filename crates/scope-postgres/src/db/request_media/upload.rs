@@ -367,12 +367,13 @@ impl MediaStore {
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_request_media_processing_jobs (
-                    attachment_id, state, available_at_unix, created_at_unix, updated_at_unix
-                 ) VALUES ($1, 'Queued', $2, $2, $2)
+                    attachment_id, state, available_at_unix, created_at_unix, updated_at_unix, traceparent
+                 ) VALUES ($1, 'Queued', $2, $2, $2, $3)
                  ON CONFLICT (attachment_id) DO NOTHING",
                 [
                     attachment.id.clone().into(),
                     as_i64(command.now_unix, "processing enqueue time")?.into(),
+                    crate::job_trace::QueuedTrace::current().into_column().into(),
                 ],
             ))
             .await?;

@@ -16,6 +16,7 @@ use crate::{
         request_access::{lock_request_repository, request_policy_for_user},
     },
     error::PostgresError,
+    job_trace::QueuedTrace,
 };
 use scope_domain::requests::attachments::{
     RequestAttachment, RequestAttachmentProcessingLease, RequestAttachmentState,
@@ -45,7 +46,7 @@ impl MediaStore {
         lease_token: &str,
         now_unix: u64,
         lease_expires_at_unix: u64,
-    ) -> Result<Option<RequestAttachmentProcessingLease>, PostgresError> {
+    ) -> Result<Option<(RequestAttachmentProcessingLease, QueuedTrace)>, PostgresError> {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
         let tx = self.db.begin().await?;
         let now = as_i64(now_unix, "processing claim time")?;
@@ -133,12 +134,15 @@ impl MediaStore {
         .await?;
         notify_attachment_change(&tx, &attachment).await?;
         tx.commit().await?;
-        Ok(Some(RequestAttachmentProcessingLease {
-            attachment_id,
-            lease_token: lease_token.to_string(),
-            lease_generation: generation,
-            attempt,
-        }))
+        Ok(Some((
+            RequestAttachmentProcessingLease {
+                attachment_id,
+                lease_token: lease_token.to_string(),
+                lease_generation: generation,
+                attempt,
+            },
+            QueuedTrace::from_column(job.try_get("", "traceparent")?),
+        )))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_processing_lease"))]
@@ -519,11 +523,13 @@ impl MediaStore {
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_jobs
              SET state = 'Queued', available_at_unix = $2, lease_token = NULL,
-                 lease_expires_at_unix = NULL, updated_at_unix = $2
+                 lease_expires_at_unix = NULL, updated_at_unix = $2,
+                 traceparent = COALESCE($3, traceparent)
              WHERE attachment_id = $1",
             [
                 attachment_id.into(),
                 as_i64(now_unix, "processing retry time")?.into(),
+                QueuedTrace::current().into_column().into(),
             ],
         ))
         .await?;

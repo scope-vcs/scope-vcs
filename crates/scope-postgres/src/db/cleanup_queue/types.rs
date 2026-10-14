@@ -1,3 +1,4 @@
+use crate::job_trace::QueuedTrace;
 use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup};
 use std::collections::BTreeSet;
 
@@ -11,6 +12,7 @@ pub(super) struct LoadedRepoStorageCleanup {
 pub(super) struct LoadedSourceBlobCleanup {
     pub(super) blob: SourceBlob,
     pub(super) generation: String,
+    pub(super) queued_trace: QueuedTrace,
 }
 
 pub struct RepoStorageCleanupBatch {
@@ -21,6 +23,7 @@ pub struct RepoStorageCleanupBatch {
 
 pub struct SourceBlobCleanupBatch {
     pub pending: Vec<SourceBlob>,
+    pub queued_traces: BTreeSet<QueuedTrace>,
     pub(super) loaded: Vec<LoadedSourceBlobCleanup>,
 }
 

@@ -25,6 +25,7 @@ pub mod outbox_job {
         pub created_at_unix: i64,
         pub updated_at_unix: i64,
         pub completed_at_unix: Option<i64>,
+        pub traceparent: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -59,6 +60,7 @@ pub mod outbox_job {
                 created_at_unix: u64_to_i64(now, "outbox creation time")?,
                 updated_at_unix: u64_to_i64(now, "outbox update time")?,
                 completed_at_unix: None,
+                traceparent: QueuedTrace::current().into_column(),
             })
         }
 
@@ -94,6 +96,7 @@ pub mod outbox_job {
                 created_at_unix: u64_to_i64(now, "outbox creation time")?,
                 updated_at_unix: u64_to_i64(now, "outbox update time")?,
                 completed_at_unix: None,
+                traceparent: QueuedTrace::current().into_column(),
             })
         }
     }
@@ -116,6 +119,7 @@ pub mod git_compaction_job {
         pub last_error: Option<String>,
         pub created_at_unix: i64,
         pub updated_at_unix: i64,
+        pub traceparent: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -219,6 +223,7 @@ pub mod source_blob_cleanup_job {
         pub completed_at_unix: Option<i64>,
         pub created_at_unix: i64,
         pub updated_at_unix: i64,
+        pub traceparent: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -246,6 +251,7 @@ pub mod source_blob_cleanup_job {
                 completed_at_unix: None,
                 created_at_unix: now_unix,
                 updated_at_unix: now_unix,
+                traceparent: QueuedTrace::current().into_column(),
             })
         }
 

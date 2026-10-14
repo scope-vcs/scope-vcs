@@ -2,7 +2,7 @@ use super::{
     GeneratedIdKind, JobStore, acquire_aggregate_lock, decode_json, generated_ids::generate_id,
     git_segments::load_git_pack_spans,
 };
-use crate::error::PostgresError;
+use crate::{error::PostgresError, job_trace::QueuedTrace};
 use scope_domain::{
     content::SourceBlob,
     dependency_analysis::{
@@ -42,6 +42,7 @@ pub struct DependencyAnalysisClaim {
     pub lease_generation: String,
     pub files: Vec<DependencySnapshotFile>,
     pub reusable_analysis: Option<StoredDependencyAnalysis>,
+    pub queued_trace: QueuedTrace,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -198,6 +199,7 @@ impl JobStore {
             lease_generation,
             files,
             reusable_analysis,
+            queued_trace: QueuedTrace::from_column(database_value(&job, "traceparent")?),
         };
         tx.commit().await?;
         Ok(Some(claim))
@@ -423,8 +425,8 @@ pub(super) async fn enqueue_dependency_analysis_target<C: ConnectionTrait>(
             INSERT INTO scope_dependency_analysis_jobs (
                 repo_id, incarnation_id, repo_version, head_oid, analyzer_version,
                 attempts, next_run_at_unix, lease_generation, lease_owner,
-                lease_expires_at_unix, last_error, created_at_unix, updated_at_unix
-            ) VALUES ($1, $2, $3, $4, $5, 0, $6, NULL, NULL, NULL, NULL, $6, $6)
+                lease_expires_at_unix, last_error, created_at_unix, updated_at_unix, traceparent
+            ) VALUES ($1, $2, $3, $4, $5, 0, $6, NULL, NULL, NULL, NULL, $6, $6, $7)
             ON CONFLICT (repo_id) DO UPDATE SET
                 incarnation_id = EXCLUDED.incarnation_id,
                 repo_version = EXCLUDED.repo_version,
@@ -436,7 +438,8 @@ pub(super) async fn enqueue_dependency_analysis_target<C: ConnectionTrait>(
                 lease_owner = NULL,
                 lease_expires_at_unix = NULL,
                 last_error = NULL,
-                updated_at_unix = GREATEST(scope_dependency_analysis_jobs.updated_at_unix, EXCLUDED.updated_at_unix)
+                updated_at_unix = GREATEST(scope_dependency_analysis_jobs.updated_at_unix, EXCLUDED.updated_at_unix),
+                traceparent = COALESCE(EXCLUDED.traceparent, scope_dependency_analysis_jobs.traceparent)
             WHERE ROW(
                 scope_dependency_analysis_jobs.incarnation_id,
                 scope_dependency_analysis_jobs.repo_version,
@@ -454,6 +457,7 @@ pub(super) async fn enqueue_dependency_analysis_target<C: ConnectionTrait>(
             head_oid.into(),
             analyzer_version.into(),
             now.into(),
+            QueuedTrace::current().into_column().into(),
         ],
     ))
     .await?;

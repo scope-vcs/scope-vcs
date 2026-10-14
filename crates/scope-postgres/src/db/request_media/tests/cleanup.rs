@@ -14,6 +14,7 @@ async fn claim_cleanup(
         .await
         .unwrap()
         .unwrap()
+        .0
 }
 
 async fn abandon_first_part_write(fixture: &Fixture, attachment_id: &str) {
@@ -173,7 +174,7 @@ async fn concurrent_orphan_claimers_each_take_distinct_work() {
     }
     let mut claimed = Vec::new();
     while let Some(claim) = claims.join_next().await {
-        claimed.push(claim.unwrap().unwrap().unwrap().attachment_id);
+        claimed.push(claim.unwrap().unwrap().unwrap().0.attachment_id);
     }
     claimed.sort();
     assert_eq!(claimed, attachment_ids);

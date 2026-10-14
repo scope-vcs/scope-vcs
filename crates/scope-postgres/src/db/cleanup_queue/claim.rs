@@ -11,6 +11,7 @@ use crate::{
         integer_columns::u64_to_i64,
     },
     error::PostgresError,
+    job_trace::QueuedTrace,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult,
@@ -52,8 +53,13 @@ impl CleanupStore {
             .iter()
             .map(|row| row.blob.clone())
             .collect::<Vec<_>>();
+        let queued_traces = loaded.iter().map(|row| row.queued_trace.clone()).collect();
         tx.commit().await?;
-        Ok(SourceBlobCleanupBatch { pending, loaded })
+        Ok(SourceBlobCleanupBatch {
+            pending,
+            queued_traces,
+            loaded,
+        })
     }
 }
 
@@ -190,8 +196,10 @@ where
     rows.into_iter()
         .map(|row| {
             let generation = row.generation.clone();
+            let queued_trace = QueuedTrace::from_column(row.traceparent.clone());
             Ok(LoadedSourceBlobCleanup {
                 generation,
+                queued_trace,
                 blob: row.try_into_domain()?,
             })
         })

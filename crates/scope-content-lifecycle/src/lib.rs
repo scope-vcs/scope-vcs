@@ -5,6 +5,7 @@ use scope_postgres::{
         cleanup_queue::types::{SourceBlobCleanupBatch, SourceBlobCleanupDecision},
     },
     error::PostgresError,
+    job_trace,
 };
 use scope_storage::{ObjectStore, ObjectStoreError, object_key};
 use std::collections::BTreeMap;
@@ -44,6 +45,7 @@ pub async fn drain_source_blob_cleanup(
             scope.blob.count = batch.pending.len(),
         )
     };
+    job_trace::link_all(&span, &batch.queued_traces);
     clean_up_batch(metadata, object_store, batch, now_unix)
         .instrument(span)
         .await

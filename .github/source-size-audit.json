@@ -27,11 +27,6 @@
       "reason": "Tree construction, native-range validation, deterministic object identity, and identity fixtures are one algorithm."
     },
     {
-      "path": "crates/scope-postgres/src/db/outbox.rs",
-      "owner": "projection read-model outbox",
-      "reason": "Enqueue, claim, execute, lease, retry, completion, pruning, and queue tests implement one durable outbox."
-    },
-    {
       "path": "crates/scope-postgres/src/db/request_discussions.rs",
       "owner": "request discussion persistence",
       "reason": "Discussion and reply mutations, visibility, read state, attachment binding, and notifications share the same request discussion transaction boundary."

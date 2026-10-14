@@ -56,7 +56,7 @@ async fn process_next_job(
 ) -> anyhow::Result<JobOutcome> {
     let now = unix_now()?;
     let token = random_hex("lease-", 16)?;
-    let Some(lease) = metadata
+    let Some((lease, queued_trace)) = metadata
         .media()
         .claim_processing_job(&token, now, lease_expiry(now, settings.lease_duration)?)
         .await?
@@ -77,6 +77,7 @@ async fn process_next_job(
         scope.job.id = %lease.attachment_id,
         scope.job.attempt = lease.attempt,
     );
+    queued_trace.link(&span);
     let _activity = health.processing_activity();
     let work = settle_claim(metadata, storage, pipeline, scratch, settings, &lease);
     match supervise_lease(work, settings.lease_duration, || async {

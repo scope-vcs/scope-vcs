@@ -163,6 +163,7 @@ async fn process_next(
         scope.job.kind = "dependency_analysis",
         scope.job.id = %claim.lease_generation,
     );
+    claim.queued_trace.link(&span);
     analyze_claimed(metadata, objects, segments, settings, health, claim)
         .instrument(span)
         .await

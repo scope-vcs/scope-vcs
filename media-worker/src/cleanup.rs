@@ -40,7 +40,7 @@ async fn cleanup_next_job(
         .enqueue_expired_attachment_cleanup(now)
         .await?;
     let token = random_hex("cleanup-", 16)?;
-    let Some(lease) = metadata
+    let Some((lease, queued_trace)) = metadata
         .media()
         .claim_cleanup_job(&token, now, lease_expiry(now, settings.lease_duration)?)
         .await?
@@ -55,6 +55,7 @@ async fn cleanup_next_job(
         scope.job.id = %lease.attachment_id,
         scope.job.attempt = lease.attempt,
     );
+    queued_trace.link(&span);
     clean_up_lease(metadata, storage, settings, health, &lease)
         .instrument(span)
         .await

@@ -1,5 +1,6 @@
 use super::*;
 use crate::db::{MetadataStore, TestDatabaseTarget};
+use crate::job_trace::test_support::queued_by;
 use scope_domain::{
     account::UserAccount,
     dependency_analysis::{
@@ -351,5 +352,25 @@ async fn failed_first_page_job_does_not_starve_later_backfill_candidates() {
     assert_eq!(
         second.incarnation.repository_id(),
         "dependency-owner/second"
+    );
+}
+
+#[tokio::test]
+async fn a_claim_carries_the_trace_that_queued_it() {
+    let store = seeded_store().await;
+    queued_by(
+        "trace-dependency-push",
+        store
+            .jobs()
+            .enqueue_dependency_analysis_backfill(DEPENDENCY_ANALYZER_VERSION, NOW, 10),
+    )
+    .await
+    .unwrap();
+
+    let claim = claim_job(&store, "worker-a", NOW, 30).await.unwrap();
+
+    assert_eq!(
+        claim.queued_trace,
+        QueuedTrace::from_column(Some("trace-dependency-push".into()))
     );
 }

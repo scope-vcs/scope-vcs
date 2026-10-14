@@ -5,6 +5,7 @@ use crate::{
     },
     db::{decode_json, encode_json},
     error::PostgresError,
+    job_trace::QueuedTrace,
 };
 use scope_domain::runs::{
     attempt::{AttemptState, RunAttempt},
