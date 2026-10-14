@@ -23,7 +23,7 @@ pub(super) fn selected_mode(
     Ok(mode)
 }
 
-fn resolve_comparison(
+pub(super) fn resolve_comparison(
     raw_repo: &FsPath,
     revision: &RequestRevision,
     access: &RepositoryAccess,

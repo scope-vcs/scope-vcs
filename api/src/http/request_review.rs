@@ -142,7 +142,42 @@ pub(crate) async fn list_request_revisions(
                 revision,
                 move |raw_repo, revision| {
                     let mut repo_for_inspection = (*repo_for_inspection).clone();
-                    repo_for_inspection.policy =
+                    let comparison = if selected_comparison {
+                        let selected = comparison::resolve_comparison(
+                            raw_repo,
+                            revision,
+                            &inspection_access,
+                            mode,
+                            selected_commit.as_deref(),
+                        )?;
+                        match crate::use_cases::request_inspection_policy::resolve_comparison(
+                            &inspection_state,
+                            &repo_for_inspection,
+                            &inspection_access.view,
+                            raw_repo,
+                            &selected,
+                        )? {
+                            Some(policy) => {
+                                repo_for_inspection.policy = policy;
+                                Some(comparison::inspect_comparison(
+                                    raw_repo,
+                                    &repo_for_inspection,
+                                    &inspection_access,
+                                    revision,
+                                    mode,
+                                    selected_commit.as_deref(),
+                                    comparison::ComparisonFileSelection {
+                                        limit: file_limit,
+                                        path: None,
+                                    },
+                                )?)
+                            }
+                            None => Some(comparison::unavailable_comparison(revision, mode)),
+                        }
+                    } else {
+                        None
+                    };
+                    let Some(policy) =
                         crate::use_cases::request_inspection_policy::resolve_revision(
                             &inspection_state,
                             &repo_for_inspection,
@@ -151,23 +186,19 @@ pub(crate) async fn list_request_revisions(
                             revision,
                             selected_commit.as_deref(),
                             commit_limit,
-                        )?;
-                    let comparison = selected_comparison
-                        .then(|| {
-                            comparison::inspect_comparison(
-                                raw_repo,
-                                &repo_for_inspection,
-                                &inspection_access,
-                                revision,
-                                mode,
-                                selected_commit.as_deref(),
-                                comparison::ComparisonFileSelection {
-                                    limit: file_limit,
-                                    path: None,
-                                },
-                            )
-                        })
-                        .transpose()?;
+                        )?
+                    else {
+                        return Ok((
+                            InspectedRequestCommits {
+                                visible: Vec::new(),
+                                inspected: 0,
+                                files_listed: 0,
+                                inspection: RequestRevisionInspectionState::Unavailable,
+                            },
+                            comparison,
+                        ));
+                    };
+                    repo_for_inspection.policy = policy;
                     let remaining_files = file_limit
                         .saturating_sub(comparison.as_ref().map_or(0, |value| value.files.len()));
                     let commits = request_revision_commits(

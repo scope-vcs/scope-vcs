@@ -157,8 +157,10 @@ pub(super) fn exercise(contributor: &Actor, maintainer: &Actor, suffix: &str) {
             assert_eq!(shown["result"]["request"]["main_ancestor_oid"], view_main);
             assert_eq!(
                 shown["result"]["request"]["mergeability"]["status"],
-                "Ready"
+                "NotMaintainer"
             );
+            let ready = maintainer.json(["request", "ci", "--request", &child_id]);
+            assert_eq!(ready["result"]["checks"]["mergeability"]["status"], "Ready");
             run_git(
                 &contributor.repo,
                 ["merge-base", "--is-ancestor", &view_main, &child_head],

@@ -26,12 +26,9 @@ pub(crate) fn resolve_revision(
     revision: &RequestRevision,
     selected_commit: Option<&str>,
     commit_limit: usize,
-) -> Result<Policy, ApiError> {
+) -> Result<Option<Policy>, ApiError> {
     let mut paths = BTreeSet::new();
     let comparison = scope_domain::requests::RequestComparison::push(revision, reader.clone());
-    let push_base =
-        super::request_revision_inspection::request_comparison_base_oid(raw_repo, &comparison)?
-            .expect("push base exists");
     let mut commits = super::request_revision_inspection::request_revision_commit_oids(
         raw_repo,
         &comparison,
@@ -45,31 +42,36 @@ pub(crate) fn resolve_revision(
     }
     let mut commits = commits.join("\n").into_bytes();
     commits.push(b'\n');
-    collect_paths(
+    if !collect_paths(
         raw_repo,
         &["--stdin", "--diff-merges=first-parent"],
         Some(commits),
         &mut paths,
-    )?;
-    let comparison = scope_domain::requests::RequestComparison::request(revision, reader.clone());
+    )? {
+        return Ok(None);
+    }
+    resolve_paths(state, repo, reader, paths).map(Some)
+}
+
+pub(crate) fn resolve_comparison(
+    state: &AppState,
+    repo: &RepositoryReadPolicy,
+    reader: &ViewId,
+    raw_repo: &Path,
+    comparison: &scope_domain::requests::RequestComparison,
+) -> Result<Option<Policy>, ApiError> {
     let base =
-        super::request_revision_inspection::request_comparison_base_oid(raw_repo, &comparison)?;
-    collect_paths(
-        raw_repo,
-        &[
-            base.as_deref().expect("request base exists"),
-            &revision.new_head_oid,
-        ],
-        None,
-        &mut paths,
-    )?;
-    collect_paths(
-        raw_repo,
-        &[&push_base, &revision.new_head_oid],
-        None,
-        &mut paths,
-    )?;
-    resolve_paths(state, repo, reader, paths)
+        super::request_revision_inspection::request_comparison_base_oid(raw_repo, comparison)?;
+    let mut args = Vec::new();
+    if let Some(base) = &base {
+        args.push(base.as_str());
+    }
+    args.push(comparison.identity().head_oid.as_str());
+    let mut paths = BTreeSet::new();
+    if !collect_paths(raw_repo, &args, None, &mut paths)? {
+        return Ok(None);
+    }
+    resolve_paths(state, repo, reader, paths).map(Some)
 }
 
 pub(crate) fn resolve_commit(
@@ -92,12 +94,16 @@ pub(crate) fn resolve_commits(
     let mut paths = BTreeSet::new();
     let mut input = commits.join("\n").into_bytes();
     input.push(b'\n');
-    collect_paths(
+    if !collect_paths(
         raw_repo,
         &["--stdin", "--diff-merges=first-parent"],
         Some(input),
         &mut paths,
-    )?;
+    )? {
+        return Err(ApiError::infrastructure_unavailable(
+            "request visibility inspection exceeds its path budget",
+        ));
+    }
     resolve_paths(state, repo, reader, paths)
 }
 
@@ -123,7 +129,7 @@ fn collect_paths(
     args: &[&str],
     input: Option<Vec<u8>>,
     paths: &mut BTreeSet<ScopePath>,
-) -> Result<(), ApiError> {
+) -> Result<bool, ApiError> {
     let mut command = Command::new("git");
     command
         .arg("-C")
@@ -148,13 +154,14 @@ fn collect_paths(
         "reading bounded request inspection paths",
         move |stdout, _| {
             let mut reader = BufReader::new(stdout);
+            let mut complete = true;
             loop {
                 let mut bytes = Vec::new();
                 let mut oversized = false;
                 loop {
                     let available = reader.fill_buf().map_err(ApiError::internal)?;
                     if available.is_empty() {
-                        return Ok::<_, ApiError>(collected);
+                        return Ok::<_, ApiError>((collected, complete));
                     }
                     let consumed = available
                         .iter()
@@ -171,21 +178,18 @@ fn collect_paths(
                     }
                 }
                 if oversized {
-                    return Err(ApiError::payload_too_large(
-                        "request inspection path exceeds the 64 KiB limit",
-                    ));
+                    complete = false;
                 }
-                if !bytes.is_empty() {
+                if complete && !bytes.is_empty() {
                     let path = std::str::from_utf8(&bytes).map_err(ApiError::bad_request)?;
                     let path =
                         ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
                     if !collected.contains(&path) && collected.len() == MAX_REQUEST_INSPECTION_PATHS
                     {
-                        return Err(ApiError::payload_too_large(
-                            "request inspection exceeds the 10,000 path limit",
-                        ));
+                        complete = false;
+                    } else {
+                        collected.insert(path);
                     }
-                    collected.insert(path);
                 }
             }
         },
@@ -202,6 +206,7 @@ fn collect_paths(
             "reading request inspection paths failed",
         ));
     }
-    *paths = output.value;
-    Ok(())
+    let (collected, complete) = output.value;
+    *paths = collected;
+    Ok(complete)
 }

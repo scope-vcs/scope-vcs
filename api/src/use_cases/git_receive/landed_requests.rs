@@ -1,23 +1,32 @@
 use crate::{
     error::ApiError,
-    git::command::{git_is_ancestor, run_git_output},
+    git::{
+        command::{git_is_ancestor, run_git_output},
+        import::{ReceivePackUpdate, apply_receive_pack_update},
+        projection_repo::verify_and_restore_projection,
+    },
     state::AppState,
 };
-use scope_domain::requests::{Request, lands_with_main};
+use scope_domain::{
+    projection::project_graph,
+    requests::{Request, lands_with_main},
+};
 use scope_postgres::db::LandedRequestCandidate;
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 #[tracing::instrument(skip_all, name = "use_case.git_receive.find_landed_requests", fields(scope.landed_request.count = tracing::field::Empty))]
 pub(super) async fn landed_request_candidates(
     state: &AppState,
-    repository_id: &str,
+    owner: &str,
+    repo_name: &str,
     staging_repo: &Path,
-    main_oid: &str,
+    update: &ReceivePackUpdate,
 ) -> Result<Vec<LandedRequestCandidate>, ApiError> {
+    let repository_id = scope_domain::repository::repo_id(owner, repo_name);
     let candidates = state
         .metadata
         .requests()
-        .requests_by_repo_id(repository_id)
+        .requests_by_repo_id(&repository_id)
         .await?
         .into_iter()
         .filter(lands_with_main)
@@ -26,18 +35,25 @@ pub(super) async fn landed_request_candidates(
         return Ok(Vec::new());
     }
     let path = staging_repo.to_path_buf();
-    let main_oid_for_scan = main_oid.to_string();
+    let main_oid_for_scan = update.head_oid.clone();
     let mut landed = crate::git::blocking::run(move || {
         requests_carried_by(&path, &main_oid_for_scan, candidates)
     })
     .await?;
-    let incarnation = state
+    if landed.is_empty() {
+        return Ok(landed);
+    }
+    let mut proposed_repo = state
         .metadata
         .repositories()
-        .repository_record(repository_id)
+        .repository(owner, repo_name)
         .await?
-        .ok_or_else(|| ApiError::not_found("repo not found"))?
-        .incarnation();
+        .ok_or_else(|| ApiError::not_found("repo not found"))?;
+    let incarnation = proposed_repo.incarnation();
+    let mut proposed_update = update.clone();
+    proposed_update.previous_config = Some(proposed_repo.repo_config.clone());
+    apply_receive_pack_update(&mut proposed_repo, proposed_update)?;
+    let mut view_heads = BTreeMap::new();
     for candidate in &mut landed {
         let parent = state
             .metadata
@@ -50,13 +66,30 @@ pub(super) async fn landed_request_candidates(
                 "landed request changed during preparation",
             ));
         }
+        if &parent.view != proposed_repo.repo_config.views().full()
+            && !view_heads.contains_key(&parent.view)
+        {
+            let projection = project_graph(
+                &proposed_repo.graph,
+                &proposed_repo.visibility_change_sets,
+                proposed_repo.repo_config.views(),
+                &parent.view,
+            );
+            let state = state.clone();
+            let staging = staging_repo.to_path_buf();
+            let head = crate::git::blocking::run(move || {
+                verify_and_restore_projection(&state, &projection, &staging)
+            })
+            .await?;
+            view_heads.insert(parent.view.clone(), head);
+        }
         candidate.stack_children = crate::use_cases::request_stack_landing::prepare_stack_landing(
             state,
             &incarnation,
             &parent,
             staging_repo,
-            main_oid,
-            None,
+            &update.head_oid,
+            view_heads.get(&parent.view).and_then(Option::as_deref),
         )
         .await?;
     }
