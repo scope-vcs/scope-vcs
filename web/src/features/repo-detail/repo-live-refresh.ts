@@ -72,12 +72,12 @@ export function useRepoLiveRefresh(
     const onEvent = (event: RepoChangeEvent) => {
       const summaryPending = coordinator.onEvent(event)
       if (event.repo_id === repoId) {
-        invalidateRepoResources(scope, event, summaryPending)
+        invalidateRepoResources(scope, event, { summaryPending, versioned })
       }
       notifyListeners(event)
     }
     const onStreamInterrupted = () => {
-      invalidateRepoResources(scope, undefined, true)
+      invalidateRepoResources(scope, undefined, { summaryPending: true, versioned })
       coordinator.onStreamInterrupted()
       const event: RepoChangeEvent = {
         incarnation_id: 'local-stream-interruption',
