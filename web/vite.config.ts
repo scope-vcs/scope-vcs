@@ -48,6 +48,7 @@ export default defineConfig(({ mode }) => {
           './src/server/analytics-endpoint.ts',
           './src/server/compress-responses.ts',
           './src/server/secure-responses.ts',
+          './src/server/telemetry-shutdown-plugin.ts',
         ],
       }),
     ],

@@ -7,19 +7,23 @@ use opentelemetry::{
     KeyValue, global,
     trace::{TraceContextExt as _, TracerProvider as _},
 };
+use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_otlp::{WithExportConfig as _, WithHttpConfig as _};
 use opentelemetry_sdk::{
     Resource,
     error::OTelSdkResult,
+    logs::SdkLoggerProvider,
     propagation::TraceContextPropagator,
     trace::{
         Sampler, SamplingDecision, SamplingResult, SdkTracerProvider, ShouldSample, SpanData,
         SpanEvents, SpanExporter,
     },
 };
-use std::{fmt, time::Duration};
+use std::{collections::HashMap, fmt, time::Duration};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::{
     EnvFilter, Layer as _,
+    filter::{FilterExt as _, filter_fn},
     fmt::{FmtContext, FormatEvent, FormatFields, MakeWriter, format::Writer},
     layer::SubscriberExt as _,
     registry::LookupSpan,
@@ -28,6 +32,13 @@ use tracing_subscriber::{
 
 const EXPORTED_SPANS: &str =
     "off,otel::tracing=trace,api=info,worker=info,scope_=info,aws_sdk_s3::operation=debug";
+const UNEXPORTED_LOG_TARGETS: [&str; 5] = ["opentelemetry", "reqwest", "hyper", "h2", "tower"];
+const DEFAULT_POSTHOG_HOST: &str = "https://us.i.posthog.com";
+const INJECTED_EXPORTER_HEADERS: [&str; 3] = [
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+    "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+];
 const UNTRACED_PATHS: [&str; 2] = ["/healthz", "/readyz"];
 const EXPORTED_ATTRIBUTES: [&str; 20] = [
     "db.operation.name",
@@ -52,33 +63,55 @@ const EXPORTED_ATTRIBUTES: [&str; 20] = [
     "url.scheme",
 ];
 
-#[must_use = "dropping telemetry without shutdown loses the final batch of spans"]
+#[must_use = "dropping telemetry without shutdown loses the final batch of spans and logs"]
 pub struct Telemetry {
-    provider: Option<SdkTracerProvider>,
+    exporters: Option<Exporters>,
 }
 
 impl Telemetry {
     pub fn shutdown(self) {
-        if let Some(provider) = self.provider
-            && let Err(error) = provider.shutdown()
-        {
+        let Some(exporters) = self.exporters else {
+            return;
+        };
+        if let Err(error) = exporters.tracer.shutdown() {
             tracing::warn!(%error, "flushing exported spans failed");
+        }
+        if let Err(error) = exporters.logger.shutdown() {
+            tracing::warn!(%error, "flushing exported logs failed");
         }
     }
 }
 
-pub fn init_telemetry(log_filter: &str) -> anyhow::Result<Telemetry> {
-    let logs = EnvFilter::try_from_default_env().unwrap_or_else(|_| log_filter.into());
-    let provider = std::env::var_os("OTEL_EXPORTER_OTLP_ENDPOINT")
-        .map(|_| tracer_provider())
-        .transpose()?;
-    subscriber(logs, provider.as_ref(), std::io::stdout).try_init()?;
-    Ok(Telemetry { provider })
+struct Exporters {
+    tracer: SdkTracerProvider,
+    logger: SdkLoggerProvider,
+}
+
+pub fn init_telemetry(service: &'static str, log_filter: &str) -> anyhow::Result<Telemetry> {
+    let log_filter = service_log_filter(std::env::var("RUST_LOG").ok(), log_filter);
+    let destination = PostHogDestination::from_env(|name| std::env::var(name).ok());
+    let exporters = match &destination {
+        Ok(Some(destination)) => Some(destination.exporters(service)?),
+        _ => None,
+    };
+    subscriber(log_filter, exporters.as_ref(), std::io::stdout).try_init()?;
+    if let Err(InjectedExporterHeaders(variable)) = destination {
+        eprintln!(
+            "PostHog telemetry export disabled because Railway still injects {variable}; disable Railway tracing for this service"
+        );
+    }
+    Ok(Telemetry { exporters })
+}
+
+fn service_log_filter(rust_log: Option<String>, service_default: &str) -> EnvFilter {
+    rust_log
+        .and_then(|directives| EnvFilter::try_new(directives).ok())
+        .unwrap_or_else(|| service_default.into())
 }
 
 fn subscriber<W>(
-    logs: EnvFilter,
-    provider: Option<&SdkTracerProvider>,
+    log_filter: EnvFilter,
+    exporters: Option<&Exporters>,
     writer: W,
 ) -> impl Subscriber + Send + Sync
 where
@@ -89,12 +122,21 @@ where
             tracing_subscriber::fmt::layer()
                 .event_format(WithTraceId(tracing_subscriber::fmt::format()))
                 .with_writer(writer)
-                .with_filter(logs),
+                .with_filter(log_filter.clone()),
         )
-        .with(provider.map(|provider| {
+        .with(exporters.map(|exporters| {
             tracing_opentelemetry::layer()
-                .with_tracer(provider.tracer("scope"))
+                .with_tracer(exporters.tracer.tracer("scope"))
                 .with_filter(EnvFilter::new(EXPORTED_SPANS))
+        }))
+        .with(exporters.map(|exporters| {
+            OpenTelemetryTracingBridge::new(&exporters.logger).with_filter(log_filter.and(
+                filter_fn(|metadata| {
+                    !UNEXPORTED_LOG_TARGETS
+                        .iter()
+                        .any(|target| metadata.target().starts_with(target))
+                }),
+            ))
         }))
 }
 
@@ -102,22 +144,97 @@ pub fn request_tracing() -> OtelAxumLayer {
     OtelAxumLayer::default().filter(|path| !UNTRACED_PATHS.contains(&path))
 }
 
-fn tracer_provider() -> anyhow::Result<SdkTracerProvider> {
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_http()
-        .build()?;
-    let mut resource = Resource::builder();
-    if let Ok(version) = std::env::var("OTEL_SERVICE_VERSION") {
-        resource = resource.with_attribute(KeyValue::new("service.version", version));
+#[derive(Debug, PartialEq)]
+struct PostHogDestination {
+    host: String,
+    project_token: String,
+    release: Option<String>,
+    environment: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+struct InjectedExporterHeaders(&'static str);
+
+impl PostHogDestination {
+    fn from_env(
+        env: impl Fn(&str) -> Option<String>,
+    ) -> Result<Option<Self>, InjectedExporterHeaders> {
+        let set = |name: &str| {
+            env(name)
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+        };
+        let Some(project_token) = set("POSTHOG_PROJECT_TOKEN") else {
+            return Ok(None);
+        };
+        if let Some(variable) = INJECTED_EXPORTER_HEADERS
+            .into_iter()
+            .find(|variable| env(variable).is_some())
+        {
+            return Err(InjectedExporterHeaders(variable));
+        }
+        Ok(Some(Self {
+            host: set("POSTHOG_HOST")
+                .unwrap_or_else(|| DEFAULT_POSTHOG_HOST.to_owned())
+                .trim_end_matches('/')
+                .to_owned(),
+            project_token,
+            release: set("SCOPE_ANALYTICS_RELEASE"),
+            environment: set("RAILWAY_ENVIRONMENT_NAME"),
+        }))
     }
-    let provider = SdkTracerProvider::builder()
-        .with_sampler(Sampler::ParentBased(Box::new(RequestsAndJobs)))
-        .with_batch_exporter(AllowedAttributes(exporter))
-        .with_resource(resource.build())
-        .build();
-    global::set_text_map_propagator(TraceContextPropagator::new());
-    global::set_tracer_provider(provider.clone());
-    Ok(provider)
+
+    fn endpoint(&self, signal: &str) -> String {
+        format!("{}/i/v1/{signal}", self.host)
+    }
+
+    fn headers(&self) -> HashMap<String, String> {
+        HashMap::from([(
+            "Authorization".to_owned(),
+            format!("Bearer {}", self.project_token),
+        )])
+    }
+
+    fn resource(&self, service: &'static str) -> Resource {
+        let attributes = [
+            ("service.version", &self.release),
+            ("deployment.environment.name", &self.environment),
+        ];
+        Resource::builder()
+            .with_service_name(service)
+            .with_attributes(
+                attributes.into_iter().filter_map(|(key, value)| {
+                    value.clone().map(|value| KeyValue::new(key, value))
+                }),
+            )
+            .build()
+    }
+
+    fn exporters(&self, service: &'static str) -> anyhow::Result<Exporters> {
+        let resource = self.resource(service);
+        let spans = opentelemetry_otlp::SpanExporter::builder()
+            .with_http()
+            .with_endpoint(self.endpoint("traces"))
+            .with_headers(self.headers())
+            .build()?;
+        let logs = opentelemetry_otlp::LogExporter::builder()
+            .with_http()
+            .with_endpoint(self.endpoint("logs"))
+            .with_headers(self.headers())
+            .build()?;
+        let tracer = SdkTracerProvider::builder()
+            .with_sampler(Sampler::ParentBased(Box::new(RequestsAndJobs)))
+            .with_batch_exporter(AllowedAttributes(spans))
+            .with_resource(resource.clone())
+            .build();
+        let logger = SdkLoggerProvider::builder()
+            .with_batch_exporter(logs)
+            .with_resource(resource)
+            .build();
+        global::set_text_map_propagator(TraceContextPropagator::new());
+        global::set_tracer_provider(tracer.clone());
+        Ok(Exporters { tracer, logger })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -216,7 +333,7 @@ mod tests {
         InstrumentationScope,
         trace::{Event, SpanContext, SpanId, SpanKind, TraceFlags, TraceId, TraceState},
     };
-    use opentelemetry_sdk::trace::SpanLinks;
+    use opentelemetry_sdk::{logs::InMemoryLogExporter, trace::SpanLinks};
     use std::{
         borrow::Cow,
         io,
@@ -246,9 +363,18 @@ mod tests {
         }
     }
 
-    fn logged_inside_span(provider: Option<&SdkTracerProvider>) -> String {
+    fn exporters(logs: &InMemoryLogExporter) -> Exporters {
+        Exporters {
+            tracer: SdkTracerProvider::builder().build(),
+            logger: SdkLoggerProvider::builder()
+                .with_simple_exporter(logs.clone())
+                .build(),
+        }
+    }
+
+    fn logged_inside_span(exporters: Option<&Exporters>) -> String {
         let captured = Captured::default();
-        let subscriber = subscriber(EnvFilter::new("info"), provider, captured.clone());
+        let subscriber = subscriber(EnvFilter::new("info"), exporters, captured.clone());
         tracing::subscriber::with_default(subscriber, || {
             let span = tracing::info_span!(target: "scope_test", "request");
             let _entered = span.enter();
@@ -258,8 +384,19 @@ mod tests {
     }
 
     #[test]
+    fn an_invalid_log_filter_keeps_the_service_default() {
+        let captured = Captured::default();
+        let filter = service_log_filter(Some("scope_test=invalid".to_owned()), "scope_test=info");
+        tracing::subscriber::with_default(subscriber(filter, None, captured.clone()), || {
+            tracing::info!(target: "scope_test", "handled");
+        });
+        let logged = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        assert!(logged.ends_with("handled\n"), "{logged}");
+    }
+
+    #[test]
     fn log_lines_carry_the_trace_id_only_when_spans_are_exported() {
-        let exported = logged_inside_span(Some(&SdkTracerProvider::builder().build()));
+        let exported = logged_inside_span(Some(&exporters(&InMemoryLogExporter::default())));
         let trace_id = exported
             .strip_prefix("trace_id=")
             .and_then(|rest| rest.split_once(' '))
@@ -272,6 +409,80 @@ mod tests {
         let local = logged_inside_span(None);
         assert!(!local.contains("trace_id="), "{local}");
         assert!(local.ends_with("handled\n"), "{local}");
+    }
+
+    #[test]
+    fn exported_logs_join_their_request_trace_without_exporter_internals() {
+        let logs = InMemoryLogExporter::default();
+        let exporters = exporters(&logs);
+        let subscriber = subscriber(
+            EnvFilter::new("info,reqwest::connect=debug,opentelemetry_sdk=debug"),
+            Some(&exporters),
+            Captured::default(),
+        );
+        let trace_id = tracing::subscriber::with_default(subscriber, || {
+            let span = tracing::info_span!(target: "scope_test", "request", otel.kind = "server");
+            let _entered = span.enter();
+            tracing::info!(target: "scope_test", "handled");
+            tracing::debug!(target: "reqwest::connect", "connecting");
+            tracing::debug!(target: "opentelemetry_sdk", "exporting");
+            current_trace_id().unwrap()
+        });
+        let emitted = logs.get_emitted_logs().unwrap();
+        let exported: Vec<_> = emitted
+            .iter()
+            .map(|log| {
+                (
+                    log.record.target().map(|target| target.to_string()),
+                    log.record
+                        .trace_context()
+                        .map(|context| context.trace_id.to_string()),
+                )
+            })
+            .collect();
+        assert_eq!(exported, [(Some("scope_test".to_owned()), Some(trace_id))]);
+    }
+
+    #[test]
+    fn posthog_export_requires_a_token_and_no_injected_exporter_headers() {
+        let env = |variables: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                variables
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_owned())
+            }
+        };
+        assert_eq!(
+            PostHogDestination::from_env(env(&[("POSTHOG_HOST", "https://eu.i.posthog.com")])),
+            Ok(None)
+        );
+        let default_host =
+            PostHogDestination::from_env(env(&[("POSTHOG_PROJECT_TOKEN", " phc_public ")]))
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            default_host.endpoint("traces"),
+            "https://us.i.posthog.com/i/v1/traces"
+        );
+        assert_eq!(default_host.headers()["Authorization"], "Bearer phc_public");
+        let configured_host = PostHogDestination::from_env(env(&[
+            ("POSTHOG_PROJECT_TOKEN", "phc_public"),
+            ("POSTHOG_HOST", "https://eu.i.posthog.com/"),
+        ]))
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            configured_host.endpoint("logs"),
+            "https://eu.i.posthog.com/i/v1/logs"
+        );
+        assert_eq!(
+            PostHogDestination::from_env(env(&[
+                ("POSTHOG_PROJECT_TOKEN", "phc_public"),
+                ("OTEL_EXPORTER_OTLP_HEADERS", "authorization=Bearer railway"),
+            ])),
+            Err(InjectedExporterHeaders("OTEL_EXPORTER_OTLP_HEADERS"))
+        );
     }
 
     #[derive(Clone, Debug, Default)]
