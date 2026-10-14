@@ -42,7 +42,7 @@ test('real client preserves event identities and stores nothing on the device', 
     assert.equal(captured[2].properties.release, 'web-abc123')
     assert.equal(captured[2].properties.source, 'browser')
     client.capture('frontend_error', {
-      error_kind: 'abort_error',
+      error_kind: 'type_error',
       error_origin: 'promise',
       release: 'web-original',
       route_name: 'request_changes',

@@ -27,7 +27,6 @@ const campaignPropertyNames = [
 const campaignValuePattern = /^[a-zA-Z0-9._-]{1,80}$/
 const releaseValuePattern = /^[a-zA-Z0-9._-]{1,120}$/
 const errorKinds = new Set([
-  'abort_error',
   'aggregate_error',
   'dom_error',
   'eval_error',

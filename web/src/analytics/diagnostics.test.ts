@@ -65,13 +65,13 @@ test('browser diagnostics have one reporting owner across installations and disp
   installations.push(first, second)
   const rejection = () => {
     const event = new Event('unhandledrejection')
-    Object.assign(event, { reason: new DOMException('private cancellation', 'AbortError') })
+    Object.assign(event, { reason: new TypeError('private failure') })
     browser.dispatchEvent(event)
   }
 
   rejection()
   assert.equal(captures.length, 1)
-  assert.equal(captures[0]?.error_kind, 'abort_error')
+  assert.equal(captures[0]?.error_kind, 'type_error')
   second.dispose()
   rejection()
   assert.equal(captures.length, 2)
@@ -88,7 +88,25 @@ test('frontend errors are reduced to a fixed classification', () => {
   assert.equal(classifyFrontendError(new TypeError('private user text')), 'type_error')
   assert.equal(classifyFrontendError(new Error('https://scope.test/private/path')), 'unknown_error')
   assert.equal(classifyFrontendError('raw rejection value'), 'unknown_error')
-  assert.equal(classifyFrontendError(new DOMException('stopped', 'AbortError')), 'abort_error')
+  assert.equal(classifyFrontendError(new DOMException('private', 'NotAllowedError')), 'dom_error')
+})
+
+test('cancelled work is not reported as a frontend error', (t) => {
+  const { browser, installations } = diagnosticBrowser(t)
+  const captures: Array<Record<string, number | string | null>> = []
+  installations.push(installBrowserDiagnostics({
+    capture: (_event, properties) => { captures.push(properties); return true },
+    release: 'web-original',
+    routeName: 'repository_code',
+  }))
+  const controller = new AbortController()
+  controller.abort()
+  const rejection = new Event('unhandledrejection')
+  Object.assign(rejection, { reason: controller.signal.reason })
+  browser.dispatchEvent(rejection)
+  reportFrontendError(controller.signal.reason, 'route')
+
+  assert.deepEqual(captures, [])
 })
 
 test('web vitals keep the initial document route and wait for safe identity', () => {

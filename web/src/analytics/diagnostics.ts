@@ -1,7 +1,6 @@
 import { analyticsRouteForPathname } from './routes'
 
 type FrontendErrorKind =
-  | 'abort_error'
   | 'aggregate_error'
   | 'dom_error'
   | 'eval_error'
@@ -46,6 +45,7 @@ export function reportFrontendError(
   error: unknown,
   origin: FrontendErrorOrigin,
 ) {
+  if (isCancellation(error)) return
   const installation = currentInstallation()
   const report: FrontendErrorReport = {
     kind: classifyFrontendError(error),
@@ -65,10 +65,12 @@ export function classifyFrontendError(error: unknown): FrontendErrorKind {
   if (error instanceof SyntaxError) return 'syntax_error'
   if (error instanceof TypeError) return 'type_error'
   if (error instanceof URIError) return 'uri_error'
-  if (error instanceof DOMException) {
-    return error.name === 'AbortError' ? 'abort_error' : 'dom_error'
-  }
+  if (error instanceof DOMException) return 'dom_error'
   return 'unknown_error'
+}
+
+function isCancellation(error: unknown) {
+  return error instanceof DOMException && error.name === 'AbortError'
 }
 
 export function installFrontendDiagnostics({
