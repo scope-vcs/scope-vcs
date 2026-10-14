@@ -4,7 +4,7 @@ import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { useAuth, useClerk } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
-import { AccountDangerZoneSection } from './account-sections'
+import { DeleteAccountRow } from './settings-sections'
 import { accountSessionResource } from './account-session-resource'
 import { useAccountSession } from './use-account-session'
 
@@ -38,7 +38,7 @@ export function DeleteAccountSection({
 
   return (
     <>
-      <AccountDangerZoneSection onDelete={handle === null ? undefined : () => setOpen(true)} />
+      <DeleteAccountRow onDelete={handle === null ? undefined : () => setOpen(true)} />
       {open && handle !== null && (
         <TypedConfirmationDialog
           confirmLabel="Delete account"

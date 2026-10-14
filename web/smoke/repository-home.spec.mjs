@@ -99,7 +99,7 @@ test('README details preserve inspection without exposing repeated navigator met
 })
 
 async function navigateFromHome(page, path) {
-  await waitForClientHydration(page.getByRole('button', { name: 'Switch to light mode' }))
+  await waitForClientHydration(page.getByRole('button', { name: 'System', exact: true }))
   const url = new URL(path, baseUrl)
   await page.evaluate(({ to, search }) => { void globalThis.__TSR_ROUTER__.navigate({ to, search }) }, {
     to: url.pathname,

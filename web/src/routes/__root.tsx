@@ -1,6 +1,7 @@
 import { forceSignedOut, signedOutPublishableKey } from '@/auth-mode'
 import { RouteNotFoundPage } from '@/components/route-not-found-page'
 import { signedOutClerk } from '@/lib/signed-out-clerk'
+import { themeBootScript } from '@/lib/use-theme-type'
 import { ClerkProvider } from '@clerk/tanstack-react-start'
 import {
   HeadContent,
@@ -130,7 +131,7 @@ function RootDocument({ children }: { children: ReactNode }) {
         <HeadContent />
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var s=localStorage.getItem('scope-theme');var dark=s?s==='dark':true;var e=document.documentElement;e.classList.toggle('dark',dark);e.style.colorScheme=dark?'dark':'light';}catch(_){}})();`,
+            __html: themeBootScript,
           }}
         />
       </head>

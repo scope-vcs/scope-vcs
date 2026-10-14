@@ -108,12 +108,10 @@ function SlowNote({ label, onRetry }: { label: string; onRetry?: () => void }) {
 }
 
 export function ApplicationPendingShell({
-  actions,
   children,
   contextLabel,
   label,
 }: {
-  actions?: ReactNode
   children?: ReactNode
   contextLabel?: string
   label: string
@@ -121,7 +119,7 @@ export function ApplicationPendingShell({
   return (
     <AppShell
       header={() => (
-        <ApplicationTopbar contextLabel={contextLabel}>{actions}</ApplicationTopbar>
+        <ApplicationTopbar contextLabel={contextLabel} />
       )}
     >
       <PageRail className="min-h-full">

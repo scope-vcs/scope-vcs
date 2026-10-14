@@ -318,7 +318,7 @@ function InviteViewerActions({
           </p>
           <div className="flex flex-wrap gap-2">
             <Button asChild>
-              <Link to="/account">Verify email</Link>
+              <Link hash="profile" to="/settings">Verify email</Link>
             </Button>
           </div>
         </>

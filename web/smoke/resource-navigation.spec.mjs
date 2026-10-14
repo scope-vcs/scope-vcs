@@ -184,7 +184,7 @@ test('leaving and returning during a file load reuses its pending resource reque
   try {
     await withPage(repoPath, async (page) => {
       holdRequestedFile = true
-      await waitForClientHydration(page.getByRole('button', { name: 'Switch to light mode' }))
+      await waitForClientHydration(page.getByRole('button', { name: 'System', exact: true }))
       await page.evaluate((to) => { void globalThis.__TSR_ROUTER__.navigate({ to, search: { file: 'src/app.ts' } }) }, repoPath)
       await page.getByRole('tab', { name: 'src/app.ts', exact: true }).waitFor()
       await page.getByRole('link', { name: 'Requests', exact: true }).first().click()

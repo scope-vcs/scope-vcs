@@ -1,7 +1,6 @@
 export type LandingView = 'public' | 'private'
 export type PairedText = Record<LandingView, string>
 
-export const sourceUrl = 'https://scopevcs.com/adamblumoff/scope-vcs'
 
 export const heroCopy = {
   title: 'One repository.',

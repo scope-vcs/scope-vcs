@@ -1,10 +1,9 @@
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { AccountControl } from '@/components/account-control'
 import { ScopeMark } from '@/components/scope-logo'
-import { ThemeToggle } from '@/components/theme-toggle'
 import { PageRail } from '@/components/page-header'
-import { ApplicationMenu } from '@/components/application-menu'
 
 export type TopbarItem = {
   active?: boolean
@@ -22,13 +21,11 @@ const EMPTY_ITEMS: TopbarItem[] = []
 const EMPTY_FACTS: TopbarFact[] = []
 
 export function ApplicationTopbar({
-  children,
   contextLabel,
   facts = EMPTY_FACTS,
   items = EMPTY_ITEMS,
   repository,
 }: {
-  children?: ReactNode
   contextLabel?: string
   facts?: TopbarFact[]
   items?: TopbarItem[]
@@ -78,10 +75,8 @@ export function ApplicationTopbar({
           </nav>
         )}
 
-        <div className="ml-auto flex shrink-0 items-center gap-1.5 md:ml-3">
-          <ApplicationMenu />
-          <ThemeToggle />
-          {children}
+        <div className={cn('ml-auto flex shrink-0 items-center', items.length > 0 && 'md:ml-3')}>
+          <AccountControl />
         </div>
       </PageRail>
     </header>

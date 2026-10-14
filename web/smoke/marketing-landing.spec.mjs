@@ -18,10 +18,8 @@ test('the served landing page satisfies the production availability gate', async
 async function withLanding(run, pageOptions = {}) {
   await withPage('/', async (page) => {
     await page.getByRole('heading', { name: 'One repository. Part of it is public.' }).waitFor()
-    const themeToggle = page.getByRole('button', { name: 'Switch to light mode' })
-    await waitForClientHydration(themeToggle)
-    await themeToggle.click()
-    await page.getByRole('button', { name: 'Switch to dark mode' }).waitFor()
+    await waitForClientHydration(page.getByRole('button', { name: 'System', exact: true }))
+    assert.equal(await page.locator('html').getAttribute('class'), '')
     await run(page)
   }, {
     permissions: ['clipboard-read', 'clipboard-write'],
@@ -41,8 +39,11 @@ async function waitForRadius(page, { above = -Infinity, below = Infinity }) {
 
 test('landing install controls copy the selected command and keep the theme after reload', async () => {
   await withLanding(async (page) => {
+    await page.getByRole('button', { name: 'Dark', exact: true }).click()
     await page.reload()
-    await page.getByRole('button', { name: 'Switch to dark mode' }).waitFor()
+    await page.getByRole('button', { name: 'Dark', exact: true, pressed: true }).waitFor()
+    assert.equal(await page.locator('html').getAttribute('class'), 'dark')
+    await page.getByRole('button', { name: 'System', exact: true }).click()
     assert.equal(await page.locator('html').getAttribute('class'), '')
     await page.getByRole('link', { name: 'Install Scope', exact: true }).click()
     await page.locator(`${publicLayer} .landing-terminal.is-called`).waitFor()
@@ -68,7 +69,7 @@ test('landing install controls copy the selected command and keep the theme afte
 test('landing layout keeps every note clear of the content at each width', async () => {
   await withLanding(async (page) => {
     for (const colorScheme of ['light', 'dark']) {
-      if (colorScheme === 'dark') await page.getByRole('button', { name: 'Switch to dark mode' }).click()
+      if (colorScheme === 'dark') await page.getByRole('button', { name: 'Dark', exact: true }).click()
       for (const width of [1920, 1440, 1024, 900, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 })
         const layout = await page.evaluate((selector) => {

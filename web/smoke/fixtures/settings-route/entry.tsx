@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { useState } from 'react'
-import { Route } from '@/routes/account'
+import { Route } from '@/routes/settings'
 import { FixtureViewer } from '../shared/clerk'
 import { resetViewerState } from '@/lib/viewer-state'
 

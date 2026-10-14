@@ -31,7 +31,7 @@ const SCENARIOS = [
     { name: 'runs', from: repoPath, to: `${repoPath}/runs`, signedIn: true },
     { name: 'run detail', from: `${repoPath}/runs`, to: firstRunLink, signedIn: true },
     { name: 'settings', from: `/${owner}`, to: `${repoPath}/settings`, signedIn: true },
-    { name: 'account', from: `/${owner}`, to: '/account', signedIn: true },
+    { name: 'settings page', from: `/${owner}`, to: '/settings', signedIn: true },
     { name: 'request detail', from: `${requestRepoPath}/requests`, to: firstRequestLink, signedIn: true },
   ] : [],
 ]

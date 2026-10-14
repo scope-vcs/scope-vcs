@@ -2,23 +2,23 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { fixtureClerk, fixturePath, openFixture } from './support/fixture-server.mjs'
 
-const ui = fixturePath('account-route', 'ui.tsx')
+const ui = fixturePath('settings-route', 'ui.tsx')
 const mockedUi = [
   'components/application-topbar', 'components/app-shell', 'components/copyable-code-block',
-  'components/page-header', 'components/page-error-alert', 'components/section-rows',
+  'components/page-header', 'components/page-error-alert',
   'components/ui/button', 'components/timestamp',
-  'features/account/account-page-header', 'features/account/account-page-pending',
-  'features/account/account-sections', 'features/account/cli-session-list',
-  'features/account/delete-account-section',
+  'features/account/profile-section', 'features/account/settings-page-pending',
+  'features/account/settings-sections', 'features/account/cli-session-list',
+  'features/account/delete-account-section', 'features/account/theme-section',
 ]
 
-test('account route shows revalidated CLI sessions while mounted', async (t) => {
-  const { base, page } = await openFixture(t, 'account-route', {
+test('settings route shows revalidated CLI sessions while mounted', async (t) => {
+  const { base, page } = await openFixture(t, 'settings-route', {
     timeout: 5000,
     aliases: [
       ...mockedUi.map((name) => ({ find: `@/${name}`, replacement: ui })),
-      { find: '@tanstack/react-router', replacement: fixturePath('account-route', 'router.ts') },
-      { find: '@tanstack/react-start', replacement: fixturePath('account-route', 'server.ts') },
+      { find: '@tanstack/react-router', replacement: fixturePath('settings-route', 'router.ts') },
+      { find: '@tanstack/react-start', replacement: fixturePath('settings-route', 'server.ts') },
       { find: '@clerk/tanstack-react-start/server', replacement: fixtureClerk.replacement },
       fixtureClerk,
     ],

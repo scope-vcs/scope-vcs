@@ -12,7 +12,7 @@ import {
 } from '@/components/repo-section-model'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { useRequestReturnLocation } from '@/features/requests/use-request-return-location'
-import { UserButton, useAuth } from '@clerk/tanstack-react-start'
+import { useAuth } from '@clerk/tanstack-react-start'
 import { Link, useLocation, useRouter } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
@@ -87,9 +87,7 @@ export function RepoShell({
           ]}
           items={items}
           repository={params}
-        >
-          <UserButton />
-        </ApplicationTopbar>
+        />
       )}
     >
       {children}

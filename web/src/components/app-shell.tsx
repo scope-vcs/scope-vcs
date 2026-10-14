@@ -1,4 +1,5 @@
 import { MAIN_CONTENT_ID } from './main-content'
+import { SiteFooter } from './site-footer'
 import type { ReactNode } from 'react'
 
 export function AppShell({
@@ -18,12 +19,13 @@ export function AppShell({
       </a>
       {header?.()}
       <main
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none [scrollbar-gutter:stable] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain outline-none [scrollbar-gutter:stable] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-scroll-restoration-id={MAIN_CONTENT_ID}
         id={MAIN_CONTENT_ID}
         tabIndex={-1}
       >
         {children}
+        <SiteFooter />
       </main>
     </div>
   )
