@@ -30,15 +30,16 @@ use scope_domain::{
         access::{RepositoryAccess, RepositoryActor},
     },
     requests::{
-        Request, RequestChecksOutcome, RequestViewer, canonical_request_ref, request_actor_role,
-        request_mergeability, request_policy,
+        MergeGateAuthority, MergeGateInput, Request, RequestViewer, canonical_request_ref,
+        evaluate_merge_gate, request_actor_role, request_policy,
     },
     reviewed_updates::content::apply_request_merge_to_repo,
     runs::catalog::RepositoryWorkflowCatalog,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_postgres::db::{
-    ExpectedRequestAutoMerge, MergeRequestContentCommand, RepositoryGitWriteLease,
+    ExpectedRequestAutoMerge, ExpectedRequestMergeEvidence, MergeRequestContentCommand,
+    RepositoryGitWriteLease,
 };
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
 use scope_storage::StagedGitSegment;
@@ -75,6 +76,7 @@ pub(crate) struct PreparedRequestMerge {
     pub(crate) expected_git_frontier: scope_domain::repository::git::GitFrontier,
     pub(crate) expected_repo_change_version: u64,
     pub(crate) prepared_request_head_oid: String,
+    pub(crate) expected_merge_evidence: ExpectedRequestMergeEvidence,
     pub(crate) origin: RequestMergeOrigin,
     pub(crate) landing_file_mutation: RepositoryLandingFileMutation,
     pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
@@ -149,10 +151,16 @@ pub(crate) async fn merge_request_inner(
     crate::use_cases::github_check_results::confirm_recent_github_checks(state, &request).await?;
     let checks =
         crate::use_cases::request_checks::checks_outcome(state, &context.record, &request).await?;
-    if checks != RequestChecksOutcome::Clear {
-        let decision = request_mergeability(&request, &viewer, &context.views, checks);
+    let decision = evaluate_merge_gate(MergeGateInput::RequestMerge {
+        repository_lifecycle: context.record.lifecycle_state,
+        subject: (&request).into(),
+        viewer: &viewer,
+        views: &context.views,
+        checks,
+    });
+    if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
         return Err(
-            ApiError::conflict(decision.reason.unwrap_or("request CI has not cleared")).into(),
+            ApiError::conflict(decision.reason().unwrap_or("request CI has not cleared")).into(),
         );
     }
 
@@ -267,6 +275,7 @@ async fn persist_prepared_merge(
             expected_git_frontier: prepared.expected_git_frontier,
             expected_repo_change_version: prepared.expected_repo_change_version,
             expected_request_head_oid: prepared.prepared_request_head_oid,
+            expected_merge_evidence: prepared.expected_merge_evidence,
             update: prepared.update.into_reviewed_update(),
             landing_file_mutation: prepared.landing_file_mutation,
             workflow_catalog: prepared.workflow_catalog,
@@ -338,6 +347,16 @@ async fn prepare_request_merge_for_execution(
     repo: &Repository,
     request: &Request,
 ) -> Result<PreparedRequestMerge, RequestMergeFailure> {
+    let expected_merge_evidence = state
+        .metadata
+        .requests()
+        .request_merge_evidence(
+            &request.id,
+            &request.head_oid,
+            request.base_version,
+            request.base.review_base_oid(),
+        )
+        .await?;
     let current = repo.git_head.as_ref().ok_or_else(|| {
         RequestMergeFailure::Other(ApiError::conflict("repo has no accepted Git head"))
     })?;
@@ -383,7 +402,7 @@ async fn prepare_request_merge_for_execution(
                     request_id: request.id.clone(),
                     request_head_oid: request.head_oid.clone(),
                 },
-                request.base_main_oid.clone(),
+                request.base.review_base_oid().to_string(),
             )
         } else {
             let git = RepositoryGit::of_repository(repo);
@@ -498,6 +517,7 @@ async fn prepare_request_merge_for_execution(
             expected_git_frontier: current.frontier(),
             expected_repo_change_version: repo.record.change_version,
             prepared_request_head_oid: request.head_oid.clone(),
+            expected_merge_evidence,
             origin,
             landing_file_mutation: update.landing_file_mutation.clone(),
             workflow_catalog: update.workflow_catalog.clone(),

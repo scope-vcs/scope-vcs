@@ -40,7 +40,7 @@ pub(crate) fn start_input(author_role: RequestActorRole) -> StartRequestInput {
         author_role,
         author_view: ViewId::public(),
         view: ViewId::public(),
-        base_main_oid: "base".to_string(),
+        main_ancestor_oid: "base".to_string(),
         event_id: "event_started".to_string(),
         now_unix: 10,
     }

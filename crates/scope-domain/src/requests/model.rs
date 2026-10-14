@@ -24,7 +24,9 @@ pub struct Request {
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub view: crate::views::ViewId,
-    pub base_main_oid: String,
+    pub base: super::RequestBase,
+    pub base_version: u64,
+    pub main_ancestor_oid: String,
     pub head_oid: String,
     pub git_snapshot: Option<SourceBlob>,
     pub title: String,
@@ -189,6 +191,11 @@ pub struct RequestTimelineMutation {
 }
 
 pub fn validate_request_facts(request: &Request) -> Result<(), DomainError> {
+    if request.base_version == 0 || request.base.review_base_oid().is_empty() {
+        return Err(DomainError::conflict(
+            "request requires a versioned review base",
+        ));
+    }
     if request.updated_at_unix < request.created_at_unix {
         return Err(DomainError::conflict(
             "request update time cannot precede creation time",

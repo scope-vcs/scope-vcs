@@ -119,7 +119,7 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
     assert_eq!(accepted.merged_main_oid, accepted.merged_head_oid);
     assert_ne!(
         accepted.merged_main_oid,
-        Some(accepted.base_main_oid.clone())
+        Some(accepted.main_ancestor_oid.clone())
     );
 }
 

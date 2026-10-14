@@ -7,7 +7,7 @@ use super::{
     request_access::ensure_user_exists,
     request_auto_merge::{
         StoredIntent, automatic_event_id, lock_active_intent_for_request,
-        persist_existing_auto_merge_mutation, request_auto_merge_check_state,
+        persist_existing_auto_merge_mutation,
     },
     request_lifecycle_effects::persist_lifecycle_mutation,
     request_revision_rows::latest_revision_for_request,
@@ -19,12 +19,12 @@ use sea_orm::{
 use {
     crate::error::PostgresError,
     scope_domain::{
-        repository::RepoLifecycleState,
         repository::git::GitHead,
         requests::{
-            MergeRequestInput, RequestAutoMergeReadiness, RequestAutoMergeStopReason,
-            RequestLifecycleMutation, fulfill_request_auto_merge, lands_with_main, merge_request,
-            request_auto_merge_readiness, stop_request_auto_merge,
+            MergeGateAuthority, MergeGateInput, MergeRequestInput, RequestAutoMergeReadiness,
+            RequestAutoMergeStopReason, RequestLifecycleMutation, RequestViewer,
+            evaluate_merge_gate, fulfill_request_auto_merge, lands_with_main, merge_request,
+            request_auto_merge_readiness, request_checks_outcome, stop_request_auto_merge,
         },
     },
 };
@@ -51,12 +51,14 @@ impl RequestStore {
             expected_repo_change_version,
             expected_request_head_oid,
             expected_auto_merge,
+            expected_merge_evidence,
             update,
             landing_file_mutation,
             workflow_catalog,
             origin,
             now_unix,
         } = command;
+        let started = std::time::Instant::now();
         let repo_id = scope_domain::repository::repo_id(&owner, &name);
         let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
@@ -138,6 +140,26 @@ impl RequestStore {
         let context = repository_access(&tx, &repo_id, Some(&actor_user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {owner}/{name} not found")))?;
+        let checks = evidence::locked_merge_checks(
+            &tx,
+            &request,
+            &expected_merge_evidence,
+            now_unix.saturating_add(started.elapsed().as_secs()),
+        )
+        .await?;
+        let viewer = RequestViewer::new(context.access.clone(), Some(&actor_user_id), false);
+        let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {
+            repository_lifecycle: context.record.lifecycle_state,
+            subject: (&request).into(),
+            viewer: &viewer,
+            views: &context.views,
+            checks: request_checks_outcome(
+                &request.id,
+                &request.head_oid,
+                checks.evaluation.as_ref(),
+                &checks.results,
+            ),
+        });
         if expected_auto_merge.is_some()
             && let Some(locked) = &locked_auto_merge
         {
@@ -158,13 +180,7 @@ impl RequestStore {
                 tx.commit().await?;
                 return Err(PostgresError::permission_denied("repo maintainer required"));
             }
-            let checks = request_auto_merge_check_state(&tx, &locked.intent).await?;
-            match request_auto_merge_readiness(
-                &request.id,
-                &request.head_oid,
-                checks.evaluation.as_ref(),
-                &checks.results,
-            ) {
+            match request_auto_merge_readiness(gate) {
                 RequestAutoMergeReadiness::Ready => {}
                 RequestAutoMergeReadiness::Waiting(_) => {
                     return Err(PostgresError::conflict("auto-merge CI is not ready"));
@@ -189,9 +205,6 @@ impl RequestStore {
                 "repo changed since merge was prepared; retry merge",
             ));
         }
-        if context.record.lifecycle_state != RepoLifecycleState::Ready {
-            return Err(PostgresError::conflict("repo must be ready before merge"));
-        }
         let head = entities::git_head::Entity::find_by_id(repo_id.clone())
             .one(&tx)
             .await?
@@ -201,6 +214,14 @@ impl RequestStore {
             return Err(PostgresError::conflict(
                 "repo changed since merge was prepared; retry merge",
             ));
+        }
+        if gate.authority() != Some(MergeGateAuthority::RequestMerge) {
+            let message = gate.reason().unwrap_or("request cannot be merged");
+            return Err(if !context.access.is_maintainer() {
+                PostgresError::permission_denied(message)
+            } else {
+                PostgresError::conflict(message)
+            });
         }
         let request_mutation = merge_request(
             &request,
@@ -254,6 +275,7 @@ impl RequestStore {
         } else {
             request_mutation
         };
+        checks.ensure_fresh(now_unix.saturating_add(started.elapsed().as_secs()))?;
         tx.commit().await?;
         Ok(MergeRequestContentMutation {
             request: request_mutation,
@@ -261,6 +283,8 @@ impl RequestStore {
         })
     }
 }
+
+mod evidence;
 
 #[cfg(test)]
 mod tests;
@@ -290,7 +314,14 @@ pub(super) async fn complete_landed_requests(
     let repo = repository_access(tx, repo_id, Some(&completion.actor_user_id))
         .await?
         .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-    if !repo.access.is_maintainer() || !repo.access.reads_full_view(&repo.views) {
+    if evaluate_merge_gate(MergeGateInput::AuthorizedMainPush {
+        repository_lifecycle: repo.record.lifecycle_state,
+        access: &repo.access,
+        views: &repo.views,
+    })
+    .authority()
+        != Some(MergeGateAuthority::AuthorizedMainPush)
+    {
         return Ok(0);
     }
     let mut completed = 0;

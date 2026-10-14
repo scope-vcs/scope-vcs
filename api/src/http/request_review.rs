@@ -35,7 +35,7 @@ use scope_api_contract::{
 use scope_domain::{
     policy::ScopePath,
     repository::access::RepositoryAccess,
-    requests::{RequestRevision, select_request_review_revision},
+    requests::{RequestComparison, RequestRevision, select_request_review_revision},
 };
 use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
@@ -310,7 +310,8 @@ fn request_revision_commits(
     limit: usize,
     file_limit: usize,
 ) -> Result<InspectedRequestCommits, ApiError> {
-    let mut commit_oids = request_revision_commit_oids(raw_repo, revision, limit)?;
+    let comparison = RequestComparison::push(revision, access.view.clone());
+    let mut commit_oids = request_revision_commit_oids(raw_repo, &comparison, limit)?;
     let mut inspection_incomplete = commit_oids.len() > limit;
     if inspection_incomplete {
         commit_oids.drain(..commit_oids.len() - limit);
@@ -409,10 +410,11 @@ struct InspectedRequestCommits {
 
 fn request_revision_commit_oids(
     raw_repo: &FsPath,
-    revision: &RequestRevision,
+    comparison: &RequestComparison,
     limit: usize,
 ) -> Result<Vec<String>, ApiError> {
-    let exclude_earlier_history = format!("^{}", revision.commits_after_oid());
+    let range = comparison.membership();
+    let exclude_earlier_history = format!("^{}", range.excluded_ancestor_oid());
     let max_count = format!("--max-count={}", limit.saturating_add(1));
     let max_output_bytes = limit.saturating_add(1).saturating_mul(41);
     let output = run_git_output_bounded(
@@ -422,7 +424,7 @@ fn request_revision_commit_oids(
             &max_count,
             "--reverse",
             "--topo-order",
-            &revision.new_head_oid,
+            range.head_oid(),
             &exclude_earlier_history,
         ],
         "reading request revision commits",

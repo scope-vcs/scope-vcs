@@ -6,7 +6,11 @@ use crate::error::PostgresError;
 use scope_domain::{
     account::UserAccount,
     github_connection::GitHubConnection,
-    repository::{RepoLifecycleState, access::RepositoryAccessContext, repo_id},
+    repository::{
+        RepoLifecycleState,
+        access::{RepositoryAccess, RepositoryAccessContext},
+        repo_id,
+    },
     requests::{
         GitHubPush, Request, RequestAutoMergeIntent, RequestCheckEvaluation, RequestCheckResults,
         RequestRevision, RequestViewer, request_policy,
@@ -25,6 +29,7 @@ pub struct RequestStateSnapshot {
     pub results: RequestCheckResults,
     pub revision: Option<RequestRevision>,
     pub auto_merge: Option<RequestAutoMergeIntent>,
+    pub auto_merge_actor_access: Option<RepositoryAccess>,
     pub users: BTreeMap<String, UserAccount>,
     pub github_connection: Option<GitHubConnection>,
     pub github_push: Option<GitHubPush>,
@@ -120,6 +125,16 @@ async fn read_request_state(
     let revision =
         super::request_revision_rows::latest_revision_for_request(&tx, request_id).await?;
     let auto_merge = super::request_auto_merge::latest_intent(&tx, request_id).await?;
+    let auto_merge_actor_access = match auto_merge.as_ref().filter(|intent| intent.is_active()) {
+        Some(intent) => super::repository_access::repository_access(
+            &tx,
+            &request.repo_id,
+            Some(&intent.actor_user_id),
+        )
+        .await?
+        .map(|context| context.access),
+        None => None,
+    };
     let users = super::auth::load_users_by_ids(
         &tx,
         auto_merge
@@ -175,6 +190,7 @@ async fn read_request_state(
         results,
         revision,
         auto_merge,
+        auto_merge_actor_access,
         users,
         github_connection,
         github_push,

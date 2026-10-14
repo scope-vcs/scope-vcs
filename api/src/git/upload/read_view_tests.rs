@@ -15,7 +15,11 @@ fn request(name: &str, head: &str, git_snapshot: Option<SourceBlob>) -> Request 
         author_user_id: Some("author".into()),
         author_role: RequestActorRole::Public,
         view: ViewId::public(),
-        base_main_oid: head.into(),
+        base: scope_domain::requests::RequestBase::Main {
+            review_base_oid: head.into(),
+        },
+        base_version: 1,
+        main_ancestor_oid: head.into(),
         head_oid: head.into(),
         git_snapshot,
         title: name.into(),

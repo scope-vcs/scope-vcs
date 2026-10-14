@@ -15,10 +15,10 @@ use scope_api_contract::RunChangeKind;
 use scope_domain::{
     repository::{RepoRecord, RepositoryIncarnation},
     requests::{
-        GitHubCheckTarget, GitHubTestedCommit, Request, RequestCheckEvaluation, RequestCheckPlan,
-        RequestCheckProvider, RequestCheckResults, RequestCheckReviewer, RequestChecksOutcome,
-        RequestRevision, changes_github_workflows, request_checks_outcome,
-        request_head_awaits_evaluation,
+        GitHubCheckTarget, GitHubRequestChecks, GitHubTestedCommit, Request, RequestCheckContext,
+        RequestCheckEvaluation, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
+        RequestCheckReviewer, RequestChecksOutcome, RequestComparison, RequestRevision,
+        changes_github_workflows, request_checks_outcome, request_head_awaits_evaluation,
     },
     runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
     views::Views,
@@ -31,6 +31,11 @@ use std::{collections::HashMap, future::Future, path::Path, time::Duration};
 const CHECK_RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
 
 type NativeRevisions = Result<Vec<WorkflowRevision>, String>;
+
+struct RequestCheckSource<'a> {
+    request: &'a Request,
+    revision: &'a RequestRevision,
+}
 
 pub(crate) struct RequestChecksView {
     pub(crate) evaluation: Option<RequestCheckEvaluation>,
@@ -53,6 +58,7 @@ pub(crate) async fn checks_view(
             state,
             &git,
             request,
+            &evaluation.id,
             &evaluation.tested_oid,
         ))
         .await?;
@@ -152,7 +158,10 @@ async fn evaluate_saved_head(
     Box::pin(evaluate_request_checks(
         state,
         &git.incarnation,
-        request,
+        RequestCheckSource {
+            request,
+            revision: &revision,
+        },
         views,
         reviewing_pusher,
         native_revisions,
@@ -231,7 +240,7 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     let evaluated = evaluate_request_checks(
         state,
         &git.incarnation,
-        request,
+        RequestCheckSource { request, revision },
         views,
         reviewing_pusher,
         native_revisions,
@@ -250,6 +259,7 @@ async fn renew_check_commit(
     state: &AppState,
     git: &RepositoryGit,
     request: &Request,
+    expected_evaluation_id: &str,
     replaced_tested_oid: &str,
 ) -> Result<Option<RequestChecksMutation>, ApiError> {
     let revision = state
@@ -271,6 +281,7 @@ async fn renew_check_commit(
             repository_incarnation: git.incarnation.clone(),
             request_id: request.id.clone(),
             head_oid: request.head_oid.clone(),
+            expected_evaluation_id: expected_evaluation_id.to_string(),
             replaced_tested_oid: replaced_tested_oid.to_string(),
             expected_canonical_main_oid,
             tested,
@@ -312,8 +323,14 @@ pub(crate) fn renew_stale_check_commits_in_background(state: &AppState, owner: &
                 else {
                     continue;
                 };
-                if let Err(error) =
-                    renew_check_commit(&state, &git, &request, &evaluation.tested_oid).await
+                if let Err(error) = renew_check_commit(
+                    &state,
+                    &git,
+                    &request,
+                    &evaluation.id,
+                    &evaluation.tested_oid,
+                )
+                .await
                 {
                     tracing::warn!(
                         request_id = request.id,
@@ -350,13 +367,15 @@ async fn changes_github_workflow_files(
         else {
             return Ok(true);
         };
-        let base_oid = request.base_main_oid.clone();
+        let request_view = request.view.clone();
         with_request_revision_store_repo(
             state,
             &repo.incarnation(),
             request,
             &revision,
             move |path, revision| {
+                let comparison = RequestComparison::request(revision, request_view);
+                let range = comparison.membership();
                 let output = successful_git_output(
                     run_git_output(
                         Some(path),
@@ -364,8 +383,8 @@ async fn changes_github_workflow_files(
                             "diff",
                             "--name-only",
                             "-z",
-                            &base_oid,
-                            &revision.new_head_oid,
+                            range.excluded_ancestor_oid(),
+                            range.head_oid(),
                             "--",
                             ".github/workflows",
                         ],
@@ -398,12 +417,13 @@ fn warn_evaluation_failed(request: &Request, error: &ApiError) {
 async fn evaluate_request_checks(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    request: &Request,
+    source: RequestCheckSource<'_>,
     views: &Views,
     reviewing_pusher: Option<RequestCheckReviewer<'_>>,
     native_revisions: impl Future<Output = Result<NativeRevisions, ApiError>>,
     check_commit: impl Future<Output = Result<GitHubTestedCommit, ApiError>>,
 ) -> Result<RequestChecksMutation, ApiError> {
+    let RequestCheckSource { request, revision } = source;
     let repositories = state.metadata.repositories();
     let repo = repositories
         .repository_record(&request.repo_id)
@@ -418,6 +438,7 @@ async fn evaluate_request_checks(
         .requests()
         .request_check_base(&request.repo_id)
         .await?;
+    let context = RequestCheckContext::for_revision(request, revision)?;
     let now_unix = unix_now()?;
     let (mut plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref()) {
         RequestCheckProvider::GitHub => {
@@ -431,9 +452,16 @@ async fn evaluate_request_checks(
             (
                 RequestCheckPlan::evaluate_github(
                     request,
+                    &context,
                     views,
-                    tested,
-                    &required,
+                    GitHubRequestChecks {
+                        github_repository_id: connection
+                            .as_ref()
+                            .expect("GitHub provider has a connection")
+                            .github_repository_id,
+                        tested,
+                        required_check_names: &required,
+                    },
                     reviewing_pusher,
                     now_unix,
                 )?,
@@ -450,6 +478,7 @@ async fn evaluate_request_checks(
             (
                 RequestCheckPlan::evaluate(
                     request,
+                    &context,
                     native_runs,
                     revisions.as_deref().map_err(String::as_str),
                     reviewing_pusher,

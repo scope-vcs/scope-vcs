@@ -135,12 +135,33 @@ async fn reconcile_claim(
     if authorized_request(state, claim, now_unix).await?.is_none() {
         return Ok(());
     }
-    match request_auto_merge_readiness(
-        &request.id,
-        &request.head_oid,
-        checks.evaluation.as_ref(),
-        &checks.results,
-    ) {
+    let context = crate::repo_access::find_read_access(
+        state,
+        &claim.owner,
+        &claim.name,
+        Some(&claim.intent.actor_user_id),
+    )
+    .await?;
+    let viewer = RequestViewer::new(
+        context.access.clone(),
+        Some(&claim.intent.actor_user_id),
+        false,
+    );
+    let gate = scope_domain::requests::evaluate_merge_gate(
+        scope_domain::requests::MergeGateInput::RequestMerge {
+            repository_lifecycle: context.record.lifecycle_state,
+            subject: (&request).into(),
+            viewer: &viewer,
+            views: &context.views,
+            checks: scope_domain::requests::request_checks_outcome(
+                &request.id,
+                &request.head_oid,
+                checks.evaluation.as_ref(),
+                &checks.results,
+            ),
+        },
+    );
+    match request_auto_merge_readiness(gate) {
         RequestAutoMergeReadiness::Waiting(_) => {
             return release(state, claim, now_unix, None).await;
         }

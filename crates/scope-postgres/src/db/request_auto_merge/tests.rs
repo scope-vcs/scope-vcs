@@ -10,7 +10,8 @@ use scope_domain::{
     content_ref::ContentRef,
     requests::{
         NativeRequestCheck, RecordRequestRevisionInput, RequestAutoMergeIntentStatus, RequestCheck,
-        RequestCheckEvaluation, RequestCheckEvaluationState, RequestRevisionGitFacts,
+        RequestCheckContext, RequestCheckEvaluation, RequestCheckEvaluationState,
+        RequestRevisionGitFacts,
     },
     runs::{
         run::Run,
@@ -49,8 +50,7 @@ async fn recording_configuration_error_stops_matching_active_intent_immediately(
                 .unwrap()
                 .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
-                "req_1",
-                "a".repeat(40),
+                &request_check_context(&store).await,
                 "invalid request workflow",
                 8,
             )
@@ -95,8 +95,7 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
                 .unwrap()
                 .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
-                "req_1",
-                "a".repeat(40),
+                &request_check_context(&store).await,
                 "invalid request workflow",
                 7,
             )
@@ -122,6 +121,8 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
         .authorize_request_auto_merge(authorize("intent_current", "enabled_current", &revision, 7))
         .await
         .unwrap();
+    let mut stale_context = request_check_context(&store).await;
+    stale_context.head_oid = "b".repeat(40);
     requests
         .record_request_checks(RecordRequestChecksCommand {
             expected_canonical_main_oid: store
@@ -137,8 +138,7 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
                 .unwrap()
                 .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
-                "req_1",
-                "b".repeat(40),
+                &stale_context,
                 "stale-head workflow error",
                 8,
             )
@@ -178,7 +178,8 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
                 .unwrap()
                 .unwrap()
                 .incarnation(),
-            evaluation: RequestCheckEvaluation::no_checks("req_1", "a".repeat(40), 8).unwrap(),
+            evaluation: RequestCheckEvaluation::no_checks(&request_check_context(&store).await, 8)
+                .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
             push_to_github: false,
@@ -200,8 +201,7 @@ async fn irrelevant_or_replayed_configuration_errors_do_not_stop_auto_merge() {
                 .unwrap()
                 .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
-                "req_1",
-                "a".repeat(40),
+                &request_check_context(&store).await,
                 "later conflicting evaluation",
                 9,
             )
@@ -485,6 +485,20 @@ async fn retention_committing_first_makes_authorization_reject_missing_evidence(
     );
 }
 
+async fn request_check_context(store: &super::super::MetadataStore) -> RequestCheckContext {
+    let requests = store.requests();
+    let request = requests.request_for_tests("req_1").await.unwrap().unwrap();
+    let revision = requests
+        .request_revision_window("req_1", None, 1)
+        .await
+        .unwrap()
+        .revisions
+        .into_iter()
+        .next()
+        .unwrap();
+    RequestCheckContext::for_revision(&request, &revision).unwrap()
+}
+
 async fn open_request_with_revision(store: &super::super::MetadataStore) -> String {
     start_public_request(store).await;
     store
@@ -514,8 +528,8 @@ async fn open_request_with_revision(store: &super::super::MetadataStore) -> Stri
             },
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: true,
-                contained_main_oid: None,
-                contained_main_descends_from_base: false,
+                contained_main_oid: Some("f".repeat(40)),
+                contained_main_descends_from_base: true,
             },
             event_id: "revision_current".into(),
             body: None,
@@ -609,8 +623,7 @@ jobs:
                 .unwrap()
                 .incarnation(),
             evaluation: RequestCheckEvaluation::started(
-                "req_1",
-                "a".repeat(40),
+                &request_check_context(store).await,
                 vec![RequestCheck::Native(check)],
                 6,
             )

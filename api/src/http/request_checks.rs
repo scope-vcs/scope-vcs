@@ -102,7 +102,13 @@ pub(crate) fn snapshot_response(
         evaluation.as_ref(),
         results,
     );
-    let decision = request_mergeability(request, &viewer, views, outcome);
+    let decision = request_mergeability(
+        request,
+        &viewer,
+        views,
+        outcome,
+        snapshot.repository.record.lifecycle_state,
+    );
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,

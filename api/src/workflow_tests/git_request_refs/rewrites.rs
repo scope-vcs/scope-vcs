@@ -79,7 +79,7 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     lease_push(&source, &remote, REQUEST_REF, &first_head);
     let request = stored_request(&state, REQUEST_ID).await;
     assert_eq!(request.head_oid, rebased_head);
-    assert_eq!(request.base_main_oid, public_main);
+    assert_eq!(request.main_ancestor_oid, public_main);
 
     let changes = get_json(&app, &format!("{route}/changes"), &contributor).await;
     let revisions = changes["revisions"].as_array().unwrap();
@@ -240,7 +240,7 @@ async fn maintainer_rebases_and_amends_a_private_request() {
     lease_push(&source, &remote, "refs/heads/rebased", &first_head);
     let request = stored_request(&state, &request_id).await;
     assert_eq!(request.head_oid, rebased_head);
-    assert_eq!(request.base_main_oid, main_head);
+    assert_eq!(request.main_ancestor_oid, main_head);
     let route = format!("/v1/repos/{TEST_REPO_ID}/requests/{request_id}");
     let changes = get_json(&app, &format!("{route}/changes"), &bearer).await;
     assert_eq!(
@@ -257,7 +257,7 @@ async fn maintainer_rebases_and_amends_a_private_request() {
     lease_push(&source, &remote, "refs/heads/rebased", &rebased_head);
     let request = stored_request(&state, &request_id).await;
     assert_eq!(request.head_oid, amended_head);
-    assert_eq!(request.base_main_oid, main_head);
+    assert_eq!(request.main_ancestor_oid, main_head);
     let changes = get_json(&app, &format!("{route}/changes"), &bearer).await;
     assert_eq!(
         commit_oids(changes["revisions"].as_array().unwrap().last().unwrap()),

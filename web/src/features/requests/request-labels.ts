@@ -32,6 +32,7 @@ const MERGEABILITY = {
   Closed: { label: 'Closed', tone: 'neutral' },
   Merged: { label: 'Merged', tone: 'success' },
   NotMaintainer: { label: 'Maintainer merges', tone: 'outline' },
+  RepositoryNotReady: { label: 'Repository not ready', tone: 'warning' },
   MissingRequestBranch: { label: 'Branch missing', tone: 'warning' },
   ChecksNotEvaluated: { label: 'CI status unavailable', tone: 'warning' },
   ChecksAwaitingApproval: { label: 'CI needs permission to run', tone: 'warning' },

@@ -103,7 +103,7 @@ mod tests {
             "id":"req_one", "name":"fix-one", "title":"Fix one",
             "description_markdown":"", "author_user_id":"usr_one",
             "author_role":"Public", "view":"public",
-            "base_main_oid":head, "head_oid":head, "state":"Draft",
+            "base":{"kind":"main","review_base_oid":head},"base_version":1,"main_ancestor_oid":head, "head_oid":head, "state":"Draft",
             "activity_version":0, "submitted_at_unix":null, "closed_at_unix":null,
             "closed_by_user_id":null, "merged_at_unix":null,
             "merged_by_user_id":null, "merged_head_oid":null, "merged_main_oid":null,

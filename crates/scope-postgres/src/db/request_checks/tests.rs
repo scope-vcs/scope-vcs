@@ -1,6 +1,9 @@
 use super::*;
 use crate::db::{MetadataStore, requests::tests::postgres_store};
-use scope_domain::requests::RequestCheckEvaluationState;
+use scope_domain::requests::{
+    RecordRequestRevisionInput, RequestCheckContext, RequestCheckEvaluationState,
+    RequestRevisionGitFacts,
+};
 use scope_domain::requests::{RequestActorRole, StartRequestInput};
 use scope_domain::views::ViewId;
 
@@ -44,10 +47,7 @@ async fn evaluations_for_heads_match_exact_pairs_without_returning_history() {
         .map(|evaluation| (evaluation.request_id.as_str(), evaluation.head_oid.as_str()))
         .collect::<Vec<_>>();
     pairs.sort_unstable();
-    assert_eq!(
-        pairs,
-        [("request-a", HEAD_A_CURRENT), ("request-b", HEAD_SHARED),]
-    );
+    assert_eq!(pairs, [("request-a", HEAD_A_CURRENT)]);
 
     assert!(
         store
@@ -82,19 +82,72 @@ async fn start_request(store: &MetadataStore, request_id: &str, event_id: &str) 
             author_role: RequestActorRole::Public,
             author_view: ViewId::public(),
             view: ViewId::public(),
-            base_main_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             event_id: event_id.into(),
             now_unix: 2,
+        })
+        .await
+        .unwrap();
+    let request = store
+        .requests()
+        .request_by_id(request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    store
+        .requests()
+        .record_request_revision(RecordRequestRevisionInput {
+            request_id: request_id.into(),
+            actor_user_id: "user_public".into(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some(request.head_oid.clone()),
+            new_head_oid: request.head_oid.clone(),
+            git_snapshot: crate::db::test_support::fixtures::source_blob(
+                &request.head_oid,
+                &"b".repeat(64),
+                1,
+            ),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
+            },
+            event_id: format!("{request_id}-initial-revision"),
+            body: None,
+            now_unix: 3,
         })
         .await
         .unwrap();
 }
 
 async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &str, now_unix: u64) {
+    let request = store
+        .requests()
+        .request_by_id(request_id)
+        .await
+        .unwrap()
+        .unwrap();
     store
         .requests()
-        .mutate_request_for_tests(request_id, |request| {
-            request.head_oid = head_oid.to_string()
+        .record_request_revision(RecordRequestRevisionInput {
+            request_id: request_id.into(),
+            actor_user_id: "user_public".into(),
+            actor_can_edit: true,
+            expected_old_head_oid: Some(request.head_oid),
+            new_head_oid: head_oid.into(),
+            git_snapshot: crate::db::test_support::fixtures::source_blob(
+                head_oid,
+                &"b".repeat(64),
+                1,
+            ),
+            git_facts: RequestRevisionGitFacts {
+                contains_old_head: true,
+                contained_main_oid: None,
+                contained_main_descends_from_base: false,
+            },
+            event_id: format!("{request_id}-revision-{now_unix}"),
+            body: None,
+            now_unix,
         })
         .await
         .unwrap();
@@ -113,7 +166,11 @@ async fn record_no_checks(store: &MetadataStore, request_id: &str, head_oid: &st
                 .unwrap()
                 .unwrap()
                 .incarnation(),
-            evaluation: RequestCheckEvaluation::no_checks(request_id, head_oid, now_unix).unwrap(),
+            evaluation: RequestCheckEvaluation::no_checks(
+                &saved_context(store, request_id, head_oid).await,
+                now_unix,
+            )
+            .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
             push_to_github: false,
@@ -144,8 +201,7 @@ async fn the_first_evaluation_of_a_head_stands() {
                 .unwrap()
                 .incarnation(),
             evaluation: RequestCheckEvaluation::configuration_error(
-                "request-a",
-                HEAD_A_CURRENT,
+                &saved_context(&store, "request-a", HEAD_A_CURRENT).await,
                 "a later evaluation of the same head",
                 11,
             )
@@ -170,6 +226,56 @@ async fn the_first_evaluation_of_a_head_stands() {
         .unwrap();
     assert_eq!(stored.state, RequestCheckEvaluationState::NoChecks);
     assert_eq!(stored.updated_at_unix, 10);
+    record_no_checks(&store, "request-a", HEAD_A_CURRENT, 12).await;
+    let current = store
+        .requests()
+        .request_check_evaluation("request-a", HEAD_A_CURRENT)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(current.id, stored.id);
+    assert_ne!(current.revision_id, stored.revision_id);
+    let retained = entities::request_check_evaluation::Entity::find_by_id(stored.id.clone())
+        .one(store.requests().db.as_ref())
+        .await
+        .unwrap()
+        .unwrap()
+        .try_into_domain()
+        .unwrap();
+    assert_eq!(retained, stored);
+    let stale = store
+        .requests()
+        .record_request_checks(RecordRequestChecksCommand {
+            repository_incarnation: store
+                .repositories()
+                .repository_record("owner/repo")
+                .await
+                .unwrap()
+                .unwrap()
+                .incarnation(),
+            expected_canonical_main_oid: store
+                .requests()
+                .request_check_base("owner/repo")
+                .await
+                .unwrap(),
+            evaluation: stored,
+            revisions: Vec::new(),
+            runs: Vec::new(),
+            push_to_github: false,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(stale.kind, crate::error::PostgresErrorKind::Conflict);
+    assert_eq!(
+        store
+            .requests()
+            .request_check_evaluation("request-a", HEAD_A_CURRENT)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        current.id
+    );
 }
 
 #[tokio::test]
@@ -202,7 +308,11 @@ async fn a_request_that_can_no_longer_merge_records_no_evaluation() {
                 .unwrap()
                 .unwrap()
                 .incarnation(),
-            evaluation: RequestCheckEvaluation::no_checks("request-a", HEAD_A_CURRENT, 10).unwrap(),
+            evaluation: RequestCheckEvaluation::no_checks(
+                &saved_context(&store, "request-a", HEAD_A_CURRENT).await,
+                10,
+            )
+            .unwrap(),
             revisions: Vec::new(),
             runs: Vec::new(),
             push_to_github: false,
@@ -265,7 +375,11 @@ async fn evaluation_completion_rejects_changed_head_incarnation_and_base() {
             .record_request_checks(RecordRequestChecksCommand {
                 repository_incarnation: expected_incarnation,
                 expected_canonical_main_oid: expected_base,
-                evaluation: RequestCheckEvaluation::no_checks("request-a", &head_oid, 10).unwrap(),
+                evaluation: RequestCheckEvaluation::no_checks(
+                    &saved_context(&store, "request-a", &head_oid).await,
+                    10,
+                )
+                .unwrap(),
                 revisions: Vec::new(),
                 runs: Vec::new(),
                 push_to_github: false,
@@ -376,4 +490,32 @@ async fn recovery_pages_advance_past_unrepaired_requests_and_restart_from_the_be
             .collect::<Vec<_>>(),
         ["request-b", "request-c"]
     );
+}
+
+async fn saved_context(
+    store: &MetadataStore,
+    request_id: &str,
+    head_oid: &str,
+) -> RequestCheckContext {
+    let request = store
+        .requests()
+        .request_by_id(request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let revision_id = store
+        .requests()
+        .latest_request_revision(request_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    RequestCheckContext::new(
+        request_id,
+        revision_id,
+        head_oid,
+        request.base_version,
+        request.base.review_base_oid(),
+    )
+    .unwrap()
 }
