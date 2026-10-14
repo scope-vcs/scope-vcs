@@ -2980,6 +2980,17 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
+opentelemetry-appender-tracing 0.33.0
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/opentelemetry-appender-tracing/opentelemetry-appender-tracing-0.33.0.crate
+
+Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-appender-tracing"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+
+==============================================================================
 opentelemetry-http 0.33.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0

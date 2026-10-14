@@ -317,7 +317,7 @@ fn read_browser_callback(
     browser_callback_code_from_target(target, expected_request_id)
 }
 
-fn read_http_request_line(stream: &mut TcpStream) -> anyhow::Result<String> {
+fn read_http_request_line(stream: &mut impl Read) -> anyhow::Result<String> {
     let mut request = Vec::with_capacity(512);
     let mut chunk = [0_u8; 256];
     loop {
@@ -337,6 +337,7 @@ fn read_http_request_line(stream: &mut TcpStream) -> anyhow::Result<String> {
         match stream.read(&mut chunk) {
             Ok(0) => bail!("local Scope login callback closed before request line"),
             Ok(byte_count) => request.extend_from_slice(&chunk[..byte_count]),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error)
                 if matches!(
                     error.kind(),
@@ -463,5 +464,31 @@ mod tests {
             "scope_callback_456"
         );
         writer.join().unwrap();
+    }
+
+    #[test]
+    fn interrupted_callback_reads_are_retried() {
+        struct InterruptedOnce<'a> {
+            interrupted: bool,
+            request: &'a [u8],
+        }
+        impl Read for InterruptedOnce<'_> {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                if !self.interrupted {
+                    self.interrupted = true;
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                self.request.read(buffer)
+            }
+        }
+
+        let mut stream = InterruptedOnce {
+            interrupted: false,
+            request: b"GET /scope-cli-callback?request_id=cli_1&code=scope_2 HTTP/1.1\r\n",
+        };
+        assert_eq!(
+            read_http_request_line(&mut stream).unwrap(),
+            "GET /scope-cli-callback?request_id=cli_1&code=scope_2 HTTP/1.1"
+        );
     }
 }

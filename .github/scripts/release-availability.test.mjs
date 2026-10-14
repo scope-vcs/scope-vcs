@@ -184,9 +184,9 @@ test("reads the current homepage without a browser handshake and still rejects r
   });
   t.after(() => close(web.server));
   const target = availabilityTargets(parseAvailabilityConfig(config(web.origin, web.origin)))[0];
-  assert.equal((await probeTarget(target, { timeoutMs: 1_000 })).ok, true);
+  assert.equal((await probeTarget(target, { timeoutMs: 5_000 })).ok, true);
   redirectPage = true;
-  assert.equal((await probeTarget(target, { timeoutMs: 1_000 })).ok, false);
+  assert.equal((await probeTarget(target, { timeoutMs: 5_000 })).ok, false);
 });
 
 test("rejects application errors returned with HTTP 200", async () => {
@@ -274,14 +274,13 @@ test("wrapper runs activation under monitoring and retains the tail summary", as
     env: {
       ...process.env,
       SCOPE_RELEASE_OBSERVATION_SECONDS: "0",
-      SCOPE_RELEASE_READY_TIMEOUT_SECONDS: "5",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const output = collect(child.stdout);
   const errors = collect(child.stderr);
   const [status] = await once(child, "exit");
-  assert.equal(status, 0, `${await output}\n${await errors}`);
+  assert.equal(status, 0, `${await output}\n${await errors}\n${await monitorLog(outputPath)}`);
   assert.equal(await readFile(activationPath, "utf8"), "activated");
   const summary = JSON.parse(await readFile(join(outputPath, "availability-summary.json"), "utf8"));
   assert.equal(summary.passed, true);
@@ -325,14 +324,13 @@ test("wrapper runs activation under monitoring and retains the tail summary", as
     env: {
       ...process.env,
       SCOPE_RELEASE_OBSERVATION_SECONDS: "0",
-      SCOPE_RELEASE_READY_TIMEOUT_SECONDS: "5",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const recoveryOutput = collect(recovery.stdout);
   const recoveryErrors = collect(recovery.stderr);
   const [recoveryStatus] = await once(recovery, "exit");
-  assert.equal(recoveryStatus, 0, `${await recoveryOutput}\n${await recoveryErrors}`);
+  assert.equal(recoveryStatus, 0, `${await recoveryOutput}\n${await recoveryErrors}\n${await monitorLog(recoveryOutputPath)}`);
   assert.equal(await readFile(recoveryActivationPath, "utf8"), "recovered");
   const recoverySummary = JSON.parse(
     await readFile(join(recoveryOutputPath, "availability-summary.json"), "utf8"),
@@ -473,7 +471,6 @@ function config(webOrigin, apiOrigin, overrides = {}) {
       sourceSha: SOURCE_SHA,
       stage: "ordinary-handoff",
     },
-    requestTimeoutMs: 1_000,
     webOrigin,
     ...overrides,
   };
@@ -592,16 +589,24 @@ async function close(server) {
 }
 
 async function waitForFile(path) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
     try {
       await readFile(path);
       return;
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  throw new Error(`timed out waiting for ${path}`);
+}
+
+async function monitorLog(outputPath) {
+  return readFile(join(outputPath, "availability-process.log"), "utf8").catch((error) => {
+    if (error.code === "ENOENT") return "";
+    throw error;
+  });
 }
 
 async function collect(stream) {

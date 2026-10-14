@@ -109,4 +109,6 @@ RUN heif-info --version | grep --fixed-strings '1.23.5' \
 EXPOSE 8080
 VOLUME ["/tmp/scope-media-worker"]
 USER 65532:65532
+ARG SCOPE_ANALYTICS_RELEASE
+ENV SCOPE_ANALYTICS_RELEASE=$SCOPE_ANALYTICS_RELEASE
 ENTRYPOINT ["/usr/local/bin/scope-media-worker"]

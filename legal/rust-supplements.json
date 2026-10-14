@@ -263,6 +263,16 @@
       ],
       "declared_metadata": true
     },
+    "rust:opentelemetry-appender-tracing@0.33.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE",
+          "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
     "rust:opentelemetry-http@0.33.0": {
       "reason_key": "published-vcs-license",
       "documents": [
