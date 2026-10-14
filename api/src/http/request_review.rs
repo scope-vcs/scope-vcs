@@ -141,7 +141,6 @@ pub(crate) async fn list_request_revisions(
                 &request,
                 revision,
                 move |raw_repo, revision| {
-                    let mut repo_for_inspection = (*repo_for_inspection).clone();
                     let comparison = if selected_comparison {
                         let selected = comparison::resolve_comparison(
                             raw_repo,
@@ -158,10 +157,11 @@ pub(crate) async fn list_request_revisions(
                             &selected,
                         )? {
                             Some(policy) => {
-                                repo_for_inspection.policy = policy;
+                                let mut comparison_repo = (*repo_for_inspection).clone();
+                                comparison_repo.policy = policy;
                                 Some(comparison::inspect_comparison(
                                     raw_repo,
-                                    &repo_for_inspection,
+                                    &comparison_repo,
                                     &inspection_access,
                                     revision,
                                     mode,
@@ -198,12 +198,13 @@ pub(crate) async fn list_request_revisions(
                             comparison,
                         ));
                     };
-                    repo_for_inspection.policy = policy;
+                    let mut revision_repo = (*repo_for_inspection).clone();
+                    revision_repo.policy = policy;
                     let remaining_files = file_limit
                         .saturating_sub(comparison.as_ref().map_or(0, |value| value.files.len()));
                     let commits = request_revision_commits(
                         raw_repo,
-                        &repo_for_inspection,
+                        &revision_repo,
                         inspection_access,
                         revision,
                         selected_commit.as_deref(),
