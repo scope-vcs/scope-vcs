@@ -302,3 +302,39 @@ test('collapsed request loading keeps its header stable without guessing avatar 
   assert(await sidebar.locator('[data-slot="skeleton"]:visible').count() > 0, 'mobile request lists keep their loading rows')
   assert.deepEqual(errors, [])
 })
+
+
+test('stack context preserves actionable children and row order when parents are outside the visible section or search', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const node = { id: 'parent', name: 'parent', title: 'Safe parent', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
+  const row = (id, parent, group = 'needs_you') => ({ request: { id, title: `Actionable ${id}`, stack_parent: parent, stack_depth: 2 }, author: { handle: 'adam' }, attention: { group, reason: 'authored', can_set_aside: true }, attention_at_unix: 1790000000 })
+  const parent = { kind: 'available', request: node }
+  const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  const requests = [row('child', parent), row('sibling', parent), row('opaque', { kind: 'unavailable' })]
+  const pages = { active: { ...empty, requests }, unclaimed: empty, set_aside: { ...empty, requests: [row('parent', null, 'set_aside')] }, done: empty }
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), pages)
+  const rows = page.locator('.request-workspace-needs-you [data-request-id]')
+  await page.locator('[data-request-id="child"]').waitFor()
+  assert.deepEqual(await rows.evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId)), ['child', 'sibling', 'opaque'])
+  assert.equal(await page.locator('.request-workspace-needs-you > h2').textContent(), 'Needs you3')
+  const child = page.locator('[data-request-id="child"]')
+  assert.equal(await child.getByRole('link', { name: 'Safe parent' }).getAttribute('href'), '/adam/demo/requests/parent')
+  assert.equal(await child.locator('a a').count(), 0)
+  assert.equal(await child.evaluate((node) => node.classList.contains('request-workspace-row--stacked')), true)
+  assert.equal(await page.locator('[data-request-id="opaque"]').getByRole('link').count(), 1)
+  assert.equal(await page.locator('[data-request-id="opaque"]').getByText('Unavailable dependency').isVisible(), true)
+  const searched = { ...pages, active: { ...empty, requests: [requests[0]] }, set_aside: empty }
+  await page.evaluate((pages) => { window.setQuery('child'); window.setQueue({ pages, maintainer: true, loading: false }) }, searched)
+  await page.locator('[data-request-id="sibling"]').waitFor({ state: 'detached' })
+  assert.equal(await child.isVisible(), true)
+  assert.equal(await child.getByRole('link', { name: 'Safe parent' }).isVisible(), true)
+  assert.equal(await page.locator('[data-request-id="parent"]').count(), 0)
+  assert.equal(await child.evaluate((node) => node.classList.contains('request-workspace-row--stacked')), false)
+  assert.deepEqual(await page.locator('.request-workspace-rows [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId)), ['child'])
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await child.isVisible(), true)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-mobile.png`, fullPage: true })
+  assert.deepEqual(errors, [])
+})

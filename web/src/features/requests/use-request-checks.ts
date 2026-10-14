@@ -31,7 +31,7 @@ export function useRequestChecks({
       reconcileRequestState(identity, snapshot, (state) => ({
         ...state,
         checks: result,
-        detail: { request: { ...state.detail.request, mergeability: result.mergeability } },
+        detail: { ...state.detail, request: { ...state.detail.request, mergeability: result.mergeability } },
         auto_merge: { ...state.auto_merge, can_enable: false },
       }))
       return true

@@ -126,8 +126,17 @@ default to the complete layer between the saved parent pin and the child's head;
 public and restricted views retain visible push comparisons until aggregate
 review is available for those views. Use `--comparison push` for one push or
 `--comparison commit --revision <revision-id> --commit <full-oid>` for one commit.
-Show and list report the base, depth and dependency status. A child waits for its
-parent to land. An extension that still contains the saved pin is informational:
+Show, status and push report the named ancestor path, saved review pin, current
+parent revision and visible child names. The saved pin stays the review base
+when the parent advances. `--json` includes the server's authorized
+`result.stack_navigation`, with ancestors from root to parent and a first page
+of children. A `children.next_cursor` marks more children; human output calls
+out that cursor. Inspect a visible child with `request show --request <name>`.
+Unavailable dependencies have an opaque label without a parent name or link.
+
+Depth describes the request's ancestry, with a main-based root at depth 1.
+Forks can share a depth; it is not a position in a linear stack. A child waits for
+its parent to land. An extension that still contains the saved pin is informational:
 ordinary pushes retain that pin and the child keeps its existing review and CI.
 A rewritten or closed parent blocks landing until the author repairs the child.
 
@@ -279,7 +288,13 @@ groups it: Needs you, Waiting on others, and Unclaimed. Use
 `--section set-aside` or `--section done` for requests you set aside or that
 have closed or merged. `--search TEXT` matches titles and descriptions on the server,
 and `--limit` caps each section. Maintainers move an open request through the
-queue:
+queue. Each row carries authorized parent context even when the parent is
+outside the selected section, search or page; that context does not add a queue
+item or change ordering, limits or cursors. Actionable children remain in the
+default queue when their parent is off-page. Parent extensions, satisfied
+dependencies and parent landing preserve attention. A new hard dependency
+blocker, including a rewrite, close or conflict, can bring children back to
+attention, while a future snooze keeps its deadline.
 
 ```sh
 scope request claim --request fix-parser    # become its reviewer

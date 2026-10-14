@@ -12,6 +12,11 @@
       "reason": "Discussion queries and mutations share visibility projection, cursor, anchor, and response mapping rules."
     },
     {
+      "path": "api/src/http/requests.rs",
+      "owner": "request HTTP translation",
+      "reason": "Existing list, queue, lifecycle and start endpoints share HTTP input and response translation; dependency policy lives in scope-domain, metadata reads in scope-postgres and the paged children handler in its own module."
+    },
+    {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
       "reason": "Upload, processing, binding, access, and media-manifest rules share source, derivative, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."

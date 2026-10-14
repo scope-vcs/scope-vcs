@@ -148,15 +148,40 @@ pub(super) async fn reactivate_attention_for_activity<C: ConnectionTrait>(
     activity_version: u64,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
+    update_attentions(conn, request_id, |state| {
+        reactivate_request_attention(state, actor_user_id, activity_version, now_unix)
+    })
+    .await
+}
+
+pub(super) async fn reactivate_attention_for_stack_blocker<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+    activity_version: u64,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    update_attentions(conn, request_id, |state| {
+        scope_domain::requests::reactivate_request_attention_for_stack_blocker(
+            state,
+            activity_version,
+            now_unix,
+        )
+    })
+    .await
+}
+
+async fn update_attentions<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+    transition: impl Fn(&RequestAttention) -> Option<RequestAttention>,
+) -> Result<(), PostgresError> {
     let states = entities::request_attention_state::Entity::find()
         .filter(entities::request_attention_state::Column::RequestId.eq(request_id))
         .all(conn)
         .await?;
     for state in states {
         let state = state.try_into_domain()?;
-        if let Some(active) =
-            reactivate_request_attention(&state, actor_user_id, activity_version, now_unix)
-        {
+        if let Some(active) = transition(&state) {
             save_attention(conn, &active).await?;
         }
     }

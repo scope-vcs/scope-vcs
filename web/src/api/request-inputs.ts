@@ -290,3 +290,8 @@ function parseRequestComparison(input: unknown): 'request' | 'push' | 'commit' {
   if (input === 'request' || input === 'push' || input === 'commit') return input
   throw new Error('comparison must be request, push or commit.')
 }
+
+export function parseLoadRequestChildrenInput(input: unknown) {
+  const data = object(input)
+  return { ...parseRequestParams(data), cursor: text(data.cursor, 'cursor', 4096) }
+}

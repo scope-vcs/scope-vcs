@@ -42,6 +42,11 @@ fn list_shows_the_queue_grouped_and_searches_on_the_server() {
     assert_eq!(rows[0]["request"]["name"], "fix-fresh");
     assert_eq!(rows[1]["attention"]["group"], "unclaimed");
     assert_eq!(
+        rows[0]["request"]["stack_parent"]["request"]["name"],
+        "parser-core"
+    );
+    assert_eq!(rows[1]["request"]["stack_parent"]["kind"], "unavailable");
+    assert_eq!(
         server.seen(),
         [
             "GET /v1/repos/owner/repo/requests/queue?section=active&search=fix&limit=1",
@@ -62,6 +67,8 @@ fn list_shows_the_queue_grouped_and_searches_on_the_server() {
         "Waiting on others",
         "fix-claimed (req_claimed) — fix-claimed · Reviewing: @dana",
         "Unclaimed",
+        "base parser-core · depth 2",
+        "base dependency unavailable · depth 2",
         "More: scope request list --section set-aside | done",
     ] {
         assert!(
@@ -69,6 +76,9 @@ fn list_shows_the_queue_grouped_and_searches_on_the_server() {
             "missing {expected:?} in:\n{human}"
         );
     }
+
+    assert!(!human.contains("req_hidden"), "{human}");
+    assert!(!human.contains("parser-core (req_parent)"), "{human}");
 
     let value = success(
         server
@@ -267,7 +277,7 @@ impl QueueServer {
                         }
                         _ => request_detail(LOADED_VERSION, "Open"),
                     };
-                    async move { Json(json!({"request": detail})) }
+                    async move { Json(json!({"request": detail,"stack_navigation":json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}})})) }
                 }),
             )
             .route(
@@ -359,7 +369,21 @@ fn queue_page(section: &str, limit: usize, next_page: bool) -> Value {
         )],
         _ => Vec::new(),
     };
-    let items: Vec<Value> = items.into_iter().take(limit).collect();
+    let items: Vec<Value> = items.into_iter().take(limit).map(|mut item| {
+        if section == "active" || section == "unclaimed" {
+            item["request"]["base"] = json!({"kind":"request","request_id":if section == "active" { "req_parent" } else { "req_hidden" },"revision_id":"rev_pin","head_oid":OID});
+            item["request"]["stack_depth"] = 2.into();
+            item["request"]["stack_parent"] = if section == "active" {
+                json!({"kind":"available","request":{
+                    "id":"req_parent","name":"parser-core","title":"Parser core","state":"Open",
+                    "stack_status":"main","stack_depth":1,"head_oid":OID,"current_revision_id":"rev_parent"
+                }})
+            } else {
+                json!({"kind":"unavailable"})
+            };
+        }
+        item
+    }).collect();
     json!({"requests": items, "next_cursor": "next", "next_attention_at_unix": null})
 }
 
@@ -367,7 +391,7 @@ fn queue_item(id: &str, name: &str, group: &str, reason: &str, claimer: Option<&
     json!({
         "attention_at_unix": 1,
         "request": {
-            "id": id, "name": name, "title": name, "base":{"kind":"main","review_base_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base_version":1,"stack_status":"main","stack_depth":1,"author_role": "Public",
+            "id": id, "name": name, "title": name, "base":{"kind":"main","review_base_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"base_version":1,"stack_status":"main","stack_depth":1,"stack_parent":null,"author_role": "Public",
             "view": "public", "head_oid": OID, "state": "Open",
             "submitted_at_unix": 1, "updated_at_unix": 2,
             "mergeability": {"status": "Ready", "current_main_oid": OID, "request_head_oid": OID, "reason": null}

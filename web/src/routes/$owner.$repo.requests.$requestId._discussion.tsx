@@ -144,6 +144,7 @@ function RequestDiscussionLayout() {
 
   return (
     <RequestDetailPage
+      childrenError={page.childrenError}
       approveChecks={(expectedHeadOid) =>
         approveChecks({ data: { ...requestParams, expected_head_oid: expectedHeadOid } })}
       authorizeAutoMerge={(input) =>
@@ -168,7 +169,7 @@ function RequestDiscussionLayout() {
         const snapshot = requestStateResource.getSnapshot(page.identity)
         try {
           const result = await updateDescription({ data })
-          reconcileRequestState(page.identity, snapshot, (current) => ({ ...current, detail: { request: result.request } }))
+          reconcileRequestState(page.identity, snapshot, (current) => ({ ...current, detail: { ...current.detail, request: result.request } }))
           requestStateResource.invalidate(page.identity)
           return result
         } catch (error) {
@@ -177,7 +178,7 @@ function RequestDiscussionLayout() {
           throw error
         }
       }}
-      viewerId={page.viewerId ?? 'anonymous'}
+      viewerId={page.viewerId}
     >
       <Outlet />
     </RequestDetailPage>

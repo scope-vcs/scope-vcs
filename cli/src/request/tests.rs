@@ -220,6 +220,7 @@ fn request_summary(
     head_oid: &str,
 ) -> crate::api::RequestSummaryResponse {
     let detail: crate::api::RequestDetailResponse = serde_json::from_value(serde_json::json!({
+        "stack_navigation":{"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}},
         "request": {
             "id":"req_one","name":"change","title":"Change",
             "description_markdown":"","author_user_id":"scope_usr_author",

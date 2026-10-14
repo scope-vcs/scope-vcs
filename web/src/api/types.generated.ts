@@ -484,7 +484,7 @@ export type RequestQueuePageResponse = { requests: Array<RequestQueueItemRespons
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
-export type RequestDetailResponse = { request: RequestSummaryResponse, };
+export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, };
 
 export type RequestStateResponse = { viewer: RequestActorSummaryResponse | null, detail: RequestDetailResponse, checks: RequestChecksResponse, auto_merge: RequestAutoMergeResponse, };
 
@@ -498,7 +498,7 @@ export type RequestRatingsResponse = { ratings: Array<RequestRatingResponse>, el
 
 export type RequestMutationResponse = { request: RequestSummaryResponse, };
 
-export type RequestListItemResponse = { base: RequestBase, base_version: number, stack_status: RequestStackStatus,
+export type RequestListItemResponse = { stack_parent: RequestStackParentResponse | null, base: RequestBase, base_version: number, stack_status: RequestStackStatus,
 /**
  * Counts this request and its request ancestors; main-rooted requests have depth 1, with a maximum of 33.
  */
@@ -511,6 +511,14 @@ author_user_id: string | null, author_role: RequestActorRole, view: ViewId, head
 export type RequestBase = { "kind": "main", review_base_oid: GitOid, } | { "kind": "request", request_id: string, revision_id: string, head_oid: GitOid, };
 
 export type RequestStackStatus = "main" | "waiting_for_parent" | "parent_extended" | "parent_rewritten" | "parent_closed" | "ancestor_blocked" | "integration_conflict";
+
+export type RequestStackNodeResponse = { id: string, name: string, title: string, state: RequestState, stack_status: RequestStackStatus, stack_depth: number, head_oid: GitOid, current_revision_id: string | null, };
+
+export type RequestStackParentResponse = { "kind": "available", request: RequestStackNodeResponse, } | { "kind": "unavailable" };
+
+export type RequestStackNavigationResponse = { parent: RequestStackParentResponse | null, ancestors: Array<RequestStackNodeResponse>, ancestors_unavailable: boolean, children: RequestChildrenPageResponse, };
+
+export type RequestChildrenPageResponse = { requests: Array<RequestStackNodeResponse>, next_cursor: string | null, };
 
 export type RequestComparisonMode = "request" | "push" | "commit";
 
@@ -787,6 +795,7 @@ export const ApiRouteTemplates = {
   repoRequestQueue: "/v1/repos/{owner}/{repo}/requests/queue",
   repoRequestAttention: "/v1/repos/{owner}/{repo}/requests/{request_id}/attention",
   repoRequest: "/v1/repos/{owner}/{repo}/requests/{request_id}",
+  repoRequestChildren: "/v1/repos/{owner}/{repo}/requests/{request_id}/children",
   repoRequestState: "/v1/repos/{owner}/{repo}/requests/{request_id}/state",
   repoRequestSubmit: "/v1/repos/{owner}/{repo}/requests/{request_id}/submit",
   repoRequestMerge: "/v1/repos/{owner}/{repo}/requests/{request_id}/merge",

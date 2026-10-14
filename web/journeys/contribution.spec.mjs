@@ -183,6 +183,86 @@ test('a merge of a head that moved is refused and the page shows the new head', 
   assert.equal(request.head_oid, newHead)
 })
 
+test('signed-in private stack navigation preserves the pin across parent extension and hides names from a contributor', async () => {
+  const actor = cli.maintainer
+  await syncMain(actor)
+  const parentName = `journey-stack-parent-${runId}`
+  const childName = `journey-stack-child-${runId}`
+  const parentTitle = `Private foundation ${runId}`
+  const childTitle = `Private follow-up ${runId}`
+  const parentPath = `internal/${parentName}.txt`
+  const childPath = `internal/${childName}.txt`
+  const parent = await actor.scope('request', 'start', parentName, '--view', 'private', '--title', parentTitle)
+  const parentId = parent.request.id
+  let childId
+  const page = web.maintainer.page
+  try {
+    await writeFile(join(actor.repo, parentPath), 'private foundation\n')
+    await actor.commit('Add private stack foundation')
+    await actor.scope('request', 'push')
+    await actor.scope('request', 'submit', '--yes')
+    const child = await actor.scope('request', 'start', childName, '--base', parentId, '--title', childTitle)
+    childId = child.request.id
+    const pin = child.request.base
+    await writeFile(join(actor.repo, childPath), 'private follow-up\n')
+    await actor.commit('Add private stack follow-up')
+    await actor.scope('request', 'push')
+    await actor.scope('request', 'submit', '--yes')
+
+    await openRequest(page, childId)
+    const dependency = page.getByRole('region', { name: 'Request dependency' })
+    await dependency.getByRole('link', { name: parentTitle, exact: true }).waitFor()
+    await dependency.getByText(`Pinned revision ${pin.revision_id} · ${pin.head_oid.slice(0, 12)}`, { exact: true }).waitFor()
+    await actor.git('switch', parentName)
+    await writeFile(join(actor.repo, parentPath), 'private foundation extended\n')
+    await actor.commit('Extend private stack foundation')
+    const extended = await actor.scope('request', 'push')
+    await dependency.locator('p').filter({ hasText: `Current revision` }).filter({ hasText: extended.request.head_oid.slice(0, 12) }).waitFor()
+    await dependency.getByText(`Pinned revision ${pin.revision_id} · ${pin.head_oid.slice(0, 12)}`, { exact: true }).waitFor()
+    await clickAfterHydration(dependency.getByRole('link', { name: parentTitle, exact: true }))
+    await page.waitForURL(`**${repoPath}/requests/${parentId}`)
+    await clickAfterHydration(page.getByRole('navigation', { name: 'Immediate children' }).getByRole('link', { name: childTitle, exact: true }))
+    await page.waitForURL(`**${repoPath}/requests/${childId}`)
+    const primary = page.getByRole('navigation', { name: 'Primary' })
+    await primary.getByRole('link', { name: 'Runs', exact: true }).click()
+    await page.getByRole('heading', { name: 'Runs', exact: true }).waitFor()
+    await primary.getByRole('link', { name: 'Requests', exact: true }).click()
+    await page.waitForURL(`**${repoPath}/requests/${childId}`)
+    await dependency.getByText(`Pinned revision ${pin.revision_id} · ${pin.head_oid.slice(0, 12)}`, { exact: true }).waitFor()
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    const selector = page.getByRole('combobox', { name: 'Navigate stack' })
+    await waitForClientHydration(selector)
+    await selector.selectOption(parentId)
+    await page.waitForURL(`**${repoPath}/requests/${parentId}`)
+    await selector.selectOption(childId)
+    await page.waitForURL(`**${repoPath}/requests/${childId}`)
+    await dependency.getByText('Depth 2', { exact: true }).waitFor()
+    await assertNoHorizontalOverflow(page)
+
+    const contributor = web.contributor.page
+    for (const id of [parentId, childId]) {
+      await openRequest(contributor, id)
+      await contributor.getByText('Request not found', { exact: true }).waitFor()
+      assert.equal(await contributor.getByText(parentTitle, { exact: true }).count(), 0)
+      assert.equal(await contributor.getByText(childTitle, { exact: true }).count(), 0)
+      assert.equal(await contributor.getByRole('region', { name: 'Request dependency' }).count(), 0)
+    }
+    await contributor.goto(`${baseUrl}${repoPath}/requests`)
+    const search = contributor.getByRole('searchbox', { name: 'Search requests' })
+    await waitForClientHydration(search)
+    await search.fill(`journey-stack`)
+    await contributor.getByText('No matching requests.', { exact: true }).waitFor()
+    assert.equal(await contributor.getByText(parentTitle, { exact: true }).count(), 0)
+    assert.equal(await contributor.getByText(childTitle, { exact: true }).count(), 0)
+  } finally {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    if (childId) await actor.scope('request', 'close', '--request', childId, '--yes')
+    await actor.scope('request', 'close', '--request', parentId, '--yes')
+    await syncMain(actor)
+  }
+})
+
 test('only the maintainer allows CI, and pending CI holds the merge', async () => {
   const { maintainer: maintainerCli, contributor: contributorCli } = cli
   await syncMain(maintainerCli)

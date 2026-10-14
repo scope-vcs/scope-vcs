@@ -288,7 +288,7 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
     )
     .unwrap();
     assert_eq!(unchanged.request.updated_at_unix, child.updated_at_unix);
-    assert!(!unchanged.effects.refresh_queue);
+    assert!(!unchanged.effects.reactivate_attention);
     parent.head_oid = "extension".into();
     let extension = refresh_request_stack(
         child.clone(),
@@ -303,7 +303,7 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
     );
     assert_eq!(extension.request.base, child.base);
     assert_eq!(extension.effects.stop_auto_merge, None);
-    assert!(!extension.effects.refresh_queue);
+    assert!(!extension.effects.reactivate_attention);
     for (facts, expected, stop_reason) in [
         (
             RequestParentGitFacts {
@@ -339,11 +339,12 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
         .unwrap();
         assert_eq!(blocked.request.stack_status, expected);
         assert_eq!(blocked.effects.stop_auto_merge, Some(stop_reason));
-        assert!(blocked.effects.refresh_queue);
+        assert!(blocked.effects.reactivate_attention);
         assert_eq!(
             blocked.request.activity_version,
             extension.request.activity_version + 1
         );
+        let blocked_activity_version = blocked.request.activity_version;
         let repaired = refresh_request_stack(
             blocked.request,
             Some(&parent),
@@ -352,8 +353,23 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
         )
         .unwrap();
         assert_eq!(repaired.effects.stop_auto_merge, None);
-        assert!(repaired.effects.refresh_queue);
+        assert!(!repaired.effects.reactivate_attention);
+        assert_eq!(repaired.request.activity_version, blocked_activity_version);
     }
+    parent.stack_depth = 2;
+    let deeper = refresh_request_stack(
+        extension.request.clone(),
+        Some(&parent),
+        clean,
+        child.updated_at_unix + 35,
+    )
+    .unwrap();
+    assert_eq!(deeper.request.stack_depth, 3);
+    assert!(!deeper.effects.reactivate_attention);
+    assert_eq!(
+        deeper.request.activity_version,
+        extension.request.activity_version
+    );
     parent.closed_at_unix = Some(parent.updated_at_unix);
     let closed = refresh_request_stack(
         child.clone(),
@@ -370,7 +386,7 @@ fn parent_refresh_preserves_extensions_and_emits_hard_block_effects() {
         closed.effects.stop_auto_merge,
         Some(crate::requests::RequestAutoMergeStopReason::ParentClosed)
     );
-    assert!(closed.effects.refresh_queue);
+    assert!(closed.effects.reactivate_attention);
     parent.stack_depth = REQUEST_STACK_MAX_DEPTH;
     assert!(
         refresh_request_stack(child, Some(&parent), clean, parent.updated_at_unix + 40).is_err()
@@ -391,7 +407,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
     .unwrap();
     assert_eq!(unmarked.request, public);
     assert_eq!(unmarked.effects.stop_auto_merge, None);
-    assert!(!unmarked.effects.refresh_queue);
+    assert!(!unmarked.effects.reactivate_attention);
     let original = revision(&request);
     let marked = mark_request_integration_conflict(
         request.clone(),
@@ -412,7 +428,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
         marked.effects.stop_auto_merge,
         Some(crate::requests::RequestAutoMergeStopReason::MergeConflict)
     );
-    assert!(marked.effects.refresh_queue);
+    assert!(marked.effects.reactivate_attention);
     assert_eq!(
         marked.request.activity_version,
         request.activity_version + 1

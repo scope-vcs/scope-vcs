@@ -265,16 +265,21 @@ pub(super) fn push_request_branch(
             .map_err(|error| recover("clear_restack_selection", error))?;
     }
     let mut human_lines = repo_access_lines(&context.repo);
-    human_lines.extend(request_detail_lines(&detail.request, &context.views));
+    human_lines.extend(request_detail_lines(
+        &detail.request,
+        &detail.stack_navigation,
+        &context.views,
+    ));
     let result = DetailResult {
         repo: context.repo,
         request: detail.request,
+        stack_navigation: detail.stack_navigation,
         activity: None,
         auto_merge: None,
     };
     Ok(RequestCommandOutcome::new(
         "request.push",
-        RequestCommandResult::Detail(result),
+        RequestCommandResult::Detail(Box::new(result)),
         human_lines,
     ))
 }

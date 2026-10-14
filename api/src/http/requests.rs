@@ -87,6 +87,11 @@ pub(crate) async fn list_requests(
     let checks =
         crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &requests)
             .await?;
+    let mut parents = state
+        .metadata
+        .requests()
+        .request_stack_parents(&repo, viewer_user_id.as_deref(), &requests)
+        .await?;
     let requests = requests
         .into_iter()
         .map(|request| {
@@ -94,6 +99,7 @@ pub(crate) async fn list_requests(
                 .get(&request.id)
                 .copied()
                 .unwrap_or(RequestChecksOutcome::NotEvaluated);
+            let parent = parents.remove(&request.id);
             request_list_item_response(
                 request,
                 &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
@@ -101,6 +107,7 @@ pub(crate) async fn list_requests(
                 current_main_oid.clone(),
                 checks,
                 repo.record.lifecycle_state,
+                parent,
             )
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
@@ -111,7 +118,7 @@ pub(crate) async fn list_requests(
     }))
 }
 
-fn parse_request_list_cursor(value: &str) -> Result<String, ApiError> {
+pub(crate) fn parse_request_list_cursor(value: &str) -> Result<String, ApiError> {
     value
         .strip_prefix("v1:")
         .filter(|id| !id.is_empty() && !id.contains(':'))

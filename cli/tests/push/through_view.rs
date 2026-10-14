@@ -333,6 +333,7 @@ fn list_item(id: &str, name: &str, author: &str, view: &str, head: &str, state: 
         "base_version": 1,
         "stack_status": "main",
         "stack_depth": 1,
+        "stack_parent": null,
         "head_oid": head,
         "state": state,
         "submitted_at_unix": 1,

@@ -1,4 +1,5 @@
 use super::*;
+use sea_orm::TransactionTrait;
 
 #[tokio::test]
 async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_identity() {
@@ -170,6 +171,45 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
         pinned.try_get::<String>("", "parent_head_oid").unwrap(),
         "b".repeat(40)
     );
+    let tx = db.begin().await.unwrap();
+    tx.execute_unprepared("SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off;")
+        .await
+        .unwrap();
+    for (lifecycle, transition) in [
+        (
+            "closed",
+            "closed_at_unix = 2, closed_by_user_id = 'stack-owner'",
+        ),
+        (
+            "merged",
+            "closed_at_unix = NULL, closed_by_user_id = NULL, merged_at_unix = 2, merged_by_user_id = 'stack-owner', merged_head_oid = repeat('b',40), merged_main_oid = repeat('b',40)",
+        ),
+    ] {
+        tx.execute_unprepared(&format!(
+            "UPDATE scope_requests SET {transition}, submitted_at_unix = 1, updated_at_unix = 2 WHERE id = 'child'"
+        )).await.unwrap();
+        let children = tx.query_all_raw(Statement::from_string(DatabaseBackend::Postgres,
+            "SELECT id FROM scope_requests WHERE repo_id = 'stack-owner/repo' AND parent_request_id = 'parent' AND audience = 'private' AND id > 'a' ORDER BY id LIMIT 2"
+        )).await.unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].try_get::<String>("", "id").unwrap(), "child");
+        let plan = tx.query_one_raw(Statement::from_string(DatabaseBackend::Postgres,
+            "EXPLAIN (FORMAT JSON) SELECT id FROM scope_requests WHERE repo_id = 'stack-owner/repo' AND parent_request_id = 'parent' AND audience = 'private' AND id > 'a' ORDER BY id LIMIT 2"
+        )).await.unwrap().unwrap().try_get::<serde_json::Value>("", "QUERY PLAN").unwrap();
+        let scan = &plan[0]["Plan"]["Plans"][0];
+        assert!(
+            matches!(
+                scan["Node Type"].as_str(),
+                Some("Index Scan" | "Index Only Scan")
+            ),
+            "{lifecycle}: {plan}"
+        );
+        let condition = scan["Index Cond"].as_str().unwrap();
+        for key in ["repo_id", "parent_request_id", "audience", "> 'a'"] {
+            assert!(condition.contains(key), "{lifecycle}: {plan}");
+        }
+    }
+    tx.commit().await.unwrap();
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
 }
 

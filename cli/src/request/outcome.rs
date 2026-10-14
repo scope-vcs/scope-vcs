@@ -38,7 +38,7 @@ pub(super) enum RequestCommandResult {
     Restack(RestackResult),
     Diff(DiffResult),
     Checks(ChecksResult),
-    Detail(DetailResult),
+    Detail(Box<DetailResult>),
     List(ListResult),
     Mutation(MutationResult),
     AutoMerge(RepoResponse<crate::api::RequestAutoMergeResponse>),
@@ -62,6 +62,7 @@ pub(super) struct StartResult {
 
 #[derive(Serialize)]
 pub(super) struct DetailResult {
+    pub(super) stack_navigation: scope_api_contract::RequestStackNavigationResponse,
     pub(super) repo: RepoSummaryResponse,
     pub(super) request: RequestSummaryResponse,
     #[serde(skip_serializing_if = "Option::is_none")]

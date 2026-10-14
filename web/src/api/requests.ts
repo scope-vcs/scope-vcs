@@ -18,6 +18,7 @@ import {
   RequestRatingsResponseValidator,
   RequestRevisionListResponseValidator,
   RequestStateResponseValidator,
+  RequestChildrenPageResponseValidator,
   ReviewFileDiffResponseValidator,
 } from './validators.generated'
 import type { LoadRequestQueueInput } from './request-queue-input'
@@ -181,4 +182,10 @@ export async function loadRequestStateForRequest(
     RequestStateResponseValidator,
     { auth: 'optional', signal },
   )
+}
+
+export function loadRequestChildrenForRequest(data: RequestParams & { cursor: string }, signal?: AbortSignal) {
+  const path = requestRoute(ApiRouteTemplates.repoRequestChildren, data)
+  const search = new URLSearchParams({ cursor: data.cursor })
+  return createApiClient().get(`${path}?${search}`, RequestChildrenPageResponseValidator, { auth: 'optional', signal })
 }

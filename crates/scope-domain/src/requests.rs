@@ -1,4 +1,6 @@
+mod navigation;
 use crate::error::DomainError;
+pub use navigation::*;
 
 mod stack;
 pub use stack::*;
@@ -106,7 +108,8 @@ pub use queue::{
     RequestQueueClassification, RequestQueueFacts, RequestQueueGroup, RequestQueuePredicate,
     RequestQueuePredicateAtom, RequestQueueRule, RequestQueueSection,
     apply_request_attention_action, classify_request_queue_item, reactivate_request_attention,
-    request_queue_group, request_queue_visibility_predicate,
+    reactivate_request_attention_for_stack_blocker, request_queue_group,
+    request_queue_visibility_predicate,
 };
 mod ratings;
 pub use ratings::{

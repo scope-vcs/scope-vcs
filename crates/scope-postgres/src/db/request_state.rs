@@ -20,6 +20,8 @@ use sea_orm::DatabaseTransaction;
 use std::collections::{BTreeMap, HashMap};
 
 pub struct RequestStateSnapshot {
+    pub stack_navigation: scope_domain::requests::RequestStackNavigation,
+    pub children: super::RequestChildrenPage,
     pub repository: RepositoryAccessContext,
     pub request: Request,
     pub is_invitee: bool,
@@ -44,6 +46,26 @@ impl RequestStore {
         name: &str,
         request_id: &str,
         viewer_user_id: Option<&str>,
+    ) -> Result<RequestStateSnapshot, PostgresError> {
+        self.request_state_snapshot_with_children(
+            owner,
+            name,
+            request_id,
+            viewer_user_id,
+            None,
+            scope_domain::requests::REQUEST_LIST_DEFAULT_PAGE_SIZE,
+        )
+        .await
+    }
+
+    pub async fn request_state_snapshot_with_children(
+        &self,
+        owner: &str,
+        name: &str,
+        request_id: &str,
+        viewer_user_id: Option<&str>,
+        children_after_id: Option<&str>,
+        children_limit: usize,
     ) -> Result<RequestStateSnapshot, PostgresError> {
         for _ in 0..3 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
@@ -74,8 +96,16 @@ impl RequestStore {
                 .await?;
                 continue;
             }
-            return read_request_state(tx, repository, projection, request_id, viewer_user_id)
-                .await;
+            return read_request_state(
+                tx,
+                repository,
+                projection,
+                request_id,
+                viewer_user_id,
+                children_after_id,
+                children_limit,
+            )
+            .await;
         }
         Err(PostgresError::conflict(
             "repository kept changing while reading the request; retry",
@@ -89,6 +119,8 @@ async fn read_request_state(
     projection: Option<entities::projection_read_model::Model>,
     request_id: &str,
     viewer_user_id: Option<&str>,
+    children_after_id: Option<&str>,
+    children_limit: usize,
 ) -> Result<RequestStateSnapshot, PostgresError> {
     if !repository.can_read(
         projection
@@ -179,8 +211,19 @@ async fn read_request_state(
     } else {
         projection.and_then(|projection| projection.head_oid)
     };
+    let (stack_navigation, children) = super::request_navigation::navigation(
+        &tx,
+        &repository,
+        viewer_user_id,
+        &request,
+        children_after_id,
+        children_limit,
+    )
+    .await?;
     tx.commit().await?;
     Ok(RequestStateSnapshot {
+        stack_navigation,
+        children,
         repository,
         request,
         is_invitee,

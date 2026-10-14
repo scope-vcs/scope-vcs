@@ -29,6 +29,8 @@ import type {
   AuthorizeRequestAutoMergeInput,
   CancelRequestAutoMergeInput,
 } from './request-auto-merge-api'
+import { loadRequestChildrenForViewer } from '@/routes/-request-state-actions'
+import { loadMoreRequestChildren } from './request-state-resource'
 import { RequestStackContext } from './request-stack-context'
 import { RequestChecksSection } from './request-checks-section'
 import { RequestCiApproval } from './request-ci-approval'
@@ -76,6 +78,7 @@ export function RequestUnavailablePage({ params }: { params: RepoParams }) {
 }
 
 type RequestDetailPageProps = {
+  childrenError: string | null
   approveChecks: (expectedHeadOid: string) => Promise<RequestChecksResponse>
   authorizeAutoMerge: (input: Pick<
     AuthorizeRequestAutoMergeInput,
@@ -98,7 +101,7 @@ type RequestDetailPageProps = {
   >) => Promise<RequestAutoMergeResponse>
   rateRequest: (input: RateRequestInput) => Promise<RequestRatingResponse>
   updateDescription: (input: UpdateDescriptionInput) => Promise<RequestMutationResponse>
-  viewerId: string
+  viewerId: string | null
 }
 
 export function RequestDetailPage(props: RequestDetailPageProps) {
@@ -107,6 +110,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     authorizeAutoMerge,
     cancelAutoMerge,
     children,
+    childrenError,
     attachmentActions,
     state,
     stateError,
@@ -121,6 +125,16 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
     updateDescription,
     viewerId,
   } = props
+  const [childrenLoading, setChildrenLoading] = useState(false)
+  const loadChildren = async () => {
+    if (childrenLoading) return
+    setChildrenLoading(true)
+    try {
+      await loadMoreRequestChildren(identity, (cursor, signal) => loadRequestChildrenForViewer({ ...params, request_id: state.detail.request.id, cursor }, viewerId, signal))
+    } finally {
+      setChildrenLoading(false)
+    }
+  }
   const { request } = state.detail
   const serverDescription = request.description_markdown
   const activity = {
@@ -184,7 +198,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
       actions={attachmentActions}
       live={live}
       requestId={request.id}
-      viewerId={viewerId}
+      viewerId={viewerId ?? 'anonymous'}
     >
       <div
         className="request-detail-pane scope-content-enter w-full"
@@ -261,7 +275,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
             {requestActions.error ?? autoMerge.error ?? stateError}
           </p>
         ) : null}
-        <RequestStackContext request={request} params={params} />
+        <RequestStackContext detail={state.detail} params={params} childrenLoading={childrenLoading} childrenError={childrenError} onLoadChildren={() => { void loadChildren() }} />
         <RequestChecksSection
           checks={checks.checks}
           error={checks.error}

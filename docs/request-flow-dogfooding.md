@@ -24,6 +24,21 @@ ancestors must report their specific stop reason. Land A, then verify B and C
 advance only after their own required checks and native merge gate pass.
 Authorization on one layer supplies no authorization to another.
 
+Exercise navigation with a fork as well as A → B → C. `request show`,
+`request status` and `request push --json` must retain the server's authorized
+stack context. Confirm the named ancestor path, saved pin beside the current
+parent revision, visible child names and a next-cursor hint when more children
+exist. Depth measures ancestry, so sibling requests share a depth. An unavailable
+dependency must expose no parent name, link or hidden descendant count. The
+visible child's saved review pin remains available without live parent evidence.
+
+Move a parent outside the child's queue section or search results. The child must
+remain actionable in the default queue with the authorized parent name, without
+adding a context row or changing section counts, ordering or pagination. Parent
+extensions, satisfied dependencies and parent landing preserve attention. New
+hard blockers such as parent rewrite, close or conflict can reactivate attention
+but must respect a child's future snooze deadline.
+
 A released service must support the request-base Git headers before this workflow
 can exercise hosted publication. Record a missing deployed capability as a
 Scope dogfood limitation; it does not block GitHub delivery. Do not start Scope

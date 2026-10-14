@@ -96,6 +96,7 @@ routes! {
         REPO_REQUEST = "/v1/repos/{owner}/{repo}/requests/{request_id}"
             => "repoRequest",
             repo_request(owner: &str, repo: &str, request_id: &str);
+        REPO_REQUEST_CHILDREN = "/v1/repos/{owner}/{repo}/requests/{request_id}/children" => "repoRequestChildren";
         REPO_REQUEST_STATE = "/v1/repos/{owner}/{repo}/requests/{request_id}/state"
             => "repoRequestState",
             repo_request_state(owner: &str, repo: &str, request_id: &str);

@@ -129,6 +129,11 @@ pub(crate) async fn request_queue(
         .collect::<Vec<_>>();
     let checks =
         crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &rows).await?;
+    let mut parents = state
+        .metadata
+        .requests()
+        .request_stack_parents(&repo, viewer_user_id.as_deref(), &rows)
+        .await?;
     let requests = page
         .rows
         .into_iter()
@@ -154,6 +159,7 @@ pub(crate) async fn request_queue(
                         .copied()
                         .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
                     repo.record.lifecycle_state,
+                    parents.remove(&request_id),
                 )?,
                 author,
                 attention: attention_response(

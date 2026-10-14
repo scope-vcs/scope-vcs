@@ -11,10 +11,12 @@ use crate::display::{short_oid, terminal_text};
 use scope_domain::views::Views;
 
 mod auto_merge;
+mod navigation;
 use auto_merge::activity_line as auto_merge_activity_line;
 pub(super) use auto_merge::{
     receipt_lines as auto_merge_receipt_lines, status_lines as auto_merge_status_lines,
 };
+pub(super) use navigation::parent_label;
 
 pub(super) fn repo_access_lines(repo: &RepoSummaryResponse) -> Vec<String> {
     vec![
@@ -155,7 +157,11 @@ pub(super) fn wait_label(submitted_at_unix: Option<u64>, now_unix: u64) -> Strin
     }
 }
 
-pub(super) fn request_detail_lines(request: &RequestSummaryResponse, views: &Views) -> Vec<String> {
+pub(super) fn request_detail_lines(
+    request: &RequestSummaryResponse,
+    navigation: &scope_api_contract::RequestStackNavigationResponse,
+    views: &Views,
+) -> Vec<String> {
     let mut lines = vec![
         request_line(request),
         format!(
@@ -179,19 +185,7 @@ pub(super) fn request_detail_lines(request: &RequestSummaryResponse, views: &Vie
         "  stack: depth {} · {:?}",
         request.stack_depth, request.stack_status
     ));
-    lines.push(match &request.base {
-        scope_api_contract::RequestBase::Main { review_base_oid } => {
-            format!("  base: main @ {}", short_oid(review_base_oid))
-        }
-        scope_api_contract::RequestBase::Request {
-            request_id,
-            revision_id,
-            head_oid,
-        } => format!(
-            "  base: {request_id} @ {revision_id} ({})",
-            short_oid(head_oid)
-        ),
-    });
+    lines.extend(navigation::lines(request, navigation));
     if !request.description_markdown.trim().is_empty() {
         lines.push(format!(
             "  description: {}",

@@ -14,6 +14,13 @@ pub enum RequestBase {
 }
 
 impl RequestBase {
+    pub fn parent_request_id(&self) -> Option<&str> {
+        match self {
+            Self::Main { .. } => None,
+            Self::Request { request_id, .. } => Some(request_id),
+        }
+    }
+
     pub fn review_base_oid(&self) -> &str {
         match self {
             Self::Main { review_base_oid } => review_base_oid,

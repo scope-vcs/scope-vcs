@@ -1,6 +1,6 @@
 import { loadOptionalResource } from '@/api/http'
-import { parseRequestParams } from '@/api/request-inputs'
-import { loadRequestStateForRequest } from '@/api/requests'
+import { parseLoadRequestChildrenInput, parseRequestParams } from '@/api/request-inputs'
+import { loadRequestChildrenForRequest, loadRequestStateForRequest } from '@/api/requests'
 import type { RequestParams } from '@/api/types'
 import type { RequestStateValue } from '@/features/requests/request-state-resource'
 import { auth } from '@clerk/tanstack-react-start/server'
@@ -25,4 +25,17 @@ export async function loadRequestStateForViewer(
   const loaded = await loadRequestState({ data, signal })
   if (loaded.viewerId !== viewerId) throw new Error('The account changed while loading this request.')
   return { state: loaded.state }
+}
+
+export const loadRequestChildren = createServerFn({ method: 'GET' })
+  .validator(parseLoadRequestChildrenInput)
+  .handler(async ({ data }) => {
+    const [{ userId }, children] = await Promise.all([auth(), loadRequestChildrenForRequest(data, getRequest().signal)])
+    return { children, viewerId: userId }
+  })
+
+export async function loadRequestChildrenForViewer(data: RequestParams & { cursor: string }, viewerId: string | null, signal: AbortSignal) {
+  const loaded = await loadRequestChildren({ data, signal })
+  if (loaded.viewerId !== viewerId) throw new Error('The account changed while loading this request.')
+  return loaded.children
 }

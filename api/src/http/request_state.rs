@@ -74,6 +74,23 @@ pub(crate) fn detail_response(
         &snapshot.results,
     );
     Ok(RequestDetailResponse {
+        stack_navigation: scope_api_contract::RequestStackNavigationResponse {
+            parent: snapshot
+                .stack_navigation
+                .parent
+                .clone()
+                .map(super::responses::request_stack_parent_response)
+                .transpose()?,
+            ancestors: snapshot
+                .stack_navigation
+                .ancestors
+                .iter()
+                .cloned()
+                .map(super::responses::request_stack_node_response)
+                .collect::<Result<_, _>>()?,
+            ancestors_unavailable: snapshot.stack_navigation.ancestors_unavailable,
+            children: super::responses::request_children_page_response(&snapshot.children)?,
+        },
         request: super::responses::request_response(
             snapshot.request.clone(),
             viewer,

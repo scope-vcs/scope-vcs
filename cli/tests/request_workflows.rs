@@ -1,3 +1,5 @@
+#[path = "request_workflows/navigation.rs"]
+mod navigation;
 #[cfg(unix)]
 #[path = "request_workflows/pull.rs"]
 mod pull;
@@ -28,28 +30,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use support::*;
-
-#[test]
-fn request_reads_work_outside_a_checkout_with_explicit_repository() {
-    let dir = TempDir::new("request-outside");
-    let server = FixtureServer::start();
-    let output = server
-        .command(dir.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "show",
-            "--request",
-            "req_one",
-        ])
-        .output()
-        .unwrap();
-    let value = success(output);
-    assert_eq!(value["result"]["request"]["id"], "req_one");
-    assert_eq!(value["result"]["auto_merge"]["request_id"], "req_one");
-}
 
 #[test]
 fn request_auto_merge_saves_exact_revision_and_returns_a_pending_receipt() {
@@ -586,6 +566,14 @@ impl FixtureServer {
     }
 
     fn with_request_states(start_detail: Value, show_detail: Value) -> Self {
+        Self::with_navigation(
+            start_detail,
+            show_detail,
+            json!({"parent":null,"ancestors":[],"ancestors_unavailable":false,"children":{"requests":[],"next_cursor":null}}),
+        )
+    }
+
+    fn with_navigation(start_detail: Value, show_detail: Value, navigation: Value) -> Self {
         let private = show_detail["view"] == "private";
         let mut repo = repository();
         if private {
@@ -652,7 +640,7 @@ impl FixtureServer {
                         }
                     }))
                     .route("/v1/repos/owner/repo/requests", get(|| async { Json(json!({"requests":[list_item("req_one", "fix-one", "Open"), list_item("req_two", "fix-two", "Closed"), list_item("req_three", "fix-three", "Open")], "next_cursor":null})) }).post(move || { let started=started.clone(); let detail=start_detail.clone(); async move { started.lock().unwrap().push("POST request".to_string()); Json(json!({"request":detail})) } }))
-                    .route("/v1/repos/owner/repo/requests/req_one", get(move || { let detail=show_detail.clone(); async move { Json(json!({"request":detail})) } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
+                    .route("/v1/repos/owner/repo/requests/req_one", get(move || { let detail=show_detail.clone(); let navigation=navigation.clone(); async move { Json(json!({"request":detail,"stack_navigation":navigation})) } }).patch(move |Json(body): Json<Value>| { let captured=captured.clone(); async move { *captured.lock().unwrap()=body; Json(json!({"request":request()})) } }))
                     .route("/v1/repos/owner/repo/requests/req_one/changes", get(move |OriginalUri(uri): OriginalUri, Query(query): Query<HashMap<String,String>>| { let inspected=revisions_seen.clone(); async move { inspected.lock().unwrap().push(uri.to_string());
                     let mode = query.get("comparison").map(String::as_str).unwrap_or(if query.contains_key("commit") { "commit" } else if private { "request" } else { "push" });
                     if !private && mode == "request" { return (axum::http::StatusCode::BAD_REQUEST, Json(json!({"code":"bad_request","message":"request comparison requires private access","retryable":false}))); }
@@ -763,7 +751,7 @@ fn repository() -> Value {
     repository_response(json!({"open_request_count": 2}))
 }
 fn list_item(id: &str, name: &str, state: &str) -> Value {
-    json!({"id":id,"name":name,"title":name,"base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"author_role":"Public","view":"public","head_oid":OID,"state":state,"submitted_at_unix":1,"updated_at_unix":2,"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
+    json!({"id":id,"name":name,"title":name,"base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"stack_parent":null,"author_role":"Public","view":"public","head_oid":OID,"state":state,"submitted_at_unix":1,"updated_at_unix":2,"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})
 }
 fn request() -> Value {
     json!({"id":"req_one","name":"fix-one","title":"Fix one","description_markdown":"","author_user_id":"usr_test","author_role":"Public","view":"public","base":{"kind":"main","review_base_oid":OID},"base_version":1,"stack_status":"main","stack_depth":1,"main_ancestor_oid":OID,"head_oid":OID,"state":"Draft","activity_version":0,"submitted_at_unix":null,"closed_at_unix":null,"closed_by_user_id":null,"merged_at_unix":null,"merged_by_user_id":null,"merged_head_oid":null,"merged_main_oid":null,"created_at_unix":1,"updated_at_unix":2,"invitees":[],"permissions":{"can_view_activity":false,"can_open_discussion":false,"can_reply_to_discussion":false,"can_wait_after_reply":false,"can_edit_identity":true,"can_pull_branch":false,"can_push_branch":true,"can_submit":false,"can_manage_invitees":false,"can_leave_request":false,"can_close":false,"can_merge":false},"mergeability":{"status":"Draft","current_main_oid":OID,"request_head_oid":OID,"reason":null}})

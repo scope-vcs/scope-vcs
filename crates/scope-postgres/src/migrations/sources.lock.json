@@ -4,5 +4,6 @@
   "m0084_request_review_bases.rs": "d2d1ecf325e5c636ada92b53aa00bb107dd9edb3904e42dfea073861f34db079",
   "m0085_request_check_identity.rs": "f66c019c2e14ad3e3396b56ee600c0414b5fef9a8ee7f3b02ed7ba7fa18b5cff",
   "m0086_private_request_stacks.rs": "70820bb1a51c16859e2a6b456a303e220784e89dc2d0bb6cad328ab93a512eaf",
-  "m0087_stack_auto_merge_stop_reasons.rs": "57815084bd6e2e545703ae98751b574fbeb89bef3c7197bde4b7fdd526f72d5f"
+  "m0087_stack_auto_merge_stop_reasons.rs": "57815084bd6e2e545703ae98751b574fbeb89bef3c7197bde4b7fdd526f72d5f",
+  "m0088_request_navigation_children_index.rs": "d118b488ade02ca1ba0cda2cba32f2596b45770f4a828824797f0ba7e795de62"
 }

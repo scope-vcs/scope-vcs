@@ -382,6 +382,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     .await;
     let child = start(&store, "child", pin(&store, &parent).await, 6).await;
     let grandchild = start(&store, "grandchild", pin(&store, &child).await, 10).await;
+    let attention = attention::seed_landing_attention(&store, &child, &grandchild).await;
     let revision = store
         .requests()
         .latest_request_revision(&child.id)
@@ -473,6 +474,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     .await
     .unwrap();
     tx.commit().await.unwrap();
+    attention::assert_landing_attention(&store, attention).await;
     let retargeted = load(&store, "child").await;
     assert_eq!(
         retargeted.base,
@@ -512,3 +514,5 @@ mod integration_conflict;
 mod auto_merge;
 mod carried;
 mod reparent;
+
+mod attention;
