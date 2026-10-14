@@ -27,7 +27,6 @@ use tracing_subscriber::{
     fmt::{FmtContext, FormatEvent, FormatFields, MakeWriter, format::Writer},
     layer::SubscriberExt as _,
     registry::LookupSpan,
-    util::SubscriberInitExt as _,
 };
 
 #[cfg(feature = "postgres")]
@@ -98,7 +97,7 @@ pub fn init_telemetry(service: &'static str, log_filter: &str) -> anyhow::Result
         Ok(Some(destination)) => Some(destination.exporters(service)?),
         _ => None,
     };
-    subscriber(log_filter, exporters.as_ref(), std::io::stdout).try_init()?;
+    install(subscriber(log_filter, exporters.as_ref(), std::io::stdout))?;
     if let Err(InjectedExporterHeaders(variable)) = destination {
         eprintln!(
             "PostHog telemetry export disabled because Railway still injects {variable}; disable Railway tracing for this service"
@@ -142,6 +141,11 @@ where
                 }),
             ))
         }))
+}
+
+fn install(subscriber: impl Subscriber + Send + Sync) -> anyhow::Result<()> {
+    tracing::subscriber::set_global_default(subscriber)?;
+    Ok(())
 }
 
 pub fn request_tracing() -> OtelAxumLayer {
@@ -415,6 +419,26 @@ mod tests {
         let local = logged_inside_span(None);
         assert!(!local.contains("trace_id="), "{local}");
         assert!(local.ends_with("handled\n"), "{local}");
+    }
+
+    #[test]
+    fn logs_after_a_log_crate_level_check_still_reach_every_output() {
+        let captured = Captured::default();
+        let logs = InMemoryLogExporter::default();
+        let exporters = exporters(&logs);
+        install(subscriber(
+            EnvFilter::new("scope_test=info"),
+            Some(&exporters),
+            captured.clone(),
+        ))
+        .unwrap();
+        for pass in 0..3 {
+            let _ = log::log_enabled!(target: "sqlx::query", log::Level::Debug);
+            tracing::info!(target: "scope_test", pass, "pass finished");
+        }
+        let logged = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(logged.matches("pass finished").count(), 3, "{logged}");
+        assert_eq!(logs.get_emitted_logs().unwrap().len(), 3);
     }
 
     #[test]

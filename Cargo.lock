@@ -3702,6 +3702,7 @@ dependencies = [
  "http",
  "http-body",
  "jsonwebtoken",
+ "log",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-http",
