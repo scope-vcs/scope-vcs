@@ -70,7 +70,7 @@ export function classifyFrontendError(error: unknown): FrontendErrorKind {
 }
 
 function isCancellation(error: unknown) {
-  return error instanceof DOMException && error.name === 'AbortError'
+  return error instanceof Error && error.name === 'AbortError'
 }
 
 export function installFrontendDiagnostics({
