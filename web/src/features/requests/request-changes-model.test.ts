@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { discussion } from './request-discussion-test-fixtures'
 import {
-  discussionsForRequestCommit,
+  discussionsForRequestComparison,
   missingRequestCommitFileError,
   orderedRequestCommits,
   requestCommitForListId,
@@ -132,9 +132,13 @@ test('orders matching commit and revision discussions chronologically', () => {
     discussion('other', 6, { anchor: { revision_id: 'revision-1', revision_position: 1, commit_oid: 'commit-a', path: null } }),
   ]
   assert.deepEqual(
-    discussionsForRequestCommit(discussions, revisions[0], 'commit-b')
+    discussionsForRequestComparison(discussions, revisions[0], 'commit-b')
       .map(({ id }) => id),
     ['revision', 'later'],
+  )
+  assert.deepEqual(
+    discussionsForRequestComparison(discussions, revisions[0], null).map(({ id }) => id),
+    ['revision'],
   )
 })
 

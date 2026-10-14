@@ -103,16 +103,17 @@ export function missingRequestCommitFileError(
     : 'This file is not part of the selected commit.'
 }
 
-export function discussionsForRequestCommit(
+export function discussionsForRequestComparison(
   discussions: RequestDiscussion[],
   revision: RequestRevisionListResponse['revisions'][number] | null,
   commitOid: string | null,
 ) {
-  if (!revision || !commitOid) return []
+  if (!revision) return []
   return discussions
     .filter((discussion) => {
       const anchor = discussion.anchor
       if (!anchor || anchor.revision_id !== revision.id) return false
+      if (!commitOid) return anchor.commit_oid === null
       if (anchor.commit_oid) return anchor.commit_oid === commitOid
       return commitOid === revision.commits.at(-1)?.oid
     })

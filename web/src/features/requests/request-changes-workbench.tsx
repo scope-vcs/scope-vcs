@@ -35,7 +35,7 @@ import {
 } from './request-changes-discussion-references'
 import type { LoadDiscussionsInput } from './request-discussion-api'
 import {
-  discussionsForRequestCommit,
+  discussionsForRequestComparison,
   missingRequestCommitFileError,
   requestCommitForListId,
   requestChangesPresentation,
@@ -54,7 +54,7 @@ export type RequestChangesSearch = {
 }
 
 export type RequestChangesDiscussionReferences = {
-  commitKey: string | null
+  referenceKey: string | null
   page: RequestDiscussionPage | null
 }
 
@@ -106,13 +106,14 @@ export function RequestChangesWorkbench({
   const discussionReferences = useRequestDiscussionReferences({
     accessScope,
     commitOid: model.selectedCommitOid,
+    comparison: model.mode,
     initialReferences: initialDiscussionReferences,
     loadDiscussions,
     params,
     revision: model.selectedRevision,
   })
   const references = useMemo(
-    () => discussionsForRequestCommit(
+    () => discussionsForRequestComparison(
       discussionReferences.discussions,
       model.selectedRevision,
       model.selectedCommitOid,
@@ -121,7 +122,7 @@ export function RequestChangesWorkbench({
   )
   const commitContext = useMemo(
     () => model.selectedRevision ? (
-      <RequestCommitContext
+      <RequestRevisionContext
         commit={model.selectedCommitSummary}
         discussions={references}
         discussionReferences={discussionReferences}
@@ -187,6 +188,7 @@ export function RequestChangesWorkbench({
 function useRequestDiscussionReferences({
   accessScope,
   commitOid,
+  comparison,
   initialReferences,
   loadDiscussions,
   params,
@@ -194,24 +196,25 @@ function useRequestDiscussionReferences({
 }: {
   accessScope: string | null
   commitOid: string | null
+  comparison: 'request' | 'push' | 'commit'
   initialReferences: RequestChangesDiscussionReferences
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
   params: { owner: string; repo: string; request_id: string }
   revision: RequestRevisionListResponse['revisions'][number] | null
 }): DiscussionReferenceState {
-  const query = revision && commitOid
+  const query = revision && (comparison !== 'commit' || commitOid)
     ? discussionReferenceQuery(params, revision, commitOid)
     : null
   const identity = query && accessScope
     ? requestDiscussionReferenceIdentity(accessScope, params.request_id, query.key)
     : null
-  const seed = query && query.key === initialReferences.commitKey ? initialReferences.page : null
+  const seed = query && query.key === initialReferences.referenceKey ? initialReferences.page : null
   useMemo(() => {
     if (identity && seed) openRequestDiscussionReferences(identity, seed)
   }, [identity, seed])
   const input = query?.input
   const loadFirstPage = useCallback(() => {
-    if (!input) throw new Error('Select a commit.')
+    if (!input) throw new Error('Select a request revision.')
     return loadDiscussions(input)
   }, [input, loadDiscussions])
   const page = useCachedResource({
@@ -395,7 +398,7 @@ function RequestRevisionHeader({ revision }: { revision: RequestRevisionListResp
   )
 }
 
-function RequestCommitContext({
+function RequestRevisionContext({
   commit,
   discussionReferences,
   discussions,

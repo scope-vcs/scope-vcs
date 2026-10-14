@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router'
 import type { RequestDetailResponse, RequestRevisionListResponse, RequestStackStatus, RequestSummaryResponse } from '@/api/types.generated'
+import { discussion } from '@/features/requests/request-discussion-test-fixtures'
 import { RequestStackContext } from '@/features/requests/request-stack-context'
 import { RequestChangesWorkbench, type RequestChangesSearch } from '@/features/requests/request-changes-workbench'
 import { RequestLifecycleActions } from '@/features/requests/request-lifecycle-actions'
@@ -20,6 +21,7 @@ const revision = {
   commits: [{ oid: head, parent_oids: [base], author: 'adam', message: 'Add child UI', change_count: 1, files_truncated: false, files }],
 } as RequestRevisionListResponse['revisions'][number]
 const calls: unknown[] = []
+const referenceCalls: unknown[] = []
 
 function Stack() {
   const view = new URL(location.href).searchParams.get('view') ?? 'private'
@@ -29,7 +31,7 @@ function Stack() {
   const [childrenError, setChildrenError] = useState<string | null>(null)
   const [stackStatus, setStackStatus] = useState<RequestStackStatus>('waiting_for_parent')
   const [search, setSearch] = useState<RequestChangesSearch>({ revision: revision.id })
-  Object.assign(window, { setStackStatus, setOpaque, setChildrenError, calls })
+  Object.assign(window, { setStackStatus, setOpaque, setChildrenError, calls, referenceCalls })
   const requestBase = revision.base
   const status = stackStatus === 'main' ? 'Ready' : stackStatus === 'parent_rewritten' ? 'ParentRewritten'
     : stackStatus === 'parent_closed' ? 'ParentClosed'
@@ -60,9 +62,15 @@ function Stack() {
     </div>
     <RequestChangesWorkbench
       accessScope={`fixture:${view}:adam`} view={view} repoId="repo" params={{ owner: 'adam', repo: 'demo', request_id: 'child' }}
-      initialDiscussionReferences={{ commitKey: null, page: null }} revisions={revisions} search={search}
+      initialDiscussionReferences={{ referenceKey: null, page: null }} revisions={revisions} search={search}
       onSearchChange={setSearch}
-      loadDiscussions={async () => ({ discussions: [], next_cursor: null, snapshot_version: 0 })}
+      loadDiscussions={async (input) => {
+        referenceCalls.push(input)
+        return { discussions: [
+          discussion('layer-reference', 1, { body_markdown: 'Review the child revision', anchor: { revision_id: revision.id, revision_position: 2, commit_oid: null, path: null } }),
+          discussion('commit-reference', 2, { body_markdown: 'Review the child commit', anchor: { revision_id: revision.id, revision_position: 2, commit_oid: head, path: null } }),
+        ], next_cursor: null, snapshot_version: 1 }
+      }}
       loadDiff={async (input) => {
         calls.push(input)
         return { kind: 'Added', new_mode: '100644', old_mode: null, path: input.path, presentation: { kind: 'empty' } }

@@ -61,7 +61,7 @@ const loadChangesPage = createServerFn({ method: 'GET' })
         })
       : null
     const discussionReferences: RequestChangesDiscussionReferences = {
-      commitKey: query?.key ?? null,
+      referenceKey: query?.key ?? null,
       page,
     }
     return { discussionReferences, revisions, viewerId: userId }
@@ -180,7 +180,7 @@ function RequestChangesRoute() {
             <RequestChangesWorkbench
               accessScope={scope}
               view={live.repo.access.view}
-              initialDiscussionReferences={initial?.discussionReferences ?? { commitKey: null, page: null }}
+              initialDiscussionReferences={initial?.discussionReferences ?? { referenceKey: null, page: null }}
               loadDiff={loadDiffForView}
               loadDiscussions={loadDiscussionsForView}
               onSearchChange={(nextSearch) => {
