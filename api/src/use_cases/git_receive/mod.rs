@@ -345,9 +345,10 @@ async fn complete_main_push(
     } else {
         match landed_requests::landed_request_candidates(
             state,
-            incarnation.repository_id(),
+            owner,
+            repo_name,
             staging_repo,
-            &prepared.head_oid,
+            &prepared.update,
         )
         .await
         {

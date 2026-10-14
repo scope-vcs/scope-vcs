@@ -7,6 +7,9 @@ use scope_domain::{
 };
 use scope_postgres::db::RebuildCheckCommitCommand;
 
+mod landing;
+mod stacks;
+
 const PRIVATE_FILE: &str = "secret.txt";
 const PRIVATE_CONTENT: &str = "private code\n";
 

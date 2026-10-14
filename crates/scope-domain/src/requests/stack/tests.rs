@@ -85,6 +85,33 @@ fn parent_pin_rejects_wrong_revision_view_cycles_and_overdepth() {
         .unwrap(),
         2
     );
+    for view in [ViewId::public(), crate::requests::fixtures::agent()] {
+        let mut same_view_parent = parent.clone();
+        same_view_parent.view = view.clone();
+        assert_eq!(
+            validate_request_stack_base(
+                &child.id,
+                &child.repo_id,
+                &view,
+                &child.base,
+                std::slice::from_ref(&same_view_parent),
+                Some(&revision)
+            )
+            .unwrap(),
+            2
+        );
+        assert!(
+            validate_request_stack_base(
+                &child.id,
+                &child.repo_id,
+                &child.view,
+                &child.base,
+                std::slice::from_ref(&same_view_parent),
+                Some(&revision)
+            )
+            .is_err()
+        );
+    }
     revision.id = "stale-revision".into();
     assert!(
         validate_request_stack_base(
@@ -218,6 +245,7 @@ fn containing_landing_preserves_child_evidence_and_separate_main_ancestor() {
         event_id: "retarget".into(),
         now_unix: child.updated_at_unix + 1,
         parent_contains_pin: true,
+        accepted_view_main_oid: None,
         contained_main_oid: Some("unproven-main".into()),
         contained_main_descends_from_ancestor: false,
     };
@@ -398,16 +426,23 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
     let request = parent();
     let mut public = request.clone();
     public.view = ViewId::public();
-    let unmarked = mark_request_integration_conflict(
+    let public_conflict = mark_request_integration_conflict(
         public.clone(),
         &public.head_oid,
         public.base_version,
         public.updated_at_unix + 1,
     )
     .unwrap();
-    assert_eq!(unmarked.request, public);
-    assert_eq!(unmarked.effects.stop_auto_merge, None);
-    assert!(!unmarked.effects.reactivate_attention);
+    assert_eq!(
+        public_conflict.request.stack_status,
+        RequestStackStatus::IntegrationConflict
+    );
+    assert_eq!(public_conflict.request.head_oid, public.head_oid);
+    assert_eq!(
+        public_conflict.effects.stop_auto_merge,
+        Some(crate::requests::RequestAutoMergeStopReason::MergeConflict)
+    );
+    assert!(public_conflict.effects.reactivate_attention);
     let original = revision(&request);
     let marked = mark_request_integration_conflict(
         request.clone(),
@@ -475,3 +510,129 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
 }
 
 mod base_selection;
+
+#[test]
+fn restricted_parent_landing_requires_current_view_main_and_preserves_saved_layer() {
+    for view in [ViewId::public(), crate::requests::fixtures::agent()] {
+        for parent_extended in [false, true] {
+            for (contained_main, monotonic, expected_status) in [
+                (Some("accepted-view-main"), true, RequestStackStatus::Main),
+                (
+                    Some("older-view-main"),
+                    true,
+                    RequestStackStatus::NeedsMainUpdate,
+                ),
+                (None, true, RequestStackStatus::NeedsMainUpdate),
+                (
+                    Some("accepted-view-main"),
+                    false,
+                    RequestStackStatus::NeedsMainUpdate,
+                ),
+            ] {
+                let mut parent = parent();
+                parent.view = view.clone();
+                let child = child(&parent);
+                let saved = revision(&child);
+                let original_context = RequestCheckContext::for_revision(&child, &saved).unwrap();
+                let landed_head = if parent_extended {
+                    "extended-parent"
+                } else {
+                    &parent.head_oid
+                }
+                .to_string();
+                parent.merged_at_unix = Some(parent.updated_at_unix);
+                parent.merged_head_oid = Some(landed_head.clone());
+                parent.merged_main_oid = Some("private-landed-main".into());
+                let input = RetargetRequestAfterParentMergeInput {
+                    parent_head_oid: landed_head,
+                    event_id: "retarget-restricted".into(),
+                    now_unix: child.updated_at_unix + 1,
+                    parent_contains_pin: true,
+                    accepted_view_main_oid: Some("accepted-view-main".into()),
+                    contained_main_oid: contained_main.map(str::to_string),
+                    contained_main_descends_from_ancestor: monotonic,
+                };
+                let result =
+                    retarget_request_after_parent_merge(child.clone(), &parent, input.clone())
+                        .unwrap();
+                assert_eq!(result.request.stack_status, expected_status);
+                assert_eq!(result.request.stack_depth, 1);
+                assert_eq!(
+                    result.request.base.review_base_oid(),
+                    child.base.review_base_oid()
+                );
+                assert_eq!(result.request.head_oid, child.head_oid);
+                assert_eq!(result.request.git_snapshot, child.git_snapshot);
+                assert_eq!(result.request.base_version, child.base_version + 1);
+                assert_eq!(result.request.activity_version, child.activity_version + 1);
+                assert_eq!(
+                    result.effects.preserve_auto_merge_intent,
+                    expected_status == RequestStackStatus::Main
+                );
+                assert!(result.effects.rebind_check_context);
+                let rebound = RequestCheckContext::for_revision(&result.request, &saved).unwrap();
+                assert_eq!(rebound.revision_id, saved.id);
+                assert_eq!(rebound.review_base_oid, original_context.review_base_oid);
+                assert_eq!(
+                    result.request.main_ancestor_oid,
+                    if monotonic {
+                        contained_main.unwrap_or(&child.main_ancestor_oid)
+                    } else {
+                        &child.main_ancestor_oid
+                    }
+                );
+                assert_eq!(
+                    retarget_request_after_parent_merge(
+                        child,
+                        &parent,
+                        RetargetRequestAfterParentMergeInput {
+                            accepted_view_main_oid: None,
+                            ..input
+                        }
+                    )
+                    .unwrap_err()
+                    .message,
+                    "restricted child retarget requires accepted view main"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn main_update_block_survives_unchanged_publication_and_clears_on_repaired_head() {
+    for view in [ViewId::public(), crate::requests::fixtures::agent()] {
+        let mut request = parent();
+        request.view = view;
+        request.stack_status = RequestStackStatus::NeedsMainUpdate;
+        let input = publication_input(&request);
+        let unchanged = record_request_revision(request.clone(), false, input.clone()).unwrap();
+        assert_eq!(
+            unchanged.request.stack_status,
+            RequestStackStatus::NeedsMainUpdate
+        );
+        let repaired = record_request_revision(
+            request.clone(),
+            false,
+            RecordRequestRevisionInput {
+                new_head_oid: "repaired-head".into(),
+                git_snapshot: source_blob("repaired-head"),
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: Some("accepted-view-main".into()),
+                    contained_main_descends_from_base: true,
+                },
+                ..input
+            },
+        )
+        .unwrap();
+        assert_eq!(repaired.request.stack_status, RequestStackStatus::Main);
+        assert_eq!(repaired.request.main_ancestor_oid, "accepted-view-main");
+        assert_eq!(
+            repaired.request.base.review_base_oid(),
+            "accepted-view-main"
+        );
+        assert_eq!(repaired.request.head_oid, "repaired-head");
+        assert_eq!(repaired.revision.new_head_oid, "repaired-head");
+    }
+}

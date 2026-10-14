@@ -370,7 +370,7 @@ fn request_readiness(
         can_delete_repo: true,
     };
     let viewer = crate::requests::RequestViewer::new(access, Some("maintainer"), false);
-    let views = crate::views::Views::builtin();
+    let views = crate::requests::fixtures::views_with_agent();
     request_auto_merge_readiness(crate::requests::evaluate_merge_gate(
         crate::requests::MergeGateInput::RequestMerge {
             repository_lifecycle: crate::repository::RepoLifecycleState::Ready,

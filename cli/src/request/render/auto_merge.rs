@@ -76,6 +76,7 @@ pub(super) fn stop_reason_label(reason: RequestAutoMergeStopReason) -> &'static 
         RequestAutoMergeStopReason::ParentRewritten => "the parent request was rewritten",
         RequestAutoMergeStopReason::ParentClosed => "the parent request was closed",
         RequestAutoMergeStopReason::AncestorBlocked => "an ancestor request is blocked",
+        RequestAutoMergeStopReason::NeedsMainUpdate => "request view main moved; restack onto main",
     }
 }
 
@@ -96,11 +97,7 @@ pub(super) fn activity_line(payload: &RequestEventPayload) -> String {
         ),
         RequestEventPayload::AutoMergeFulfilled {
             head_oid, main_oid, ..
-        } => format!(
-            "Fulfilled auto-merge · head {} · main {}",
-            short_oid(head_oid),
-            short_oid(main_oid)
-        ),
+        } => super::landed_activity_line("Fulfilled auto-merge", head_oid, main_oid.as_deref()),
         _ => unreachable!("only auto-merge activity is rendered here"),
     }
 }

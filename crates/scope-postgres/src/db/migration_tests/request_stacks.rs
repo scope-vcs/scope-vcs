@@ -98,6 +98,27 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
     )
     .await
     .unwrap();
+    for id in ["parent", "child"] {
+        db.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE scope_requests SET stack_status = 'needs_main_update' WHERE id = $1",
+            [id.into()],
+        ))
+        .await
+        .unwrap();
+        let status = db
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT stack_status FROM scope_requests WHERE id = $1",
+                [id.into()],
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<String>("", "stack_status")
+            .unwrap();
+        assert_eq!(status, "needs_main_update");
+    }
     for (sql, constraint) in [
         (
             "UPDATE scope_requests SET parent_head_oid = NULL WHERE id = 'child'",

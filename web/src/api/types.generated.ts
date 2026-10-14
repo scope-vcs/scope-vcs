@@ -510,7 +510,7 @@ author_user_id: string | null, author_role: RequestActorRole, view: ViewId, head
 
 export type RequestBase = { "kind": "main", review_base_oid: GitOid, } | { "kind": "request", request_id: string, revision_id: string, head_oid: GitOid, };
 
-export type RequestStackStatus = "main" | "waiting_for_parent" | "parent_extended" | "parent_rewritten" | "parent_closed" | "ancestor_blocked" | "integration_conflict";
+export type RequestStackStatus = "main" | "waiting_for_parent" | "parent_extended" | "parent_rewritten" | "parent_closed" | "ancestor_blocked" | "integration_conflict" | "needs_main_update";
 
 export type RequestStackNodeResponse = { id: string, name: string, title: string, state: RequestState, stack_status: RequestStackStatus, stack_depth: number, head_oid: GitOid, current_revision_id: string | null, };
 
@@ -554,7 +554,7 @@ export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
 export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
-export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "Ready" | "RepositoryNotReady" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError";
+export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "NeedsMainUpdate" | "Ready" | "RepositoryNotReady" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError";
 
 export type RequestMergeabilityResponse = { status: RequestMergeabilityStatus, current_main_oid: GitOid | null, request_head_oid: GitOid, reason: string | null, };
 
@@ -562,7 +562,7 @@ export type RequestCheckEvaluationState = "no-checks" | "awaiting-approval" | "s
 
 export type RequestAutoMergeIntentStatus = "Active" | "Cancelled" | "Stopped" | "Fulfilled";
 
-export type RequestAutoMergeStopReason = "RequestChanged" | "RequestClosed" | "AccessRevoked" | "ChecksFailed" | "ChecksConfigurationError" | "MergeConflict" | "RequestBranchMissing" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked";
+export type RequestAutoMergeStopReason = "RequestChanged" | "RequestClosed" | "AccessRevoked" | "ChecksFailed" | "ChecksConfigurationError" | "MergeConflict" | "RequestBranchMissing" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "NeedsMainUpdate";
 
 export type AuthorizeRequestAutoMergeRequest = { expected_revision_id: string, expected_head_oid: GitOid, };
 
@@ -624,7 +624,7 @@ export type RequestEventResponse = { id: string, position: number,
  */
 actor: RequestActorSummaryResponse | null, kind: RequestEventKind, payload: RequestEventPayload, created_at_unix: number, };
 
-export type RequestEventPayload = { "BaseRetargeted": { old_base: RequestBase, landed_head_oid: string, main_oid: string, } } | { "Started": { identity: RequestIdentityAuditFact, } } | { "Submitted": { head_oid: string, } } | { "RevisionPushed": { old_head_oid: string, new_head_oid: string, note: string | null, } } | { "Merged": { head_oid: string, main_oid: string, } } | { "Closed": { head_oid: string, } } | { "IdentityEdited": { before: RequestIdentityAuditFact, after: RequestIdentityAuditFact, } } | { "DiscussionResolved": { discussion_id: string, } } | { "DiscussionReopened": { discussion_id: string, } } | { "AutoMergeEnabled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeCancelled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeStopped": { intent_id: string, revision_id: string, head_oid: string, reason: RequestAutoMergeStopReason, } } | { "AutoMergeFulfilled": { intent_id: string, revision_id: string, head_oid: string, main_oid: string, } };
+export type RequestEventPayload = { "BaseRetargeted": { old_base: RequestBase, landed_head_oid: string, main_oid: string | null, } } | { "Started": { identity: RequestIdentityAuditFact, } } | { "Submitted": { head_oid: string, } } | { "RevisionPushed": { old_head_oid: string, new_head_oid: string, note: string | null, } } | { "Merged": { head_oid: string, main_oid: string | null, } } | { "Closed": { head_oid: string, } } | { "IdentityEdited": { before: RequestIdentityAuditFact, after: RequestIdentityAuditFact, } } | { "DiscussionResolved": { discussion_id: string, } } | { "DiscussionReopened": { discussion_id: string, } } | { "AutoMergeEnabled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeCancelled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeStopped": { intent_id: string, revision_id: string, head_oid: string, reason: RequestAutoMergeStopReason, } } | { "AutoMergeFulfilled": { intent_id: string, revision_id: string, head_oid: string, main_oid: string | null, } };
 
 export type RequestIdentityAuditFact = { title_sha256: string, title_byte_count: number, description_sha256: string, description_byte_count: number, };
 

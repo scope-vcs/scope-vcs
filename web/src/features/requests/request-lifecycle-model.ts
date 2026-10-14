@@ -11,7 +11,7 @@ export function canMergeRequest(request: RequestSummaryResponse) {
 export function requestMergeHeld(request: RequestSummaryResponse) {
   return request.permissions.can_merge &&
     (request.mergeability.status.startsWith('Checks') ||
-      ['WaitingForParent', 'ParentRewritten', 'ParentClosed', 'AncestorBlocked', 'IntegrationConflict'].includes(request.mergeability.status))
+      ['WaitingForParent', 'ParentRewritten', 'ParentClosed', 'AncestorBlocked', 'IntegrationConflict', 'NeedsMainUpdate'].includes(request.mergeability.status))
 }
 
 export function hasRequestLifecycleActions(request: RequestSummaryResponse) {

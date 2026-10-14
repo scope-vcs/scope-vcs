@@ -60,6 +60,7 @@ fn containing_main_lands_conflicted_child_after_parent_retarget_without_changing
             event_id: "retarget-child".into(),
             now_unix: 32,
             parent_contains_pin: true,
+            accepted_view_main_oid: None,
             contained_main_oid: Some(contained_child_head),
             contained_main_descends_from_ancestor: true,
         },

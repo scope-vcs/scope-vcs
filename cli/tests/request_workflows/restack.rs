@@ -1,4 +1,4 @@
-use super::stacks::{ContextResponse, stack_server_with_base};
+use super::stacks::{ContextResponse, require_view_transport, stack_server_with_base};
 use super::*;
 
 struct Layer {
@@ -13,7 +13,7 @@ struct Layer {
 }
 
 impl Layer {
-    fn new(conflict: bool, extension: bool, parent_open: bool) -> Self {
+    fn new(conflict: bool, extension: bool, parent_open: bool, view: &str) -> Self {
         let checkout = TempDir::new("restack-layer");
         create_repo_with_head(checkout.path());
         run_git(checkout.path(), ["config", "user.name", "Scope Test"]);
@@ -68,8 +68,10 @@ impl Layer {
             ContextResponse::None,
             Some(base),
             parent_open,
+            view,
         );
         let transport = BareRepoTransport::new(&server, checkout.path(), bare.path());
+        require_view_transport(&transport, &server, view);
         for (key, value) in [
             ("scopeRequestId", "req_child"),
             ("scopeRequestOwner", "owner"),
@@ -134,13 +136,13 @@ impl Layer {
 
 #[test]
 fn restack_replays_only_the_child_layer_and_leaves_publication_explicit() {
-    for (extension, onto, parent_open) in [
-        (false, None, true),
-        (true, None, true),
-        (false, Some("main"), false),
-        (false, Some("req_other"), true),
+    for (view, extension, onto, parent_open) in [
+        ("private", false, None, true),
+        ("public", true, None, true),
+        ("public", false, Some("main"), false),
+        ("agent", false, Some("req_other"), true),
     ] {
-        let layer = Layer::new(false, extension, parent_open);
+        let layer = Layer::new(false, extension, parent_open, view);
         run_git(
             layer.checkout.path(),
             ["config", "rebase.updateRefs", "true"],
@@ -199,7 +201,7 @@ fn restack_replays_only_the_child_layer_and_leaves_publication_explicit() {
 fn restack_conflict_can_continue_staged_resolutions_or_abort_to_the_backup() {
     for mode in ["continue", "abort", "manual_abort"] {
         let abort = mode != "continue";
-        let layer = Layer::new(true, false, true);
+        let layer = Layer::new(true, false, true, "public");
         let output = layer.command(&[]);
         assert_eq!(output.status.code(), Some(5), "{output:?}");
         let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
@@ -277,7 +279,7 @@ fn restack_conflict_can_continue_staged_resolutions_or_abort_to_the_backup() {
 #[test]
 fn restack_refuses_unsafe_initial_states_without_mutating_the_branch() {
     for mode in ["dirty", "operation", "merge", "worktree", "closed"] {
-        let layer = Layer::new(false, false, mode != "closed");
+        let layer = Layer::new(false, false, mode != "closed", "agent");
         let linked = TempDir::new("restack-other-worktree");
         match mode {
             "dirty" => {
@@ -343,7 +345,7 @@ fn restack_refuses_unsafe_initial_states_without_mutating_the_branch() {
 #[test]
 fn discarding_a_stale_selection_preserves_resolutions_and_allows_a_fresh_main_selection() {
     use std::os::unix::fs::PermissionsExt;
-    let layer = Layer::new(true, false, true);
+    let layer = Layer::new(true, false, true, "public");
     let conflict = layer.command(&["--onto", "main"]);
     assert_eq!(conflict.status.code(), Some(5), "{conflict:?}");
     fs::write(

@@ -55,13 +55,18 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
         json!({"AutoMergeStopped": {"intent_id": "ami_four", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "ParentRewritten"}}),
         json!({"AutoMergeStopped": {"intent_id": "ami_five", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "ParentClosed"}}),
         json!({"AutoMergeStopped": {"intent_id": "ami_six", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "AncestorBlocked"}}),
+        json!({"AutoMergeStopped": {"intent_id": "ami_seven", "revision_id": "rev_one", "head_oid": oid('b'), "reason": "NeedsMainUpdate"}}),
+        json!({"BaseRetargeted": {"old_base": {"kind":"request","request_id":"req_parent","revision_id":"rev_parent","head_oid":oid('a')}, "landed_head_oid": oid('b'), "main_oid": oid('c')}}),
+        json!({"BaseRetargeted": {"old_base": {"kind":"request","request_id":"req_parent","revision_id":"rev_parent","head_oid":oid('a')}, "landed_head_oid": oid('b'), "main_oid": null}}),
+        json!({"Merged": {"head_oid": oid('b'), "main_oid": null}}),
+        json!({"AutoMergeFulfilled": {"intent_id": "ami_eight", "revision_id": "rev_one", "head_oid": oid('b'), "main_oid": null}}),
     ];
     let activity: RequestActivityPageResponse = serde_json::from_value(json!({
         "events": payloads.into_iter().enumerate().rev().map(|(i, payload)| event(i as u64 + 1, payload)).collect::<Vec<_>>(),
-        "through_position": 15
+        "through_position": 20
     })).unwrap();
     let lines = request_activity_lines(&activity);
-    assert_eq!(lines.len(), 15);
+    assert_eq!(lines.len(), 20);
     for (line, label) in lines.iter().zip([
         "Started request",
         "Submitted",
@@ -78,6 +83,11 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
         "Stopped auto-merge",
         "Stopped auto-merge",
         "Stopped auto-merge",
+        "Stopped auto-merge",
+        "Parent landed",
+        "Parent landed",
+        "Merged",
+        "Fulfilled auto-merge",
     ]) {
         assert!(line.starts_with(label), "{line}");
         assert!(!line.chars().any(char::is_control), "{line:?}");
@@ -86,12 +96,18 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
     let main_oid = oid('c');
     assert!(lines[3].contains(short_oid(&main_oid)));
     assert!(lines[10].contains("CI failed"), "{}", lines[10]);
-    for (line, reason) in lines[12..].iter().zip([
+    for (line, reason) in lines[12..16].iter().zip([
         "the parent request was rewritten",
         "the parent request was closed",
         "an ancestor request is blocked",
+        "request view main moved; restack onto main",
     ]) {
         assert!(line.contains(reason), "{line}");
+    }
+    assert!(lines[16].contains(" · main ccccccc"), "{}", lines[16]);
+    for line in &lines[17..] {
+        assert!(line.contains(" · head bbbbbbb"), "{line}");
+        assert!(!line.contains(" · main"), "{line}");
     }
 }
 

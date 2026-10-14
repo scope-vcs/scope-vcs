@@ -30,7 +30,6 @@ import {
 } from '@/features/requests/request-changes-model'
 import { useRequestState } from '@/features/requests/request-state-context'
 import { requestParamsForRoute } from '@/features/requests/request-route-data'
-import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { parseRouteFilePathSearch } from '@/lib/route-file'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
@@ -62,7 +61,7 @@ const loadChangesPage = createServerFn({ method: 'GET' })
         })
       : null
     const discussionReferences: RequestChangesDiscussionReferences = {
-      commitKey: query?.key ?? null,
+      referenceKey: query?.key ?? null,
       page,
     }
     return { discussionReferences, revisions, viewerId: userId }
@@ -116,7 +115,6 @@ function RequestChangesRoute() {
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
   const live = useRepoLayout()
-  const views = useRepoViews()
   const { owner, repo, requestId } = params
   const requestParams = useMemo(
     () => requestParamsForRoute({ owner, repo, requestId }),
@@ -124,10 +122,9 @@ function RequestChangesRoute() {
   )
   const { userId, isLoaded } = useAuth()
   const scope = isLoaded ? repoResourceScope(live.repo, userId ?? null) : null
-  const allowRequestComparison = live.repo.access.view === views.full
   const query = useMemo(
-    () => requestChangesQuery({ comparison: search.comparison, commit: search.commit, revision: search.revision }, allowRequestComparison ? 'request' : 'push'),
-    [allowRequestComparison, search.comparison, search.commit, search.revision],
+    () => requestChangesQuery({ comparison: search.comparison, commit: search.commit, revision: search.revision }),
+    [search.comparison, search.commit, search.revision],
   )
   const identity = scope
     ? requestChangesSelectionIdentity(scope, requestId, query.revision_id, query.commit_oid, query.comparison)
@@ -182,9 +179,8 @@ function RequestChangesRoute() {
         ? (
             <RequestChangesWorkbench
               accessScope={scope}
-              allowRequestComparison={allowRequestComparison}
               view={live.repo.access.view}
-              initialDiscussionReferences={initial?.discussionReferences ?? { commitKey: null, page: null }}
+              initialDiscussionReferences={initial?.discussionReferences ?? { referenceKey: null, page: null }}
               loadDiff={loadDiffForView}
               loadDiscussions={loadDiscussionsForView}
               onSearchChange={(nextSearch) => {

@@ -6,7 +6,9 @@ use scope_domain::{
     history::FileChangeKind,
     policy::{Policy, ScopePath},
     repository::access::RepositoryAccess,
-    requests::{RequestCommitMembershipFacts, RequestCommitRange, RequestRevision},
+    requests::{
+        RequestCommitMembershipFacts, RequestCommitRange, RequestComparison, RequestRevision,
+    },
     views::{ViewId, Views},
 };
 use std::{collections::BTreeSet, path::Path as FsPath};
@@ -134,6 +136,37 @@ fn git_mode(mode: &str) -> Option<String> {
     (mode != "000000").then(|| mode.to_string())
 }
 
+pub(crate) fn request_comparison_base_oid(
+    raw_repo: &FsPath,
+    comparison: &scope_domain::requests::RequestComparison,
+) -> Result<Option<String>, ApiError> {
+    let identity = comparison.identity();
+    if identity.mode != scope_domain::requests::RequestComparisonMode::Request {
+        return Ok(identity.base_oid.clone());
+    }
+    let output = crate::git::command::run_git_output_bounded(
+        Some(raw_repo),
+        &[
+            "merge-base",
+            identity.base_oid.as_deref().expect("request base exists"),
+            &identity.head_oid,
+        ],
+        "resolving request comparison base",
+        130,
+    )?;
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(
+            "request comparison has no merge base",
+        ));
+    }
+    Ok(Some(
+        String::from_utf8(output.stdout)
+            .map_err(ApiError::bad_request)?
+            .trim()
+            .to_string(),
+    ))
+}
+
 pub(crate) fn commit_belongs_to_revision(
     raw_repo: &FsPath,
     revision: &RequestRevision,
@@ -213,4 +246,44 @@ pub(crate) fn request_commit_changes(
         )));
     }
     Ok(output.stdout)
+}
+pub(crate) fn request_revision_commit_oids(
+    raw_repo: &FsPath,
+    comparison: &RequestComparison,
+    limit: usize,
+) -> Result<Vec<String>, ApiError> {
+    let range = comparison.membership();
+    let exclusions = range
+        .excluded_ancestor_oids()
+        .iter()
+        .map(|oid| format!("^{oid}"))
+        .collect::<Vec<_>>();
+    let max_count = format!("--max-count={}", limit.saturating_add(1));
+    let max_output_bytes = limit.saturating_add(1).saturating_mul(41);
+    let mut args = vec![
+        "rev-list",
+        &max_count,
+        "--reverse",
+        "--topo-order",
+        range.head_oid(),
+    ];
+    args.extend(exclusions.iter().map(String::as_str));
+    let output = crate::git::command::run_git_output_bounded(
+        Some(raw_repo),
+        &args,
+        "reading request revision commits",
+        max_output_bytes,
+    )?;
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading request revision commits: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8(output.stdout)
+        .map_err(ApiError::bad_request)?
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(ToString::to_string)
+        .collect())
 }

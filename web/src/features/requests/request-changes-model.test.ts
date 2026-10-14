@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { discussion } from './request-discussion-test-fixtures'
 import {
-  discussionsForRequestCommit,
+  discussionsForRequestComparison,
   missingRequestCommitFileError,
   orderedRequestCommits,
   requestCommitForListId,
@@ -132,33 +132,45 @@ test('orders matching commit and revision discussions chronologically', () => {
     discussion('other', 6, { anchor: { revision_id: 'revision-1', revision_position: 1, commit_oid: 'commit-a', path: null } }),
   ]
   assert.deepEqual(
-    discussionsForRequestCommit(discussions, revisions[0], 'commit-b')
+    discussionsForRequestComparison(discussions, revisions[0], 'commit-b')
       .map(({ id }) => id),
     ['revision', 'later'],
+  )
+  assert.deepEqual(
+    discussionsForRequestComparison(discussions, revisions[0], null).map(({ id }) => id),
+    ['revision'],
   )
 })
 
 for (const view of ['public', 'restricted']) {
-  test(`${view} push changes retain visible commit files when aggregate inspection is absent`, () => {
-    const response: RequestRevisionListResponse = {
-      comparison: null,
-      has_earlier_revisions: false,
-      review_revision_id: 'revision-1',
-      revisions,
-    }
-    for (const search of [{}, { comparison: 'push' as const }, { comparison: 'request' as const }]) {
-      const model = requestChangesPresentation(response, search, view, 'repo', false)
+  test(`${view} request and push comparisons show only the selected child layer at its parent pin`, () => {
+    const child = revision('child-revision', 2, ['parent-commit', 'child-commit'])
+    child.base = { kind: 'request', request_id: 'parent', revision_id: 'parent-revision', head_oid: 'parent-commit' }
+    for (const mode of ['request', 'push'] as const) {
+      const response: RequestRevisionListResponse = {
+        comparison: {
+          revision_id: child.id,
+          mode,
+          base_oid: 'parent-commit',
+          head_oid: 'child-commit',
+          inspection: 'Complete',
+          files: child.commits[1].files,
+        },
+        has_earlier_revisions: false,
+        review_revision_id: child.id,
+        revisions: [child],
+      }
+      const model = requestChangesPresentation(response, { revision: child.id, comparison: mode }, view, 'repo')
       assert.equal(model.error, null)
-      assert.equal(model.mode, 'push')
-      assert.equal(model.diffMode, 'commit')
-      assert.equal(model.selectedCommitOid, 'commit-b')
-      assert.equal(model.selectedCommit?.message, 'Commit commit-b')
-      assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/commit-b.txt'])
-      assert.deepEqual(model.commits.map(({ logical_commit_id }) => logical_commit_id), ['commit-b', 'commit-a'])
+      assert.equal(model.mode, mode)
+      assert.equal(model.diffMode, mode)
+      assert.equal(model.selectedCommitOid, null)
+      assert.equal(model.selectedCommit?.logical_commit_id, 'child-commit')
+      assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/child-commit.txt'])
+      const unavailable = requestChangesPresentation({ ...response, comparison: null }, { comparison: mode }, view, 'repo')
+      assert.equal(unavailable.selectedCommit, null)
+      assert.match(unavailable.error ?? '', /could not be inspected/)
     }
-    const selected = requestChangesPresentation(response, { comparison: 'push', commit: 'commit-a' }, view, 'repo', false)
-    assert.equal(selected.selectedCommitOid, 'commit-a')
-    assert.deepEqual(selected.selectedCommit?.files.map(({ path }) => path), ['/commit-a.txt'])
   })
 }
 
@@ -182,7 +194,7 @@ test('private commit comparison uses inspected files while retaining the bounded
     review_revision_id: bounded.id,
     revisions: [bounded],
   }
-  const model = requestChangesPresentation(response, { comparison: 'commit', commit: commit.oid }, 'private', 'repo', true)
+  const model = requestChangesPresentation(response, { comparison: 'commit', commit: commit.oid }, 'private', 'repo')
   assert.equal(model.error, null)
   assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/commit-selected.txt'])
   assert.deepEqual(model.selectedCommitSummary?.files.map(({ path }) => path), ['commit-selected.txt'])
@@ -198,7 +210,7 @@ function revision(
   position: number,
   commits: string[],
   inspection: RequestRevisionListResponse['revisions'][number]['inspection'] = 'Complete',
-) {
+): RequestRevisionListResponse['revisions'][number] {
   return {
     base: { kind: 'main' as const, review_base_oid: 'base' },
     base_version: 1,

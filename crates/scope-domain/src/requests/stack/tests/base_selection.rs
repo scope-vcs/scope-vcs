@@ -105,6 +105,7 @@ fn selecting_a_different_parent_recovers_old_parent_blocks_without_rewriting_the
         RequestStackStatus::ParentRewritten,
         RequestStackStatus::AncestorBlocked,
         RequestStackStatus::IntegrationConflict,
+        RequestStackStatus::NeedsMainUpdate,
     ] {
         let mut blocked = original.clone();
         blocked.stack_status = status;
@@ -140,7 +141,7 @@ fn selecting_a_different_parent_recovers_old_parent_blocks_without_rewriting_the
 }
 
 #[test]
-fn explicit_parent_publication_requires_private_view_validated_depth_and_main_ancestry() {
+fn explicit_parent_publication_requires_validated_depth_and_main_ancestry() {
     let request = parent();
     let valid = RecordRequestRevisionInput {
         new_base: Some(selected_parent("selected")),
@@ -165,11 +166,11 @@ fn explicit_parent_publication_requires_private_view_validated_depth_and_main_an
     for view in [ViewId::public(), crate::requests::fixtures::agent()] {
         let mut restricted = request.clone();
         restricted.view = view;
+        let published = record_request_revision(restricted.clone(), false, valid.clone()).unwrap();
+        assert_eq!(published.request.view, restricted.view);
         assert_eq!(
-            record_request_revision(restricted, false, valid.clone())
-                .unwrap_err()
-                .message,
-            "base selection requires the private full view"
+            published.request.stack_status,
+            RequestStackStatus::WaitingForParent
         );
     }
     for contains_main in [None, Some("unrelated-main".into())] {

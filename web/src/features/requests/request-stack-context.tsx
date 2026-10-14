@@ -10,6 +10,7 @@ const STATUS_LABELS = {
   parent_closed: 'Parent closed',
   ancestor_blocked: 'Ancestor blocked',
   integration_conflict: 'Integration conflict',
+  needs_main_update: 'Update from main required',
 }
 
 export function RequestStackContext({ detail, params, childrenLoading = false, childrenError = null, onLoadChildren }: {

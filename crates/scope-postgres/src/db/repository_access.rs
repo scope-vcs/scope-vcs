@@ -32,6 +32,7 @@ struct AccessRow {
 pub struct RepositoryReadPolicy {
     pub context: RepositoryAccessContext,
     pub policy: scope_domain::policy::Policy,
+    pub repo_config: scope_domain::repo_config::RepoConfig,
 }
 
 impl RepositoryStore {
@@ -65,9 +66,13 @@ impl RepositoryStore {
         else {
             return Ok(None);
         };
-        let policy = load_policy(&tx, &context.record.id).await?;
+        let (policy, repo_config) = load_policy_config(&tx, &context.record.id).await?;
         tx.commit().await?;
-        Ok(Some(RepositoryReadPolicy { context, policy }))
+        Ok(Some(RepositoryReadPolicy {
+            context,
+            policy,
+            repo_config,
+        }))
     }
 
     pub(super) async fn begin_read_access_snapshot(
@@ -172,14 +177,25 @@ impl RepositoryStore {
         &self,
         context: &RepositoryAccessContext,
     ) -> Result<scope_domain::policy::Policy, PostgresError> {
+        Ok(self.repository_policy_config(context).await?.policy)
+    }
+
+    pub async fn repository_policy_config(
+        &self,
+        context: &RepositoryAccessContext,
+    ) -> Result<RepositoryReadPolicy, PostgresError> {
         let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let current = repository_access(&tx, &context.record.id, None)
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
         ensure_current_context(context, &current)?;
-        let policy = load_policy(&tx, &context.record.id).await?;
+        let (policy, repo_config) = load_policy_config(&tx, &context.record.id).await?;
         tx.commit().await?;
-        Ok(policy)
+        Ok(RepositoryReadPolicy {
+            context: context.clone(),
+            policy,
+            repo_config,
+        })
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_main_oid"))]
@@ -276,18 +292,30 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
     }))
 }
 
-async fn load_policy<C: ConnectionTrait>(
+async fn load_policy_config<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
-) -> Result<scope_domain::policy::Policy, PostgresError> {
-    let policy = entities::repository::Entity::find_by_id(repo_id)
+) -> Result<
+    (
+        scope_domain::policy::Policy,
+        scope_domain::repo_config::RepoConfig,
+    ),
+    PostgresError,
+> {
+    let (policy, config) = entities::repository::Entity::find_by_id(repo_id)
         .select_only()
-        .column(entities::repository::Column::Policy)
-        .into_tuple::<serde_json::Value>()
+        .columns([
+            entities::repository::Column::Policy,
+            entities::repository::Column::RepoConfig,
+        ])
+        .into_tuple::<(serde_json::Value, serde_json::Value)>()
         .one(conn)
         .await?
         .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-    serde_json::from_value(policy).map_err(PostgresError::internal)
+    Ok((
+        serde_json::from_value(policy).map_err(PostgresError::internal)?,
+        serde_json::from_value(config).map_err(PostgresError::internal)?,
+    ))
 }
 
 pub(super) async fn load_repo_record<C: ConnectionTrait>(

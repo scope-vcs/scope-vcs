@@ -25,9 +25,8 @@ export function retainPinnedRequestChanges(
 
 export function requestChangesQuery(
   search: { comparison?: RequestComparisonMode; commit?: string; revision?: string },
-  defaultComparison?: 'request' | 'push',
 ) {
-  const comparison = search.comparison ?? (search.commit ? 'commit' : defaultComparison)
+  const comparison = search.comparison ?? (search.commit ? 'commit' : 'request')
   return {
     comparison,
     commit_oid: comparison === 'commit' ? search.commit : undefined,

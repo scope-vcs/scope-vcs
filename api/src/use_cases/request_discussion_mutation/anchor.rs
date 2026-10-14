@@ -46,11 +46,12 @@ pub(super) async fn validate(
         })
         .transpose()?;
     if let Some(commit_oid) = commit_oid.as_deref() {
-        let policy = state
+        let repo = state
             .metadata
             .repositories()
-            .repository_policy(&context.repo)
+            .repository_policy_config(&context.repo)
             .await?;
+        let inspection_state = state.clone();
         let access = context.access.clone();
         let views = context.repo.views.clone();
         let commit_oid = commit_oid.to_string();
@@ -60,6 +61,13 @@ pub(super) async fn validate(
             &context.request,
             &revision,
             move |raw_repo, revision| {
+                let policy = crate::use_cases::request_inspection_policy::resolve_commit(
+                    &inspection_state,
+                    &repo,
+                    &access.view,
+                    raw_repo,
+                    &commit_oid,
+                )?;
                 visible_commit_paths(raw_repo, &policy, &views, access, revision, &commit_oid)
             },
         )

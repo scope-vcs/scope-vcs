@@ -23,6 +23,7 @@ wire_enum!(RequestAutoMergeStopReason => DomainRequestAutoMergeStopReason {
     ParentRewritten,
     ParentClosed,
     AncestorBlocked,
+    NeedsMainUpdate,
 });
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -45,6 +45,7 @@ const MERGEABILITY = {
   ParentClosed: { label: 'Parent closed', tone: 'warning' },
   AncestorBlocked: { label: 'Ancestor blocked', tone: 'warning' },
   IntegrationConflict: { label: 'Integration conflict', tone: 'danger' },
+  NeedsMainUpdate: { label: 'Update from main required', tone: 'warning' },
 } as const satisfies Record<
   RequestSummaryResponse['mergeability']['status'],
   { label: string; tone: BadgeVariant }
@@ -125,7 +126,8 @@ export function requestEventBody(event: RequestEventResponse) {
   if ('BaseRetargeted' in payload) return 'The parent landed. This request now targets main with its saved review comparison.'
   if ('Closed' in payload) return shortOid(payload.Closed.head_oid)
   if ('Merged' in payload) {
-    return `${shortOid(payload.Merged.head_oid)} → ${shortOid(payload.Merged.main_oid)}`
+    const { head_oid, main_oid } = payload.Merged
+    return main_oid ? `${shortOid(head_oid)} → ${shortOid(main_oid)}` : shortOid(head_oid)
   }
   if ('IdentityEdited' in payload) {
     return 'The request title or description was updated.'
@@ -148,7 +150,7 @@ export function requestEventBody(event: RequestEventResponse) {
   }
   if ('AutoMergeFulfilled' in payload) {
     const { head_oid, main_oid } = payload.AutoMergeFulfilled
-    return `${shortOid(head_oid)} → ${shortOid(main_oid)}`
+    return main_oid ? `${shortOid(head_oid)} → ${shortOid(main_oid)}` : shortOid(head_oid)
   }
   payload satisfies never
   return null

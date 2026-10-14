@@ -39,6 +39,15 @@ extensions, satisfied dependencies and parent landing preserve attention. New
 hard blockers such as parent rewrite, close or conflict can reactivate attention
 but must respect a child's future snooze deadline.
 
+Repeat the pinned workflow for public and custom views. Review only the child
+layer while checking the cumulative contribution. A parent's check approval must
+not approve its child. After exact parent landing, keep the child head and saved
+comparison, renew GitHub checks against private main, and reject late green
+results for the old check commit. After extension landing, a child missing the
+actual view main must report NeedsMainUpdate and recover through explicit restack
+and push. Anonymous readers can navigate submitted public children and page
+siblings without private main or check commit IDs in responses or activity.
+
 A released service must support the request-base Git headers before this workflow
 can exercise hosted publication. Record a missing deployed capability as a
 Scope dogfood limitation; it does not block GitHub delivery. Do not start Scope

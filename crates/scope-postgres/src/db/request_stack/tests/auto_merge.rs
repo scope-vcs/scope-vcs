@@ -115,6 +115,7 @@ async fn land(store: &MetadataStore, request: &Request, child: &Request, main: &
                     head_oid: request.head_oid.clone(),
                     stack_children: vec![RequestStackChildFacts {
                         contained_main_oid: Some(child.base.review_base_oid().into()),
+                        accepted_view_main_oid: None,
                         contained_main_descends_from_ancestor: true,
                         ..fact(&request.head_oid, child, true)
                     }],

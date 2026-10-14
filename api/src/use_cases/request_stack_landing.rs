@@ -19,6 +19,7 @@ pub(crate) async fn prepare_stack_landing(
     parent: &Request,
     staging_repo: &Path,
     main_oid: &str,
+    accepted_view_main_oid: Option<&str>,
 ) -> Result<Vec<RequestStackChildFacts>, ApiError> {
     let children = state
         .metadata
@@ -50,7 +51,8 @@ pub(crate) async fn prepare_stack_landing(
         let staging = staging_repo.to_path_buf();
         let child_head = child.head_oid.clone();
         let parent_head = parent.head_oid.clone();
-        let main = main_oid.to_string();
+        let main = accepted_view_main_oid.unwrap_or(main_oid).to_string();
+        let accepted_view_main_oid = accepted_view_main_oid.map(str::to_string);
         let review_base = child.base.review_base_oid().to_string();
         let ancestor = child.main_ancestor_oid.clone();
         let child_id = child.id.clone();
@@ -119,6 +121,7 @@ pub(crate) async fn prepare_stack_landing(
                     base_version,
                     parent_contains_pin,
                     contained_main_oid,
+                    accepted_view_main_oid,
                     contained_main_descends_from_ancestor,
                 })
             },

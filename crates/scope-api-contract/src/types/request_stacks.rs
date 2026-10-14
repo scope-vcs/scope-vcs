@@ -47,6 +47,7 @@ crate::wire::wire_enum!(
         ParentClosed,
         AncestorBlocked,
         IntegrationConflict,
+        NeedsMainUpdate,
     }
 );
 

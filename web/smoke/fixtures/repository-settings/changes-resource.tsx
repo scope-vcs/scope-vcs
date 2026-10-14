@@ -9,7 +9,7 @@ const originalViewer = 'user_clerk_original'
 const initial = {
   viewerId: originalViewer,
   revisions: { comparison: null, has_earlier_revisions: false, revisions: [], review_revision_id: 'server-seed' } satisfies RequestRevisionListResponse,
-  discussionReferences: { commitKey: null, page: null },
+  discussionReferences: { referenceKey: null, page: null },
 }
 
 export function ChangesResourceFixture() {

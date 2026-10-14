@@ -24,11 +24,20 @@ fn child_revision(request: &Request) -> RequestRevision {
 }
 
 #[test]
-fn private_child_intent_waits_for_parent_with_green_or_undecided_checks() {
-    for status in [
-        RequestStackStatus::WaitingForParent,
-        RequestStackStatus::ParentExtended,
-    ] {
+fn same_view_child_intent_waits_for_parent_with_green_or_undecided_checks() {
+    for (view, status) in [
+        ViewId::private(),
+        ViewId::public(),
+        crate::requests::fixtures::agent(),
+    ]
+    .into_iter()
+    .flat_map(|view| {
+        [
+            RequestStackStatus::WaitingForParent,
+            RequestStackStatus::ParentExtended,
+        ]
+        .map(|status| (view.clone(), status))
+    }) {
         for checks in [
             RequestChecksOutcome::Clear,
             RequestChecksOutcome::NotEvaluated,
@@ -36,6 +45,7 @@ fn private_child_intent_waits_for_parent_with_green_or_undecided_checks() {
             RequestChecksOutcome::Pending,
         ] {
             let mut request = child();
+            request.view = view.clone();
             request.stack_status = status;
             let saved = child_revision(&request);
             let readiness = request_readiness(&request, checks);
@@ -133,6 +143,10 @@ fn dependency_blocks_stop_the_child_with_the_owned_reason_even_with_failed_check
             RequestStackStatus::IntegrationConflict,
             RequestAutoMergeStopReason::MergeConflict,
         ),
+        (
+            RequestStackStatus::NeedsMainUpdate,
+            RequestAutoMergeStopReason::NeedsMainUpdate,
+        ),
     ] {
         let mut request = child();
         request.stack_status = status;
@@ -146,7 +160,7 @@ fn dependency_blocks_stop_the_child_with_the_owned_reason_even_with_failed_check
 }
 
 #[test]
-fn restricted_child_cannot_enable_private_stack_intent() {
+fn restricted_child_requires_an_authorized_maintainer_for_stack_intent() {
     for view in [ViewId::public(), crate::requests::fixtures::agent()] {
         let mut request = child();
         request.view = view;
@@ -158,7 +172,7 @@ fn restricted_child_cannot_enable_private_stack_intent() {
             Some(&saved),
             None,
             readiness,
-            true
+            false
         ));
         assert_eq!(
             authorize_request_auto_merge(
@@ -167,6 +181,7 @@ fn restricted_child_cannot_enable_private_stack_intent() {
                 None,
                 AuthorizeRequestAutoMergeInput {
                     readiness,
+                    actor_can_merge: false,
                     ..authorize_input()
                 }
             )

@@ -18,7 +18,7 @@ use crate::{
     use_cases::{
         request_revision_inspection::{
             InspectedRequestChange, commit_belongs_to_revision, inspect_request_changes,
-            request_commit_changes,
+            request_commit_changes, request_revision_commit_oids,
         },
         scope_path_input::normalized_scope_path,
     },
@@ -53,7 +53,6 @@ use inspection::{
 const MAX_LISTED_REQUEST_REVISIONS: usize = 50;
 const MAX_LISTED_COMMITS_PER_REVISION: usize = 100;
 const MAX_LISTED_REQUEST_COMMITS: usize = 100;
-const MAX_LISTED_REQUEST_FILES: usize = 10_000;
 const MAX_IMPORTED_REQUEST_REVISIONS: usize = 5;
 const MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -87,11 +86,7 @@ pub(crate) async fn list_request_revisions(
             "selecting a request commit requires a revision",
         ));
     }
-    let mode = comparison::selected_mode(
-        input.comparison,
-        input.commit.is_some(),
-        access.view.is_private(),
-    )?;
+    let mode = comparison::selected_mode(input.comparison, input.commit.is_some())?;
     let revision_window = state
         .metadata
         .requests()
@@ -133,40 +128,83 @@ pub(crate) async fn list_request_revisions(
         let commit_limit = work_budget.claim_revision(revision.git_snapshot.size_bytes);
         let (commits, inspection) = if let Some(commit_limit) = commit_limit {
             let repo_for_inspection = repo.clone();
+            let inspection_state = state.clone();
             let selected_commit = (input.revision.as_deref() == Some(revision.id.as_str()))
                 .then(|| selected_commit.clone())
                 .flatten();
             let file_limit = work_budget.remaining_files;
             let inspection_access = access.clone();
-            let selected_comparison =
-                Some(index) == selected_revision_index && access.view.is_private();
+            let selected_comparison = Some(index) == selected_revision_index;
             let inspected = with_request_revision_store_repo(
                 &state,
                 &repo.context.incarnation(),
                 &request,
                 revision,
                 move |raw_repo, revision| {
-                    let comparison = selected_comparison
-                        .then(|| {
-                            comparison::inspect_comparison(
-                                raw_repo,
-                                &repo_for_inspection,
-                                &inspection_access,
-                                revision,
-                                mode,
-                                selected_commit.as_deref(),
-                                comparison::ComparisonFileSelection {
-                                    limit: file_limit,
-                                    path: None,
-                                },
-                            )
-                        })
-                        .transpose()?;
+                    let comparison = if selected_comparison {
+                        let selected = comparison::resolve_comparison(
+                            raw_repo,
+                            revision,
+                            &inspection_access,
+                            mode,
+                            selected_commit.as_deref(),
+                        )?;
+                        match crate::use_cases::request_inspection_policy::resolve_comparison(
+                            &inspection_state,
+                            &repo_for_inspection,
+                            &inspection_access.view,
+                            raw_repo,
+                            &selected,
+                        )? {
+                            Some(policy) => {
+                                let mut comparison_repo = (*repo_for_inspection).clone();
+                                comparison_repo.policy = policy;
+                                Some(comparison::inspect_comparison(
+                                    raw_repo,
+                                    &comparison_repo,
+                                    &inspection_access,
+                                    revision,
+                                    mode,
+                                    selected_commit.as_deref(),
+                                    comparison::ComparisonFileSelection {
+                                        limit: file_limit,
+                                        path: None,
+                                    },
+                                )?)
+                            }
+                            None => Some(comparison::unavailable_comparison(revision, mode)),
+                        }
+                    } else {
+                        None
+                    };
+                    let Some(policy) =
+                        crate::use_cases::request_inspection_policy::resolve_revision(
+                            &inspection_state,
+                            &repo_for_inspection,
+                            &inspection_access.view,
+                            raw_repo,
+                            revision,
+                            selected_commit.as_deref(),
+                            commit_limit,
+                        )?
+                    else {
+                        return Ok((
+                            InspectedRequestCommits {
+                                visible: Vec::new(),
+                                inspected: 0,
+                                files_listed: 0,
+                                inspection: RequestRevisionInspectionState::Unavailable,
+                            },
+                            comparison,
+                        ));
+                    };
+                    let mut revision_repo = (*repo_for_inspection).clone();
+                    revision_repo.policy = policy;
                     let remaining_files = file_limit
                         .saturating_sub(comparison.as_ref().map_or(0, |value| value.files.len()));
                     let commits = request_revision_commits(
                         raw_repo,
-                        &repo_for_inspection,
+                        &revision_repo,
                         inspection_access,
                         revision,
                         selected_commit.as_deref(),
@@ -190,7 +228,7 @@ pub(crate) async fn list_request_revisions(
             );
             (inspected.visible, inspected.inspection)
         } else {
-            if Some(index) == selected_revision_index && access.view.is_private() {
+            if Some(index) == selected_revision_index {
                 comparison_response = Some(comparison::unavailable_comparison(revision, mode));
             }
             (Vec::new(), RequestRevisionInspectionState::Unavailable)
@@ -245,7 +283,8 @@ impl RequestRevisionListWorkBudget {
     fn new() -> Self {
         Self {
             remaining_commits: MAX_LISTED_REQUEST_COMMITS,
-            remaining_files: MAX_LISTED_REQUEST_FILES,
+            remaining_files:
+                crate::use_cases::request_inspection_policy::MAX_REQUEST_INSPECTION_PATHS,
             remaining_revisions: MAX_IMPORTED_REQUEST_REVISIONS,
             remaining_snapshot_bytes: MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES,
         }
@@ -304,15 +343,23 @@ pub(crate) async fn get_request_revision_commit_file_diff(
     let path = normalized_path(&input.path)?;
     let repo_for_inspection = repo.clone();
     let path_for_inspection = path.clone();
+    let inspection_state = state.clone();
     let (file, old_content, new_content) = with_request_revision_store_repo(
         &state,
         &repo.context.incarnation(),
         &request,
         &revision,
         move |raw_repo, revision| {
+            let policy = crate::use_cases::request_inspection_policy::resolve_commit(
+                &inspection_state,
+                &repo_for_inspection,
+                &access.view,
+                raw_repo,
+                &commit_oid,
+            )?;
             let inspected = request_revision_commit_files(
                 raw_repo,
-                &repo_for_inspection.policy,
+                &policy,
                 &repo_for_inspection.context.views,
                 access,
                 revision,
@@ -453,47 +500,6 @@ struct InspectedRequestCommits {
     inspected: usize,
     files_listed: usize,
     inspection: RequestRevisionInspectionState,
-}
-
-fn request_revision_commit_oids(
-    raw_repo: &FsPath,
-    comparison: &RequestComparison,
-    limit: usize,
-) -> Result<Vec<String>, ApiError> {
-    let range = comparison.membership();
-    let exclusions = range
-        .excluded_ancestor_oids()
-        .iter()
-        .map(|oid| format!("^{oid}"))
-        .collect::<Vec<_>>();
-    let max_count = format!("--max-count={}", limit.saturating_add(1));
-    let max_output_bytes = limit.saturating_add(1).saturating_mul(41);
-    let mut args = vec![
-        "rev-list",
-        &max_count,
-        "--reverse",
-        "--topo-order",
-        range.head_oid(),
-    ];
-    args.extend(exclusions.iter().map(String::as_str));
-    let output = run_git_output_bounded(
-        Some(raw_repo),
-        &args,
-        "reading request revision commits",
-        max_output_bytes,
-    )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading request revision commits: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    Ok(String::from_utf8(output.stdout)
-        .map_err(ApiError::bad_request)?
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(ToString::to_string)
-        .collect())
 }
 
 fn request_file_response(file: InspectedRequestChange) -> CommitFileResponse {

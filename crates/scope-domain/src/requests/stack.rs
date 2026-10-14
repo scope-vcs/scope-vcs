@@ -9,9 +9,21 @@ use std::collections::BTreeSet;
 pub const REQUEST_STACK_MAX_ANCESTORS: u32 = 32;
 pub const REQUEST_STACK_MAX_DEPTH: u32 = REQUEST_STACK_MAX_ANCESTORS + 1;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RequestStackStatus {
+macro_rules! request_stack_statuses {
+    ($($status:ident),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        pub enum RequestStackStatus {
+            $($status),+
+        }
+
+        impl RequestStackStatus {
+            pub const ALL: &'static [Self] = &[$(Self::$status),+];
+        }
+    };
+}
+
+request_stack_statuses! {
     Main,
     WaitingForParent,
     ParentExtended,
@@ -19,6 +31,7 @@ pub enum RequestStackStatus {
     ParentClosed,
     AncestorBlocked,
     IntegrationConflict,
+    NeedsMainUpdate,
 }
 
 impl RequestStackStatus {
@@ -34,6 +47,7 @@ impl RequestStackStatus {
             Self::ParentClosed => Some(RequestAutoMergeStopReason::ParentClosed),
             Self::AncestorBlocked => Some(RequestAutoMergeStopReason::AncestorBlocked),
             Self::IntegrationConflict => Some(RequestAutoMergeStopReason::MergeConflict),
+            Self::NeedsMainUpdate => Some(RequestAutoMergeStopReason::NeedsMainUpdate),
         }
     }
 
@@ -45,6 +59,7 @@ impl RequestStackStatus {
             Self::ParentClosed => Some("parent request is closed"),
             Self::AncestorBlocked => Some("an ancestor request is blocked"),
             Self::IntegrationConflict => Some("request integration conflicts with main"),
+            Self::NeedsMainUpdate => Some("request must contain the latest view main"),
         }
     }
 }
@@ -68,11 +83,6 @@ pub fn validate_request_stack_base(
         }
         return Ok(1);
     };
-    if !view.is_private() {
-        return Err(DomainError::forbidden(
-            "stacks require the private full view",
-        ));
-    }
     if ancestors.is_empty() || ancestors.len() > REQUEST_STACK_MAX_ANCESTORS as usize {
         return Err(DomainError::conflict(
             "request stack requires a complete ancestry of at most 32 parents",
@@ -117,16 +127,10 @@ pub fn validate_request_stack_base(
 }
 
 pub(super) fn validate_request_base_selection(
-    request: &Request,
     base: &RequestBase,
     stack_depth: Option<u32>,
     git_facts: &super::RequestRevisionGitFacts,
 ) -> Result<u32, DomainError> {
-    if !request.view.is_private() {
-        return Err(DomainError::forbidden(
-            "base selection requires the private full view",
-        ));
-    }
     match base {
         RequestBase::Request { .. } => {
             let depth = stack_depth
@@ -229,15 +233,6 @@ pub fn mark_request_integration_conflict(
     {
         return Err(DomainError::conflict("request integration context changed"));
     }
-    if !request.view.is_private() {
-        return Ok(RequestStackRefreshMutation {
-            request,
-            effects: RequestStackRefreshEffects {
-                stop_auto_merge: None,
-                reactivate_attention: false,
-            },
-        });
-    }
     let changed = request.stack_status != RequestStackStatus::IntegrationConflict;
     request.stack_status = RequestStackStatus::IntegrationConflict;
     request.updated_at_unix = request.updated_at_unix.max(now_unix);
@@ -309,6 +304,7 @@ pub struct RetargetRequestAfterParentMergeInput {
     pub now_unix: u64,
     pub parent_contains_pin: bool,
     pub contained_main_oid: Option<String>,
+    pub accepted_view_main_oid: Option<String>,
     pub contained_main_descends_from_ancestor: bool,
 }
 
@@ -351,6 +347,16 @@ pub fn retarget_request_after_parent_merge(
         ));
     }
     super::validate_required("retarget event id", &input.event_id)?;
+    let needs_main_update = if child.view.is_private() {
+        false
+    } else {
+        let accepted_view_main_oid = input.accepted_view_main_oid.as_deref().ok_or_else(|| {
+            DomainError::conflict("restricted child retarget requires accepted view main")
+        })?;
+        super::validate_required("accepted view main oid", accepted_view_main_oid)?;
+        input.contained_main_oid.as_deref() != Some(accepted_view_main_oid)
+            || !input.contained_main_descends_from_ancestor
+    };
     let landed_head_oid = parent
         .merged_head_oid
         .clone()
@@ -367,7 +373,9 @@ pub fn retarget_request_after_parent_merge(
         .base_version
         .checked_add(1)
         .ok_or_else(|| DomainError::conflict("request base version overflow"))?;
-    if child.stack_status != RequestStackStatus::IntegrationConflict {
+    if needs_main_update {
+        child.stack_status = RequestStackStatus::NeedsMainUpdate;
+    } else if child.stack_status != RequestStackStatus::IntegrationConflict {
         child.stack_status = RequestStackStatus::Main;
     }
     child.stack_depth = 1;
@@ -397,7 +405,7 @@ pub fn retarget_request_after_parent_merge(
         event,
         effects: RequestRetargetEffects {
             rebind_check_context: true,
-            preserve_auto_merge_intent: true,
+            preserve_auto_merge_intent: !needs_main_update,
         },
     })
 }

@@ -123,6 +123,10 @@ fn clear_checks_cannot_authorize_a_child_before_containing_parent_landing() {
             RequestStackStatus::IntegrationConflict,
             RequestMergeabilityStatus::IntegrationConflict,
         ),
+        (
+            RequestStackStatus::NeedsMainUpdate,
+            RequestMergeabilityStatus::NeedsMainUpdate,
+        ),
     ] {
         request.stack_status = stack_status;
         let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {

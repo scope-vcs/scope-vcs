@@ -7,7 +7,6 @@ use crate::{
     },
 };
 use scope_domain::{
-    policy::Policy,
     repository::{
         RepositoryIncarnation,
         access::{RepositoryAccess, RepositoryAccessContext},
@@ -30,7 +29,12 @@ pub(crate) async fn visible_commits<'a>(
     if repo.access.view == *repo.views.full() {
         return flatten(commits_by_revision);
     }
-    let policy = match state.metadata.repositories().repository_policy(repo).await {
+    let policy = match state
+        .metadata
+        .repositories()
+        .repository_policy_config(repo)
+        .await
+    {
         Ok(policy) => policy,
         Err(error) => {
             tracing::warn!(
@@ -101,7 +105,7 @@ fn flatten(commits_by_revision: BTreeMap<String, BTreeSet<String>>) -> BTreeSet<
 }
 
 struct RevisionReader {
-    policy: Policy,
+    policy: scope_postgres::db::RepositoryReadPolicy,
     views: Views,
     access: RepositoryAccess,
 }
@@ -127,21 +131,40 @@ async fn visible_commits_in_revision(
         views,
         access,
     } = reader;
+    let inspection_state = state.clone();
     with_request_revision_store_repo(
         state,
         incarnation,
         request,
         &revision,
         move |raw_repo, revision| {
-            let mut visible = BTreeSet::new();
-            for commit_oid in &commit_oids {
-                if !commit_belongs_to_revision(raw_repo, revision, commit_oid)? {
-                    continue;
+            let mut valid_commits = Vec::new();
+            for commit_oid in commit_oids {
+                if commit_belongs_to_revision(raw_repo, revision, &commit_oid)? {
+                    valid_commits.push(commit_oid);
                 }
-                let (_, hidden) =
-                    request_commit_visible_paths(raw_repo, &policy, &views, &access, commit_oid)?;
+            }
+            if valid_commits.is_empty() {
+                return Ok(BTreeSet::new());
+            }
+            let resolved = crate::use_cases::request_inspection_policy::resolve_commits(
+                &inspection_state,
+                &policy,
+                &access.view,
+                raw_repo,
+                &valid_commits,
+            )?;
+            let mut visible = BTreeSet::new();
+            for commit_oid in valid_commits {
+                let (_, hidden) = request_commit_visible_paths(
+                    raw_repo,
+                    &resolved,
+                    &views,
+                    &access,
+                    &commit_oid,
+                )?;
                 if !hidden {
-                    visible.insert(commit_oid.clone());
+                    visible.insert(commit_oid);
                 }
             }
             Ok(visible)

@@ -6,6 +6,10 @@ use super::git_request_refs::github_checks::{REQUIRED_CHECK, checks, connect_git
 use super::*;
 use scope_domain::projection::LogicalCommitOrigin;
 
+mod privacy;
+mod review;
+mod stacks;
+
 pub(super) struct AgentCheckout {
     pub(super) path: TempGitRepo,
     remote: String,
@@ -164,6 +168,7 @@ async fn an_agent_request_merge_keeps_its_commits_only_in_the_agent_view() {
         String::from_utf8_lossy(&pushed.stderr)
     );
     submit_request(router(state.clone()), &request_id, &member_bearer()).await;
+    let mut events = privacy::merged_event_stream(&state).await;
 
     let merged = api_request(
         router(state.clone()),
@@ -177,6 +182,18 @@ async fn an_agent_request_merge_keeps_its_commits_only_in_the_agent_view() {
     assert_eq!(merged["request"]["state"], "Merged");
 
     let repo = stored_repo(&state).await;
+    let canonical_main = repo.git_head.as_ref().unwrap().head_oid.clone();
+    assert_ne!(canonical_main, native_head);
+    privacy::assert_readable_without_private_oids(
+        &state,
+        &request_id,
+        &native_head,
+        &[&canonical_main],
+        "done",
+    )
+    .await;
+    privacy::assert_merged_event(&mut events, &canonical_main).await;
+    assert_eq!(merged["request"]["merged_main_oid"], canonical_main);
     match &repo.graph.commits.last().unwrap().origin {
         LogicalCommitOrigin::RequestMerge {
             view: origin_view,
@@ -308,6 +325,14 @@ async fn an_agent_request_reaches_github_on_a_canonical_check_commit_only_after_
     assert_eq!(owner_view["can_approve"], true);
     let approved = expect_json(approve(bearer_header()).await, StatusCode::OK).await;
     assert_eq!(approved["state"], "started");
+    privacy::assert_readable_without_private_oids(
+        &state,
+        &request_id,
+        &head,
+        &[&canonical_main, &evaluation.tested_oid],
+        "active",
+    )
+    .await;
 
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     assert_eq!(

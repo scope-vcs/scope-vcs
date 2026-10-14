@@ -216,23 +216,23 @@ pub(super) fn diff_request(
     }
     let (context, request_id, _) = load_exact_request(git_repo, api, args.target)?;
     let target = api_target(&context, &request_id);
+    let comparison_mode = args.comparison.unwrap_or(if args.commit.is_some() {
+        args::ComparisonArg::Commit
+    } else {
+        args::ComparisonArg::Request
+    });
     let revisions = request_revisions(
         api,
         target,
         args.revision.as_deref(),
         args.commit.as_deref(),
-        args.comparison.map(args::ComparisonArg::wire),
+        Some(comparison_mode.wire()),
     )?;
     let comparison_mode = revisions
         .comparison
         .as_ref()
         .map(|comparison| args::ComparisonArg::from(comparison.mode))
-        .or(args.comparison)
-        .unwrap_or(if args.commit.is_some() {
-            args::ComparisonArg::Commit
-        } else {
-            args::ComparisonArg::Push
-        });
+        .unwrap_or(comparison_mode);
     let selected = revisions.review_revision_id.as_deref().and_then(|id| {
         revisions
             .revisions

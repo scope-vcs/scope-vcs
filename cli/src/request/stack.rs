@@ -22,13 +22,8 @@ pub(super) fn current_parent(
     if parent.state != RequestState::Open {
         return Err(crate::error::CliError::usage("the parent request must be Open").into());
     }
-    if scope_domain::views::ViewId::from(parent.view.clone()) != *context.views.full()
-        || view.is_some_and(|view| view != &parent.view)
-    {
-        return Err(crate::error::CliError::usage(
-            "stacked requests require the same private full view",
-        )
-        .into());
+    if view.is_some_and(|view| view != &parent.view) {
+        return Err(crate::error::CliError::usage("stacked requests require the same view").into());
     }
     let revision_id =
         crate::api::request_revisions(api, api_target(context, &id), None, None, None)?
@@ -342,12 +337,6 @@ pub(super) fn select_base(
     selector: &str,
     revision: Option<&str>,
 ) -> anyhow::Result<SelectedBase> {
-    if scope_domain::views::ViewId::from(request.view.clone()) != *context.views.full() {
-        return Err(crate::error::CliError::usage(
-            "explicit base publication requires the private full view",
-        )
-        .into());
-    }
     if selector == "main" {
         let head = refresh_main_projection(git_repo, &context.target, &request.view, api.token)?;
         return Ok(SelectedBase {

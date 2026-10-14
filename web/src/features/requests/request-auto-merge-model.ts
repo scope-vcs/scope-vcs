@@ -18,6 +18,7 @@ const reasons: Record<RequestAutoMergeStopReason, string> = {
   ParentRewritten: 'the parent request was rewritten',
   ParentClosed: 'the parent request was closed',
   AncestorBlocked: 'an ancestor request is blocked',
+  NeedsMainUpdate: 'the request must contain the latest view main',
 }
 
 export const autoMergeStopReasonText = (reason: RequestAutoMergeStopReason) => reasons[reason] ?? 'auto-merge stopped'

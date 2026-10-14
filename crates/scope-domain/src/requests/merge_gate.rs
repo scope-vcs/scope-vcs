@@ -29,6 +29,7 @@ pub enum RequestMergeabilityStatus {
     ParentClosed,
     AncestorBlocked,
     IntegrationConflict,
+    NeedsMainUpdate,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -223,6 +224,7 @@ fn request_stack_mergeability(status: super::RequestStackStatus) -> Option<Reque
         super::RequestStackStatus::ParentRewritten => RequestMergeabilityStatus::ParentRewritten,
         super::RequestStackStatus::ParentClosed => RequestMergeabilityStatus::ParentClosed,
         super::RequestStackStatus::AncestorBlocked => RequestMergeabilityStatus::AncestorBlocked,
+        super::RequestStackStatus::NeedsMainUpdate => RequestMergeabilityStatus::NeedsMainUpdate,
         super::RequestStackStatus::IntegrationConflict => {
             RequestMergeabilityStatus::IntegrationConflict
         }

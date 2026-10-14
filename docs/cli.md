@@ -108,7 +108,8 @@ scope request merge --request fix-parser --yes
 scope request merge --request fix-parser --auto --yes
 ```
 
-Private maintainers can create a child of an Open request in the same full view:
+A request can depend on an Open request in the same exact view. Public contributors
+and maintainers can create children in a view they can read:
 
 ```sh
 scope request start parser-ui --base parser-core
@@ -121,10 +122,8 @@ branch there. Adoption keeps the current branch and upstream and requires that
 branch to contain the selected parent head. Checkout keeps each child's own
 request branch and upstream; parent objects use `refs/scope/parents/`.
 
-`scope request diff` lets the server select the comparison. Private requests
-default to the complete layer between the saved parent pin and the child's head;
-public and restricted views retain visible push comparisons until aggregate
-review is available for those views. Use `--comparison push` for one push or
+`scope request diff` defaults to the complete layer between the saved review base
+and the child's head in every view. Use `--comparison push` for one push or
 `--comparison commit --revision <revision-id> --commit <full-oid>` for one commit.
 Show, status and push report the named ancestor path, saved review pin, current
 parent revision and visible child names. The saved pin stays the review base
@@ -135,6 +134,14 @@ out that cursor. Inspect a visible child with `request show --request <name>`.
 Unavailable dependencies have an opaque label without a parent name or link.
 
 Depth describes the request's ancestry, with a main-based root at depth 1.
+Public and custom-view stacks keep the same pinned layer diff. Their GitHub
+check commit includes the cumulative visible contribution merged onto private
+main. Each child's checks require its own approval. Parent landing renews that
+check commit without approving new child content. If the actual view main now
+contains commits missing from the child, the child reports NeedsMainUpdate;
+run `scope request restack --onto main`, inspect the replay and push explicitly.
+Canonical private main and check commit IDs remain hidden from restricted readers.
+
 Forks can share a depth; it is not a position in a linear stack. A child waits for
 its parent to land. An extension that still contains the saved pin is informational:
 ordinary pushes retain that pin and the child keeps its existing review and CI.
@@ -220,7 +227,7 @@ scope request push --base main
 ```
 
 `--base-revision` selects the same parent's current saved revision. `--base`
-selects an Open request in the same private full view or current main. These
+selects an Open request in the same exact view or current main. These
 options are mutually exclusive. A selection supplied after a native restack
 must agree with its retained selection. Ordinary pushes without a selection
 retain their parent pin. Main-based requests continue advancing their review

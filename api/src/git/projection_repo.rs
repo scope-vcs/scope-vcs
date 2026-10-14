@@ -26,7 +26,9 @@ use std::{
 };
 
 mod index;
+mod preflight;
 use index::ProjectionIndex;
+pub(crate) use preflight::verify_and_restore_projection;
 
 const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-labels-v4-head-oid-alternates";
 static PROJECTION_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
@@ -493,37 +495,6 @@ pub(crate) fn cached_projection_repo(
     }
     let repo = state.repository_engine.lease_derived(path)?;
     Ok(projection_cache_is_ready(&repo).then_some(repo))
-}
-
-pub(crate) fn verify_projection_materialization(
-    state: &AppState,
-    projection: &Projection,
-    native_source_repo: &FsPath,
-) -> Result<(), ApiError> {
-    let cache_root = state.repository_engine.cache_root().to_path_buf();
-    let attempt = PROJECTION_CACHE_ATTEMPT.fetch_add(1, Ordering::Relaxed);
-    let verification_root = cache_root.join(format!(
-        ".projection-preflight.{}.{}",
-        std::process::id(),
-        attempt
-    ));
-    fs::create_dir_all(&verification_root).map_err(ApiError::internal)?;
-    let verification = projection_bare_repo_with_loader(
-        &verification_root,
-        None,
-        &[],
-        projection,
-        Some(native_source_repo),
-        None,
-        |blob| source_content_bytes_from_repo(state, blob, Some(native_source_repo)),
-    )
-    .map(|_| ());
-    let cleanup = fs::remove_dir_all(&verification_root).map_err(ApiError::internal);
-    match (verification, cleanup) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(error), _) => Err(error),
-        (Ok(()), Err(error)) => Err(error),
-    }
 }
 
 fn projection_requires_raw_source(projection: &Projection) -> bool {

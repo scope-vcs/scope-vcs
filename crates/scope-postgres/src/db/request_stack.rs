@@ -3,19 +3,20 @@ use super::{
     request_auto_merge::{
         automatic_event_id, lock_active_intent_for_request, persist_existing_auto_merge_mutation,
     },
-    request_revision_rows::latest_revision_for_request,
     request_rows::{request_by_id, save_request_row},
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
     REQUEST_STACK_MAX_ANCESTORS, Request, RequestBase, RequestParentGitFacts,
-    RequestRevisionGitFacts, refresh_request_stack, stop_request_auto_merge,
-    validate_request_stack_base,
+    refresh_request_stack, stop_request_auto_merge,
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+mod publication;
+pub(super) use publication::{validate_publication, validate_start};
 
 #[derive(Clone, Debug)]
 pub struct RequestParentPublicationFacts {
@@ -25,13 +26,18 @@ pub struct RequestParentPublicationFacts {
     pub base_version: u64,
     pub parent_contains_pin: bool,
     pub child_contains_pin: bool,
+    pub expected_repo_change_version: u64,
 }
 
 #[derive(Clone, Debug)]
 pub enum RequestBasePublicationFacts {
+    Unchanged {
+        expected_repo_change_version: u64,
+    },
     Main {
         main_head_oid: String,
         child_contains_main: bool,
+        expected_repo_change_version: u64,
     },
     Request(RequestParentPublicationFacts),
 }
@@ -49,6 +55,7 @@ pub struct RequestStackChildFacts {
     pub base_version: u64,
     pub parent_contains_pin: bool,
     pub contained_main_oid: Option<String>,
+    pub accepted_view_main_oid: Option<String>,
     pub contained_main_descends_from_ancestor: bool,
 }
 
@@ -114,6 +121,7 @@ impl RequestStore {
                 parent_contains_pin: child.stack_status
                     != scope_domain::requests::RequestStackStatus::ParentRewritten,
                 contained_main_oid: None,
+                accepted_view_main_oid: None,
                 contained_main_descends_from_ancestor: false,
             })
             .collect::<Vec<_>>();
@@ -166,139 +174,6 @@ pub(super) async fn ancestry<C: ConnectionTrait>(
         result.push(request);
     }
     Ok(result)
-}
-
-pub(super) async fn validate_start<C: ConnectionTrait>(
-    conn: &C,
-    input: &mut scope_domain::requests::StartRequestInput,
-) -> Result<u32, PostgresError> {
-    let ancestors = ancestry(conn, &input.base).await?;
-    let revision = match ancestors.first() {
-        Some(parent) => latest_revision_for_request(conn, &parent.id).await?,
-        None => None,
-    };
-    let depth = validate_request_stack_base(
-        &input.id,
-        &input.repo_id,
-        &input.view,
-        &input.base,
-        &ancestors,
-        revision.as_ref(),
-    )?;
-    if let Some(parent) = ancestors.first() {
-        input.main_ancestor_oid = parent.main_ancestor_oid.clone();
-    }
-    Ok(depth)
-}
-
-pub(super) async fn validate_publication(
-    tx: &DatabaseTransaction,
-    request: &Request,
-    selected_base: &RequestBase,
-    expected_base_version: u64,
-    explicit_repin: bool,
-    facts: Option<&RequestBasePublicationFacts>,
-    git_facts: &RequestRevisionGitFacts,
-) -> Result<ValidatedRequestPublication, PostgresError> {
-    if request.base_version != expected_base_version {
-        return Err(PostgresError::conflict(
-            "request base changed during publication",
-        ));
-    }
-    if explicit_repin && !request.view.is_private() {
-        return Err(PostgresError::permission_denied(
-            "request base publication requires the private view",
-        ));
-    }
-    let RequestBase::Request { request_id, .. } = selected_base else {
-        match (explicit_repin, facts) {
-            (
-                true,
-                Some(RequestBasePublicationFacts::Main {
-                    main_head_oid,
-                    child_contains_main,
-                }),
-            ) => {
-                let main = entities::git_head::Entity::find_by_id(&request.repo_id)
-                    .one(tx)
-                    .await
-                    .map_err(PostgresError::internal)?
-                    .ok_or_else(|| PostgresError::conflict("repository has no accepted main"))?;
-                if main.head_oid != *main_head_oid
-                    || selected_base.review_base_oid() != main_head_oid
-                    || !child_contains_main
-                    || git_facts.contained_main_oid.as_ref() != Some(main_head_oid)
-                    || !git_facts.contained_main_descends_from_base
-                {
-                    return Err(PostgresError::conflict(
-                        "main changed or publication does not contain selected main",
-                    ));
-                }
-            }
-            (false, None) => {}
-            _ => {
-                return Err(PostgresError::conflict(
-                    "main publication has invalid Git evidence",
-                ));
-            }
-        }
-        let depth = validate_request_stack_base(
-            &request.id,
-            &request.repo_id,
-            &request.view,
-            selected_base,
-            &[],
-            None,
-        )?;
-        return Ok(ValidatedRequestPublication {
-            parent: None,
-            depth,
-        });
-    };
-    let Some(RequestBasePublicationFacts::Request(facts)) = facts else {
-        return Err(PostgresError::conflict(
-            "parent publication requires Git evidence",
-        ));
-    };
-    let ancestors = ancestry(tx, selected_base).await?;
-    let parent = ancestors
-        .first()
-        .ok_or_else(|| PostgresError::conflict("request parent is unavailable"))?;
-    let revision = latest_revision_for_request(tx, &parent.id)
-        .await?
-        .ok_or_else(|| PostgresError::conflict("parent requires a saved current revision"))?;
-    if facts.request_id != *request_id
-        || facts.revision_id != revision.id
-        || facts.head_oid != parent.head_oid
-        || facts.base_version != parent.base_version
-        || !facts.parent_contains_pin
-        || !facts.child_contains_pin
-    {
-        return Err(PostgresError::conflict(
-            "parent changed or publication does not contain its pin",
-        ));
-    }
-    let current_base = RequestBase::Request {
-        request_id: parent.id.clone(),
-        revision_id: revision.id.clone(),
-        head_oid: parent.head_oid.clone(),
-    };
-    let depth = validate_request_stack_base(
-        &request.id,
-        &request.repo_id,
-        &request.view,
-        if explicit_repin {
-            selected_base
-        } else {
-            &current_base
-        },
-        &ancestors,
-        Some(&revision),
-    )?;
-    Ok(ValidatedRequestPublication {
-        parent: Some(parent.clone()),
-        depth,
-    })
 }
 
 pub(super) async fn refresh_children(
@@ -407,6 +282,7 @@ pub(super) async fn close_children(
             base_version: child.base_version,
             parent_contains_pin: true,
             contained_main_oid: None,
+            accepted_view_main_oid: None,
             contained_main_descends_from_ancestor: false,
         })
         .collect::<Vec<_>>();
@@ -482,6 +358,23 @@ pub(super) async fn retarget_children(
         if !fact.parent_contains_pin {
             continue;
         }
+        if !child.view.is_private() {
+            let repo = super::request_access::repo_by_id(
+                tx,
+                &child.repo_id,
+                parent
+                    .merged_by_user_id
+                    .as_deref()
+                    .ok_or_else(|| PostgresError::conflict("parent merger is missing"))?,
+            )
+            .await?;
+            let actual = publication::accepted_main_oid(tx, &repo, &child.view).await?;
+            if fact.accepted_view_main_oid.as_ref() != Some(&actual) {
+                return Err(PostgresError::conflict(
+                    "request view main changed during parent landing",
+                ));
+            }
+        }
         let mutation = scope_domain::requests::retarget_request_after_parent_merge(
             child,
             parent,
@@ -493,34 +386,52 @@ pub(super) async fn retarget_children(
                 now_unix,
                 parent_contains_pin: fact.parent_contains_pin,
                 contained_main_oid: fact.contained_main_oid.clone(),
+                accepted_view_main_oid: fact.accepted_view_main_oid.clone(),
                 contained_main_descends_from_ancestor: fact.contained_main_descends_from_ancestor,
             },
         )?;
-        save_request_row(tx, &mutation.request).await?;
+        let request = if mutation.effects.preserve_auto_merge_intent {
+            save_request_row(tx, &mutation.request).await?;
+            mutation.request
+        } else {
+            persist_refresh(
+                tx,
+                scope_domain::requests::RequestStackRefreshMutation {
+                    effects: scope_domain::requests::RequestStackRefreshEffects {
+                        stop_auto_merge: mutation.request.stack_status.auto_merge_stop_reason(),
+                        reactivate_attention: true,
+                    },
+                    request: mutation.request,
+                },
+                now_unix,
+            )
+            .await?
+        };
         super::request_rows::insert_request_event_row(tx, &mutation.event).await?;
         if mutation.effects.rebind_check_context {
             tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
                 "UPDATE scope_request_check_evaluations SET base_version = $2 WHERE id = (SELECT current_check_evaluation_id FROM scope_requests WHERE id = $1)",
-                [mutation.request.id.clone().into(), super::integer_columns::u64_to_i64(mutation.request.base_version, "request base version")?.into()])).await.map_err(PostgresError::internal)?;
+                [request.id.clone().into(), super::integer_columns::u64_to_i64(request.base_version, "request base version")?.into()])).await.map_err(PostgresError::internal)?;
         }
         tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
             "UPDATE scope_request_auto_merge_intents SET next_attempt_at_unix = $2 WHERE request_id = $1 AND status = 'Active'",
-            [mutation.request.id.clone().into(), super::integer_columns::u64_to_i64(now_unix, "auto-merge wake time")?.into()])).await.map_err(PostgresError::internal)?;
-        let descendants = children(tx, &mutation.request.id)
+            [request.id.clone().into(), super::integer_columns::u64_to_i64(now_unix, "auto-merge wake time")?.into()])).await.map_err(PostgresError::internal)?;
+        let descendants = children(tx, &request.id)
             .await?
             .into_iter()
             .map(|child| RequestStackChildFacts {
-                parent_head_oid: mutation.request.head_oid.clone(),
+                parent_head_oid: request.head_oid.clone(),
                 request_id: child.id,
                 head_oid: child.head_oid,
                 base_version: child.base_version,
                 parent_contains_pin: child.stack_status
                     != scope_domain::requests::RequestStackStatus::ParentRewritten,
                 contained_main_oid: None,
+                accepted_view_main_oid: None,
                 contained_main_descends_from_ancestor: false,
             })
             .collect::<Vec<_>>();
-        refresh_children(tx, &mutation.request, &descendants, now_unix).await?;
+        refresh_children(tx, &request, &descendants, now_unix).await?;
     }
     let remaining = children(tx, &parent.id).await?;
     let remaining_facts = remaining

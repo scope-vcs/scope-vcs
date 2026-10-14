@@ -34,6 +34,7 @@ const LATEST_MIGRATIONS: &[&str] = &[
     "m0086_private_request_stacks",
     "m0087_stack_auto_merge_stop_reasons",
     "m0088_request_navigation_children_index",
+    "m0089_contribution_request_stacks",
 ];
 const BRIDGED_LEDGER: &str = include_str!("../migrations/m0084_bridged_ledger.txt");
 

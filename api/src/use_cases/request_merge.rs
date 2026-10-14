@@ -6,7 +6,7 @@ use crate::{
             PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
             reviewed_update_from_staging_repo,
         },
-        projection_repo::verify_projection_materialization,
+        projection_repo::verify_and_restore_projection,
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, validate_view_request_merge_range},
         request_refs::{
@@ -454,14 +454,6 @@ async fn prepare_request_merge_for_execution(
             &["update-ref", "-d", &request_ref],
             "removing prepared request branch",
         )?;
-        let stack_children = super::request_stack_landing::prepare_stack_landing(
-            state,
-            &repo.incarnation(),
-            request,
-            &staging_repo,
-            &merged_main_oid,
-        )
-        .await?;
         let PreparedReceivePackUpdate {
             update,
             staged_segment,
@@ -505,24 +497,58 @@ async fn prepare_request_merge_for_execution(
                 let state = state.clone();
                 let staging_repo = staging_repo.clone();
                 crate::git::blocking::run(move || {
-                    projections.iter().try_for_each(|projection| {
-                        verify_projection_materialization(&state, projection, &staging_repo)
-                    })
+                    projections
+                        .iter()
+                        .map(|projection| {
+                            Ok((
+                                projection.view_key.clone(),
+                                verify_and_restore_projection(&state, projection, &staging_repo)?,
+                            ))
+                        })
+                        .collect::<Result<std::collections::BTreeMap<_, _>, ApiError>>()
                 })
                 .await
             }
             Err(error) => Err(error),
         };
-        if let Err(error) = preflight {
-            crate::git::import::best_effort_delete_staged_git_segment(
-                state,
-                &repo.record.id,
-                &staged_segment,
-            )
-            .await;
-            write_lease.release().await;
-            return Err(RequestMergeFailure::from(error));
-        }
+        let view_heads = match preflight {
+            Ok(heads) => heads,
+            Err(error) => {
+                crate::git::import::best_effort_delete_staged_git_segment(
+                    state,
+                    &repo.record.id,
+                    &staged_segment,
+                )
+                .await;
+                write_lease.release().await;
+                return Err(RequestMergeFailure::from(error));
+            }
+        };
+        let stack_children = match super::request_stack_landing::prepare_stack_landing(
+            state,
+            &repo.incarnation(),
+            request,
+            &staging_repo,
+            &merged_main_oid,
+            view_heads
+                .get(&request.view)
+                .filter(|_| &request.view != views.full())
+                .and_then(Option::as_deref),
+        )
+        .await
+        {
+            Ok(children) => children,
+            Err(error) => {
+                crate::git::import::best_effort_delete_staged_git_segment(
+                    state,
+                    &repo.record.id,
+                    &staged_segment,
+                )
+                .await;
+                write_lease.release().await;
+                return Err(RequestMergeFailure::from(error));
+            }
+        };
         Ok(PreparedRequestMerge {
             stack_children,
             repository_id: repo.record.id.clone(),
