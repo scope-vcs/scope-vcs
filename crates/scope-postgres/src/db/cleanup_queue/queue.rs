@@ -8,7 +8,7 @@ use crate::{
 use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set, TransactionTrait,
-    sea_query::OnConflict,
+    sea_query::{Expr, OnConflict},
 };
 
 pub(crate) const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = 600;
@@ -98,6 +98,12 @@ where
                         entities::source_blob_cleanup_job::Column::CompletedAtUnix,
                         entities::source_blob_cleanup_job::Column::UpdatedAtUnix,
                     ])
+                    .value(
+                        entities::source_blob_cleanup_job::Column::Traceparent,
+                        Expr::cust(
+                            "COALESCE(EXCLUDED.traceparent, scope_orphan_object_jobs.traceparent)",
+                        ),
+                    )
                     .to_owned(),
             )
             .exec(conn)

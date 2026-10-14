@@ -30,6 +30,9 @@ use tracing_subscriber::{
     util::SubscriberInitExt as _,
 };
 
+#[cfg(feature = "postgres")]
+mod job_trace;
+
 const EXPORTED_SPANS: &str =
     "off,otel::tracing=trace,api=info,worker=info,scope_=info,aws_sdk_s3::operation=debug";
 const UNEXPORTED_LOG_TARGETS: [&str; 5] = ["opentelemetry", "reqwest", "hyper", "h2", "tower"];
@@ -40,7 +43,7 @@ const INJECTED_EXPORTER_HEADERS: [&str; 3] = [
     "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
 ];
 const UNTRACED_PATHS: [&str; 2] = ["/healthz", "/readyz"];
-const EXPORTED_ATTRIBUTES: [&str; 20] = [
+const EXPORTED_ATTRIBUTES: [&str; 21] = [
     "db.operation.name",
     "db.system.name",
     "git.subcommand",
@@ -57,6 +60,7 @@ const EXPORTED_ATTRIBUTES: [&str; 20] = [
     "scope.job.attempt",
     "scope.job.id",
     "scope.job.kind",
+    "scope.job.queued_trace_ids",
     "scope.landed_request.count",
     "server.address",
     "server.port",
@@ -233,6 +237,8 @@ impl PostHogDestination {
             .build();
         global::set_text_map_propagator(TraceContextPropagator::new());
         global::set_tracer_provider(tracer.clone());
+        #[cfg(feature = "postgres")]
+        job_trace::install();
         Ok(Exporters { tracer, logger })
     }
 }

@@ -2,9 +2,10 @@ use crate::db::entities;
 use crate::db::{
     MetadataStore, TestDatabaseTarget, cleanup_queue::types::SourceBlobCleanupDecision,
 };
+use crate::job_trace::{QueuedTrace, test_support::queued_by};
 use scope_domain::content::{DEFAULT_GIT_FILE_MODE, SourceBlob};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 
 #[tokio::test]
 async fn content_fence_serializes_publication_with_delete_revalidation() {
@@ -195,4 +196,36 @@ fn blob(sha256: &str) -> SourceBlob {
         git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
         size_bytes: 10,
     }
+}
+
+#[tokio::test]
+async fn an_untraced_requeue_keeps_the_trace_that_queued_the_blob() {
+    let store =
+        MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
+    let blob = blob("traced-cleanup");
+    queued_by(
+        "trace-blob-delete",
+        store
+            .cleanup()
+            .queue_pending_source_blob_deletions(vec![blob.clone()], now()),
+    )
+    .await
+    .unwrap();
+    store
+        .cleanup()
+        .queue_pending_source_blob_deletions(vec![blob.clone()], now())
+        .await
+        .unwrap();
+    make_source_blob_cleanup_due(&store, &blob.content_ref).await;
+
+    let batch = store
+        .cleanup()
+        .source_blob_cleanup_batch(now())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        batch.queued_traces,
+        BTreeSet::from([QueuedTrace::from_column(Some("trace-blob-delete".into()))])
+    );
 }

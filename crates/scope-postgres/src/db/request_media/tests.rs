@@ -430,7 +430,7 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
     start_request(&fixture, "processing_request", "processing-request", 1).await;
     upload_attachment(&fixture, "processing_request", "processing_attachment", 10).await;
 
-    let first_lease = fixture
+    let (first_lease, _) = fixture
         .store
         .media()
         .claim_processing_job("first-processing-token", 20, 30)
@@ -454,7 +454,7 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
         MediaLeaseMutation::Applied(())
     );
 
-    let replacement_lease = fixture
+    let (replacement_lease, _) = fixture
         .store
         .media()
         .claim_processing_job("replacement-processing-token", 30, 40)
@@ -506,7 +506,7 @@ async fn successful_processing_completion_persists_derivative_with_repository_bu
     start_request(&fixture, "completion_request", "completion-request", 1).await;
     upload_attachment(&fixture, "completion_request", "completion_attachment", 10).await;
 
-    let lease = fixture
+    let (lease, _) = fixture
         .store
         .media()
         .claim_processing_job("completion-token", 20, 40)
@@ -620,7 +620,7 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
     start_request(&fixture, "deleted_request", "deleted-request", 1).await;
     upload_attachment(&fixture, "deleted_request", "deleted_attachment", 10).await;
 
-    let processing_lease = fixture
+    let (processing_lease, _) = fixture
         .store
         .media()
         .claim_processing_job("processing-before-delete", 20, 30)
@@ -692,7 +692,7 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
             .unwrap()
             .is_none()
     );
-    let cleanup = fixture
+    let (cleanup, _) = fixture
         .store
         .media()
         .claim_cleanup_job("cleanup-after-grace", 90, 100)
@@ -728,7 +728,7 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
         .enqueue_expired_attachment_cleanup(reconciliation_time)
         .await
         .unwrap();
-    let reconciled = fixture
+    let (reconciled, _) = fixture
         .store
         .media()
         .claim_cleanup_job(
@@ -862,3 +862,4 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
 
 mod access;
 mod cleanup;
+mod queued_traces;

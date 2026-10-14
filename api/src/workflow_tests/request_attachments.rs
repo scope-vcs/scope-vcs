@@ -109,7 +109,7 @@ async fn validate_source(state: &AppState, attachment_id: &str) {
     use scope_postgres::db::ValidateRequestAttachmentSourceCommand;
     let now = crate::persistence::unix_now().unwrap();
     let media = state.metadata.media();
-    let lease = media
+    let (lease, _) = media
         .claim_processing_job("test-lease", now, now + 60)
         .await
         .unwrap()

@@ -412,6 +412,7 @@ mod tests {
             repo_id: job.repo_id,
             repo_version: job.repo_version,
             attempts: job.attempts,
+            queued_trace: Default::default(),
         };
         let payload = load_job_payload(store.db.as_ref(), &claimed.id)
             .await

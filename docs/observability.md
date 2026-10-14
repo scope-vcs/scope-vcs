@@ -53,6 +53,25 @@ a server span or a claimed job's consumer span. Store queries and outbound calls
 made by idle worker polls have no parent and are dropped, with everything nested
 under them, so polling does not consume PostHog's ingestion quota.
 
+## Jobs link to the request that queued them
+
+Outbox, Git compaction, dependency analysis, source blob cleanup, and media
+cleanup and processing jobs store the `traceparent` of the sampled span that
+queued them. Each claimed job's `job.<kind>` consumer span links to that
+context instead of joining its trace, so a retried or long-running job does not
+stretch the request's trace. A source blob cleanup batch links to every request
+behind its blobs. Requeueing a job from an untraced poll keeps the stored
+context; a traced requeue replaces it. Jobs queued while export is off, or by
+an idle poll, store no context and their spans carry no link.
+
+PostHog does not store span links, so the job span also exports the queuing
+trace IDs as `scope.job.queued_trace_ids`, comma-separated. Filter job spans by
+that attribute, or open one of its IDs as a trace, to reach the request.
+
+`scope_service_runtime` installs the capture and link functions into
+`scope_postgres::job_trace` when export is configured, so store code records
+the context without depending on OpenTelemetry.
+
 ## What leaves a service
 
 Anyone with access to the PostHog project can read what is exported.

@@ -101,6 +101,7 @@ pub(crate) async fn compact_one_git_repository(
         scope.job.id = claim.lease_generation(),
         scope.job.attempt = claim.attempts.saturating_add(1),
     );
+    claim.queued_trace.link(&span);
     let started = ClaimTimings {
         attempt: attempt_started,
         candidate: candidate_started,

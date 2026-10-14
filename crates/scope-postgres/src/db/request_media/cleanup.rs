@@ -5,7 +5,9 @@ use super::{
     MediaLeaseMutation, MediaStore,
     persistence::{as_i32, as_i64},
 };
-use crate::{db::locks::acquire_shared_repository_lock, error::PostgresError};
+use crate::{
+    db::locks::acquire_shared_repository_lock, error::PostgresError, job_trace::QueuedTrace,
+};
 use scope_domain::requests::attachments::{RequestAttachmentCleanupLease, validate_lease_grant};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
 
@@ -103,9 +105,9 @@ impl MediaStore {
         lease_token: &str,
         now_unix: u64,
         lease_expires_at_unix: u64,
-    ) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError> {
+    ) -> Result<Option<(RequestAttachmentCleanupLease, QueuedTrace)>, PostgresError> {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
-        if let Some(lease) = claim_attachment_tombstone(
+        if let Some(claim) = claim_attachment_tombstone(
             self.db.as_ref(),
             lease_token,
             now_unix,
@@ -113,15 +115,16 @@ impl MediaStore {
         )
         .await?
         {
-            return Ok(Some(lease));
+            return Ok(Some(claim));
         }
-        claim_orphan_objects(
+        Ok(claim_orphan_objects(
             self.db.as_ref(),
             lease_token,
             now_unix,
             lease_expires_at_unix,
         )
-        .await
+        .await?
+        .map(|lease| (lease, QueuedTrace::default())))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_cleanup_lease"))]
@@ -422,8 +425,8 @@ where
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_cleanup_jobs (
                 attachment_id, repository_id, reason, state, available_at_unix,
-                created_at_unix, updated_at_unix
-             ) VALUES ($1, $2, $3, 'Queued', $4, $5, $5)
+                created_at_unix, updated_at_unix, traceparent
+             ) VALUES ($1, $2, $3, 'Queued', $4, $5, $5, $6)
              ON CONFLICT (attachment_id) DO UPDATE
              SET reason = CASE
                     WHEN scope_request_media_cleanup_jobs.reason = 'RepositoryDeleted'
@@ -441,13 +444,18 @@ where
                     EXCLUDED.available_at_unix
                  ),
                  completed_at_unix = NULL,
-                 updated_at_unix = EXCLUDED.updated_at_unix",
+                 updated_at_unix = EXCLUDED.updated_at_unix,
+                 traceparent = COALESCE(
+                    EXCLUDED.traceparent,
+                    scope_request_media_cleanup_jobs.traceparent
+                 )",
             [
                 attachment_id.clone().into(),
                 repository_id.into(),
                 reason.into(),
                 as_i64(available_at, "cleanup available time")?.into(),
                 as_i64(now_unix, "cleanup creation time")?.into(),
+                QueuedTrace::current().into_column().into(),
             ],
         ))
         .await?;
@@ -461,7 +469,7 @@ async fn claim_attachment_tombstone(
     lease_token: &str,
     now_unix: u64,
     lease_expires_at_unix: u64,
-) -> Result<Option<RequestAttachmentCleanupLease>, PostgresError> {
+) -> Result<Option<(RequestAttachmentCleanupLease, QueuedTrace)>, PostgresError> {
     let tx = db.begin().await?;
     let candidate = tx
         .query_one_raw(Statement::from_sql_and_values(
@@ -551,15 +559,19 @@ async fn claim_attachment_tombstone(
         ],
     ))
     .await?;
+    let queued_trace = QueuedTrace::from_column(row.try_get("", "traceparent")?);
     let object_keys = all_attachment_object_keys(&tx, &attachment_id).await?;
     tx.commit().await?;
-    Ok(Some(RequestAttachmentCleanupLease {
-        attachment_id,
-        object_keys,
-        lease_token: lease_token.to_string(),
-        lease_generation: generation,
-        attempt,
-    }))
+    Ok(Some((
+        RequestAttachmentCleanupLease {
+            attachment_id,
+            object_keys,
+            lease_token: lease_token.to_string(),
+            lease_generation: generation,
+            attempt,
+        },
+        queued_trace,
+    )))
 }
 
 const TOMBSTONE_LEASE: &str = "SELECT lease_expires_at_unix FROM scope_request_media_cleanup_jobs

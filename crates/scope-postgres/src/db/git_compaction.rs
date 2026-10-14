@@ -11,6 +11,7 @@ use {
     crate::{
         db::integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
         error::PostgresError,
+        job_trace::QueuedTrace,
     },
     scope_domain::repository::{
         RepositoryIncarnation,
@@ -33,6 +34,7 @@ pub struct GitCompactionClaim {
     pub attempts: u32,
     pub queue_delay_ms: u64,
     pub candidate: Option<GitCompactionCandidate>,
+    pub queued_trace: QueuedTrace,
     repo_id: String,
     lease_generation: String,
 }
@@ -62,8 +64,8 @@ where
             INSERT INTO scope_git_compaction_jobs (
                 repo_id, target_sequence, attempts, next_run_at_unix,
                 lease_generation, lease_owner, lease_expires_at_unix,
-                last_error, created_at_unix, updated_at_unix
-            ) VALUES ($1, $2, 0, $3, NULL, NULL, NULL, NULL, $3, $3)
+                last_error, created_at_unix, updated_at_unix, traceparent
+            ) VALUES ($1, $2, 0, $3, NULL, NULL, NULL, NULL, $3, $3, $4)
             ON CONFLICT (repo_id) DO UPDATE
             SET target_sequence = GREATEST(
                     scope_git_compaction_jobs.target_sequence,
@@ -72,9 +74,18 @@ where
                 updated_at_unix = GREATEST(
                     scope_git_compaction_jobs.updated_at_unix,
                     EXCLUDED.updated_at_unix
+                ),
+                traceparent = COALESCE(
+                    EXCLUDED.traceparent,
+                    scope_git_compaction_jobs.traceparent
                 )
         "#,
-        [repo_id.into(), target_sequence.into(), now.into()],
+        [
+            repo_id.into(),
+            target_sequence.into(),
+            now.into(),
+            QueuedTrace::current().into_column().into(),
+        ],
     ))
     .await?;
     Ok(())
@@ -169,6 +180,7 @@ impl JobStore {
             attempts,
             queue_delay_ms: now_unix.saturating_sub(due_at_unix).saturating_mul(1_000),
             candidate,
+            queued_trace: QueuedTrace::from_column(job.traceparent),
             repo_id: job.repo_id,
             lease_generation,
         }))
