@@ -3,7 +3,7 @@ import { VisibilityBadge } from '@/components/visibility-badge'
 import { displayRouteFilePath } from '@/lib/route-file'
 import { cn } from '@/lib/utils'
 import { NavigationSearch } from '@/components/navigation-search'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { matchingRepositoryFiles } from './repository-file-navigation'
 import type { RepoFileResponse } from '@/api/types.generated'
 
@@ -24,13 +24,29 @@ export function RepositoryFileNavigator({
   const [activeIndex, setActiveIndex] = useState(0)
   const resultRef = useRef<HTMLUListElement>(null)
   const listId = useId()
-  const searching = query.trim().length > 0
-  const matches = matchingRepositoryFiles(files, query)
+  const deferredQuery = useDeferredValue(query)
+  const searching = deferredQuery.trim().length > 0
+  const { shown: matches, total } = useMemo(
+    () => matchingRepositoryFiles(files, deferredQuery),
+    [files, deferredQuery],
+  )
   const active = Math.min(activeIndex, Math.max(0, matches.length - 1))
+  const tree = useMemo(
+    () => (
+      <FileSystemTree
+        files={files}
+        onActivateFile={(file) => onSelectFile(file.path, true)}
+        onSelectFile={(file) => onSelectFile(file.path, false)}
+        selectedFilePath={selectedPath}
+        showVisibility={showVisibility}
+      />
+    ),
+    [files, onSelectFile, selectedPath, showVisibility],
+  )
 
   useEffect(() => {
     resultRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
-  }, [active, query])
+  }, [active, deferredQuery])
 
   function openFile(path: string) {
     setQuery('')
@@ -80,7 +96,7 @@ export function RepositoryFileNavigator({
         <div>
           <output className="sr-only">
             {matches.length
-              ? `${matches.length} matching files. ${displayRouteFilePath(matches[active].path)} selected.`
+              ? `${total} matching files. ${displayRouteFilePath(matches[active].path)} selected.`
               : ''}
           </output>
           <ul aria-label="Matching files" className="max-h-[60dvh] overflow-y-auto" ref={resultRef}>
@@ -104,6 +120,11 @@ export function RepositoryFileNavigator({
               </li>
             ))}
           </ul>
+          {total > matches.length && (
+            <p className="px-2 py-2 text-xs text-muted-foreground">
+              Showing {matches.length} of {total} matches. Keep typing to narrow the results.
+            </p>
+          )}
           {!matches.length && (
             <output className="block px-2 py-4 text-xs text-muted-foreground">
               No matching visible files.
@@ -111,15 +132,7 @@ export function RepositoryFileNavigator({
           )}
         </div>
       )}
-      <div hidden={searching}>
-        <FileSystemTree
-          files={files}
-          onActivateFile={(file) => onSelectFile(file.path, true)}
-          onSelectFile={(file) => onSelectFile(file.path, false)}
-          selectedFilePath={selectedPath}
-          showVisibility={showVisibility}
-        />
-      </div>
+      <div hidden={searching}>{tree}</div>
     </>
   )
 }
