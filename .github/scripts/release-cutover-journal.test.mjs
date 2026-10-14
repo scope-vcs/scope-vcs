@@ -63,6 +63,18 @@ test("only completed forward activation or verified restoration clears the guard
   }
 });
 
+test("completed history naming a retired component or phase does not block a release, but an open one fails closed", async () => {
+  const store = storage();
+  const id = await beginCutover({ prepared, baseline, previous: {} }, store.request);
+  store.deployments[0].payload.prepared.components.retired = prepared.components.web;
+  await assert.rejects(guardCutovers(store.request), /Unknown release component retired/);
+  store.statuses.get(id).unshift({ description: "cutover:activating-retired" });
+  await assert.rejects(guardCutovers(store.request), /Unknown cutover journal status/);
+  store.statuses.get(id).unshift({ description: "cutover:complete" });
+  assert.equal(await findOpenCutover(store.request), null);
+  await guardCutovers(store.request);
+});
+
 test("incomplete preparation fails before creating closure intent", async () => {
   const store = storage();
   const incomplete = structuredClone(prepared);

@@ -146,7 +146,9 @@ export function artifactDeploymentInput(component, artifact, config, { registryC
   const input = {
     source: { image: artifact.image },
     rootDirectory: '/', railwayConfigFile: null, buildCommand: null,
-    startCommand: definition.kind === 'web' ? 'node /app/.output/server/index.mjs' : `/app/bin/${definition.binary}`,
+    startCommand: definition.kind === 'web'
+      ? 'node --import /app/.output/server/_instrumentation/instrumentation.mjs /app/.output/server/index.mjs'
+      : `/app/bin/${definition.binary}`,
     ...runtimeDeploySettings(component, config),
     preDeployCommand: [],
   };

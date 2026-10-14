@@ -33,6 +33,7 @@ if [[ "$component" == run-worker ]]; then
 fi
 if [[ "$(jq -r '.artifact.kind' <<< "$definition")" == web ]]; then
   test -s "$context_root/.output/server/index.mjs"
+  test -s "$context_root/.output/server/_instrumentation/instrumentation.mjs"
 elif [[ -z "$binary" ]]; then
   echo "Release component $component has no prebuilt binary to package." >&2
   exit 2

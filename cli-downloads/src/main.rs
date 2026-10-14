@@ -25,7 +25,10 @@ struct AppState {
 }
 
 fn main() -> anyhow::Result<()> {
-    let telemetry = init_telemetry("scope_cli_service=info,scope_product_analytics=info")?;
+    let telemetry = init_telemetry(
+        "cli-downloads",
+        "scope_cli_service=info,scope_product_analytics=info",
+    )?;
     let result = run();
     telemetry.shutdown();
     result
