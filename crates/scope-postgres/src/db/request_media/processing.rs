@@ -523,11 +523,13 @@ impl MediaStore {
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_jobs
              SET state = 'Queued', available_at_unix = $2, lease_token = NULL,
-                 lease_expires_at_unix = NULL, updated_at_unix = $2
+                 lease_expires_at_unix = NULL, updated_at_unix = $2,
+                 traceparent = COALESCE($3, traceparent)
              WHERE attachment_id = $1",
             [
                 attachment_id.into(),
                 as_i64(now_unix, "processing retry time")?.into(),
+                QueuedTrace::current().into_column().into(),
             ],
         ))
         .await?;

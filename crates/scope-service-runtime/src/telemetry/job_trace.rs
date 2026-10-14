@@ -82,7 +82,6 @@ mod tests {
                 tracing::info_span!("poll", otel.kind = "client").in_scope(current_traceparent);
             let job = tracing::info_span!(parent: None, "job", otel.kind = "consumer");
             link_queued_traces(&job, &queued.each_ref().map(String::as_str));
-            job.in_scope(|| {});
             (queued, unsampled)
         });
 

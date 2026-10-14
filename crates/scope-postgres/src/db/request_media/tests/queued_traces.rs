@@ -24,6 +24,30 @@ async fn claimed_media_jobs_carry_the_trace_that_queued_them() {
     );
 
     queued_by(
+        "trace-media-retry",
+        fixture.store.media().retry_request_attachment_processing(
+            "traced_request",
+            "traced_attachment",
+            OWNER_ID,
+            "traced_retry",
+            21,
+        ),
+    )
+    .await
+    .unwrap();
+    let (_, retried_trace) = fixture
+        .store
+        .media()
+        .claim_processing_job("traced-retry-processing", 21, 30)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        retried_trace,
+        QueuedTrace::from_column(Some("trace-media-retry".into()))
+    );
+
+    queued_by(
         "trace-request-close",
         fixture.store.requests().close_request(CloseRequestCommand {
             request_id: "traced_request".to_string(),
