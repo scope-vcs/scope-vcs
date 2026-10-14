@@ -3790,10 +3790,10 @@ LICENSE-Apache-2.0_WITH_LLVM-exception: text 2f213ec6b1355dc841dc489c9e7ce1dddd0
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-rustls 0.23.45
+rustls 0.23.46
 Declared license: Apache-2.0 OR ISC OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/rustls/rustls-0.23.45.crate
+Source: https://static.crates.io/crates/rustls/rustls-0.23.46.crate
 
 Repository: "https://github.com/rustls/rustls"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
