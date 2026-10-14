@@ -8,6 +8,7 @@ import { useAuth } from '@clerk/tanstack-react-start'
 import { loadRepositoryLatestActivity } from '@/routes/-repo-activity-actions'
 import { Link } from '@tanstack/react-router'
 import { useCallback } from 'react'
+import { cn } from '@/lib/utils'
 import { repoResourceScope } from './repo-resource-scope'
 import { repositoryActivityIdentity, repositoryActivityResource } from './repository-activity-resource'
 import { HistoryMenu } from '@/features/history/history-menu'
@@ -50,7 +51,10 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   if (!entry) return null
   const message = entry.message.split('\n', 1)[0] || 'Repository updated'
   return (
-    <div aria-label="Latest repository change" className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:flex-nowrap">
+    <div
+      aria-label="Latest repository change"
+      className={cn('flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs', !current.error && 'sm:flex-nowrap')}
+    >
       <Link
         className="min-w-0 basis-full truncate rounded text-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:basis-auto"
         params={{ ...params, entryId: entry.source_id }}
@@ -60,7 +64,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       >
         {message}
       </Link>
-      <div className="flex min-w-0 shrink-0 items-center gap-x-2 text-muted-foreground">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground sm:shrink-0">
         {entry.author && <span className="max-w-40 truncate" title={entry.author}>{entry.author}</span>}
         {entry.occurred_at_unix !== null && <RelativeTimestamp value={entry.occurred_at_unix} />}
         {headOid && (
@@ -80,9 +84,13 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
 export function RepositoryLatestActivityPending({ onRetry }: { onRetry?: () => void }) {
   return (
     <PendingSurface label="Loading latest repository change" onRetry={onRetry}>
-      <div className="flex items-center gap-3">
-        <TextSkeleton length="long" size="meta" />
-        <TextSkeleton length="short" size="meta" />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
+        <span className="flex h-5 basis-full items-center sm:basis-auto">
+          <TextSkeleton length="long" size="meta" />
+        </span>
+        <span className="flex h-4 items-center">
+          <TextSkeleton length="short" size="meta" />
+        </span>
       </div>
     </PendingSurface>
   )

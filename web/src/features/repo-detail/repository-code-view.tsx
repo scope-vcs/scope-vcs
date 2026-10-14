@@ -111,11 +111,6 @@ export function RepositoryCodeView({
                 )}
                 showVisibility={hasMixedVisibility}
               />
-              <RepositoryAbout
-                files={tree.files}
-                onSelectFilePath={(path) => selectFile(path, false)}
-                repo={repo}
-              />
             </div>
           ) : content.error ? (
             <FileNavigatorError error={content.error} retry={content.retry} />
@@ -128,6 +123,11 @@ export function RepositoryCodeView({
               <FileNavigatorSkeleton showVisibility={hasMixedVisibility} />
             </PendingSurface>
           )}
+          <RepositoryAbout
+            files={tree?.files ?? []}
+            onSelectFilePath={(path) => selectFile(path, false)}
+            repo={repo}
+          />
         </div>
         <SourcePane
           availablePaths={availablePaths}
