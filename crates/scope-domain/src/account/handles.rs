@@ -1,4 +1,5 @@
 pub const RESERVED_HANDLES: &[&str] = &[
+    "account",
     "api",
     "cli-login",
     "docs",
@@ -24,6 +25,7 @@ mod tests {
     #[test]
     fn application_and_marketing_routes_are_reserved_handles() {
         for handle in [
+            "account",
             "settings",
             "sign-in",
             "sign-up",
