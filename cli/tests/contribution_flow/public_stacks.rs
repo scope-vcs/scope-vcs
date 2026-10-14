@@ -69,6 +69,11 @@ pub(super) fn exercise(contributor: &Actor, maintainer: &Actor, suffix: &str) {
         assert_eq!(view_main, landed_parent_head);
         let shown = contributor.json(["request", "show"]);
         assert_eq!(shown["result"]["request"]["head_oid"], child_head);
+        assert_eq!(
+            shown["result"]["request"]["mergeability"]["status"],
+            "NotMaintainer"
+        );
+        let maintainer_checks = maintainer.json(["request", "ci", "--request", &child_id]);
         assert_eq!(shown["result"]["request"]["base"]["kind"], "main");
         assert_eq!(
             shown["result"]["request"]["base"]["review_base_oid"],
@@ -87,7 +92,7 @@ pub(super) fn exercise(contributor: &Actor, maintainer: &Actor, suffix: &str) {
                 "needs_main_update"
             );
             assert_eq!(
-                shown["result"]["request"]["mergeability"]["status"],
+                maintainer_checks["result"]["checks"]["mergeability"]["status"],
                 "NeedsMainUpdate"
             );
             assert_error(
@@ -156,11 +161,9 @@ pub(super) fn exercise(contributor: &Actor, maintainer: &Actor, suffix: &str) {
             assert_eq!(shown["result"]["request"]["stack_status"], "main");
             assert_eq!(shown["result"]["request"]["main_ancestor_oid"], view_main);
             assert_eq!(
-                shown["result"]["request"]["mergeability"]["status"],
-                "NotMaintainer"
+                maintainer_checks["result"]["checks"]["mergeability"]["status"],
+                "Ready"
             );
-            let ready = maintainer.json(["request", "ci", "--request", &child_id]);
-            assert_eq!(ready["result"]["checks"]["mergeability"]["status"], "Ready");
             run_git(
                 &contributor.repo,
                 ["merge-base", "--is-ancestor", &view_main, &child_head],
