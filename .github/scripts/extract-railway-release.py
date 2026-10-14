@@ -7,6 +7,8 @@ import shutil
 import sys
 import tarfile
 
+WEB_ENTRYPOINTS = ('.output/server/index.mjs', '.output/server/_instrumentation/instrumentation.mjs')
+
 BACKEND_FILES = {
     'LICENSE', 'NOTICE', 'third-party-rust.txt', 'scope-maintenance',
 }
@@ -85,8 +87,10 @@ def extract_release(kind, archive, destination):
             entries.append((member, path))
         if not regular_files:
             raise ValueError('Release archive has no runtime files')
-        if kind == 'web' and PurePosixPath('.output/server/index.mjs') not in regular_files:
-            raise ValueError('Web release is missing .output/server/index.mjs')
+        if kind == 'web':
+            for entrypoint in WEB_ENTRYPOINTS:
+                if PurePosixPath(entrypoint) not in regular_files:
+                    raise ValueError(f'Web release is missing {entrypoint}')
         for _, path in entries:
             if any(parent in regular_files for parent in path.parents):
                 raise ValueError(f'Archive file is also a parent directory: {str(path)!r}')

@@ -58,6 +58,7 @@ jobs:
         with:
           context: .
           file: media-worker/Dockerfile
+          build-args: SCOPE_ANALYTICS_RELEASE=${{ inputs.source_sha }}
           platforms: linux/amd64
           provenance: false
           push: ${{ inputs.publish }}

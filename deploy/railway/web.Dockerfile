@@ -7,4 +7,4 @@ COPY .output /app/.output
 COPY .scope-deployment-sha /app/.scope-deployment-sha
 ENV HOME=/home/node
 USER node
-CMD ["node", "/app/.output/server/index.mjs"]
+CMD ["node", "--import", "/app/.output/server/_instrumentation/instrumentation.mjs", "/app/.output/server/index.mjs"]

@@ -98,7 +98,7 @@ async fn redacted_access_log(request: Request, next: Next) -> Response {
 }
 
 fn main() -> anyhow::Result<()> {
-    let telemetry = init_telemetry("scope_media_service=info")?;
+    let telemetry = init_telemetry("media-api", "scope_media_service=info")?;
     let result = run();
     telemetry.shutdown();
     result

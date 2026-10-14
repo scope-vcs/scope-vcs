@@ -41,7 +41,7 @@ async fn abandon_first_part_write(fixture: &Fixture, attachment_id: &str) {
 }
 
 #[tokio::test]
-async fn orphan_claims_skip_live_leases_back_off_and_split_concurrent_claimers() {
+async fn orphan_claims_skip_live_leases_and_back_off() {
     let fixture = fixture();
     start_request(&fixture, "orphan_request", "orphan-request", 1).await;
     for attachment_id in ["orphan_a", "orphan_b", "orphan_c", "orphan_d"] {
@@ -72,16 +72,16 @@ async fn orphan_claims_skip_live_leases_back_off_and_split_concurrent_claimers()
         MediaLeaseMutation::Applied(())
     );
 
-    let (third, fourth) = tokio::join!(
-        media.claim_cleanup_job("third", 22, 42),
-        media.claim_cleanup_job("fourth", 22, 42),
+    assert_eq!(
+        claim_cleanup(&fixture, "third", 22, 42).await.attachment_id,
+        "orphan_c"
     );
-    let mut claimed = [
-        third.unwrap().unwrap().attachment_id,
-        fourth.unwrap().unwrap().attachment_id,
-    ];
-    claimed.sort();
-    assert_eq!(claimed, ["orphan_c", "orphan_d"]);
+    assert_eq!(
+        claim_cleanup(&fixture, "fourth", 22, 42)
+            .await
+            .attachment_id,
+        "orphan_d"
+    );
     assert!(
         media
             .claim_cleanup_job("none", 23, 43)
@@ -152,4 +152,29 @@ async fn completed_cleanup_never_reserves_bytes_again_during_reconciliation() {
         .await
         .unwrap();
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_orphan_claimers_each_take_distinct_work() {
+    let fixture = fixture();
+    start_request(&fixture, "orphan_request", "orphan-request", 1).await;
+    let attachment_ids: Vec<String> = (0..10).map(|index| format!("orphan_{index}")).collect();
+    for attachment_id in &attachment_ids {
+        abandon_first_part_write(&fixture, attachment_id).await;
+    }
+    let mut claims = tokio::task::JoinSet::new();
+    for claimer in 0..attachment_ids.len() {
+        let media = fixture.store.media();
+        claims.spawn(async move {
+            media
+                .claim_cleanup_job(&format!("claimer_{claimer}"), 20, 40)
+                .await
+        });
+    }
+    let mut claimed = Vec::new();
+    while let Some(claim) = claims.join_next().await {
+        claimed.push(claim.unwrap().unwrap().unwrap().attachment_id);
+    }
+    claimed.sort();
+    assert_eq!(claimed, attachment_ids);
 }

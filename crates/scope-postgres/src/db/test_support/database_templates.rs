@@ -1,5 +1,6 @@
 use super::*;
 use anyhow::Context as _;
+use sea_orm::DbErr;
 use std::{
     collections::{HashMap, HashSet},
     sync::Mutex,
@@ -8,6 +9,8 @@ use std::{
 
 const TEMPLATE_SCHEMA: &str = "scope_test_template";
 const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
+const BACKEND_STARTUP_ALLOWANCE: Duration = Duration::from_secs(5);
+const INSUFFICIENT_PRIVILEGE: &str = "42501";
 
 type ProcessDatabases = Mutex<HashMap<String, HashSet<String>>>;
 static PROCESS_DATABASES: OnceLock<ProcessDatabases> = OnceLock::new();
@@ -281,19 +284,49 @@ async fn try_drop_database(admin_url: &str, database_name: &str) -> anyhow::Resu
         .await
         .expect("test database cleanup semaphore should stay open");
     let admin = Database::connect(admin_url).await?;
-    let drop_result = execute(
-        &admin,
-        format!(
-            "DROP DATABASE IF EXISTS {} WITH (FORCE)",
-            quote_pg_ident(database_name)
-        ),
-    )
-    .await;
+    let drop_result = drop_once_backends_are_terminable(&admin, database_name).await;
     let close_result = admin.close().await;
     drop_result?;
     close_result?;
     unregister_process_database(admin_url, database_name);
     Ok(())
+}
+
+async fn drop_once_backends_are_terminable(
+    admin: &DatabaseConnection,
+    database_name: &str,
+) -> Result<(), DbErr> {
+    let statement = format!(
+        "DROP DATABASE IF EXISTS {} WITH (FORCE)",
+        quote_pg_ident(database_name)
+    );
+    let deadline = tokio::time::Instant::now() + BACKEND_STARTUP_ALLOWANCE;
+    loop {
+        let result = admin
+            .execute_raw(Statement::from_string(
+                admin.get_database_backend(),
+                statement.clone(),
+            ))
+            .await;
+        match result {
+            Err(error)
+                if backend_not_yet_terminable(&error) && tokio::time::Instant::now() < deadline =>
+            {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            result => return result.map(drop),
+        }
+    }
+}
+
+fn backend_not_yet_terminable(error: &DbErr) -> bool {
+    let DbErr::Exec(sea_orm::RuntimeErr::SqlxError(error)) = error else {
+        return false;
+    };
+    error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .is_some_and(|code| code == INSUFFICIENT_PRIVILEGE)
 }
 
 fn unique_database_name(kind: &str) -> String {
