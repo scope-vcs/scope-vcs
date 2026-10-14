@@ -1,5 +1,6 @@
 use super::*;
 use anyhow::Context as _;
+use sea_orm::DbErr;
 use std::{
     collections::HashMap,
     sync::{Mutex, Weak},
@@ -8,6 +9,8 @@ use std::{
 
 const TEMPLATE_SCHEMA: &str = "scope_test_template";
 const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
+const BACKEND_STARTUP_ALLOWANCE: Duration = Duration::from_secs(5);
+const INSUFFICIENT_PRIVILEGE: &str = "42501";
 
 type ProcessDatabases = Mutex<HashMap<String, HashMap<String, Weak<DatabaseConnection>>>>;
 static PROCESS_DATABASES: OnceLock<ProcessDatabases> = OnceLock::new();
@@ -325,28 +328,49 @@ async fn try_drop_database(admin_url: &str, database_name: &str) -> anyhow::Resu
         drop(database.get_postgres_connection_pool().close());
     }
     let admin = Database::connect(admin_url).await?;
-    let drop_result = async {
-        admin
-            .query_all_raw(Statement::from_sql_and_values(
-                admin.get_database_backend(),
-                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-                 WHERE datname = $1 AND usename = current_user
-                 AND backend_type = 'client backend' AND pid <> pg_backend_pid()",
-                [database_name.into()],
-            ))
-            .await?;
-        execute(
-            &admin,
-            format!("DROP DATABASE IF EXISTS {}", quote_pg_ident(database_name)),
-        )
-        .await
-    }
-    .await;
+    let drop_result = drop_once_backends_are_terminable(&admin, database_name).await;
     let close_result = admin.close().await;
     drop_result?;
     close_result?;
     unregister_process_database(admin_url, database_name);
     Ok(())
+}
+
+async fn drop_once_backends_are_terminable(
+    admin: &DatabaseConnection,
+    database_name: &str,
+) -> Result<(), DbErr> {
+    let statement = format!(
+        "DROP DATABASE IF EXISTS {} WITH (FORCE)",
+        quote_pg_ident(database_name)
+    );
+    let deadline = tokio::time::Instant::now() + BACKEND_STARTUP_ALLOWANCE;
+    loop {
+        let result = admin
+            .execute_raw(Statement::from_string(
+                admin.get_database_backend(),
+                statement.clone(),
+            ))
+            .await;
+        match result {
+            Err(error)
+                if backend_not_yet_terminable(&error) && tokio::time::Instant::now() < deadline =>
+            {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            result => return result.map(drop),
+        }
+    }
+}
+
+fn backend_not_yet_terminable(error: &DbErr) -> bool {
+    let DbErr::Exec(sea_orm::RuntimeErr::SqlxError(error)) = error else {
+        return false;
+    };
+    error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .is_some_and(|code| code == INSUFFICIENT_PRIVILEGE)
 }
 
 fn unique_database_name(kind: &str) -> String {
@@ -365,321 +389,4 @@ fn unique_database_name(kind: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use sea_orm::sqlx::Connection as _;
-
-    const EXIT_CLEANUP_CHILD: &str = "SCOPE_TEST_DATABASE_EXIT_CLEANUP_CHILD";
-
-    #[test]
-    fn database_url_replaces_database_and_preserves_query() {
-        assert_eq!(
-            database_url(
-                "postgres://scope:scope@localhost:5432/scope_test?sslmode=disable",
-                "scope_test_db_1"
-            )
-            .unwrap(),
-            "postgres://scope:scope@localhost:5432/scope_test_db_1?sslmode=disable"
-        );
-    }
-
-    #[test]
-    fn template_databases_isolate_targets_and_preserve_live_reopens() {
-        let target = TestDatabaseTarget::required().unwrap();
-        let first = connect_postgres_test_store(&target).unwrap();
-        let other = connect_postgres_test_store(&TestDatabaseTarget::required().unwrap()).unwrap();
-        let database = Arc::clone(&first.db);
-        run_test_future(async move {
-            database
-                .execute_unprepared(
-                    "INSERT INTO scope_users (id, handle, email, email_verified) VALUES ('template_fixture', 'template_fixture', 'template-fixture@scope.test', TRUE)",
-                )
-                .await
-                .unwrap();
-        });
-
-        let reopened = connect_postgres_test_store(&target).unwrap();
-        assert!(Arc::ptr_eq(&first.db, &reopened.db));
-        drop(first);
-        run_test_future(async move {
-            for (store, expected) in [(reopened, 1_i64), (other, 0_i64)] {
-                let row = store
-                    .db
-                    .query_one_raw(Statement::from_string(
-                        store.db.get_database_backend(),
-                        "SELECT current_database() AS database, (SELECT count(*) FROM scope_users WHERE id = 'template_fixture') AS count".to_owned(),
-                    ))
-                    .await
-                    .unwrap()
-                    .unwrap();
-                assert!(
-                    row.try_get::<String>("", "database")
-                        .unwrap()
-                        .starts_with("scope_test_db_")
-                );
-                assert_eq!(row.try_get::<i64>("", "count").unwrap(), expected);
-                crate::migrations::assert_exact_state(store.db.as_ref())
-                    .await
-                    .unwrap();
-            }
-        });
-
-        let fresh = connect_postgres_test_store(&target).unwrap();
-        run_test_future(async move {
-            let count = fresh
-                .db
-                .query_one_raw(Statement::from_string(
-                    fresh.db.get_database_backend(),
-                    "SELECT count(*) AS count FROM scope_users".to_owned(),
-                ))
-                .await
-                .unwrap()
-                .unwrap()
-                .try_get::<i64>("", "count")
-                .unwrap();
-            assert_eq!(count, 0);
-        });
-    }
-
-    #[test]
-    fn process_exit_removes_only_its_registered_databases() {
-        if let Some(mode) = std::env::var_os(EXIT_CLEANUP_CHILD) {
-            let target = TestDatabaseTarget::required().unwrap();
-            let store = connect_postgres_test_store(&target).unwrap();
-            if mode == "orphaned-lease" {
-                let name = orphaned_client_with_idle_connection(&store, &target);
-                drop(store);
-                let admin_url = target.database_url.clone();
-                let database_name = name.clone();
-                let absent = run_test_future(async move {
-                    let admin = Database::connect(&admin_url).await.unwrap();
-                    let deadline = tokio::time::Instant::now() + EXIT_CLEANUP_TIMEOUT;
-                    let absent = loop {
-                        let row = admin.query_one_raw(Statement::from_sql_and_values(
-                            admin.get_database_backend(),
-                            "SELECT NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS absent",
-                            [database_name.clone().into()],
-                        )).await.unwrap().unwrap();
-                        let absent = row.try_get::<bool>("", "absent").unwrap();
-                        if absent || tokio::time::Instant::now() >= deadline {
-                            break absent;
-                        }
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    };
-                    admin.close().await.unwrap();
-                    absent
-                });
-                unregister_process_database(&target.database_url, &name);
-                assert!(absent, "normal lease cleanup left owned database {name}");
-                return;
-            }
-            if mode == "orphaned-client" {
-                let name = orphaned_client_with_idle_connection(&store, &target);
-                cleanup_process_databases();
-                let admin_url = target.database_url.clone();
-                let database_name = name.clone();
-                let absent = run_test_future(async move {
-                    let admin = Database::connect(&admin_url).await.unwrap();
-                    let row = admin.query_one_raw(Statement::from_sql_and_values(
-                        admin.get_database_backend(),
-                        "SELECT NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS absent",
-                        [database_name.into()],
-                    )).await.unwrap().unwrap();
-                    let absent = row.try_get::<bool>("", "absent").unwrap();
-                    admin.close().await.unwrap();
-                    absent
-                });
-                unregister_process_database(&target.database_url, &name);
-                assert!(
-                    absent,
-                    "process cleanup left owned database {name} after its checked-out backend exited"
-                );
-                assert!(store.db.get_postgres_connection_pool().is_closed());
-            }
-            if mode == "pool-close" {
-                cleanup_process_databases();
-                assert!(
-                    store.db.get_postgres_connection_pool().is_closed(),
-                    "process cleanup left the registered database pool open"
-                );
-            }
-            std::mem::forget(store);
-            return;
-        }
-
-        let target = TestDatabaseTarget::required().unwrap();
-        let (_, pool_child) = cleanup_child(&target, "pool-close");
-        assert!(
-            pool_child.status.success(),
-            "pool cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&pool_child.stdout),
-            String::from_utf8_lossy(&pool_child.stderr)
-        );
-        let (_, orphan_child) = cleanup_child(&target, "orphaned-client");
-        assert!(
-            orphan_child.status.success(),
-            "orphaned client cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&orphan_child.stdout),
-            String::from_utf8_lossy(&orphan_child.stderr)
-        );
-        let (_, lease_child) = cleanup_child(&target, "orphaned-lease");
-        assert!(
-            lease_child.status.success(),
-            "normal lease cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&lease_child.stdout),
-            String::from_utf8_lossy(&lease_child.stderr)
-        );
-        let external_database = unique_database_name("external_process");
-        let admin_url = target.database_url.clone();
-        let external_name = external_database.clone();
-        let mut external_connection = run_test_future(async move {
-            let admin = Database::connect(&admin_url).await.unwrap();
-            execute(
-                &admin,
-                format!(
-                    "CREATE DATABASE {} TEMPLATE template0",
-                    quote_pg_ident(&external_name)
-                ),
-            )
-            .await
-            .unwrap();
-            admin.close().await.unwrap();
-            sea_orm::sqlx::PgConnection::connect(&database_url(&admin_url, &external_name).unwrap())
-                .await
-                .unwrap()
-        });
-
-        let (child_id, child) = cleanup_child(&target, "exit");
-        assert!(
-            child.status.success(),
-            "cleanup child failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&child.stdout),
-            String::from_utf8_lossy(&child.stderr)
-        );
-
-        let external_value = run_test_future(async move {
-            let value: (i32,) = sea_orm::sqlx::query_as("SELECT 1")
-                .fetch_one(&mut external_connection)
-                .await
-                .unwrap();
-            external_connection.close().await.unwrap();
-            value.0
-        });
-        assert_eq!(external_value, 1);
-
-        let admin_url = target.database_url.clone();
-        let external_name = external_database.clone();
-        let databases = run_test_future(async move {
-            let admin = Database::connect(&admin_url).await.unwrap();
-            let deadline = tokio::time::Instant::now() + EXIT_CLEANUP_TIMEOUT;
-            let databases = loop {
-                let databases = admin
-                    .query_all_raw(Statement::from_string(
-                        admin.get_database_backend(),
-                        "SELECT datname FROM pg_database".to_owned(),
-                    ))
-                    .await
-                    .unwrap()
-                    .into_iter()
-                    .map(|row| row.try_get::<String>("", "datname").unwrap())
-                    .collect::<Vec<_>>();
-                let child_database_remains = databases.iter().any(|name| {
-                    name.starts_with(&format!("scope_test_db_{child_id}_"))
-                        || name.starts_with(&format!("scope_test_template_{child_id}_"))
-                });
-                if !child_database_remains || tokio::time::Instant::now() >= deadline {
-                    break databases;
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            };
-            execute(
-                &admin,
-                format!(
-                    "DROP DATABASE {} WITH (FORCE)",
-                    quote_pg_ident(&external_name)
-                ),
-            )
-            .await
-            .unwrap();
-            admin.close().await.unwrap();
-            databases
-        });
-        assert!(databases.contains(&external_database));
-        assert!(
-            databases.iter().all(
-                |name| !name.starts_with(&format!("scope_test_db_{child_id}_"))
-                    && !name.starts_with(&format!("scope_test_template_{child_id}_"))
-            ),
-            "cleanup child left a registered database behind: {databases:?}\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&child.stdout),
-            String::from_utf8_lossy(&child.stderr)
-        );
-    }
-
-    fn orphaned_client_with_idle_connection(
-        store: &MetadataStore,
-        target: &TestDatabaseTarget,
-    ) -> String {
-        let database = Arc::clone(&store.db);
-        let admin_url = target.database_url.clone();
-        let (name, terminated, idle_clients) = run_test_future(async move {
-            let pool = database.get_postgres_connection_pool();
-            let mut orphan = pool.acquire().await.unwrap();
-            let (name, pid) = sea_orm::sqlx::query_as::<_, (String, i32)>(
-                "SELECT current_database(), pg_backend_pid()",
-            )
-            .fetch_one(&mut *orphan)
-            .await
-            .unwrap();
-            let mut idle = pool.acquire().await.unwrap();
-            idle.return_to_pool().await;
-            drop(idle);
-            let admin = Database::connect(&admin_url).await.unwrap();
-            let terminated = admin
-                .query_one_raw(Statement::from_sql_and_values(
-                    admin.get_database_backend(),
-                    "SELECT pg_terminate_backend($1) AS terminated",
-                    [pid.into()],
-                ))
-                .await
-                .unwrap()
-                .unwrap()
-                .try_get::<bool>("", "terminated")
-                .unwrap();
-            let idle_clients = admin.query_one_raw(Statement::from_sql_and_values(
-                admin.get_database_backend(),
-                "SELECT count(*)::bigint AS count FROM pg_stat_activity
-                 WHERE datname = $1 AND pid <> $2 AND usename = current_user AND backend_type = 'client backend'",
-                [name.clone().into(), pid.into()],
-            )).await.unwrap().unwrap().try_get::<i64>("", "count").unwrap();
-            admin.close().await.unwrap();
-            std::mem::forget(orphan);
-            (name, terminated, idle_clients)
-        });
-        assert!(
-            terminated,
-            "failed to terminate only the borrowed backend for {name}"
-        );
-        assert_eq!(
-            idle_clients, 1,
-            "regression requires one live idle client for {name}"
-        );
-        name
-    }
-
-    fn cleanup_child(target: &TestDatabaseTarget, mode: &str) -> (u32, std::process::Output) {
-        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
-        command
-            .arg("--exact")
-            .arg(
-                "db::test_support::database_templates::tests::process_exit_removes_only_its_registered_databases",
-            )
-            .env(EXIT_CLEANUP_CHILD, mode)
-            .env("SCOPE_TEST_DATABASE_URL", &target.database_url)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        let child = command.spawn().unwrap();
-        let id = child.id();
-        (id, child.wait_with_output().unwrap())
-    }
-}
+mod tests;

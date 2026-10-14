@@ -1,3 +1,5 @@
+import { serverLog } from './log'
+
 const POSTHOG_CAPTURE_UPSTREAM = 'https://us.i.posthog.com/e/'
 const MAX_REQUEST_BYTES = 1024 * 1024
 const MAX_RESPONSE_BYTES = 64 * 1024
@@ -86,7 +88,7 @@ function observeDelivery(
     if (observer) {
       observer(observation)
     } else {
-      console.info('[analytics-proxy] delivery', observation)
+      serverLog('info', '[analytics-proxy] delivery', observation)
     }
   } catch {}
 }

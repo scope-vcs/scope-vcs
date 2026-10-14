@@ -37,7 +37,7 @@ function stagingCopy() {
 }
 
 function fakeRailway({ environments = [] } = {}) {
-  const state = { environments: [...environments], volumes: [], tracing: {}, calls: [], deployments: [], bootstraps: [], copy: stagingCopy(), clock: 0 };
+  const state = { environments: [...environments], volumes: [], calls: [], deployments: [], bootstraps: [], copy: stagingCopy(), clock: 0 };
   const railway = {
     state,
     now: () => state.clock,
@@ -74,11 +74,6 @@ function fakeRailway({ environments = [] } = {}) {
         return { volumeCreate: { id: 'volume' } };
       }
       if (query.startsWith('mutation PreviewRegistry')) return { serviceInstanceUpdate: true };
-      if (query.startsWith('mutation ConfigureTracing')) {
-        assert.equal(variables.environmentId, preview);
-        state.tracing[variables.serviceId] = variables.input;
-        return { serviceInstanceUpdate: true };
-      }
       if (query.startsWith('mutation PreviewVariables')) {
         const { serviceId, variables: values, environmentId, skipDeploys } = variables.input;
         assert.equal(environmentId, preview);
@@ -195,11 +190,6 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.equal(result.environmentId, preview);
   assert.equal(result.urls.web, 'https://scope-web-pr-7.up.railway.app');
   assert.deepEqual(railway.state.volumes, [{ serviceId: ids.postgres, mountPath: '/var/lib/postgresql/data' }]);
-  assert.equal(railway.state.tracing[ids.postgres], undefined);
-  assert.deepEqual(railway.state.tracing[ids.web], { tracingEnabled: true, autoInstrumentationEnabled: true });
-  for (const component of ['api', 'run-worker', 'git-router', 'media-api', 'media-worker', 'maintenance']) {
-    assert.deepEqual(railway.state.tracing[ids[component]], { tracingEnabled: true });
-  }
   assert.deepEqual(railway.state.deployments, [ids.postgres, ids.maintenance, ids.maintenance]);
   assert.equal(railway.state.bootstraps.length, 1);
   assert.equal(railway.state.bootstraps[0].environmentId, preview);
@@ -218,7 +208,7 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.deepEqual(railway.state.copy.variables, before);
   assert.equal(railway.state.bootstraps.length, 1);
   assert.deepEqual([...new Set(railway.state.calls.slice(calls).map(([name]) => name))],
-    ['mutation ConfigureTracing', 'mutation PreviewRegistry', 'mutation PreviewDeploy']);
+    ['mutation PreviewRegistry', 'mutation PreviewDeploy']);
 });
 
 test('refuses release and persistent environments that share the preview name', () => {

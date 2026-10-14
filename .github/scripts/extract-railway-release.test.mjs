@@ -50,7 +50,7 @@ test('extracts backend executables, notices, and analyzer runtime with sanitized
 });
 
 test('extracts the compiled web tree including hidden data', (t) => {
-  const f = fixture(t, [{ name: '.output', type: 'directory' }, { name: '.output/server/index.mjs', data: 'export {}' }, { name: '.output/public/.well-known/data.json', data: '{}' }]);
+  const f = fixture(t, [{ name: '.output', type: 'directory' }, { name: '.output/server/index.mjs', data: 'export {}' }, { name: '.output/server/_instrumentation/instrumentation.mjs', data: 'export {}' }, { name: '.output/public/.well-known/data.json', data: '{}' }]);
   const result = extract('web', f);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(join(f.destination, '.output/public/.well-known/data.json'), 'utf8'), '{}');
@@ -69,6 +69,14 @@ for (const bad of [
     assert.equal(existsSync(f.destination), false);
   });
 }
+
+test('rejects a web release without the telemetry preload', (t) => {
+  const f = fixture(t, [{ name: '.output/server/index.mjs', data: 'export {}' }]);
+  const result = extract('web', f);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /missing \.output\/server\/_instrumentation\/instrumentation\.mjs/);
+  assert.equal(existsSync(f.destination), false);
+});
 
 test('rejects publishing scripts, duplicate files and file-as-directory archives', (t) => {
   for (const [kind, entries] of [
