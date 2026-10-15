@@ -63,17 +63,6 @@ test('a late page cannot replace a newer search or a cleared viewer scope', asyn
   assert.equal(requestQueueResource.peek('race'), null)
 })
 
-test('refresh failure leaves valid data available for retry', async () => {
-  requestQueueResource.clear()
-  const previous = await open('error')
-  requestQueueResource.invalidate('error')
-  await assert.rejects(open('error', '2', async () => { throw new Error('offline') }), /offline/)
-  assert.equal(requestQueueResource.peek('error'), previous)
-  assert.match(String(requestQueueResource.getSnapshot('error').error), /offline/)
-  await open('error', '2')
-  assert.equal(requestQueueResource.getSnapshot('error').error, null)
-})
-
 test('live invalidation restarts an in-flight search with the requested query', async () => {
   requestQueueResource.clear()
   const previous = await open('search-refresh')

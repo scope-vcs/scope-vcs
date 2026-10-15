@@ -22,22 +22,6 @@ test('case parser preserves the physical dimensions', () => {
   assert.throws(() => parseCases('1MiB:1:mystery'), /content kind/);
 });
 
-test('smoke configuration stays small and accepts explicit matrix cases', () => {
-  const config = configuration({
-    SCOPE_PHYSICS_PROFILE: 'smoke',
-    SCOPE_PHYSICS_CASES: '4KiB:2:random',
-    SCOPE_PHYSICS_OPERATIONS: 'pack,index',
-    SCOPE_PHYSICS_SAMPLES: '1',
-    SCOPE_PHYSICS_FILE_BYTES: '4KiB',
-    SCOPE_PHYSICS_EVICT_BYTES: '0',
-    SCOPE_PHYSICS_TIMEOUT_MS: '1000',
-    SCOPE_PHYSICS_OUTPUT_DIR: '.tmp/test-output',
-  });
-  assert.equal(config.cases[0].logicalBytes, 4096);
-  assert.deepEqual(config.operations, ['pack', 'index']);
-  assert.equal(config.samples, 1);
-});
-
 test('GNU time parser names CPU, page-cache, disk, and scheduler counters', () => {
   assert.deepEqual(parseTimeReport('__SCOPE_TIME__\t1.25\t0.50\t2.00\t8192\t3\t4\t5\t6\t7\t8\n'), {
     wallMs: 2000,

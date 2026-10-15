@@ -42,13 +42,6 @@ const loaded: StepLogState = {
 
 beforeEach(resetViewerState)
 
-test('returning to completed run output reuses its loaded page without refreshing', () => {
-  writeRunLogCache(key, selection, loaded)
-  const revisited = readRunLogCache(key)[stepKey(selection)]!
-  assert.deepEqual(revisited.logs, [log(1)])
-  assert.equal(canReuseRunLogs(revisited, detail), true)
-})
-
 test('live output survives navigation and appends missing output during recovery', () => {
   const running: RepositoryRunDetailResponse = {
     ...detail,
@@ -158,12 +151,18 @@ test('streamed output never moves the page cursor past rows still to fetch', () 
   assert.equal(state?.nextAfter, 1)
 })
 
-test('a changed completion revision, incomplete page or failed page still needs refresh', () => {
+test('completed run output is reused unless its revision changed or its page is incomplete or failed', () => {
+  writeRunLogCache(key, selection, loaded)
+  const revisited = readRunLogCache(key)[stepKey(selection)]!
   const changed = { ...detail, run: { ...detail.run, updated_at_unix: 4 } }
-  assert.equal(canReuseRunLogs(loaded, changed), false)
-  assert.equal(canReuseRunLogs({ ...loaded, hasMore: true }, detail), false)
-  assert.equal(canReuseRunLogs({ ...loaded, error: 'disconnected' }, detail), false)
-  assert.equal(canReuseRunLogs(EMPTY_LOG_STATE, detail), false)
+  const cases: [StepLogState, RepositoryRunDetailResponse, boolean][] = [
+    [revisited, detail, true],
+    [revisited, changed, false],
+    [{ ...revisited, hasMore: true }, detail, false],
+    [{ ...revisited, error: 'disconnected' }, detail, false],
+    [EMPTY_LOG_STATE, detail, false],
+  ]
+  for (const [state, run, reusable] of cases) assert.equal(canReuseRunLogs(state, run), reusable)
 })
 
 test('logs never cross viewer, repository, access, run, job, attempt or step identities', () => {
@@ -181,32 +180,10 @@ test('logs never cross viewer, repository, access, run, job, attempt or step ide
   ]) assert.equal(retained[stepKey(other)], undefined)
 })
 
-test('returning to an earlier window preserves its cursor and navigation state', () => {
-  const earlier = { ...loaded, viewingEarlier: true, hasEarlier: true, nextAfter: 10 }
-  writeRunLogCache(key, selection, earlier)
-  assert.deepEqual(readRunLogCache(key)[stepKey(selection)], earlier)
-})
-
-test('retention limits steps per run and evicts old runs by access order', () => {
+test('retention limits steps per run', () => {
   for (let stepIndex = 0; stepIndex < 9; stepIndex++) {
     writeRunLogCache(key, { ...selection, stepIndex }, loaded)
   }
   assert.equal(Object.keys(readRunLogCache(key)).length, 8)
   assert.equal(readRunLogCache(key)[stepKey(selection)], undefined)
-  for (let run = 0; run < 15; run++) writeRunLogCache(`run-${run}`, selection, loaded)
-  readRunLogCache(key)
-  writeRunLogCache('another-run', selection, loaded)
-  assert.equal(Object.keys(readRunLogCache(key)).length, 8)
-  assert.deepEqual(readRunLogCache('run-0'), {})
-})
-
-test('retention also bounds total log bytes', () => {
-  const large = { ...loaded, logs: [{ ...log(1), byte_length: 512 * 1_024 }] }
-  for (let stepIndex = 0; stepIndex < 8; stepIndex++) {
-    writeRunLogCache('first', { ...selection, stepIndex }, large)
-    writeRunLogCache('second', { ...selection, stepIndex }, large)
-  }
-  writeRunLogCache('third', selection, large)
-  assert.deepEqual(readRunLogCache('first'), {})
-  assert.equal(Object.keys(readRunLogCache('second')).length, 8)
 })

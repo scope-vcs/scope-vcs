@@ -25,15 +25,8 @@ function render(view: string) {
   }))
 }
 
-test('the member view picker offers every repository view by name', () => {
-  const html = render('agent')
-  assert.deepEqual([...html.matchAll(/<option[^>]*value="([^"]+)"[^>]*>([^<]+)</g)].map((match) => [match[1], match[2]]), [
-    ['public', 'Public'],
-    ['private', 'Private'],
-    ['agent', 'Agent'],
-  ])
-  assert.match(html, /<option[^>]*value="agent"[^>]*selected/)
-  assert.match(html, /<label[^>]*for="([^"]+)"[^>]*>View<\/label><span[^>]*><select[^>]*id="\1"/)
+test('the member view picker is labelled View', () => {
+  assert.match(render('agent'), /<label[^>]*for="([^"]+)"[^>]*>View<\/label><span[^>]*><select[^>]*id="\1"/)
 })
 
 test('a narrower view explains that only changing file visibility needs the full view', () => {

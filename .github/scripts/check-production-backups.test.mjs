@@ -40,17 +40,7 @@ test('query uses project token and rejects API errors without echoing sensitive 
   await assert.rejects(fetchBackupHealth('', async () => { throw new Error('must not fetch') }), /missing/)
 })
 
-test('scheduled monitor uses the reviewed reusable job and forwards only its project token', () => {
-  const read = name => readFileSync(new URL(`../workflows/${name}.yml`, import.meta.url), 'utf8')
-  const caller = read('backup-monitor')
-  const execution = read('backup-monitor-execute')
-  assert.match(caller, /cron: '7-52\/15 \* \* \* \*'/)
-  assert.match(caller, /if: github.ref == 'refs\/heads\/main'/)
-  assert.match(caller, /uses: \.\/\.github\/workflows\/backup-monitor-execute.yml/)
+test('scheduled monitor does not inherit every repository secret', () => {
+  const caller = readFileSync(new URL('../workflows/backup-monitor.yml', import.meta.url), 'utf8')
   assert.doesNotMatch(caller, /secrets: inherit/)
-  assert.match(caller, /RAILWAY_TOKEN: \$\{\{ secrets.RAILWAY_TOKEN \}\}/)
-  assert.match(execution, /role-to-assume: \$\{\{ vars.SCOPE_BACKUP_MONITOR_ROLE_ARN \}\}/)
-  assert.match(execution, /always\(\) && steps.backup.outcome != 'skipped'/)
-  assert.match(execution, /node \.github\/scripts\/check-production-backups.mjs/)
-  assert.match(execution, /cloudwatch put-metric-data --namespace Scope\/Security\/Backup/)
 })

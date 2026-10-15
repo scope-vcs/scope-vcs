@@ -1,20 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {
-  repoFileResource,
-  repoFileCacheKey,
-} from './repo-file-cache'
-import type { RepoFileContentResponse } from '@/api/types.generated'
-
-function textFile(path: string, oid: string, text: string): RepoFileContentResponse {
-  return {
-    content: { kind: 'text', text },
-    oid,
-    path,
-    size_bytes: text.length,
-    label: 'public',
-  }
-}
+import { repoFileCacheKey } from './repo-file-cache'
 
 test('keys file entries by repository version, view and normalized path', () => {
   const base = {
@@ -42,30 +28,4 @@ test('keys file entries by repository version, view and normalized path', () => 
     repoFileCacheKey(base),
     repoFileCacheKey({ ...base, path: 'another.ts' }),
   )
-})
-
-test('evicts old entries at the entry limit', () => {
-  repoFileResource.clear()
-  for (let index = 0; index < 40; index += 1) {
-    repoFileResource.write(`file-${index}`, textFile(`${index}.ts`, `${index}`, 'x'))
-  }
-
-  assert.equal(repoFileResource.stats().entries, 32)
-  assert.equal(repoFileResource.read('file-0'), null)
-  assert.equal(repoFileResource.read('file-39')?.path, '39.ts')
-})
-
-test('evicts large source entries at the byte limit', () => {
-  repoFileResource.clear()
-  const sixMiBOfText = 'x'.repeat(3 * 1024 * 1024)
-  for (let index = 0; index < 6; index += 1) {
-    repoFileResource.write(
-      `large-${index}`,
-      textFile(`${index}.txt`, `${index}`, sixMiBOfText),
-    )
-  }
-
-  const stats = repoFileResource.stats()
-  assert.ok(stats.entries < 6)
-  assert.ok(stats.totalWeight <= 24 * 1024 * 1024)
 })

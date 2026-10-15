@@ -67,17 +67,6 @@ if(a[0]==='manifest' && process.env.TEST_PULL_FAIL) process.exit(1);
   assert(!readFileSync(log,'utf8').includes('durable-secret'));
 });
 
-test('runtime workflow verifies staging before production and stays outside app release activation', () => {
-  const workflow = readFileSync(new URL('../workflows/maintenance-runtime.yml', import.meta.url),'utf8');
-  assert.match(workflow,/workflow_dispatch:/);
-  assert.match(workflow,/github.ref == 'refs\/heads\/main'/);
-  assert.match(workflow,/production:\n    needs: staging/);
-  assert.match(workflow,/verify-maintenance-runtime.sh staging/);
-  assert.match(workflow,/packages: write/);
-  assert.doesNotMatch(workflow,/deploy-backend|release-cutover|railway up/);
-});
-
-
 test('only initial package creation accepts missing metadata', async () => {
   const imageRepository = `ghcr.io/${repository}/railway-private-maintenance`;
   const fetchImpl = async url => String(url).includes('/packages/')

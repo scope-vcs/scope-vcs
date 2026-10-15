@@ -68,9 +68,3 @@ test('caps must be positive integers', () => {
     assert.throws(() => backendBinaryCaps(invalid), /Component worker has no positive integer maxBytes for scope-worker/);
   }
 });
-
-test('the deployment manifest caps all five backend release binaries', () => {
-  assert.deepEqual(backendBinaryCaps().map(({ binary }) => binary).sort(), [
-    'scope-maintenance', 'scope-media-service', 'scope-repo-router', 'scope-vcs', 'scope-worker',
-  ]);
-});

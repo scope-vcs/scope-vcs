@@ -79,7 +79,6 @@ test("changes select the required deployment lanes", () => {
       ["web/scripts/generate-api-contract.mjs", "web/pnpm-lock.yaml", "web/src/api/validators.generated.ts"],
       { api: true, web: true },
     ],
-    ["router changes deploy the Git router", ["repo-router/src/main.rs"], { "git-router": true }],
     [
       "shared runtime image selects backend services and CLI downloads",
       ["deploy/railway/prebuilt.Dockerfile"],

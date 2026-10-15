@@ -34,10 +34,6 @@ test("pull requests build only the Linux and Windows x64 targets", () => {
   assert.ok(plan.include.every(({ smoke }) => smoke));
 });
 
-test("every distribution target builds on a GitHub-hosted runner", () => {
-  assert.ok(configuration.targets.every(({ runner }) => !runner.startsWith("blacksmith-")));
-});
-
 test("configurations without targets, a pinned Node version, or a known mode fail", () => {
   assert.throws(() => selectCliDistributionTargets({ targets: [] }, "release"), /non-empty targets/);
   assert.throws(

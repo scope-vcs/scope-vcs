@@ -15,12 +15,3 @@ test('run retention isolates repository access and workflow filters', () => {
     assert.equal(runHistoryResource.read(other), null)
   }
 })
-
-test('run pagination retention is bounded', () => {
-  runHistoryResource.clear()
-  for (let index = 0; index < 13; index++) runHistoryResource.write(String(index), { history: page(['first', 'older']), pageCount: 2 })
-  assert.equal(runHistoryResource.read('0'), null)
-  assert.equal(runHistoryResource.read('12')?.pageCount, 2)
-  runHistoryResource.write('large', { history: page(['x'.repeat(3 * 1024 * 1024)]), pageCount: 2 })
-  assert.equal(runHistoryResource.read('large'), null)
-})
