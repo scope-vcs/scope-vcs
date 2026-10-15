@@ -114,3 +114,11 @@ process.exit(result.status ?? 1);
   assert.notEqual(result.status,0);
   assert(!existsSync(preflight));
 });
+
+test('runtime workflow verifies staging before production and stays outside app release activation', () => {
+  const workflow = readFileSync(new URL('../workflows/maintenance-runtime.yml', import.meta.url),'utf8');
+  assert.match(workflow,/github.ref == 'refs\/heads\/main'/);
+  assert.match(workflow,/production:\n    needs: staging/);
+  assert.match(workflow,/verify-maintenance-runtime.sh staging/);
+  assert.doesNotMatch(workflow,/deploy-backend|release-cutover|railway up/);
+});

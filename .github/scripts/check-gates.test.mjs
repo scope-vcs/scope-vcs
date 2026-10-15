@@ -24,6 +24,15 @@ function commands(gate, ...args) {
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
+test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
+  const backend = commands('backend');
+  assert.ok(backend.includes('cargo deny --locked check advisories'));
+  assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --locked'));
+  assert.ok(backend.includes('cargo test --workspace --locked'));
+  assert.ok(backend.includes('cargo test -p api --features local-dev --locked dev::'));
+  assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
+});
+
 test('the backend gate bounds PostgreSQL test concurrency on larger hosts', () => {
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-test-concurrency-'));
   try {
@@ -40,12 +49,33 @@ test('the backend gate bounds PostgreSQL test concurrency on larger hosts', () =
   }
 });
 
-test('web checks include resource, Hooks, convention and advisory checks; backend owns the contract; CLI checks avoid release builds', () => {
+test('web gate includes resource, Hooks, convention and advisory checks; backend owns the contract; CLI and integration retain their coverage', () => {
+  assert.deepEqual(commands('web'), [
+    'pnpm test', 'pnpm check', 'pnpm build',
+  ]);
   const webChecks = JSON.parse(read('web/package.json')).scripts.check;
   assert.equal(webChecks, 'pnpm typecheck && pnpm check:resource-boundary && pnpm check:hooks && pnpm check:conventions && pnpm check:advisories');
   assert.deepEqual(commands('contract'), ['pnpm check:api-contract']);
   const cliCommands = commands('cli');
+  assert.ok(cliCommands.includes('cargo fmt --manifest-path cli/Cargo.toml -- --check'));
+  assert.ok(cliCommands.includes('cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml check advisories'));
+  assert.ok(cliCommands.includes('cargo test --manifest-path cli/Cargo.toml --locked'));
+  assert.ok(cliCommands.includes('cargo clippy --manifest-path cli/Cargo.toml --all-targets --locked -- -D warnings'));
+  assert.ok(cliCommands.includes('cargo test -p scope-cli-downloads --locked'));
   assert.ok(!cliCommands.some((command) => command.includes('--release')), cliCommands.join('\n'));
+  const bundleCommands = commands('cli-bundle');
+  assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope'));
+  assert.ok(bundleCommands.includes('cargo build -p scope-cli-downloads --release --locked'));
+  assert.ok(bundleCommands.includes('npm ci --prefix dependency-analyzer --ignore-scripts'));
+  assert.ok(bundleCommands.includes('bash cli/distribution/package-bundle.sh'));
+  assert.ok(bundleCommands.includes('bash cli/distribution/verify-bundled-analyzer.sh'));
+  assert.ok(bundleCommands.includes('node --test cli/distribution/install-smoke.test.mjs'));
+  assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
+  assert.deepEqual(commands('integration', 'web'), ['pnpm test:smoke']);
+  assert.deepEqual(commands('integration', 'journey'), ['cargo build --manifest-path cli/Cargo.toml --locked --bin scope', 'pnpm test:journey']);
+  assert.deepEqual(commands('dependency-analyzer'), [
+    'npm ci --ignore-scripts', 'npm test',
+  ]);
 });
 
 test('local and GitHub callers use the shared inventory', () => {

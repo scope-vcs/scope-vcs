@@ -94,7 +94,9 @@ class RecoveryStorageContracts(unittest.TestCase):
         capture = next(s for s in job['steps'] if s.get('run') == 'python .github/scripts/recovery-run.py')
         self.assertEqual(capture['env']['RAILWAY_TOKEN'], '${{ secrets.RAILWAY_TOKEN }}')
         self.assertEqual(capture['env']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], '${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}')
-        self.assertEqual(job['steps'][-1]['if'], "${{ failure() && steps.credentials.outcome == 'success' }}")
+        failure = job['steps'][-1]
+        self.assertEqual(failure['if'], "${{ failure() && steps.credentials.outcome == 'success' }}")
+        self.assertIn('Value:0', failure['run'])
 
     def testIdentityGrantsCannotTurnWriterIntoReaderOrDestroyer(self):
         statements = RESOURCES['RecoveryBucketPolicy']['Properties']['PolicyDocument']['Statement']
