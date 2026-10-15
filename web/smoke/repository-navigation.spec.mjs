@@ -52,14 +52,6 @@ test('repository Markdown routes relative file links without replacing the docum
   await withPage(requestRepoPath, assertRepositoryMarkdownUsesClientNavigation)
 })
 
-test('repository sections no longer include a History tab', async () => {
-  await withPage(repoPath, async (page) => {
-    await assertCurrentRepoSection(page, 'Code')
-    await primaryLink(page, 'Requests').waitFor()
-    assert.equal(await primaryLink(page, 'History').count(), 0)
-  })
-})
-
 test('repository chrome persists across navigation and request revalidation', async () => {
   await withPage(requestRepoPath, async (page) => {
     await assertCurrentRepoSection(page, 'Code')

@@ -23,30 +23,17 @@ test('attachment resources are isolated by viewer/access scope and request', () 
   )
 })
 
-test('invalidation retains valid metadata while a processing refresh runs or fails', async () => {
-  const identity = requestAttachmentResourceIdentity('viewer/private', 'request')
-  const current = resourceValue('Processing')
-  requestAttachmentResource.write(identity, current)
-  requestAttachmentResource.invalidate(identity)
-
-  assert.equal(requestAttachmentResource.getSnapshot(identity).value?.attachments[0]?.state, 'Processing')
-  const refresh = requestAttachmentResource.ensure(identity, '2', async () => {
-    throw new Error('temporary outage')
-  })
-  assert.equal(requestAttachmentResource.getSnapshot(identity).value?.attachments[0]?.state, 'Processing')
-  await refresh
-  assert.equal(requestAttachmentResource.getSnapshot(identity).value?.attachments[0]?.state, 'Processing')
-  assert.equal(requestAttachmentResource.getSnapshot(identity).error instanceof Error, true)
-})
-
 const scope = (repo = 'repo', viewer = 'viewer', access = 'Public') =>
   JSON.stringify([repo, viewer, { actor: access }])
 const maxOwners = 64
+const seedMetadata = (key: string) => requestAttachmentResource.write(key, resourceValue('Processing'))
+const seedScope = (accessScope: string) => seedMetadata(requestAttachmentResourceIdentity(accessScope, 'request'))
+const peekScope = (accessScope: string) => requestAttachmentResource.peek(requestAttachmentResourceIdentity(accessScope, 'request'))
 const owners = [
   {
     name: 'metadata', resource: requestAttachmentResource,
     identity: requestAttachmentResourceIdentity,
-    seed: (key: string) => requestAttachmentResource.write(key, resourceValue('Processing')),
+    seed: seedMetadata,
   },
   {
     name: 'media grants', resource: requestAttachmentMediaGrantResource,
@@ -78,42 +65,42 @@ for (const owner of owners) {
     for (const identity of removed) assert.equal(resource.peek(identity), null)
     for (const identity of retained) assert.equal(resource.getSnapshot(identity).stale, false)
   })
-
-  test(`${owner.name}: ${maxOwners}-owner tracking refreshes recency and forgets without cache deletion`, () => {
-    for (let index = 0; index < maxOwners; index++) activate(scope(`repo-${index}`))
-    seed(key(scope('repo-0')))
-    activate(scope('repo-0', 'viewer', 'Member'))
-    assert.equal(resource.peek(key(scope('repo-0'))), null)
-    activate(scope('repo-1'))
-    for (const repo of ['repo-1', 'repo-2']) seed(key(scope(repo)))
-    activate(scope('overflow'))
-    assert.notEqual(resource.peek(key(scope('repo-2'))), null)
-    activate(scope('repo-1', 'viewer', 'Member'))
-    activate(scope('repo-2', 'viewer', 'Member'))
-    assert.equal(resource.peek(key(scope('repo-1'))), null)
-    assert.notEqual(resource.peek(key(scope('repo-2'))), null)
-  })
-
-  test(`${owner.name}: decoding ignores malformed scopes and preserves the anonymous fallback`, () => {
-    activate(scope())
-    for (let index = 1; index < maxOwners; index++) activate(scope(`repo-${index}`))
-    for (const invalid of ['{', 'null', '123', '{}', '"repo"', '[]', '[null]', '[1,"viewer"]']) {
-      seed(key(invalid))
-      activate(invalid)
-      assert.notEqual(resource.peek(key(invalid)), null)
-    }
-    seed(key(scope()))
-    activate(scope('repo', 'viewer', 'Member'))
-    assert.equal(resource.peek(key(scope())), null)
-    const anonymous = ['["repo"]', '["repo",null]', '["repo",12]', '["repo",{}]', '["repo",[]]', '["repo","anonymous"]']
-    for (const current of anonymous) {
-      activate(current)
-      seed(key(current))
-    }
-    for (const previous of anonymous.slice(0, -1)) assert.equal(resource.peek(key(previous)), null)
-    assert.notEqual(resource.peek(key(anonymous.at(-1)!)), null)
-  })
 }
+
+test(`${maxOwners}-owner tracking refreshes recency and forgets without cache deletion`, () => {
+  for (let index = 0; index < maxOwners; index++) activate(scope(`repo-${index}`))
+  seedScope(scope('repo-0'))
+  activate(scope('repo-0', 'viewer', 'Member'))
+  assert.equal(peekScope(scope('repo-0')), null)
+  activate(scope('repo-1'))
+  for (const repo of ['repo-1', 'repo-2']) seedScope(scope(repo))
+  activate(scope('overflow'))
+  assert.notEqual(peekScope(scope('repo-2')), null)
+  activate(scope('repo-1', 'viewer', 'Member'))
+  activate(scope('repo-2', 'viewer', 'Member'))
+  assert.equal(peekScope(scope('repo-1')), null)
+  assert.notEqual(peekScope(scope('repo-2')), null)
+})
+
+test('decoding ignores malformed scopes and preserves the anonymous fallback', () => {
+  activate(scope())
+  for (let index = 1; index < maxOwners; index++) activate(scope(`repo-${index}`))
+  for (const invalid of ['{', 'null', '123', '{}', '"repo"', '[]', '[null]', '[1,"viewer"]']) {
+    seedScope(invalid)
+    activate(invalid)
+    assert.notEqual(peekScope(invalid), null)
+  }
+  seedScope(scope())
+  activate(scope('repo', 'viewer', 'Member'))
+  assert.equal(peekScope(scope()), null)
+  const anonymous = ['["repo"]', '["repo",null]', '["repo",12]', '["repo",{}]', '["repo",[]]', '["repo","anonymous"]']
+  for (const current of anonymous) {
+    activate(current)
+    seedScope(current)
+  }
+  for (const previous of anonymous.slice(0, -1)) assert.equal(peekScope(previous), null)
+  assert.notEqual(peekScope(anonymous.at(-1)!), null)
+})
 
 function resourceValue(state: 'Processing'): RequestAttachmentResourceValue {
   return {

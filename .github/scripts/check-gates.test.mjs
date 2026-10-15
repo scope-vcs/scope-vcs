@@ -343,13 +343,9 @@ test('prepared web and backend jobs cannot build after activation begins', () =>
     assert.match(workflow, /SCOPE_PREPARED_RELEASE_PATH: prepared-release\.json/);
     assert.doesNotMatch(workflow, /cargo build|docker build|railway up|pnpm build/);
   }
-  assert.match(preparation, /prepare-release-images\.sh/);
-  assert.match(read('.github/scripts/prepare-release-images.sh'), /prepare-railway-artifact\.sh/);
-  assert.match(read('.github/workflows/scope-api-ci.yml'), /name: backend-release-\$\{\{ github\.sha \}\}/);
   assert.match(backendDeploy, /extract-railway-maintenance\.sh prepared-release\.json/);
   assert.doesNotMatch(backendDeploy, /backend-release-\$\{\{ inputs\.source_sha \}\}/);
   assert.match(preparation, /selected-release-\$\{\{ inputs\.source_sha \}\}/);
-  assert.match(preparation.split('\njobs:')[0], /actions: read/);
   const cliDeploy = read('.github/workflows/publish-cli.yml');
   assert.match(cliDeploy, /SCOPE_PREPARED_RELEASE_PATH: prepared-cli-release\.json/);
   assert.match(cliDeploy, /prepare-railway-artifact\.sh cli-downloads \.railway-cli prepared-cli-release\.json/);

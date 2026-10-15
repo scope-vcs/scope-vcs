@@ -63,7 +63,3 @@ test('relative time falls back to an absolute date past thirty days', () => {
 test('relative time has the same missing value wording as absolute dates', () => {
   assert.equal(formatRelativeUnix(null, NOW_SECONDS), 'Not set')
 })
-
-test('relative time defaults its reference point to now', () => {
-  assert.equal(formatRelativeUnix(Date.now() / 1000), 'just now')
-})

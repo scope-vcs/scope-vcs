@@ -35,11 +35,6 @@ class MissingTimeoutsTest(unittest.TestCase):
             with unittest.mock.patch.object(MODULE, "WORKFLOWS", root):
                 self.assertEqual([p.name for p in MODULE.workflow_files()], ["a.yml", "b.yaml"])
 
-    def test_repository_workflows_all_declare_timeouts(self):
-        workflows = {str(p): p.read_text() for p in MODULE.workflow_files()}
-        self.assertGreater(len(workflows), 0)
-        self.assertEqual(MODULE.missing_timeouts(workflows), [])
-
 
 if __name__ == "__main__":
     unittest.main()

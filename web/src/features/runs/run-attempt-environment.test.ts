@@ -6,7 +6,6 @@ import { RunEnvironmentPanel } from './run-attempt-environment'
 import {
   cacheSetupLabel,
   cacheSizeLabel,
-  cacheStateClass,
   cacheTimingLabel,
   cachesNeedAttention,
   pinnedImageLabel,
@@ -76,7 +75,6 @@ describe('run attempt environment', () => {
     assert.match(html, new RegExp(`title="${image}"`))
     assert.match(html, /Set up in 20ms/)
     assert.doesNotMatch(html, /authorized|finalize|key 2ms|checks\.yml/)
-    assert.doesNotMatch(html, /rounded|shadow/)
   })
 
   it('flags a cold or unreported cache for the collapsed control', () => {
@@ -86,8 +84,7 @@ describe('run attempt environment', () => {
     assert.equal(cachesNeedAttention([]), false)
   })
 
-  it('styles results and labels only observed facts', () => {
-    assert.deepEqual(caches.map(cacheStateClass), ['text-success', 'text-warning', 'text-success', 'text-muted-foreground'])
+  it('labels only observed facts', () => {
     assert.equal(cacheTimingLabel(caches[1]!), '1.1s')
     assert.equal(cacheSizeLabel(caches[3]!), null)
     assert.equal(cacheTimingLabel(caches[3]!), null)

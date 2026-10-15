@@ -26,11 +26,8 @@ export async function loadAnalyticsBootstrap(signal: AbortSignal) {
   return { client, eventContext }
 }
 
-export async function fetchAnalyticsRuntimeConfig(
-  signal: AbortSignal,
-  fetcher: typeof fetch = fetch,
-) {
-  const response = await fetcher('/e/config', {
+export async function fetchAnalyticsRuntimeConfig(signal: AbortSignal) {
+  const response = await fetch('/e/config', {
     cache: 'no-store',
     credentials: 'omit',
     headers: { Accept: 'application/json' },

@@ -6,115 +6,52 @@ import {
   resolveAnalyticsIdentity,
 } from './identity'
 
-test('signed-in anonymous visitors identify with the internal Scope user ID', () => {
-  assert.deepEqual(identityTransition({
-    currentDistinctId: 'anonymous-id',
-    isSignedIn: true,
-    identifiedUserId: undefined,
-    scopeUserId: 'scope_usr_123',
-  }), {
-    kind: 'identify',
-    scopeUserId: 'scope_usr_123',
-  })
+test('identity transitions identify, reset or switch the browser without duplicate identifies', () => {
+  const cases: [string, Parameters<typeof identityTransition>[0], ReturnType<typeof identityTransition>][] = [
+    ['signed-in anonymous visitor identifies with the Scope user ID', {
+      currentDistinctId: 'anonymous-id', isSignedIn: true, identifiedUserId: undefined, scopeUserId: 'scope_usr_123',
+    }, { kind: 'identify', scopeUserId: 'scope_usr_123' }],
+    ['sign-out resets an identified browser', {
+      currentDistinctId: 'scope_usr_123', isSignedIn: false, identifiedUserId: 'scope_usr_123',
+    }, { kind: 'reset' }],
+    ['a new anonymous visit is left alone', {
+      currentDistinctId: 'anonymous-id', isSignedIn: false, identifiedUserId: undefined,
+    }, { kind: 'none' }],
+    ['sign-out resets a Scope distinct ID without a persisted user property', {
+      currentDistinctId: 'scope_usr_123', isSignedIn: false, identifiedUserId: undefined,
+    }, { kind: 'reset' }],
+    ['an already identified visitor is not identified again', {
+      currentDistinctId: 'scope_usr_123', isSignedIn: true, identifiedUserId: 'scope_usr_123', scopeUserId: 'scope_usr_123',
+    }, { kind: 'none' }],
+    ['account switching resets before identifying the next user', {
+      currentDistinctId: 'scope_usr_one', isSignedIn: true, identifiedUserId: 'scope_usr_one', scopeUserId: 'scope_usr_two',
+    }, { kind: 'reset_and_identify', scopeUserId: 'scope_usr_two' }],
+  ]
+  for (const [name, input, expected] of cases) assert.deepEqual(identityTransition(input), expected, name)
 })
 
-test('sign-out resets an identified browser but not a new anonymous visit', () => {
-  assert.deepEqual(identityTransition({
-    currentDistinctId: 'scope_usr_123',
-    isSignedIn: false,
-    identifiedUserId: 'scope_usr_123',
-  }), { kind: 'reset' })
-  assert.deepEqual(identityTransition({
-    currentDistinctId: 'anonymous-id',
-    isSignedIn: false,
-    identifiedUserId: undefined,
-  }), { kind: 'none' })
-})
-
-test('sign-out resets a Scope distinct ID even without a persisted user property', () => {
-  assert.deepEqual(identityTransition({
-    currentDistinctId: 'scope_usr_123',
-    isSignedIn: false,
-    identifiedUserId: undefined,
-  }), { kind: 'reset' })
-})
-
-test('already identified visitors do not emit a duplicate identify', () => {
-  assert.deepEqual(identityTransition({
-    currentDistinctId: 'scope_usr_123',
-    isSignedIn: true,
-    identifiedUserId: 'scope_usr_123',
-    scopeUserId: 'scope_usr_123',
-  }), { kind: 'none' })
-})
-
-test('account switching resets before identifying the next Scope user', () => {
-  assert.deepEqual(identityTransition({
-    currentDistinctId: 'scope_usr_one',
-    isSignedIn: true,
-    identifiedUserId: 'scope_usr_one',
-    scopeUserId: 'scope_usr_two',
-  }), {
-    kind: 'reset_and_identify',
-    scopeUserId: 'scope_usr_two',
-  })
-})
-
-const signedIn = {
-  clerkUserId: 'clerk_user_123',
-  isLoaded: true,
-  isSignedIn: true,
-}
-
-test('identity resolves the internal Scope user ID from the resolved session', () => {
-  assert.deepEqual(resolveAnalyticsIdentity({
-    ...signedIn,
-    scopeUserId: 'scope_usr_123',
-    sessionResolved: true,
-  }), {
-    identityKey: 'identified:clerk_user_123',
-    scopeUserId: 'scope_usr_123',
-  })
-})
-
-test('a signed-in viewer stays unresolved until the session resource publishes', () => {
-  assert.equal(resolveAnalyticsIdentity({
-    ...signedIn,
-    scopeUserId: null,
-    sessionResolved: false,
-  }), null)
+test('identity resolves from auth and the published session', () => {
+  const signedIn = { clerkUserId: 'clerk_user_123', isLoaded: true, isSignedIn: true }
+  const signedOut = { clerkUserId: null, isLoaded: true, isSignedIn: false }
+  const unloaded = { clerkUserId: null, isLoaded: false, isSignedIn: false }
+  const cases: [string, Parameters<typeof resolveAnalyticsIdentity>[0], ReturnType<typeof resolveAnalyticsIdentity>][] = [
+    ['a resolved session supplies the Scope user ID', {
+      ...signedIn, scopeUserId: 'scope_usr_123', sessionResolved: true,
+    }, { identityKey: 'identified:clerk_user_123', scopeUserId: 'scope_usr_123' }],
+    ['a signed-in viewer waits for the session resource', {
+      ...signedIn, scopeUserId: null, sessionResolved: false,
+    }, null],
+    ['a session without a Scope account identifies nobody', {
+      ...signedIn, scopeUserId: null, sessionResolved: true,
+    }, { identityKey: 'identified:clerk_user_123', scopeUserId: null }],
+    ['a signed-out viewer resolves anonymously without a session', {
+      ...signedOut, scopeUserId: null, sessionResolved: false,
+    }, { identityKey: 'anonymous', scopeUserId: null }],
+    ['an unloaded auth state resolves to no identity', {
+      ...unloaded, scopeUserId: null, sessionResolved: false,
+    }, null],
+  ]
+  for (const [name, input, expected] of cases) assert.deepEqual(resolveAnalyticsIdentity(input), expected, name)
   assert.equal(expectedIdentityKey(signedIn), 'identified:clerk_user_123')
-})
-
-test('a session that resolves without a Scope account identifies nobody', () => {
-  assert.deepEqual(resolveAnalyticsIdentity({
-    ...signedIn,
-    scopeUserId: null,
-    sessionResolved: true,
-  }), {
-    identityKey: 'identified:clerk_user_123',
-    scopeUserId: null,
-  })
-})
-
-test('signed-out viewers resolve anonymously without reading a session', () => {
-  assert.deepEqual(resolveAnalyticsIdentity({
-    clerkUserId: null,
-    isLoaded: true,
-    isSignedIn: false,
-    scopeUserId: null,
-    sessionResolved: false,
-  }), { identityKey: 'anonymous', scopeUserId: null })
-})
-
-test('an unloaded auth state resolves to no identity at all', () => {
-  const pending = {
-    clerkUserId: null,
-    isLoaded: false,
-    isSignedIn: false,
-    scopeUserId: null,
-    sessionResolved: false,
-  }
-  assert.equal(resolveAnalyticsIdentity(pending), null)
-  assert.equal(expectedIdentityKey(pending), null)
+  assert.equal(expectedIdentityKey(unloaded), null)
 })

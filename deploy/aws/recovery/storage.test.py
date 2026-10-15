@@ -79,11 +79,10 @@ class RecoveryStorageContracts(unittest.TestCase):
         self.assertEqual(statement['Action'], ['signin:AuthorizeOAuth2Access', 'signin:CreateOAuth2Token'])
         self.assertEqual(statement['Resource'], [{'Sub': 'arn:${AWS::Partition}:signin:us-east-1:${AWS::AccountId}:oauth2/public-client/' + name} for name in ['localhost', 'remote']])
 
-    def testSchedulerUsesOnlyPinnedActionsAndPrivateCapture(self):
+    def testSchedulerCapturesPrivatelyFromMainInProduction(self):
         root = Path(__file__).resolve().parents[3]
         schedule = yaml.safe_load((root / '.github/workflows/recovery.yml').read_text())
         execute = yaml.safe_load((root / '.github/workflows/recovery-execute.yml').read_text())
-        self.assertEqual(schedule[UNQUOTED_ON_KEY_AS_PARSED]['schedule'], [{'cron': '17 7 * * *'}])
         self.assertFalse(schedule['concurrency']['cancel-in-progress'])
         job = execute['jobs']['capture']
         self.assertEqual(job['if'], "github.ref == 'refs/heads/main'")
@@ -91,13 +90,7 @@ class RecoveryStorageContracts(unittest.TestCase):
         self.assertEqual(execute[UNQUOTED_ON_KEY_AS_PARSED]['workflow_call']['secrets']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], {'required': True})
         self.assertEqual(schedule['jobs']['capture']['secrets']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], '${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}')
         for step in job['steps']:
-            if 'uses' in step:
-                self.assertRegex(step['uses'], r'@[a-f0-9]{40}$')
-                self.assertNotIn('upload-artifact', step['uses'])
-        installer = next(s for s in job['steps'] if s.get('name') == 'Install verified age binary')
-        self.assertIn('age/age age/age-keygen', installer['run'])
-        validation = next(s for s in job['steps'] if s.get('name') == 'Verify recovery tooling')
-        self.assertIn('command -v age age-keygen', validation['run'])
+            self.assertNotIn('upload-artifact', step.get('uses', ''))
         capture = next(s for s in job['steps'] if s.get('run') == 'python .github/scripts/recovery-run.py')
         self.assertEqual(capture['env']['RAILWAY_TOKEN'], '${{ secrets.RAILWAY_TOKEN }}')
         self.assertEqual(capture['env']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], '${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}')

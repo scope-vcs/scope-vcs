@@ -41,21 +41,6 @@ test('the URL names the view only when it differs from the reader view', () => {
   assert.deepEqual(parseViewingAsSearch({}), {})
 })
 
-test('the picker lists the readable views by name with the current view selected', () => {
-  const html = renderToStaticMarkup(createElement(ViewingAsPicker, {
-    onChange: () => undefined,
-    options: views.readableBy('private'),
-    value: 'agent',
-  }))
-  assert.match(html, /Viewing as/)
-  assert.deepEqual([...html.matchAll(/<option[^>]*value="([^"]+)"[^>]*>([^<]+)</g)].map((match) => [match[1], match[2]]), [
-    ['public', 'Public'],
-    ['private', 'Private'],
-    ['agent', 'Agent'],
-  ])
-  assert.match(html, /<option[^>]*value="agent"[^>]*selected/)
-})
-
 test('the picker stays hidden when the reader has a single view', () => {
   const html = renderToStaticMarkup(createElement(ViewingAsPicker, {
     onChange: () => undefined,

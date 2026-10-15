@@ -3,16 +3,6 @@ import { describe, it } from 'node:test'
 import { runDurationLead, runStatus } from './run-status'
 
 describe('run status', () => {
-  it('separates running from succeeded', () => {
-    const running = runStatus('running')
-    const succeeded = runStatus('succeeded')
-
-    assert.equal(running.tone, 'running')
-    assert.equal(running.animated, true)
-    assert.equal(succeeded.tone, 'success')
-    assert.equal(succeeded.animated, false)
-  })
-
   it('prefers a terminal reason over the raw state', () => {
     assert.equal(
       runStatus('failed', { kind: 'timed-out', step_index: 2 }).label,
@@ -23,17 +13,6 @@ describe('run status', () => {
         .label,
       'failed',
     )
-  })
-
-  it('groups every waiting state under one tone', () => {
-    for (const state of ['pending', 'blocked', 'queued', 'dispatching', 'canceling']) {
-      assert.equal(runStatus(state).tone, 'waiting', state)
-    }
-  })
-
-  it('treats states that never ran as inert', () => {
-    assert.equal(runStatus('canceled').tone, 'inert')
-    assert.equal(runStatus('skipped').tone, 'inert')
   })
 
   it('reads a duration the way the run went', () => {

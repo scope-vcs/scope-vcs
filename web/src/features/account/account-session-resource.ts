@@ -5,7 +5,7 @@ type AccountSessionResourceValue = {
   account: AccountSessionResponse | null
 }
 
-export type AccountSessionLoader = (
+type AccountSessionLoader = (
   signal: AbortSignal,
 ) => Promise<AccountSessionResponse | null>
 

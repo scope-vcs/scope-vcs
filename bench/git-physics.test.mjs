@@ -22,18 +22,13 @@ test('case parser preserves the physical dimensions', () => {
   assert.throws(() => parseCases('1MiB:1:mystery'), /content kind/);
 });
 
-test('smoke configuration stays small and accepts explicit matrix cases', () => {
+test('configuration honors explicit cases, operations and sample count', () => {
   const config = configuration({
-    SCOPE_PHYSICS_PROFILE: 'smoke',
     SCOPE_PHYSICS_CASES: '4KiB:2:random',
     SCOPE_PHYSICS_OPERATIONS: 'pack,index',
     SCOPE_PHYSICS_SAMPLES: '1',
-    SCOPE_PHYSICS_FILE_BYTES: '4KiB',
-    SCOPE_PHYSICS_EVICT_BYTES: '0',
-    SCOPE_PHYSICS_TIMEOUT_MS: '1000',
-    SCOPE_PHYSICS_OUTPUT_DIR: '.tmp/test-output',
   });
-  assert.equal(config.cases[0].logicalBytes, 4096);
+  assert.deepEqual(config.cases, [{ label: '4KiB-2c-random', logicalBytes: 4096, commits: 2, content: 'random' }]);
   assert.deepEqual(config.operations, ['pack', 'index']);
   assert.equal(config.samples, 1);
 });

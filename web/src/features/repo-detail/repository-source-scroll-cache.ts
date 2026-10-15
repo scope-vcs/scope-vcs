@@ -1,6 +1,6 @@
 import { createBoundedCache } from '../../lib/bounded-cache'
 
-export const sourceScrollPositions = createBoundedCache<string, number>({
+const sourceScrollPositions = createBoundedCache<string, number>({
   maxEntries: 64,
 })
 
