@@ -120,3 +120,45 @@ async fn parallel_job_appends_publish_positions_in_commit_order() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn append_attempt_log_is_idempotent_and_rejects_sequence_gaps() {
+    let store = fixture().await;
+    let runs = store.runs();
+    let token = "a".repeat(64);
+    let mut positions = Vec::new();
+    for (sequence, text) in [(1, "first\n"), (2, "second\n")] {
+        let appended = runs
+            .append_attempt_log(
+                RunLogChunk::new("attempt-a", 0, sequence, text, 13).unwrap(),
+                &token,
+                13,
+            )
+            .await
+            .unwrap();
+        assert!(appended.appended);
+        positions.push(appended.log.position);
+    }
+
+    let retry = runs
+        .append_attempt_log(
+            RunLogChunk::new("attempt-a", 0, 1, "first\n", 14).unwrap(),
+            &token,
+            14,
+        )
+        .await
+        .unwrap();
+    assert!(!retry.appended);
+    assert_eq!(retry.log.position, positions[0]);
+    for (sequence, text) in [(1, "different"), (4, "gap")] {
+        let error = runs
+            .append_attempt_log(
+                RunLogChunk::new("attempt-a", 0, sequence, text, 14).unwrap(),
+                &token,
+                14,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
+    }
+}

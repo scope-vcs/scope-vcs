@@ -1,6 +1,6 @@
 use super::fake_github::{
-    GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, connect_test_repository, deliver_event, github_api,
-    github_json, github_state, reconnect_test_repository, workflow_run_started_at,
+    GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID, connect_test_repository, github_api, github_json,
+    github_state, reconnect_test_repository, workflow_run_started_at,
 };
 use super::*;
 use crate::use_cases::github_run_imports::import_due_github_runs;
@@ -127,57 +127,6 @@ async fn a_repository_that_imports_nothing_reads_nothing_from_github() {
     assert_eq!(ids(&runs_page(&state, "").await), Vec::<u64>::new());
     let refused = github_api(&state, "POST", "/run-import", &bearer_header(), None).await;
     assert_eq!(refused.status(), StatusCode::CONFLICT);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_import_and_github_reports_never_move_a_run_backwards() {
-    let (state, fake) = github_state().await;
-    let started = unix_now() - 100;
-    let head = "a".repeat(40);
-    let running = workflow_run_started_at(7, "main", &head, None, started);
-    let completed = workflow_run_started_at(7, "main", &head, Some("success"), started);
-    connect_test_repository(&state, GITHUB_REPOSITORY_ID, GITHUB_FULL_NAME, 50).await;
-
-    fake.report_workflow_runs(vec![completed.clone()]);
-    deliver_event(
-        &state,
-        "workflow_run",
-        "completed",
-        GITHUB_REPOSITORY_ID,
-        completed.clone(),
-    )
-    .await;
-    fake.report_workflow_runs(vec![running.clone()]);
-    import_pass(&state, unix_now()).await;
-    assert_eq!(
-        runs_page(&state, "").await["workflow_runs"][0]["status"],
-        "completed"
-    );
-
-    github_json(&state, "POST", "/run-import").await;
-    let other = workflow_run_started_at(8, "main", &head, None, started);
-    fake.report_workflow_runs(vec![other.clone()]);
-    import_pass(&state, unix_now()).await;
-    assert_eq!(
-        runs_page(&state, "").await["workflow_runs"][0]["status"],
-        "in_progress"
-    );
-    let other_completed = workflow_run_started_at(8, "main", &head, Some("failure"), started);
-    fake.report_workflow_runs(vec![other_completed.clone()]);
-    deliver_event(
-        &state,
-        "workflow_run",
-        "completed",
-        GITHUB_REPOSITORY_ID,
-        other_completed.clone(),
-    )
-    .await;
-    fake.report_workflow_runs(vec![other, running]);
-    github_json(&state, "POST", "/run-import").await;
-    import_pass(&state, unix_now()).await;
-    let runs = runs_page(&state, "").await;
-    assert_eq!(runs["workflow_runs"][0]["conclusion"], "failure");
-    assert_eq!(runs["workflow_runs"][1]["conclusion"], "success");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

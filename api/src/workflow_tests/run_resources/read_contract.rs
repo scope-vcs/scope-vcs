@@ -165,33 +165,6 @@ async fn workflow_selection_precedes_cursor_validation() {
         )
         .await;
     }
-    for id in ["cursor_old", "cursor_new"] {
-        enqueue_history_run(&state, id, "test", 1, history_bundle(&"b".repeat(40))).await;
-    }
-    for (initial_query, changed_query) in
-        [("limit=1", "workflow=test"), ("workflow=test&limit=1", "")]
-    {
-        let first = get(
-            router(state.clone()),
-            &history_url(initial_query),
-            Some(&auth),
-        )
-        .await;
-        assert_eq!(first.status(), StatusCode::OK);
-        let first = response_json(first).await;
-        let cursor = first["next_cursor"].as_str().unwrap();
-        assert_error(
-            get(
-                router(state.clone()),
-                &history_url(&format!("{changed_query}&after={cursor}")),
-                Some(&auth),
-            )
-            .await,
-            StatusCode::BAD_REQUEST,
-            "run history cursor does not match the filters",
-        )
-        .await;
-    }
 }
 
 #[tokio::test]

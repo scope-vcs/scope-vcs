@@ -6,7 +6,7 @@ mod mutation_refresh;
 mod publication;
 mod queue;
 mod ratings;
-pub(super) use helpers::{create_owner_request, create_public_request};
+pub(super) use helpers::{create_owner_request, create_public_request, start_private_request};
 
 use scope_postgres::db::AddRequestInviteeCommand;
 
@@ -139,47 +139,6 @@ async fn request_reads_rebuild_current_history_before_projection_jobs_run() {
 }
 
 #[tokio::test]
-async fn public_readers_do_not_see_private_request_branches() {
-    let state = test_state_with_readme().await;
-    cache_test_jwks(&state);
-    create_owner_request(&state, "req_private", REQUEST_HEAD).await;
-    let app = router(state);
-
-    let public_response = api_request(
-        app.clone(),
-        "GET",
-        "/v1/repos/owner/repo/requests",
-        None,
-        None,
-    )
-    .await;
-
-    assert_eq!(public_response.status(), StatusCode::OK);
-    let public_body = response_json(public_response).await;
-    assert_eq!(public_body["requests"].as_array().unwrap().len(), 0);
-    assert!(public_body["next_cursor"].is_null());
-
-    let owner_response = api_request(
-        app,
-        "GET",
-        "/v1/repos/owner/repo/requests",
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-
-    assert_eq!(owner_response.status(), StatusCode::OK);
-    let owner_body = response_json(owner_response).await;
-    assert_eq!(owner_body["requests"].as_array().unwrap().len(), 1);
-    assert_eq!(owner_body["requests"][0]["view"], "private");
-    assert!(
-        owner_body["requests"][0]
-            .get("description_markdown")
-            .is_none()
-    );
-}
-
-#[tokio::test]
 async fn request_list_rejects_malformed_cursors() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
@@ -236,6 +195,12 @@ async fn request_list_pages_one_hundred_and_one_visible_rows_without_overlap() {
     assert_eq!(first_requests.len(), 100);
     assert_eq!(first_requests.first().unwrap()["id"], "req_page_000");
     assert_eq!(first_requests.last().unwrap()["id"], "req_page_099");
+    assert_eq!(first_requests[0]["view"], "private");
+    assert!(
+        first_requests
+            .iter()
+            .all(|request| request.get("description_markdown").is_none())
+    );
     let cursor = first["next_cursor"].as_str().unwrap();
 
     let second = api_request(
@@ -251,56 +216,6 @@ async fn request_list_pages_one_hundred_and_one_visible_rows_without_overlap() {
     assert_eq!(second["requests"].as_array().unwrap().len(), 1);
     assert_eq!(second["requests"][0]["id"], "req_page_100");
     assert!(second["next_cursor"].is_null());
-}
-
-#[tokio::test]
-async fn request_lifecycle_exposes_one_way_submit_and_merge_actions() {
-    let mut state = test_state_with_repo();
-    cache_test_jwks(&state);
-    create_owner_request(&state, "req_lifecycle", REQUEST_HEAD).await;
-    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
-    state.product_analytics = analytics;
-    let app = router(state);
-    let bearer = bearer_header();
-
-    let submitted = api_request(
-        app.clone(),
-        "POST",
-        "/v1/repos/owner/repo/requests/req_lifecycle/submit",
-        Some(&bearer),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(submitted.status(), StatusCode::OK);
-    let submitted = response_json(submitted).await;
-    assert_eq!(submitted["request"]["state"], "Open");
-    assert_eq!(recording.event_names(), ["request:request_submit"]);
-    assert_eq!(
-        recording.property(0, "repository_id"),
-        Some(serde_json::Value::String("repoi_workflow_test".into()))
-    );
-    assert_eq!(
-        recording.property(0, "request_id"),
-        Some(serde_json::Value::String("req_lifecycle".into()))
-    );
-
-    let repeated = api_request(
-        app.clone(),
-        "POST",
-        "/v1/repos/owner/repo/requests/req_lifecycle/submit",
-        Some(&bearer),
-        Some("{}"),
-    )
-    .await;
-    assert_eq!(repeated.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        recording.event_names(),
-        ["request:request_submit", "operation:failure"]
-    );
-    assert_eq!(
-        recording.property(1, "reason"),
-        Some(serde_json::Value::String("conflict".into()))
-    );
 }
 
 #[tokio::test]
@@ -708,29 +623,12 @@ fn request_ids(body: &serde_json::Value) -> Vec<&str> {
         .collect()
 }
 
-async fn start_private_request(app: &axum::Router, name: &str) -> Response {
-    let body = format!(r#"{{"name":"{name}","view":"private"}}"#);
-    api_request(
-        app.clone(),
-        "POST",
-        "/v1/repos/owner/repo/requests",
-        Some(&bearer_header()),
-        Some(&body),
-    )
-    .await
-}
-
 #[tokio::test]
 async fn starting_and_reviewing_a_request_reads_no_repository_history() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
     let app = router(state.clone());
-    assert_eq!(
-        start_private_request(&app, "warm-history-view")
-            .await
-            .status(),
-        StatusCode::OK
-    );
+    start_private_request(&state, "warm-history-view", None).await;
 
     let held = state
         .metadata
@@ -738,17 +636,12 @@ async fn starting_and_reviewing_a_request_reads_no_repository_history() {
         .lock_repository_history_for_tests()
         .await
         .unwrap();
-    let started = tokio::time::timeout(
+    let request_id = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        start_private_request(&app, "without-history"),
+        start_private_request(&state, "without-history", None),
     )
     .await
     .expect("starting a request must not wait on history tables");
-    assert_eq!(started.status(), StatusCode::OK);
-    let request_id = response_json(started).await["request"]["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
     let changes = tokio::time::timeout(
         std::time::Duration::from_secs(2),
         api_request(
@@ -784,13 +677,18 @@ async fn starting_a_request_succeeds_when_the_repository_changes_as_it_is_create
         )
         .await
         .unwrap();
-    let app = router(state.clone());
 
-    let started = start_private_request(&app, "concurrent-change").await;
+    let request_id = start_private_request(&state, "concurrent-change", None).await;
 
-    assert_eq!(started.status(), StatusCode::OK);
     assert_eq!(
-        response_json(started).await["request"]["name"],
+        state
+            .metadata
+            .requests()
+            .request_by_id(&request_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .name,
         "concurrent-change"
     );
 }

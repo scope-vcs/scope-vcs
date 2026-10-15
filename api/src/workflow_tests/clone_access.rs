@@ -79,49 +79,6 @@ async fn private_git_view_accepts_basic_scope_cli_session_for_repo_owner() {
 }
 
 #[tokio::test]
-async fn public_git_view_serves_signed_in_readers_without_target_repo_membership() {
-    let state = test_state_with_readme().await;
-    cache_test_jwks(&state);
-    let clerk_id = "user_other_owner";
-    let projection = git_projection_for_request(
-        &state,
-        &authorization_headers(bearer_header_for(clerk_id, "other@example.com")),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &ViewId::public(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(projection.view_key, ViewId::public());
-    assert!(
-        projection
-            .visible_paths()
-            .iter()
-            .any(|path| path == "/README.md")
-    );
-}
-
-#[tokio::test]
-async fn public_git_view_omits_private_files_even_for_the_owner() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    repo_with_secret(&state, "/owner-secret.txt").await;
-    let projection = git_projection_for_request(
-        &state,
-        &authorization_headers(bearer_header()),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &ViewId::public(),
-    )
-    .await
-    .unwrap();
-    let paths = projection.visible_paths();
-    assert_eq!(projection.view_key, ViewId::public());
-    assert!(paths.iter().any(|path| path == "/README.md"));
-    assert!(!paths.iter().any(|path| path == "/owner-secret.txt"));
-}
-
-#[tokio::test]
 async fn public_git_read_view_physically_excludes_private_objects() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);

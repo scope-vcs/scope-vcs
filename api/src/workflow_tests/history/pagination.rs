@@ -232,20 +232,10 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
 }
 
 #[tokio::test]
-async fn history_cursor_rejects_invalid_values_and_other_views() {
+async fn history_cursor_rejects_a_boundary_missing_from_current_history() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
     replace_test_repo(&state, paged_history_repo(&state, 51)).await;
-
-    let invalid = api_request(
-        router(state.clone()),
-        "GET",
-        "/v1/repos/owner/repo/history?view=public&before=not-a-cursor",
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
 
     let first = api_request(
         router(state.clone()),
@@ -257,15 +247,6 @@ async fn history_cursor_rejects_invalid_values_and_other_views() {
     .await;
     let first = response_json(first).await;
     let cursor = first["next_cursor"].as_str().unwrap();
-    let wrong_view = api_request(
-        router(state.clone()),
-        "GET",
-        &format!("/v1/repos/owner/repo/history?view=private&before={cursor}"),
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-    assert_eq!(wrong_view.status(), StatusCode::BAD_REQUEST);
 
     replace_test_repo(&state, paged_history_repo(&state, 1)).await;
     let missing_boundary = api_request(

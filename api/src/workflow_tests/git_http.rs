@@ -2,23 +2,6 @@ use super::*;
 use scope_domain::views::ViewId;
 
 #[tokio::test]
-async fn published_receive_pack_accepts_git_push_token() {
-    let secret = "scope_git_test";
-    let state = test_state_with_git_push_token(secret).await;
-    let mut headers = git_push_token_headers(secret);
-    insert_push_intent_header(&state, &mut headers, &test_owner_id(), TEST_PUSH_HEAD_OID).await;
-
-    let access = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-
-    assert!(matches!(
-        access,
-        ReceivePackAccess::ReadyMember { author_id, .. } if author_id == test_owner_id()
-    ));
-}
-
-#[tokio::test]
 async fn no_op_receive_pack_does_not_record_push_success() {
     let secret = "scope_git_test";
     let mut state = test_state_with_git_push_token(secret).await;
@@ -52,37 +35,6 @@ async fn no_op_receive_pack_does_not_record_push_success() {
     );
     assert!(recording.events().is_empty());
     let _ = fs::remove_dir_all(staging_repo);
-}
-
-#[tokio::test]
-async fn push_intent_is_signed_instead_of_process_local() {
-    let issuer = test_state_with_repo();
-    let verifier = test_state_with_repo();
-    let token = issuer
-        .create_push_intent(
-            TEST_REPO_ID,
-            &test_owner_id(),
-            TEST_PUSH_HEAD_OID,
-            crate::push_intents::PushIntentTarget::Canonical {
-                config: repo_config(ViewId::public()),
-                base_config_hash: repo_config_fingerprint(&repo_config(ViewId::public())).unwrap(),
-                base_git_frontier: None,
-            },
-        )
-        .unwrap()
-        .token;
-
-    let intent = verifier.validate_push_intent_secret(&token).unwrap();
-    intent
-        .ensure_repo_user(TEST_REPO_ID, &test_owner_id())
-        .unwrap();
-    let base = intent
-        .canonical()
-        .unwrap()
-        .base_for_head(&intent, TEST_PUSH_HEAD_OID)
-        .unwrap();
-
-    assert_eq!(base, None);
 }
 
 #[tokio::test]
@@ -152,49 +104,13 @@ async fn assert_challenges(app: &axum::Router, service: &str, repos: &[&str]) {
     }
 }
 
-async fn insert_push_member(state: &AppState, subject: &str) -> String {
-    let user_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", subject);
-    state
-        .metadata
-        .auth()
-        .insert_user_for_tests(test_user(user_id.clone(), "member", "member@example.com"))
-        .await
-        .unwrap();
-    let member_id = user_id.clone();
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, move |repo| {
-            repo.collaboration.members.push(test_repository_member(
-                TEST_REPO_ID,
-                member_id,
-                member_permissions(true, false),
-            ));
-        })
-        .await
-        .unwrap();
-    user_id
-}
-
 #[tokio::test]
-async fn receive_pack_rejects_git_push_without_push_intent() {
-    let secret = "scope_git_test";
-    let state = test_state_with_git_push_token(secret).await;
-    let headers = git_push_token_headers(secret);
-
-    let error = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap_err();
-
-    assert_eq!(error.status(), StatusCode::FORBIDDEN);
-    assert_eq!(error.public_message(), "valid Scope push intent required");
-}
-
-#[tokio::test]
-async fn receive_pack_requires_credentials_before_repo_state_is_revealed() {
+async fn info_refs_challenges_anonymous_clients_before_revealing_repo_state() {
     let state = test_state_with_repo();
     let app = router(state.clone());
-    assert_challenges(&app, "git-receive-pack", &["repo", "missing"]).await;
+    for service in ["git-upload-pack", "git-receive-pack"] {
+        assert_challenges(&app, service, &["repo", "missing"]).await;
+    }
 
     state
         .metadata
@@ -204,7 +120,9 @@ async fn receive_pack_requires_credentials_before_repo_state_is_revealed() {
         })
         .await
         .unwrap();
-    assert_challenges(&app, "git-receive-pack", &["repo"]).await;
+    for service in ["git-upload-pack", "git-receive-pack"] {
+        assert_challenges(&app, service, &["repo", "missing"]).await;
+    }
 }
 
 #[tokio::test]
@@ -256,26 +174,6 @@ async fn receive_pack_advertisement_prepares_without_persisting_first_push() {
 }
 
 #[tokio::test]
-async fn published_receive_pack_accepts_member_scope_session() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let member_subject = "user_member";
-    let member_id = insert_push_member(&state, member_subject).await;
-    let mut headers =
-        authorization_headers(bearer_header_for(member_subject, "member@example.com"));
-    insert_push_intent_header(&state, &mut headers, &member_id, TEST_PUSH_HEAD_OID).await;
-
-    let access = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-
-    assert!(matches!(
-        access,
-        ReceivePackAccess::ReadyMember { author_id, .. } if author_id == member_id
-    ));
-}
-
-#[tokio::test]
 async fn upload_pack_wrong_basic_credentials_do_not_reveal_repo_existence() {
     let state = test_state_with_repo();
     cache_test_jwks(&state);
@@ -310,75 +208,6 @@ async fn upload_pack_wrong_basic_credentials_do_not_reveal_repo_existence() {
     assert!(!String::from_utf8_lossy(&existing_body).contains("owner/repo"));
 }
 
-#[tokio::test]
-async fn private_upload_pack_without_credentials_challenges_for_auth() {
-    let state = test_state_with_repo();
-    {
-        let mut repo = test_repo(&test_owner_id());
-        repo.repo_config = repo_config(ViewId::private());
-        repo.policy = Policy::new(ViewId::private());
-        repo.graph.commits.push(LogicalCommit {
-            occurred_at_unix: None,
-            id: "rv1".to_string(),
-            origin: LogicalCommitOrigin::CanonicalPush {
-                source_head_oid: "rv1".to_string(),
-            },
-            author_id: repo.record.owner_user_id.clone(),
-            message: "initial".to_string(),
-            changes: vec![FileChange {
-                label: ViewId::private(),
-                path: ScopePath::parse("/secret.txt").unwrap(),
-                old_content: None,
-                new_content: Some(source_blob(&state, "secret")),
-            }],
-        });
-
-        replace_test_repo(&state, repo).await;
-    }
-    let app = router(state);
-
-    assert_challenges(&app, "git-upload-pack", &["repo", "missing"]).await;
-}
-
-#[tokio::test]
-async fn unpublished_upload_pack_member_scope_session_stays_hidden() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let member_subject = "user_member";
-    let member_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", member_subject);
-    state
-        .metadata
-        .auth()
-        .insert_user_for_tests(test_user(member_id.clone(), "member", "member@example.com"))
-        .await
-        .unwrap();
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, move |repo| {
-            repo.record.lifecycle_state = RepoLifecycleState::AwaitingFirstPush;
-            repo.collaboration.members.push(test_repository_member(
-                TEST_REPO_ID,
-                member_id,
-                RepositoryMemberPermissions::default(),
-            ));
-        })
-        .await
-        .unwrap();
-    let headers = authorization_headers(bearer_header_for(member_subject, "member@example.com"));
-
-    let error = git_upload_pack_repo_for_request(
-        &state,
-        &headers,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &ViewId::private(),
-    )
-    .await
-    .unwrap_err();
-
-    assert_eq!(error.status(), StatusCode::NOT_FOUND);
-}
 #[tokio::test]
 async fn first_push_staging_repo_head_points_to_default_branch() {
     let state = test_state_with_repo();

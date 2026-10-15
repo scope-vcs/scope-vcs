@@ -135,91 +135,95 @@ async fn verify_with_cached_jwks(
 }
 
 #[tokio::test]
-async fn clerk_token_verifies_issuer_signature_expiration_and_subject() {
-    let jwt = token_with_audience(TEST_CLERK_USER_ID, serde_json::json!(TEST_CLERK_AUDIENCE));
-    let identity = verify_with_cached_jwks(&jwt, TEST_CLERK_ISSUER, test_clerk_policy())
-        .await
-        .unwrap();
-
-    assert_eq!(identity.subject, TEST_CLERK_USER_ID);
-    assert_eq!(identity.email.as_deref(), Some(TEST_OWNER_EMAIL));
-    assert!(identity.email_verified);
-}
-
-#[tokio::test]
-async fn clerk_token_rejects_invalid_identity_and_origin_claims() {
-    let cases = [
+async fn clerk_tokens_verify_issuer_identity_origin_and_audience() {
+    let audience = || serde_json::json!(TEST_CLERK_AUDIENCE);
+    for (label, jwt, issuer, policy, verifies) in [
         (
-            token_with_audience(TEST_CLERK_USER_ID, serde_json::json!(TEST_CLERK_AUDIENCE)),
-            "https://other.example",
-        ),
-        (token_without_required_claims(), TEST_CLERK_ISSUER),
-        (
-            token_with_audience("", serde_json::json!(TEST_CLERK_AUDIENCE)),
+            "configured audience",
+            token_with_audience(TEST_CLERK_USER_ID, audience()),
             TEST_CLERK_ISSUER,
+            test_clerk_policy(),
+            true,
         ),
         (
+            "audience without an audience policy",
+            token_with_audience(TEST_CLERK_USER_ID, audience()),
+            TEST_CLERK_ISSUER,
+            ClerkTokenPolicy::default(),
+            true,
+        ),
+        (
+            "one of several audiences",
+            token_with_audience(
+                TEST_CLERK_USER_ID,
+                serde_json::json!(["other", TEST_CLERK_AUDIENCE]),
+            ),
+            TEST_CLERK_ISSUER,
+            test_clerk_policy(),
+            true,
+        ),
+        (
+            "another issuer",
+            token_with_audience(TEST_CLERK_USER_ID, audience()),
+            "https://other.example",
+            test_clerk_policy(),
+            false,
+        ),
+        (
+            "missing required claims",
+            token_without_required_claims(),
+            TEST_CLERK_ISSUER,
+            test_clerk_policy(),
+            false,
+        ),
+        (
+            "empty subject",
+            token_with_audience("", audience()),
+            TEST_CLERK_ISSUER,
+            test_clerk_policy(),
+            false,
+        ),
+        (
+            "untrusted origin",
             token_for_claims(
                 TEST_CLERK_USER_ID,
                 Some(TEST_OWNER_EMAIL.to_string()),
                 true,
                 Some("https://evil.example"),
-                Some(serde_json::json!(TEST_CLERK_AUDIENCE)),
+                Some(audience()),
             ),
             TEST_CLERK_ISSUER,
+            test_clerk_policy(),
+            false,
         ),
-    ];
-    for (jwt, issuer) in cases {
-        let error = verify_with_cached_jwks(&jwt, issuer, test_clerk_policy())
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind, crate::error::ErrorKind::Unauthorized);
-    }
-}
-
-#[tokio::test]
-async fn clerk_token_policy_cases() {
-    use crate::error::ErrorKind::Unauthorized;
-    for (token, policy, kind) in [
         (
+            "no audience under the default policy",
             token(TEST_CLERK_USER_ID, true),
+            TEST_CLERK_ISSUER,
             ClerkTokenPolicy::default(),
-            Unauthorized,
+            false,
         ),
         (
+            "another audience",
             token_with_audience(TEST_CLERK_USER_ID, serde_json::json!("other")),
+            TEST_CLERK_ISSUER,
             test_clerk_policy(),
-            Unauthorized,
+            false,
         ),
     ] {
-        assert_eq!(
-            verify_with_cached_jwks(&token, TEST_CLERK_ISSUER, policy)
-                .await
-                .unwrap_err()
-                .kind,
-            kind
-        );
-    }
-    for (token, policy) in [
-        (
-            token_with_audience(TEST_CLERK_USER_ID, serde_json::json!(TEST_CLERK_AUDIENCE)),
-            ClerkTokenPolicy::default(),
-        ),
-        (
-            token_with_audience(
-                TEST_CLERK_USER_ID,
-                serde_json::json!(["other", TEST_CLERK_AUDIENCE]),
-            ),
-            test_clerk_policy(),
-        ),
-    ] {
-        assert_eq!(
-            verify_with_cached_jwks(&token, TEST_CLERK_ISSUER, policy)
-                .await
-                .unwrap()
-                .subject,
-            TEST_CLERK_USER_ID
-        );
+        let result = verify_with_cached_jwks(&jwt, issuer, policy).await;
+        if verifies {
+            let identity = result.unwrap_or_else(|error| panic!("{label}: {error:?}"));
+            assert_eq!(identity.subject, TEST_CLERK_USER_ID, "{label}");
+            assert_eq!(identity.email.as_deref(), Some(TEST_OWNER_EMAIL), "{label}");
+            assert!(identity.email_verified, "{label}");
+        } else {
+            assert_eq!(
+                result.unwrap_err().kind,
+                crate::error::ErrorKind::Unauthorized,
+                "{label}"
+            );
+        }
     }
 }
 

@@ -125,13 +125,16 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
     .await;
     assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
 
+    let discussion_id = post_discussion(&app, base, &owner, "attention-root").await;
     let initial = queue_item(&app, "unclaimed", "req_attention_activity", Some(&owner)).await;
-    let version = activity_version(&initial);
-    attention.apply("settle", version, None).await;
-    assert_eq!(
-        queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await["attention"]["reason"],
-        "settled"
-    );
+    attention
+        .apply("settle", activity_version(&initial), None)
+        .await;
+    let settled = queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await;
+    assert_eq!(settled["attention"]["reason"], "settled");
+    let settled_through = settled["attention"]["through_activity_version"]
+        .as_u64()
+        .unwrap();
 
     let edited = api_request(
         app.clone(),
@@ -146,19 +149,6 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
         queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await["attention"]["reason"],
         "settled"
     );
-
-    let discussion_id = post_discussion(&app, base, &author, "attention-root").await;
-    let woke_from_discussion =
-        queue_item(&app, "active", "req_attention_activity", Some(&owner)).await;
-    assert_eq!(woke_from_discussion["attention"]["reason"], "new_activity");
-    attention
-        .apply("settle", activity_version(&woke_from_discussion), None)
-        .await;
-    let settled = queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await;
-    assert_eq!(settled["attention"]["reason"], "settled");
-    let settled_through = settled["attention"]["through_activity_version"]
-        .as_u64()
-        .unwrap();
 
     let ordinary = api_request(
         app.clone(),

@@ -3,10 +3,6 @@ use scope_api_contract::routes::{repo_request_checks, repo_request_checks_approv
 use scope_domain::runs::{run::RunState, source::RunTrigger};
 use scope_domain::views::ViewId;
 
-fn request_workflow() -> String {
-    WORKFLOW.replacen("  manual: true", "  manual: true\n  request: true", 1)
-}
-
 async fn native_repo_with_public_request(label: &str, workflow: &str) -> AppState {
     let state = test_state_with_repo();
     cache_test_jwks(&state);

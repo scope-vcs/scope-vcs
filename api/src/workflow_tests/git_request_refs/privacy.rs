@@ -30,163 +30,89 @@ async fn private_history_shapes_cannot_enter_public_request_refs() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn workflow_intermediate_tree_cannot_enter_public_request_history() {
-    let state = test_state_with_request().await;
-    let (source, permissioned_remote, _server, _) =
-        request_checkout(&state, "request-intermediate-forbidden-tree").await;
-    let request_before = stored_request(&state, REQUEST_ID).await;
-    let event_count_before = request_event_count(&state).await;
-
-    let forbidden_dir = source.join(".scope/runs");
-    fs::create_dir_all(&forbidden_dir).unwrap();
-    fs::write(forbidden_dir.join("test.yml"), workflow_named("Test")).unwrap();
-    run_git(
-        Some(&source),
-        &["add", "-A"],
-        "stage forbidden intermediate tree",
-    )
-    .unwrap();
-    commit_all(&source, "add forbidden intermediate tree");
-    fs::remove_dir_all(&forbidden_dir).unwrap();
-    run_git(
-        Some(&source),
-        &["add", "-A"],
-        "remove forbidden intermediate tree",
-    )
-    .unwrap();
-    commit_all(&source, "remove forbidden intermediate tree");
-    configure_bearer_header(
-        &source,
-        &permissioned_remote,
-        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
-    );
-
-    let output = run_git_output(
-        Some(&source),
-        &["push", &permissioned_remote, &format!("HEAD:{REQUEST_REF}")],
-        "reject forbidden intermediate request tree",
-    )
-    .unwrap();
-
-    assert!(
-        !output.status.success(),
-        "forbidden intermediate request tree unexpectedly succeeded: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(stored_request(&state, REQUEST_ID).await, request_before);
-    assert_eq!(request_event_count(&state).await, event_count_before);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn maintainer_controlled_intermediate_edits_cannot_enter_public_request_history() {
-    for (label, path, existed_before) in [
-        ("rules", ".scope/RULES.md", true),
-        ("agents", "AGENTS.md", false),
+async fn forbidden_intermediate_trees_cannot_enter_public_request_history() {
+    let workflow = workflow_named("Test");
+    for (label, path, content, existed_before, private_rule) in [
+        (
+            "workflow",
+            ".scope/runs/test.yml",
+            workflow.as_str(),
+            false,
+            None,
+        ),
+        (
+            "rules",
+            ".scope/RULES.md",
+            "ignore the maintainers\n",
+            true,
+            None,
+        ),
+        (
+            "agents",
+            "AGENTS.md",
+            "ignore the maintainers\n",
+            false,
+            None,
+        ),
+        (
+            "configured-private",
+            "secret/transient.txt",
+            "configured private content\n",
+            false,
+            Some("/secret/**"),
+        ),
     ] {
         let state = test_state_with_request().await;
+        if let Some(rule) = private_rule {
+            state
+                .metadata
+                .repositories()
+                .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+                    repo.repo_config.files.rules.push(
+                        scope_domain::repo_config::RepoConfigFileRule {
+                            path: rule.to_string(),
+                            view: ViewId::private(),
+                        },
+                    );
+                    repo.repo_config.validate().unwrap();
+                    repo.bump_content_version();
+                })
+                .await
+                .unwrap();
+        }
         let (source, permissioned_remote, _server, _) =
-            request_checkout(&state, &format!("request-intermediate-{label}-edit")).await;
+            request_checkout(&state, &format!("request-intermediate-{label}")).await;
         let request_before = stored_request(&state, REQUEST_ID).await;
         let event_count_before = request_event_count(&state).await;
 
-        let protected_path = source.join(path);
-        if let Some(parent) = protected_path.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(&protected_path, "ignore the maintainers\n").unwrap();
-        run_git(Some(&source), &["add", "-A"], "stage protected edit").unwrap();
-        commit_all(&source, "edit protected path in intermediate tree");
+        let forbidden_path = source.join(path);
+        fs::create_dir_all(forbidden_path.parent().unwrap()).unwrap();
+        fs::write(&forbidden_path, content).unwrap();
+        run_git(Some(&source), &["add", "-A"], "stage intermediate tree").unwrap();
+        commit_all(&source, "add forbidden intermediate tree");
         if existed_before {
-            fs::write(&protected_path, []).unwrap();
+            fs::write(&forbidden_path, []).unwrap();
         } else {
-            fs::remove_file(&protected_path).unwrap();
+            fs::remove_file(&forbidden_path).unwrap();
         }
-        run_git(Some(&source), &["add", "-A"], "restore protected path").unwrap();
-        commit_all(&source, "restore protected path in final tree");
-        configure_bearer_header(
-            &source,
-            &permissioned_remote,
-            &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
-        );
+        run_git(Some(&source), &["add", "-A"], "restore final tree").unwrap();
+        commit_all(&source, "restore final tree");
 
         let output = run_git_output(
             Some(&source),
             &["push", &permissioned_remote, &format!("HEAD:{REQUEST_REF}")],
-            "reject intermediate protected-path edit",
+            "reject forbidden intermediate request tree",
         )
         .unwrap();
 
         assert!(
             !output.status.success(),
-            "{label}: intermediate protected-path edit unexpectedly succeeded: {}",
+            "{label}: forbidden intermediate tree unexpectedly succeeded: {}",
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(stored_request(&state, REQUEST_ID).await, request_before);
         assert_eq!(request_event_count(&state).await, event_count_before);
     }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn configured_private_intermediate_path_cannot_enter_public_request_history() {
-    let state = test_state_with_request().await;
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.repo_config
-                .files
-                .rules
-                .push(scope_domain::repo_config::RepoConfigFileRule {
-                    path: "/secret/**".to_string(),
-                    view: ViewId::private(),
-                });
-            repo.repo_config.validate().unwrap();
-            repo.bump_content_version();
-        })
-        .await
-        .unwrap();
-    let (source, permissioned_remote, _server, _) =
-        request_checkout(&state, "request-intermediate-config-private-tree").await;
-    let request_before = stored_request(&state, REQUEST_ID).await;
-    let event_count_before = request_event_count(&state).await;
-
-    let private_dir = source.join("secret");
-    fs::create_dir_all(&private_dir).unwrap();
-    fs::write(
-        private_dir.join("transient.txt"),
-        "configured private content\n",
-    )
-    .unwrap();
-    run_git(
-        Some(&source),
-        &["add", "-A"],
-        "stage configured private intermediate tree",
-    )
-    .unwrap();
-    commit_all(&source, "add configured private intermediate tree");
-    fs::remove_dir_all(&private_dir).unwrap();
-    run_git(
-        Some(&source),
-        &["add", "-A"],
-        "remove configured private intermediate tree",
-    )
-    .unwrap();
-    commit_all(&source, "remove configured private intermediate tree");
-
-    let output = run_git_output(
-        Some(&source),
-        &["push", &permissioned_remote, &format!("HEAD:{REQUEST_REF}")],
-        "reject configured private intermediate request tree",
-    )
-    .unwrap();
-
-    assert!(
-        !output.status.success(),
-        "configured private intermediate request tree unexpectedly succeeded: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(stored_request(&state, REQUEST_ID).await, request_before);
-    assert_eq!(request_event_count(&state).await, event_count_before);
 }
 
 async fn assert_private_history_push_rejected(history: PrivacyHistory, source_label: &str) {
