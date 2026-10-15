@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    clerk_users::{ClerkUsers, ScriptedClerkUsers},
+    clerk_users::{ClerkUserDeletion, ClerkUsers, ScriptedClerkUsers},
     use_cases::clerk_user_deletion::delete_due_clerk_users,
 };
 
@@ -74,14 +74,26 @@ async fn deleting_the_account_ends_its_sessions_and_then_its_clerk_user() {
     }
 
     let clerk = scripted_clerk(&state);
+    clerk
+        .scripted
+        .lock()
+        .unwrap()
+        .push_back(ClerkUserDeletion::Retry("Clerk answered 503".into()));
     let now = unix_now();
+    for (at, claimed) in [(now, 1), (now + 29, 0), (now + 31, 1), (now + 3600, 0)] {
+        assert_eq!(
+            delete_due_clerk_users(&state, &move || Ok(at))
+                .await
+                .unwrap(),
+            claimed,
+            "at +{}",
+            at - now
+        );
+    }
     assert_eq!(
-        delete_due_clerk_users(&state, &move || Ok(now))
-            .await
-            .unwrap(),
-        1
+        *clerk.attempts.lock().unwrap(),
+        [TEST_CLERK_USER_ID, TEST_CLERK_USER_ID]
     );
-    assert_eq!(*clerk.attempts.lock().unwrap(), [TEST_CLERK_USER_ID]);
     let session = request(&app, "GET", "/v1/session", &bearer_header()).await;
     assert_eq!(session.status(), StatusCode::UNAUTHORIZED);
 }

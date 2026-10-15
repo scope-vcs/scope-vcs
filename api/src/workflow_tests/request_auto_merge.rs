@@ -730,9 +730,9 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
 async fn only_someone_who_may_merge_can_enable_auto_merge() {
     let actor_id =
         scope_postgres::db::scope_user_id_for_auth_identity("clerk", PUBLIC_AUTO_SUBJECT);
-    for (request_id, actor_authors_request) in [
-        ("req_public_auto_merge", true),
-        ("req_auto_merge_narrower", false),
+    for (request_id, actor_authors_request, actor_can_cancel) in [
+        ("req_public_auto_merge", true, false),
+        ("req_auto_merge_narrower", false, true),
     ] {
         let (author_user_id, author_role) = if actor_authors_request {
             (actor_id.clone(), RequestActorRole::Public)
@@ -818,7 +818,7 @@ async fn only_someone_who_may_merge_can_enable_auto_merge() {
         let read = actor_view().await;
         assert_eq!(read["intent"]["status"], "Active", "{request_id}");
         assert_eq!(read["waiting_reason"], "Waiting for CI evaluation");
-        assert_eq!(read["can_enable"], false);
-        assert_eq!(read["can_cancel"], false);
+        assert_eq!(read["can_enable"], false, "{request_id}");
+        assert_eq!(read["can_cancel"], actor_can_cancel, "{request_id}");
     }
 }
