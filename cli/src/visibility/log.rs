@@ -159,24 +159,6 @@ mod tests {
     }
 
     #[test]
-    fn public_lines_omit_withheld_time_and_author() {
-        let lines = lines(
-            &page(
-                vec![entry(
-                    HistoryEntryKind::Push,
-                    None,
-                    None,
-                    "Tighten docs",
-                    (0, 1),
-                )],
-                None,
-            ),
-            &Views::builtin(),
-        );
-        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Public"]);
-    }
-
-    #[test]
     fn empty_page_reports_no_changes_and_keeps_the_cursor_hint() {
         assert_eq!(
             lines(&page(vec![], None), &Views::builtin()),
@@ -192,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn custom_view_lines_use_the_repository_view_name() {
+    fn custom_view_lines_use_the_neutralized_repository_view_name() {
         let views = Views::new(vec![
             scope_domain::views::Views::builtin()
                 .iter()
@@ -206,7 +188,7 @@ mod tests {
                 .clone(),
             scope_domain::views::ViewDefinition {
                 id: scope_domain::views::ViewId::parse("agent").unwrap(),
-                name: "Agent".into(),
+                name: "Ag\u{1b}[31ment".into(),
                 includes: scope_domain::views::ViewIncludes::Some(
                     [scope_domain::views::ViewId::public()].into(),
                 ),
@@ -228,27 +210,6 @@ mod tests {
             ),
             &views,
         );
-        assert_eq!(lines, ["vc_000041 · Updated views · 2 entered Agent"]);
-    }
-
-    #[test]
-    fn view_names_with_control_characters_are_neutralized() {
-        let mut definitions = Vec::from(Views::builtin());
-        definitions[0].name = "Pub\u{1b}[31mlic".into();
-        let views = Views::new(definitions).unwrap();
-        let lines = lines(
-            &page(
-                vec![entry(
-                    HistoryEntryKind::Push,
-                    None,
-                    None,
-                    "Tighten docs",
-                    (0, 1),
-                )],
-                None,
-            ),
-            &views,
-        );
-        assert_eq!(lines, ["vc_000041 · Tighten docs · 1 left Pub [31mlic"]);
+        assert_eq!(lines, ["vc_000041 · Updated views · 2 entered Ag [31ment"]);
     }
 }

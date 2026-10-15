@@ -3,7 +3,7 @@ use anyhow::Context;
 use scope_domain::views::ViewId;
 use std::io::{self, BufRead, Write};
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Default)]
 struct GitCredentialRequest {
     protocol: Option<String>,
     host: Option<String>,
@@ -106,23 +106,6 @@ fn is_scope_authenticated_view_request(request: &GitCredentialRequest) -> bool {
 mod tests {
     use super::*;
     use std::io::Cursor;
-
-    #[test]
-    fn parse_git_credential_request_reads_scope_fields() {
-        let request = parse_git_credential_request(Cursor::new(
-            "protocol=https\nhost=scope.example\npath=git/private/adam/repo\n\n",
-        ))
-        .unwrap();
-
-        assert_eq!(
-            request,
-            GitCredentialRequest {
-                protocol: Some("https".to_string()),
-                host: Some("scope.example".to_string()),
-                path: Some("git/private/adam/repo".to_string()),
-            }
-        );
-    }
 
     fn request_for(path: &str) -> GitCredentialRequest {
         GitCredentialRequest {

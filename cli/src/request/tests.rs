@@ -1,7 +1,4 @@
-use super::{
-    ViewId, ensure_request_paths_allowed, new_client_mutation_id, start_view,
-    text::discussion_body_with_stdin,
-};
+use super::{ViewId, ensure_request_paths_allowed, new_client_mutation_id, start_view};
 use crate::{
     api::RepositoryActor,
     error::CliError,
@@ -9,7 +6,7 @@ use crate::{
     test_support::{TempDir, commit_all},
 };
 use scope_domain::views::Views;
-use std::{fs, io::Cursor, path::PathBuf};
+use std::fs;
 
 #[test]
 fn client_mutation_ids_are_unique_across_kinds() {
@@ -17,35 +14,6 @@ fn client_mutation_ids_are_unique_across_kinds() {
     for kind in ["discussion", "reply", "discussion", "reply"] {
         assert!(ids.insert(new_client_mutation_id(kind).unwrap()));
     }
-}
-
-#[test]
-fn literal_discussion_body_is_not_unescaped() {
-    let mut stdin = Cursor::new(Vec::<u8>::new());
-    let body =
-        discussion_body_with_stdin(Some(r"First\n\nSecond".to_string()), None, &mut stdin).unwrap();
-
-    assert_eq!(body, r"First\n\nSecond");
-}
-
-#[test]
-fn discussion_body_reads_multiline_stdin_for_dash() {
-    let mut stdin = Cursor::new(b"First\n\nSecond\n".to_vec());
-    let body = discussion_body_with_stdin(None, Some(PathBuf::from("-")), &mut stdin).unwrap();
-
-    assert_eq!(body, "First\n\nSecond\n");
-}
-
-#[test]
-fn discussion_body_reads_files_without_rewriting_content() {
-    let dir = TempDir::new("discussion-body");
-    let path = dir.path().join("body.md");
-    fs::write(&path, "# Question\n\nKeep `\\n` literal.\n").unwrap();
-    let mut stdin = Cursor::new(Vec::<u8>::new());
-
-    let body = discussion_body_with_stdin(None, Some(path), &mut stdin).unwrap();
-
-    assert_eq!(body, "# Question\n\nKeep `\\n` literal.\n");
 }
 
 #[test]

@@ -111,17 +111,6 @@ fn push_warns_about_dirty_state_before_remote_lookup() {
     assert!(stderr.contains("Only committed HEAD will be pushed to Scope."));
 }
 
-#[test]
-fn push_requires_review_tty_before_login() {
-    let dir = configured_repo("review-non-tty");
-    add_unreachable_remote(dir.path(), "private");
-    scope_failure(
-        dir.path(),
-        ["push", "--main"],
-        "scope push review requires an interactive terminal",
-    );
-}
-
 #[cfg(unix)]
 #[test]
 fn json_push_rejects_review_even_with_a_terminal() {

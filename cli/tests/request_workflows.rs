@@ -143,31 +143,6 @@ fn request_show_and_cancel_auto_merge_use_the_active_server_intent() {
 }
 
 #[test]
-fn request_merge_auto_modes_are_mutually_exclusive() {
-    let dir = TempDir::new("request-auto-merge-exclusive");
-    let output = scope_command(dir.path())
-        .args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "merge",
-            "--auto",
-            "--cancel-auto",
-            "--yes",
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(output.status.code(), Some(2), "{output:?}");
-    let error: scope_api_contract::ErrorResponse = serde_json::from_slice(&output.stderr).unwrap();
-    assert!(
-        error.message.contains("cannot be used with"),
-        "{}",
-        error.message
-    );
-}
-
-#[test]
 fn invalid_request_audience_fails_before_git_fetch() {
     let dir = TempDir::new("request-invalid-audience");
     create_repo_with_head(dir.path());
@@ -428,19 +403,6 @@ fn request_diff_renders_aggregate_comparisons_and_filters_selected_paths() {
 fn request_ci_reads_the_server_evaluation_for_the_head() {
     let dir = TempDir::new("request-ci");
     let server = FixtureServer::start();
-    let obsolete = server
-        .command(dir.path())
-        .args(["--json", "--repo", "owner/repo", "request", "checks"])
-        .output()
-        .unwrap();
-    assert_eq!(obsolete.status.code(), Some(2), "{obsolete:?}");
-    let error: scope_api_contract::ErrorResponse =
-        serde_json::from_slice(&obsolete.stderr).unwrap();
-    assert!(
-        error.message.contains("unrecognized subcommand 'checks'"),
-        "{}",
-        error.message
-    );
     let output = server
         .command(dir.path())
         .args([

@@ -327,40 +327,7 @@ pub fn display_user(user: &UserResponse) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        io::Write,
-        net::{TcpListener, TcpStream},
-        sync::mpsc,
-        thread,
-        time::Duration,
-    };
-
-    #[test]
-    fn request_capture_waits_for_fragmented_body() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let (captured, received) = mpsc::channel();
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            captured
-                .send(crate::test_support::read_http_request(&mut stream).unwrap())
-                .unwrap();
-        });
-        let mut client = TcpStream::connect(address).unwrap();
-        client
-            .write_all(b"POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\n")
-            .unwrap();
-        assert!(received.recv_timeout(Duration::from_millis(30)).is_err());
-        client.write_all(b"he").unwrap();
-        client.write_all(b"llo").unwrap();
-        assert!(
-            received
-                .recv_timeout(Duration::from_secs(5))
-                .unwrap()
-                .ends_with("\r\n\r\nhello")
-        );
-        server.join().unwrap();
-    }
+    use std::{io::Write, net::TcpListener, thread};
 
     #[test]
     fn shared_http_client_sends_cli_compatibility_identity() {

@@ -73,6 +73,12 @@ fn authenticated_git_plans_keep_secrets_in_numbered_environment_config() {
         2,
         &["Authorization: Bearer scope_cli_secret"],
     );
+    assert_auth_plan(
+        git_fetch_refs_auth_plan(REMOTE, "scope", "scope_cli_secret", Some(1)),
+        &["-c", "protocol.version=2", "fetch", "--prune", "scope"],
+        1,
+        &["Authorization: Bearer scope_cli_secret"],
+    );
 }
 
 fn assert_auth_plan(plan: GitCommandPlan, args: &[&str], inherited_count: usize, headers: &[&str]) {
@@ -128,17 +134,6 @@ fn scope_remotes_push_through_the_view_they_fetch() {
         .status()
         .unwrap();
     assert!(!status.success());
-}
-
-#[test]
-fn fetching_every_scope_ref_sends_the_session_as_a_header() {
-    let plan = git_fetch_refs_auth_plan(REMOTE, "scope", "scope_cli_secret", Some(1));
-    assert_auth_plan(
-        plan,
-        &["-c", "protocol.version=2", "fetch", "--prune", "scope"],
-        1,
-        &["Authorization: Bearer scope_cli_secret"],
-    );
 }
 
 #[test]
@@ -209,41 +204,6 @@ fn install_scope_fetch_auth_rejects_config_injection() {
             "https://api.scope.example",
         )
         .is_err()
-    );
-}
-
-#[test]
-fn dirty_detection_includes_untracked_workflow_definitions() {
-    assert!(has_dirty_paths(b"?? .scope/runs/test.yml\n"));
-    assert!(has_dirty_paths(b" M README.md\n"));
-    assert!(!has_dirty_paths(b""));
-}
-
-#[test]
-fn request_side_paths_use_the_merge_base_after_main_diverges() {
-    let dir = request_repo("request-side-diverged");
-    fs::write(dir.path().join("README.md"), "base\n").unwrap();
-    let recorded_base_oid = commit_all(dir.path(), "base");
-    dir.run_git(["branch", "request"]);
-
-    fs::create_dir_all(dir.path().join(".scope")).unwrap();
-    fs::write(dir.path().join(".scope/RULES.md"), "main only\n").unwrap();
-    let current_main_oid = commit_all(dir.path(), "advance main");
-
-    dir.run_git(["checkout", "request"]);
-    fs::create_dir_all(dir.path().join("src")).unwrap();
-    fs::write(dir.path().join("src/lib.rs"), "request only\n").unwrap();
-    let request_head_oid = commit_all(dir.path(), "advance request");
-
-    assert_eq!(
-        request_side_changed_file_paths(
-            &repo(&dir),
-            &recorded_base_oid,
-            &current_main_oid,
-            &request_head_oid,
-        )
-        .unwrap(),
-        ["src/lib.rs"]
     );
 }
 

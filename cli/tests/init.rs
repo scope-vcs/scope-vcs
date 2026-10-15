@@ -117,40 +117,6 @@ fn init_asks_for_a_file_when_head_has_an_empty_tree() {
 }
 
 #[test]
-fn init_restores_the_remote_and_retains_created_repo_when_local_setup_fails() {
-    let dir = TempDir::new("rollback");
-    create_repo_with_head(dir.path());
-    run_git(
-        dir.path(),
-        ["remote", "add", "scope", "https://old.scope.example/repo"],
-    );
-    fs::write(
-        dir.path().join(".git/scope"),
-        "blocks Scope state directory\n",
-    )
-    .unwrap();
-    let server = InitServer::start();
-
-    let output = server
-        .server
-        .command(dir.path())
-        .args(["init", "--name", "sample"])
-        .output()
-        .unwrap();
-    let rolled_back = server.finish();
-
-    assert_failure(&output, "scope init with failed local config");
-    assert!(
-        !rolled_back,
-        "the created server repository must remain available for recovery"
-    );
-    assert_eq!(
-        git_stdout(dir.path(), ["remote", "get-url", "scope"]),
-        "https://old.scope.example/repo"
-    );
-}
-
-#[test]
 fn init_warns_on_dirty_working_tree_and_continues_to_auth() {
     let dir = TempDir::new("dirty");
     create_repo_with_head(dir.path());
@@ -214,9 +180,13 @@ fn init_requires_explicit_name_when_noninteractive() {
 }
 
 #[test]
-fn init_partial_failure_json_identifies_retained_repository() {
+fn init_partial_failure_restores_the_remote_and_reports_the_retained_repository() {
     let dir = TempDir::new("init-partial-json");
     create_repo_with_head(dir.path());
+    run_git(
+        dir.path(),
+        ["remote", "add", "scope", "https://old.scope.example/repo"],
+    );
     fs::write(dir.path().join(".git/scope"), "block state directory").unwrap();
     let server = InitServer::start();
     let output = server
@@ -227,6 +197,10 @@ fn init_partial_failure_json_identifies_retained_repository() {
         .unwrap();
     assert!(!server.finish());
     assert_eq!(output.status.code(), Some(5));
+    assert_eq!(
+        git_stdout(dir.path(), ["remote", "get-url", "scope"]),
+        "https://old.scope.example/repo"
+    );
     let value: serde_json::Value = serde_json::from_str(
         String::from_utf8_lossy(&output.stderr)
             .lines()

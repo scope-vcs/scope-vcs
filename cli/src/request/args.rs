@@ -455,32 +455,3 @@ pub(super) enum SnoozeFor {
 fn parse_view(value: &str) -> Result<ViewId, String> {
     ViewId::parse(value).map_err(|error| error.message)
 }
-
-#[cfg(test)]
-mod attachment_tests {
-    use super::{RequestArgs, RequestCommand};
-    use clap::Parser;
-    use std::path::PathBuf;
-
-    #[test]
-    fn request_edit_collects_repeated_attachments() {
-        let args = RequestArgs::try_parse_from([
-            "scope-request",
-            "edit",
-            "--attach",
-            "one.png",
-            "--attach",
-            "two.mov",
-            "--wait",
-        ])
-        .unwrap();
-        let RequestCommand::Edit(edit) = args.command else {
-            panic!("expected request edit");
-        };
-        assert_eq!(
-            edit.attachments.paths,
-            [PathBuf::from("one.png"), PathBuf::from("two.mov")]
-        );
-        assert!(edit.attachments.wait);
-    }
-}

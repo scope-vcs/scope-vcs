@@ -165,7 +165,7 @@ fn queue_row_line(row: &QueueRow, now_unix: u64) -> String {
     };
     format!(
         "{marker}{:>5}  {} ({}) — {} · {} · base {} · depth {} · {:?}",
-        render::wait_label(Some(row.item.attention_at_unix), now_unix),
+        render::wait_label(row.item.attention_at_unix, now_unix),
         terminal_text(&request.name),
         terminal_text(&request.id),
         terminal_text(&request.title),

@@ -141,10 +141,7 @@ pub(super) fn request_line(request: &RequestSummaryResponse) -> String {
     })
 }
 
-pub(super) fn wait_label(submitted_at_unix: Option<u64>, now_unix: u64) -> String {
-    let Some(submitted_at_unix) = submitted_at_unix else {
-        return "-".to_string();
-    };
+pub(super) fn wait_label(submitted_at_unix: u64, now_unix: u64) -> String {
     let seconds = now_unix.saturating_sub(submitted_at_unix);
     if seconds < 60 {
         "<1m".to_string()
