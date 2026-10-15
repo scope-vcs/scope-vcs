@@ -43,7 +43,7 @@ jobs:
 
   checks:
     name: Check scope-cli
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Require the distribution matrix for a service release
