@@ -147,6 +147,32 @@ pub(super) fn evaluate_request_merge(
     views: &Views,
     checks: RequestChecksOutcome,
 ) -> RequestMergeability {
+    let readiness = evaluate_request_readiness(repository_lifecycle, subject, checks);
+    if subject.state != RequestState::Open
+        || readiness.status == RequestMergeabilityStatus::RepositoryNotReady
+    {
+        return readiness;
+    }
+    if !viewer.access.is_maintainer() {
+        return RequestMergeability {
+            status: RequestMergeabilityStatus::NotMaintainer,
+            reason: Some("repo maintainer required"),
+        };
+    }
+    if !request_merger(viewer, subject.author_user_id, subject.view, views) {
+        return RequestMergeability {
+            status: RequestMergeabilityStatus::NotMaintainer,
+            reason: Some("merging needs a maintainer who reads the full view"),
+        };
+    }
+    readiness
+}
+
+pub(super) fn evaluate_request_readiness(
+    repository_lifecycle: RepoLifecycleState,
+    subject: RequestMergeSubject<'_>,
+    checks: RequestChecksOutcome,
+) -> RequestMergeability {
     if repository_lifecycle != RepoLifecycleState::Ready {
         return RequestMergeability {
             status: RequestMergeabilityStatus::RepositoryNotReady,
@@ -160,18 +186,6 @@ pub(super) fn evaluate_request_merge(
             RequestMergeabilityStatus::Draft,
             Some("request is not submitted"),
         ),
-        RequestState::Open if !viewer.access.is_maintainer() => (
-            RequestMergeabilityStatus::NotMaintainer,
-            Some("repo maintainer required"),
-        ),
-        RequestState::Open
-            if !request_merger(viewer, subject.author_user_id, subject.view, views) =>
-        {
-            (
-                RequestMergeabilityStatus::NotMaintainer,
-                Some("merging needs a maintainer who reads the full view"),
-            )
-        }
         RequestState::Open if !subject.has_git_snapshot => (
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),

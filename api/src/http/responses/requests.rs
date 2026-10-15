@@ -60,6 +60,16 @@ fn request_summary_response(
     })
 }
 
+pub(crate) fn request_list_row_subject(request: &RequestListRow) -> RequestMergeSubject<'_> {
+    RequestMergeSubject {
+        author_user_id: request.author_user_id.as_deref(),
+        view: &request.view,
+        state: request.state,
+        has_git_snapshot: request.has_git_snapshot,
+        stack_status: request.stack_status,
+    }
+}
+
 pub(crate) fn request_list_item_response(
     request: RequestListRow,
     viewer: &RequestViewer<'_>,
@@ -70,13 +80,7 @@ pub(crate) fn request_list_item_response(
     parent: Option<scope_domain::requests::RequestStackParent>,
 ) -> Result<RequestListItemResponse, crate::error::ApiError> {
     let decision = request_list_mergeability(
-        RequestMergeSubject {
-            author_user_id: request.author_user_id.as_deref(),
-            view: &request.view,
-            state: request.state,
-            has_git_snapshot: request.has_git_snapshot,
-            stack_status: request.stack_status,
-        },
+        request_list_row_subject(&request),
         viewer,
         views,
         checks,

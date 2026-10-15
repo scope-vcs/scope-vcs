@@ -22,6 +22,7 @@ const items = titles.map((title, index) => ({
   author: { handle: 'adam' },
   attention: { group: 'needs_you', reason: 'authored', can_set_aside: index < 2 },
   attention_at_unix: Math.floor(Date.now() / 1000) - index * 480,
+  next_step: (['review', 'fix_checks', 'merge'] as const)[index],
 })) as RequestQueueItemResponse[]
 const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
 const pages = { active: { ...empty, requests: items }, unclaimed: empty, set_aside: empty, done: empty }

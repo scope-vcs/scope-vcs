@@ -45,6 +45,61 @@ fn groups_split_active_rows_by_who_acts_next() {
 }
 
 #[test]
+fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
+    use RequestAttentionReason as Reason;
+    use RequestMergeabilityStatus as Status;
+    use RequestQueueNextStep as Step;
+    let author = Some("author");
+    for (status, expected) in [
+        (Status::Ready, Step::Merge),
+        (Status::ChecksFailed, Step::FixChecks),
+        (Status::ChecksConfigurationError, Step::FixChecks),
+        (Status::IntegrationConflict, Step::Update),
+        (Status::NeedsMainUpdate, Step::Update),
+        (Status::ParentRewritten, Step::Update),
+        (Status::ParentClosed, Step::Update),
+        (Status::ChecksPending, Step::Wait),
+        (Status::WaitingForParent, Step::Wait),
+        (Status::Draft, Step::Wait),
+    ] {
+        assert_eq!(
+            next_step_for(author, author, Reason::NewActivity, status, true),
+            expected,
+            "{status:?}"
+        );
+    }
+    assert_eq!(
+        next_step_for(author, author, Reason::NewActivity, Status::Ready, false),
+        Step::Wait,
+        "a contributor waits for a maintainer to merge"
+    );
+    for (reason, expected) in [
+        (Reason::Invited, Step::Review),
+        (Reason::Claimed, Step::Review),
+        (Reason::Unclaimed, Step::Review),
+        (Reason::NewActivity, Step::Reply),
+        (Reason::Restored, Step::Revisit),
+        (Reason::SnoozeExpired, Step::Revisit),
+        (Reason::ClaimedElsewhere, Step::Wait),
+        (Reason::Merged, Step::Done),
+    ] {
+        assert_eq!(
+            next_step_for(author, Some("reviewer"), reason, Status::ChecksFailed, true),
+            expected,
+            "{reason:?}"
+        );
+    }
+    assert_eq!(
+        next_step_for(author, author, Reason::Closed, Status::Closed, false),
+        Step::Done
+    );
+    assert_eq!(
+        next_step_for(None, None, Reason::Open, Status::Ready, false),
+        Step::Wait
+    );
+}
+
+#[test]
 fn personal_set_aside_precedes_retained_claim_and_other_activity_reactivates() {
     let request = open_request();
     let waiting = attention(&request, RequestAttentionState::Waiting);

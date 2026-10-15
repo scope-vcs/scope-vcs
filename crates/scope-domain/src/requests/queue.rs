@@ -1,5 +1,11 @@
-use super::{Request, RequestState};
+use super::merge_gate::{evaluate_request_merge, evaluate_request_readiness};
+use super::{
+    Request, RequestChecksOutcome, RequestMergeSubject, RequestMergeabilityStatus, RequestState,
+    RequestViewer,
+};
 use crate::error::DomainError;
+use crate::repository::RepoLifecycleState;
+use crate::views::Views;
 use serde::{Deserialize, Serialize};
 
 mod placement;
@@ -46,6 +52,86 @@ pub fn request_queue_group(
             | Reason::SnoozeExpired => RequestQueueGroup::NeedsYou,
             _ => RequestQueueGroup::Waiting,
         },
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestQueueNextStep {
+    Review,
+    Reply,
+    Revisit,
+    Merge,
+    FixChecks,
+    Update,
+    Wait,
+    Done,
+}
+
+pub fn request_queue_next_step(
+    subject: RequestMergeSubject<'_>,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
+    checks: RequestChecksOutcome,
+    repository_lifecycle: RepoLifecycleState,
+    reason: RequestAttentionReason,
+) -> RequestQueueNextStep {
+    let readiness = evaluate_request_readiness(repository_lifecycle, subject, checks).status;
+    let viewer_can_merge =
+        evaluate_request_merge(repository_lifecycle, subject, viewer, views, checks).status
+            == RequestMergeabilityStatus::Ready;
+    next_step_for(
+        subject.author_user_id,
+        viewer.user_id,
+        reason,
+        readiness,
+        viewer_can_merge,
+    )
+}
+
+fn next_step_for(
+    author_user_id: Option<&str>,
+    viewer_user_id: Option<&str>,
+    reason: RequestAttentionReason,
+    readiness: RequestMergeabilityStatus,
+    viewer_can_merge: bool,
+) -> RequestQueueNextStep {
+    use RequestAttentionReason as Reason;
+    use RequestMergeabilityStatus as Status;
+    if viewer_user_id.is_some() && author_user_id == viewer_user_id {
+        return match readiness {
+            Status::Ready if viewer_can_merge => RequestQueueNextStep::Merge,
+            Status::Ready => RequestQueueNextStep::Wait,
+            Status::ChecksFailed | Status::ChecksConfigurationError => {
+                RequestQueueNextStep::FixChecks
+            }
+            Status::IntegrationConflict
+            | Status::NeedsMainUpdate
+            | Status::ParentRewritten
+            | Status::ParentClosed => RequestQueueNextStep::Update,
+            Status::Closed | Status::Merged => RequestQueueNextStep::Done,
+            Status::RepositoryNotReady
+            | Status::Draft
+            | Status::NotMaintainer
+            | Status::MissingRequestBranch
+            | Status::ChecksNotEvaluated
+            | Status::ChecksAwaitingApproval
+            | Status::ChecksPending
+            | Status::WaitingForParent
+            | Status::AncestorBlocked => RequestQueueNextStep::Wait,
+        };
+    }
+    match reason {
+        Reason::Invited | Reason::Claimed | Reason::Unclaimed => RequestQueueNextStep::Review,
+        Reason::NewActivity => RequestQueueNextStep::Reply,
+        Reason::Restored | Reason::SnoozeExpired => RequestQueueNextStep::Revisit,
+        Reason::Authored
+        | Reason::ClaimedElsewhere
+        | Reason::Waiting
+        | Reason::Snoozed
+        | Reason::Settled
+        | Reason::Open => RequestQueueNextStep::Wait,
+        Reason::Closed | Reason::Merged => RequestQueueNextStep::Done,
     }
 }
 

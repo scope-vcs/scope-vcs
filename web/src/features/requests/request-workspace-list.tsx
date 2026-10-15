@@ -11,8 +11,10 @@ import { Check, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-re
 import type { CSSProperties } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
 import { RequestDiscussionActorAvatar } from './request-discussion-byline'
+import { RequestRailMarker } from './request-workspace-rail-marker'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import {
+  REQUEST_MERGE_STEP_LABELS,
   requestAgeLabel,
   requestAttentionHeat,
   requestAttentionLabel,
@@ -92,7 +94,7 @@ export function RequestWorkspaceListSkeleton({ rail = false }: { rail?: boolean 
       {[0, 1, 2].map((index) => (
         <div className="request-workspace-row" data-rail={rail ? '' : undefined} key={index}>
           <div className="request-workspace-row-link">
-            <BlockSkeleton className={cn('rounded-full', rail ? 'size-8' : 'size-5')} />
+            <BlockSkeleton className={cn('rounded-full', rail ? 'size-[30px]' : 'size-5')} />
             <div className="min-w-0">
               <TextSkeleton className="h-[18px]" length="long" size="meta" />
               <TextSkeleton className="mt-[3px] h-[15px]" length="short" size="meta" />
@@ -125,6 +127,7 @@ function RequestWorkspaceRow({
   const pending = pendingId === request.id
   const hot = attention.group === 'needs_you'
   const unread = requestHasNewActivity(item)
+  const mergeStep = rail ? REQUEST_MERGE_STEP_LABELS[item.next_step] : undefined
   const canSetAside = section === 'active' && attention.can_set_aside
   const actions = [
     { action: 'settle', label: 'Settle', icon: Check, visible: canSetAside },
@@ -163,8 +166,11 @@ function RequestWorkspaceRow({
         to="/$owner/$repo/requests/$requestId"
       >
         <span className="request-workspace-row-avatar">
-          <RequestDiscussionActorAvatar handle={actorHandle(author)} small={!rail} />
-          {rail && unread && <span aria-hidden="true" className="request-workspace-row-unread" />}
+          {rail ? (
+            <RequestRailMarker handle={actorHandle(author)} nextStep={item.next_step} unread={unread} />
+          ) : (
+            <RequestDiscussionActorAvatar handle={actorHandle(author)} small />
+          )}
         </span>
         <span className="min-w-0">
           <span
@@ -193,6 +199,7 @@ function RequestWorkspaceRow({
               />
               <span className="truncate" suppressHydrationWarning>
                 {requestAttentionLabel(item, hydrated)}
+                {mergeStep && <span className="sr-only">, {mergeStep}</span>}
               </span>
             </span>
             <time

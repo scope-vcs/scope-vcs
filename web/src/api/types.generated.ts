@@ -456,6 +456,8 @@ export type RequestQueueSection = "active" | "unclaimed" | "set_aside" | "done";
 
 export type RequestQueueGroup = "needs_you" | "waiting" | "unclaimed" | "set_aside" | "done";
 
+export type RequestQueueNextStep = "review" | "reply" | "revisit" | "merge" | "fix_checks" | "update" | "wait" | "done";
+
 export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled";
 
 export type RequestAttentionReason = "authored" | "invited" | "claimed" | "unclaimed" | "claimed_elsewhere" | "new_activity" | "restored" | "snooze_expired" | "waiting" | "snoozed" | "settled" | "open" | "closed" | "merged";
@@ -472,13 +474,21 @@ revision: number, can_claim: boolean, can_set_aside: boolean, can_restore: boole
 
 export type RequestAttentionActionRequest = { "action": "claim", expected_activity_version: number, } | { "action": "wait", expected_activity_version: number, } | { "action": "settle", expected_activity_version: number, } | { "action": "snooze", expected_activity_version: number, until_unix: number, } | { "action": "restore", expected_activity_version: number, } | { "action": "release", expected_activity_version: number, };
 
-export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null,
+/**
+ * The queue row's next step after this change.
+ */
+next_step: RequestQueueNextStep, };
 
 export type RequestQueueItemResponse = { attention_at_unix: number, request: RequestListItemResponse,
 /**
  * Null once that account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+author: RequestActorSummaryResponse | null, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null,
+/**
+ * What the viewer does next: mergeability on their own requests, attention on others'.
+ */
+next_step: RequestQueueNextStep, };
 
 export type RequestQueuePageResponse = { requests: Array<RequestQueueItemResponse>, next_cursor: string | null, next_attention_at_unix: number | null, };
 
