@@ -118,30 +118,29 @@ async fn cli_browser_login_rejects_non_loopback_callbacks() {
 }
 
 #[tokio::test]
-async fn cli_browser_login_start_is_rate_limited() {
-    let app = router(test_state_with_jwks());
-
-    for _ in 0..scope_domain::account::cli_auth::MAX_BROWSER_LOGIN_STARTS_PER_WINDOW {
-        let response = api_request(
-            app.clone(),
-            "POST",
+async fn cli_login_starts_are_rate_limited() {
+    let browser_body = serde_json::json!({"callback_url": LOOPBACK_CALLBACK}).to_string();
+    for (route, body, max_starts) in [
+        (
             "/v1/cli/browser-login",
+            Some(browser_body.as_str()),
+            scope_domain::account::cli_auth::MAX_BROWSER_LOGIN_STARTS_PER_WINDOW,
+        ),
+        (
+            "/v1/cli/device-login",
             None,
-            Some(&serde_json::json!({"callback_url": LOOPBACK_CALLBACK}).to_string()),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::OK);
-    }
+            scope_domain::account::cli_auth::MAX_DEVICE_LOGIN_STARTS_PER_WINDOW,
+        ),
+    ] {
+        let app = router(test_state_with_jwks());
+        for _ in 0..max_starts {
+            let response = api_request(app.clone(), "POST", route, None, body).await;
+            assert_eq!(response.status(), StatusCode::OK, "{route}");
+        }
 
-    let response = api_request(
-        app.clone(),
-        "POST",
-        "/v1/cli/browser-login",
-        None,
-        Some(&serde_json::json!({"callback_url": LOOPBACK_CALLBACK}).to_string()),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let response = api_request(app, "POST", route, None, body).await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS, "{route}");
+    }
 }
 
 #[tokio::test]

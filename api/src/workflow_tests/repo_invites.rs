@@ -160,6 +160,29 @@ async fn acceptance_grants_member_access_and_can_be_repeated_safely() {
         landing(&state, &token, None).await,
         serde_json::json!({ "status": "used" })
     );
+    assert_eq!(
+        landing(&state, "scope_invite_unknown", None).await,
+        serde_json::json!({ "status": "invalid" })
+    );
+
+    let member_user_id = body["member"]["user_id"].as_str().unwrap();
+    let (status, _) = json_request(
+        &state,
+        "DELETE",
+        &format!("/v1/repos/owner/repo/members/{member_user_id}"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        landing(&state, &token, Some(&invitee_header())).await,
+        serde_json::json!({ "status": "access_removed" })
+    );
+    assert_eq!(
+        accept(&state, &token, &invitee_header()).await.0,
+        StatusCode::FORBIDDEN
+    );
 }
 
 #[tokio::test]
@@ -271,44 +294,6 @@ async fn an_expired_invite_reads_as_expired_everywhere_and_can_be_replaced() {
     let (_, fresh) = create_invite(&state).await;
     assert_eq!(landing(&state, &fresh, None).await["status"], "open");
     assert_eq!(landing(&state, token, None).await["status"], "expired");
-}
-
-#[tokio::test]
-async fn a_removed_member_cannot_rejoin_by_replaying_the_link() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let (_, token) = create_invite(&state).await;
-    let (status, body) = accept(&state, &token, &invitee_header()).await;
-    assert_eq!(status, StatusCode::OK);
-    let member_user_id = body["member"]["user_id"].as_str().unwrap();
-
-    let (status, _) = json_request(
-        &state,
-        "DELETE",
-        &format!("/v1/repos/owner/repo/members/{member_user_id}"),
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-
-    assert_eq!(
-        landing(&state, &token, Some(&invitee_header())).await,
-        serde_json::json!({ "status": "access_removed" })
-    );
-    assert_eq!(
-        accept(&state, &token, &invitee_header()).await.0,
-        StatusCode::FORBIDDEN
-    );
-}
-
-#[tokio::test]
-async fn an_unknown_link_lands_as_invalid() {
-    let state = test_state_with_repo();
-    assert_eq!(
-        landing(&state, "scope_invite_unknown", None).await,
-        serde_json::json!({ "status": "invalid" })
-    );
 }
 
 use crate::use_cases::invite_email_delivery::deliver_due_invite_emails;

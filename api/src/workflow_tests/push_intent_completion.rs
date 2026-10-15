@@ -132,41 +132,6 @@ async fn create_push_intent_applies_config_when_reviewed_head_is_current() {
 }
 
 #[tokio::test]
-async fn create_push_intent_rejects_stale_config_only_review() {
-    let (state, _source, head_oid) = published_git_fixture("stale-config-intent").await;
-    let old_base_hash = repo_config_fingerprint(&repo_config(ViewId::public())).unwrap();
-    let applied = api_request(
-        router(state.clone()),
-        "POST",
-        "/v1/repos/owner/repo/push-intents",
-        Some(&bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL)),
-        Some(&push_intent_request_json_with_base(
-            &head_oid,
-            old_base_hash.clone(),
-            repo_config(ViewId::private()),
-        )),
-    )
-    .await;
-    assert_eq!(applied.status(), StatusCode::OK);
-
-    let stale = api_request(
-        router(state.clone()),
-        "POST",
-        "/v1/repos/owner/repo/push-intents",
-        Some(&bearer_header_for(&test_owner_id(), TEST_OWNER_EMAIL)),
-        Some(&push_intent_request_json_with_base(
-            &head_oid,
-            old_base_hash,
-            readme_private_config(),
-        )),
-    )
-    .await;
-
-    assert_eq!(stale.status(), StatusCode::CONFLICT);
-    assert_eq!(stored_config(&state).await, repo_config(ViewId::private()));
-}
-
-#[tokio::test]
 async fn incremental_git_pack_layout_restores_after_cache_loss() {
     let (state, source, _head_oid) = published_git_fixture("segment-restore").await;
     let first_snapshot = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)

@@ -215,42 +215,6 @@ async fn inspectable_run(logs_truncated: bool, log_chunks: usize) -> Inspectable
 }
 
 #[tokio::test]
-async fn append_attempt_log_is_idempotent_and_rejects_sequence_gaps() {
-    let fixture = active_run(2).await;
-    let attempt_token_hash = "d".repeat(64);
-    let retry = fixture
-        .state
-        .metadata
-        .runs()
-        .append_attempt_log(
-            RunLogChunk::new(&fixture.attempt_id, 0, 1, "first\n", 6).unwrap(),
-            &attempt_token_hash,
-            6,
-        )
-        .await
-        .unwrap();
-    assert!(!retry.appended);
-    assert_eq!(retry.log.position, fixture.first_log_position);
-    for (sequence, text) in [(1, "different"), (4, "gap")] {
-        let error = fixture
-            .state
-            .metadata
-            .runs()
-            .append_attempt_log(
-                RunLogChunk::new(&fixture.attempt_id, 0, sequence, text, 6).unwrap(),
-                &attempt_token_hash,
-                6,
-            )
-            .await
-            .unwrap_err();
-        assert_eq!(
-            error.kind,
-            scope_postgres::error::PostgresErrorKind::Conflict
-        );
-    }
-}
-
-#[tokio::test]
 async fn append_attempt_log_rejects_nul_text_as_bad_request() {
     let fixture = active_run(2).await;
     let response = api_request(

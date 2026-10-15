@@ -1,18 +1,11 @@
+use super::github_checks::checks;
 use super::*;
-use scope_api_contract::routes::{repo_request, repo_request_checks};
+use scope_api_contract::routes::repo_request;
 use scope_domain::requests::{RequestCheckContext, RequestCheckEvaluation};
 use scope_domain::runs::source::RunTrigger;
 use scope_postgres::db::RecordRequestChecksCommand;
 
 mod approval;
-
-fn request_workflow() -> String {
-    WORKFLOW.replacen("  manual: true", "  manual: true\n  request: true", 1)
-}
-
-fn checks_route(request_id: &str) -> String {
-    repo_request_checks(TEST_REPO_OWNER, TEST_REPO_NAME, request_id)
-}
 
 fn merge_route(request_id: &str) -> String {
     scope_api_contract::routes::repo_request_merge(TEST_REPO_OWNER, TEST_REPO_NAME, request_id)
@@ -78,18 +71,7 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
     )
     .await;
 
-    let checks = expect_json(
-        api_request(
-            router(state.clone()),
-            "GET",
-            &checks_route(&request_id),
-            Some(&bearer_header()),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
+    let checks = checks(&state, &request_id, &bearer_header()).await;
 
     assert_eq!(checks["state"], "started");
     assert_eq!(checks["can_approve"], false);
@@ -202,31 +184,49 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_head_whose_workflows_never_ask_for_requests_owes_no_checks() {
-    let (state, request_id, _server) = owner_request_push(
-        "request-checks-none",
-        &[(".scope/runs/manual.yml", WORKFLOW.to_string())],
-    )
-    .await;
+async fn heads_without_admitted_request_workflows_owe_no_checks() {
+    for (label, workflow_path, workflow, native_runs) in [
+        (
+            "request-checks-none",
+            ".scope/runs/manual.yml",
+            WORKFLOW.to_string(),
+            true,
+        ),
+        (
+            "request-checks-unlisted",
+            ".scope/runs/checks.yml",
+            request_workflow(),
+            false,
+        ),
+    ] {
+        let (state, request_id, _server) =
+            owner_request_push_with_native_runs(label, &[(workflow_path, workflow)], native_runs)
+                .await;
 
-    let checks = expect_json(
-        api_request(
-            router(state),
-            "GET",
-            &checks_route(&request_id),
-            Some(&bearer_header()),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
+        let checks = checks(&state, &request_id, &bearer_header()).await;
 
-    assert_eq!(checks["state"], "no-checks");
-    assert_eq!(checks["can_approve"], false);
-    assert!(checks["checks"].as_array().unwrap().is_empty());
-    assert_eq!(checks["mergeability"]["status"], "Ready");
-    assert_eq!(checks["mergeability"]["reason"], serde_json::Value::Null);
+        assert_eq!(checks["state"], "no-checks", "{label}");
+        assert_eq!(checks["can_approve"], false);
+        assert!(checks["checks"].as_array().unwrap().is_empty());
+        assert_eq!(checks["mergeability"]["status"], "Ready");
+        assert_eq!(checks["mergeability"]["reason"], serde_json::Value::Null);
+        assert!(
+            state
+                .metadata
+                .runs()
+                .repository_run_history_page(scope_postgres::db::RunHistoryPageQuery {
+                    repository_id: TEST_REPO_ID,
+                    workflow_path: None,
+                    git_oid: None,
+                    after: None,
+                    limit: 10,
+                })
+                .await
+                .unwrap()
+                .is_empty(),
+            "{label}"
+        );
+    }
 }
 
 async fn forget_evaluations(state: &AppState, request_id: &str) {
@@ -236,21 +236,6 @@ async fn forget_evaluations(state: &AppState, request_id: &str) {
         .forget_request_check_evaluations_for_tests(request_id)
         .await
         .unwrap();
-}
-
-async fn checks(state: &AppState, request_id: &str, bearer: &str) -> serde_json::Value {
-    expect_json(
-        api_request(
-            router(state.clone()),
-            "GET",
-            &checks_route(request_id),
-            Some(bearer),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await
 }
 
 async fn listed_status(state: &AppState, request_id: &str) -> serde_json::Value {
@@ -406,37 +391,6 @@ async fn merging_an_unevaluated_head_evaluates_it_instead() {
         "CI has not finished"
     );
     assert_eq!(listed_status(&state, &request_id).await, "ChecksPending");
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_unlisted_owners_request_workflows_are_ignored() {
-    let (state, request_id, _server) = owner_request_push_with_native_runs(
-        "request-checks-unlisted",
-        &[(".scope/runs/checks.yml", request_workflow())],
-        false,
-    )
-    .await;
-
-    let checks = checks(&state, &request_id, &bearer_header()).await;
-
-    assert_eq!(checks["state"], "no-checks");
-    assert!(checks["checks"].as_array().unwrap().is_empty());
-    assert_eq!(checks["mergeability"]["status"], "Ready");
-    assert!(
-        state
-            .metadata
-            .runs()
-            .repository_run_history_page(scope_postgres::db::RunHistoryPageQuery {
-                repository_id: TEST_REPO_ID,
-                workflow_path: None,
-                git_oid: None,
-                after: None,
-                limit: 10,
-            })
-            .await
-            .unwrap()
-            .is_empty()
-    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -289,6 +289,27 @@ fn commit_all(repo: &FsPath, message: &str) {
     .unwrap();
 }
 
+fn commit_file(repo: &FsPath, path: &str, content: &str) {
+    fs::write(repo.join(path), content).unwrap();
+    run_git(Some(repo), &["add", path], "stage test file").unwrap();
+    commit_all(repo, path);
+}
+
+fn configure_bearer_header(repo: &FsPath, remote: &str, bearer: &str) {
+    run_git(
+        Some(repo),
+        &[
+            "config",
+            "--replace-all",
+            &format!("http.{remote}.extraHeader"),
+            &format!("Authorization: {bearer}"),
+            "^Authorization: ",
+        ],
+        "configure bearer header",
+    )
+    .unwrap();
+}
+
 fn clone_with_bearer(remote: &str, destination: &FsPath, bearer_header_value: &str, action: &str) {
     let header = format!("http.{remote}.extraHeader=Authorization: {bearer_header_value}");
     run_git(

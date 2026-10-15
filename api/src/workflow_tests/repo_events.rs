@@ -1,5 +1,5 @@
 use super::*;
-use crate::repo_events::{RepoChangeReason, repository_change_event, run_change_event};
+use crate::repo_events::{RepoChangeReason, repository_change_event};
 use scope_api_contract::RunChangeKind;
 use scope_domain::requests::{RequestActorRole, StartRequestInput};
 use scope_domain::views::ViewId;
@@ -448,7 +448,7 @@ async fn public_repo_stream_drops_private_request_identifiers() {
 }
 
 #[tokio::test]
-async fn run_changes_are_visible_to_members_and_hidden_from_public_repo_streams() {
+async fn run_and_dependency_changes_reach_members_but_not_public_repo_streams() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
     let public = events(state.clone(), None).await;
@@ -460,55 +460,42 @@ async fn run_changes_are_visible_to_members_and_hidden_from_public_repo_streams(
     assert!(next_event(&mut public_stream).await.contains("Connected"));
     assert!(next_event(&mut member_stream).await.contains("Connected"));
 
-    state.repo_events.publish_event(run_change_event(
-        &test_repo_incarnation(),
-        "run_private".to_string(),
-        RunChangeKind::Created,
-    ));
-
-    let member_event = next_event(&mut member_stream).await;
-    assert!(member_event.contains(r#""RunChanged""#));
-    assert!(member_event.contains(r#""run_id":"run_private""#));
-    assert!(member_event.contains(r#""change":"Created""#));
-    assert!(
-        tokio::time::timeout(Duration::from_millis(250), public_stream.next())
-            .await
-            .is_err()
-    );
-}
-
-#[tokio::test]
-async fn dependency_changes_are_hidden_from_public_repository_streams() {
-    let state = test_state_with_readme().await;
-    cache_test_jwks(&state);
-    let public = events(state.clone(), None).await;
-    let maintainer = events(state.clone(), Some(bearer_header())).await;
-    assert_eq!(public.status(), StatusCode::OK);
-    assert_eq!(maintainer.status(), StatusCode::OK);
-    let mut public_stream = public.into_body().into_data_stream();
-    let mut maintainer_stream = maintainer.into_body().into_data_stream();
-    assert!(next_event(&mut public_stream).await.contains("Connected"));
-    assert!(
-        next_event(&mut maintainer_stream)
-            .await
-            .contains("Connected")
-    );
-    state
-        .repo_events
-        .publish_event(scope_api_contract::RepoChangeEvent {
-            repo_id: TEST_REPO_ID.to_string(),
-            incarnation_id: test_repo_incarnation().incarnation_id().to_string(),
-            version: 0,
-            kind: scope_api_contract::RepoChangeKind::DependenciesChanged,
-        });
-    assert!(
-        next_event(&mut maintainer_stream)
-            .await
-            .contains("DependenciesChanged")
-    );
-    assert!(
-        tokio::time::timeout(Duration::from_millis(250), public_stream.next())
-            .await
-            .is_err()
-    );
+    for (kind, member_sees) in [
+        (
+            scope_api_contract::RepoChangeKind::RunChanged {
+                run_id: "run_private".to_string(),
+                change: RunChangeKind::Created,
+            },
+            r#""run_id":"run_private""#,
+        ),
+        (
+            scope_api_contract::RepoChangeKind::DependenciesChanged,
+            "DependenciesChanged",
+        ),
+        (
+            scope_api_contract::RepoChangeKind::GitHubWorkflowRunsChanged,
+            "GitHubWorkflowRunsChanged",
+        ),
+        (
+            scope_api_contract::RepoChangeKind::GitHubWorkflowRunChanged { github_run_id: 42 },
+            r#""github_run_id":42"#,
+        ),
+    ] {
+        state
+            .repo_events
+            .publish_event(scope_api_contract::RepoChangeEvent {
+                repo_id: TEST_REPO_ID.to_string(),
+                incarnation_id: test_repo_incarnation().incarnation_id().to_string(),
+                version: 0,
+                kind,
+            });
+        let member_event = next_event(&mut member_stream).await;
+        assert!(member_event.contains(member_sees), "{member_event}");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), public_stream.next())
+                .await
+                .is_err(),
+            "public stream received {member_sees}"
+        );
+    }
 }

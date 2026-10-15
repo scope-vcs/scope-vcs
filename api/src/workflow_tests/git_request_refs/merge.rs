@@ -490,134 +490,77 @@ async fn public_merge_rejects_path_made_private_after_request_push() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn locked_merge_authorization_rejects_non_maintainer_before_content_persistence() {
-    let (state, _source) = test_state_with_mergeable_request("locked-non-maintainer-state").await;
-    let prepared = prepared_merge(&state, "locked-non-maintainer", &public_user_id()).await;
-    let staged_segment = prepared.staged_segment.clone();
-    let repo_before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-
-    let error = persist_prepared_merge_for_tests(
-        &state,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        REQUEST_ID,
-        &public_user_id(),
-        prepared,
-    )
-    .await
-    .unwrap_err();
-
-    assert_eq!(error.status(), StatusCode::FORBIDDEN);
-    assert_eq!(error.public_message(), "repo maintainer required");
-    assert_eq!(
-        stored_request(&state, REQUEST_ID).await.state(),
-        RequestState::Open
-    );
-    assert_eq!(
-        find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-            .await
-            .unwrap()
-            .record
-            .change_version,
-        repo_before.record.change_version
-    );
-    assert_segment_rollback_and_write_lease_released(&state, &staged_segment).await;
+#[derive(Clone, Copy)]
+enum StaleMergeInput {
+    RequestHead,
+    RepositoryVersion,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn locked_merge_rejects_stale_request_head_without_persisting_content() {
-    let (state, _source) = test_state_with_mergeable_request("stale-request-head-state").await;
-    insert_member_user(&state).await;
-    let prepared = prepared_merge(&state, "stale-request-head", &member_user_id()).await;
-    let staged_segment = prepared.staged_segment.clone();
-    let repo_before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-    state
-        .metadata
-        .requests()
-        .mutate_request_for_tests(REQUEST_ID, |request| {
-            request.head_oid = "ffffffffffffffffffffffffffffffffffffffff".to_string();
-        })
-        .await
-        .unwrap();
-
-    let error = persist_prepared_merge_for_tests(
-        &state,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        REQUEST_ID,
-        &member_user_id(),
-        prepared,
-    )
-    .await
-    .unwrap_err();
-
-    assert_eq!(error.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        error.public_message(),
-        "request changed since merge was prepared; retry merge"
-    );
-    assert_eq!(
-        find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+async fn locked_merge_rejects_stale_inputs_without_persisting_content() {
+    for (label, stale, message) in [
+        (
+            "stale-request-head",
+            StaleMergeInput::RequestHead,
+            "request changed since merge was prepared; retry merge",
+        ),
+        (
+            "stale-repository-version",
+            StaleMergeInput::RepositoryVersion,
+            "repo changed since merge was prepared; retry merge",
+        ),
+    ] {
+        let (state, _source) = test_state_with_mergeable_request(&format!("{label}-state")).await;
+        insert_member_user(&state).await;
+        let prepared = prepared_merge(&state, label, &member_user_id()).await;
+        let staged_segment = prepared.staged_segment.clone();
+        match stale {
+            StaleMergeInput::RequestHead => state
+                .metadata
+                .requests()
+                .mutate_request_for_tests(REQUEST_ID, |request| {
+                    request.head_oid = "ffffffffffffffffffffffffffffffffffffffff".to_string();
+                })
+                .await
+                .unwrap(),
+            StaleMergeInput::RepositoryVersion => state
+                .metadata
+                .repositories()
+                .mutate_repository_for_tests(TEST_REPO_ID, Repository::bump_change_version)
+                .await
+                .unwrap(),
+        }
+        let repo_before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
-            .unwrap()
-            .record
-            .change_version,
-        repo_before.record.change_version
-    );
-    assert_segment_rollback_and_write_lease_released(&state, &staged_segment).await;
-}
+            .unwrap();
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn locked_merge_rejects_stale_repository_version_without_persisting_content() {
-    let (state, _source) =
-        test_state_with_mergeable_request("stale-repository-version-state").await;
-    insert_member_user(&state).await;
-    let prepared = prepared_merge(&state, "stale-repository-version", &member_user_id()).await;
-    let staged_segment = prepared.staged_segment.clone();
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, Repository::bump_change_version)
+        let error = persist_prepared_merge_for_tests(
+            &state,
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            REQUEST_ID,
+            &member_user_id(),
+            prepared,
+        )
         .await
-        .unwrap();
-    let changed_repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
+        .unwrap_err();
 
-    let error = persist_prepared_merge_for_tests(
-        &state,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        REQUEST_ID,
-        &member_user_id(),
-        prepared,
-    )
-    .await
-    .unwrap_err();
-
-    assert_eq!(error.status(), StatusCode::CONFLICT);
-    assert_eq!(
-        error.public_message(),
-        "repo changed since merge was prepared; retry merge"
-    );
-    assert_eq!(
-        find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-            .await
-            .unwrap()
-            .record
-            .change_version,
-        changed_repo.record.change_version
-    );
-    assert_eq!(
-        stored_request(&state, REQUEST_ID).await.state(),
-        RequestState::Open
-    );
-    assert_segment_rollback_and_write_lease_released(&state, &staged_segment).await;
+        assert_eq!(error.status(), StatusCode::CONFLICT, "{label}");
+        assert_eq!(error.public_message(), message);
+        assert_eq!(
+            find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+                .await
+                .unwrap()
+                .record
+                .change_version,
+            repo_before.record.change_version
+        );
+        assert_eq!(
+            stored_request(&state, REQUEST_ID).await.state(),
+            RequestState::Open
+        );
+        assert_segment_rollback_and_write_lease_released(&state, &staged_segment).await;
+    }
 }
 
 async fn prepared_merge(

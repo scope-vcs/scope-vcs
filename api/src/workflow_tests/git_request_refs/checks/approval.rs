@@ -72,18 +72,7 @@ async fn checks_awaiting_approval_wait_for_a_maintainer_and_gate_the_merge() {
     let member = bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL);
     submit_request(app.clone(), REQUEST_ID, &public).await;
 
-    let waiting = expect_json(
-        api_request(
-            app.clone(),
-            "GET",
-            &checks_route(REQUEST_ID),
-            Some(&member),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
+    let waiting = checks(&state, REQUEST_ID, &member).await;
     assert_eq!(waiting["state"], "awaiting-approval");
     assert_eq!(waiting["can_approve"], true);
     assert_eq!(waiting["checks"].as_array().unwrap().len(), 1);
@@ -95,18 +84,7 @@ async fn checks_awaiting_approval_wait_for_a_maintainer_and_gate_the_merge() {
     assert_eq!(waiting["checks"][0]["run_state"], serde_json::Value::Null);
     assert_eq!(waiting["mergeability"]["status"], "ChecksAwaitingApproval");
 
-    let contributor_view = expect_json(
-        api_request(
-            app.clone(),
-            "GET",
-            &checks_route(REQUEST_ID),
-            Some(&public),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
+    let contributor_view = checks(&state, REQUEST_ID, &public).await;
     assert_eq!(contributor_view["state"], "awaiting-approval");
     assert_eq!(contributor_view["can_approve"], false);
 
@@ -197,34 +175,12 @@ async fn recorded_checks_can_be_approved_by_a_maintainer_after_the_request_close
     .await;
     assert_eq!(closed["deleted"], false);
 
-    let waiting = expect_json(
-        api_request(
-            app.clone(),
-            "GET",
-            &checks_route(REQUEST_ID),
-            Some(&member),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
+    let waiting = checks(&state, REQUEST_ID, &member).await;
     assert_eq!(waiting["state"], "awaiting-approval");
     assert_eq!(waiting["can_approve"], true);
     assert_eq!(waiting["mergeability"]["status"], "Closed");
 
-    let contributor_view = expect_json(
-        api_request(
-            app.clone(),
-            "GET",
-            &checks_route(REQUEST_ID),
-            Some(&public),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
+    let contributor_view = checks(&state, REQUEST_ID, &public).await;
     assert_eq!(contributor_view["can_approve"], false);
 
     let refused = api_request(

@@ -64,9 +64,11 @@ async fn committed_submission_refreshes_other_viewers_when_response_projection_f
 
 #[tokio::test]
 async fn request_mutations_refresh_once_after_commit_and_never_after_rejection() {
-    let state = test_state_with_readme().await;
+    let mut state = test_state_with_readme().await;
     cache_test_jwks(&state);
     create_owner_request(&state, "req_refresh_once", REQUEST_HEAD).await;
+    let (analytics, recording) = scope_product_analytics::ProductAnalytics::recording();
+    state.product_analytics = analytics;
     let app = router(state.clone());
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
     let submit_path = "/v1/repos/owner/repo/requests/req_refresh_once/submit";
@@ -76,10 +78,28 @@ async fn request_mutations_refresh_once_after_commit_and_never_after_rejection()
 
     let submitted = api_request(app.clone(), "POST", submit_path, Some(&auth), Some("{}")).await;
     assert_eq!(submitted.status(), StatusCode::OK);
+    assert_eq!(response_json(submitted).await["request"]["state"], "Open");
     assert_one_refresh(&mut events, "request-submitted");
+    assert_eq!(recording.event_names(), ["request:request_submit"]);
+    assert_eq!(
+        recording.property(0, "repository_id"),
+        Some(serde_json::Value::String("repoi_workflow_test".into()))
+    );
+    assert_eq!(
+        recording.property(0, "request_id"),
+        Some(serde_json::Value::String("req_refresh_once".into()))
+    );
     let rejected = api_request(app.clone(), "POST", submit_path, Some(&auth), Some("{}")).await;
     assert_eq!(rejected.status(), StatusCode::CONFLICT);
     assert!(events.try_recv().is_err());
+    assert_eq!(
+        recording.event_names(),
+        ["request:request_submit", "operation:failure"]
+    );
+    assert_eq!(
+        recording.property(1, "reason"),
+        Some(serde_json::Value::String("conflict".into()))
+    );
 
     let start_body = r#"{"name":"refresh-once","view":"private"}"#;
     let started = api_request(

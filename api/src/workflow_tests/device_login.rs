@@ -130,16 +130,3 @@ async fn cli_device_login_completion_requires_clerk_auth_and_is_single_use() {
         Some(serde_json::Value::String("conflict".into()))
     );
 }
-
-#[tokio::test]
-async fn cli_device_login_start_is_rate_limited() {
-    let app = router(test_state_with_jwks());
-
-    for _ in 0..scope_domain::account::cli_auth::MAX_DEVICE_LOGIN_STARTS_PER_WINDOW {
-        let response = api_request(app.clone(), "POST", "/v1/cli/device-login", None, None).await;
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    let response = api_request(app.clone(), "POST", "/v1/cli/device-login", None, None).await;
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-}

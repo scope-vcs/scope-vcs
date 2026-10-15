@@ -270,26 +270,6 @@ fn assert_stopped(response: &serde_json::Value, reason: &str) {
     assert_eq!(response["intent"]["reason"], reason);
 }
 
-fn commit_file(repo: &FsPath, path: &str, content: &str, message: &str) {
-    fs::write(repo.join(path), content).unwrap();
-    run_git(Some(repo), &["add", path], "stage test file").unwrap();
-    commit_all(repo, message);
-}
-
-fn configure_git_header(repo: &FsPath, remote: &str, value: &str) {
-    run_git(
-        Some(repo),
-        &[
-            "config",
-            "--add",
-            &format!("http.{remote}.extraHeader"),
-            value,
-        ],
-        "configure Git HTTP header",
-    )
-    .unwrap();
-}
-
 fn push_head(repo: &FsPath, remote: &str, branch: &str, label: &str) {
     run_git(
         Some(repo),
@@ -345,13 +325,8 @@ async fn native_open_request(
         None
     };
     let request_source = public_request_source.as_deref().unwrap_or(source.as_ref());
-    configure_git_header(request_source, &remote, &format!("Authorization: {bearer}"));
-    commit_file(
-        request_source,
-        "auto-merge.txt",
-        "merge this head\n",
-        "auto merge request",
-    );
+    configure_bearer_header(request_source, &remote, &bearer);
+    commit_file(request_source, "auto-merge.txt", "merge this head\n");
     push_head(
         request_source,
         &remote,
@@ -425,59 +400,6 @@ async fn authorization_is_bound_to_the_exact_revision_and_only_the_current_inten
     assert_eq!(canceled["intent"]["status"], "Cancelled");
     assert_eq!(canceled["can_cancel"], false);
     assert_eq!(reconcile(&state, unix_now()).await, 0);
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn public_authors_can_read_maintainer_auto_merge_but_cannot_authorize_it() {
-    let author_user_id =
-        scope_postgres::db::scope_user_id_for_auth_identity("clerk", PUBLIC_AUTO_SUBJECT);
-    let (state, revision_id) = open_request_with_revision(
-        "req_public_auto_merge",
-        author_user_id,
-        RequestActorRole::Public,
-        ViewId::public(),
-    )
-    .await;
-    let response = api_request(
-        router(state.clone()),
-        "POST",
-        &auto_merge_route("req_public_auto_merge"),
-        Some(&bearer_header_for(PUBLIC_AUTO_SUBJECT, PUBLIC_AUTO_EMAIL)),
-        Some(
-            &serde_json::json!({
-                "expected_revision_id": revision_id,
-                "expected_head_oid": SECOND_HEAD,
-            })
-            .to_string(),
-        ),
-    )
-    .await;
-
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    let app = router(state);
-    authorize(
-        app.clone(),
-        "req_public_auto_merge",
-        &revision_id,
-        SECOND_HEAD,
-    )
-    .await;
-    let response = expect_json(
-        api_request(
-            app,
-            "GET",
-            &auto_merge_route("req_public_auto_merge"),
-            Some(&bearer_header_for(PUBLIC_AUTO_SUBJECT, PUBLIC_AUTO_EMAIL)),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(response["intent"]["status"], "Active");
-    assert_eq!(response["waiting_reason"], "Waiting for CI evaluation");
-    assert_eq!(response["can_enable"], false);
-    assert_eq!(response["can_cancel"], false);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -703,13 +625,8 @@ async fn public_main_advance_stops_authorization_as_merge_conflict() {
     assert_eq!(ready["waiting_reason"], serde_json::Value::Null);
     assert_eq!(active["intent"]["status"], "Active");
 
-    commit_file(
-        &source,
-        "public-main.txt",
-        "public main advanced\n",
-        "advance public main after auto merge authorization",
-    );
-    configure_git_header(&source, &remote, &format!("Authorization: {bearer}"));
+    commit_file(&source, "public-main.txt", "public main advanced\n");
+    configure_bearer_header(&source, &remote, &bearer);
     configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
     push_head(
         &source,
@@ -760,12 +677,7 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
         &test_repo_incarnation(),
     ))
     .unwrap();
-    commit_file(
-        &source,
-        "auto-merge.txt",
-        "second revision\n",
-        "second revision",
-    );
+    commit_file(&source, "auto-merge.txt", "second revision\n");
     push_head(&source, &remote, AUTO_REQUEST_NAME, "push second revision");
     let request = state
         .metadata
@@ -816,84 +728,97 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn only_someone_who_may_merge_can_enable_auto_merge() {
-    let request_id = "req_auto_merge_narrower";
-    let (state, revision_id) = open_request_with_revision(
-        request_id,
-        test_owner_id(),
-        RequestActorRole::Owner,
-        ViewId::public(),
-    )
-    .await;
-    let narrower_member =
+    let actor_id =
         scope_postgres::db::scope_user_id_for_auth_identity("clerk", PUBLIC_AUTO_SUBJECT);
-    state
-        .metadata
-        .auth()
-        .insert_user_for_tests(test_user(
-            &narrower_member,
-            "auto-merge-member",
-            PUBLIC_AUTO_EMAIL,
-        ))
-        .await
-        .unwrap();
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
-            repo.collaboration.members.push(test_repository_member(
-                TEST_REPO_ID,
-                narrower_member.clone(),
-                RepositoryMemberPermissions {
-                    can_push: true,
-                    can_change_file_visibility: false,
-                    view: ViewId::public(),
-                },
-            ));
-        })
-        .await
-        .unwrap();
-    let app = router(state.clone());
-    let member_bearer = bearer_header_for(PUBLIC_AUTO_SUBJECT, PUBLIC_AUTO_EMAIL);
-    let body = serde_json::json!({
-        "expected_revision_id": revision_id,
-        "expected_head_oid": SECOND_HEAD,
-    })
-    .to_string();
-
-    let member_view = expect_json(
-        api_request(
-            app.clone(),
-            "GET",
-            &auto_merge_route(request_id),
-            Some(&member_bearer),
-            None,
-        )
-        .await,
-        StatusCode::OK,
-    )
-    .await;
-    assert_eq!(member_view["can_enable"], false);
-    let refused = api_request(
-        app.clone(),
-        "POST",
-        &auto_merge_route(request_id),
-        Some(&member_bearer),
-        Some(&body),
-    )
-    .await;
-    assert_eq!(refused.status(), StatusCode::FORBIDDEN);
-    assert!(
-        state
-            .metadata
-            .requests()
-            .request_auto_merge_intent(request_id)
+    for (request_id, actor_authors_request) in [
+        ("req_public_auto_merge", true),
+        ("req_auto_merge_narrower", false),
+    ] {
+        let (author_user_id, author_role) = if actor_authors_request {
+            (actor_id.clone(), RequestActorRole::Public)
+        } else {
+            (test_owner_id(), RequestActorRole::Owner)
+        };
+        let (state, revision_id) =
+            open_request_with_revision(request_id, author_user_id, author_role, ViewId::public())
+                .await;
+        if !actor_authors_request {
+            state
+                .metadata
+                .auth()
+                .insert_user_for_tests(test_user(&actor_id, "auto-merge-member", PUBLIC_AUTO_EMAIL))
+                .await
+                .unwrap();
+            state
+                .metadata
+                .repositories()
+                .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+                    repo.collaboration.members.push(test_repository_member(
+                        TEST_REPO_ID,
+                        actor_id.clone(),
+                        RepositoryMemberPermissions {
+                            can_push: true,
+                            can_change_file_visibility: false,
+                            view: ViewId::public(),
+                        },
+                    ));
+                })
+                .await
+                .unwrap();
+        }
+        let app = router(state.clone());
+        let actor_bearer = bearer_header_for(PUBLIC_AUTO_SUBJECT, PUBLIC_AUTO_EMAIL);
+        let actor_view = || async {
+            expect_json(
+                api_request(
+                    app.clone(),
+                    "GET",
+                    &auto_merge_route(request_id),
+                    Some(&actor_bearer),
+                    None,
+                )
+                .await,
+                StatusCode::OK,
+            )
             .await
-            .unwrap()
-            .is_none()
-    );
+        };
 
-    let owner_view = auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
-    assert_eq!(owner_view["can_enable"], true);
-    let authorized = authorize(app, request_id, &revision_id, SECOND_HEAD).await;
-    assert_eq!(authorized["intent"]["status"], "Active");
+        assert_eq!(actor_view().await["can_enable"], false, "{request_id}");
+        let refused = api_request(
+            app.clone(),
+            "POST",
+            &auto_merge_route(request_id),
+            Some(&actor_bearer),
+            Some(
+                &serde_json::json!({
+                    "expected_revision_id": revision_id,
+                    "expected_head_oid": SECOND_HEAD,
+                })
+                .to_string(),
+            ),
+        )
+        .await;
+        assert_eq!(refused.status(), StatusCode::FORBIDDEN, "{request_id}");
+        assert!(
+            state
+                .metadata
+                .requests()
+                .request_auto_merge_intent(request_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        let owner_view =
+            auto_merge_json(app.clone(), "GET", request_id, None, StatusCode::OK).await;
+        assert_eq!(owner_view["can_enable"], true);
+        let authorized = authorize(app.clone(), request_id, &revision_id, SECOND_HEAD).await;
+        assert_eq!(authorized["intent"]["status"], "Active");
+
+        let read = actor_view().await;
+        assert_eq!(read["intent"]["status"], "Active", "{request_id}");
+        assert_eq!(read["waiting_reason"], "Waiting for CI evaluation");
+        assert_eq!(read["can_enable"], false);
+        assert_eq!(read["can_cancel"], false);
+    }
 }

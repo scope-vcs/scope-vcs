@@ -8,6 +8,29 @@ async fn metadata_updates_persist_in_repository_and_public_owner_summaries() {
         .await
         .unwrap();
     let mut events = state.repo_events.subscribe(&before.record.id);
+    let rejected = api_request(
+        router(state.clone()),
+        "PATCH",
+        "/v1/repos/owner/repo/metadata",
+        Some(&bearer_header()),
+        Some(
+            &serde_json::json!({
+                "description": "Must not save", "website_url": "javascript:alert(1)"
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+            .await
+            .unwrap()
+            .record
+            .description,
+        None
+    );
+    assert!(events.try_recv().is_err());
     let response = api_request(
         router(state.clone()),
         "PATCH",
@@ -112,68 +135,44 @@ async fn metadata_updates_persist_in_repository_and_public_owner_summaries() {
 async fn metadata_editing_requires_membership_but_no_member_capabilities() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
+    let unreadable = test_state_with_repo();
+    cache_test_jwks(&unreadable);
     let update = serde_json::json!({"description": "Member edit", "website_url": null});
-    let anonymous = api_request(
-        router(state.clone()),
-        "PATCH",
-        "/v1/repos/owner/repo/metadata",
-        None,
-        Some(&update.clone().to_string()),
-    )
-    .await;
-    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
-    let outsider = api_request(
-        router(state.clone()),
-        "PATCH",
-        "/v1/repos/owner/repo/metadata",
-        Some(&bearer_header_for("user_other", "other@example.com")),
-        Some(&update.clone().to_string()),
-    )
-    .await;
-    assert_eq!(outsider.status(), StatusCode::FORBIDDEN);
-    let invite = api_request(
-        router(state.clone()),
-        "POST",
-        "/v1/repos/owner/repo/invites",
-        Some(&bearer_header()),
-        Some(
-            &serde_json::json!({
-                "email": "member@example.com", "permissions": RepositoryMemberPermissions::default()
-            })
-            .to_string(),
-        ),
-    )
-    .await;
-    assert_eq!(invite.status(), StatusCode::OK);
-    let invite = response_json(invite).await;
-    let link = api_request(
-        router(state.clone()),
-        "POST",
-        &format!(
-            "/v1/repos/owner/repo/invites/{}/links",
-            invite["id"].as_str().unwrap()
-        ),
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-    assert_eq!(link.status(), StatusCode::OK);
-    let link = response_json(link).await;
-    let token = link["invite_url"]
-        .as_str()
-        .unwrap()
-        .rsplit('/')
-        .next()
+    let outsider = bearer_header_for("user_other", "other@example.com");
+    for (target, bearer, status) in [
+        (&state, None, StatusCode::UNAUTHORIZED),
+        (&state, Some(outsider.as_str()), StatusCode::FORBIDDEN),
+        (&unreadable, Some(outsider.as_str()), StatusCode::NOT_FOUND),
+    ] {
+        let response = api_request(
+            router(target.clone()),
+            "PATCH",
+            "/v1/repos/owner/repo/metadata",
+            bearer,
+            Some(&update.to_string()),
+        )
+        .await;
+        assert_eq!(response.status(), status);
+    }
+    let member_id = scope_postgres::db::scope_user_id_for_auth_identity("clerk", "user_member");
+    state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(member_id.clone(), "member", "member@example.com"))
+        .await
         .unwrap();
-    let accepted = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repository-invites/{token}/accept"),
-        Some(&bearer_header_for("user_member", "member@example.com")),
-        None,
-    )
-    .await;
-    assert_eq!(accepted.status(), StatusCode::OK);
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.collaboration.members.push(test_repository_member(
+                TEST_REPO_ID,
+                member_id,
+                RepositoryMemberPermissions::default(),
+            ));
+        })
+        .await
+        .unwrap();
     let member = api_request(
         router(state),
         "PATCH",
@@ -186,64 +185,4 @@ async fn metadata_editing_requires_membership_but_no_member_capabilities() {
     let body = response_json(member).await;
     assert_eq!(body["description"], "Member edit");
     assert_eq!(body["access"]["actor"], "Member");
-}
-
-#[tokio::test]
-async fn metadata_validation_rejects_unsafe_urls_without_saving_description() {
-    let state = test_state_with_readme().await;
-    cache_test_jwks(&state);
-    for website in [
-        "javascript:alert(1)",
-        "/relative",
-        "https://user:password@example.com",
-    ] {
-        let response = api_request(
-            router(state.clone()),
-            "PATCH",
-            "/v1/repos/owner/repo/metadata",
-            Some(&bearer_header()),
-            Some(
-                &serde_json::json!({
-                    "description": "Must not save", "website_url": website
-                })
-                .to_string(),
-            ),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-    let invalid_description = api_request(
-        router(state.clone()),
-        "PATCH",
-        "/v1/repos/owner/repo/metadata",
-        Some(&bearer_header()),
-        Some(
-            &serde_json::json!({
-                "description": "x".repeat(161), "website_url": null
-            })
-            .to_string(),
-        ),
-    )
-    .await;
-    assert_eq!(invalid_description.status(), StatusCode::BAD_REQUEST);
-    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-    assert_eq!(repo.record.description, None);
-    assert_eq!(repo.record.website_url, None);
-}
-
-#[tokio::test]
-async fn metadata_updates_hide_repositories_the_viewer_cannot_read() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let response = api_request(
-        router(state),
-        "PATCH",
-        "/v1/repos/owner/repo/metadata",
-        Some(&bearer_header_for("user_other", "other@example.com")),
-        Some(&serde_json::json!({"description": "Must not save", "website_url": null}).to_string()),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

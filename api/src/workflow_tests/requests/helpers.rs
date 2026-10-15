@@ -31,6 +31,27 @@ pub(crate) async fn create_public_request(
     .await;
 }
 
+pub(crate) async fn start_private_request(
+    state: &AppState,
+    name: &str,
+    base: Option<serde_json::Value>,
+) -> String {
+    let body = serde_json::json!({ "name": name, "title": name, "view": "private", "base": base });
+    let response = api_request(
+        router(state.clone()),
+        "POST",
+        "/v1/repos/owner/repo/requests",
+        Some(&bearer_header()),
+        Some(&body.to_string()),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response).await["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
 async fn create_request(
     state: &AppState,
     request_id: &str,

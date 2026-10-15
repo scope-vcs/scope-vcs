@@ -3,6 +3,8 @@ use scope_domain::requests::{
     Request as StackRequest, RequestBase, RequestRevision, RequestStackStatus,
 };
 
+use super::requests::start_private_request;
+
 mod auto_merge;
 mod carried;
 mod navigation;
@@ -159,27 +161,6 @@ async fn stack_request(state: &AppState, request_id: &str) -> StackRequest {
         .unwrap()
 }
 
-async fn start_private_request(
-    state: &AppState,
-    name: &str,
-    base: Option<serde_json::Value>,
-) -> String {
-    let body = serde_json::json!({ "name": name, "title": name, "view": "private", "base": base });
-    let response = api_request(
-        router(state.clone()),
-        "POST",
-        "/v1/repos/owner/repo/requests",
-        Some(&bearer_header()),
-        Some(&body.to_string()),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    response_json(response).await["request"]["id"]
-        .as_str()
-        .unwrap()
-        .to_string()
-}
-
 async fn submit_private_request(state: &AppState, request_id: &str) {
     let response = api_request(
         router(state.clone()),
@@ -190,12 +171,6 @@ async fn submit_private_request(state: &AppState, request_id: &str) {
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
-}
-
-fn commit_file(source: &FsPath, path: &str, contents: &str) {
-    fs::write(source.join(path), contents).unwrap();
-    run_git(Some(source), &["add", path], "stage stack layer").unwrap();
-    commit_all(source, path);
 }
 
 fn git_push_output(

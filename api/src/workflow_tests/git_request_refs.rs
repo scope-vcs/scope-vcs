@@ -19,6 +19,10 @@ const REQUEST_REF: &str = "refs/heads/request-branch";
 const PRIVATE_REQUEST_ID: &str = "req_private";
 const PRIVATE_REQUEST_REF: &str = "refs/heads/private-request";
 
+fn request_workflow() -> String {
+    WORKFLOW.replacen("  manual: true", "  manual: true\n  request: true", 1)
+}
+
 mod cache;
 mod checks;
 mod cleanup;
@@ -295,19 +299,6 @@ async fn request_push_checkout(
     .unwrap();
     configure_bearer_header(&source, &public_remote, &bearer_header_for(subject, email));
     (source, public_remote, server)
-}
-
-fn configure_bearer_header(repo: &FsPath, remote: &str, bearer: &str) {
-    run_git(
-        Some(repo),
-        &[
-            "config",
-            &format!("http.{remote}.extraHeader"),
-            &format!("Authorization: {bearer}"),
-        ],
-        "configure bearer header",
-    )
-    .unwrap();
 }
 
 fn push_change(

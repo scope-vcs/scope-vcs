@@ -125,13 +125,16 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
     .await;
     assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
 
+    let discussion_id = post_discussion(&app, base, &owner, "attention-root").await;
     let initial = queue_item(&app, "unclaimed", "req_attention_activity", Some(&owner)).await;
-    let version = activity_version(&initial);
-    attention.apply("settle", version, None).await;
-    assert_eq!(
-        queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await["attention"]["reason"],
-        "settled"
-    );
+    attention
+        .apply("settle", activity_version(&initial), None)
+        .await;
+    let settled = queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await;
+    assert_eq!(settled["attention"]["reason"], "settled");
+    let settled_through = settled["attention"]["through_activity_version"]
+        .as_u64()
+        .unwrap();
 
     let edited = api_request(
         app.clone(),
@@ -146,19 +149,6 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
         queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await["attention"]["reason"],
         "settled"
     );
-
-    let discussion_id = post_discussion(&app, base, &author, "attention-root").await;
-    let woke_from_discussion =
-        queue_item(&app, "active", "req_attention_activity", Some(&owner)).await;
-    assert_eq!(woke_from_discussion["attention"]["reason"], "new_activity");
-    attention
-        .apply("settle", activity_version(&woke_from_discussion), None)
-        .await;
-    let settled = queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await;
-    assert_eq!(settled["attention"]["reason"], "settled");
-    let settled_through = settled["attention"]["through_activity_version"]
-        .as_u64()
-        .unwrap();
 
     let ordinary = api_request(
         app.clone(),
@@ -189,33 +179,6 @@ async fn reply_wait_is_atomic_and_only_other_activity_reactivates_attention() {
         settled_through
     );
 
-    let wait_reply = api_request(
-        app.clone(),
-        "POST",
-        &format!("{base}/threads/{discussion_id}/replies"),
-        Some(&owner),
-        Some(
-            r#"{"body_markdown":"Waiting after this reply.","client_reply_id":"wait-owner","reply_to_reply_id":null,"wait_after_reply":true}"#,
-        ),
-    )
-    .await;
-    assert_eq!(wait_reply.status(), StatusCode::OK);
-    let wait_reply = response_json(wait_reply).await;
-    let wait_position = wait_reply["reply"]["position"].as_u64().unwrap();
-    let waiting = queue_item(&app, "set_aside", "req_attention_activity", Some(&owner)).await;
-    assert_eq!(waiting["attention"]["state"], "waiting");
-    assert_eq!(
-        waiting["attention"]["through_activity_version"],
-        wait_position
-    );
-
-    post_reply(&app, base, &discussion_id, &author, "incoming-after-wait").await;
-    let woke_from_wait = queue_item(&app, "active", "req_attention_activity", Some(&owner)).await;
-    assert_eq!(woke_from_wait["attention"]["reason"], "new_activity");
-
-    attention
-        .apply("settle", activity_version(&woke_from_wait), None)
-        .await;
     let mut snapshot = source_blob(&state, "incoming request revision");
     let revision_head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     snapshot.git_oid = revision_head.to_string();

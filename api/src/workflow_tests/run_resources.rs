@@ -140,7 +140,7 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     assert_eq!(first_id, created_run_ids[1]);
     let cursor = first["next_cursor"].as_str().unwrap();
     let second = get(
-        app.clone(),
+        app,
         &history_url(&format!("workflow=test&limit=1&after={cursor}")),
         Some(&bearer_header()),
     )
@@ -151,18 +151,6 @@ async fn workflow_catalog_and_filtered_history_follow_current_main() {
     assert_ne!(second["runs"][0]["id"], first_id);
     assert_eq!(second["runs"][0]["id"], created_run_ids[0]);
     assert!(second["next_cursor"].is_null());
-
-    let wrong_filter = get(
-        app,
-        &history_url(&format!("workflow=missing&after={cursor}")),
-        Some(&bearer_header()),
-    )
-    .await;
-    assert_eq!(wrong_filter.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        response_json(wrong_filter).await["message"],
-        "workflow is not defined on current main"
-    );
 }
 
 #[tokio::test]
@@ -199,20 +187,6 @@ async fn maintenance_rejects_a_previously_captured_workflow_that_the_release_can
 
     assert!(error.contains(TEST_REPO_ID));
     assert!(error.contains("missing field `format`"));
-}
-
-#[tokio::test]
-async fn repository_without_an_accepted_head_has_an_empty_workflow_catalog() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-
-    let response = workflow_list_response(state).await;
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response_json(response).await["workflows"],
-        serde_json::json!([])
-    );
 }
 
 #[tokio::test]

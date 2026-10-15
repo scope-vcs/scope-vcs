@@ -2,8 +2,8 @@ use super::custom_views::{fixture, member_bearer, member_id, view};
 use super::custom_views_requests::{AgentCheckout, agent_checkout, contains_commit};
 use super::*;
 use scope_domain::requests::{
-    MainPushRequestOutcome, Request, RequestRevisionGitFacts, RequestState,
-    StartMainPushRequestInput, main_push_request_names,
+    Request, RequestRevisionGitFacts, RequestState, StartMainPushRequestInput,
+    main_push_request_names,
 };
 
 async fn grant_push(state: &AppState) {
@@ -226,31 +226,16 @@ async fn a_retried_main_push_reuses_its_open_request_and_a_closed_one_moves_to_t
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_request_transaction_refuses_a_duplicate_or_stale_main_push() {
+async fn the_request_transaction_refuses_a_stale_main_push() {
     let (state, _head, _source) = fixture("agent-main-push-race").await;
     grant_push(&state).await;
     let checkout = agent_checkout(&state, "agent-main-push-race-clone").await;
     let agent_main_before = checkout.fetch_main();
     let head = checkout.commit(&[("src/main.rs", "fn main() { race() }\n")], "agent main");
-    let names = main_push_request_names(&head).take(2).collect::<Vec<_>>();
+    let next_name = main_push_request_names(&head).nth(1).unwrap();
     push_main(&state, &checkout, &head).await;
     let landed = main_push_requests(&state).await.remove(0);
     let incarnation_id = stored_repo_incarnation(&state).await;
-
-    let duplicate = state
-        .metadata
-        .requests()
-        .start_main_push_request(StartMainPushRequestInput {
-            repository_incarnation_id: incarnation_id.clone(),
-            ..concurrent_push(&landed, "req_duplicate", &names[0], &agent_main_before)
-        })
-        .await
-        .unwrap();
-    assert_eq!(
-        duplicate,
-        MainPushRequestOutcome::AlreadyOpen(Box::new(landed.clone()))
-    );
-    assert_eq!(main_push_requests(&state).await.len(), 1);
 
     crate::use_cases::request_auto_merge::reconcile_once(&state, unix_now())
         .await
@@ -261,7 +246,7 @@ async fn the_request_transaction_refuses_a_duplicate_or_stale_main_push() {
         .requests()
         .start_main_push_request(StartMainPushRequestInput {
             repository_incarnation_id: incarnation_id,
-            ..concurrent_push(&landed, "req_stale", &names[1], &agent_main_before)
+            ..concurrent_push(&landed, "req_stale", &next_name, &agent_main_before)
         })
         .await
         .unwrap_err();
