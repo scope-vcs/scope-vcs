@@ -100,14 +100,15 @@ pub(crate) async fn list_requests(
                 .copied()
                 .unwrap_or(RequestChecksOutcome::NotEvaluated);
             let parent = parents.remove(&request.id);
-            let mergeability = request_list_row_mergeability(
-                &request,
+            request_list_item_response(
+                request,
                 &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
                 &repo.views,
+                current_main_oid.clone(),
                 checks,
                 repo.record.lifecycle_state,
-            );
-            request_list_item_response(request, mergeability, current_main_oid.clone(), parent)
+                parent,
+            )
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
 

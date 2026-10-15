@@ -2,7 +2,7 @@ use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
     responses::{
         recorded_actor_response, request_actor_summary_response, request_list_item_response,
-        request_list_row_mergeability, request_list_row_subject,
+        request_list_row_subject,
     },
 };
 use crate::auth::scope::require_scope_user;
@@ -153,13 +153,6 @@ pub(crate) async fn request_queue(
                 .copied()
                 .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated);
             let viewer = RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false);
-            let mergeability = request_list_row_mergeability(
-                &row.request,
-                &viewer,
-                &repo.views,
-                checks,
-                repo.record.lifecycle_state,
-            );
             let next_step = request_queue_next_step(
                 request_list_row_subject(&row.request),
                 &viewer,
@@ -172,8 +165,11 @@ pub(crate) async fn request_queue(
                 attention_at_unix: row.cursor.updated_at_unix,
                 request: request_list_item_response(
                     row.request,
-                    mergeability,
+                    &viewer,
+                    &repo.views,
                     current_main_oid.clone(),
+                    checks,
+                    repo.record.lifecycle_state,
                     parents.remove(&request_id),
                 )?,
                 author,
