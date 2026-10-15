@@ -83,9 +83,12 @@ fn run_watch_reconnects_with_cursor_deduplicates_and_reports_failure() {
                 let after = query["after"];
                 received.lock().unwrap().push(after);
                 let body = if after == 0 {
-                    event("log", log(1))
+                    event("log", log(1)) + &event("log", log(2))
                 } else {
-                    event("log", log(1)) + &event("log", log(2)) + &event("status", run("failed"))
+                    event("log", log(1))
+                        + &event("log", log(2))
+                        + &event("log", log(3))
+                        + &event("status", run("failed"))
                 };
                 ([("content-type", "text/event-stream")], body).into_response()
             }
@@ -108,13 +111,13 @@ fn run_watch_reconnects_with_cursor_deduplicates_and_reports_failure() {
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    assert_eq!(lines.len(), 3, "{lines:?}");
-    assert_eq!(*cursors.lock().unwrap(), [0, 1]);
+    assert_eq!(lines.len(), 4, "{lines:?}");
+    assert_eq!(*cursors.lock().unwrap(), [0, 2]);
     assert_eq!(
         lines.iter().filter(|v| v["command"] == "run.log").count(),
-        2
+        3
     );
-    assert_eq!(lines[2]["command"], "run.status");
+    assert_eq!(lines[3]["command"], "run.status");
 }
 
 #[test]

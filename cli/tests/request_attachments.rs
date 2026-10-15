@@ -103,6 +103,27 @@ fn attachment_only_edit_resumes_parts_and_preserves_machine_output() {
 }
 
 #[test]
+fn discussion_posts_body_file_without_rewriting_markdown() {
+    let cwd = TempDir::new("discussion-body-file");
+    let body = "# Question\n\nKeep `\\n` literal.\n";
+    let path = cwd.path().join("body.md");
+    fs::write(&path, body).unwrap();
+    let server = MediaFixture::start();
+    let output = server
+        .request_command(
+            cwd.path(),
+            ["discussion", "start", "--body-file", path.to_str().unwrap()],
+        )
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        server.state.lock().unwrap().discussions[0]["body_markdown"],
+        body
+    );
+}
+
+#[test]
 fn attachment_only_discussion_retry_reuses_the_client_mutation_id() {
     let cwd = TempDir::new("attachment-discussion-cwd");
     let file = cwd.path().join("walkthrough.mp4");

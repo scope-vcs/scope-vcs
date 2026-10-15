@@ -250,15 +250,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn run_watch_ignores_replayed_log_positions() {
-        let mut cursor = 7;
-        assert!(!advance_log_cursor(&mut cursor, 6));
-        assert!(!advance_log_cursor(&mut cursor, 7));
-        assert!(advance_log_cursor(&mut cursor, 8));
-        assert_eq!(cursor, 8);
-    }
-
-    #[test]
     fn run_watch_preserves_job_order_when_partial_lines_interleave() {
         let mut buffers = JobLineBuffers::default();
         assert!(buffers.push("backend", "compiling").is_empty());

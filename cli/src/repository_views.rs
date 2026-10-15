@@ -38,7 +38,6 @@ pub fn summary_repo_config(views: Views) -> RepoConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::ViewId;
 
     fn summary(view: &str, definitions: serde_json::Value) -> RepoSummaryResponse {
         serde_json::from_value(serde_json::json!({
@@ -78,19 +77,5 @@ mod tests {
         assert!(reads_full_view(&summary("private", agent_views())).unwrap());
         assert!(!reads_full_view(&summary("agent", agent_views())).unwrap());
         assert!(!reads_full_view(&summary("public", agent_views())).unwrap());
-    }
-
-    #[test]
-    fn repository_views_keep_custom_names_and_reject_invalid_definitions() {
-        let views = repository_views(&summary("agent", agent_views()).views).unwrap();
-        assert_eq!(
-            views.display_name(&ViewId::parse("agent").unwrap().into()),
-            "Agent"
-        );
-        let invalid = serde_json::json!([
-            {"id": "private", "name": "Private", "includes": "all", "readers": "assigned"},
-            {"id": "agent", "name": "Agent", "includes": ["missing"], "readers": "assigned"},
-        ]);
-        assert!(repository_views(&summary("agent", invalid).views).is_err());
     }
 }

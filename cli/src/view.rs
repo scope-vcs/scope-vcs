@@ -33,7 +33,7 @@ pub enum ViewCommand {
     Edit(ViewEdit),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
+#[derive(Clone, Debug, Subcommand)]
 pub enum ViewEdit {
     #[command(about = "Add a view to the local repository configuration")]
     Add {
@@ -74,7 +74,7 @@ pub enum ViewEdit {
     },
 }
 
-#[derive(Args, Clone, Debug, Eq, PartialEq)]
+#[derive(Args, Clone, Debug)]
 #[group(required = true, multiple = false)]
 pub struct IncludeChange {
     #[arg(long, value_name = "VIEW", value_parser = parse_view_id)]

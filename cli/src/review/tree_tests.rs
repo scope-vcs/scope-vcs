@@ -28,48 +28,35 @@ fn tree_sorts_folders_before_files_and_marks_workflows_as_private_control_paths(
 }
 
 #[test]
-fn tree_maps_rename_status_to_new_path() {
-    let tree = ReviewTree::from_paths(
-        &["new.rs".to_string()],
-        &[GitChangedPath {
-            status: "R100".to_string(),
-            path: "new.rs".to_string(),
-            previous_path: Some("old.rs".to_string()),
-        }],
-    );
-
-    let file = tree
-        .nodes()
-        .iter()
-        .find(|node| node.path == "/new.rs")
-        .unwrap();
-    assert_eq!(file.change_status.as_deref(), Some("R100"));
-}
-
-#[test]
-fn change_paths_preserve_literal_arrows_spaces_and_control_characters() {
-    let paths = [" old -> new\t.rs\n".to_string(), "unrelated.rs".to_string()];
+fn change_statuses_follow_new_paths_and_preserve_literal_arrows_spaces_and_control_characters() {
+    let paths = [
+        " old -> new\t.rs\n".to_string(),
+        "new.rs".to_string(),
+        "unrelated.rs".to_string(),
+    ];
     let tree = ReviewTree::from_paths(
         &paths,
-        &[GitChangedPath {
-            status: "M".to_string(),
-            path: paths[0].clone(),
-            previous_path: None,
-        }],
+        &[
+            GitChangedPath {
+                status: "M".to_string(),
+                path: paths[0].clone(),
+                previous_path: None,
+            },
+            GitChangedPath {
+                status: "R100".to_string(),
+                path: "new.rs".to_string(),
+                previous_path: Some("old.rs".to_string()),
+            },
+        ],
     );
-    let file = tree
-        .nodes()
-        .iter()
-        .find(|node| node.path == format!("/{}", paths[0]))
-        .unwrap();
-    assert_eq!(file.name, paths[0]);
-    assert_eq!(file.change_status.as_deref(), Some("M"));
-    assert_eq!(
+    let node = |path: &str| {
         tree.nodes()
             .iter()
-            .find(|node| node.path == "/unrelated.rs")
+            .find(|node| node.path == format!("/{path}"))
             .unwrap()
-            .change_status,
-        None
-    );
+    };
+    assert_eq!(node(&paths[0]).name, paths[0]);
+    assert_eq!(node(&paths[0]).change_status.as_deref(), Some("M"));
+    assert_eq!(node("new.rs").change_status.as_deref(), Some("R100"));
+    assert_eq!(node("unrelated.rs").change_status, None);
 }

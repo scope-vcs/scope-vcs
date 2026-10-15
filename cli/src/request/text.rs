@@ -1,4 +1,4 @@
-use anyhow::{Context, bail};
+use anyhow::Context;
 use std::{
     fs,
     io::{self, Read},
@@ -9,20 +9,9 @@ pub(super) fn discussion_body(
     body: Option<String>,
     body_file: Option<PathBuf>,
 ) -> anyhow::Result<String> {
-    let mut stdin = io::stdin().lock();
-    discussion_body_with_stdin(body, body_file, &mut stdin)
-}
-
-pub(super) fn discussion_body_with_stdin(
-    body: Option<String>,
-    body_file: Option<PathBuf>,
-    stdin: &mut dyn Read,
-) -> anyhow::Result<String> {
-    match (body, body_file) {
-        (Some(body), None) => Ok(body),
-        (None, Some(path)) => read_markdown_with_stdin(path, stdin),
-        (None, None) => Ok(String::new()),
-        (Some(_), Some(_)) => bail!("--body and --body-file cannot be used together"),
+    match body_file {
+        Some(path) => read_markdown(path),
+        None => Ok(body.unwrap_or_default()),
     }
 }
 
@@ -50,13 +39,10 @@ pub(super) fn append_attachment_references(
 }
 
 pub(super) fn read_markdown(path: PathBuf) -> anyhow::Result<String> {
-    read_markdown_with_stdin(path, &mut io::stdin().lock())
-}
-
-fn read_markdown_with_stdin(path: PathBuf, stdin: &mut dyn Read) -> anyhow::Result<String> {
     if path == Path::new("-") {
         let mut body = String::new();
-        stdin
+        io::stdin()
+            .lock()
             .read_to_string(&mut body)
             .context("read Markdown from stdin")?;
         Ok(body)

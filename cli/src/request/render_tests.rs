@@ -2,7 +2,7 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn detail_uses_server_capabilities_and_renders_invitees_and_submission() {
+fn detail_lines_render_the_request_summary() {
     let mut request = summary();
     request.state = RequestState::Open;
     request.submitted_at_unix = Some(10);
@@ -26,13 +26,22 @@ fn detail_uses_server_capabilities_and_renders_invitees_and_submission() {
             },
         },
         &Views::builtin(),
-    )
-    .join("\n");
+    );
 
-    assert!(rendered.contains("open"), "{rendered}");
-    assert!(rendered.contains("submitted"), "{rendered}");
-    assert!(rendered.contains("@devon"), "{rendered}");
-    assert!(rendered.contains("edit"), "{rendered}");
+    assert_eq!(
+        rendered,
+        [
+            "open       fix-refs (req_one) — Fix request refs · head bbbbbbb",
+            "  lifecycle: open · submitted",
+            "  branch: fix-refs · base Public main aaaaaaa · head bbbbbbb",
+            "  stack: depth 1 · Main",
+            "  review base: main @ aaaaaaa",
+            "  description: Atomic updates",
+            "  invitees: @devon",
+            "  capabilities: edit",
+            "  mergeability: draft",
+        ]
+    );
 }
 
 #[test]
@@ -113,10 +122,9 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
 
 #[test]
 fn wait_labels_are_concise_and_saturating() {
-    assert_eq!(wait_label(None, 3_600), "-");
-    assert_eq!(wait_label(Some(3_590), 3_600), "<1m");
-    assert_eq!(wait_label(Some(0), 3_600), "1h");
-    assert_eq!(wait_label(Some(4_000), 3_600), "<1m");
+    assert_eq!(wait_label(3_590, 3_600), "<1m");
+    assert_eq!(wait_label(0, 3_600), "1h");
+    assert_eq!(wait_label(4_000, 3_600), "<1m");
 }
 
 #[test]

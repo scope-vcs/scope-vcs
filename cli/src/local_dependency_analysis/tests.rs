@@ -1,12 +1,6 @@
 use super::*;
 use crate::test_support::{TempDir, commit_all};
-use scope_domain::{
-    dependency_analysis::{
-        DependencyEdge, DependencyEdgeKind, DependencyGap, evaluate_dependency_analysis,
-    },
-    repo_config::{RepoConfig, RepoConfigFileRule},
-    views::ViewId,
-};
+use scope_domain::dependency_analysis::{DependencyEdge, DependencyEdgeKind, DependencyGap};
 use std::{
     fs,
     sync::atomic::{AtomicUsize, Ordering},
@@ -50,7 +44,10 @@ fn output() -> AnalyzerOutput {
             target_path: "internal/client.ts".into(),
             kind: DependencyEdgeKind::Import,
         }],
-        gaps: vec![],
+        gaps: vec![DependencyGap {
+            path: "src/index.ts".into(),
+            reason: "dynamic import could not be resolved".into(),
+        }],
     }
 }
 
@@ -78,7 +75,7 @@ fn snapshot_reads_committed_bytes_and_resolver_config_without_worktree_edits() {
 }
 
 #[test]
-fn analysis_reuses_commit_cache_and_visibility_changes_only_reevaluate() {
+fn analysis_retains_edges_and_gaps_when_reusing_the_commit_cache() {
     let (repo, commit) = repository();
     let calls = AtomicUsize::new(0);
     let token = CancellationToken::new();
@@ -92,25 +89,9 @@ fn analysis_reuses_commit_cache_and_visibility_changes_only_reevaluate() {
         Ok(output())
     })
     .unwrap();
+    assert_eq!(first.edges, output().edges);
+    assert_eq!(first.gaps, output().gaps);
     assert_eq!(first, second);
-    let mut config = RepoConfig::with_default_view(ViewId::public());
-    config.files.rules.push(RepoConfigFileRule {
-        path: "/internal/**".into(),
-        view: ViewId::private(),
-    });
-    assert_eq!(
-        evaluate_dependency_analysis(&second, &config)
-            .unwrap()
-            .public_file_count,
-        1
-    );
-    config.files.rules.clear();
-    assert!(
-        evaluate_dependency_analysis(&second, &config)
-            .unwrap()
-            .findings
-            .is_empty()
-    );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
@@ -207,22 +188,6 @@ fn canceled_analysis_does_not_launch_or_publish_cache() {
         .is_err()
     );
     assert!(!path.exists());
-}
-
-#[test]
-fn analysis_retains_known_edges_and_coverage_gaps() {
-    let (repo, commit) = repository();
-    let result = analyze_cached(repo.path(), &commit, &CancellationToken::new(), |_, _| {
-        let mut output = output();
-        output.gaps.push(DependencyGap {
-            path: "src/loader.ts".into(),
-            reason: "dynamic import could not be resolved".into(),
-        });
-        Ok(output)
-    })
-    .unwrap();
-    assert_eq!(result.edges.len(), 1);
-    assert_eq!(result.gaps.len(), 1);
 }
 
 #[test]

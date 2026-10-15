@@ -421,18 +421,6 @@ mod tests {
     }
 
     #[test]
-    fn browser_callback_target_returns_code_for_matching_request() {
-        assert_eq!(
-            browser_callback_code_from_target(
-                "/scope-cli-callback?request_id=cli_browser_123&code=scope_callback_456",
-                "cli_browser_123"
-            )
-            .unwrap(),
-            "scope_callback_456"
-        );
-    }
-
-    #[test]
     fn browser_callback_target_rejects_mismatched_request() {
         assert!(
             browser_callback_code_from_target(

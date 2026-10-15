@@ -97,14 +97,11 @@ fn dirty_working_tree(repo: &GitRepo) -> anyhow::Result<bool> {
     if !output.status.success() {
         bail!("git status --porcelain failed");
     }
-    Ok(has_dirty_paths(&output.stdout))
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| !line.trim().is_empty()))
 }
 
-fn has_dirty_paths(status: &[u8]) -> bool {
-    String::from_utf8_lossy(status)
-        .lines()
-        .any(|line| !line.trim().is_empty())
-}
 pub fn scope_remote_head_oid(
     repo: &GitRepo,
     remote: &str,
