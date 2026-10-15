@@ -6,7 +6,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useHomeFlash } from '@/lib/home-flash'
 import { CheckCircle2 } from 'lucide-react'
 import { FirstRepositoryWalkthrough } from './first-repository-walkthrough'
-import { OwnerProfileTopbarActions } from './owner-profile-topbar-actions'
 import { RepoList } from './repo-list'
 
 export function OwnerProfilePage({ state }: { state: ProfileState }) {
@@ -16,11 +15,7 @@ export function OwnerProfilePage({ state }: { state: ProfileState }) {
 
   return (
     <AppShell
-      header={() => (
-        <ApplicationTopbar>
-          <OwnerProfileTopbarActions handle={profile.handle} signedIn={Boolean(account.user)} />
-        </ApplicationTopbar>
-      )}
+      header={() => <ApplicationTopbar />}
     >
       <PageContent>
         <PageHeader title={`@${profile.handle}`} />

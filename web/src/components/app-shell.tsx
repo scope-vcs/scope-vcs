@@ -1,4 +1,5 @@
 import { MAIN_CONTENT_ID } from './main-content'
+import { SiteFooter } from './site-footer'
 import type { ReactNode } from 'react'
 
 export function AppShell({
@@ -23,7 +24,10 @@ export function AppShell({
         id={MAIN_CONTENT_ID}
         tabIndex={-1}
       >
-        {children}
+        <div className="grid min-h-full grid-cols-[minmax(0,1fr)] grid-rows-[1fr_auto]">
+          <div className="min-w-0">{children}</div>
+          <SiteFooter />
+        </div>
       </main>
     </div>
   )

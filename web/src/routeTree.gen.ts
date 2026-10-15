@@ -11,10 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as OwnerRouteImport } from './routes/$owner'
-import { Route as AccountRouteImport } from './routes/account'
 import { Route as CliLoginRouteImport } from './routes/cli-login'
 import { Route as LicensesRouteImport } from './routes/licenses'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TermsRouteImport } from './routes/terms'
 import { Route as OwnerIndexRouteImport } from './routes/$owner.index'
 import { Route as OwnerRepoRouteImport } from './routes/$owner.$repo'
@@ -47,11 +47,6 @@ const OwnerRoute = OwnerRouteImport.update({
   path: '/$owner',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AccountRoute = AccountRouteImport.update({
-  id: '/account',
-  path: '/account',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const CliLoginRoute = CliLoginRouteImport.update({
   id: '/cli-login',
   path: '/cli-login',
@@ -65,6 +60,11 @@ const LicensesRoute = LicensesRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TermsRoute = TermsRouteImport.update({
@@ -179,10 +179,10 @@ const OwnerRepoRequestsRequestIdDiscussionIndexRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$owner': typeof OwnerRouteWithChildren
-  '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
   '/licenses': typeof LicensesRoute
   '/privacy': typeof PrivacyRoute
+  '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/github/setup': typeof GithubSetupRoute
@@ -205,10 +205,10 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
   '/licenses': typeof LicensesRoute
   '/privacy': typeof PrivacyRoute
+  '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoCodeIndexRoute
   '/github/setup': typeof GithubSetupRoute
@@ -229,10 +229,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$owner': typeof OwnerRouteWithChildren
-  '/account': typeof AccountRoute
   '/cli-login': typeof CliLoginRoute
   '/licenses': typeof LicensesRoute
   '/privacy': typeof PrivacyRoute
+  '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/$owner/$repo': typeof OwnerRepoRouteWithChildren
   '/github/setup': typeof GithubSetupRoute
@@ -260,10 +260,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/$owner'
-    | '/account'
     | '/cli-login'
     | '/licenses'
     | '/privacy'
+    | '/settings'
     | '/terms'
     | '/$owner/$repo'
     | '/github/setup'
@@ -286,10 +286,10 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/account'
     | '/cli-login'
     | '/licenses'
     | '/privacy'
+    | '/settings'
     | '/terms'
     | '/$owner/$repo'
     | '/github/setup'
@@ -309,10 +309,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/$owner'
-    | '/account'
     | '/cli-login'
     | '/licenses'
     | '/privacy'
+    | '/settings'
     | '/terms'
     | '/$owner/$repo'
     | '/github/setup'
@@ -339,10 +339,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   OwnerRoute: typeof OwnerRouteWithChildren
-  AccountRoute: typeof AccountRoute
   CliLoginRoute: typeof CliLoginRoute
   LicensesRoute: typeof LicensesRoute
   PrivacyRoute: typeof PrivacyRoute
+  SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
   GithubSetupRoute: typeof GithubSetupRoute
   InvitesTokenRoute: typeof InvitesTokenRoute
@@ -366,13 +366,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/account': {
-      id: '/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof AccountRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/cli-login': {
       id: '/cli-login'
       path: '/cli-login'
@@ -392,6 +385,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/terms': {
@@ -653,10 +653,10 @@ const OwnerRouteWithChildren = OwnerRoute._addFileChildren(OwnerRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   OwnerRoute: OwnerRouteWithChildren,
-  AccountRoute: AccountRoute,
   CliLoginRoute: CliLoginRoute,
   LicensesRoute: LicensesRoute,
   PrivacyRoute: PrivacyRoute,
+  SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,
   GithubSetupRoute: GithubSetupRoute,
   InvitesTokenRoute: InvitesTokenRoute,

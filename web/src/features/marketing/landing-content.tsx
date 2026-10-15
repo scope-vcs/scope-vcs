@@ -1,12 +1,12 @@
 import type { CliInstallCommands, CliPlatform } from '@/api/types'
 import { CliInstallCommand } from '@/components/cli-install-command'
 import { ScopeLogo } from '@/components/scope-logo'
-import { ThemeToggle } from '@/components/theme-toggle'
+import { SiteLinks, sourceUrl, ThemeSwitch } from '@/components/site-footer'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ArrowUpRight } from 'lucide-react'
 import type { CSSProperties, MouseEvent, ReactElement } from 'react'
-import { heroCopy, installTitle, mergeTitle, notes, sourceUrl, touchNavNote, type LandingView } from './landing-copy'
+import { heroCopy, installTitle, mergeTitle, notes, touchNavNote, type LandingView } from './landing-copy'
 import { Heading, LandingViewProvider, Note, Swap } from './landing-view'
 import { MergeGraph } from './merge-graph'
 import { RepoPanel } from './repo-panel'
@@ -48,10 +48,7 @@ export function LandingContent({
             <span className="pointer-coarse:hidden">{notes.nav}</span>
             <span className="hidden pointer-coarse:inline">{touchNavNote}</span>
           </Note>
-          <nav aria-label={isPublic ? 'Account and appearance' : undefined} className="flex items-center gap-5 text-sm">
-            <Link className="hover:text-success-strong" params={{ _splat: '' }} search={{ redirect_url: '/' }} to="/sign-in/$">Sign in</Link>
-            <ThemeToggle />
-          </nav>
+          <Link className="text-sm hover:text-success-strong" params={{ _splat: '' }} search={{ redirect_url: '/' }} to="/sign-in/$">Sign in</Link>
         </header>
 
         <main className="outline-none" id={isPublic ? 'main-content' : undefined} tabIndex={isPublic ? -1 : undefined}>
@@ -100,13 +97,11 @@ export function LandingContent({
 
         <footer className="relative flex min-h-24 flex-wrap items-center justify-between gap-5 text-[13px] text-muted-foreground max-[901px]:pb-8">
           <Link aria-label="Scope home" to="/"><ScopeLogo className="landing-logo w-[84px] opacity-65" /></Link>
-          <Note className="absolute left-1/2 top-1/2 max-w-[44ch] -translate-x-1/2 -translate-y-1/2 text-center max-[901px]:static max-[901px]:order-last max-[901px]:block max-[901px]:max-w-none max-[901px]:basis-full max-[901px]:translate-none max-[901px]:text-left" id="footer" />
-          <nav aria-label={isPublic ? 'Project' : undefined} className="flex gap-6 [&_a:hover]:text-success-strong">
-            <a href={sourceUrl}>Source</a>
-            <Link to="/privacy">Privacy</Link>
-            <Link to="/terms">Terms</Link>
-            <Link to="/licenses">Licenses</Link>
-          </nav>
+          <Note className="absolute left-1/2 top-1/2 max-w-[44ch] -translate-x-1/2 -translate-y-1/2 text-center max-[1151px]:static max-[1151px]:order-last max-[1151px]:block max-[1151px]:max-w-none max-[1151px]:basis-full max-[1151px]:translate-none max-[1151px]:text-left" id="footer" />
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <SiteLinks className="flex gap-6 [&_a:hover]:text-success-strong" label={isPublic ? 'Project' : undefined} />
+            <ThemeSwitch />
+          </div>
         </footer>
       </div>
     </LandingViewProvider>

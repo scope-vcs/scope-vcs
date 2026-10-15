@@ -16,7 +16,7 @@ const tracked = (name: string, path: string): AnalyticsRouteDecision => ({
 const routeDecisions = {
   '__root__': excluded,
   '/': tracked('home', '/'),
-  '/account': tracked('account', '/account'),
+  '/settings': tracked('settings', '/settings'),
   '/cli-login': tracked('cli_login', '/cli-login'),
   '/github/setup': tracked('github_setup', '/github/setup'),
   '/licenses': tracked('licenses', '/licenses'),

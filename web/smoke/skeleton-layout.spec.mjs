@@ -31,7 +31,7 @@ const SCENARIOS = [
     { name: 'runs', from: repoPath, to: `${repoPath}/runs`, signedIn: true },
     { name: 'run detail', from: `${repoPath}/runs`, to: firstRunLink, signedIn: true },
     { name: 'settings', from: `/${owner}`, to: `${repoPath}/settings`, signedIn: true },
-    { name: 'account', from: `/${owner}`, to: '/account', signedIn: true },
+    { name: 'settings page', from: `/${owner}`, to: '/settings', signedIn: true },
     { name: 'request detail', from: `${requestRepoPath}/requests`, to: firstRequestLink, signedIn: true },
   ] : [],
 ]
@@ -175,7 +175,7 @@ function measureLayout() {
   const dividers = new Set()
   const mainRect = main?.getBoundingClientRect()
   for (const element of main?.querySelectorAll('*') ?? []) {
-    if (!visible(element) || element.closest('.sr-only, .animate-spin')) continue
+    if (!visible(element) || element.closest('.sr-only, .animate-spin, [data-slot="site-footer"]')) continue
     const rect = element.getBoundingClientRect()
     if (rect.bottom < mainRect.top || rect.top > innerHeight) continue
     if (element.matches('[data-slot="skeleton"], svg, img, input, textarea, select')) {

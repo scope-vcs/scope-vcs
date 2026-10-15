@@ -38,7 +38,7 @@ test('unknown routes are rejected instead of falling back to a raw path', () => 
 test('pre-runtime error routes use registered aliases without retaining path values', () => {
   for (const [pathname, name] of [
     ['/', 'home'],
-    ['/account', 'account'],
+    ['/settings', 'settings'],
     ['/private-owner/private-repo/', 'repository_code'],
     ['/private-owner/private-repo/requests/private-id', 'request'],
     ['/private-owner/private-repo/requests/private-id/changes', 'request_changes'],

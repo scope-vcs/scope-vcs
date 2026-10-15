@@ -2,14 +2,13 @@ import { useState } from 'react'
 import { RepositoryHtmlPreviewProvider } from '@/components/repository-html-preview-store'
 import { RepositoryHtmlRenderer } from '@/components/repository-html-renderer'
 import { WorkspaceTabStrip } from '@/components/workspace-tab-strip'
-import { toggleTheme } from '@/lib/use-theme-type'
 
 export function WorkspaceFixture() {
   const [mode, setMode] = useState<'preview' | 'source'>('preview')
   const [tabs, setTabs] = useState([{ id: 'one', label: 'One.html' }, { id: 'two', label: 'Two.html' }])
   return <RepositoryHtmlPreviewProvider>
     <button onClick={() => setMode(mode === 'preview' ? 'source' : 'preview')}>Toggle source</button>
-    <button onClick={toggleTheme}>Toggle theme</button>
+    <button onClick={() => document.documentElement.classList.toggle('dark')}>Toggle theme</button>
     <WorkspaceTabStrip activeId="one" ariaLabel="Fixture files" onActivate={() => {}}
       onClose={id => { setTabs(tabs.filter(tab => tab.id !== id)); return 'one' }}
       onEmptyFocus={() => {}} onPin={() => {}} previewId={null} tabSetId="fixture" tabs={tabs} />

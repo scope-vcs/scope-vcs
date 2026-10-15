@@ -43,7 +43,7 @@ export function FirstRepositoryWalkthrough({
 
       <p className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-xs leading-4 text-muted-foreground">
         <span>Already have the CLI? Start at step 2.</span>
-        <Link className="underline underline-offset-2 hover:text-foreground" to="/account">
+        <Link className="underline underline-offset-2 hover:text-foreground" hash="cli-access" to="/settings">
           Manage CLI sessions
         </Link>
       </p>

@@ -7,6 +7,7 @@ pub const RESERVED_HANDLES: &[&str] = &[
     "licenses",
     "pricing",
     "repos",
+    "settings",
     "sign-in",
     "sign-up",
 ];
@@ -25,6 +26,7 @@ mod tests {
     fn application_and_marketing_routes_are_reserved_handles() {
         for handle in [
             "account",
+            "settings",
             "sign-in",
             "sign-up",
             "cli-login",
@@ -41,8 +43,8 @@ mod tests {
 
     #[test]
     fn reservation_is_case_insensitive_but_does_not_claim_derived_handles() {
-        assert!(is_reserved_handle("ACCOUNT"));
-        assert!(!is_reserved_handle("account-2"));
+        assert!(is_reserved_handle("SETTINGS"));
+        assert!(!is_reserved_handle("settings-2"));
         assert!(!is_reserved_handle("adamblumoff"));
     }
 }

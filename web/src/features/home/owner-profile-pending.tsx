@@ -1,8 +1,6 @@
 import { PageHeader } from '@/components/page-header'
-import { useAuth } from '@clerk/tanstack-react-start'
-import { ApplicationPendingShell } from '@/components/pending-surface'
+import { ApplicationPendingShell } from '@/components/application-pending-shell'
 import { TextSkeleton, type TextSkeletonLength } from '@/components/ui/text-skeleton'
-import { OwnerProfileTopbarActions } from './owner-profile-topbar-actions'
 
 const REPOSITORY_LENGTHS: TextSkeletonLength[] = ['medium', 'short', 'long', 'medium']
 const PENDING_REPOSITORIES = Array.from({ length: 12 }, (_, row) => ({
@@ -11,12 +9,8 @@ const PENDING_REPOSITORIES = Array.from({ length: 12 }, (_, row) => ({
 }))
 
 export function OwnerProfilePending({ owner }: { owner: string }) {
-  const { isSignedIn } = useAuth()
   return (
-    <ApplicationPendingShell
-      actions={<OwnerProfileTopbarActions handle={owner} signedIn={Boolean(isSignedIn)} />}
-      label={`Loading @${owner}`}
-    >
+    <ApplicationPendingShell label={`Loading @${owner}`}>
       <div className="py-8 lg:py-10">
         <PageHeader title={`@${owner}`} />
         <div className="mt-6 divide-y divide-border">

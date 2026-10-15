@@ -1,10 +1,10 @@
 import { DestructiveActionDialog } from '@/components/destructive-action-dialog'
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
-import { LoaderCircle, Trash2 } from 'lucide-react'
+import { LoaderCircle } from 'lucide-react'
 import { useState } from 'react'
 import type { CliSessionResponse } from '@/api/types.generated'
-import { SESSION_ROW_CLASS } from './account-sections'
+import { SESSION_ROW_CLASS } from './settings-sections'
 
 export function CliSessionList({
   pending,
@@ -23,7 +23,7 @@ export function CliSessionList({
 
   return (
     <>
-      <ul className="divide-y divide-border border-y border-border">
+      <ul className="divide-y divide-border border-t border-border">
         {sessions.map((session) => (
           <li className={SESSION_ROW_CLASS} key={session.id}>
             <div className="min-w-0">
@@ -42,16 +42,12 @@ export function CliSessionList({
               aria-label={`Revoke ${session.label}`}
               disabled={pending.has(session.id)}
               onClick={() => setConfirmSession(session)}
-              size="icon-sm"
-              title={`Revoke ${session.label}`}
+              size="sm"
               type="button"
               variant="destructive"
             >
-              {pending.has(session.id) ? (
-                <LoaderCircle className="size-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="size-3.5" />
-              )}
+              {pending.has(session.id) && <LoaderCircle className="animate-spin" />}
+              Revoke
             </Button>
           </li>
         ))}
