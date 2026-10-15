@@ -357,46 +357,60 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn internal_diagnostics_are_not_serialized() {
-        let diagnostic = "failed to read /srv/scope/private/repository.git";
-        let api_error = ApiError::internal_message(diagnostic);
-
-        assert_eq!(api_error.operator_diagnostic(), diagnostic);
-        let response = api_error.into_response();
-
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
-        let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(error.message, INTERNAL_PUBLIC_MESSAGE);
-        assert!(!error.message.contains("/srv/scope/private"));
-        assert_opaque_reference(&error);
-    }
-
-    #[tokio::test]
     async fn infrastructure_diagnostic_sources_are_redacted_and_correlated() {
         let cases = [
-            ApiError::from(scope_postgres::error::PostgresError::internal_message(
-                "database host db.internal.example refused the query",
-            )),
-            ApiError::internal(std::io::Error::other(
-                "permission denied at /srv/scope/repos/private.git",
-            )),
-            ApiError::infrastructure_unavailable(
-                "git upload-pack exited 128: fatal: repository secret.git not found",
+            (
+                ApiError::internal_message("failed to read /srv/scope/private/repository.git"),
+                "/srv/scope/private",
+                StatusCode::INTERNAL_SERVER_ERROR,
             ),
-            ApiError::from(scope_storage::ObjectStoreError::service_unavailable(
-                "S3 endpoint https://objects.internal.example timed out",
-            )),
+            (
+                ApiError::from(scope_postgres::error::PostgresError::internal_message(
+                    "database host db.internal.example refused the query",
+                )),
+                "db.internal.example",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                ApiError::internal(std::io::Error::other(
+                    "permission denied at /srv/scope/repos/private.git",
+                )),
+                "/srv/scope/repos/private.git",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                ApiError::infrastructure_unavailable(
+                    "git upload-pack exited 128: fatal: repository secret.git not found",
+                ),
+                "secret.git",
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                ApiError::from(scope_storage::ObjectStoreError::service_unavailable(
+                    "S3 endpoint https://objects.internal.example timed out",
+                )),
+                "objects.internal.example",
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
         ];
 
-        for api_error in cases {
-            let diagnostic = api_error.operator_diagnostic().to_string();
-            let error = response_error(api_error).await;
-            assert!(!error.message.contains(&diagnostic));
-            assert!(
-                error.message == INTERNAL_PUBLIC_MESSAGE
-                    || error.message == SERVICE_UNAVAILABLE_PUBLIC_MESSAGE
+        for (api_error, secret, status) in cases {
+            assert!(api_error.operator_diagnostic().contains(secret));
+            let response = api_error.into_response();
+            assert_eq!(response.status(), status, "{secret}");
+            let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
+            let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
+            let unavailable = status == StatusCode::SERVICE_UNAVAILABLE;
+            assert_eq!(
+                error.message,
+                if unavailable {
+                    SERVICE_UNAVAILABLE_PUBLIC_MESSAGE
+                } else {
+                    INTERNAL_PUBLIC_MESSAGE
+                }
             );
+            assert_eq!(error.code == ErrorCode::ServiceUnavailable, unavailable);
+            assert_eq!(error.retryable, unavailable);
             assert_opaque_reference(&error);
         }
     }
@@ -473,17 +487,5 @@ mod tests {
         assert_eq!(error.fields.paths, [".scope/RULES.md"]);
         assert!(error.instruction.is_some());
         assert!(!error.retryable);
-    }
-
-    #[tokio::test]
-    async fn temporary_errors_are_marked_retryable() {
-        let response = ApiError::infrastructure_unavailable("upstream timed out").into_response();
-        let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
-        let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
-
-        assert_eq!(error.code, ErrorCode::ServiceUnavailable);
-        assert_eq!(error.message, SERVICE_UNAVAILABLE_PUBLIC_MESSAGE);
-        assert_opaque_reference(&error);
-        assert!(error.retryable);
     }
 }

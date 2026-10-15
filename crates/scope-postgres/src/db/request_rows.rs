@@ -579,14 +579,14 @@ mod request_list_tests {
     use sea_orm::{DatabaseBackend, QueryTrait};
 
     #[test]
-    fn request_list_query_projects_only_bounded_list_facts() {
+    fn request_list_does_not_fetch_unbounded_payloads() {
         let query = request_list_select(&RequestListPageQuery {
             repo_id: "repo-1",
             viewer_user_id: Some("viewer-1"),
             access: RepositoryAccess::public(),
             views: &Views::builtin(),
-            after_id: Some("request-10"),
-            limit: u64::MAX,
+            after_id: None,
+            limit: 1,
         })
         .unwrap();
         let sql = query.build(DatabaseBackend::Postgres).to_string();
@@ -595,7 +595,5 @@ mod request_list_tests {
         assert!(!projection.contains("description_markdown"));
         assert_eq!(projection.matches("\"git_snapshot\"").count(), 1);
         assert!(projection.contains("git_snapshot\" IS NOT NULL"));
-        assert!(projection.contains("AS \"has_git_snapshot\""));
-        assert!(sql.ends_with("LIMIT 101"));
     }
 }

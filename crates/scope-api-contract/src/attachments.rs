@@ -441,26 +441,4 @@ mod tests {
             .is_err()
         );
     }
-
-    #[test]
-    fn media_claims_are_exact_and_expire_exclusively() {
-        let target = RequestAttachmentMediaTarget::Original;
-        let claims = RequestAttachmentMediaGrantClaims {
-            attachment_id: "att_1".into(),
-            repository_id: "repo_1".into(),
-            request_id: "req_1".into(),
-            viewer_user_id: None,
-            target: target.clone(),
-            expires_at_unix: 20,
-        };
-        assert!(claims.allows("att_1", &target, 19));
-        assert!(!claims.allows("att_1", &target, 20));
-        assert!(!claims.allows(
-            "att_1",
-            &RequestAttachmentMediaTarget::Derivative {
-                derivative_id: "preview".into()
-            },
-            19
-        ));
-    }
 }

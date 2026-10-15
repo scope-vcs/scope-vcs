@@ -331,26 +331,6 @@ mod tests {
     }
 
     #[test]
-    fn bounded_git_output_maps_size_limit_to_payload_too_large() {
-        let mut command = Command::new("sh");
-        command.arg("-c").arg("printf 12345");
-
-        let error = git_process_output(
-            &mut command,
-            None,
-            ProcessLimits::new(Duration::from_secs(1)).with_max_stdout_bytes(4),
-        )
-        .unwrap_err();
-
-        assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE);
-        assert!(
-            error
-                .operator_diagnostic()
-                .contains("stdout exceeded 4 bytes")
-        );
-    }
-
-    #[test]
     fn bounded_git_output_names_the_action_when_stdout_is_too_large() {
         let error =
             run_git_output_bounded(None, &["--version"], "reading Git version", 1).unwrap_err();

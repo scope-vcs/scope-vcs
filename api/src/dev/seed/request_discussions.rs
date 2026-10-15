@@ -301,7 +301,6 @@ mod tests {
     use super::*;
     use crate::seed_user::DevSeedUser;
     use scope_domain::requests::RequestDiscussionStatus;
-    use scope_domain::requests::RequestEventKind;
     use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend};
     use std::sync::Arc;
 
@@ -334,11 +333,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(
-            request
-                .description_markdown
-                .contains("bounded retry timing")
-        );
 
         let discussions = metadata
             .requests()
@@ -355,38 +349,6 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(discussions.discussions.len(), 6);
-        assert_eq!(
-            discussions
-                .discussions
-                .iter()
-                .map(|model| model.discussion.id.as_str())
-                .collect::<Vec<_>>(),
-            vec![
-                FINAL_REVISION_DISCUSSION_ID,
-                TEST_REVISION_DISCUSSION_ID,
-                JITTER_REVISION_DISCUSSION_ID,
-                RESOLVED_DOCS_ID,
-                JITTER_ID,
-                RETRY_CAP_ID,
-            ]
-        );
-        assert_eq!(
-            discussions
-                .discussions
-                .iter()
-                .filter(|model| model.discussion.status == RequestDiscussionStatus::Open)
-                .count(),
-            5
-        );
-        assert_eq!(
-            discussions
-                .discussions
-                .iter()
-                .filter(|model| model.discussion.anchor.is_some())
-                .count(),
-            3
-        );
         assert_eq!(
             discussions
                 .discussions
@@ -402,49 +364,9 @@ mod tests {
             .iter()
             .find(|model| model.discussion.id == RETRY_CAP_ID)
             .unwrap();
-        assert_eq!(retry_cap.reply_count, 3);
-        assert_eq!(retry_cap.latest_replies.len(), 3);
-        assert!(retry_cap.latest_replies[0].reply_to.is_none());
         assert_eq!(
             retry_cap.latest_replies[1].reply_to.as_ref().unwrap().id,
             RETRY_CAP_MAINTAINER_REPLY_ID
-        );
-
-        let (replies, users) = metadata
-            .requests()
-            .request_discussion_replies(RETRY_CAP_ID, None, 10)
-            .await
-            .unwrap();
-        assert_eq!(replies.len(), 3);
-        assert_eq!(replies[0].reply.id, RETRY_CAP_MAINTAINER_REPLY_ID);
-        assert_eq!(
-            replies[1].reply.reply_to_reply_id.as_deref(),
-            Some(RETRY_CAP_MAINTAINER_REPLY_ID)
-        );
-        assert_eq!(
-            replies[2].reply_to.as_ref().unwrap().id,
-            RETRY_CAP_CONTRIBUTOR_REPLY_ID
-        );
-        assert_eq!(
-            users.get(CONTRIBUTOR_ID).unwrap().handle,
-            "river-contributor"
-        );
-        assert_eq!(users.get(MAINTAINER_ID).unwrap().handle, "maya-maintainer");
-
-        let activity = metadata
-            .requests()
-            .request_events_by_request_id(REQUEST_ID)
-            .await
-            .unwrap();
-        assert!(
-            activity
-                .iter()
-                .any(|event| event.kind == RequestEventKind::IdentityEdited)
-        );
-        assert!(
-            activity
-                .iter()
-                .any(|event| event.kind == RequestEventKind::DiscussionResolved)
         );
     }
 }

@@ -67,7 +67,10 @@ async fn maintenance_reads_catalogs_from_the_canonical_pre_migration_schema() {
     assert_eq!(catalogs.len(), 1);
     assert_eq!(catalogs[0].repository_id(), REPO_ID);
     let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(plan.pending[0].name, LATEST_MIGRATIONS[0]);
+    assert_eq!(
+        plan.pending[0].name,
+        migrations::Migrator::migrations()[0].name()
+    );
 }
 
 #[tokio::test]

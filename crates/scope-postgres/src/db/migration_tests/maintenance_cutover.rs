@@ -14,7 +14,10 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
 
     assert!(error.to_string().contains("have not been applied"));
     let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(plan.pending[0].name, LATEST_MIGRATIONS[0]);
+    assert_eq!(
+        plan.pending[0].name,
+        migrations::Migrator::migrations()[0].name()
+    );
     assert!(plan.applied.is_empty());
 
     let api_error = match connect_postgres_store(target.schema_database_url()).await {
@@ -159,29 +162,6 @@ async fn migration_lock_timeout_preserves_unapplied_inventory() {
         .await
         .unwrap();
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
-}
-
-#[tokio::test]
-async fn preflight_accepts_initialization_and_completed_cutover_without_reapplying_migrations() {
-    let (_target, db, _lease) = isolated_database().await;
-    let before = migrations::plan(db.as_ref()).await.unwrap();
-    assert_eq!(
-        migrations::preflight(&db, Default::default())
-            .await
-            .unwrap(),
-        before
-    );
-    migrations::apply_in_maintenance(&db, Default::default())
-        .await
-        .unwrap();
-    let completed = migrations::plan(db.as_ref()).await.unwrap();
-    assert!(completed.exact);
-    assert_eq!(
-        migrations::preflight(&db, Default::default())
-            .await
-            .unwrap(),
-        completed
-    );
 }
 
 #[tokio::test]

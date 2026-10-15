@@ -88,14 +88,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn storage_limits_do_not_bound_logical_sequence() {
-        let limits = GitStorageLimits::new(4).unwrap();
-
-        assert_eq!(limits.next_push_sequence(None).unwrap(), 1);
-        assert_eq!(limits.next_push_sequence(Some(2)).unwrap(), 3);
-    }
-
-    #[test]
     fn storage_limits_reject_zero_values() {
         assert_eq!(
             GitStorageLimits::new(0).unwrap_err(),

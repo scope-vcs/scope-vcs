@@ -194,7 +194,7 @@ pub mod repository_workflow_file {
 pub mod repository_first_push_token {
     use super::*;
 
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_first_push_tokens")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]

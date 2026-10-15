@@ -70,6 +70,19 @@ mod tests {
         assert_eq!(stored.pack_span.base_oid.as_deref(), Some("head-1"));
         assert_eq!(stored.pack_span.head_oid, "head-2");
         assert_eq!(stored.pack_span.segment, segment());
+
+        let first = prepare_git_push(
+            segment(),
+            "head-1".to_string(),
+            None,
+            GitStorageLimits::new(4096).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(first.head.push_sequence, 1);
+        assert_eq!(first.head.change_version, 1);
+        assert_eq!(first.pack_span.first_sequence, 1);
+        assert_eq!(first.pack_span.base_oid, None);
     }
 
     #[test]

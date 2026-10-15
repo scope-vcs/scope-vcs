@@ -466,15 +466,6 @@ impl CompiledWorkflow {
             .map(|index| &self.jobs[index])
     }
 
-    #[cfg(test)]
-    pub(crate) fn only_job(&self) -> Option<&WorkflowJob> {
-        if self.jobs.len() == 1 {
-            self.jobs.first()
-        } else {
-            None
-        }
-    }
-
     pub fn serial_jobs(&self) -> Vec<&WorkflowJob> {
         topological_job_indices(&self.jobs)
             .into_iter()

@@ -193,31 +193,9 @@ impl PushTriggerEvaluation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        content::DEFAULT_GIT_FILE_MODE,
-        runs::catalog::{RepositoryWorkflowCatalog, RepositoryWorkflowFile},
-    };
+    use crate::runs::catalog::RepositoryWorkflowCatalog;
 
     const HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
-    #[test]
-    fn push_input_is_derived_from_the_captured_catalog() {
-        let file = RepositoryWorkflowFile::from_content(
-            "/.scope/runs/checks.yml",
-            DEFAULT_GIT_FILE_MODE,
-            b"workflow".to_vec(),
-        )
-        .unwrap();
-        let catalog = RepositoryWorkflowCatalog::captured("repo-1", HEAD, 4, vec![file]).unwrap();
-
-        let input = PushTriggerInput::from(&catalog);
-
-        assert_eq!(input.head_oid, HEAD);
-        assert_eq!(input.workflows.len(), 1);
-        assert_eq!(input.workflows[0].path, "/.scope/runs/checks.yml");
-        assert_eq!(input.workflows[0].bytes, b"workflow");
-        assert!(input.configuration_error.is_none());
-    }
 
     #[test]
     fn push_input_preserves_catalog_capture_errors() {

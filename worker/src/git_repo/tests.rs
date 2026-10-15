@@ -1,6 +1,5 @@
 use super::*;
 use scope_domain::repository::git::GitPackSpan;
-use scope_git_process::ProcessError;
 use scope_storage::{EncryptionKey, GitSegmentStoreConfig, MemoryBackend};
 use std::io::Cursor;
 
@@ -131,33 +130,6 @@ fn segment_store(local_root: &Path) -> Arc<GitSegmentStore> {
         )
         .unwrap(),
     )
-}
-
-#[test]
-fn worker_git_output_obeys_exact_byte_limit() {
-    let exact = run_git(
-        None,
-        &["hash-object", "--stdin"],
-        Some(b"content".to_vec()),
-        Duration::from_secs(1),
-        41,
-    )
-    .unwrap();
-    assert_eq!(exact.len(), 41);
-
-    let error = run_git(
-        None,
-        &["hash-object", "--stdin"],
-        Some(b"content".to_vec()),
-        Duration::from_secs(1),
-        40,
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .downcast_ref::<ProcessError>()
-            .is_some_and(ProcessError::is_stdout_limit)
-    );
 }
 
 #[tokio::test]

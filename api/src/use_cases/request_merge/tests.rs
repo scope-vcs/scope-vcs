@@ -24,7 +24,7 @@ fn explicit_request_base_preserves_private_main_files() {
     repo.commit_all("request change");
     let request_head = repo.oid("HEAD");
 
-    let merged = merge_main_oid(
+    let merged = merge_main_oid_for_execution(
         &repo,
         &request_base,
         &current_main,
@@ -69,7 +69,7 @@ fn explicit_request_base_merges_non_overlapping_file_edits() {
     repo.commit_all("request edit");
     let request_head = repo.oid("HEAD");
 
-    let merged = merge_main_oid(
+    let merged = merge_main_oid_for_execution(
         &repo,
         &request_base,
         &current_main,
@@ -163,7 +163,7 @@ fn merge_preserves_rename_executable_mode_and_binary_content() {
     .unwrap();
     let request = repo.oid("HEAD");
 
-    let merged = merge_main_oid(&repo, &base, &main, &request, "request").unwrap();
+    let merged = merge_main_oid_for_execution(&repo, &base, &main, &request, "request").unwrap();
     assert_eq!(
         git_text(&repo, &["show", &format!("{merged}:new.txt")]),
         "one\ntwo\nrequest\nfour\nfive\n"
@@ -205,7 +205,7 @@ fn recorded_base_controls_merge_even_when_git_finds_a_newer_common_ancestor() {
         merge_main_oid_for_execution(&repo, &recorded_base, &main, &request, "request"),
         Err(MergeMainFailure::Conflict(_))
     ));
-    assert!(merge_main_oid(&repo, &newer_base, &main, &request, "request").is_ok());
+    assert!(merge_main_oid_for_execution(&repo, &newer_base, &main, &request, "request").is_ok());
 }
 
 fn git_text(repo: &Path, args: &[&str]) -> String {

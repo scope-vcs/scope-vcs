@@ -35,26 +35,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_zero_is_a_successful_step_exit_code() {
-        assert_eq!(StepConclusion::from_exit_code(0), StepConclusion::Succeeded);
-        assert_eq!(
-            StepConclusion::from_exit_code(3),
-            StepConclusion::Failed { exit_code: 3 }
-        );
-        assert_eq!(
-            StepConclusion::from_exit_code(SIGNAL_TERMINATED_EXIT_CODE),
-            StepConclusion::Failed { exit_code: 128 }
-        );
-    }
-
-    #[test]
-    fn setup_failures_are_distinct_and_never_success() {
-        assert_ne!(
-            SetupFailure::ProviderRejected.exit_code(),
-            SetupFailure::RuntimeSetup.exit_code()
-        );
-        for failure in [SetupFailure::ProviderRejected, SetupFailure::RuntimeSetup] {
-            assert_ne!(failure.exit_code(), 0);
-        }
+    fn setup_failures_report_sysexits_codes() {
+        assert_eq!(SetupFailure::ProviderRejected.exit_code(), 69);
+        assert_eq!(SetupFailure::RuntimeSetup.exit_code(), 70);
     }
 }

@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn existing_content_is_referenced_without_an_upload_and_refreshes_ttl() {
+    fn access_refreshes_ttl_without_changing_identity_or_object() {
         let object = cache_object("repo-1", 'a', 100, 1);
         let PrepareUploadDecision::UseObject { reference } =
             upload(&object, digest('b'), None, true, 100, 10).unwrap()
@@ -217,16 +217,6 @@ mod tests {
             reference.expires_at_unix(),
             10 + CACHE_REFERENCE_TTL_SECONDS
         );
-    }
-
-    #[test]
-    fn access_refreshes_ttl_without_changing_identity_or_object() {
-        let object = cache_object("repo-1", 'a', 100, 1);
-        let PrepareUploadDecision::UseObject { reference, .. } =
-            upload(&object, digest('b'), None, true, 100, 10).unwrap()
-        else {
-            unreachable!();
-        };
 
         let refreshed = access_reference(&reference, 20).unwrap();
         assert_eq!(refreshed.repository_id(), reference.repository_id());

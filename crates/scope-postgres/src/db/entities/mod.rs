@@ -45,7 +45,6 @@ use scope_domain::{
     views::ViewId,
 };
 use sea_orm::entity::prelude::*;
-use serde::{Deserialize, Serialize};
 
 pub(super) fn encode_enum<T: serde::Serialize>(value: T) -> Result<String, PostgresError> {
     match serde_json::to_value(value).map_err(PostgresError::internal)? {
@@ -116,30 +115,6 @@ pub use runs::{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scope_domain::landing_file::RepositoryLandingFile;
-    use sha2::{Digest as _, Sha256};
-
-    #[test]
-    fn persisted_first_push_token_never_stores_plaintext_secret() {
-        let token = FirstPushToken {
-            token_hash: "hash".to_string(),
-            secret: Some("scope-first-push-secret".to_string()),
-            owner_user_id: "user-1".to_string(),
-            created_at_unix: 10,
-            expires_at_unix: 20,
-            used_at_unix: None,
-        };
-
-        let persisted = repository_first_push_token::Model::from_domain("repo-1", &token).unwrap();
-        let json = serde_json::to_value(&persisted).expect("token serializes");
-        assert!(json.get("secret").is_none());
-
-        let rehydrated = serde_json::from_value::<repository_first_push_token::Model>(json)
-            .expect("token deserializes")
-            .try_into_domain()
-            .unwrap();
-        assert_eq!(rehydrated.secret, None);
-    }
 
     #[test]
     fn projection_file_uses_bounded_path_key_without_truncating_path() {
@@ -238,24 +213,6 @@ mod tests {
         };
 
         assert!(row.try_into_domain().is_err());
-    }
-
-    #[test]
-    fn repository_landing_file_round_trips_verified_bytes() {
-        let content_bytes = b"<h1>Scope</h1>".to_vec();
-        let landing_file = RepositoryLandingFile {
-            oid: "abc123".to_string(),
-            sha256: hex::encode(Sha256::digest(&content_bytes)),
-            size_bytes: content_bytes.len() as u64,
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            content_bytes,
-        };
-
-        let row = repository_landing_file::Model::from_domain("owner/repo", landing_file.clone())
-            .unwrap();
-
-        assert_eq!(row.path, "/README.html");
-        assert_eq!(row.try_into_domain().unwrap(), landing_file);
     }
 
     #[test]

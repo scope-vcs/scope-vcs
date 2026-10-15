@@ -200,13 +200,13 @@ impl AdminStore {
     pub async fn lock_repository_history_and_invites_for_tests(
         &self,
     ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
-        let tx = self.db.begin().await?;
-        tx.execute_unprepared(
-            "LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files,
-                        scope_repository_invites IN ACCESS EXCLUSIVE MODE",
-        )
-        .await?;
-        Ok(tx)
+        self.lock_tables_for_tests(&[
+            "scope_logical_commits",
+            "scope_file_changes",
+            "scope_live_files",
+            "scope_repository_invites",
+        ])
+        .await
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -224,7 +224,7 @@ impl AdminStore {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub async fn lock_tables_for_tests(
+    async fn lock_tables_for_tests(
         &self,
         tables: &[&str],
     ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {

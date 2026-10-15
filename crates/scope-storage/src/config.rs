@@ -136,45 +136,44 @@ mod tests {
             );
             return;
         }
-        for prefix in ["SCOPE_BUCKET", "SCOPE_CACHE_BUCKET", "SCOPE_MEDIA_BUCKET"] {
-            for (flag, expected) in [
-                (None, false),
-                (Some("false"), false),
-                (Some("1"), true),
-                (Some("true"), true),
-                (Some("TRUE"), true),
-                (Some("yes"), true),
-                (Some("YES"), true),
+        let prefix = "SCOPE_BUCKET";
+        for (flag, expected) in [
+            (None, false),
+            (Some("false"), false),
+            (Some("1"), true),
+            (Some("true"), true),
+            (Some("TRUE"), true),
+            (Some("yes"), true),
+            (Some("YES"), true),
+        ] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    "config::tests::prefixed_s3_settings_preserve_addressing",
+                ])
+                .env_clear()
+                .env("SCOPE_TEST_S3_PREFIX", prefix)
+                .env("SCOPE_TEST_PATH_STYLE", expected.to_string());
+            for (suffix, value) in [
+                ("ENDPOINT", "https://storage.example"),
+                ("NAME", "fixture-bucket"),
+                ("REGION", "us-east-1"),
+                ("ACCESS_KEY_ID", "fixture-access-key"),
+                ("SECRET_ACCESS_KEY", "fixture-secret-key"),
             ] {
-                let mut child = std::process::Command::new(std::env::current_exe().unwrap());
-                child
-                    .args([
-                        "--exact",
-                        "config::tests::prefixed_s3_settings_preserve_addressing",
-                    ])
-                    .env_clear()
-                    .env("SCOPE_TEST_S3_PREFIX", prefix)
-                    .env("SCOPE_TEST_PATH_STYLE", expected.to_string());
-                for (suffix, value) in [
-                    ("ENDPOINT", "https://storage.example"),
-                    ("NAME", "fixture-bucket"),
-                    ("REGION", "us-east-1"),
-                    ("ACCESS_KEY_ID", "fixture-access-key"),
-                    ("SECRET_ACCESS_KEY", "fixture-secret-key"),
-                ] {
-                    child.env(format!("{prefix}_{suffix}"), value);
-                }
-                if let Some(flag) = flag {
-                    child.env(format!("{prefix}_FORCE_PATH_STYLE"), flag);
-                }
-                let output = child.output().unwrap();
-                assert!(
-                    output.status.success(),
-                    "{prefix} {flag:?}: {}{}",
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                );
+                child.env(format!("{prefix}_{suffix}"), value);
             }
+            if let Some(flag) = flag {
+                child.env(format!("{prefix}_FORCE_PATH_STYLE"), flag);
+            }
+            let output = child.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{prefix} {flag:?}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     }
 

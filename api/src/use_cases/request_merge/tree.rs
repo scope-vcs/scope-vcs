@@ -6,18 +6,10 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
 pub(super) enum MergeMainFailure {
     Conflict(ApiError),
     Other(ApiError),
-}
-
-impl MergeMainFailure {
-    #[cfg(test)]
-    pub(super) fn into_api_error(self) -> ApiError {
-        match self {
-            Self::Conflict(error) | Self::Other(error) => error,
-        }
-    }
 }
 
 impl From<ApiError> for MergeMainFailure {

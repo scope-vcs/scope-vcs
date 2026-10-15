@@ -273,109 +273,63 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     #[tokio::test]
-    async fn async_followers_share_one_build() {
-        let coordinator = Arc::new(GitDerivedCacheCoordinator::default());
-        let ready = Arc::new(AtomicBool::new(false));
-        let started = Arc::new(Notify::new());
-        let release = Arc::new(Notify::new());
-        let started_wait = started.notified();
-        let leader = {
-            let coordinator = coordinator.clone();
-            let ready_for_check = ready.clone();
-            let ready_for_build = ready.clone();
-            let started = started.clone();
-            let release = release.clone();
-            tokio::spawn(async move {
-                coordinator
-                    .materialize_async(
-                        GitDerivedCacheNamespace::Repository,
-                        "repo".to_string(),
-                        move || ready_for_check.load(Ordering::SeqCst),
-                        move || async move {
-                            started.notify_one();
-                            release.notified().await;
-                            ready_for_build.store(true, Ordering::SeqCst);
-                            Ok(())
-                        },
-                    )
-                    .await
-            })
-        };
-        started_wait.await;
-        let follower = {
-            let coordinator = coordinator.clone();
-            let ready = ready.clone();
-            tokio::spawn(async move {
-                coordinator
-                    .materialize_async(
-                        GitDerivedCacheNamespace::Repository,
-                        "repo".to_string(),
-                        move || ready.load(Ordering::SeqCst),
-                        || async { panic!("follower must not build") },
-                    )
-                    .await
-            })
-        };
-        while coordinator.follower_count(GitDerivedCacheNamespace::Repository, "repo") == 0 {
-            tokio::task::yield_now().await;
+    async fn async_followers_share_one_build_even_when_the_leader_request_is_cancelled() {
+        for cancel_leader in [false, true] {
+            let coordinator = Arc::new(GitDerivedCacheCoordinator::default());
+            let ready = Arc::new(AtomicBool::new(false));
+            let started = Arc::new(Notify::new());
+            let release = Arc::new(Notify::new());
+            let started_wait = started.notified();
+            let leader = {
+                let coordinator = coordinator.clone();
+                let ready_for_check = ready.clone();
+                let ready_for_build = ready.clone();
+                let started = started.clone();
+                let release = release.clone();
+                tokio::spawn(async move {
+                    coordinator
+                        .materialize_async(
+                            GitDerivedCacheNamespace::Repository,
+                            "repo".to_string(),
+                            move || ready_for_check.load(Ordering::SeqCst),
+                            move || async move {
+                                started.notify_one();
+                                release.notified().await;
+                                ready_for_build.store(true, Ordering::SeqCst);
+                                Ok(())
+                            },
+                        )
+                        .await
+                })
+            };
+            started_wait.await;
+            let follower = {
+                let coordinator = coordinator.clone();
+                let ready = ready.clone();
+                tokio::spawn(async move {
+                    coordinator
+                        .materialize_async(
+                            GitDerivedCacheNamespace::Repository,
+                            "repo".to_string(),
+                            move || ready.load(Ordering::SeqCst),
+                            || async { panic!("follower must not build") },
+                        )
+                        .await
+                })
+            };
+            while coordinator.follower_count(GitDerivedCacheNamespace::Repository, "repo") == 0 {
+                tokio::task::yield_now().await;
+            }
+            if cancel_leader {
+                leader.abort();
+                assert!(!follower.is_finished());
+                release.notify_one();
+            } else {
+                release.notify_one();
+                leader.await.unwrap().unwrap();
+            }
+
+            follower.await.unwrap().unwrap();
         }
-        release.notify_one();
-
-        leader.await.unwrap().unwrap();
-        follower.await.unwrap().unwrap();
-    }
-
-    #[tokio::test]
-    async fn cancelling_async_request_keeps_build_leadership_until_work_finishes() {
-        let coordinator = Arc::new(GitDerivedCacheCoordinator::default());
-        let ready = Arc::new(AtomicBool::new(false));
-        let started = Arc::new(Notify::new());
-        let release = Arc::new(Notify::new());
-        let started_wait = started.notified();
-        let leader = {
-            let coordinator = coordinator.clone();
-            let ready_for_check = ready.clone();
-            let ready_for_build = ready.clone();
-            let started = started.clone();
-            let release = release.clone();
-            tokio::spawn(async move {
-                coordinator
-                    .materialize_async(
-                        GitDerivedCacheNamespace::Repository,
-                        "repo".to_string(),
-                        move || ready_for_check.load(Ordering::SeqCst),
-                        move || async move {
-                            started.notify_one();
-                            release.notified().await;
-                            ready_for_build.store(true, Ordering::SeqCst);
-                            Ok(())
-                        },
-                    )
-                    .await
-            })
-        };
-        started_wait.await;
-        let follower = {
-            let coordinator = coordinator.clone();
-            let ready = ready.clone();
-            tokio::spawn(async move {
-                coordinator
-                    .materialize_async(
-                        GitDerivedCacheNamespace::Repository,
-                        "repo".to_string(),
-                        move || ready.load(Ordering::SeqCst),
-                        || async { panic!("follower must not build") },
-                    )
-                    .await
-            })
-        };
-        while coordinator.follower_count(GitDerivedCacheNamespace::Repository, "repo") == 0 {
-            tokio::task::yield_now().await;
-        }
-        leader.abort();
-        assert!(!follower.is_finished());
-        release.notify_one();
-
-        follower.await.unwrap().unwrap();
     }
 }

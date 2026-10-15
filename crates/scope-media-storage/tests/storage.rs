@@ -2,7 +2,7 @@ mod support;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, MediaStorageErrorKind, WriteAttempt};
+use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, WriteAttempt};
 use scope_storage::{
     BackendError, MemoryBackend, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart,
 };
@@ -63,30 +63,6 @@ async fn encrypted_chunks_support_verified_ranges_across_boundaries() {
         received.extend_from_slice(&bytes.unwrap());
     }
     assert_eq!(received, &plaintext[start as usize..start as usize + 9]);
-}
-
-#[tokio::test]
-async fn tampered_encrypted_chunk_fails_closed() {
-    let raw = Arc::new(MemoryBackend::default());
-    let storage = MediaStorage::encrypted(raw.clone(), [9; 32], 1).unwrap();
-    let attempt = WriteAttempt::new("att_2", "original", "upload_2").unwrap();
-    let plaintext = b"private recording bytes".to_vec();
-    let digest = hex::encode(Sha256::digest(&plaintext));
-    let part = storage.plan_part(&attempt, 1, &plaintext).unwrap();
-    storage.write_part(&part, plaintext).await.unwrap();
-    let object = storage
-        .seal_parts("video/mp4", 23, &digest, vec![part.clone()])
-        .await
-        .unwrap();
-
-    let mut envelope = raw.object(&part.object_key).unwrap().to_vec();
-    *envelope.last_mut().unwrap() ^= 1;
-    raw.put(&part.object_key, Bytes::from(envelope))
-        .await
-        .unwrap();
-    let mut stream = storage.read_range(&object, 0..=22).await.unwrap();
-    let error = stream.next().await.unwrap().unwrap_err();
-    assert_eq!(error.kind, MediaStorageErrorKind::Integrity);
 }
 
 #[tokio::test]

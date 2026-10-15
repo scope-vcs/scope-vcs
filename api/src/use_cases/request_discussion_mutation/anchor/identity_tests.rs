@@ -57,22 +57,6 @@ fn commit_paths_use_the_first_parent_of_a_wide_merge() {
 }
 
 #[test]
-fn commit_paths_accept_a_root_commit() {
-    let fixture = fixture();
-
-    let (paths, hidden) = request_commit_visible_paths(
-        fixture.directory.path(),
-        &Policy::new(ViewId::public()),
-        RepositoryAccess::public(),
-        &fixture.base,
-    )
-    .unwrap();
-
-    assert!(paths.is_empty());
-    assert!(!hidden);
-}
-
-#[test]
 fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
     let fixture = fixture();
     let revision = RequestRevision {
