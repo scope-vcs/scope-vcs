@@ -197,7 +197,7 @@ export function RequestWorkspaceSidebar({
   const activeHasMore = Boolean(pages?.active.next_cursor)
   const activeCount = (value: number) => pages ? `${value}${activeHasMore ? '+' : ''}` : null
   const needsYou = grouped.needs_you
-  const caughtUp = Boolean(pages) && needsYou.length === 0 && !activeHasMore
+  const caughtUp = Boolean(pages) && !skeleton && needsYou.length === 0 && !activeHasMore
   const current = searching
     ? undefined
     : allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))

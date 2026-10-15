@@ -63,13 +63,13 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
         (Status::Draft, Step::Wait),
     ] {
         assert_eq!(
-            request_queue_next_step(author, author, Reason::NewActivity, status, true),
+            next_step_for(author, author, Reason::NewActivity, status, true),
             expected,
             "{status:?}"
         );
     }
     assert_eq!(
-        request_queue_next_step(author, author, Reason::NewActivity, Status::Ready, false),
+        next_step_for(author, author, Reason::NewActivity, Status::Ready, false),
         Step::Wait,
         "a contributor waits for a maintainer to merge"
     );
@@ -84,17 +84,17 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
         (Reason::Merged, Step::Done),
     ] {
         assert_eq!(
-            request_queue_next_step(author, Some("reviewer"), reason, Status::ChecksFailed, true),
+            next_step_for(author, Some("reviewer"), reason, Status::ChecksFailed, true),
             expected,
             "{reason:?}"
         );
     }
     assert_eq!(
-        request_queue_next_step(author, author, Reason::Closed, Status::Closed, false),
+        next_step_for(author, author, Reason::Closed, Status::Closed, false),
         Step::Done
     );
     assert_eq!(
-        request_queue_next_step(None, None, Reason::Open, Status::Ready, false),
+        next_step_for(None, None, Reason::Open, Status::Ready, false),
         Step::Wait
     );
 }

@@ -76,6 +76,7 @@ export function invalidateRepoResources(
     repositoryDependencyResource.invalidate(scope)
   } else if (event.kind === 'GitHubWorkflowRunsChanged') {
     refreshRequestState(scope)
+    if (!summaryPending) invalidateRequestQueues(scope)
     invalidateGitHubWorkflowRuns(scope)
     githubWorkflowNamesResource.invalidate(scope)
     invalidateGitHubWorkflowRunDetails(scope)

@@ -474,7 +474,11 @@ revision: number, can_claim: boolean, can_set_aside: boolean, can_restore: boole
 
 export type RequestAttentionActionRequest = { "action": "claim", expected_activity_version: number, } | { "action": "wait", expected_activity_version: number, } | { "action": "settle", expected_activity_version: number, } | { "action": "snooze", expected_activity_version: number, until_unix: number, } | { "action": "restore", expected_activity_version: number, } | { "action": "release", expected_activity_version: number, };
 
-export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, };
+export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null,
+/**
+ * The queue row's next step after this change.
+ */
+next_step: RequestQueueNextStep, };
 
 export type RequestQueueItemResponse = { attention_at_unix: number, request: RequestListItemResponse,
 /**

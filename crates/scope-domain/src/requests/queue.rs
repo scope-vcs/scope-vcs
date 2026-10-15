@@ -1,5 +1,11 @@
-use super::{Request, RequestMergeabilityStatus, RequestState};
+use super::merge_gate::{evaluate_request_merge, evaluate_request_readiness};
+use super::{
+    Request, RequestChecksOutcome, RequestMergeSubject, RequestMergeabilityStatus, RequestState,
+    RequestViewer,
+};
 use crate::error::DomainError;
+use crate::repository::RepoLifecycleState;
+use crate::views::Views;
 use serde::{Deserialize, Serialize};
 
 mod placement;
@@ -63,6 +69,27 @@ pub enum RequestQueueNextStep {
 }
 
 pub fn request_queue_next_step(
+    subject: RequestMergeSubject<'_>,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
+    checks: RequestChecksOutcome,
+    repository_lifecycle: RepoLifecycleState,
+    reason: RequestAttentionReason,
+) -> RequestQueueNextStep {
+    let readiness = evaluate_request_readiness(repository_lifecycle, subject, checks).status;
+    let viewer_can_merge =
+        evaluate_request_merge(repository_lifecycle, subject, viewer, views, checks).status
+            == RequestMergeabilityStatus::Ready;
+    next_step_for(
+        subject.author_user_id,
+        viewer.user_id,
+        reason,
+        readiness,
+        viewer_can_merge,
+    )
+}
+
+fn next_step_for(
     author_user_id: Option<&str>,
     viewer_user_id: Option<&str>,
     reason: RequestAttentionReason,

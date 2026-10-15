@@ -108,7 +108,7 @@ test('run changes refresh request-owned state without invalidating repository re
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
 })
 
-test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
+test('GitHub workflow runs refresh the retained GitHub run lists and request queues', () => {
   seed()
   githubWorkflowRunsResource.clear()
   const runs = {
@@ -129,7 +129,7 @@ test('GitHub workflow runs refresh only the retained GitHub run lists', () => {
   assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-a').stale, true)
   assert.equal(githubWorkflowNamesResource.peek('viewer-a')?.workflows[0], 'ci')
   assert.equal(githubWorkflowNamesResource.getSnapshot('viewer-b').stale, false)
-  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
+  assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
 
   githubWorkflowRunsResource.write(all, runs)

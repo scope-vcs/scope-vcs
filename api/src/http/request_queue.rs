@@ -2,7 +2,7 @@ use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
     responses::{
         recorded_actor_response, request_actor_summary_response, request_list_item_response,
-        request_list_row_mergeability, request_list_row_readiness,
+        request_list_row_mergeability, request_list_row_subject,
     },
 };
 use crate::auth::scope::require_scope_user;
@@ -152,20 +152,21 @@ pub(crate) async fn request_queue(
                 .get(&request_id)
                 .copied()
                 .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated);
+            let viewer = RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false);
             let mergeability = request_list_row_mergeability(
                 &row.request,
-                &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
+                &viewer,
                 &repo.views,
                 checks,
                 repo.record.lifecycle_state,
             );
             let next_step = request_queue_next_step(
-                row.request.author_user_id.as_deref(),
-                viewer_user_id.as_deref(),
+                request_list_row_subject(&row.request),
+                &viewer,
+                &repo.views,
+                checks,
+                repo.record.lifecycle_state,
                 row.attention.reason,
-                request_list_row_readiness(&row.request, checks, repo.record.lifecycle_state)
-                    .status,
-                mergeability.status == scope_domain::requests::RequestMergeabilityStatus::Ready,
             );
             Ok(RequestQueueItemResponse {
                 attention_at_unix: row.cursor.updated_at_unix,
@@ -245,7 +246,7 @@ pub(crate) async fn apply_attention(
         .requests()
         .apply_request_attention(scope_postgres::db::ApplyRequestAttentionCommand {
             repo_id: repo.record.id.clone(),
-            request_id,
+            request_id: request_id.clone(),
             actor_user_id: user.id,
             expected_activity_version,
             action,
@@ -271,6 +272,22 @@ pub(crate) async fn apply_attention(
     } else {
         None
     };
+    let snapshot =
+        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    let checks = scope_domain::requests::request_checks_outcome(
+        &snapshot.request.id,
+        &snapshot.request.head_oid,
+        snapshot.evaluation.as_ref(),
+        &snapshot.results,
+    );
+    let next_step = request_queue_next_step(
+        (&snapshot.request).into(),
+        &super::request_state::viewer(&snapshot),
+        &snapshot.repository.views,
+        checks,
+        snapshot.repository.record.lifecycle_state,
+        result.attention.reason,
+    );
     Ok(Json(RequestAttentionMutationResponse {
         attention: attention_response(
             result.attention,
@@ -278,6 +295,7 @@ pub(crate) async fn apply_attention(
             access.is_maintainer(),
         ),
         claimer,
+        next_step: next_step.into(),
     }))
 }
 

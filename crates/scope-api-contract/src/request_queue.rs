@@ -48,6 +48,8 @@ pub struct RequestAttentionResponse {
 pub struct RequestAttentionMutationResponse {
     pub attention: RequestAttentionResponse,
     pub claimer: Option<RequestActorSummaryResponse>,
+    /// The queue row's next step after this change.
+    pub next_step: RequestQueueNextStep,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

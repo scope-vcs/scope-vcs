@@ -415,7 +415,7 @@ fn attention_mutation() -> Value {
     let mut attention = attention("set_aside", "snoozed");
     attention["state"] = json!("snoozed");
     attention["snoozed_until_unix"] = json!(4_000_000_000_u64);
-    json!({"attention": attention, "claimer": null})
+    json!({"attention": attention, "claimer": null, "next_step": "wait"})
 }
 
 fn request_detail(activity_version: u64, state: &str) -> Value {

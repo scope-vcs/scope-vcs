@@ -8,8 +8,7 @@ use scope_api_contract::{
 use scope_domain::{
     requests::{
         Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject, RequestMergeability,
-        RequestViewer, request_list_mergeability, request_list_readiness, request_mergeability,
-        request_policy,
+        RequestViewer, request_list_mergeability, request_mergeability, request_policy,
     },
     views::Views,
 };
@@ -61,7 +60,7 @@ fn request_summary_response(
     })
 }
 
-fn request_list_row_subject(request: &RequestListRow) -> RequestMergeSubject<'_> {
+pub(crate) fn request_list_row_subject(request: &RequestListRow) -> RequestMergeSubject<'_> {
     RequestMergeSubject {
         author_user_id: request.author_user_id.as_deref(),
         view: &request.view,
@@ -82,18 +81,6 @@ pub(crate) fn request_list_row_mergeability(
         request_list_row_subject(request),
         viewer,
         views,
-        checks,
-        repository_lifecycle,
-    )
-}
-
-pub(crate) fn request_list_row_readiness(
-    request: &RequestListRow,
-    checks: RequestChecksOutcome,
-    repository_lifecycle: scope_domain::repository::RepoLifecycleState,
-) -> RequestMergeability {
-    request_list_readiness(
-        request_list_row_subject(request),
         checks,
         repository_lifecycle,
     )
