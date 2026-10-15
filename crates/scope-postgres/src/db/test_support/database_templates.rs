@@ -11,6 +11,12 @@ const TEMPLATE_SCHEMA: &str = "scope_test_template";
 const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
 const BACKEND_STARTUP_ALLOWANCE: Duration = Duration::from_secs(5);
 const INSUFFICIENT_PRIVILEGE: &str = "42501";
+const DATABASE_DROP_CONCURRENCY: u32 = 4;
+static DATABASE_DROPS: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(DATABASE_DROP_CONCURRENCY as usize);
+const OUTSTANDING_DATABASE_LIMIT: usize = 32;
+static OUTSTANDING_DATABASES: tokio::sync::Semaphore =
+    tokio::sync::Semaphore::const_new(OUTSTANDING_DATABASE_LIMIT);
 
 type ProcessDatabases = Mutex<HashMap<String, HashMap<String, Weak<DatabaseConnection>>>>;
 static PROCESS_DATABASES: OnceLock<ProcessDatabases> = OnceLock::new();
@@ -36,6 +42,10 @@ pub(super) async fn connect_store(target: &TestDatabaseTarget) -> anyhow::Result
 
 async fn clone_test_database(target: &TestDatabaseTarget) -> anyhow::Result<Arc<TestSchemaLease>> {
     let template = template_database(&target.database_url).await?;
+    let outstanding = OUTSTANDING_DATABASES
+        .acquire()
+        .await
+        .expect("outstanding test database semaphore should stay open");
     let database_name = unique_database_name("db");
     let database_url = database_url(&target.database_url, &database_name)?;
     create_database(&target.database_url, &database_name, &template).await?;
@@ -65,6 +75,7 @@ async fn clone_test_database(target: &TestDatabaseTarget) -> anyhow::Result<Arc<
         cleanup: TestDatabaseCleanup::Database {
             admin_url: target.database_url.clone(),
             database_name,
+            outstanding: Arc::new(outstanding),
         },
     }))
 }
@@ -311,8 +322,7 @@ pub(super) async fn drop_database(admin_url: &str, database_name: &str) {
 }
 
 async fn try_drop_database(admin_url: &str, database_name: &str) -> anyhow::Result<()> {
-    static CLEANUPS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
-    let _permit = CLEANUPS
+    let _permit = DATABASE_DROPS
         .acquire()
         .await
         .expect("test database cleanup semaphore should stay open");
