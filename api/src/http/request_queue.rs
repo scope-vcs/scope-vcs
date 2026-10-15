@@ -2,7 +2,7 @@ use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
     responses::{
         recorded_actor_response, request_actor_summary_response, request_list_item_response,
-        request_list_row_mergeability,
+        request_list_row_mergeability, request_list_row_readiness,
     },
 };
 use crate::auth::scope::require_scope_user;
@@ -148,21 +148,24 @@ pub(crate) async fn request_queue(
                 .transpose()?;
             let activity_version = row.request.activity_version;
             let request_id = row.request.id.clone();
+            let checks = checks
+                .get(&request_id)
+                .copied()
+                .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated);
             let mergeability = request_list_row_mergeability(
                 &row.request,
                 &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
                 &repo.views,
-                checks
-                    .get(&request_id)
-                    .copied()
-                    .unwrap_or(scope_domain::requests::RequestChecksOutcome::NotEvaluated),
+                checks,
                 repo.record.lifecycle_state,
             );
             let next_step = request_queue_next_step(
                 row.request.author_user_id.as_deref(),
                 viewer_user_id.as_deref(),
                 row.attention.reason,
-                mergeability.status,
+                request_list_row_readiness(&row.request, checks, repo.record.lifecycle_state)
+                    .status,
+                mergeability.status == scope_domain::requests::RequestMergeabilityStatus::Ready,
             );
             Ok(RequestQueueItemResponse {
                 attention_at_unix: row.cursor.updated_at_unix,

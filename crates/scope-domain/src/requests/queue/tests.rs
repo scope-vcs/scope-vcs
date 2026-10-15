@@ -45,7 +45,7 @@ fn groups_split_active_rows_by_who_acts_next() {
 }
 
 #[test]
-fn next_step_follows_mergeability_for_the_author_and_attention_for_others() {
+fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
     use RequestAttentionReason as Reason;
     use RequestMergeabilityStatus as Status;
     use RequestQueueNextStep as Step;
@@ -63,11 +63,16 @@ fn next_step_follows_mergeability_for_the_author_and_attention_for_others() {
         (Status::Draft, Step::Wait),
     ] {
         assert_eq!(
-            request_queue_next_step(author, author, Reason::NewActivity, status),
+            request_queue_next_step(author, author, Reason::NewActivity, status, true),
             expected,
             "{status:?}"
         );
     }
+    assert_eq!(
+        request_queue_next_step(author, author, Reason::NewActivity, Status::Ready, false),
+        Step::Wait,
+        "a contributor waits for a maintainer to merge"
+    );
     for (reason, expected) in [
         (Reason::Invited, Step::Review),
         (Reason::Claimed, Step::Review),
@@ -79,17 +84,17 @@ fn next_step_follows_mergeability_for_the_author_and_attention_for_others() {
         (Reason::Merged, Step::Done),
     ] {
         assert_eq!(
-            request_queue_next_step(author, Some("reviewer"), reason, Status::ChecksFailed),
+            request_queue_next_step(author, Some("reviewer"), reason, Status::ChecksFailed, true),
             expected,
             "{reason:?}"
         );
     }
     assert_eq!(
-        request_queue_next_step(author, author, Reason::Closed, Status::Closed),
+        request_queue_next_step(author, author, Reason::Closed, Status::Closed, false),
         Step::Done
     );
     assert_eq!(
-        request_queue_next_step(None, None, Reason::Open, Status::Ready),
+        request_queue_next_step(None, None, Reason::Open, Status::Ready, false),
         Step::Wait
     );
 }

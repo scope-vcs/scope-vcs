@@ -14,6 +14,7 @@ import { RequestDiscussionActorAvatar } from './request-discussion-byline'
 import { RequestRailMarker } from './request-workspace-rail-marker'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import {
+  REQUEST_MERGE_STEP_LABELS,
   requestAgeLabel,
   requestAttentionHeat,
   requestAttentionLabel,
@@ -126,6 +127,7 @@ function RequestWorkspaceRow({
   const pending = pendingId === request.id
   const hot = attention.group === 'needs_you'
   const unread = requestHasNewActivity(item)
+  const mergeStep = rail ? REQUEST_MERGE_STEP_LABELS[item.next_step] : undefined
   const canSetAside = section === 'active' && attention.can_set_aside
   const actions = [
     { action: 'settle', label: 'Settle', icon: Check, visible: canSetAside },
@@ -197,6 +199,7 @@ function RequestWorkspaceRow({
               />
               <span className="truncate" suppressHydrationWarning>
                 {requestAttentionLabel(item, hydrated)}
+                {mergeStep && <span className="sr-only">, {mergeStep}</span>}
               </span>
             </span>
             <time

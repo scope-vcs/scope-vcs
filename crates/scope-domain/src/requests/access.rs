@@ -1,4 +1,6 @@
-use super::merge_gate::{RequestMergeSubject, RequestMergeability, evaluate_request_merge};
+use super::merge_gate::{
+    RequestMergeSubject, RequestMergeability, evaluate_request_merge, evaluate_request_readiness,
+};
 use super::{
     Request, RequestActorRole, RequestState, checks::RequestChecksOutcome,
     lifecycle::ensure_request_close_allowed,
@@ -203,6 +205,14 @@ pub fn request_list_mergeability(
     repository_lifecycle: crate::repository::RepoLifecycleState,
 ) -> RequestMergeability {
     evaluate_request_merge(repository_lifecycle, subject, viewer, views, checks)
+}
+
+pub fn request_list_readiness(
+    subject: RequestMergeSubject<'_>,
+    checks: RequestChecksOutcome,
+    repository_lifecycle: crate::repository::RepoLifecycleState,
+) -> RequestMergeability {
+    evaluate_request_readiness(repository_lifecycle, subject, checks)
 }
 
 pub fn request_mergeability(

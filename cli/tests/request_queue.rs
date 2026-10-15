@@ -398,7 +398,8 @@ fn queue_item(id: &str, name: &str, group: &str, reason: &str, claimer: Option<&
         },
         "author": {"id": "usr_author", "handle": "author"},
         "attention": attention(group, reason),
-        "claimer": claimer.map(|handle| json!({"id": format!("usr_{handle}"), "handle": handle}))
+        "claimer": claimer.map(|handle| json!({"id": format!("usr_{handle}"), "handle": handle})),
+        "next_step": "review"
     })
 }
 

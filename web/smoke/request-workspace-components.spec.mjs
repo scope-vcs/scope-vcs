@@ -143,6 +143,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
   const hint = page.locator('.request-workspace-rail-hint')
   assert.match(await hint.textContent(), /^Request without available actions/)
+  assert.match(await page.locator('[data-request-id="request-2"]').getByRole('link').textContent(), /Your request, Ready to merge/)
   const hintBox = await hint.boundingBox()
   assert(hintBox.x > railX + 88)
   assert(Math.abs(hintBox.y + hintBox.height / 2 - (closedAvatars[2].y + closedAvatars[2].width / 2)) < 1)

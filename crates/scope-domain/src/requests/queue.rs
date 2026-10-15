@@ -66,13 +66,15 @@ pub fn request_queue_next_step(
     author_user_id: Option<&str>,
     viewer_user_id: Option<&str>,
     reason: RequestAttentionReason,
-    mergeability: RequestMergeabilityStatus,
+    readiness: RequestMergeabilityStatus,
+    viewer_can_merge: bool,
 ) -> RequestQueueNextStep {
     use RequestAttentionReason as Reason;
     use RequestMergeabilityStatus as Status;
     if viewer_user_id.is_some() && author_user_id == viewer_user_id {
-        return match mergeability {
-            Status::Ready => RequestQueueNextStep::Merge,
+        return match readiness {
+            Status::Ready if viewer_can_merge => RequestQueueNextStep::Merge,
+            Status::Ready => RequestQueueNextStep::Wait,
             Status::ChecksFailed | Status::ChecksConfigurationError => {
                 RequestQueueNextStep::FixChecks
             }
