@@ -427,24 +427,6 @@ jobs:
     }
 
     #[test]
-    fn cache_yaml_order_does_not_change_the_revision_digest() {
-        let reversed =
-            WORKFLOW.replace(
-                "  - name: cargo-target\n    path: /scope/cache/cargo-target\n    format: v1\n    compatibility: { files: [], environment: [], source: false }\n    exact: { files: [Cargo.lock], environment: [RUSTUP_TOOLCHAIN], source: false }\n  - name: cargo\n    path: /scope/cache/cargo\n    format: v1\n    compatibility: { files: [], environment: [], source: false }\n    exact: { files: [Cargo.lock], environment: [RUSTUP_TOOLCHAIN], source: false }",
-                "  - name: cargo\n    path: /scope/cache/cargo\n    format: v1\n    compatibility: { files: [], environment: [], source: false }\n    exact: { files: [Cargo.lock], environment: [RUSTUP_TOOLCHAIN], source: false }\n  - name: cargo-target\n    path: /scope/cache/cargo-target\n    format: v1\n    compatibility: { files: [], environment: [], source: false }\n    exact: { files: [Cargo.lock], environment: [RUSTUP_TOOLCHAIN], source: false }",
-            );
-        let first = parse_workflow("/.scope/runs/test.yml", WORKFLOW.as_bytes())
-            .unwrap()
-            .into_revision("repo-1")
-            .unwrap();
-        let second = parse_workflow("/.scope/runs/test.yml", reversed.as_bytes())
-            .unwrap()
-            .into_revision("repo-1")
-            .unwrap();
-        assert_eq!(first.digest(), second.digest());
-    }
-
-    #[test]
     fn rejects_unknown_keys_and_non_main_pushes() {
         let unknown = WORKFLOW.replace("name: Test", "name: Test\nmatrix: {}");
         assert!(matches!(
@@ -457,6 +439,16 @@ jobs:
             parse_workflow("/.scope/runs/test.yml", branch.as_bytes()),
             Err(RunConfigError::UnsupportedPushBranches)
         ));
+
+        for invalid in ["1INVALID", "WITH-DASH"] {
+            let workflow = WORKFLOW.replace("RUSTUP_TOOLCHAIN:", &format!("{invalid}:"));
+            assert!(matches!(
+                parse_workflow("/.scope/runs/test.yml", workflow.as_bytes()),
+                Err(RunConfigError::InvalidWorkflow(
+                    WorkflowError::InvalidEnvironmentKey
+                ))
+            ));
+        }
     }
 
     #[test]
@@ -525,35 +517,6 @@ jobs:
                 WorkflowError::OverlappingCachePath(_)
             ))
         ));
-
-        let undeclared_environment = WORKFLOW.replace(
-            "environment: [RUSTUP_TOOLCHAIN]",
-            "environment: [UNDECLARED_CACHE_KEY]",
-        );
-        assert!(matches!(
-            parse_workflow("/.scope/runs/test.yml", undeclared_environment.as_bytes()),
-            Err(RunConfigError::InvalidWorkflow(
-                WorkflowError::UndeclaredCacheEnvironmentInput(name)
-            )) if name == "UNDECLARED_CACHE_KEY"
-        ));
-    }
-
-    #[test]
-    fn environment_is_strict_and_job_values_override_workflow_values() {
-        let parsed = parse_workflow("/.scope/runs/test.yml", WORKFLOW.as_bytes()).unwrap();
-        let environment = parsed.definition().jobs()[0].environment();
-        assert_eq!(environment["RUSTUP_TOOLCHAIN"], "stable");
-        assert_eq!(environment["TEST_MODE"], "strict");
-
-        for invalid in ["1INVALID", "WITH-DASH"] {
-            let workflow = WORKFLOW.replace("RUSTUP_TOOLCHAIN:", &format!("{invalid}:"));
-            assert!(matches!(
-                parse_workflow("/.scope/runs/test.yml", workflow.as_bytes()),
-                Err(RunConfigError::InvalidWorkflow(
-                    WorkflowError::InvalidEnvironmentKey
-                ))
-            ));
-        }
     }
 
     #[test]

@@ -227,7 +227,37 @@ pub fn validate_git_pack_span_run(spans: &[GitPackSpan]) -> Result<(), GitPackLa
 }
 
 #[cfg(test)]
+pub(crate) mod fixtures {
+    use super::{GitPackSpan, GitSegmentRef};
+
+    pub(crate) fn span(
+        first_sequence: u64,
+        last_sequence: u64,
+        geometric_tier: u32,
+    ) -> GitPackSpan {
+        GitPackSpan {
+            first_sequence,
+            last_sequence,
+            geometric_tier,
+            base_oid: (first_sequence > 1).then(|| format!("head-{}", first_sequence - 1)),
+            head_oid: format!("head-{last_sequence}"),
+            segment: segment(first_sequence, last_sequence),
+        }
+    }
+
+    pub(crate) fn segment(first_sequence: u64, last_sequence: u64) -> GitSegmentRef {
+        GitSegmentRef {
+            segment_id: format!("segment-{first_sequence}-{last_sequence}"),
+            sha256: format!("{first_sequence:032x}{last_sequence:032x}"),
+            plaintext_bytes: 1,
+            encoding_version: 2,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    use super::fixtures::span;
     use super::*;
 
     #[test]
@@ -264,36 +294,16 @@ mod tests {
         assert_eq!(serde_json::to_value(head).unwrap(), stored);
     }
 
-    fn pack_span(first_sequence: u64, last_sequence: u64, geometric_tier: u32) -> GitPackSpan {
-        GitPackSpan {
-            first_sequence,
-            last_sequence,
-            geometric_tier,
-            base_oid: (first_sequence > 1).then(|| format!("head-{}", first_sequence - 1)),
-            head_oid: format!("head-{last_sequence}"),
-            segment: GitSegmentRef {
-                segment_id: format!("segment-{first_sequence}"),
-                sha256: format!("pack-{first_sequence}"),
-                plaintext_bytes: 1,
-                encoding_version: 2,
-            },
-        }
-    }
-
     #[test]
     fn git_pack_layout_accepts_contiguous_geometric_spans() {
-        let spans = [
-            pack_span(1, 8, 3),
-            pack_span(9, 12, 2),
-            pack_span(13, 13, 0),
-        ];
+        let spans = [span(1, 8, 3), span(9, 12, 2), span(13, 13, 0)];
 
         validate_git_pack_layout(&spans).unwrap();
     }
 
     #[test]
     fn git_pack_layout_rejects_gaps_and_overlaps() {
-        let gap = [pack_span(1, 4, 2), pack_span(6, 6, 0)];
+        let gap = [span(1, 4, 2), span(6, 6, 0)];
         assert_eq!(
             validate_git_pack_layout(&gap).unwrap_err(),
             GitPackLayoutError::NonContiguous {
@@ -302,7 +312,7 @@ mod tests {
             }
         );
 
-        let overlap = [pack_span(1, 4, 2), pack_span(4, 4, 0)];
+        let overlap = [span(1, 4, 2), span(4, 4, 0)];
         assert_eq!(
             validate_git_pack_layout(&overlap).unwrap_err(),
             GitPackLayoutError::NonContiguous {
@@ -314,7 +324,7 @@ mod tests {
 
     #[test]
     fn git_pack_layout_rejects_a_tier_that_does_not_match_coverage() {
-        let spans = [pack_span(1, 8, 2)];
+        let spans = [span(1, 8, 2)];
 
         assert_eq!(
             validate_git_pack_layout(&spans).unwrap_err(),
@@ -329,7 +339,7 @@ mod tests {
 
     #[test]
     fn git_pack_layout_requires_power_of_two_coverage_in_descending_tier_order() {
-        let uneven = [pack_span(1, 6, 2)];
+        let uneven = [span(1, 6, 2)];
         assert_eq!(
             validate_git_pack_layout(&uneven).unwrap_err(),
             GitPackLayoutError::NonGeometricCoverage {
@@ -339,7 +349,7 @@ mod tests {
             }
         );
 
-        let increasing = [pack_span(1, 1, 0), pack_span(2, 3, 1)];
+        let increasing = [span(1, 1, 0), span(2, 3, 1)];
         assert_eq!(
             validate_git_pack_layout(&increasing).unwrap_err(),
             GitPackLayoutError::IncreasingTier {
@@ -351,14 +361,14 @@ mod tests {
 
     #[test]
     fn git_pack_layout_requires_a_connected_history_boundary() {
-        let mut first = pack_span(1, 2, 1);
+        let mut first = span(1, 2, 1);
         first.base_oid = Some("unexpected".to_string());
         assert!(matches!(
             validate_git_pack_layout(&[first]).unwrap_err(),
             GitPackLayoutError::InvalidStartBase { .. }
         ));
 
-        let mut disconnected = [pack_span(1, 2, 1), pack_span(3, 3, 0)];
+        let mut disconnected = [span(1, 2, 1), span(3, 3, 0)];
         disconnected[1].base_oid = Some("different".to_string());
         assert!(matches!(
             validate_git_pack_layout(&disconnected).unwrap_err(),

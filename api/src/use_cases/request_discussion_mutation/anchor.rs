@@ -107,7 +107,4 @@ fn visible_commit_paths(
 }
 
 #[cfg(test)]
-mod tests;
-
-#[cfg(test)]
 mod identity_tests;

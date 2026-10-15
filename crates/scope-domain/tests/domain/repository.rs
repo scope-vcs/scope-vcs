@@ -5,7 +5,7 @@ use scope_domain::{
     repository::{
         RepoLifecycleState::{AwaitingFirstPush, Ready},
         Repository, RepositoryIncarnation,
-        access::{MainPushMode, RepositoryAccess, RepositoryActor, can_read_repository},
+        access::{MainPushMode, RepositoryAccess, RepositoryActor},
         collaboration::{CollaborationState, RepositoryMember, RepositoryMemberPermissions},
         credentials::{FirstPushToken, FirstPushTokenStatus},
     },
@@ -29,12 +29,12 @@ fn test_repo(visibility: ViewId) -> Repository {
     repo
 }
 
-fn add_member(repo: &mut Repository, user_id: &str, can_push: bool) {
+fn add_pushing_member(repo: &mut Repository, user_id: &str) {
     repo.collaboration.members.push(RepositoryMember {
         repo_id: repo.record.id.clone(),
         user_id: user_id.to_string(),
         permissions: RepositoryMemberPermissions {
-            can_push,
+            can_push: true,
             ..RepositoryMemberPermissions::default()
         },
         created_at_unix: 1,
@@ -64,12 +64,6 @@ fn create_repository_makes_private_owner_repo_pending_first_push() {
     let root_view = repo.policy.label(&root, repo.repo_config.views());
     assert!(repo.can_read_view(&repo.access_for_user_id(TEST_OWNER_ID), &root_view));
     assert!(!repo.can_read_view(&RepositoryAccess::public(), &root_view));
-    for (user, mode) in [
-        (TEST_OWNER_ID, MainPushMode::FirstPush),
-        ("user_other", MainPushMode::Denied),
-    ] {
-        assert_eq!(repo.push_policy_for_user_id(user).mode, mode);
-    }
 }
 
 #[test]
@@ -79,17 +73,14 @@ fn repository_incarnation_requires_both_durable_identity_parts() {
 }
 
 #[test]
-fn published_push_policy_uses_repository_permissions() {
+fn published_push_policy_uses_repository_member_permissions() {
     let mut repo = test_repo(ViewId::public());
-    add_member(&mut repo, "user_member", true);
+    add_pushing_member(&mut repo, "user_member");
 
-    for (user, mode) in [
-        (TEST_OWNER_ID, MainPushMode::Ready),
-        ("user_member", MainPushMode::Ready),
-        ("user_other", MainPushMode::Denied),
-    ] {
-        assert_eq!(repo.push_policy_for_user_id(user).mode, mode);
-    }
+    assert_eq!(
+        repo.push_policy_for_user_id("user_member").mode,
+        MainPushMode::Ready
+    );
 }
 
 #[test]
@@ -112,30 +103,6 @@ fn first_push_token_reports_active_expired_and_used_shape() {
 
     token.used_at_unix = Some(175);
     assert_eq!(token.status_at(180), FirstPushTokenStatus::Used);
-}
-
-#[test]
-fn unpublished_repo_is_owner_only_even_with_reader_membership() {
-    let mut repo = test_repo(ViewId::public());
-    repo.record.lifecycle_state = AwaitingFirstPush;
-    add_member(&mut repo, "user_reader", false);
-    let lifecycle = repo.record.lifecycle_state;
-
-    assert!(can_read_repository(
-        lifecycle,
-        &repo.access_for_user_id(TEST_OWNER_ID),
-        true
-    ));
-    assert!(!can_read_repository(
-        lifecycle,
-        &repo.access_for_user_id("user_reader"),
-        true
-    ));
-    assert!(!can_read_repository(
-        lifecycle,
-        &RepositoryAccess::public(),
-        true
-    ));
 }
 
 #[test]

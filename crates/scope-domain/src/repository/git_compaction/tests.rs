@@ -1,130 +1,92 @@
 use super::*;
+use crate::repository::git::fixtures::{segment, span};
 
-fn span(first_sequence: u64, last_sequence: u64, geometric_tier: u32) -> GitPackSpan {
-    GitPackSpan {
-        first_sequence,
-        last_sequence,
-        geometric_tier,
-        base_oid: (first_sequence > 1).then(|| format!("head-{}", first_sequence - 1)),
-        head_oid: format!("head-{last_sequence}"),
-        segment: segment(first_sequence, last_sequence),
+#[test]
+fn selection_surfaces_layout_errors_before_looking_for_a_pair() {
+    let disconnected = GitPackSpan {
+        base_oid: Some("different".to_string()),
+        ..span(3, 3, 0)
+    };
+    for (spans, expected) in [
+        (
+            vec![GitPackSpan {
+                geometric_tier: 1,
+                ..span(1, 1, 0)
+            }],
+            GitPackLayoutError::InvalidGeometricTier {
+                first_sequence: 1,
+                last_sequence: 1,
+                actual: 1,
+                expected: 0,
+            },
+        ),
+        (
+            vec![span(2, 2, 0), span(3, 3, 0)],
+            GitPackLayoutError::InvalidStart { first_sequence: 2 },
+        ),
+        (
+            vec![span(1, 2, 1), disconnected, span(4, 4, 0)],
+            GitPackLayoutError::DisconnectedHistory {
+                previous_head_oid: "head-2".to_string(),
+                next_base_oid: Some("different".to_string()),
+            },
+        ),
+        (
+            vec![span(1, 1, 0), span(3, 3, 0)],
+            GitPackLayoutError::NonContiguous {
+                previous_last_sequence: 1,
+                next_first_sequence: 3,
+            },
+        ),
+    ] {
+        assert_eq!(
+            GitCompactionPlan::select(&spans, u64::MAX).unwrap_err(),
+            GitCompactionError::InvalidLayout(expected)
+        );
     }
-}
-
-fn segment(first_sequence: u64, last_sequence: u64) -> GitSegmentRef {
-    GitSegmentRef {
-        segment_id: format!("segment-{first_sequence}-{last_sequence}"),
-        sha256: format!("{first_sequence:032x}{last_sequence:032x}"),
-        plaintext_bytes: 1,
-        encoding_version: 2,
-    }
-}
-
-#[test]
-fn selection_validates_the_layout_before_looking_for_a_pair() {
-    let mut invalid = span(1, 1, 0);
-    invalid.geometric_tier = 1;
-
-    assert!(matches!(
-        GitCompactionPlan::select(&[invalid], u64::MAX),
-        Err(GitCompactionError::InvalidLayout(
-            GitPackLayoutError::InvalidGeometricTier { .. }
-        ))
-    ));
-}
-
-#[test]
-fn selection_rejects_missing_or_disconnected_predecessor_history() {
-    let missing_prefix = [span(2, 2, 0), span(3, 3, 0)];
-    assert_eq!(
-        GitCompactionPlan::select(&missing_prefix, u64::MAX).unwrap_err(),
-        GitCompactionError::InvalidLayout(GitPackLayoutError::InvalidStart { first_sequence: 2 })
-    );
-
-    let disconnected = [
-        span(1, 2, 1),
-        GitPackSpan {
-            base_oid: Some("different".to_string()),
-            ..span(3, 3, 0)
-        },
-        span(4, 4, 0),
-    ];
-    assert!(matches!(
-        GitCompactionPlan::select(&disconnected, u64::MAX),
-        Err(GitCompactionError::InvalidLayout(
-            GitPackLayoutError::DisconnectedHistory { .. }
-        ))
-    ));
-}
-
-#[test]
-fn selection_rejects_a_gap_before_looking_for_a_pair() {
-    let spans = [span(1, 1, 0), span(3, 3, 0)];
-
-    assert_eq!(
-        GitCompactionPlan::select(&spans, u64::MAX).unwrap_err(),
-        GitCompactionError::InvalidLayout(GitPackLayoutError::NonContiguous {
-            previous_last_sequence: 1,
-            next_first_sequence: 3,
-        })
-    );
-}
-
-#[test]
-fn selection_allows_the_newest_pair() {
-    let spans = [span(1, 4, 2), span(5, 5, 0), span(6, 6, 0)];
-
-    let plan = GitCompactionPlan::select(&spans, u64::MAX)
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        plan.selected_spans()
-            .iter()
-            .map(|span| (span.first_sequence, span.last_sequence))
-            .collect::<Vec<_>>(),
-        [(5, 5), (6, 6)]
-    );
 }
 
 #[test]
 fn selection_chooses_the_oldest_equal_tier_pair() {
-    let spans = [
+    for (spans, selected) in [
+        (vec![span(1, 1, 0), span(2, 2, 0)], Some(0..2)),
+        (
+            vec![span(1, 4, 2), span(5, 5, 0), span(6, 6, 0)],
+            Some(1..3),
+        ),
+        (
+            vec![
+                span(1, 4, 2),
+                span(5, 6, 1),
+                span(7, 8, 1),
+                span(9, 9, 0),
+                span(10, 10, 0),
+            ],
+            Some(1..3),
+        ),
+        (vec![span(1, 4, 2), span(5, 6, 1), span(7, 7, 0)], None),
+    ] {
+        let plan = GitCompactionPlan::select(&spans, u64::MAX).unwrap();
+        assert_eq!(
+            plan.as_ref().map(|plan| plan.selected_spans().as_slice()),
+            selected.map(|range| &spans[range])
+        );
+    }
+}
+
+#[test]
+fn selection_skips_a_pair_over_the_byte_budget() {
+    let mut spans = [
         span(1, 4, 2),
         span(5, 6, 1),
         span(7, 8, 1),
         span(9, 9, 0),
         span(10, 10, 0),
     ];
-
-    let plan = GitCompactionPlan::select(&spans, u64::MAX)
-        .unwrap()
-        .unwrap();
-    assert_eq!(plan.selected_spans(), &spans[1..3]);
-
-    let mut first_pair_over_budget = spans.clone();
-    first_pair_over_budget[1].segment.plaintext_bytes = 6;
-    first_pair_over_budget[2].segment.plaintext_bytes = 5;
-    let plan = GitCompactionPlan::select(&first_pair_over_budget, 10)
-        .unwrap()
-        .unwrap();
-    assert_eq!(plan.selected_spans(), &first_pair_over_budget[3..5]);
-}
-
-#[test]
-fn selection_returns_none_when_no_equal_tier_pair_exists() {
-    let spans = [span(1, 4, 2), span(5, 6, 1), span(7, 7, 0)];
-
-    assert_eq!(GitCompactionPlan::select(&spans, u64::MAX).unwrap(), None);
-}
-
-#[test]
-fn a_prefix_plan_selects_the_pair() {
-    let spans = [span(1, 1, 0), span(2, 2, 0)];
-
-    let plan = GitCompactionPlan::select(&spans, u64::MAX)
-        .unwrap()
-        .unwrap();
-    assert_eq!(plan.selected_spans(), &spans);
+    spans[1].segment.plaintext_bytes = 6;
+    spans[2].segment.plaintext_bytes = 5;
+    let plan = GitCompactionPlan::select(&spans, 10).unwrap().unwrap();
+    assert_eq!(plan.selected_spans(), &spans[3..5]);
 }
 
 #[test]

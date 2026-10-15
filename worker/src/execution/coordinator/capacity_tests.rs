@@ -12,7 +12,7 @@ fn capacity_rejection() -> Value {
 }
 
 #[tokio::test]
-async fn multibyte_capacity_rejection_records_retry() {
+async fn capacity_rejection_retries_after_restart_and_stops_after_three_extra_attempts() {
     let metadata = queued_runs(1).await;
     let provider = FakeEcs::new().await;
     provider.reply(
@@ -20,10 +20,9 @@ async fn multibyte_capacity_rejection_records_retry() {
         json!({"status":"rejected","reason":"capacity","message":"é".repeat(2048)}),
         false,
     );
-    let execution = coordinator(&metadata, &provider, 4);
+    let first = coordinator(&metadata, &provider, 4);
     let now = crate::unix_now().unwrap();
-
-    assert_eq!(execution.dispatch_available(now).await.unwrap(), 1);
+    assert_eq!(first.dispatch_available(now).await.unwrap(), 1);
     assert_eq!(
         metadata.runs().run("run-0").await.unwrap().unwrap().state,
         RunState::Queued
@@ -35,9 +34,7 @@ async fn multibyte_capacity_rejection_records_retry() {
         .unwrap()
         .unwrap()
         .jobs;
-    let retry = jobs[0].capacity_retry.as_ref().unwrap();
-    assert_eq!(retry.rejections, 1);
-    assert!(retry.next_attempt_at_unix.unwrap() > now);
+    assert_eq!(jobs[0].capacity_retry.as_ref().unwrap().rejections, 1);
     let detail = metadata.runs().run_detail("run-0").await.unwrap().unwrap();
     let Some(AttemptTerminalReason::ProviderCapacityRejected { message }) =
         &detail.attempts[0].attempt.terminal_reason
@@ -50,20 +47,6 @@ async fn multibyte_capacity_rejection_records_retry() {
             .starts_with("provider rejected dispatch: é")
     );
     assert!(message.as_str().len() <= MAX_RUN_SETUP_FAILURE_MESSAGE_BYTES);
-}
-
-#[tokio::test]
-async fn capacity_rejection_retries_after_restart_and_stops_after_three_extra_attempts() {
-    let metadata = queued_runs(1).await;
-    let provider = FakeEcs::new().await;
-    provider.reply(StatusCode::OK, capacity_rejection(), false);
-    let first = coordinator(&metadata, &provider, 4);
-    let now = crate::unix_now().unwrap();
-    assert_eq!(first.dispatch_available(now).await.unwrap(), 1);
-    assert_eq!(
-        metadata.runs().run("run-0").await.unwrap().unwrap().state,
-        RunState::Queued
-    );
     assert!(
         metadata
             .runs()

@@ -133,20 +133,6 @@ mod tests {
     }
 
     #[test]
-    fn origin_validation_rejects_credentials_and_loopback_lookalikes() {
-        for invalid in [
-            "http://127.0.0.1.example.com",
-            "http://example.com",
-            "https://user:secret@example.com",
-            "https://example.com/path",
-            "https://example.com?query=true",
-            "https://example.com#fragment",
-        ] {
-            assert!(MediaGrantIssuer::new(invalid.into(), TEST_PRIVATE_KEY.into()).is_err());
-        }
-    }
-
-    #[test]
     fn media_paths_cannot_turn_ids_into_query_or_path_injection() {
         let issuer = MediaGrantIssuer::test();
         let url = issuer

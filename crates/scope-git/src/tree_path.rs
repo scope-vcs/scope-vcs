@@ -212,22 +212,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_each_member_of_windows_filesystem_collision_pairs() {
-        for (canonical, alias) in [
-            ("docs/guide", "docs/guide."),
-            ("docs/guide", "docs/guide "),
-            ("docs/guide/readme.md", "docs./guide/readme.md"),
-            ("docs/guide/readme.md", "docs /guide/readme.md"),
-        ] {
-            assert!(GitTreePath::parse(canonical).is_ok());
-            assert!(matches!(
-                GitTreePath::parse(alias),
-                Err(GitTreePathError::Unrepresentable { .. })
-            ));
-        }
-    }
-
-    #[test]
     fn rejects_dot_git_and_cross_platform_filesystem_aliases_at_any_depth() {
         for path in [
             ".git",

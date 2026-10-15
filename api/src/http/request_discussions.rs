@@ -717,42 +717,7 @@ fn encode_discussion_cursor(snapshot_version: u64, position: u64, id: &str) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scope_domain::{
-        policy::ScopePath, requests::RequestDiscussionAnchor as DomainDiscussionAnchor,
-    };
-
-    #[test]
-    fn discussion_anchor_hides_whole_commit_context_when_policy_rejects_it() {
-        let private_path = ScopePath::parse("/internal/plan.md").unwrap();
-        let anchor = DomainDiscussionAnchor {
-            revision_id: "revision".to_string(),
-            commit_oid: Some("commit".to_string()),
-            path: Some(private_path),
-        };
-
-        let public = project_discussion_anchor(anchor.clone(), 3, false);
-        let private = project_discussion_anchor(anchor, 3, true);
-
-        assert_eq!(public.path, None);
-        assert_eq!(public.commit_oid, None);
-        assert_eq!(private.path.as_deref(), Some("/internal/plan.md"));
-        assert_eq!(private.commit_oid.as_deref(), Some("commit"));
-    }
-
-    #[test]
-    fn discussion_anchor_carries_the_revision_ordinal() {
-        let anchor = DomainDiscussionAnchor {
-            revision_id: "revision".to_string(),
-            commit_oid: None,
-            path: None,
-        };
-        let response = discussion_anchor_response(Some(anchor), &BTreeSet::new(), Some(4))
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(response.revision_id, "revision");
-        assert_eq!(response.revision_position, 4);
-    }
+    use scope_domain::requests::RequestDiscussionAnchor as DomainDiscussionAnchor;
 
     #[test]
     fn discussion_anchor_rejects_an_unknown_revision() {

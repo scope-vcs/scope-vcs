@@ -659,22 +659,4 @@ pub(crate) async fn persist_prepared_merge_for_tests(
 }
 
 #[cfg(test)]
-fn merge_main_oid(
-    repo: &std::path::Path,
-    request_base_oid: &str,
-    current_main_oid: &str,
-    request_head_oid: &str,
-    request_name: &str,
-) -> Result<String, ApiError> {
-    merge_main_oid_for_execution(
-        repo,
-        request_base_oid,
-        current_main_oid,
-        request_head_oid,
-        request_name,
-    )
-    .map_err(MergeMainFailure::into_api_error)
-}
-
-#[cfg(test)]
 mod tests;

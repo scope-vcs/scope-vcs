@@ -3,7 +3,7 @@ use crate::views::{ViewId, Views};
 use crate::{
     error::DomainErrorKind,
     repository::access::{RepositoryAccess, RepositoryActor},
-    requests::fixtures::{open_request, source_blob, start_input},
+    requests::fixtures::{access, open_request, source_blob, start_input},
 };
 
 #[test]
@@ -282,7 +282,7 @@ fn close_permission_and_mutation_agree_for_roles_and_terminal_states() {
                 &request,
                 RequestViewer::new(
                     if maintainer {
-                        maintainer_access()
+                        access(RepositoryActor::Member, ViewId::private(), true)
                     } else {
                         RepositoryAccess::public()
                     },
@@ -298,81 +298,37 @@ fn close_permission_and_mutation_agree_for_roles_and_terminal_states() {
 }
 
 #[test]
-fn discussion_moderation_does_not_change_request_lifecycle() {
-    let request = open_request();
-    let opened = create_request_discussion(
-        request,
-        false,
-        CreateRequestDiscussionInput {
-            request_id: "request_1".to_string(),
-            id: "discussion_1".to_string(),
-            actor_user_id: "author".to_string(),
-            actor_can_participate: true,
-            client_discussion_id: "client_1".to_string(),
-            body_markdown: "Review this invariant".to_string(),
-            anchor: None,
-            now_unix: 21,
-        },
-    )
-    .unwrap();
-    let discussion_id = opened.discussion.id.clone();
-    let resolved = resolve_request_discussion(
-        opened.request,
-        opened.discussion,
-        transition_input(discussion_id, "event_discussion_resolved", 22),
-    )
-    .unwrap();
-    assert_eq!(resolved.request.state(), RequestState::Open);
-}
+fn completed_discussion_transitions_are_allowed_only_in_public_requests() {
+    for (view, allowed) in [(ViewId::public(), true), (ViewId::private(), false)] {
+        let mut request = open_request();
+        request.view = view;
+        let (request, open, resolved) = completed_request_discussions(request);
 
-#[test]
-fn completed_private_discussion_transitions_are_rejected_before_mutation() {
-    let mut request = open_request();
-    request.view = ViewId::private();
-    let (request, open, resolved) = completed_request_discussions(request);
-
-    let resolve_error = resolve_request_discussion(
-        request.clone(),
-        open,
-        transition_input("discussion_open", "event_rejected_resolve", 31),
-    )
-    .unwrap_err();
-    assert_eq!(resolve_error.kind, crate::error::DomainErrorKind::Conflict);
-
-    let reopen_error = reopen_request_discussion(
-        request,
-        resolved,
-        transition_input("discussion_resolved", "event_rejected_reopen", 32),
-    )
-    .unwrap_err();
-    assert_eq!(reopen_error.kind, crate::error::DomainErrorKind::Conflict);
-}
-
-#[test]
-fn completed_public_discussion_transitions_remain_allowed() {
-    let request = open_request();
-    let (request, open_discussion, resolved_discussion) = completed_request_discussions(request);
-
-    let resolved = resolve_request_discussion(
-        request,
-        open_discussion,
-        transition_input("discussion_open", "event_completed_resolve", 31),
-    )
-    .unwrap();
-    assert_eq!(resolved.request.state(), RequestState::Closed);
-    assert_eq!(
-        resolved.discussion.status,
-        RequestDiscussionStatus::Resolved
-    );
-
-    let reopened = reopen_request_discussion(
-        resolved.request,
-        resolved_discussion,
-        transition_input("discussion_resolved", "event_completed_reopen", 32),
-    )
-    .unwrap();
-    assert_eq!(reopened.request.state(), RequestState::Closed);
-    assert_eq!(reopened.discussion.status, RequestDiscussionStatus::Open);
+        let resolve = resolve_request_discussion(
+            request.clone(),
+            open,
+            transition_input("discussion_open", "event_completed_resolve", 31),
+        );
+        let reopen = reopen_request_discussion(
+            request,
+            resolved,
+            transition_input("discussion_resolved", "event_completed_reopen", 32),
+        );
+        if allowed {
+            let resolved = resolve.unwrap();
+            assert_eq!(resolved.request.state(), RequestState::Closed);
+            assert_eq!(
+                resolved.discussion.status,
+                RequestDiscussionStatus::Resolved
+            );
+            let reopened = reopen.unwrap();
+            assert_eq!(reopened.request.state(), RequestState::Closed);
+            assert_eq!(reopened.discussion.status, RequestDiscussionStatus::Open);
+        } else {
+            assert_eq!(resolve.unwrap_err().kind, DomainErrorKind::Conflict);
+            assert_eq!(reopen.unwrap_err().kind, DomainErrorKind::Conflict);
+        }
+    }
 }
 
 fn completed_request_discussions(
@@ -420,7 +376,7 @@ enum ViewerKind {
 
 fn policy_for(request: &Request, viewer: ViewerKind) -> RequestPolicyDecision {
     let access = match viewer {
-        ViewerKind::Maintainer => maintainer_access(),
+        ViewerKind::Maintainer => access(RepositoryActor::Member, ViewId::private(), true),
         _ => RepositoryAccess::public(),
     };
     let user_id = match viewer {
@@ -449,22 +405,11 @@ fn close_input(actor: &str, actor_is_maintainer: bool) -> CloseRequestInput {
     }
 }
 
-fn maintainer_access() -> RepositoryAccess {
-    RepositoryAccess {
-        actor: RepositoryActor::Member,
-        view: ViewId::private(),
-        can_push: true,
-        can_change_file_visibility: false,
-        can_manage_members: false,
-        can_delete_repo: false,
-    }
-}
-
 #[test]
 fn public_view_member_cannot_read_private_request_metadata() {
     let mut request = open_request();
     request.view = ViewId::private();
-    let mut access = maintainer_access();
+    let mut access = access(RepositoryActor::Member, ViewId::private(), true);
     access.view = ViewId::public();
     let decision = request_policy(
         &request,

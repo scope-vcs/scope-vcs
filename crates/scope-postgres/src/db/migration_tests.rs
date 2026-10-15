@@ -10,8 +10,6 @@ use std::sync::Arc;
 mod baseline_bridge;
 mod cache_schema;
 mod current_schema_baseline;
-mod fresh_schema;
-mod git_segment_schema;
 mod github_connections;
 mod github_request_checks;
 mod github_run_imports;
@@ -27,16 +25,6 @@ mod run_attempt_active_indexes;
 mod run_state_constraints;
 mod stack_auto_merge;
 
-const LATEST_MIGRATIONS: &[&str] = &[
-    "m0084_current_schema_baseline",
-    "m0084_request_review_bases",
-    "m0085_request_check_identity",
-    "m0086_private_request_stacks",
-    "m0087_stack_auto_merge_stop_reasons",
-    "m0088_request_navigation_children_index",
-    "m0089_contribution_request_stacks",
-    "m0090_job_traceparents",
-];
 const BRIDGED_LEDGER: &str = include_str!("../migrations/m0084_bridged_ledger.txt");
 
 pub(super) async fn isolated_database() -> (
@@ -140,6 +128,7 @@ async fn reapplying_latest_migrations_is_a_data_preserving_noop() {
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap();
+    migrations::assert_exact_state(db.as_ref()).await.unwrap();
     db.execute_unprepared(
         "
             INSERT INTO scope_users (id, handle, email, email_verified)
@@ -155,7 +144,7 @@ async fn reapplying_latest_migrations_is_a_data_preserving_noop() {
         .unwrap();
 
     assert_eq!(representative_business_snapshot(db.as_ref()).await, before);
-    assert_eq!(applied_versions(db.as_ref()).await, LATEST_MIGRATIONS);
+    migrations::assert_exact_state(db.as_ref()).await.unwrap();
 }
 
 #[tokio::test]
@@ -169,7 +158,7 @@ async fn concurrent_maintenance_migration_attempts_serialize() {
 
     first.unwrap();
     second.unwrap();
-    assert_eq!(applied_versions(db.as_ref()).await, LATEST_MIGRATIONS);
+    migrations::assert_exact_state(db.as_ref()).await.unwrap();
 }
 
 #[tokio::test]

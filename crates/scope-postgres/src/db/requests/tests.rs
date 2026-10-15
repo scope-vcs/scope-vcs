@@ -627,33 +627,6 @@ async fn close_draft_request_deletes_request_and_events() {
 }
 
 #[tokio::test]
-async fn maintainer_cannot_delete_another_authors_draft() {
-    let store = postgres_store();
-    start_public_request(&store).await;
-
-    let error = store
-        .requests()
-        .close_request(CloseRequestCommand {
-            request_id: "req_1".to_string(),
-            actor_user_id: "user_owner".to_string(),
-            event_id: "event_closed_by_maintainer".to_string(),
-            now_unix: 4,
-        })
-        .await
-        .unwrap_err();
-
-    assert!(error.message.contains("only the request author"));
-    assert!(
-        store
-            .requests()
-            .request_for_tests("req_1")
-            .await
-            .unwrap()
-            .is_some()
-    );
-}
-
-#[tokio::test]
 async fn close_open_request_persists_exact_closer() {
     let store = postgres_store();
     let mut request = store

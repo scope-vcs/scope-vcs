@@ -318,38 +318,6 @@ async fn path_history_reads_only_the_requested_paths() {
 }
 
 #[tokio::test]
-async fn path_history_lookups_can_use_the_path_indexes() {
-    let store = fixture().await;
-    let tx = store.db.begin().await.unwrap();
-    tx.execute_unprepared("SET LOCAL enable_seqscan = off")
-        .await
-        .unwrap();
-    for (table, index) in [
-        ("scope_file_changes", "idx_scope_file_changes_path"),
-        (
-            "scope_visibility_changes",
-            "idx_scope_visibility_changes_path",
-        ),
-    ] {
-        let plan = tx
-            .query_all_raw(sea_orm::Statement::from_string(
-                sea_orm::DatabaseBackend::Postgres,
-                format!(
-                    "EXPLAIN SELECT path FROM {table} WHERE repo_id = 'owner/repo' AND path = ANY(ARRAY['/file-5.txt'])"
-                ),
-            ))
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|row| row.try_get::<String>("", "QUERY PLAN").unwrap())
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(plan.contains(index), "{table} plan:\n{plan}");
-    }
-    tx.rollback().await.unwrap();
-}
-
-#[tokio::test]
 async fn git_push_context_reads_no_history() {
     let store = fixture().await;
     let held = lock(

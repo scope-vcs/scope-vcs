@@ -361,14 +361,11 @@ fn request_readiness(
     request: &Request,
     checks: crate::requests::RequestChecksOutcome,
 ) -> RequestAutoMergeReadiness {
-    let access = crate::repository::access::RepositoryAccess {
-        actor: crate::repository::access::RepositoryActor::Owner,
-        view: crate::views::ViewId::private(),
-        can_push: true,
-        can_change_file_visibility: true,
-        can_manage_members: true,
-        can_delete_repo: true,
-    };
+    let access = crate::requests::fixtures::access(
+        crate::repository::access::RepositoryActor::Owner,
+        crate::views::ViewId::private(),
+        true,
+    );
     let viewer = crate::requests::RequestViewer::new(access, Some("maintainer"), false);
     let views = crate::requests::fixtures::views_with_agent();
     request_auto_merge_readiness(crate::requests::evaluate_merge_gate(

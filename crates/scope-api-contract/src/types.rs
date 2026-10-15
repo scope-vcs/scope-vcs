@@ -8,23 +8,6 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lifecycle_request_payloads_preserve_optional_fields() {
-        let submit: SubmitRequestRequest = serde_json::from_str("{}").expect("submit request");
-        assert_eq!(serde_json::to_string(&submit).unwrap(), "{}");
-
-        let edit: EditRequestIdentityRequest = serde_json::from_str(r#"{"title":"New title"}"#)
-            .expect("identity edit with only a title");
-        assert_eq!(edit.title.as_deref(), Some("New title"));
-        assert_eq!(edit.description_markdown, None);
-        assert_eq!(edit.expected_description_markdown, None);
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct AccountSessionResponse {

@@ -21,7 +21,6 @@ async fn objects_round_trip_across_frames_without_storing_plaintext() {
     ] {
         store.put("object", plaintext.clone()).await.unwrap();
         let stored = backend.object("object").unwrap();
-        assert!(crate::envelope::is_framed(&stored));
         assert!(!stored.windows(14).any(|window| window == b"private source"));
         assert_eq!(
             read_bounded(&store, "object", usize::MAX).await.unwrap(),

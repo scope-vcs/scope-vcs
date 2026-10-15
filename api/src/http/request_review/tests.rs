@@ -1,16 +1,14 @@
 use super::{
     MAX_IMPORTED_REQUEST_REVISIONS, MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES,
-    RequestRevisionListWorkBudget, inspect_request_changes as inspect_request_changes_with_views,
-    request_file_response, request_revision_commits,
+    RequestRevisionListWorkBudget, request_revision_commits,
 };
 use crate::git::test_repo::pinned_identity_git as git;
-use scope_api_contract::{FileChangeKind as ApiFileChangeKind, ViewId as ApiViewId};
 use scope_domain::views::ViewId;
 use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
-    policy::{LabelRule, Policy, ScopePath},
+    policy::{LabelRule, ScopePath},
     repository::{
         Repository,
         access::{RepositoryAccess, RepositoryAccessContext},
@@ -29,60 +27,6 @@ pub(super) fn read_policy(repo: &Repository) -> RepositoryReadPolicy {
         policy: repo.policy.clone(),
         repo_config: repo.repo_config.clone(),
     }
-}
-
-fn inspect_request_changes(
-    changes: &[u8],
-    policy: &Policy,
-    access: RepositoryAccess,
-) -> Result<
-    crate::use_cases::request_revision_inspection::InspectedRequestChanges,
-    crate::error::ApiError,
-> {
-    inspect_request_changes_with_views(
-        changes,
-        policy,
-        &scope_domain::views::Views::builtin(),
-        &access,
-    )
-}
-
-#[test]
-fn request_file_response_maps_type_changes_and_private_visibility() {
-    let policy = Policy::new(ViewId::private());
-    let access = RepositoryAccess {
-        view: ViewId::private(),
-        ..RepositoryAccess::public()
-    };
-    let parsed =
-        inspect_request_changes(b":100644 100755 old new T\0type.txt\0", &policy, access).unwrap();
-
-    let files = parsed
-        .files
-        .into_iter()
-        .map(request_file_response)
-        .collect::<Vec<_>>();
-    assert_eq!(
-        files
-            .iter()
-            .map(|file| (file.path.as_str(), file.kind, file.label.clone()))
-            .collect::<Vec<_>>(),
-        [(
-            "type.txt",
-            ApiFileChangeKind::Modified,
-            ApiViewId::private()
-        )]
-    );
-    let file = &files[0];
-    assert_eq!(
-        (
-            file.old_mode.as_deref(),
-            file.new_mode.as_deref(),
-            file.old_oid.as_deref(),
-            file.new_oid.as_deref(),
-        ),
-        (Some("100644"), Some("100755"), Some("old"), Some("new"))
-    );
 }
 
 #[test]

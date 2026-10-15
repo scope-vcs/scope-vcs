@@ -138,10 +138,23 @@ fn an_agent_request_merge_is_preserved_only_in_the_agent_projection() {
 
 #[test]
 fn an_agent_request_merge_cannot_carry_paths_outside_the_agent_view() {
-    for (changed, touched) in [
-        ("/ops/deploy.sh", vec!["/ops/deploy.sh"]),
-        ("/src/lib.rs", vec!["/src/lib.rs", "/ops/transient.sh"]),
-        ("/src/lib.rs", vec!["/src/lib.rs", "/.scope/repo.json"]),
+    let uncovered = "request merge native paths do not cover the logical changes";
+    for (changed, touched, message) in [
+        (
+            "/ops/deploy.sh",
+            vec!["/ops/deploy.sh"],
+            "request merge contains changes outside its view",
+        ),
+        (
+            "/src/lib.rs",
+            vec!["/src/lib.rs", "/ops/transient.sh"],
+            uncovered,
+        ),
+        (
+            "/src/lib.rs",
+            vec!["/src/lib.rs", "/.scope/repo.json"],
+            uncovered,
+        ),
     ] {
         let mut repo = agent_repo();
         let result = merge(
@@ -149,7 +162,10 @@ fn an_agent_request_merge_cannot_carry_paths_outside_the_agent_view() {
             vec![reviewed_change(changed, Some("change"))],
             agent_origin(vec![native(HEAD, BASE, &touched)]),
         );
-        assert!(result.is_err(), "{changed} {touched:?}");
+        assert!(
+            matches!(result, Err(ReviewedUpdateError::Conflict(error)) if error == message),
+            "{changed} {touched:?} {result:?}"
+        );
     }
 }
 

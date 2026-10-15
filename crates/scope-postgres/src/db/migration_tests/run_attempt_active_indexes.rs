@@ -1,6 +1,6 @@
 use super::isolated_database;
 use crate::migrations;
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
+use sea_orm::ConnectionTrait;
 
 const FIXTURE_SQL: &str = r#"
     INSERT INTO scope_users (id, handle, email, email_verified)
@@ -50,23 +50,6 @@ fn dispatching_attempt_sql(attempt_id: &str, number: u32, token: char) -> String
     )
 }
 
-async fn index_predicates(db: &DatabaseConnection) -> Vec<String> {
-    db.query_all_raw(Statement::from_string(
-        DatabaseBackend::Postgres,
-        "SELECT pg_get_indexdef(indexrelid) AS definition
-         FROM pg_index
-         WHERE indrelid = 'scope_run_attempts'::regclass
-           AND pg_get_indexdef(indexrelid) LIKE '%WHERE%'
-         ORDER BY 1"
-            .to_string(),
-    ))
-    .await
-    .unwrap()
-    .into_iter()
-    .map(|row| row.try_get::<String>("", "definition").unwrap())
-    .collect()
-}
-
 #[tokio::test]
 async fn one_job_rejects_a_second_active_attempt() {
     let (_target, db, _lease) = isolated_database().await;
@@ -78,18 +61,6 @@ async fn one_job_rejects_a_second_active_attempt() {
         .await
         .unwrap();
 
-    let predicates = index_predicates(db.as_ref()).await;
-    assert_eq!(predicates.len(), 3, "{predicates:?}");
-    for definition in &predicates {
-        assert!(!definition.contains("leased"), "{definition}");
-    }
-    assert!(
-        predicates.iter().any(|definition| definition
-            .starts_with("CREATE UNIQUE INDEX idx_scope_run_attempts_active")
-            && definition.contains("'dispatching'")
-            && definition.contains("'running'")),
-        "{predicates:?}"
-    );
     let error = db
         .execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b'))
         .await

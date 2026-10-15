@@ -542,7 +542,7 @@ pub fn validate_chosen_request_name(name: &str) -> Result<(), DomainError> {
 mod tests {
     use super::*;
 
-    use crate::requests::fixtures::{agent, views_with_agent};
+    use crate::requests::fixtures::{agent, start_input, views_with_agent};
 
     #[test]
     fn public_contributors_can_only_start_requests_in_the_anyone_view() {
@@ -604,6 +604,20 @@ mod tests {
                 assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
             }
         }
+        let error = start_request(
+            StartRequestFacts::default(),
+            StartRequestInput {
+                author_view: agent(),
+                view: ViewId::private(),
+                ..start_input(RequestActorRole::Member)
+            },
+            &views,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.message,
+            "requests in the Private view need an author who can read it"
+        );
         let error = validate_start_request_view(
             RequestActorRole::Owner,
             &ViewId::private(),

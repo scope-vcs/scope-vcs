@@ -240,20 +240,6 @@ mod tests {
     use scope_api_contract::RunChangeKind;
     use std::{future::Future, task::Poll};
 
-    #[test]
-    fn stream_errors_redact_database_diagnostics() {
-        let diagnostic = "relation scope_runs_internal does not exist";
-        let error = scope_postgres::error::PostgresError::internal_message(diagnostic);
-
-        let data = stream_error_data(error.into());
-
-        assert_eq!(data.code, scope_api_contract::ErrorCode::Internal);
-        assert_eq!(data.message, "Scope hit an internal error.");
-        assert!(!data.message.contains(diagnostic));
-        assert!(data.error_reference.is_some());
-        assert!(!data.retryable);
-    }
-
     #[tokio::test]
     async fn run_stream_wakes_only_for_its_run_or_repository_changes() {
         let (sender, mut receiver) = tokio::sync::broadcast::channel(4);

@@ -1,17 +1,6 @@
 use super::*;
 use crate::repository::access::RepositoryActor;
-use crate::requests::fixtures::open_request;
-
-fn access(actor: RepositoryActor, view: ViewId, can_push: bool) -> RepositoryAccess {
-    RepositoryAccess {
-        actor,
-        view,
-        can_push,
-        can_change_file_visibility: false,
-        can_manage_members: false,
-        can_delete_repo: false,
-    }
-}
+use crate::requests::fixtures::{access, open_request};
 
 #[test]
 fn direct_main_authority_preserves_push_permission_without_clearing_request_checks() {

@@ -3,6 +3,7 @@ use super::{
     start_request, submit_request,
 };
 use crate::content::{DEFAULT_GIT_FILE_MODE, SourceBlob};
+use crate::repository::access::{RepositoryAccess, RepositoryActor};
 use crate::views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views};
 
 pub(crate) fn source_blob(git_oid: &str) -> SourceBlob {
@@ -12,6 +13,17 @@ pub(crate) fn source_blob(git_oid: &str) -> SourceBlob {
         git_oid: git_oid.to_string(),
         git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
         size_bytes: 1,
+    }
+}
+
+pub(crate) fn access(actor: RepositoryActor, view: ViewId, can_push: bool) -> RepositoryAccess {
+    RepositoryAccess {
+        actor,
+        view,
+        can_push,
+        can_change_file_visibility: false,
+        can_manage_members: false,
+        can_delete_repo: false,
     }
 }
 

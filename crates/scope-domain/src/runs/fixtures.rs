@@ -89,7 +89,7 @@ pub(crate) fn dispatch(
     at: u64,
     lease: u64,
 ) -> Result<(RunAttempt, Vec<RunAttemptStep>), DomainError> {
-    let definition = revision.definition().only_job().unwrap();
+    let definition = &revision.definition().jobs()[0];
     job.dispatch(
         run,
         definition,

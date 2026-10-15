@@ -61,7 +61,7 @@ pub(crate) fn inspect_request_changes(
     Ok(InspectedRequestChanges { files, hidden })
 }
 
-pub(crate) fn inspect_request_paths(
+fn inspect_request_paths(
     changes: &[u8],
     policy: &Policy,
     views: &Views,

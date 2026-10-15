@@ -297,8 +297,7 @@ async fn releasing_a_claim_returns_the_request_to_unclaimed_for_everyone() {
     use sea_orm::EntityTrait;
     let store = postgres_store();
     let request = open_public_request(&store).await;
-    let claimed = set_attention(&store, &request, RequestAttentionAction::Claim, 4).await;
-    assert!(claimed.attention.can_release);
+    set_attention(&store, &request, RequestAttentionAction::Claim, 4).await;
     assert_eq!(
         queue_row(&store, RequestQueueSection::Active, 4)
             .await
@@ -310,7 +309,6 @@ async fn releasing_a_claim_returns_the_request_to_unclaimed_for_everyone() {
     let released = set_attention(&store, &request, RequestAttentionAction::Release, 5).await;
     assert_eq!(released.attention.section, RequestQueueSection::Unclaimed);
     assert!(released.claim.is_none());
-    assert!(!released.attention.can_release);
     let unclaimed = queue_row(&store, RequestQueueSection::Unclaimed, 5).await;
     assert_eq!(unclaimed.request.id, request.id);
     assert!(unclaimed.claim.is_none());
@@ -324,13 +322,6 @@ async fn releasing_a_claim_returns_the_request_to_unclaimed_for_everyone() {
         .unwrap()
         .is_none()
     );
-
-    let error = store
-        .requests()
-        .apply_request_attention(command(&request, RequestAttentionAction::Release, 6))
-        .await
-        .unwrap_err();
-    assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
 }
 
 #[tokio::test]

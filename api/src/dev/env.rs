@@ -180,40 +180,31 @@ mod tests {
     }
 
     #[test]
-    fn local_runtime_requires_database() {
-        let snapshot = DevEnvSnapshot {
-            database_url: None,
-            ..local_snapshot()
-        };
-
-        let error = validate_snapshot(&snapshot).unwrap_err();
-        assert!(error.to_string().contains(DATABASE_URL_ENV));
-    }
-
-    #[test]
-    fn local_runtime_rejects_railway_markers() {
-        let snapshot = DevEnvSnapshot {
-            railway_environment_name: Some("production".to_string()),
-            ..local_snapshot()
-        };
-
-        let error = validate_snapshot(&snapshot).unwrap_err();
-
-        assert!(error.to_string().contains("Railway environment variables"));
-    }
-
-    #[test]
-    fn local_runtime_rejects_production_database() {
-        let snapshot = DevEnvSnapshot {
-            database_url: Some(
-                "postgres://user:pass@scope-postgres.railway.internal:5432/railway".to_string(),
+    fn local_runtime_rejects_unsafe_or_incomplete_settings() {
+        for (mutate, expected) in [
+            (
+                (|snapshot: &mut DevEnvSnapshot| snapshot.database_url = None)
+                    as fn(&mut DevEnvSnapshot),
+                DATABASE_URL_ENV,
             ),
-            ..local_snapshot()
-        };
-
-        let error = validate_snapshot(&snapshot).unwrap_err();
-
-        assert!(error.to_string().contains("localhost"));
+            (
+                |snapshot| snapshot.railway_environment_name = Some("production".to_string()),
+                "Railway environment variables",
+            ),
+            (
+                |snapshot| snapshot.clerk_issuer = Some("https://clerk.scopevcs.com".to_string()),
+                "production Clerk",
+            ),
+            (
+                |snapshot| snapshot.dev_user_email = None,
+                SCOPE_DEV_USER_EMAIL_ENV,
+            ),
+        ] {
+            let mut snapshot = local_snapshot();
+            mutate(&mut snapshot);
+            let error = validate_snapshot(&snapshot).unwrap_err().to_string();
+            assert!(error.contains(expected), "{error}");
+        }
     }
 
     #[test]
@@ -239,30 +230,6 @@ mod tests {
         let error =
             validate_local_database_url("postgres://scope:scope@localhost/postgres").unwrap_err();
         assert!(error.to_string().contains("local/dev database"));
-    }
-
-    #[test]
-    fn local_runtime_rejects_production_clerk_issuer() {
-        let snapshot = DevEnvSnapshot {
-            clerk_issuer: Some("https://clerk.scopevcs.com".to_string()),
-            ..local_snapshot()
-        };
-
-        let error = validate_snapshot(&snapshot).unwrap_err();
-
-        assert!(error.to_string().contains("production Clerk"));
-    }
-
-    #[test]
-    fn local_runtime_requires_seed_user_email() {
-        let snapshot = DevEnvSnapshot {
-            dev_user_email: None,
-            ..local_snapshot()
-        };
-
-        let error = validate_snapshot(&snapshot).unwrap_err();
-
-        assert!(error.to_string().contains(SCOPE_DEV_USER_EMAIL_ENV));
     }
 
     #[test]

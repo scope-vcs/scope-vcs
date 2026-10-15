@@ -599,100 +599,71 @@ fn validate_commit_origin(
 #[cfg(test)]
 mod authorization_tests {
     use super::*;
-    use crate::{error::DomainErrorKind, repository::access::RepositoryActor, views::ViewId};
+    use crate::{
+        error::DomainErrorKind, repository::access::RepositoryActor, requests::fixtures::access,
+        views::ViewId,
+    };
 
-    fn access(
-        actor: RepositoryActor,
-        can_push: bool,
-        can_change_visibility: bool,
-    ) -> RepositoryAccess {
-        RepositoryAccess {
-            actor,
-            view: if actor == RepositoryActor::Public {
-                ViewId::public()
-            } else {
-                ViewId::private()
-            },
-            can_push,
-            can_change_file_visibility: can_change_visibility,
-            can_manage_members: false,
-            can_delete_repo: false,
+    #[test]
+    fn reviewed_update_authorization_checks_push_mode_and_config_permission() {
+        let private = RepoConfig::with_default_view(ViewId::private());
+        let public = RepoConfig::with_default_view(ViewId::public());
+        for (actor, view, can_push, push_mode, proposed, expected) in [
+            (
+                RepositoryActor::Public,
+                ViewId::public(),
+                false,
+                MainPushMode::Denied,
+                &private,
+                Err("repo membership required"),
+            ),
+            (
+                RepositoryActor::Member,
+                ViewId::private(),
+                false,
+                MainPushMode::Denied,
+                &private,
+                Err("push permission required"),
+            ),
+            (
+                RepositoryActor::Member,
+                ViewId::private(),
+                true,
+                MainPushMode::ThroughView(ViewId::parse("agent").unwrap()),
+                &private,
+                Err("pushes to main through the agent view land as requests"),
+            ),
+            (
+                RepositoryActor::Member,
+                ViewId::private(),
+                true,
+                MainPushMode::Ready,
+                &public,
+                Err("file visibility permission required"),
+            ),
+            (
+                RepositoryActor::Member,
+                ViewId::private(),
+                true,
+                MainPushMode::Ready,
+                &private,
+                Ok(()),
+            ),
+        ] {
+            let result = authorize_reviewed_update(ReviewedUpdateAuthorization {
+                access: access(actor, view, can_push),
+                push_mode,
+                current_config: &private,
+                proposed_config: proposed,
+            });
+            match expected {
+                Ok(()) => assert!(result.is_ok(), "{result:?}"),
+                Err(message) => {
+                    let error = result.expect_err(message);
+                    assert_eq!(error.kind, DomainErrorKind::Forbidden);
+                    assert_eq!(error.message, message);
+                }
+            }
         }
-    }
-
-    #[test]
-    fn reviewed_update_authorization_masks_public_push_denial_as_membership_required() {
-        let config = RepoConfig::with_default_view(ViewId::private());
-        let error = authorize_reviewed_update(ReviewedUpdateAuthorization {
-            access: access(RepositoryActor::Public, false, false),
-            push_mode: MainPushMode::Denied,
-            current_config: &config,
-            proposed_config: &config,
-        })
-        .expect_err("public actor cannot push main");
-
-        assert_eq!(error.kind, DomainErrorKind::Forbidden);
-        assert_eq!(error.message, "repo membership required");
-    }
-
-    #[test]
-    fn reviewed_update_authorization_rechecks_member_push_permission() {
-        let config = RepoConfig::with_default_view(ViewId::private());
-        let error = authorize_reviewed_update(ReviewedUpdateAuthorization {
-            access: access(RepositoryActor::Member, false, false),
-            push_mode: MainPushMode::Denied,
-            current_config: &config,
-            proposed_config: &config,
-        })
-        .expect_err("member without push permission cannot push main");
-
-        assert_eq!(error.kind, DomainErrorKind::Forbidden);
-        assert_eq!(error.message, "push permission required");
-    }
-
-    #[test]
-    fn reviewed_update_authorization_sends_narrower_pushes_through_requests() {
-        let config = RepoConfig::with_default_view(ViewId::private());
-        let error = authorize_reviewed_update(ReviewedUpdateAuthorization {
-            access: access(RepositoryActor::Member, true, false),
-            push_mode: MainPushMode::ThroughView(ViewId::parse("agent").unwrap()),
-            current_config: &config,
-            proposed_config: &config,
-        })
-        .expect_err("a narrower member cannot push canonical main directly");
-
-        assert_eq!(error.kind, DomainErrorKind::Forbidden);
-        assert_eq!(
-            error.message,
-            "pushes to main through the agent view land as requests"
-        );
-    }
-
-    #[test]
-    fn reviewed_update_authorization_protects_config_changes() {
-        let current = RepoConfig::with_default_view(ViewId::private());
-        let proposed = RepoConfig::with_default_view(ViewId::public());
-        let error = authorize_reviewed_update(ReviewedUpdateAuthorization {
-            access: access(RepositoryActor::Member, true, false),
-            push_mode: MainPushMode::Ready,
-            current_config: &current,
-            proposed_config: &proposed,
-        })
-        .expect_err("config change requires visibility permission");
-
-        assert_eq!(error.kind, DomainErrorKind::Forbidden);
-        assert_eq!(error.message, "file visibility permission required");
-    }
-
-    #[test]
-    fn reviewed_update_authorization_allows_content_only_push_without_visibility_permission() {
-        let config = RepoConfig::with_default_view(ViewId::private());
-        authorize_reviewed_update(ReviewedUpdateAuthorization {
-            access: access(RepositoryActor::Member, true, false),
-            push_mode: MainPushMode::Ready,
-            current_config: &config,
-            proposed_config: &config,
-        })
-        .expect("content-only push remains allowed");
     }
 }

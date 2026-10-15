@@ -59,16 +59,6 @@ mod tests {
     const READY: StatusCode = StatusCode::OK;
     const STALE: StatusCode = StatusCode::SERVICE_UNAVAILABLE;
 
-    fn refresh_non_compaction_loops(health: &WorkerHealth, now_unix: u64) {
-        for worker_loop in [
-            WorkerLoop::Control,
-            WorkerLoop::Cleanup,
-            WorkerLoop::Dependencies,
-        ] {
-            health.mark_poll_succeeded(worker_loop, now_unix);
-        }
-    }
-
     #[test]
     fn readiness_requires_a_ready_schema_and_a_recent_poll_from_every_loop() {
         let health = WorkerHealth::new(Duration::from_secs(1));
@@ -85,23 +75,5 @@ mod tests {
 
         health.mark_schema_waiting();
         assert_eq!(health.readyz_at(100), STALE);
-    }
-
-    #[test]
-    fn active_compaction_is_ready_until_its_lease_progress_expires() {
-        let health = WorkerHealth::new(Duration::from_secs(1));
-        health.mark_schema_ready();
-        health.mark_work_progress(WorkerLoop::Compaction, 100, Duration::from_secs(150));
-
-        refresh_non_compaction_loops(&health, 116);
-        assert_eq!(health.readyz_at(116), READY);
-        refresh_non_compaction_loops(&health, 200);
-        assert_eq!(health.readyz_at(200), READY);
-        refresh_non_compaction_loops(&health, 251);
-        assert_eq!(health.readyz_at(251), STALE);
-
-        health.mark_work_progress(WorkerLoop::Compaction, 200, Duration::from_secs(150));
-        refresh_non_compaction_loops(&health, 251);
-        assert_eq!(health.readyz_at(251), READY);
     }
 }

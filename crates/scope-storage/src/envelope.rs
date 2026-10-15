@@ -16,11 +16,6 @@ const FRAME_HEADER_BYTES: usize = 4 + 4 + 1;
 const MAX_KEY_ID_BYTES: usize = 1024;
 const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
-#[cfg(test)]
-pub(crate) fn is_framed(prefix: &[u8]) -> bool {
-    prefix.starts_with(&MAGIC)
-}
-
 const fn magic(version: u32) -> [u8; 8] {
     assert!(version < 100, "envelope magic encodes a two-digit version");
     let mut magic = *b"SCGSEG00";

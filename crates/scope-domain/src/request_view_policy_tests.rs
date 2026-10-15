@@ -1,23 +1,11 @@
 use super::requests::{
-    fixtures::{agent, open_request, start_input, views_with_agent},
+    fixtures::{access, agent, open_request, views_with_agent},
     *,
 };
 use crate::{
-    error::DomainErrorKind,
     repository::access::{RepositoryAccess, RepositoryActor},
     views::{ViewId, Views},
 };
-
-fn member(view: ViewId, can_push: bool) -> RepositoryAccess {
-    RepositoryAccess {
-        actor: RepositoryActor::Member,
-        view,
-        can_push,
-        can_change_file_visibility: false,
-        can_manage_members: false,
-        can_delete_repo: false,
-    }
-}
 
 fn agent_request() -> Request {
     let mut request = open_request();
@@ -39,43 +27,15 @@ fn policy(
 }
 
 #[test]
-fn an_agent_member_may_start_an_agent_request_but_not_a_private_one() {
-    let views = views_with_agent();
-    let input = |view: ViewId| StartRequestInput {
-        author_view: agent(),
-        view,
-        ..start_input(RequestActorRole::Member)
-    };
-    let started = start_request(StartRequestFacts::default(), input(agent()), &views).unwrap();
-    assert_eq!(started.request.view, agent());
-    assert!(
-        start_request(
-            StartRequestFacts::default(),
-            input(ViewId::public()),
-            &views
-        )
-        .is_ok()
-    );
-    let error = start_request(
-        StartRequestFacts::default(),
-        input(ViewId::private()),
-        &views,
-    )
-    .unwrap_err();
-    assert_eq!(error.kind, DomainErrorKind::InvalidInput);
-    assert_eq!(
-        error.message,
-        "requests in the Private view need an author who can read it"
-    );
-}
-
-#[test]
 fn agent_requests_are_visible_only_to_members_who_read_the_agent_view() {
     let request = agent_request();
     for (access, user_id) in [
         (RepositoryAccess::public(), None),
         (RepositoryAccess::public(), Some("visitor")),
-        (member(ViewId::public(), true), Some("public-member")),
+        (
+            access(RepositoryActor::Member, ViewId::public(), true),
+            Some("public-member"),
+        ),
     ] {
         let decision = policy(&request, access, user_id);
         assert!(!decision.listable);
@@ -83,7 +43,10 @@ fn agent_requests_are_visible_only_to_members_who_read_the_agent_view() {
         assert!(!decision.permissions.can_pull_branch);
         assert!(!decision.permissions.can_open_discussion);
     }
-    for access in [member(agent(), false), member(ViewId::private(), false)] {
+    for access in [
+        access(RepositoryActor::Member, agent(), false),
+        access(RepositoryActor::Member, ViewId::private(), false),
+    ] {
         let decision = policy(&request, access, Some("reader"));
         assert!(decision.listable);
         assert!(decision.exact_visible);
@@ -97,31 +60,51 @@ fn agent_requests_are_visible_only_to_members_who_read_the_agent_view() {
 fn merging_needs_the_full_view_unless_the_author_may_push_through_the_request_view() {
     let request = agent_request();
     assert!(
-        policy(&request, member(ViewId::private(), false), Some("owner"))
-            .permissions
-            .can_merge
+        policy(
+            &request,
+            access(RepositoryActor::Member, ViewId::private(), false),
+            Some("owner")
+        )
+        .permissions
+        .can_merge
     );
     assert!(
-        !policy(&request, member(agent(), true), Some("other-agent"))
-            .permissions
-            .can_merge
+        !policy(
+            &request,
+            access(RepositoryActor::Member, agent(), true),
+            Some("other-agent")
+        )
+        .permissions
+        .can_merge
     );
     assert!(
-        !policy(&request, member(agent(), false), Some("author"))
-            .permissions
-            .can_merge
+        !policy(
+            &request,
+            access(RepositoryActor::Member, agent(), false),
+            Some("author")
+        )
+        .permissions
+        .can_merge
     );
     assert!(
-        policy(&request, member(agent(), true), Some("author"))
-            .permissions
-            .can_merge
+        policy(
+            &request,
+            access(RepositoryActor::Member, agent(), true),
+            Some("author")
+        )
+        .permissions
+        .can_merge
     );
     let mut public_request = request;
     public_request.view = ViewId::public();
     assert!(
-        !policy(&public_request, member(agent(), true), Some("author"))
-            .permissions
-            .can_merge
+        !policy(
+            &public_request,
+            access(RepositoryActor::Member, agent(), true),
+            Some("author")
+        )
+        .permissions
+        .can_merge
     );
 }
 
@@ -131,12 +114,21 @@ fn completed_agent_request_discussions_behave_like_the_anyone_view() {
     request.closed_at_unix = Some(30);
     request.closed_by_user_id = Some("author".into());
     request.updated_at_unix = 30;
-    let permissions = policy(&request, member(agent(), false), Some("reader")).permissions;
+    let permissions = policy(
+        &request,
+        access(RepositoryActor::Member, agent(), false),
+        Some("reader"),
+    )
+    .permissions;
     assert!(permissions.can_open_discussion);
     assert!(permissions.can_transition_discussion);
     request.view = ViewId::private();
-    let permissions =
-        policy(&request, member(ViewId::private(), false), Some("reader")).permissions;
+    let permissions = policy(
+        &request,
+        access(RepositoryActor::Member, ViewId::private(), false),
+        Some("reader"),
+    )
+    .permissions;
     assert!(!permissions.can_open_discussion);
     assert!(!permissions.can_transition_discussion);
 }
@@ -154,10 +146,16 @@ fn members_list_every_view_they_read_and_the_anyone_view_by_its_participation_ru
     ]);
     for (access, listed) in [
         (RepositoryAccess::public(), vec![]),
-        (member(ViewId::public(), false), vec![]),
-        (member(agent(), false), vec![agent()]),
         (
-            member(ViewId::private(), false),
+            access(RepositoryActor::Member, ViewId::public(), false),
+            vec![],
+        ),
+        (
+            access(RepositoryActor::Member, agent(), false),
+            vec![agent()],
+        ),
+        (
+            access(RepositoryActor::Member, ViewId::private(), false),
             vec![ViewId::private(), agent()],
         ),
     ] {
@@ -173,7 +171,11 @@ fn members_list_every_view_they_read_and_the_anyone_view_by_its_participation_ru
     ])
     .unwrap();
     assert_eq!(
-        request_list_predicate(member(ViewId::private(), false), None, &private_only),
+        request_list_predicate(
+            access(RepositoryActor::Member, ViewId::private(), false),
+            None,
+            &private_only
+        ),
         RequestListPredicate::Any(vec![RequestListPredicate::View(ViewId::private())])
     );
 }
@@ -183,10 +185,16 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
     let request = agent_request();
     let views = views_with_agent();
     for (access, user_id) in [
-        (member(ViewId::private(), false), "owner"),
-        (member(agent(), true), "other-agent"),
-        (member(agent(), false), "author"),
-        (member(agent(), true), "author"),
+        (
+            access(RepositoryActor::Member, ViewId::private(), false),
+            "owner",
+        ),
+        (
+            access(RepositoryActor::Member, agent(), true),
+            "other-agent",
+        ),
+        (access(RepositoryActor::Member, agent(), false), "author"),
+        (access(RepositoryActor::Member, agent(), true), "author"),
     ] {
         let viewer = RequestViewer::new(access, Some(user_id), false);
         let can_merge = request_policy(&request, viewer.clone(), &views)
@@ -215,7 +223,11 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
             mergeability
         );
     }
-    let narrower = RequestViewer::new(member(agent(), true), Some("other-agent"), false);
+    let narrower = RequestViewer::new(
+        access(RepositoryActor::Member, agent(), true),
+        Some("other-agent"),
+        false,
+    );
     assert_eq!(
         request_mergeability(
             &request,

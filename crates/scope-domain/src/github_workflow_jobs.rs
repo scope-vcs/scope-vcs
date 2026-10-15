@@ -372,14 +372,7 @@ mod tests {
         use crate::repository::access::RepositoryActor;
         use crate::views::{ViewId, Views};
         let views = Views::builtin();
-        let viewer = |actor, view: ViewId| RepositoryAccess {
-            actor,
-            view,
-            can_push: false,
-            can_change_file_visibility: false,
-            can_manage_members: false,
-            can_delete_repo: false,
-        };
+        let viewer = |actor, view: ViewId| crate::requests::fixtures::access(actor, view, false);
         let public = GitHubRepositoryVisibility::Public { acknowledged: true };
         let private = GitHubRepositoryVisibility::Private;
         for visibility in [public, private] {

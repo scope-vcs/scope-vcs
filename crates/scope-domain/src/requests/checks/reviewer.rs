@@ -39,37 +39,40 @@ mod tests {
     use super::*;
     use crate::{
         repository::{
-            RepoLifecycleState, access::repository_access_for_user_id,
-            collaboration::RepositoryMemberPermissions,
+            RepoLifecycleState,
+            access::{RepositoryActor, repository_access_for_user_id},
         },
-        requests::fixtures::{agent, views_with_agent},
+        requests::fixtures::{access, agent, views_with_agent},
         views::ViewId,
     };
-
-    fn member(view: ViewId) -> RepositoryAccess {
-        repository_access_for_user_id(
-            "owner",
-            RepoLifecycleState::Ready,
-            Some(RepositoryMemberPermissions {
-                can_push: true,
-                can_change_file_visibility: false,
-                view,
-            }),
-            "member",
-        )
-    }
 
     #[test]
     fn only_maintainers_who_read_the_full_view_review_request_checks() {
         let views = views_with_agent();
         assert_eq!(
-            RequestCheckReviewer::for_actor("member", &member(ViewId::private()), &views)
-                .map(|reviewer| reviewer.user_id()),
+            RequestCheckReviewer::for_actor(
+                "member",
+                &access(RepositoryActor::Member, ViewId::private(), true),
+                &views
+            )
+            .map(|reviewer| reviewer.user_id()),
             Some("member")
         );
-        assert!(RequestCheckReviewer::for_actor("member", &member(agent()), &views).is_none());
         assert!(
-            RequestCheckReviewer::for_actor("member", &member(ViewId::public()), &views).is_none()
+            RequestCheckReviewer::for_actor(
+                "member",
+                &access(RepositoryActor::Member, agent(), true),
+                &views
+            )
+            .is_none()
+        );
+        assert!(
+            RequestCheckReviewer::for_actor(
+                "member",
+                &access(RepositoryActor::Member, ViewId::public(), true),
+                &views
+            )
+            .is_none()
         );
         let outsider =
             repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "outsider");
@@ -79,7 +82,7 @@ mod tests {
             "repo maintainer required"
         );
         assert_eq!(
-            RequestCheckReviewer::refusal(&member(agent()), &views),
+            RequestCheckReviewer::refusal(&access(RepositoryActor::Member, agent(), true), &views),
             "approving CI needs a maintainer who reads the full view"
         );
         let owner =

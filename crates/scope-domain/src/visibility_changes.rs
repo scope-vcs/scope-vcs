@@ -76,7 +76,7 @@ pub fn visibility_change_set_id(next_change_version: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::views::{ViewDefinition, ViewIncludes, ViewReaders, Views};
+    use crate::{requests::fixtures::views_with_agent, views::Views};
 
     fn change(path: &str, old_label: ViewId, new_label: ViewId) -> VisibilityChange {
         VisibilityChange {
@@ -87,75 +87,67 @@ mod tests {
         }
     }
 
-    fn set(
-        changes: Vec<VisibilityChange>,
-        views: Option<ViewsTransition>,
-    ) -> Result<VisibilityChangeSet, &'static str> {
-        VisibilityChangeSet::new(
-            "vchg_2".into(),
-            Some("rv1".into()),
-            None,
-            "owner".into(),
-            changes,
-            views,
-        )
-    }
-
     #[test]
-    fn mixed_directions_are_one_valid_causal_set() {
-        let set = set(
-            vec![
-                change("/public.md", ViewId::private(), ViewId::public()),
-                change("/private.md", ViewId::public(), ViewId::private()),
-            ],
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(set.changes.len(), 2);
-    }
-
-    #[test]
-    fn empty_duplicate_and_no_op_sets_are_rejected() {
-        assert!(set(Vec::new(), None).is_err());
-        assert!(
-            set(
-                vec![change("/same.md", ViewId::public(), ViewId::public())],
-                None
-            )
-            .is_err()
-        );
-        assert!(
-            set(
+    fn a_set_needs_distinct_label_changes_or_a_views_transition() {
+        let (public, private) = (ViewId::public(), ViewId::private());
+        let transition = |after| {
+            Some(ViewsTransition {
+                before: Views::builtin(),
+                after,
+            })
+        };
+        for (changes, views, expected) in [
+            (
                 vec![
-                    change("/same.md", ViewId::public(), ViewId::private()),
-                    change("/same.md", ViewId::private(), ViewId::public()),
+                    change("/public.md", private.clone(), public.clone()),
+                    change("/private.md", public.clone(), private.clone()),
                 ],
                 None,
-            )
-            .is_err()
-        );
-        let unchanged = ViewsTransition {
-            before: Views::builtin(),
-            after: Views::builtin(),
-        };
-        assert!(set(Vec::new(), Some(unchanged)).is_err());
-    }
-
-    #[test]
-    fn a_views_transition_needs_no_label_changes() {
-        let mut after = Vec::<ViewDefinition>::from(Views::builtin());
-        after.push(ViewDefinition {
-            id: ViewId::parse("agent").unwrap(),
-            name: "Agent".into(),
-            includes: ViewIncludes::Some(Default::default()),
-            readers: ViewReaders::Assigned,
-        });
-        let transition = ViewsTransition {
-            before: Views::builtin(),
-            after: Views::new(after).unwrap(),
-        };
-        let set = set(Vec::new(), Some(transition.clone())).unwrap();
-        assert_eq!(set.views, Some(transition));
+                Ok(()),
+            ),
+            (Vec::new(), transition(views_with_agent()), Ok(())),
+            (
+                Vec::new(),
+                None,
+                Err("visibility change set must change a label or the views"),
+            ),
+            (
+                vec![change("/same.md", public.clone(), public.clone())],
+                None,
+                Err("visibility change set cannot contain no-op changes"),
+            ),
+            (
+                vec![
+                    change("/same.md", public.clone(), private.clone()),
+                    change("/same.md", private.clone(), public.clone()),
+                ],
+                None,
+                Err("visibility change set cannot contain duplicate paths"),
+            ),
+            (
+                Vec::new(),
+                transition(Views::builtin()),
+                Err("visibility change set cannot contain a no-op views transition"),
+            ),
+        ] {
+            let expected_changes = changes.clone();
+            let expected_views = views.clone();
+            let result = VisibilityChangeSet::new(
+                "vchg_2".into(),
+                Some("rv1".into()),
+                None,
+                "owner".into(),
+                changes,
+                views,
+            );
+            match expected {
+                Ok(()) => {
+                    let set = result.unwrap();
+                    assert_eq!(set.changes, expected_changes);
+                    assert_eq!(set.views, expected_views);
+                }
+                Err(message) => assert_eq!(result.unwrap_err(), message),
+            }
+        }
     }
 }

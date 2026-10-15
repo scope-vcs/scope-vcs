@@ -577,44 +577,6 @@ mod tests {
     }
 
     #[test]
-    fn typed_reasons_preserve_special_kinds_and_wire_reason() {
-        assert_eq!(
-            repository_change_event(&incarnation("repo"), 1, RepoChangeReason::Connected).kind,
-            RepoChangeKind::Connected
-        );
-        assert_eq!(
-            repository_change_event(&incarnation("repo"), 1, RepoChangeReason::Lagged).kind,
-            RepoChangeKind::Lagged
-        );
-        assert_eq!(
-            repository_change_event(&incarnation("repo"), 1, RepoChangeReason::ConfigApplied).kind,
-            RepoChangeKind::RepositoryChanged {
-                reason: "config-applied".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn run_changes_preserve_the_run_and_change_kind() {
-        assert_eq!(
-            run_change_event(
-                &incarnation("repo"),
-                "run_1".to_string(),
-                RunChangeKind::LogsAppended
-            ),
-            RepoChangeEvent {
-                repo_id: "repo".to_string(),
-                incarnation_id: "repoi_repo".to_string(),
-                version: 0,
-                kind: RepoChangeKind::RunChanged {
-                    run_id: "run_1".to_string(),
-                    change: RunChangeKind::LogsAppended,
-                },
-            }
-        );
-    }
-
-    #[test]
     fn notification_payload_suppresses_same_origin_and_forwards_other_origins() {
         let bus = RepoChangeBus::default();
         let mut receiver = bus.subscribe("repo");

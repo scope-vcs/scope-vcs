@@ -3,13 +3,10 @@ use crate::requests::RequestActorRole;
 use crate::requests::main_push::is_main_push_request_name;
 use crate::{
     error::DomainErrorKind,
-    repository::{
-        access::{RepositoryActor, repository_access_for_user_id},
-        collaboration::RepositoryMemberPermissions,
-    },
+    repository::access::{RepositoryActor, repository_access_for_user_id},
     requests::{
         RequestEventKind, RequestState, RequestViewer,
-        fixtures::{agent, source_blob, views_with_agent},
+        fixtures::{access, agent, source_blob, views_with_agent},
         request_policy,
     },
     views::ViewId,
@@ -17,19 +14,6 @@ use crate::{
 
 const BASE: &str = "1111111111111111111111111111111111111111";
 const HEAD: &str = "2222222222222222222222222222222222222222";
-
-fn member(view: ViewId, can_push: bool) -> RepositoryAccess {
-    repository_access_for_user_id(
-        "owner",
-        RepoLifecycleState::Ready,
-        Some(RepositoryMemberPermissions {
-            can_push,
-            can_change_file_visibility: false,
-            view,
-        }),
-        "pusher",
-    )
-}
 
 fn input() -> StartMainPushRequestInput {
     StartMainPushRequestInput {
@@ -93,7 +77,7 @@ fn started(outcome: MainPushRequestOutcome) -> MainPushRequestMutation {
 #[test]
 fn a_narrower_main_push_lands_as_an_auto_merged_request_in_the_pushers_view() {
     let views = views_with_agent();
-    let access = member(agent(), true);
+    let access = access(RepositoryActor::Member, agent(), true);
     assert_eq!(
         access.main_push_mode(RepoLifecycleState::Ready, &views),
         MainPushMode::ThroughView(agent())
@@ -138,7 +122,11 @@ fn a_narrower_main_push_lands_as_an_auto_merged_request_in_the_pushers_view() {
 #[test]
 fn a_main_push_request_always_lands_in_the_pushers_own_view() {
     for view in [agent(), ViewId::public()] {
-        let mutation = start(&member(view.clone(), true), RepoLifecycleState::Ready).unwrap();
+        let mutation = start(
+            &access(RepositoryActor::Member, view.clone(), true),
+            RepoLifecycleState::Ready,
+        )
+        .unwrap();
         assert_eq!(mutation.request.view, view);
     }
 }
@@ -147,19 +135,19 @@ fn a_main_push_request_always_lands_in_the_pushers_own_view() {
 fn only_narrower_members_with_push_permission_start_main_push_requests() {
     let views = views_with_agent();
     let owner = repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");
-    let mut forged_agent_view = member(agent(), true);
+    let mut forged_agent_view = access(RepositoryActor::Member, agent(), true);
     forged_agent_view.view = ViewId::parse("ops").unwrap();
-    let mut forged_public_actor = member(agent(), true);
+    let mut forged_public_actor = access(RepositoryActor::Member, agent(), true);
     forged_public_actor.actor = RepositoryActor::Public;
     for (access, lifecycle_state, mode, message) in [
         (
-            member(agent(), false),
+            access(RepositoryActor::Member, agent(), false),
             RepoLifecycleState::Ready,
             MainPushMode::Denied,
             "push permission required",
         ),
         (
-            member(agent(), true),
+            access(RepositoryActor::Member, agent(), true),
             RepoLifecycleState::AwaitingFirstPush,
             MainPushMode::Denied,
             "push permission required",
@@ -177,7 +165,7 @@ fn only_narrower_members_with_push_permission_start_main_push_requests() {
             "push permission required",
         ),
         (
-            member(ViewId::private(), true),
+            access(RepositoryActor::Member, ViewId::private(), true),
             RepoLifecycleState::Ready,
             MainPushMode::Ready,
             "only pushes to main through a narrower view land as requests",
@@ -199,7 +187,7 @@ fn only_narrower_members_with_push_permission_start_main_push_requests() {
 #[test]
 fn a_main_push_checked_for_another_view_is_refused() {
     let views = views_with_agent();
-    let access = member(agent(), true);
+    let access = access(RepositoryActor::Member, agent(), true);
     let mut reassigned = input();
     reassigned.validated_view = ViewId::public();
     let error = start_main_push_request(
@@ -241,7 +229,7 @@ fn main_push_names_follow_the_head_and_count_up_after_the_first() {
         assert!(!is_main_push_request_name(rejected, HEAD), "{rejected}");
     }
 
-    let access = member(agent(), true);
+    let access = access(RepositoryActor::Member, agent(), true);
     let suffixed = start_main_push_request(
         facts(),
         &access,
@@ -306,7 +294,7 @@ fn people_cannot_choose_a_main_push_request_name() {
 
 #[test]
 fn only_the_pushers_own_open_request_for_the_same_head_makes_a_push_a_retry() {
-    let access = member(agent(), true);
+    let access = access(RepositoryActor::Member, agent(), true);
     let open = start(&access, RepoLifecycleState::Ready).unwrap().request;
     let classify =
         |request: &Request| MainPushRequestName::classify(Some(request), "pusher", &agent(), HEAD);
@@ -341,7 +329,7 @@ fn only_the_pushers_own_open_request_for_the_same_head_makes_a_push_a_retry() {
 #[test]
 fn the_request_transaction_decides_retries_collisions_and_stale_pushes() {
     let views = views_with_agent();
-    let access = member(agent(), true);
+    let access = access(RepositoryActor::Member, agent(), true);
     let open = start(&access, RepoLifecycleState::Ready).unwrap().request;
     let decide = |facts: MainPushRequestFacts| {
         start_main_push_request(facts, &access, RepoLifecycleState::Ready, input(), &views)

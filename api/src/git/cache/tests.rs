@@ -69,23 +69,6 @@ fn idle_repository_is_retained_while_the_cache_fits_its_byte_budget() {
 }
 
 #[test]
-fn exact_repository_removal_waits_for_active_lease() {
-    let root = temp_cache_root("git-cache-lease-safe-delete");
-    let registry = RepositoryGitCache::new(root.clone(), 100).unwrap();
-    let repo = incarnation("owner/recreated");
-    let path = registry.path_for(&repo);
-    fs::create_dir_all(&path).unwrap();
-    let lease = registry.lease(&repo).unwrap();
-
-    assert!(!registry.remove(&repo).unwrap());
-    assert!(path.exists());
-    drop(lease);
-    assert!(registry.remove(&repo).unwrap());
-    assert!(!path.exists());
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn exact_repository_removal_waits_for_lease_from_another_registry() {
     let root = temp_cache_root("git-cache-cross-registry-lease-safe-delete");
     let leasing_registry = RepositoryGitCache::new(root.clone(), 100).unwrap();

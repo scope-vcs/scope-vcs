@@ -23,7 +23,10 @@ async fn the_bridge_replaces_the_previous_ledger_after_verifying_the_schema() {
             .iter()
             .map(|migration| migration.name.as_str())
             .collect::<Vec<_>>(),
-        LATEST_MIGRATIONS
+        migrations::Migrator::migrations()
+            .iter()
+            .map(|migration| migration.name())
+            .collect::<Vec<_>>()
     );
     assert!(!plan.exact);
     assert!(plan.metadata_restore_safe);
@@ -53,7 +56,7 @@ async fn the_bridge_replaces_the_previous_ledger_after_verifying_the_schema() {
         .await
         .unwrap();
 
-    assert_eq!(applied_versions(&db).await, LATEST_MIGRATIONS);
+    migrations::assert_exact_state(db.as_ref()).await.unwrap();
     assert_eq!(representative_business_snapshot(&db).await, before);
     assert_eq!(sequence_state(&db).await, sequence);
     let completed = migrations::plan(db.as_ref()).await.unwrap();

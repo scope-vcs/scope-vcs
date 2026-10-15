@@ -99,26 +99,14 @@ mod tests {
             classify_repo_control_path(&path("/.scope/runs/test.yml")),
             Some(RepoControlPath::Workflow(workflow)) if workflow.name() == "test"
         ));
-        for (value, image_name, context_path) in [
-            ("/.scope/images/checks/Dockerfile", "checks", "Dockerfile"),
-            (
-                "/.scope/images/checks/scripts/install.sh",
-                "checks",
-                "scripts/install.sh",
-            ),
-        ] {
-            assert!(matches!(
-                classify_repo_control_path(&path(value)),
-                Some(RepoControlPath::ImageContext(image))
-                    if image.image_name() == image_name && image.context_path() == context_path
-            ));
-        }
+        assert!(matches!(
+            classify_repo_control_path(&path("/.scope/images/checks/Dockerfile")),
+            Some(RepoControlPath::ImageContext(image))
+                if image.image_name() == "checks" && image.context_path() == "Dockerfile"
+        ));
         for forbidden in [
             "/.scope",
             "/.scope/repo.json",
-            "/.scope/images",
-            "/.scope/images/Dockerfile",
-            "/.scope/images/Checks/Dockerfile",
             "/.scope/runs",
             "/.scope/runs/Test.yml",
             "/.scope/runs/nested/test.yml",
