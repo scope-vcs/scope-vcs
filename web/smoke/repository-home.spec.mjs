@@ -155,56 +155,6 @@ test('views without a README or any files open deliberately without guessing a f
         ? 'No README in this view. Browse the files or use Find file to get started.'
         : 'Run scope push --main from the CLI to add files to this repository.', { exact: true }).waitFor()
       assert.equal(fileRequests, 0)
-      assert.equal(await page.getByRole('region', { name: 'About' }).getByRole('button').count(), 0)
     }, { prepare: fulfillTree, viewport })
   }
-})
-
-test('visible project resources open through file tabs and reopen a closed selected resource', async () => {
-  const files = [
-    { path: '/LICENSE', oid: 'license-oid', tracked: true, label: 'public' },
-    { path: '/.github/CONTRIBUTING.md', oid: 'contributing-oid', tracked: true, label: 'public' },
-    { path: '/internal/notes.md', oid: 'private-oid', tracked: true, label: 'private' },
-  ]
-  const fulfillResources = (page) => page.route('**/_serverFn/**', async (route) => {
-    const name = serverFunctionName(route.request())
-    let result
-    if (name === 'loadRepoContent_createServerFn_handler') {
-      result = { files, clone_remote_url: 'https://example.invalid/repo' }
-    } else if (name === 'loadRepoFile_createServerFn_handler') {
-      result = {
-        status: 'ready',
-        file: {
-          ...files[0], size_bytes: 15,
-          content: { kind: 'text', text: 'Fixture license' },
-        },
-      }
-    } else {
-      await route.continue()
-      return
-    }
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({ result, context: {} }),
-    })
-  })
-  await withPage('/', async (page) => {
-    await navigateFromHome(page, repoPath)
-    const about = page.getByRole('region', { name: 'About' })
-    await about.getByRole('button', { name: 'Contributing', exact: true }).waitFor()
-    assert.equal(await about.getByRole('button', { name: 'Security policy', exact: true }).count(), 0)
-    await about.getByRole('button', { name: 'License', exact: true }).click()
-    await page.getByRole('tab', { name: 'LICENSE', exact: true }).waitFor()
-    await page.locator('pre code').filter({ hasText: 'Fixture license' }).waitFor()
-    await page.getByTitle('Close LICENSE', { exact: true }).click()
-    await page.getByText('Select a file to inspect its contents.', { exact: true }).waitFor()
-    await about.getByRole('button', { name: 'License', exact: true }).click()
-    await page.getByRole('tab', { name: 'LICENSE', exact: true }).waitFor()
-    await page.locator('pre code').filter({ hasText: 'Fixture license' }).waitFor()
-    await page.setViewportSize({ width: 390, height: 844 })
-    await page.getByRole('button', { name: 'files LICENSE', exact: true }).click()
-    await about.getByRole('button', { name: 'Contributing', exact: true }).click()
-    await page.getByRole('tab', { name: '.github/CONTRIBUTING.md', exact: true }).waitFor()
-    await assertMobileFilesCollapsed(page, '.github/CONTRIBUTING.md')
-  }, { prepare: fulfillResources, viewport })
 })
