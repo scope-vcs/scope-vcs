@@ -22,6 +22,17 @@ test('case parser preserves the physical dimensions', () => {
   assert.throws(() => parseCases('1MiB:1:mystery'), /content kind/);
 });
 
+test('configuration honors explicit cases, operations and sample count', () => {
+  const config = configuration({
+    SCOPE_PHYSICS_CASES: '4KiB:2:random',
+    SCOPE_PHYSICS_OPERATIONS: 'pack,index',
+    SCOPE_PHYSICS_SAMPLES: '1',
+  });
+  assert.deepEqual(config.cases, [{ label: '4KiB-2c-random', logicalBytes: 4096, commits: 2, content: 'random' }]);
+  assert.deepEqual(config.operations, ['pack', 'index']);
+  assert.equal(config.samples, 1);
+});
+
 test('GNU time parser names CPU, page-cache, disk, and scheduler counters', () => {
   assert.deepEqual(parseTimeReport('__SCOPE_TIME__\t1.25\t0.50\t2.00\t8192\t3\t4\t5\t6\t7\t8\n'), {
     wallMs: 2000,
