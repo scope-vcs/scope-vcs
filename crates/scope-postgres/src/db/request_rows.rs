@@ -572,3 +572,28 @@ where
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod request_list_tests {
+    use super::*;
+    use sea_orm::{DatabaseBackend, QueryTrait};
+
+    #[test]
+    fn request_list_does_not_fetch_unbounded_payloads() {
+        let query = request_list_select(&RequestListPageQuery {
+            repo_id: "repo-1",
+            viewer_user_id: Some("viewer-1"),
+            access: RepositoryAccess::public(),
+            views: &Views::builtin(),
+            after_id: None,
+            limit: 1,
+        })
+        .unwrap();
+        let sql = query.build(DatabaseBackend::Postgres).to_string();
+        let projection = sql.split(" FROM ").next().unwrap();
+
+        assert!(!projection.contains("description_markdown"));
+        assert_eq!(projection.matches("\"git_snapshot\"").count(), 1);
+        assert!(projection.contains("git_snapshot\" IS NOT NULL"));
+    }
+}
