@@ -238,14 +238,16 @@ export function RequestWorkspaceSidebar({
   const folded = foldedGroups.reduce((total, { count }) => total + count, 0)
   const hinted = hint && state === 'closed' ? railHint(hint.key, hint.now) : undefined
   function railHint(key: string, now: number) {
-    if (key === 'needs-you')
+    if (key === 'needs-you') {
+      const count = activeCount(needsYou.length)
       return {
-        title: `${REQUEST_ATTENTION_GROUP_LABELS.needs_you} · ${activeCount(needsYou.length)}`,
+        title: count === null ? REQUEST_ATTENTION_GROUP_LABELS.needs_you : `${REQUEST_ATTENTION_GROUP_LABELS.needs_you} · ${count}`,
         details: caughtUp ? [EMPTY_LABELS.needs_you] : [],
       }
+    }
     if (key === 'folded')
       return {
-        title: `${folded} more open`,
+        title: `${folded} more`,
         details: foldedGroups.map(({ group, count }) => `${count} ${FOLDED_LABELS[group]}`),
       }
     const row = allRows.find((row) => row.item.request.id === key)
@@ -374,7 +376,7 @@ export function RequestWorkspaceSidebar({
                 <>
                   <hr className="request-workspace-rail-rule" />
                   <button
-                    aria-label={`Show ${folded} more open requests`}
+                    aria-label={`Show ${folded} more requests`}
                     className="request-workspace-rail-more"
                     data-rail-hint="folded"
                     onClick={openRail}

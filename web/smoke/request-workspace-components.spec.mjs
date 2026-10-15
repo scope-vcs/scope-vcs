@@ -265,6 +265,11 @@ test('collapsed request loading keeps its header stable without guessing avatar 
     const count = await header.boundingBox()
     assert(placeholder.y >= count.y && placeholder.y + placeholder.height <= count.y + count.height)
     assert.equal(placeholder.x + placeholder.width / 2, initial.rail.x + initial.rail.width / 2, 'the count placeholder stays centered in both pending phases')
+    if (maintainer === true) {
+      await header.hover()
+      assert.equal(await page.locator('.request-workspace-rail-hint').textContent(), 'Needs you')
+      await page.mouse.move(700, 400)
+    }
     if (process.env.SCOPE_COMPONENT_SCREENSHOT && maintainer === true) {
       await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-pending.png` })
     }
@@ -295,10 +300,10 @@ test('collapsed request loading keeps its header stable without guessing avatar 
   }
   const waiting = [3, 4].map((index) => ({ ...done[0], request: { id: `request-${index}`, title: `Waiting request ${index}` }, attention: { group: 'waiting', reason: 'waiting' }, next_step: 'wait' }))
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { ...pages, active: { ...empty, requests: waiting } })
-  const more = sidebar.getByRole('button', { name: 'Show 2 more open requests' })
+  const more = sidebar.getByRole('button', { name: 'Show 2 more requests' })
   assert.equal(await more.textContent(), '+2')
   await more.hover()
-  assert.equal(await page.locator('.request-workspace-rail-hint').textContent(), '2 more open2 waiting')
+  assert.equal(await page.locator('.request-workspace-rail-hint').textContent(), '2 more2 waiting')
   await more.click()
   await sidebar.getByRole('button', { name: /Done/ }).click()
   await sidebar.getByRole('link', { name: /Closed request 1/ }).click()
