@@ -1,6 +1,6 @@
 use super::*;
 use crate::test_support::{TempDir, commit_all};
-use scope_domain::dependency_analysis::{DependencyEdge, DependencyEdgeKind};
+use scope_domain::dependency_analysis::{DependencyEdge, DependencyEdgeKind, DependencyGap};
 use std::{
     fs,
     sync::atomic::{AtomicUsize, Ordering},
@@ -44,7 +44,10 @@ fn output() -> AnalyzerOutput {
             target_path: "internal/client.ts".into(),
             kind: DependencyEdgeKind::Import,
         }],
-        gaps: vec![],
+        gaps: vec![DependencyGap {
+            path: "src/index.ts".into(),
+            reason: "dynamic import could not be resolved".into(),
+        }],
     }
 }
 
@@ -72,7 +75,7 @@ fn snapshot_reads_committed_bytes_and_resolver_config_without_worktree_edits() {
 }
 
 #[test]
-fn analysis_reuses_the_commit_cache() {
+fn analysis_retains_edges_and_gaps_when_reusing_the_commit_cache() {
     let (repo, commit) = repository();
     let calls = AtomicUsize::new(0);
     let token = CancellationToken::new();
@@ -86,6 +89,8 @@ fn analysis_reuses_the_commit_cache() {
         Ok(output())
     })
     .unwrap();
+    assert_eq!(first.edges, output().edges);
+    assert_eq!(first.gaps, output().gaps);
     assert_eq!(first, second);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
