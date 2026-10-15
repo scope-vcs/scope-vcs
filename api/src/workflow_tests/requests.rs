@@ -195,6 +195,7 @@ async fn request_list_pages_one_hundred_and_one_visible_rows_without_overlap() {
     assert_eq!(first_requests.len(), 100);
     assert_eq!(first_requests.first().unwrap()["id"], "req_page_000");
     assert_eq!(first_requests.last().unwrap()["id"], "req_page_099");
+    assert_eq!(first_requests[0]["view"], "private");
     assert!(
         first_requests
             .iter()

@@ -9,9 +9,15 @@ async fn listing_and_unlisting_an_account_notifies_its_repositories() {
         "RepositoryChanged": { "reason": "native-runs-changed" }
     });
 
-    native_runs::add_account(&state.metadata, &state.repo_events, TEST_REPO_OWNER, None)
-        .await
-        .unwrap();
+    let added = native_runs::add_account(
+        &state.metadata,
+        &state.repo_events,
+        TEST_REPO_OWNER,
+        Some("design partner".to_string()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(added.account.note.as_deref(), Some("design partner"));
     assert_eq!(
         serde_json::to_value(events.try_recv().unwrap().kind).unwrap(),
         availability_changed
