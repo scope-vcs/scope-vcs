@@ -70,6 +70,7 @@ pub(super) enum TestDatabaseCleanup {
     Database {
         admin_url: String,
         database_name: String,
+        outstanding: Arc<tokio::sync::SemaphorePermit<'static>>,
     },
 }
 
@@ -91,9 +92,13 @@ impl Drop for TestSchemaLease {
                 TestDatabaseCleanup::Database {
                     admin_url,
                     database_name,
+                    outstanding,
                 } => {
-                    database_templates::drop_database(&admin_url, &database_name).await;
-                    drop(database);
+                    let (_, ()) = tokio::join!(
+                        database.close_by_ref(),
+                        database_templates::drop_database(&admin_url, &database_name),
+                    );
+                    drop(outstanding);
                 }
                 #[cfg(test)]
                 TestDatabaseCleanup::Schema {

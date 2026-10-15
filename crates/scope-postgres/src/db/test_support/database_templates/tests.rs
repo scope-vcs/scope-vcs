@@ -74,6 +74,67 @@ fn template_databases_isolate_targets_and_preserve_live_reopens() {
 }
 
 #[test]
+fn dropped_stores_release_their_connections_while_database_drops_are_queued() {
+    let target = TestDatabaseTarget::required().unwrap();
+    let store = connect_postgres_test_store(&target).unwrap();
+    let database = Arc::clone(&store.db);
+    let database_name = run_test_future(async move {
+        let pool = database.get_postgres_connection_pool();
+        let mut connections = Vec::new();
+        for _ in 0..3 {
+            connections.push(pool.acquire().await.unwrap());
+        }
+        drop(connections);
+        database
+            .query_one_raw(Statement::from_string(
+                database.get_database_backend(),
+                "SELECT current_database() AS name".to_owned(),
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<String>("", "name")
+            .unwrap()
+    });
+    let queued_drops =
+        run_test_future(async { DATABASE_DROPS.acquire_many(DATABASE_DROP_CONCURRENCY).await })
+            .unwrap();
+
+    drop(store);
+    let admin_url = target.database_url.clone();
+    let name = database_name.clone();
+    let remaining = run_test_future(async move {
+        let admin = Database::connect(&admin_url).await.unwrap();
+        let deadline = tokio::time::Instant::now() + BACKEND_STARTUP_ALLOWANCE;
+        let remaining = loop {
+            let remaining = admin
+                .query_one_raw(Statement::from_sql_and_values(
+                    admin.get_database_backend(),
+                    "SELECT count(*)::bigint AS count FROM pg_stat_activity WHERE datname = $1",
+                    [name.clone().into()],
+                ))
+                .await
+                .unwrap()
+                .unwrap()
+                .try_get::<i64>("", "count")
+                .unwrap();
+            if remaining == 0 || tokio::time::Instant::now() >= deadline {
+                break remaining;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        };
+        admin.close().await.unwrap();
+        remaining
+    });
+    drop(queued_drops);
+
+    assert_eq!(
+        remaining, 0,
+        "{database_name} kept connections while its drop waited behind other database drops"
+    );
+}
+
+#[test]
 fn process_exit_removes_only_its_registered_databases() {
     if let Some(mode) = std::env::var_os(EXIT_CLEANUP_CHILD) {
         let target = TestDatabaseTarget::required().unwrap();
