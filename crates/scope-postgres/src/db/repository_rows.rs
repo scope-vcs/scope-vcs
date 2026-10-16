@@ -3,7 +3,6 @@ use super::{
         insert_repository_collaboration, load_repository_collaboration,
         save_repository_collaboration_delta,
     },
-    dependency_analysis::enqueue_dependency_analysis_for_repository,
     entities,
     git_segments::{load_git_pack_spans, publish_git_segment, retire_git_segment},
     history_rows::{
@@ -165,8 +164,7 @@ where
         repo.record.content_version,
         now_unix,
     )
-    .await?;
-    enqueue_dependency_analysis_for_repository(conn, repo, now_unix).await
+    .await
 }
 
 async fn insert_repository_fact_rows<C>(

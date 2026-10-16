@@ -242,7 +242,6 @@ fn event_for_access(
     if matches!(
         &event.kind,
         RepoChangeKind::RunChanged { .. }
-            | RepoChangeKind::DependenciesChanged
             | RepoChangeKind::GitHubWorkflowRunsChanged
             | RepoChangeKind::GitHubWorkflowRunChanged { .. }
     ) {

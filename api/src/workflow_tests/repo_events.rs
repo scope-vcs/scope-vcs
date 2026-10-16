@@ -448,7 +448,7 @@ async fn public_repo_stream_drops_private_request_identifiers() {
 }
 
 #[tokio::test]
-async fn run_and_dependency_changes_reach_members_but_not_public_repo_streams() {
+async fn run_and_github_changes_reach_members_but_not_public_repo_streams() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);
     let public = events(state.clone(), None).await;
@@ -467,10 +467,6 @@ async fn run_and_dependency_changes_reach_members_but_not_public_repo_streams() 
                 change: RunChangeKind::Created,
             },
             r#""run_id":"run_private""#,
-        ),
-        (
-            scope_api_contract::RepoChangeKind::DependenciesChanged,
-            "DependenciesChanged",
         ),
         (
             scope_api_contract::RepoChangeKind::GitHubWorkflowRunsChanged,

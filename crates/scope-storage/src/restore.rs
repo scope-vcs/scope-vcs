@@ -15,7 +15,7 @@ use std::{
     time::Instant,
 };
 use tokio::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
 };
 
@@ -237,32 +237,6 @@ impl GitSegmentStore {
         })
     }
 
-    pub async fn restore_to_prefer_local<W>(
-        &self,
-        repository_id: &str,
-        segment: &GitSegmentRef,
-        output: W,
-    ) -> Result<GitSegmentRestoreTimings, GitStorageError>
-    where
-        W: AsyncWrite + Unpin + Send,
-    {
-        validate_restore_identity(repository_id, segment)?;
-        let started = Instant::now();
-        let local_path = self.local_pack_path(repository_id, &segment.segment_id);
-        match File::open(local_path).await {
-            Ok(file) => {
-                restore_plaintext_local(file, output, segment, self.config.chunk_bytes, started)
-                    .await
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let mut timings = self.restore_to(repository_id, segment, output).await?;
-                timings.total = started.elapsed();
-                Ok(timings)
-            }
-            Err(error) => Err(GitStorageError::Local(error)),
-        }
-    }
-
     async fn hydrate_verified_pack(
         &self,
         incarnation: &RepositoryIncarnation,
@@ -367,41 +341,6 @@ fn validate_restore_identity(
         ));
     }
     Ok(())
-}
-
-async fn restore_plaintext_local<W>(
-    mut source: File,
-    mut output: W,
-    segment: &GitSegmentRef,
-    chunk_bytes: usize,
-    started: Instant,
-) -> Result<GitSegmentRestoreTimings, GitStorageError>
-where
-    W: AsyncWrite + Unpin + Send,
-{
-    let mut digest = Sha256::new();
-    let mut plaintext_bytes = 0_u64;
-    let mut buffer = vec![0_u8; chunk_bytes];
-    loop {
-        let read = source
-            .read(&mut buffer)
-            .await
-            .map_err(GitStorageError::Local)?;
-        if read == 0 {
-            break;
-        }
-        output
-            .write_all(&buffer[..read])
-            .await
-            .map_err(GitStorageError::Output)?;
-        digest.update(&buffer[..read]);
-        plaintext_bytes = plaintext_bytes
-            .checked_add(read as u64)
-            .ok_or_else(|| GitStorageError::InvalidEnvelope("plaintext size overflow".into()))?;
-    }
-    output.flush().await.map_err(GitStorageError::Output)?;
-    verify_plaintext(segment, plaintext_bytes, digest)?;
-    Ok(local_timings(started, plaintext_bytes))
 }
 
 fn local_timings(started: Instant, plaintext_bytes: u64) -> GitSegmentRestoreTimings {

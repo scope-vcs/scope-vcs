@@ -1,5 +1,4 @@
 use super::{
-    dependency_analysis::enqueue_dependency_analysis_target,
     entities,
     git_compaction::schedule_git_compaction,
     git_segments::{load_git_pack_spans, publish_git_segment},
@@ -96,7 +95,6 @@ async fn accept_and_persist_content_update(
         workflow_catalog,
     } = snapshots;
     let repo_id = repo_row.id.clone();
-    let repo_incarnation_id = repo_row.incarnation_id.clone();
     let changed_paths = update
         .changes
         .iter()
@@ -194,16 +192,6 @@ async fn accept_and_persist_content_update(
             .changes
             .iter()
             .map(|change| (&change.path, change.new_content.as_ref())),
-    )
-    .await?;
-    enqueue_dependency_analysis_target(
-        tx,
-        &scope_domain::repository::RepositoryIncarnation::new(&repo_id, repo_incarnation_id)
-            .map_err(PostgresError::internal)?,
-        content_version,
-        &git_head.head_oid,
-        scope_domain::dependency_analysis::DEPENDENCY_ANALYZER_VERSION,
-        now_unix,
     )
     .await?;
     apply_repository_landing_file_mutation(tx, &repo_id, landing_file_mutation).await?;

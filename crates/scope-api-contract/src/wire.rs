@@ -473,7 +473,6 @@ pub enum RunChangeKind {
 pub enum RepoChangeKind {
     Connected,
     Lagged,
-    DependenciesChanged,
     /// GitHub reported a workflow run of the connected repository.
     GitHubWorkflowRunsChanged,
     /// GitHub reported a job of this workflow run.

@@ -9,7 +9,7 @@ import { classifyChanges } from './plan-production-deployment.mjs';
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const manifest = JSON.parse(read('.github/deployment-services.json'));
-const gates = ['backend', 'cli', 'cli-bundle', 'web', 'contract', 'policy', 'integration', 'ops', 'dependency-analyzer'];
+const gates = ['backend', 'cli', 'cli-bundle', 'web', 'contract', 'policy', 'integration', 'ops'];
 
 function commands(gate, ...args) {
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-gates-'));
@@ -66,16 +66,11 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   const bundleCommands = commands('cli-bundle');
   assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope'));
   assert.ok(bundleCommands.includes('cargo build -p scope-cli-downloads --release --locked'));
-  assert.ok(bundleCommands.includes('npm ci --prefix dependency-analyzer --ignore-scripts'));
   assert.ok(bundleCommands.includes('bash cli/distribution/package-bundle.sh'));
-  assert.ok(bundleCommands.includes('bash cli/distribution/verify-bundled-analyzer.sh'));
   assert.ok(bundleCommands.includes('node --test cli/distribution/install-smoke.test.mjs'));
   assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
   assert.deepEqual(commands('integration', 'web'), ['pnpm test:smoke']);
   assert.deepEqual(commands('integration', 'journey'), ['cargo build --manifest-path cli/Cargo.toml --locked --bin scope', 'pnpm test:journey']);
-  assert.deepEqual(commands('dependency-analyzer'), [
-    'npm ci --ignore-scripts', 'npm test',
-  ]);
 });
 
 test('local and GitHub callers use the shared inventory', () => {
@@ -203,7 +198,7 @@ test('the CLI checks avoid release builds and publication downloads the service 
 test('bundle packaging rejects missing and stale release identities after all builds', () => {
   const workflow = read('.github/workflows/scope-cli-build.yml');
   const identityStep = workflow.split('      - name: Verify release identity\n')[1]
-    .split('      - name: Package CLI and managed analyzer runtime\n')[0];
+    .split('      - name: Package CLI\n')[0];
   const script = identityStep.split('        run: |\n')[1].replace(/^          /gm, '');
   assert.ok(
     workflow.indexOf('      - name: Build native installer service\n')
@@ -212,7 +207,7 @@ test('bundle packaging rejects missing and stale release identities after all bu
   );
   assert.ok(
     workflow.indexOf('      - name: Verify release identity\n')
-      < workflow.indexOf('      - name: Package CLI and managed analyzer runtime\n'),
+      < workflow.indexOf('      - name: Package CLI\n'),
     'identity must be checked before the binary enters the bundle',
   );
   const sha = '1234567890abcdef1234567890abcdef12345678';

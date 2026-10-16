@@ -55,14 +55,14 @@ under them, so polling does not consume PostHog's ingestion quota.
 
 ## Jobs link to the request that queued them
 
-Outbox, Git compaction, dependency analysis, source blob cleanup, and media
-cleanup and processing jobs store the `traceparent` of the sampled span that
-queued them. Each claimed job's `job.<kind>` consumer span links to that
-context instead of joining its trace, so a retried or long-running job does not
-stretch the request's trace. A source blob cleanup batch links to every request
-behind its blobs. Requeueing a job from an untraced poll keeps the stored
-context; a traced requeue replaces it. Jobs queued while export is off, or by
-an idle poll, store no context and their spans carry no link.
+Outbox, Git compaction, source blob cleanup, and media cleanup and processing
+jobs store the `traceparent` of the sampled span that queued them. Each claimed
+job's `job.<kind>` consumer span links to that context instead of joining its
+trace, so a retried or long-running job does not stretch the request's trace.
+A source blob cleanup batch links to every request behind its blobs.
+Requeueing a job from an untraced poll keeps the stored context; a traced
+requeue replaces it. Jobs queued while export is off, or by an idle poll, store
+no context and their spans carry no link.
 
 PostHog does not store span links, so the job span also exports the queuing
 trace IDs as `scope.job.queued_trace_ids`, comma-separated. Filter job spans by

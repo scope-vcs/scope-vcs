@@ -6,14 +6,9 @@ import { readFileSync } from 'node:fs';
 const read = (path) => readFileSync(path, 'utf8');
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const nodeVersion = JSON.parse(read('cli/distribution/targets.json')).node_version;
-assert.match(nodeVersion, /^\d+\.\d+\.\d+$/);
-
-const worker = read('deploy/railway/worker.Dockerfile');
-const web = read('deploy/railway/web.Dockerfile');
-assert.match(worker, new RegExp(`FROM node:${escape(nodeVersion)}-bookworm-slim@sha256:[0-9a-f]{64}`));
-assert.match(worker, new RegExp(`ENV NODE_VERSION=${escape(nodeVersion)}\\b`));
-assert.match(web, new RegExp(`FROM node:${escape(nodeVersion)}-bookworm-slim@sha256:[0-9a-f]{64}`));
+const nodeVersion = read('deploy/railway/web.Dockerfile')
+  .match(/FROM node:(\d+\.\d+\.\d+)-bookworm-slim@sha256:[0-9a-f]{64}/)?.[1];
+assert.ok(nodeVersion, 'web image must pin Node and its digest');
 
 const maintenance = read('deploy/railway/maintenance.Dockerfile');
 const postgres = maintenance.match(/FROM postgres:(\d+\.\d+)@(sha256:[0-9a-f]{64})/);
@@ -31,4 +26,4 @@ const crossVersion = crossWorkflow.match(/cargo install cross --version (\d+\.\d
 assert.ok(crossVersion, 'cross release must be exact');
 assert.match(read('Cross.toml'), new RegExp(`image = "ghcr\\.io/cross-rs/aarch64-unknown-linux-gnu:${escape(crossVersion)}@sha256:[0-9a-f]{64}"`));
 
-console.log(`Runtime images match Node ${nodeVersion}, PostgreSQL ${postgres[1]}, and cross ${crossVersion}.`);
+console.log(`Web pins Node ${nodeVersion}; runtime images match PostgreSQL ${postgres[1]} and cross ${crossVersion}.`);

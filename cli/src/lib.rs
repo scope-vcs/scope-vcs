@@ -12,7 +12,6 @@ pub mod git_version;
 pub mod init;
 pub mod inspection;
 pub mod licenses;
-pub mod local_dependency_analysis;
 pub mod login;
 pub mod progress;
 pub mod pull;

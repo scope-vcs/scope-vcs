@@ -6,13 +6,12 @@ pub(crate) enum WorkerLoop {
     Control,
     Compaction,
     Cleanup,
-    Dependencies,
 }
 
 const SCHEMA_GATE: usize = 0;
 
 #[derive(Clone)]
-pub(crate) struct WorkerHealth(ReadinessTracker<1, 4>);
+pub(crate) struct WorkerHealth(ReadinessTracker<1, 3>);
 
 impl WorkerHealth {
     pub(crate) fn new(poll_interval: Duration) -> Self {
@@ -68,8 +67,6 @@ mod tests {
         assert_eq!(health.readyz_at(100), STALE);
 
         health.mark_poll_succeeded(WorkerLoop::Cleanup, 100);
-        assert_eq!(health.readyz_at(100), STALE);
-        health.mark_poll_succeeded(WorkerLoop::Dependencies, 100);
         assert_eq!(health.readyz_at(115), READY);
         assert_eq!(health.readyz_at(116), STALE);
 

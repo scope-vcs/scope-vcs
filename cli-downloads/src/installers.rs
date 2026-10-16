@@ -122,10 +122,7 @@ fi
 tmp_archive="$(mktemp)"
 checksum_file="$(mktemp)"
 stage_dir="$(mktemp -d)"
-runtime_backup="$install_dir/.scope-runtime.backup.$$"
 binary_backup="$install_dir/.scope.backup.$$"
-runtime_backed_up=0
-runtime_installed=0
 binary_backed_up=0
 binary_installed=0
 committed=0
@@ -138,8 +135,6 @@ cleanup() {{
   if [ "$committed" = 0 ]; then
     [ "$binary_installed" = 0 ] || as_installer rm -f "$install_dir/scope"
     [ "$binary_backed_up" = 0 ] || as_installer mv "$binary_backup" "$install_dir/scope"
-    [ "$runtime_installed" = 0 ] || as_installer rm -rf "$install_dir/scope-runtime"
-    [ "$runtime_backed_up" = 0 ] || as_installer mv "$runtime_backup" "$install_dir/scope-runtime"
   fi
   rm -rf "$tmp_archive" "$checksum_file" "$stage_dir"
 }}
@@ -163,18 +158,9 @@ fi
 
 tar -xzf "$tmp_archive" -C "$stage_dir"
 test -f "$stage_dir/scope"
-test -f "$stage_dir/scope-runtime/node"
-test -f "$stage_dir/scope-runtime/dependency-analyzer/analyze.mjs"
-test -d "$stage_dir/scope-runtime/dependency-analyzer/node_modules"
-chmod 755 "$stage_dir/scope" "$stage_dir/scope-runtime/node"
+chmod 755 "$stage_dir/scope"
 
-as_installer rm -rf "$runtime_backup" "$binary_backup"
-if as_installer test -e "$install_dir/scope-runtime"; then
-  as_installer mv "$install_dir/scope-runtime" "$runtime_backup"
-  runtime_backed_up=1
-fi
-as_installer mv "$stage_dir/scope-runtime" "$install_dir/scope-runtime"
-runtime_installed=1
+as_installer rm -f "$binary_backup"
 if as_installer test -e "$install_dir/scope"; then
   as_installer mv "$install_dir/scope" "$binary_backup"
   binary_backed_up=1
@@ -182,7 +168,7 @@ fi
 as_installer mv "$stage_dir/scope" "$install_dir/scope"
 binary_installed=1
 committed=1
-as_installer rm -rf "$runtime_backup" "$binary_backup"
+as_installer rm -f "$binary_backup"
 echo "scope installed to $install_dir/scope"
 "#,
     )
@@ -244,12 +230,8 @@ $checksumFile = New-TemporaryFile
 $tmpPath = $tmpFile.FullName
 $checksumPath = $checksumFile.FullName
 $stagePath = Join-Path $installDir (".scope-stage-" + [guid]::NewGuid().ToString("N"))
-$runtimeDestination = Join-Path $installDir "scope-runtime"
-$runtimeBackup = Join-Path $installDir (".scope-runtime.backup-" + [guid]::NewGuid().ToString("N"))
 $destination = Join-Path $installDir "scope.exe"
 $binaryBackup = Join-Path $installDir (".scope.backup-" + [guid]::NewGuid().ToString("N"))
-$runtimeBackedUp = $false
-$runtimeInstalled = $false
 $binaryBackedUp = $false
 $binaryInstalled = $false
 $committed = $false
@@ -268,22 +250,8 @@ try {{
   & tar.exe -xzf $tmpPath -C $stagePath
   if ($LASTEXITCODE -ne 0) {{ throw "scope bundle extraction failed for $artifact." }}
   $stagedBinary = Join-Path $stagePath "scope.exe"
-  $stagedRuntime = Join-Path $stagePath "scope-runtime"
-  foreach ($required in @(
-    $stagedBinary,
-    (Join-Path $stagedRuntime "node.exe"),
-    (Join-Path $stagedRuntime "dependency-analyzer\analyze.mjs"),
-    (Join-Path $stagedRuntime "dependency-analyzer\node_modules")
-  )) {{
-    if (-not (Test-Path -LiteralPath $required)) {{ throw "scope bundle is missing $required." }}
-  }}
+  if (-not (Test-Path -LiteralPath $stagedBinary)) {{ throw "scope bundle is missing $stagedBinary." }}
 
-  if (Test-Path -LiteralPath $runtimeDestination) {{
-    Move-Item -LiteralPath $runtimeDestination -Destination $runtimeBackup
-    $runtimeBackedUp = $true
-  }}
-  Move-Item -LiteralPath $stagedRuntime -Destination $runtimeDestination
-  $runtimeInstalled = $true
   if (Test-Path -LiteralPath $destination) {{
     Move-Item -LiteralPath $destination -Destination $binaryBackup
     $binaryBackedUp = $true
@@ -291,7 +259,7 @@ try {{
   Move-Item -LiteralPath $stagedBinary -Destination $destination
   $binaryInstalled = $true
   $committed = $true
-  Remove-Item -LiteralPath $runtimeBackup, $binaryBackup -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $binaryBackup -Force -ErrorAction SilentlyContinue
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
   $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
   if (
@@ -321,8 +289,6 @@ try {{
   if (-not $committed) {{
     if ($binaryInstalled) {{ Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue }}
     if ($binaryBackedUp) {{ Move-Item -LiteralPath $binaryBackup -Destination $destination -Force }}
-    if ($runtimeInstalled) {{ Remove-Item -LiteralPath $runtimeDestination -Recurse -Force -ErrorAction SilentlyContinue }}
-    if ($runtimeBackedUp) {{ Move-Item -LiteralPath $runtimeBackup -Destination $runtimeDestination -Force }}
   }}
   Remove-Item -LiteralPath $tmpPath -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $checksumPath -Force -ErrorAction SilentlyContinue

@@ -132,49 +132,6 @@ async fn blocking_reader_uses_the_reserved_identity() {
 }
 
 #[tokio::test]
-async fn preferred_restore_reads_and_verifies_the_stable_local_pack() {
-    let fixture = Fixture::new(4, 13, 1);
-    let input = b"warm local pack";
-    let staged = fixture
-        .store
-        .ingest(REPOSITORY_ID, &input[..], u64::MAX)
-        .await
-        .unwrap();
-    fixture.backend.delete(&staged.object_key).await.unwrap();
-
-    let (restored, timings) = restore_preferred_bytes(&fixture.store, &staged.segment)
-        .await
-        .unwrap();
-
-    assert_eq!(restored, input);
-    assert_eq!(timings.source, GitSegmentRestoreSource::Local);
-    assert_eq!(timings.plaintext_bytes, input.len() as u64);
-    assert_eq!(timings.verified_frames, 0);
-}
-
-#[tokio::test]
-async fn preferred_restore_uses_remote_only_when_local_pack_is_missing() {
-    let fixture = Fixture::new(4, 13, 1);
-    let input = b"cold remote pack";
-    let staged = fixture
-        .store
-        .ingest(REPOSITORY_ID, &input[..], u64::MAX)
-        .await
-        .unwrap();
-    tokio::fs::remove_file(staged.local_pack_path())
-        .await
-        .unwrap();
-
-    let (restored, timings) = restore_preferred_bytes(&fixture.store, &staged.segment)
-        .await
-        .unwrap();
-
-    assert_eq!(restored, input);
-    assert_eq!(timings.source, GitSegmentRestoreSource::Remote);
-    assert!(timings.verified_frames > 0);
-}
-
-#[tokio::test]
 async fn an_abandoned_verified_pack_miss_does_not_cancel_other_callers() {
     let fixture = Fixture::new(4, 13, 1);
     let input = b"one retained immutable pack";
@@ -229,56 +186,6 @@ async fn an_abandoned_verified_pack_miss_does_not_cancel_other_callers() {
             .is_err()
     );
     assert_eq!(fixture.backend.reads(), 2);
-}
-
-#[tokio::test]
-async fn preferred_restore_does_not_hide_local_corruption_with_remote_fallback() {
-    let fixture = Fixture::new(4, 13, 1);
-    let input = b"valid local pack";
-    let staged = fixture
-        .store
-        .ingest(REPOSITORY_ID, &input[..], u64::MAX)
-        .await
-        .unwrap();
-    tokio::fs::write(staged.local_pack_path(), b"broken local pac")
-        .await
-        .unwrap();
-
-    let error = fixture
-        .store
-        .restore_to_prefer_local(REPOSITORY_ID, &staged.segment, tokio::io::sink())
-        .await
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        GitStorageError::ChecksumMismatch { .. } | GitStorageError::SizeMismatch { .. }
-    ));
-    assert!(fixture.backend.object(&staged.object_key).is_some());
-}
-
-#[tokio::test]
-async fn preferred_restore_does_not_fall_back_on_local_io_errors() {
-    let fixture = Fixture::new(4, 13, 1);
-    let staged = fixture
-        .store
-        .ingest(REPOSITORY_ID, &b"valid remote copy"[..], u64::MAX)
-        .await
-        .unwrap();
-    tokio::fs::remove_file(staged.local_pack_path())
-        .await
-        .unwrap();
-    tokio::fs::create_dir(staged.local_pack_path())
-        .await
-        .unwrap();
-
-    let error = fixture
-        .store
-        .restore_to_prefer_local(REPOSITORY_ID, &staged.segment, tokio::io::sink())
-        .await
-        .unwrap_err();
-
-    assert!(matches!(error, GitStorageError::Local(_)));
 }
 
 #[tokio::test]
@@ -783,19 +690,6 @@ async fn restore_bytes(
 ) -> Result<(Vec<u8>, GitSegmentRestoreTimings), GitStorageError> {
     let (writer, mut reader) = tokio::io::duplex(segment.plaintext_bytes as usize + 1);
     let timings = store.restore_to(REPOSITORY_ID, segment, writer).await?;
-    let mut bytes = Vec::new();
-    reader.read_to_end(&mut bytes).await.unwrap();
-    Ok((bytes, timings))
-}
-
-async fn restore_preferred_bytes(
-    store: &GitSegmentStore,
-    segment: &GitSegmentRef,
-) -> Result<(Vec<u8>, GitSegmentRestoreTimings), GitStorageError> {
-    let (writer, mut reader) = tokio::io::duplex(segment.plaintext_bytes as usize + 1);
-    let timings = store
-        .restore_to_prefer_local(REPOSITORY_ID, segment, writer)
-        .await?;
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes).await.unwrap();
     Ok((bytes, timings))

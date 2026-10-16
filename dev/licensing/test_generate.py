@@ -36,22 +36,6 @@ class LicensingChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Archive checksum mismatch"):
             generate.archive(dict(name="package", version="1", url="file:vendor/package.tgz", integrity=integrity))
 
-    def test_npm_lock_packages_preserve_nested_names_and_integrity(self):
-        self.write("dependency-analyzer/package-lock.json", json.dumps({"packages": {
-            "": {"name": "first-party"},
-            "node_modules/@scope/one": {"version": "1.0.0", "resolved": "https://example.invalid/one.tgz", "integrity": "sha512-one"},
-            "node_modules/parent/node_modules/two": {"version": "2.0.0", "resolved": "https://example.invalid/two.tgz", "integrity": "sha512-two"},
-        }}))
-
-        self.assertEqual(generate.npm_packages("dependency-analyzer/package-lock.json", "analyzer"), [
-            dict(ecosystem="analyzer", name="@scope/one", version="1.0.0",
-                url="https://example.invalid/one.tgz", integrity="sha512-one",
-                lockfiles=["dependency-analyzer/package-lock.json"]),
-            dict(ecosystem="analyzer", name="two", version="2.0.0",
-                url="https://example.invalid/two.tgz", integrity="sha512-two",
-                lockfiles=["dependency-analyzer/package-lock.json"]),
-        ])
-
     def test_collection_excludes_source_maps_and_preserves_real_notices(self):
         contents = {
             "package.json": json.dumps(dict(name="icons", license="MIT")),
@@ -109,7 +93,6 @@ class LicensingChecks(unittest.TestCase):
         self.write("Cargo.lock", locked)
         self.write("cli/Cargo.lock", "package = []\n")
         self.write("web/pnpm-lock.yaml", "packages: {}\n")
-        self.write("dependency-analyzer/package-lock.json", '{"packages": {}}')
         with patch.object(generate, "CACHE", cache):
             entry = generate.collect(generate.packages()[0])
             self.assertEqual(entry["source"], source)

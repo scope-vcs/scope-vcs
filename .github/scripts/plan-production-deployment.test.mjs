@@ -85,11 +85,6 @@ test("changes select the required deployment lanes", () => {
       { "run-worker": true, "git-router": true, api: true, "cli-downloads": true },
     ],
     [
-      "dependency analyzer changes rebuild the worker and CLI bundle",
-      ["dependency-analyzer/analyze.mjs"],
-      { "run-worker": true, "cli-downloads": true, "cli-distribution": true },
-    ],
-    [
       "worker runtime image selects only the worker",
       ["deploy/railway/worker.Dockerfile"],
       { "run-worker": true },

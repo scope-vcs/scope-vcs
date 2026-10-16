@@ -56,7 +56,6 @@ mod cloud_runs;
 mod custom_views;
 mod custom_views_main_push;
 mod custom_views_requests;
-mod dependencies;
 mod device_login;
 mod fake_github;
 mod git_binary;

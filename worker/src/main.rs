@@ -1,7 +1,6 @@
 mod cleanup;
 mod compaction;
 mod control;
-mod dependencies;
 mod execution;
 mod git_repo;
 mod health;
@@ -65,7 +64,6 @@ async fn run() -> anyhow::Result<()> {
 
 async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::Result<()> {
     require_git_runtime()?;
-    dependencies::require_analyzer_runtime()?;
     let Some(metadata) = connect_worker_or_wait(&settings, &health).await else {
         return Ok(());
     };
@@ -97,15 +95,8 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
         ),
         compaction::run(
             metadata.clone(),
-            git_segment_store.clone(),
-            settings.clone(),
-            health.clone(),
-        ),
-        dependencies::run(
-            metadata.clone(),
-            object_store.clone(),
             git_segment_store,
-            settings,
+            settings.clone(),
             health.clone(),
         ),
         cleanup::run(metadata, object_store, health),

@@ -11,7 +11,6 @@ import type { RepoChangeEvent } from '../../api/types.generated'
 import { requestActivityIdentity, requestActivityResource } from '../requests/request-activity-resource'
 import { requestAttachmentResource, requestAttachmentResourceIdentity } from '../requests/request-attachment-resource'
 import { repositoryActivityResource } from './repository-activity-resource'
-import { repositoryDependencyResource } from './repository-dependency-resource'
 import { repoSettingsResource } from './repo-settings-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
@@ -60,7 +59,6 @@ export function invalidateRepoResources(
       repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
       repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
       repositoryActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-      repositoryDependencyResource.invalidate(scope)
     }
     runWorkflowsResource.invalidate(scope)
     requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
@@ -72,8 +70,6 @@ export function invalidateRepoResources(
   } else if (typeof event.kind === 'object' && 'RequestStateChanged' in event.kind) {
     refreshRequestState(scope, event.kind.RequestStateChanged.request_id)
     if (!summaryPending) invalidateRequestQueues(scope)
-  } else if (event.kind === 'DependenciesChanged') {
-    repositoryDependencyResource.invalidate(scope)
   } else if (event.kind === 'GitHubWorkflowRunsChanged') {
     refreshRequestState(scope)
     if (!summaryPending) invalidateRequestQueues(scope)

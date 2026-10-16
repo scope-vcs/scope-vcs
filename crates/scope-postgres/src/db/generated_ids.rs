@@ -3,7 +3,6 @@ use crate::error::PostgresError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GeneratedIdKind {
     CleanupGeneration,
-    DependencyAnalysisLease,
     OutboxJob,
     RepositoryIncarnation,
     RequestAutoMergeClaim,
@@ -14,7 +13,6 @@ impl GeneratedIdKind {
     fn prefix(self) -> &'static str {
         match self {
             Self::CleanupGeneration => "",
-            Self::DependencyAnalysisLease => "dependency_",
             Self::OutboxJob => "outbox_",
             Self::RepositoryIncarnation => "repoi_",
             Self::RequestAutoMergeClaim => "auto_merge_claim_",

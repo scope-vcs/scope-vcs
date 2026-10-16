@@ -5,7 +5,6 @@ import type { RepoChangeEvent } from '../../api/types.generated'
 import { repositoryActivityIdentity, repositoryActivityResource } from './repository-activity-resource'
 import { requestActivityIdentity, requestActivityResource } from '../requests/request-activity-resource'
 import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
-import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
@@ -25,12 +24,10 @@ function seed() {
   for (const scope of ['viewer-a', 'viewer-b']) for (const view of ['private', 'public']) requestQueueResource.write(requestQueueIdentity(scope, view), { query: 'needle', requestedQuery: 'needle', pages: { active: page, unclaimed: page, set_aside: page, done: page } })
   repositoryActivityResource.clear()
   requestActivityResource.clear()
-  repositoryDependencyResource.clear()
   repositoryActivityResource.write(repositoryActivityIdentity('viewer-a', 'public'), { view: 'public', entry: null, head_oid: 'head' })
   repositoryActivityResource.write(repositoryActivityIdentity('viewer-a', 'agent'), { view: 'agent', entry: null, head_oid: 'agent-head' })
   repositoryActivityResource.write(repositoryActivityIdentity('viewer-b', 'public'), { view: 'public', entry: null, head_oid: 'other' })
   for (const id of ['one', 'two']) requestActivityResource.write(requestActivityIdentity('viewer-a', id), { events: [], through_position: 1 })
-  repositoryDependencyResource.write('viewer-a', { error: null, report: null, status: 'Pending' })
   historyFeedResource.clear()
   historyFeedResource.write('viewer-a\0public\0all', { entries: [], next_cursor: null })
 }
@@ -48,7 +45,6 @@ test('repository updates invalidate retained activity even when its page is unmo
   assert.equal(repositoryActivityResource.peek(repositoryActivityIdentity('viewer-a', 'agent'))?.head_oid, 'agent-head')
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-b', 'public')).stale, false)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
-  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
 })
 
 test('account deletions refresh history, whose authors carry no content version', () => {
@@ -79,15 +75,6 @@ test('request changes target one request and leave latest repository activity re
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'two')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
-  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
-})
-
-test('dependency completion invalidates only the retained dependency report', () => {
-  seed()
-  invalidateRepoResources('viewer-a', event('DependenciesChanged'))
-  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
-  assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
-  assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, false)
 })
 
 test('run changes refresh request-owned state without invalidating repository resources', () => {
@@ -105,7 +92,6 @@ test('run changes refresh request-owned state without invalidating repository re
     true,
   )
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
-  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
 })
 
 test('GitHub workflow runs refresh the retained GitHub run lists and request queues', () => {
@@ -201,7 +187,6 @@ test('connection and lag recovery invalidate retained resources only in their sc
     invalidateRepoResources('viewer-a', event(kind))
     assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
     assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
-    assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
     assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
   }
 })
@@ -211,14 +196,12 @@ test('versioned resyncs leave content-versioned resources to the reloaded reposi
     seed()
     invalidateRepoResources('viewer-a', kind && event(kind), { versioned: true })
     assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
-    assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
     assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
     assert.equal(historyFeedResource.getSnapshot('viewer-a\0public\0all').stale, true)
   }
   seed()
   invalidateRepoResources('viewer-a', event({ RepositoryChanged: { reason: 'push' } }), { versioned: true })
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
-  assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, true)
 })
 
 test('a pending summary owns queue reconciliation while other resources refresh immediately', () => {

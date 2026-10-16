@@ -58,11 +58,6 @@ use scope_api_contract::{
     SubmitRequestRequest, UpdateRepoMetadataRequest, UserResponse, ViewDefinition, ViewId,
     ViewIncludes, ViewReaders,
 };
-use scope_api_contract::{
-    RepositoryDependencyCheckResponse, RepositoryDependencyCheckStatus,
-    RepositoryDependencyFindingResponse, RepositoryDependencyGapResponse,
-    RepositoryDependencyReportResponse,
-};
 use std::{collections::BTreeMap, fs, path::Path};
 use ts_rs::TS;
 
@@ -99,11 +94,6 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         RepositoryInviteState,
         RepoLifecycleState,
         RepoChangeEvent,
-        RepositoryDependencyCheckStatus,
-        RepositoryDependencyGapResponse,
-        RepositoryDependencyFindingResponse,
-        RepositoryDependencyReportResponse,
-        RepositoryDependencyCheckResponse,
         FirstPushTokenStatus,
         FileChangeKind,
         RepoConfig,
@@ -348,7 +338,6 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         RepositoryRunStepLogPageResponse,
     );
     let schemas = response_schemas!(
-        RepositoryDependencyCheckResponse,
         ApproveRequestChecksRequest,
         AuthorizeRequestAutoMergeRequest,
         CancelRequestAutoMergeRequest,

@@ -6,14 +6,13 @@ import {
 import { arrayOf, loadOptionalResource, stripTrailingSlash } from './http'
 import { repoRoute } from './paths'
 import type { RepoContent, RepoLiveState, RepoParams } from './types'
-import type { RepoSummaryResponse, RepositoryDependencyCheckResponse, ViewId } from './types.generated'
+import type { RepoSummaryResponse, ViewId } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
 import {
   GitHubConnectionResponseValidator,
   RepoFileContentResponseValidator,
   RepoFileResponseValidator,
   RepoSummaryResponseValidator,
-  RepositoryDependencyCheckResponseValidator,
 } from './validators.generated'
 
 export async function loadRepoContentForRequest(
@@ -65,17 +64,6 @@ export async function loadRepoFileForRequest(
     `${repoRoute(ApiRouteTemplates.repoFileContent, data)}?${new URLSearchParams({ path: data.path, view: data.view })}`,
     RepoFileContentResponseValidator,
     { auth: 'optional', signal },
-  )
-}
-
-export async function loadRepoDependenciesForRequest(
-  data: RepoParams,
-  signal?: AbortSignal,
-): Promise<RepositoryDependencyCheckResponse> {
-  return createApiClient().get(
-    repoRoute(ApiRouteTemplates.repoDependencies, data),
-    RepositoryDependencyCheckResponseValidator,
-    { auth: 'required', maxResponseBytes: 8 * 1024 * 1024, signal },
   )
 }
 

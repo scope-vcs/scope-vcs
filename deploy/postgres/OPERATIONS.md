@@ -5,7 +5,7 @@
 | Service | Database login | Access |
 | --- | --- | --- |
 | API | `scope_api` | Repository, collaboration, identity, runs, run cache metadata and media admission data. |
-| Run worker | `scope_run_worker` | Run, outbox, compaction, dependency and cleanup writes; repository facts, membership, history and request/revision/user reads. No CLI sessions, identity credentials, cache objects or media tables. |
+| Run worker | `scope_run_worker` | Run, outbox, compaction and cleanup writes; repository facts, membership, history and request/revision/user reads. No CLI sessions, identity credentials, cache objects or media tables. |
 | Media API | `scope_media_api` | Upload parts and abandoned objects, attachment row locks, media manifests and authorization reads. |
 | Media worker | `scope_media_worker` | Media processing/cleanup tables; reads repositories and requests. |
 | Private maintenance | `scope_migrator` | Database/schema/object owner. Can migrate and restore; inherits `pg_signal_backend` to drain runtime writer sessions. |

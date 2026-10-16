@@ -166,11 +166,6 @@ impl GitSegmentStore {
             .join(repository_namespace(repository_id))
     }
 
-    fn local_pack_path(&self, repository_id: &str, segment_id: &str) -> PathBuf {
-        self.local_directory(repository_id)
-            .join(format!("{segment_id}.pack"))
-    }
-
     fn verified_temp_directory(&self) -> PathBuf {
         self.verified_cache.root().join(".tmp")
     }

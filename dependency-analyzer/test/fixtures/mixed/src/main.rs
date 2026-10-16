@@ -1,2 +1,0 @@
-mod private;
-fn main() {}

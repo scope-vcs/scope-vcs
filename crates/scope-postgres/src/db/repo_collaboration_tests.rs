@@ -322,7 +322,7 @@ async fn change_version(store: &MetadataStore) -> u64 {
         .change_version as u64
 }
 
-async fn derived_work(store: &MetadataStore) -> (Vec<i64>, Option<i64>) {
+async fn derived_work(store: &MetadataStore) -> Vec<i64> {
     let mut projection = entities::outbox_job::Entity::find()
         .filter(entities::outbox_job::Column::RepoId.eq(REPO_ID))
         .filter(entities::outbox_job::Column::Kind.eq("projection_read_model_rebuild"))
@@ -333,17 +333,7 @@ async fn derived_work(store: &MetadataStore) -> (Vec<i64>, Option<i64>) {
         .map(|job| job.repo_version)
         .collect::<Vec<_>>();
     projection.sort_unstable();
-    let dependency = store
-        .db
-        .query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT repo_version FROM scope_dependency_analysis_jobs WHERE repo_id = $1",
-            [REPO_ID.into()],
-        ))
-        .await
-        .unwrap()
-        .map(|row| row.try_get::<i64>("", "repo_version").unwrap());
-    (projection, dependency)
+    projection
 }
 
 async fn email_row(store: &MetadataStore, id: &str) -> entities::repository_invite_email::Model {

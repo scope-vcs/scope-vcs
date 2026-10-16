@@ -5,7 +5,6 @@ use super::*;
 use crate::AppState;
 use crate::git::command::git_stdout_text;
 use crate::git::restore::restore_git_pack_spans;
-use scope_domain::views::ViewId;
 use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend, source_blob_bytes};
 use std::sync::Arc;
 
@@ -54,47 +53,6 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
     .await
     .unwrap();
 
-    for fixture in dependency_repositories::fixtures() {
-        let repository = catalog
-            .repository("dev", fixture.name)
-            .unwrap_or_else(|| panic!("missing seeded repository {}", fixture.name));
-        assert_eq!(
-            repository.policy.label(
-                &ScopePath::parse("/internal/example.ts").unwrap(),
-                repository.repo_config.views()
-            ),
-            ViewId::private()
-        );
-        assert_eq!(
-            repository.graph.commits[0].changes.len(),
-            fixture.files.len()
-        );
-        for file in fixture.files {
-            let path = ScopePath::parse(format!("/{}", file.path)).unwrap();
-            let change = repository.graph.commits[0]
-                .changes
-                .iter()
-                .find(|change| change.path == path)
-                .unwrap_or_else(|| panic!("missing logical manifest path {path}"));
-            assert_eq!(
-                change.label,
-                repository
-                    .policy
-                    .label(&path, repository.repo_config.views())
-            );
-            assert_eq!(
-                change.label,
-                repository.repo_config.label_for_path(&path),
-                "seeded dependency policy and persisted config must agree for {path}"
-            );
-            assert_eq!(
-                source_blob_bytes(&store, change.new_content.as_ref().unwrap(), usize::MAX)
-                    .await
-                    .unwrap(),
-                file.content.as_bytes()
-            );
-        }
-    }
     let ready_revisions = catalog
         .request_revisions
         .values()
@@ -171,10 +129,6 @@ async fn seed_catalog_git_segments_restore_raw_repositories() {
         UPDATE_DEMO_INITIAL_README,
     )
     .await;
-    for fixture in dependency_repositories::fixtures() {
-        let repository = catalog.repository("dev", fixture.name).unwrap();
-        assert_repository_manifest(&state, repository, fixture.name, fixture.files).await;
-    }
     for request in catalog.requests.values() {
         let snapshot = request
             .git_snapshot
@@ -247,36 +201,6 @@ async fn assert_repository_file(
     )
     .unwrap();
     assert_eq!(actual, expected);
-    let _ = fs::remove_dir_all(repo_root);
-}
-
-async fn assert_repository_manifest(
-    state: &AppState,
-    repo: &Repository,
-    label: &str,
-    files: &[dependency_repositories::SeedFile],
-) {
-    let repo_root = state.data_dir.join(format!("{label}.git"));
-    restore_git_pack_spans(
-        state,
-        &repo.incarnation(),
-        repo.git_head.as_ref().unwrap(),
-        &repo.git_pack_spans,
-        &repo_root,
-    )
-    .await
-    .unwrap();
-    let actual = git_stdout_text(
-        &repo_root,
-        &["ls-tree", "-r", "--name-only", DEFAULT_GIT_BRANCH],
-        "reading seeded dependency fixture manifest",
-    )
-    .unwrap();
-    let mut actual = actual.lines().collect::<Vec<_>>();
-    actual.sort_unstable();
-    let mut expected = files.iter().map(|file| file.path).collect::<Vec<_>>();
-    expected.sort_unstable();
-    assert_eq!(actual, expected, "unexpected Git manifest for {label}");
     let _ = fs::remove_dir_all(repo_root);
 }
 

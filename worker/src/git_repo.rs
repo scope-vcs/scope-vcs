@@ -2,8 +2,8 @@ use crate::{duration_ms, elapsed_ms};
 use scope_domain::repository::{RepositoryIncarnation, git_compaction::GitCompactionPlan};
 use scope_git::GitStorageLimits;
 use scope_git_process::{
-    ProcessCancellation, ProcessError, ProcessLimits, StreamingProcessError,
-    configure_process_group, run as run_process, run_with_stdin_reader, run_with_stdout,
+    ProcessError, ProcessLimits, StreamingProcessError, run as run_process, run_with_stdin_reader,
+    run_with_stdout,
 };
 use scope_storage::{
     GitSegmentReservation, GitSegmentRestoreSource, GitSegmentRestoreTimings, GitSegmentStore,
@@ -13,16 +13,12 @@ use std::{
     collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::io::AsyncReadExt;
 
 type ObjectId = [u8; 20];
-
-#[cfg(all(test, target_os = "linux"))]
-mod cancellation_tests;
 
 pub(crate) struct CompactedPack {
     pub(crate) staged: StagedGitSegment,
@@ -260,112 +256,6 @@ fn verify_object_set(
         );
     }
     Ok(())
-}
-
-pub(crate) async fn index_git_segment(
-    segment_store: &GitSegmentStore,
-    repository_id: &str,
-    segment: &scope_domain::repository::git::GitSegmentRef,
-    repo: &Path,
-    timeout: Duration,
-    cancellation: Option<&ProcessCancellation>,
-) -> anyhow::Result<GitSegmentRestoreTimings> {
-    let cancelled = || {
-        anyhow::Error::new(ProcessError::Cancelled {
-            action: "git index-pack --stdin".to_string(),
-        })
-    };
-    if cancellation.is_some_and(ProcessCancellation::is_cancelled) {
-        return Err(cancelled());
-    }
-    let mut command = tokio::process::Command::new("git");
-    command
-        .arg("--git-dir")
-        .arg(repo)
-        .args(["index-pack", "--stdin"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    configure_process_group(command.as_std_mut());
-    let mut child = command.spawn()?;
-    let process_id = child.id();
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("opening git index-pack stdin"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("opening git index-pack stdout"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("opening git index-pack stderr"))?;
-    let stdout_task = tokio::spawn(read_git_pipe(stdout, 64 * 1024));
-    let stderr_task = tokio::spawn(read_git_pipe(stderr, 64 * 1024));
-    let operation = async {
-        let restore = segment_store.restore_to_prefer_local(repository_id, segment, stdin);
-        let wait = child.wait();
-        let (restore, status) = tokio::join!(restore, wait);
-        Ok::<_, anyhow::Error>((restore?, status?))
-    };
-    let result = tokio::select! {
-        biased;
-        _ = async {
-            match cancellation {
-                Some(cancellation) => cancellation.cancelled().await,
-                None => std::future::pending::<()>().await,
-            }
-        } => Err(cancelled()),
-        result = tokio::time::timeout(timeout, operation) => match result {
-            Ok(result) => result,
-            Err(_) => Err(anyhow::Error::new(ProcessError::TimedOut {
-                action: "git index-pack --stdin".to_string(),
-                timeout_ms: timeout.as_millis(),
-                diagnostic: String::new(),
-            })),
-        },
-    };
-    if result.is_err() {
-        terminate_git_child(&mut child, process_id).await;
-    }
-    let stdout = stdout_task.await;
-    let stderr = stderr_task.await;
-    let (restore, status) = result?;
-    let _stdout = stdout??;
-    let stderr = stderr??;
-    if !status.success() {
-        anyhow::bail!(
-            "git index-pack --stdin failed: {}",
-            String::from_utf8_lossy(&stderr).trim()
-        );
-    }
-    Ok(restore)
-}
-
-async fn read_git_pipe(
-    pipe: impl tokio::io::AsyncRead + Unpin,
-    max_bytes: usize,
-) -> std::io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    pipe.take(max_bytes.saturating_add(1) as u64)
-        .read_to_end(&mut bytes)
-        .await?;
-    if bytes.len() > max_bytes {
-        return Err(std::io::Error::other(
-            "Git process diagnostic output exceeded its byte limit",
-        ));
-    }
-    Ok(bytes)
-}
-
-async fn terminate_git_child(child: &mut tokio::process::Child, process_id: Option<u32>) {
-    if let Some(process_id) = process_id {
-        scope_git_process::kill_process_group(process_id);
-    }
-    let _ = child.kill().await;
-    let _ = child.wait().await;
 }
 
 async fn ingest_compacted_pack(

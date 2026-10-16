@@ -1,8 +1,5 @@
 use super::{footer_hints, key_to_input, review_body_heights, row_line};
-use crate::review::{
-    dependencies::DependencySummary,
-    state::{ChangeListKind, DependencyPathSide, ReviewMode, ReviewRow},
-};
+use crate::review::state::{ChangeListKind, ReviewMode, ReviewRow};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use scope_domain::repo_visibility::ReviewLabel;
 use unicode_width::UnicodeWidthStr;
@@ -140,7 +137,6 @@ fn narrow_footer_keeps_required_push_actions_visible() {
     for control in [
         "↑↓←→ move",
         "Space toggle",
-        "D dependencies",
         "S save",
         "P push",
         "Q cancel",
@@ -149,40 +145,6 @@ fn narrow_footer_keeps_required_push_actions_visible() {
     ] {
         assert!(text.contains(control), "missing {control}: {hints:?}");
     }
-}
-
-#[test]
-fn dependency_summary_and_pair_fit_narrow_terminals_with_text_labels() {
-    let summary = row_line(
-        &ReviewRow::DependencySummary(DependencySummary {
-            label: "2 public files import private files".into(),
-            meta: Some("Check incomplete".into()),
-            expanded: true,
-            expandable: true,
-            warning: true,
-        }),
-        false,
-        42,
-        &crate::repo_config::default_scope_repo_config(),
-    )
-    .to_string();
-    let pair = row_line(
-        &ReviewRow::DependencyFinding {
-            source_path: "src/public/long-name.ts".into(),
-            target_path: "src/private/secret.ts".into(),
-            selected_side: DependencyPathSide::PrivateTarget,
-        },
-        true,
-        42,
-        &crate::repo_config::default_scope_repo_config(),
-    )
-    .to_string();
-
-    assert!(summary.starts_with("[v] 2 public files"), "{summary}");
-    assert!(pair.contains("public"), "{pair}");
-    assert!(pair.contains("private"), "{pair}");
-    assert_eq!(UnicodeWidthStr::width(summary.as_str()), 42);
-    assert_eq!(UnicodeWidthStr::width(pair.as_str()), 42);
 }
 
 #[test]

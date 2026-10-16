@@ -1,7 +1,6 @@
 pub mod account;
 pub mod content;
 pub mod content_ref;
-pub mod dependency_analysis;
 pub mod error;
 pub mod github_connection;
 pub mod github_run_import;

@@ -24,16 +24,6 @@ export type RepoLifecycleState = "AwaitingFirstPush" | "Ready";
 
 export type RepoChangeEvent = { repo_id: string, incarnation_id: string, version: number, kind: RepoChangeKind, };
 
-export type RepositoryDependencyCheckStatus = "Pending" | "Ready" | "Updating" | "Failed" | "Unsupported";
-
-export type RepositoryDependencyGapResponse = { path: string, reason: string, };
-
-export type RepositoryDependencyFindingResponse = { source_path: string, target_path: string, };
-
-export type RepositoryDependencyReportResponse = { commit_oid: string, analyzer_version: string, analyzed_file_count: number, unsupported_files: Array<string>, gaps: Array<RepositoryDependencyGapResponse>, findings: Array<RepositoryDependencyFindingResponse>, public_file_count: number, };
-
-export type RepositoryDependencyCheckResponse = { status: RepositoryDependencyCheckStatus, report: RepositoryDependencyReportResponse | null, error: string | null, };
-
 export type FirstPushTokenStatus = "Active" | "Expired" | "Used";
 
 export type FileChangeKind = "Added" | "Modified" | "Deleted";
@@ -708,7 +698,7 @@ export type CreateRequestDiscussionReplyRequest = { body_markdown: string, clien
 
 export type MarkRequestDiscussionReadRequest = { through_position: number, };
 
-export type RepoChangeKind = "Connected" | "Lagged" | "DependenciesChanged" | "GitHubWorkflowRunsChanged" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestStateChanged": { request_id: string, view: ViewId, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
+export type RepoChangeKind = "Connected" | "Lagged" | "GitHubWorkflowRunsChanged" | { "GitHubWorkflowRunChanged": { github_run_id: number, } } | { "RepositoryChanged": { reason: string, } } | { "RequestStateChanged": { request_id: string, view: ViewId, } } | { "RequestTimelineChanged": { request_id: string, discussion_id: string, through_position: number, view: ViewId, } } | { "RequestAttachmentChanged": { request_id: string, attachment_id: string, view: ViewId, } } | { "RunChanged": { run_id: string, change: RunChangeKind, } };
 
 export type RunChangeKind = "Created" | "StatusChanged" | "LogsAppended";
 
@@ -792,7 +782,6 @@ export const ApiRouteTemplates = {
   repoGitHubWorkflowJobLog: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}/jobs/{job_id}/log",
   repoGitHubRunImport: "/v1/repos/{owner}/{repo}/github/run-import",
   githubSetup: "/v1/github/setup",
-  repoDependencies: "/v1/repos/{owner}/{repo}/dependencies",
   repoRunWorkflows: "/v1/repos/{owner}/{repo}/run-workflows",
   repoRuns: "/v1/repos/{owner}/{repo}/runs",
   repoRunDetail: "/v1/repos/{owner}/{repo}/runs/{run_id}/detail",

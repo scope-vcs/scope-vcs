@@ -1,4 +1,3 @@
-mod dependencies;
 pub(crate) mod git_paths;
 pub(crate) mod policy;
 mod state;
@@ -29,7 +28,7 @@ pub fn run_standalone_review(repo: &GitRepo) -> anyhow::Result<()> {
     let tree = worktree_review_tree(repo)?;
     let state = ReviewState::new(tree, config, ReviewMode::Standalone);
 
-    match run_review_tui(state, None, |config| {
+    match run_review_tui(state, |config| {
         write_worktree_scope_repo_config(&repo.root, config)
     })? {
         TuiOutcome::Exit => Ok(()),
@@ -47,12 +46,10 @@ pub fn run_push_review(
     ensure_review_terminal_available("scope push review")?;
     let config = load_worktree_scope_repo_config(&repo.root)?;
     let tree = committed_review_tree(repo, reviewed_head_oid, changed_paths)?;
-    let state = ReviewState::new_push(tree, config, changed_paths, reviewed_head_oid.to_string());
-    let analysis_job =
-        crate::local_dependency_analysis::AnalysisJob::start(repo, reviewed_head_oid);
+    let state = ReviewState::new_push(tree, config, changed_paths);
     progress.finish()?;
 
-    match run_review_tui(state, Some(analysis_job), |config| {
+    match run_review_tui(state, |config| {
         write_worktree_scope_repo_config(&repo.root, config)
     })? {
         TuiOutcome::ContinuePush => load_worktree_scope_repo_config(&repo.root),

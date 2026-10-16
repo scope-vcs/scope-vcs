@@ -17,7 +17,6 @@ mod content_fences;
 mod content_push_transactions;
 #[cfg(test)]
 mod content_version_tests;
-mod dependency_analysis;
 mod entities;
 mod fast_push;
 mod generated_ids;
@@ -134,9 +133,6 @@ pub use connection::{
 #[cfg(test)]
 use connection::{connect_postgres_store, connect_writer_database};
 pub use content_fences::ContentRefFence;
-pub use dependency_analysis::{
-    DependencyAnalysisClaim, DependencyCompletion, DependencySnapshotFile,
-};
 pub use fast_push::ApplyContentOnlyPushCommand;
 use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
