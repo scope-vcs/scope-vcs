@@ -144,7 +144,7 @@ fn process_exit_removes_only_its_registered_databases() {
             drop(store);
             let admin_url = target.database_url.clone();
             let database_name = name.clone();
-            let absent = run_test_future(async move {
+            let (absent, slot_freed) = run_test_future(async move {
                 let admin = Database::connect(&admin_url).await.unwrap();
                 let deadline = tokio::time::Instant::now() + EXIT_CLEANUP_TIMEOUT;
                 let absent = loop {
@@ -160,10 +160,22 @@ fn process_exit_removes_only_its_registered_databases() {
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 };
                 admin.close().await.unwrap();
-                absent
+                let slot_freed = loop {
+                    let freed =
+                        OUTSTANDING_DATABASES.available_permits() == OUTSTANDING_DATABASE_LIMIT;
+                    if freed || tokio::time::Instant::now() >= deadline {
+                        break freed;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                };
+                (absent, slot_freed)
             });
             unregister_process_database(&target.database_url, &name);
             assert!(absent, "normal lease cleanup left owned database {name}");
+            assert!(
+                slot_freed,
+                "dropping {name} kept its outstanding database slot while a pooled connection was never returned"
+            );
             return;
         }
         if mode == "orphaned-client" {
