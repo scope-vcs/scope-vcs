@@ -56,7 +56,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
     <div
       aria-label="Latest repository change"
       data-repo-activity
-      className={cn(STRIP, 'flex-wrap gap-x-6 gap-y-0.5', !current.error && 'sm:flex-nowrap')}
+      className={cn(STRIP, 'flex-wrap gap-x-6 gap-y-0.5 sm:flex-nowrap')}
     >
       <Link
         className="min-w-0 basis-full truncate rounded text-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:flex-1 sm:basis-auto"
@@ -67,6 +67,16 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       >
         {message}
       </Link>
+      {current.error && (
+        <button
+          className="order-last basis-full rounded text-left text-warning-strong underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring sm:order-none sm:basis-auto sm:shrink-0"
+          onClick={current.retry}
+          title="Could not refresh latest change."
+          type="button"
+        >
+          Refresh failed. Retry
+        </button>
+      )}
       <div className="flex min-w-0 flex-1 items-center gap-x-3 whitespace-nowrap text-muted-foreground sm:flex-none sm:gap-x-4">
         {entry.author && <span className="min-w-0 max-w-40 truncate" title={entry.author}>{entry.author}</span>}
         {entry.occurred_at_unix !== null && <RelativeTimestamp className="shrink-0" value={entry.occurred_at_unix} />}
@@ -79,7 +89,6 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
           <HistoryMenu params={params} />
         </div>
       </div>
-      {current.error && <button className="basis-full text-left underline" onClick={current.retry} type="button">Could not refresh latest change. Retry</button>}
     </div>
   )
 }
