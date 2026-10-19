@@ -3,16 +3,48 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
-        mpsc::{Receiver, SyncSender, TrySendError, sync_channel},
+        mpsc::{Receiver, Sender, SyncSender, TrySendError, channel, sync_channel},
     },
+    time::{Duration, Instant},
 };
 use tracing_subscriber::fmt::MakeWriter;
 
 const QUEUED_LOG_LINES: usize = 16_384;
 
+enum Queued {
+    Line(Vec<u8>),
+    Flush(Sender<()>),
+}
+
 pub(super) struct QueuedLogWriter {
-    lines: SyncSender<Vec<u8>>,
+    lines: SyncSender<Queued>,
     dropped: Arc<AtomicU64>,
+}
+
+pub(super) struct LogFlush {
+    lines: SyncSender<Queued>,
+}
+
+impl LogFlush {
+    pub(super) fn flush(&self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        let (done, flushed) = channel();
+        let mut request = Queued::Flush(done);
+        loop {
+            match self.lines.try_send(request) {
+                Ok(()) => break,
+                Err(TrySendError::Disconnected(_)) => return false,
+                Err(TrySendError::Full(returned)) if Instant::now() < deadline => {
+                    request = returned;
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(TrySendError::Full(_)) => return false,
+            }
+        }
+        flushed
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .is_ok()
+    }
 }
 
 impl QueuedLogWriter {
@@ -32,14 +64,25 @@ impl QueuedLogWriter {
             .spawn(move || write_queued_lines(output(), queued, &dropped_for_output))?;
         Ok(Self { lines, dropped })
     }
+
+    pub(super) fn flusher(&self) -> LogFlush {
+        LogFlush {
+            lines: self.lines.clone(),
+        }
+    }
 }
 
-fn write_queued_lines(output: impl Write, queued: Receiver<Vec<u8>>, dropped: &AtomicU64) {
+fn write_queued_lines(output: impl Write, queued: Receiver<Queued>, dropped: &AtomicU64) {
     let mut output = io::BufWriter::new(output);
-    while let Ok(line) = queued.recv() {
-        let _ = output.write_all(&line);
-        while let Ok(line) = queued.try_recv() {
-            let _ = output.write_all(&line);
+    let mut flushes = Vec::new();
+    while let Ok(first) = queued.recv() {
+        for message in std::iter::once(first).chain(queued.try_iter()) {
+            match message {
+                Queued::Line(line) => {
+                    let _ = output.write_all(&line);
+                }
+                Queued::Flush(done) => flushes.push(done),
+            }
         }
         let skipped = dropped.swap(0, Ordering::Relaxed);
         if skipped > 0 {
@@ -49,6 +92,9 @@ fn write_queued_lines(output: impl Write, queued: Receiver<Vec<u8>>, dropped: &A
             );
         }
         let _ = output.flush();
+        for done in flushes.drain(..) {
+            let _ = done.send(());
+        }
     }
 }
 
@@ -73,7 +119,11 @@ impl Drop for QueuedLine<'_> {
         if self.line.is_empty() {
             return;
         }
-        match self.writer.lines.try_send(std::mem::take(&mut self.line)) {
+        match self
+            .writer
+            .lines
+            .try_send(Queued::Line(std::mem::take(&mut self.line)))
+        {
             Ok(()) | Err(TrySendError::Disconnected(_)) => {}
             Err(TrySendError::Full(_)) => {
                 self.writer.dropped.fetch_add(1, Ordering::Relaxed);
@@ -101,6 +151,12 @@ mod tests {
     #[derive(Clone, Default)]
     struct SharedOutput(Arc<Mutex<Vec<u8>>>);
 
+    impl SharedOutput {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
     impl Write for SharedOutput {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
             self.0.lock().unwrap().extend_from_slice(bytes);
@@ -112,19 +168,8 @@ mod tests {
         }
     }
 
-    fn wait_for(output: &SharedOutput, expected: &str) -> String {
-        for _ in 0..200 {
-            let text = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
-            if text.contains(expected) {
-                return text;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        panic!("log writer never produced {expected:?}");
-    }
-
     #[test]
-    fn queued_lines_reach_the_output_whole_and_in_order() {
+    fn a_flush_returns_after_every_earlier_line_is_written_whole_and_in_order() {
         let output = SharedOutput::default();
         let target = output.clone();
         let writer = QueuedLogWriter::start(move || target, 8).unwrap();
@@ -133,7 +178,8 @@ mod tests {
             write!(line, "line ").unwrap();
             writeln!(line, "{index}").unwrap();
         }
-        assert_eq!(wait_for(&output, "line 2\n"), "line 0\nline 1\nline 2\n");
+        assert!(writer.flusher().flush(Duration::from_secs(5)));
+        assert_eq!(output.text(), "line 0\nline 1\nline 2\n");
     }
 
     #[test]
@@ -155,9 +201,11 @@ mod tests {
             writeln!(writer.make_writer(), "line {index}").unwrap();
         }
         assert_eq!(writer.dropped.load(Ordering::Relaxed), 3);
+        assert!(!writer.flusher().flush(Duration::from_millis(50)));
         drop(held);
+        assert!(writer.flusher().flush(Duration::from_secs(5)));
         assert_eq!(
-            wait_for(&output, "dropped 3 lines"),
+            output.text(),
             "line 0\nline 1\nscope log writer dropped 3 lines while its output was saturated\n"
         );
     }

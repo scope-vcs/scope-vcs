@@ -48,7 +48,7 @@ use std::{
     io::Read,
     ops::Deref,
     path::{Path as FsPath, PathBuf},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use tracing::Instrument as _;
 
@@ -244,7 +244,8 @@ pub(crate) async fn git_receive_pack(
         Ok(access) => access,
         Err(error) => return git_error_response(error),
     };
-    let request = match answer_receive_pack_probe(request).await {
+    let probe_deadline = state.runtime_budgets.git_command_timeout();
+    let request = match answer_receive_pack_probe(request, probe_deadline).await {
         ReceivePackProbe::Answered(response) => return response,
         ReceivePackProbe::Upload(request) => request,
     };
@@ -273,7 +274,7 @@ enum ReceivePackProbe {
     Upload(Request),
 }
 
-async fn answer_receive_pack_probe(request: Request) -> ReceivePackProbe {
+async fn answer_receive_pack_probe(request: Request, deadline: Duration) -> ReceivePackProbe {
     let probe_length = request
         .headers()
         .get(CONTENT_LENGTH)
@@ -283,7 +284,14 @@ async fn answer_receive_pack_probe(request: Request) -> ReceivePackProbe {
         return ReceivePackProbe::Upload(request);
     }
     let (parts, body) = request.into_parts();
-    match to_bytes(body, RECEIVE_PACK_PROBE_BODY.len()).await {
+    let Ok(read) =
+        tokio::time::timeout(deadline, to_bytes(body, RECEIVE_PACK_PROBE_BODY.len())).await
+    else {
+        return ReceivePackProbe::Answered(git_error_response(
+            ApiError::infrastructure_unavailable("git request upload timed out"),
+        ));
+    };
+    match read {
         Ok(bytes) if bytes.as_ref() == RECEIVE_PACK_PROBE_BODY => ReceivePackProbe::Answered(
             git_response("application/x-git-receive-pack-result", Vec::new()),
         ),
