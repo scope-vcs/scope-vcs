@@ -38,7 +38,6 @@ pub const DEFAULT_GIT_CACHE_MAX_BYTES: usize = 10 * 1024 * 1024 * 1024;
 pub const AWAITING_FIRST_PUSH_GIT_ERROR: &str = "repo is awaiting its first push";
 pub const MAX_RECEIVE_PACK_BYTES: usize = 512 * 1024 * 1024;
 pub const MAX_UPLOAD_PACK_BYTES: usize = 64 * 1024 * 1024;
-pub const MAX_PENDING_IMPORT_FILES: usize = 10_000;
 pub const MAX_PENDING_IMPORT_BLOB_BYTES: usize = 25 * 1024 * 1024;
 
 pub fn database_url_from_env() -> anyhow::Result<String> {

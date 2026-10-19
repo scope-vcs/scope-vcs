@@ -1,4 +1,5 @@
 use super::*;
+use crate::git::import::{git_changed_tree_entries_until, validate_pushed_commit_range};
 use scope_domain::views::ViewId;
 use std::process::Command;
 
@@ -314,4 +315,38 @@ fn git_object_from_stdin(repo: &FsPath, args: &[&str], stdin: &[u8]) -> String {
     )
     .unwrap();
     String::from_utf8(output).unwrap().trim().to_string()
+}
+
+#[test]
+fn a_tree_with_more_than_ten_thousand_files_validates_and_imports() {
+    let repo = temp_git_repo("wide-tree-validation");
+    let blob = git_object_from_stdin(&repo, &["hash-object", "-w", "--stdin"], b"wide\n");
+    let entries = (0..10_001)
+        .map(|index| format!("100644 blob {blob}\tfile-{index}.txt\n"))
+        .collect::<String>();
+    let tree = git_object_from_stdin(&repo, &["mktree"], entries.as_bytes());
+    let commit = git_command_output(
+        Command::new("git")
+            .arg("-C")
+            .arg(repo.as_ref())
+            .args(["commit-tree", &tree])
+            .env("GIT_AUTHOR_NAME", "Scope Test")
+            .env("GIT_AUTHOR_EMAIL", "scope-test@example.test")
+            .env("GIT_COMMITTER_NAME", "Scope Test")
+            .env("GIT_COMMITTER_EMAIL", "scope-test@example.test"),
+        Some(b"wide tree\n"),
+    )
+    .unwrap();
+    let commit = String::from_utf8(commit).unwrap();
+
+    validate_pushed_commit_range(&repo, None, commit.trim()).unwrap();
+    let changes = git_changed_tree_entries_until(
+        &repo,
+        None,
+        commit.trim(),
+        std::time::Instant::now() + std::time::Duration::from_secs(60),
+    )
+    .unwrap();
+
+    assert_eq!(changes.len(), 10_001);
 }

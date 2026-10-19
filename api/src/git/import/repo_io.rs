@@ -3,7 +3,7 @@ use super::segment_upload::{
     best_effort_delete_git_segment_identity, best_effort_delete_staged_git_segment,
 };
 use crate::{
-    config::{MAX_PENDING_IMPORT_BLOB_BYTES, MAX_PENDING_IMPORT_FILES},
+    config::MAX_PENDING_IMPORT_BLOB_BYTES,
     error::ApiError,
     git::command::{
         git_process_output, git_ref_listing, git_stdout_text, prepare_git_subprocess,
@@ -120,11 +120,6 @@ fn git_tree_entries_for_path(
         if raw.is_empty() {
             continue;
         }
-        if enforce_import_limits && pending_files.len() >= MAX_PENDING_IMPORT_FILES {
-            return Err(ApiError::bad_request(format!(
-                "pending import exceeds {MAX_PENDING_IMPORT_FILES} files"
-            )));
-        }
         let entry = std::str::from_utf8(raw).map_err(ApiError::bad_request)?;
         let Some((metadata, path)) = entry.split_once('\t') else {
             return Err(ApiError::internal_message("invalid git tree entry"));
@@ -219,7 +214,13 @@ pub(crate) fn git_changed_tree_entries_until(
         )));
     }
 
-    let mut fields = output.stdout.split(|byte| *byte == 0);
+    let mut pending = raw_delta_entries(&output.stdout)?;
+    fill_blob_sizes(staging_repo, &mut pending, deadline)?;
+    Ok(pending)
+}
+
+fn raw_delta_entries(stdout: &[u8]) -> Result<Vec<(ScopePath, Option<GitTreeFile>)>, ApiError> {
+    let mut fields = stdout.split(|byte| *byte == 0);
     let mut pending = Vec::new();
     while let Some(header) = fields.next() {
         if header.is_empty() {
@@ -258,57 +259,58 @@ pub(crate) fn git_changed_tree_entries_until(
             }),
         ));
     }
+    Ok(pending)
+}
 
+fn fill_blob_sizes(
+    staging_repo: &FsPath,
+    pending: &mut [(ScopePath, Option<GitTreeFile>)],
+    deadline: Instant,
+) -> Result<(), ApiError> {
     let requested_oids = pending
         .iter()
         .filter_map(|(_, entry)| entry.as_ref().map(|entry| entry.oid.as_str()))
         .map(|oid| format!("{oid}\n"))
         .collect::<String>();
-    if !requested_oids.is_empty() {
-        let output = git_process_output(
-            Command::new("git").current_dir(staging_repo).args([
-                "cat-file",
-                "--batch-check=%(objectname) %(objecttype) %(objectsize)",
-            ]),
-            Some(requested_oids.into_bytes()),
-            ProcessLimits::new(remaining_git_time(deadline)?),
-        )?;
-        if !output.status.success() {
-            return Err(ApiError::infrastructure_unavailable(format!(
-                "reading pushed blob sizes: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
-        let size_output = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
-        let mut sizes = size_output.lines().map(|line| {
-            let values = line.split_whitespace().collect::<Vec<_>>();
-            if values.len() != 3 || values[1] != "blob" {
-                return Err(ApiError::bad_request("pushed path is not a Git blob"));
-            }
-            values[2]
-                .parse::<u64>()
-                .map_err(|_| ApiError::internal_message("invalid Git blob size"))
-        });
-        for (_, entry) in &mut pending {
-            if let Some(entry) = entry {
-                entry.size_bytes = sizes
-                    .next()
-                    .ok_or_else(|| ApiError::internal_message("missing Git blob size"))??;
-                if entry.size_bytes > MAX_PENDING_IMPORT_BLOB_BYTES as u64 {
-                    return Err(ApiError::bad_request(format!(
-                        "blob {} is larger than {MAX_PENDING_IMPORT_BLOB_BYTES} bytes",
-                        entry.path
-                    )));
-                }
-            }
-        }
+    if requested_oids.is_empty() {
+        return Ok(());
     }
-    if pending.len() > MAX_PENDING_IMPORT_FILES {
-        return Err(ApiError::bad_request(format!(
-            "pending import exceeds {MAX_PENDING_IMPORT_FILES} files"
+    let output = git_process_output(
+        Command::new("git").current_dir(staging_repo).args([
+            "cat-file",
+            "--batch-check=%(objectname) %(objecttype) %(objectsize)",
+        ]),
+        Some(requested_oids.into_bytes()),
+        ProcessLimits::new(remaining_git_time(deadline)?),
+    )?;
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading pushed blob sizes: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
-    Ok(pending)
+    let size_output = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
+    let mut sizes = size_output.lines().map(|line| {
+        let values = line.split_whitespace().collect::<Vec<_>>();
+        if values.len() != 3 || values[1] != "blob" {
+            return Err(ApiError::bad_request("pushed path is not a Git blob"));
+        }
+        values[2]
+            .parse::<u64>()
+            .map_err(|_| ApiError::internal_message("invalid Git blob size"))
+    });
+    for entry in pending.iter_mut().filter_map(|(_, entry)| entry.as_mut()) {
+        entry.size_bytes = sizes
+            .next()
+            .ok_or_else(|| ApiError::internal_message("missing Git blob size"))??;
+        if entry.size_bytes > MAX_PENDING_IMPORT_BLOB_BYTES as u64 {
+            return Err(ApiError::bad_request(format!(
+                "blob {} is larger than {MAX_PENDING_IMPORT_BLOB_BYTES} bytes",
+                entry.path
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_pushed_tree(staging_repo: &FsPath, head_oid: &str) -> Result<(), ApiError> {
@@ -321,19 +323,47 @@ pub(crate) fn validate_pushed_commit_range(
     base_oid: Option<&str>,
     head_oid: &str,
 ) -> Result<(), ApiError> {
-    validate_pushed_tree(staging_repo, head_oid)?;
+    let deadline = Instant::now() + RuntimeBudgets::default_git_command_timeout();
     let mut args = vec!["rev-list", "--reverse", head_oid];
     let excluded_base = base_oid.map(|oid| format!("^{oid}"));
     if let Some(excluded_base) = excluded_base.as_deref() {
         args.push(excluded_base);
     }
     let commits = git_stdout_text(staging_repo, &args, "reading pushed commit range")?;
-    for commit_oid in commits.lines() {
-        if commit_oid != head_oid {
-            git_tree_entries(staging_repo, commit_oid)?;
-        }
+    if commits.trim().is_empty() {
+        return Ok(());
     }
-    Ok(())
+    let output = git_process_output(
+        Command::new("git").current_dir(staging_repo).args([
+            "diff-tree",
+            "--stdin",
+            "--root",
+            "--no-commit-id",
+            "--raw",
+            "-r",
+            "-z",
+            "--no-renames",
+            "--diff-merges=first-parent",
+        ]),
+        Some(commits.into_bytes()),
+        ProcessLimits::new(remaining_git_time(deadline)?),
+    )?;
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading pushed commit changes: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut added = raw_delta_entries(&output.stdout)?
+        .into_iter()
+        .filter(|(_, entry)| {
+            entry
+                .as_ref()
+                .is_some_and(|entry| seen.insert(entry.oid.clone()))
+        })
+        .collect::<Vec<_>>();
+    fill_blob_sizes(staging_repo, &mut added, deadline)
 }
 
 pub(crate) struct StagedGitPush {
