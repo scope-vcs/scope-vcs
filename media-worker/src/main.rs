@@ -157,6 +157,12 @@ async fn codec_self_test(fixture_dir: &Path) -> anyhow::Result<()> {
         ("fixture-oriented.jpg", MediaKind::Photo, true, None),
         ("fixture.mp4", MediaKind::Video, false, remux),
         ("fixture-1080p.mp4", MediaKind::Video, false, transcode),
+        (
+            "fixture-unmapped-audio.mp4",
+            MediaKind::Video,
+            false,
+            transcode,
+        ),
         ("fixture.mov", MediaKind::Video, false, remux),
         ("fixture.webm", MediaKind::Video, false, transcode),
         ("fixture-rotated.mov", MediaKind::Video, true, transcode),

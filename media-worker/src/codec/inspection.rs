@@ -240,7 +240,7 @@ pub(super) fn duration_millis(probe: &Probe, stream: &ProbeStream) -> Result<u64
     Ok(duration)
 }
 
-fn parse_duration_millis(value: &str) -> Result<u64, CodecFailure> {
+pub(super) fn parse_duration_millis(value: &str) -> Result<u64, CodecFailure> {
     let seconds = value.parse::<f64>().map_err(|_| {
         CodecFailure::new(CodecFailureKind::InvalidMedia, "media duration is invalid")
     })?;
