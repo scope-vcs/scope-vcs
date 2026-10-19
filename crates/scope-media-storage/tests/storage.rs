@@ -146,6 +146,56 @@ async fn authenticated_frames_stream_before_a_stalled_backend_read_fails() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn reads_time_out_while_waiting_for_a_storage_slot() {
+    let backend = Arc::new(TrackingBackend::default());
+    let storage = MediaStorage::encrypted(backend.clone(), [29; 32], 1).unwrap();
+    let attempt = WriteAttempt::new("att_8", "original", "lease_8").unwrap();
+    let object = support::store_bytes(&storage, &attempt, b"readable").await;
+    let pending = storage.plan_part(&attempt, 2, b"held").unwrap();
+    backend.stall_puts.store(true, Ordering::SeqCst);
+    let held = tokio::spawn({
+        let storage = storage.clone();
+        async move { storage.write_part(&pending, b"held".to_vec()).await }
+    });
+    tokio::time::sleep(Duration::from_millis(1)).await;
+
+    let mut stream = storage.read_range(&object, 0..=7).await.unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(31), stream.next())
+        .await
+        .expect("a read waiting for a storage slot keeps its deadline")
+        .unwrap();
+    assert_eq!(
+        result.unwrap_err().kind,
+        MediaStorageErrorKind::ServiceUnavailable
+    );
+    assert!(!held.is_finished());
+}
+
+#[tokio::test(start_paused = true)]
+async fn returned_frames_hold_the_read_budget_until_their_bytes_are_released() {
+    let storage = MediaStorage::encrypted(Arc::new(MemoryBackend::default()), [31; 32], 2).unwrap();
+    let attempt = WriteAttempt::new("att_9", "original", "lease_9").unwrap();
+    let plaintext = vec![0x45; MAX_CHUNK_BYTES + 1];
+    let object = support::store_bytes(&storage, &attempt, &plaintext).await;
+    let mut stream = storage
+        .read_range(&object, 0..=MAX_CHUNK_BYTES as u64)
+        .await
+        .unwrap();
+    let mut retained = Vec::new();
+    for _ in 0..8 {
+        retained.push(stream.next().await.unwrap().unwrap());
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), stream.next())
+            .await
+            .is_err()
+    );
+    retained.clear();
+    assert_eq!(stream.next().await.unwrap().unwrap().as_ref(), b"E");
+    assert!(stream.next().await.is_none());
+}
+
+#[tokio::test(start_paused = true)]
 async fn readiness_and_deletes_keep_their_deadlines_while_writes_hold_every_slot() {
     let backend = Arc::new(TrackingBackend::default());
     let storage = MediaStorage::encrypted(backend.clone(), [23; 32], 1).unwrap();

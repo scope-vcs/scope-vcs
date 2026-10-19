@@ -36,7 +36,18 @@ const FRAMES_PER_CHUNK: usize = MAX_CHUNK_BYTES.div_ceil(OBJECT_FRAME_BYTES);
 
 pub type MediaByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, MediaStorageError>> + Send>>;
 
-type BudgetedFrame = Result<(Bytes, OwnedSemaphorePermit), MediaStorageError>;
+type BudgetedFrame = Result<Bytes, MediaStorageError>;
+
+struct BudgetedBytes {
+    bytes: Bytes,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl AsRef<[u8]> for BudgetedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
+    }
+}
 
 #[derive(Clone)]
 pub struct MediaStorage {
@@ -144,9 +155,7 @@ impl MediaStorage {
                 }
             }
         });
-        Ok(Box::pin(
-            ReceiverStream::new(receiver).map(|frame| frame.map(|(bytes, _budget)| bytes)),
-        ))
+        Ok(Box::pin(ReceiverStream::new(receiver)))
     }
 
     pub async fn download_to_writer<W>(
@@ -263,7 +272,14 @@ impl MediaStorage {
                 .split((to - from) as usize)
                 .ok_or_else(|| MediaStorageError::internal("media read buffer is exhausted"))?;
             let bytes = Bytes::from(frame).slice(from as usize..to as usize);
-            if sender.send(Ok((bytes, share))).await.is_err() {
+            if sender
+                .send(Ok(Bytes::from_owner(BudgetedBytes {
+                    bytes,
+                    _permit: share,
+                })))
+                .await
+                .is_err()
+            {
                 return Ok(ControlFlow::Break(()));
             }
         }
@@ -293,8 +309,8 @@ impl MediaStorage {
         &self,
         read: impl Future<Output = Result<T, ObjectStoreError>>,
     ) -> Result<T, MediaStorageError> {
-        let _slot = self.operation_slot().await?;
-        within(FRAME_STALL_TIMEOUT, "media read", read).await
+        self.bounded_operation(FRAME_STALL_TIMEOUT, "media read", read)
+            .await
     }
 
     async fn operation_slot(&self) -> Result<OwnedSemaphorePermit, MediaStorageError> {
