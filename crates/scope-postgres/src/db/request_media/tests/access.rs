@@ -243,3 +243,117 @@ async fn retry_replay_returns_the_saved_attachment_only_to_viewers_who_can_see_i
     assert_eq!(replayed.id, "retry_attachment");
     assert_eq!(replayed.state, RequestAttachmentState::Processing);
 }
+
+#[tokio::test]
+async fn media_reads_load_derivative_manifests_until_cleanup_tombstones_the_attachment() {
+    let fixture = fixture();
+    start_request(&fixture, "derivative_request", "derivative-request", 1).await;
+    upload_attachment(&fixture, "derivative_request", "derivative_attachment", 10).await;
+    let media = fixture.store.media();
+    let (lease, _) = media
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "derivative-token",
+            20,
+            40,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let output_key = "media/v1/staged/derivative_attachment/preview";
+    media
+        .reserve_processing_object_key(
+            "derivative_attachment",
+            &lease.lease_token,
+            lease.lease_generation,
+            output_key,
+            21,
+        )
+        .await
+        .unwrap();
+    let chunk = RequestMediaChunk {
+        part_number: 1,
+        plaintext_offset: 0,
+        plaintext_bytes: 3,
+        sha256: "b".repeat(64),
+        object_key: output_key.to_string(),
+    };
+    let completed = media
+        .complete_processing_job(CompleteRequestAttachmentProcessingCommand {
+            attachment_id: "derivative_attachment".to_string(),
+            lease_token: lease.lease_token,
+            lease_generation: lease.lease_generation,
+            source: png_source(),
+            derivatives: vec![CompletedRequestAttachmentDerivative {
+                derivative: RequestAttachmentDerivative {
+                    id: "derivative_preview".to_string(),
+                    kind: RequestAttachmentDerivativeKind::ImagePreview,
+                    media_type: "image/webp".to_string(),
+                    object: RequestAttachmentStoredObject {
+                        object_key: "manifest_derivative_preview".to_string(),
+                        size_bytes: 3,
+                        sha256: "b".repeat(64),
+                    },
+                    width: Some(1),
+                    height: Some(1),
+                    duration_millis: None,
+                },
+                chunks: vec![chunk.clone()],
+            }],
+            now_unix: 22,
+        })
+        .await
+        .unwrap();
+    assert!(matches!(completed, MediaLeaseMutation::Applied(_)));
+
+    let read = |target| {
+        media.request_attachment_media_for_viewer(
+            "derivative_request",
+            "derivative_attachment",
+            Some(OWNER_ID),
+            target,
+        )
+    };
+    let (attachment, derivative) = read(RequestMediaObjectTarget::Derivative("derivative_preview"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(attachment.derivatives.len(), 1);
+    let derivative = derivative.unwrap();
+    assert_eq!(derivative.media_type, "image/webp");
+    assert_eq!(derivative.chunks, [chunk]);
+
+    fixture
+        .store
+        .db
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_request_media_cleanup_jobs (
+                attachment_id, repository_id, reason, state, available_at_unix,
+                created_at_unix, updated_at_unix
+             ) VALUES ($1, $2, 'RequestDeleted', 'Queued', 30, 30, 30)",
+            [
+                "derivative_attachment".into(),
+                fixture.repository_id.clone().into(),
+            ],
+        ))
+        .await
+        .unwrap();
+    for target in [
+        RequestMediaObjectTarget::Original,
+        RequestMediaObjectTarget::Derivative("derivative_preview"),
+    ] {
+        assert!(read(target).await.unwrap().is_none(), "{target:?}");
+    }
+    assert!(
+        media
+            .request_attachment_for_viewer(
+                "derivative_request",
+                "derivative_attachment",
+                Some(OWNER_ID)
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+}

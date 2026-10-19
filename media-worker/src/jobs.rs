@@ -16,7 +16,9 @@ use scope_domain::requests::attachments::{
     RequestAttachmentStagedPart, RequestAttachmentStoredObject, RequestAttachmentVideoMetadata,
     RequestMediaObject, processing_attempts_exhausted,
 };
-use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, MediaStorageError, WriteAttempt};
+use scope_media_storage::{
+    MAX_CHUNK_BYTES, MediaStorage, MediaStorageError, WriteAttempt, seal_parts,
+};
 use scope_postgres::db::{
     CompleteRequestAttachmentProcessingCommand, CompletedRequestAttachmentDerivative,
     FailRequestAttachmentProcessingCommand, MediaLeaseMutation, MetadataStore,
@@ -24,7 +26,6 @@ use scope_postgres::db::{
 };
 use scope_service_runtime::{random_hex, unix_now};
 use sha2::{Digest, Sha256};
-use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tracing::Instrument as _;
 
@@ -226,23 +227,7 @@ async fn process_claim(
             failure: storage_failure(&error),
             validated_source: None,
         })?;
-    source_file
-        .sync_all()
-        .await
-        .map_err(local_failure(lease, "syncing local media source"))?;
     drop(source_file);
-    let (downloaded_bytes, downloaded_sha256) = sha256_file(&source_path)
-        .await
-        .map_err(local_failure(lease, "hashing local media source"))?;
-    if downloaded_bytes != manifest.plaintext_bytes
-        || !downloaded_sha256.eq_ignore_ascii_case(&manifest.sha256)
-    {
-        return Err(failure(
-            RequestAttachmentFailureCode::CorruptMedia,
-            "downloaded source does not match its immutable manifest",
-            false,
-        ));
-    }
 
     let output = match pipeline
         .process(&source_path, job_dir.path(), lease.kind)
@@ -393,10 +378,7 @@ async fn upload_derivative(
         }
     }
     let digest = hex::encode(whole_digest.finalize());
-    let object = match storage
-        .seal_parts(derivative.media_type, total_bytes, &digest, staged.clone())
-        .await
-    {
+    let object = match seal_parts(derivative.media_type, total_bytes, &digest, staged.clone()) {
         Ok(object) => object,
         Err(error) => {
             delete_parts(storage, &staged).await;
@@ -519,24 +501,6 @@ async fn record_processing_failure(
         MediaLeaseMutation::Applied(_) => JobOutcome::Failed,
         MediaLeaseMutation::LeaseLost => JobOutcome::LeaseLost,
     })
-}
-
-async fn sha256_file(path: &Path) -> anyhow::Result<(u64, String)> {
-    let mut file = tokio::fs::File::open(path).await?;
-    let mut digest = Sha256::new();
-    let mut total = 0_u64;
-    let mut buffer = vec![0_u8; 1024 * 1024];
-    loop {
-        let read = file.read(&mut buffer).await?;
-        if read == 0 {
-            break;
-        }
-        digest.update(&buffer[..read]);
-        total = total
-            .checked_add(read as u64)
-            .ok_or_else(|| anyhow::anyhow!("media source size overflow"))?;
-    }
-    Ok((total, hex::encode(digest.finalize())))
 }
 
 fn failure(code: RequestAttachmentFailureCode, message: &str, retryable: bool) -> WorkError {

@@ -1,5 +1,5 @@
 use scope_domain::requests::attachments::RequestMediaObject;
-use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, WriteAttempt};
+use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, WriteAttempt, seal_parts};
 use sha2::{Digest, Sha256};
 
 pub async fn store_bytes(
@@ -13,13 +13,11 @@ pub async fn store_bytes(
         storage.write_part(&part, chunk.to_vec()).await.unwrap();
         parts.push(part);
     }
-    storage
-        .seal_parts(
-            "video/mp4",
-            bytes.len() as u64,
-            &hex::encode(Sha256::digest(bytes)),
-            parts,
-        )
-        .await
-        .unwrap()
+    seal_parts(
+        "video/mp4",
+        bytes.len() as u64,
+        &hex::encode(Sha256::digest(bytes)),
+        parts,
+    )
+    .unwrap()
 }
