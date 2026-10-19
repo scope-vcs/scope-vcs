@@ -78,7 +78,7 @@ pub(crate) async fn repository_request(
             };
             forward_upload_pack(&state, &route, &candidate_ranks, upstream_request, body).await
         }
-        GitRequestKind::PrimaryOnly => {
+        GitRequestKind::ReceivePack | GitRequestKind::PrimaryOnly => {
             let rank = candidate_ranks[0];
             let backend = route.backend(rank);
             route_telemetry(&route, kind, backend, rank, 1, 1, &upstream_request.method);

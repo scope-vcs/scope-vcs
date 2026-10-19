@@ -20,7 +20,7 @@ pub fn router(config: RouterConfig) -> anyhow::Result<Router> {
         .connect_timeout(config.connect_timeout)
         .read_timeout(config.read_timeout)
         .build()?;
-    let selector = BackendSelector::new(config.read_replicas);
+    let selector = BackendSelector::new(config.read_replicas, config.write_replicas);
     Ok(router_with_state(RouterState {
         discovery,
         http,
@@ -76,7 +76,7 @@ pub(crate) fn test_router_with_state(
     router_with_state(RouterState {
         discovery,
         http,
-        selector: BackendSelector::new(read_replicas),
+        selector: BackendSelector::new(read_replicas, 1),
         replay: crate::replay::ReplayBuffer::new(
             4 * upload_pack_replay_max_bytes,
             upload_pack_replay_max_bytes,

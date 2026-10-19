@@ -21,6 +21,15 @@ Push throughput scales by adding API replicas. Each replica admits a fixed numbe
 
 Compaction merges two segments per job. Under sustained pushes to the same repositories, segment counts grow faster than one compactor clears them; raise this setting when due rows in `scope_git_compaction_jobs` keep growing.
 
+## Router settings
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SCOPE_REPO_ROUTER_READ_REPLICAS` | 1 | API replicas a repository's fetches rotate across. |
+| `SCOPE_REPO_ROUTER_WRITE_REPLICAS` | 1 | API replicas a repository's pushes rotate across. |
+
+The router ranks API replicas per repository. With the default of 1, every push for a repository goes to its top-ranked replica, so one busy repository is limited to one replica's CPU. Raising `SCOPE_REPO_ROUTER_WRITE_REPLICAS` spreads its pushes across that many replicas. Request revisions commit by compare-and-swap in Postgres and main pushes take the database write lease, so the replica a push lands on does not affect correctness. Replicas share request branch objects through the request object pool: before preparing a push, a replica installs the packs other replicas registered since its last sync. A replica that has not synced yet restores a request from its snapshot instead.
+
 ## Connection budget
 
 Worst-case Postgres connections:
