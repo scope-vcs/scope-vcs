@@ -151,9 +151,8 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         assert_eq!(stored.record.change_version, sequence);
         assert_eq!(stored.git_head.unwrap().change_version, sequence);
 
-        let rebuilt = drain_outbox(&state, "content-push-test").await;
-        assert_eq!(rebuilt.failed, 0);
-        assert_eq!(rebuilt.completed, 2);
+        let deferred = drain_outbox(&state, "content-push-test").await;
+        assert_eq!(deferred.claimed, 0);
         let projected = state
             .metadata
             .repositories()
@@ -186,8 +185,8 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         .outbox_job_counts_for_tests()
         .await
         .unwrap();
-    assert_eq!(jobs.succeeded, 5);
-    assert_eq!(jobs.total, 5);
+    assert_eq!(jobs.succeeded, 1);
+    assert_eq!(jobs.total, 1);
 
     let now_unix = crate::persistence::unix_now().unwrap();
     let compaction = state
@@ -328,15 +327,11 @@ async fn published_receive_pack_staging_restores_accepted_git_head_from_bucket_s
         git_stdout_text(&bare, &["rev-parse", DEFAULT_GIT_BRANCH], "first push head").unwrap();
     apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
 
-    let restored = ensure_ready_receive_pack_staging_repo(
-        &state,
-        &test_repo_incarnation(),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &test_owner_id(),
-    )
-    .await
-    .unwrap();
+    let restored =
+        ensure_ready_receive_pack_staging_repo(&state, &owner_push_context(&state).await)
+            .await
+            .unwrap()
+            .path;
     let actual_head = git_stdout_text(
         &restored,
         &["rev-parse", DEFAULT_GIT_BRANCH],

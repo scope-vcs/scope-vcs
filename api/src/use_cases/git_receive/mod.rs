@@ -7,6 +7,7 @@ mod view_main_push;
 use crate::{
     error::ApiError,
     git::{
+        cache::GitRepoHandle,
         import::PreparedReceivePackUpdate,
         request_refs::{non_request_refs_changed, receive_pack_refs, request_ref_update_from_refs},
         staging::{
@@ -20,6 +21,7 @@ use crate::{
 pub(crate) use authorization::authorize;
 use request_ref::RequestStagingKind;
 use scope_domain::{repository::RepositoryIncarnation, views::ViewId};
+use scope_postgres::db::GitPushContext;
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -34,8 +36,8 @@ pub(crate) enum ReceivePackAccess {
     },
     ReadyMember {
         author_id: String,
-        incarnation: RepositoryIncarnation,
         push_intent: ValidatedPushIntent,
+        context: Box<GitPushContext>,
     },
     ViewMainPusher {
         author_id: String,
@@ -62,8 +64,8 @@ impl ReceivePackAccess {
 
     pub(crate) fn incarnation(&self) -> &RepositoryIncarnation {
         match self {
+            Self::ReadyMember { context, .. } => &context.incarnation,
             Self::FirstPush { incarnation, .. }
-            | Self::ReadyMember { incarnation, .. }
             | Self::ViewMainPusher { incarnation, .. }
             | Self::RequestContributor { incarnation, .. } => incarnation,
         }
@@ -80,6 +82,7 @@ impl ReceivePackAccess {
 pub(crate) struct ReceivePreparation {
     pub(crate) access: ReceivePackAccess,
     pub(crate) staging_repo: PathBuf,
+    _staging_seed: Option<GitRepoHandle>,
     pub(crate) refs_before: Option<Vec<(String, String)>>,
     pub(crate) base_publication:
         Option<crate::use_cases::request_base_publication::RequestBasePublicationHeaders>,
@@ -102,28 +105,24 @@ pub(crate) async fn prepare(
     advertisement_only: bool,
 ) -> Result<ReceivePreparation, ApiError> {
     let incarnation = access.incarnation().clone();
+    let mut staging_seed = None;
     let staging_repo = match &access {
         ReceivePackAccess::FirstPush { .. } => {
             ensure_first_push_receive_pack_staging_repo(state, &incarnation).await?
         }
-        ReceivePackAccess::ReadyMember { author_id, .. } => {
-            let staging = ensure_ready_receive_pack_staging_repo(
-                state,
-                &incarnation,
-                owner,
-                repo_name,
-                author_id,
-            )
-            .await?;
-            if let Err(error) = request_ref::seed_editable_request_refs(
-                state, owner, repo_name, author_id, &staging,
-            )
-            .await
+        ReceivePackAccess::ReadyMember {
+            author_id, context, ..
+        } => {
+            let staging = ensure_ready_receive_pack_staging_repo(state, context).await?;
+            if let Err(error) =
+                request_ref::seed_editable_request_refs(state, context, author_id, &staging.path)
+                    .await
             {
-                let _ = crate::git::storage::remove_dir_if_exists(&staging);
+                let _ = crate::git::storage::remove_dir_if_exists(&staging.path);
                 return Err(error);
             }
-            staging
+            staging_seed = Some(staging.seed);
+            staging.path
         }
         ReceivePackAccess::ViewMainPusher {
             author_id, view, ..
@@ -169,6 +168,7 @@ pub(crate) async fn prepare(
     Ok(ReceivePreparation {
         access,
         staging_repo,
+        _staging_seed: staging_seed,
         refs_before,
         base_publication: None,
     })
@@ -482,7 +482,7 @@ async fn best_effort_sync_cache(
     match state
         .metadata
         .repositories()
-        .git_push_context(owner, repo_name, author_id)
+        .git_push_state(owner, repo_name, author_id)
         .await
     {
         Ok(Some(repo)) => {

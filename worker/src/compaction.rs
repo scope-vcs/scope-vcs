@@ -36,6 +36,27 @@ pub(crate) async fn run(
     settings: WorkerSettings,
     health: WorkerHealth,
 ) -> anyhow::Result<()> {
+    let mut compactors = tokio::task::JoinSet::new();
+    for _ in 0..settings.git_compaction_concurrency {
+        compactors.spawn(compact_until_shutdown(
+            metadata.clone(),
+            Arc::clone(&segment_store),
+            settings.clone(),
+            health.clone(),
+        ));
+    }
+    while let Some(compactor) = compactors.join_next().await {
+        compactor??;
+    }
+    Ok(())
+}
+
+async fn compact_until_shutdown(
+    metadata: MetadataStore,
+    segment_store: Arc<GitSegmentStore>,
+    settings: WorkerSettings,
+    health: WorkerHealth,
+) -> anyhow::Result<()> {
     loop {
         if !super::schema_ready_or_wait(&metadata, &health).await {
             return Ok(());
@@ -468,9 +489,9 @@ fn log_compaction_attempt(
         pack_ms = metrics.pack.pack_ms,
         verify_ms = metrics.pack.verify_ms,
         pack_total_ms = metrics.pack.total_ms,
-        local_write_and_fsync_ms = metrics
+        local_write_ms = metrics
             .ingest
-            .local_write_and_fsync
+            .local_write
             .as_millis(),
         remote_upload_ms = metrics
             .ingest

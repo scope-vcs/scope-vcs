@@ -1,13 +1,13 @@
 use super::repo_io::{
-    GitTreeFile, StagedGitPush, describe_refs, git_changed_tree_entries, git_push_from_repo,
-    git_refs, git_tree_entries_under, pushed_commit_message, pushed_commit_time,
+    GitTreeFile, PushedCommit, StagedGitPush, describe_refs, git_changed_tree_entries,
+    git_push_from_repo, git_refs, git_tree_entries_under, pushed_commit,
     validate_pushed_commit_range,
 };
 use super::segment_upload::GitSegmentUploadHeartbeat;
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
 use crate::{
     error::ApiError,
-    git::command::{git_process_output, run_git_output_bounded},
+    git::command::{git_process_output, run_git_output, run_git_output_bounded},
     runtime_budgets::RuntimeBudgets,
     state::AppState,
 };
@@ -88,19 +88,31 @@ pub(crate) async fn reviewed_update_from_staging_repo(
     let (branch, head_oid) = refs.into_iter().next().expect("length checked");
     ensure_default_branch(&branch)?;
     let repository_id = scope_domain::repository::repo_id(owner, repo_name);
+    let lease_started = Instant::now();
     let write_lease = state
         .metadata
         .repositories()
         .acquire_git_write_lease(&repository_id)
         .await?;
+    let lease_wait_ms = lease_started.elapsed().as_millis();
     let repo = state
         .metadata
         .repositories()
-        .git_push_context(owner, repo_name, author_id)
+        .git_push_state(owner, repo_name, author_id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
     if mode != ReviewedUpdateMode::FirstPush && repo.lifecycle_state != RepoLifecycleState::Ready {
         return Err(ApiError::conflict("repo must be ready before push"));
+    }
+    if mode == ReviewedUpdateMode::ReadyPush
+        && let Some(current_head) = repo.git_head.as_ref().map(|head| head.head_oid.clone())
+    {
+        let path = staging_repo.to_path_buf();
+        let pushed_head = head_oid.clone();
+        crate::git::blocking::run(move || {
+            ensure_pushed_head_extends(&path, &current_head, &pushed_head)
+        })
+        .await?;
     }
     let base_config_hash = crate::push_intents::repo_config_fingerprint(&repo.repo_config)?;
     let inspected = {
@@ -145,6 +157,7 @@ pub(crate) async fn reviewed_update_from_staging_repo(
         pack_bytes,
         diff_ms,
         pack_put_ms,
+        lease_wait_ms,
         "prepared durable Git push objects"
     );
 
@@ -172,6 +185,43 @@ pub(crate) async fn reviewed_update_from_staging_repo(
     })
 }
 
+pub(crate) const STALE_MAIN_PUSH_ERROR: &str =
+    "main moved while this push was in flight; fetch, rebase, and push again";
+
+fn ensure_pushed_head_extends(
+    staging_repo: &FsPath,
+    current_head: &str,
+    pushed_head: &str,
+) -> Result<(), ApiError> {
+    let action = "checking that the push extends the current main head";
+    let ancestry = run_git_output(
+        Some(staging_repo),
+        &["merge-base", "--is-ancestor", current_head, pushed_head],
+        action,
+    )?;
+    match ancestry.status.code() {
+        Some(0) => return Ok(()),
+        Some(1) => return Err(ApiError::conflict(STALE_MAIN_PUSH_ERROR)),
+        _ => {}
+    }
+    let current_commit = format!("{current_head}^{{commit}}");
+    let present = run_git_output(
+        Some(staging_repo),
+        &["cat-file", "-e", &current_commit],
+        "checking the current main head in the pushed objects",
+    )?
+    .status
+    .success();
+    if present {
+        Err(ApiError::infrastructure_unavailable(format!(
+            "{action}: {}",
+            String::from_utf8_lossy(&ancestry.stderr).trim()
+        )))
+    } else {
+        Err(ApiError::conflict(STALE_MAIN_PUSH_ERROR))
+    }
+}
+
 struct InspectedReceiveTree {
     message: String,
     occurred_at_unix: Option<i64>,
@@ -189,8 +239,11 @@ fn inspect_received_tree(
     change_version: u64,
     mode: ReviewedUpdateMode,
 ) -> Result<InspectedReceiveTree, ApiError> {
-    let message = pushed_commit_message(staging_repo, head_oid)?;
-    let occurred_at_unix = Some(pushed_commit_time(staging_repo, head_oid)?);
+    let PushedCommit {
+        message,
+        committed_at_unix,
+    } = pushed_commit(staging_repo, head_oid)?;
+    let occurred_at_unix = Some(committed_at_unix);
     validate_pushed_commit_range(staging_repo, base_head_oid, head_oid)?;
     let diff_started = Instant::now();
     let pushed_entries = git_changed_tree_entries(staging_repo, base_head_oid, head_oid)?;
@@ -374,6 +427,36 @@ mod tests {
     };
     use scope_domain::{content::DEFAULT_GIT_FILE_MODE, policy::ScopePath};
     use std::fs;
+
+    #[test]
+    fn stale_main_push_is_a_conflict_before_any_pack_work() {
+        let repo = TestRepo::init();
+        fs::write(repo.join("a.txt"), b"a").unwrap();
+        repo.commit_all("base");
+        let base = repo.oid("HEAD");
+        fs::write(repo.join("b.txt"), b"b").unwrap();
+        repo.commit_all("pushed");
+        let pushed = repo.oid("HEAD");
+        ensure_pushed_head_extends(&repo, &base, &pushed).unwrap();
+
+        run_git(
+            Some(&repo),
+            &["checkout", "-q", "-b", "other", &base],
+            "branching",
+        )
+        .unwrap();
+        fs::write(repo.join("c.txt"), b"c").unwrap();
+        repo.commit_all("concurrent main");
+        let concurrent = repo.oid("HEAD");
+        for current in [
+            concurrent.as_str(),
+            "1111111111111111111111111111111111111111",
+        ] {
+            let error = ensure_pushed_head_extends(&repo, current, &pushed).unwrap_err();
+            assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+            assert_eq!(error.into_public_message(), STALE_MAIN_PUSH_ERROR);
+        }
+    }
 
     #[test]
     fn landing_file_mutation_distinguishes_unchanged_delete_and_oversized() {

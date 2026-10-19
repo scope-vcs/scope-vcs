@@ -6,7 +6,6 @@ use super::{
     history_rows::{insert_commits, save_live_files},
     integer_columns::{i64_to_u64, u64_to_i64},
     landing_files::apply_repository_landing_file_mutation,
-    outbox::enqueue_projection_read_model_rebuild,
     projection_read_models::fold_live_projection_read_models,
     push_triggers::enqueue_push_main_trigger_evaluation,
     workflow_catalogs::apply_repository_workflow_catalog,
@@ -183,7 +182,6 @@ async fn accept_and_persist_content_update(
         .await?;
     publish_git_segment(tx, &repo_id, &git_pack_span.segment, now_unix).await?;
     schedule_git_compaction(tx, &repo_id, git_head.push_sequence, now_unix).await?;
-    let pinned_pack_spans = load_git_pack_spans(tx, &repo_id).await?;
     let ordinal = usize::try_from(next_ordinal)
         .map_err(|_| PostgresError::internal_message("logical commit ordinal is invalid"))?;
     insert_commits(tx, &repo_id, ordinal, std::slice::from_ref(&logical_commit)).await?;
@@ -209,8 +207,12 @@ async fn accept_and_persist_content_update(
     apply_repository_landing_file_mutation(tx, &repo_id, landing_file_mutation).await?;
     apply_repository_workflow_catalog(tx, &workflow_catalog).await?;
     fold_live_projection_read_models(tx, &repo_id, content_version).await?;
-    enqueue_projection_read_model_rebuild(tx, &repo_id, content_version, now_unix).await?;
     if let Some(input) = push_trigger_input {
+        let pinned_pack_spans = if input.requires_evaluation() {
+            load_git_pack_spans(tx, &repo_id).await?
+        } else {
+            Vec::new()
+        };
         enqueue_push_main_trigger_evaluation(
             tx,
             &repo_id,

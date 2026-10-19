@@ -31,6 +31,7 @@ use tracing_subscriber::{
 
 #[cfg(feature = "postgres")]
 mod job_trace;
+mod log_writer;
 
 const EXPORTED_SPANS: &str =
     "off,otel::tracing=trace,api=info,worker=info,scope_=info,aws_sdk_s3::operation=debug";
@@ -97,7 +98,11 @@ pub fn init_telemetry(service: &'static str, log_filter: &str) -> anyhow::Result
         Ok(Some(destination)) => Some(destination.exporters(service)?),
         _ => None,
     };
-    install(subscriber(log_filter, exporters.as_ref(), std::io::stdout))?;
+    install(subscriber(
+        log_filter,
+        exporters.as_ref(),
+        log_writer::QueuedLogWriter::stdout()?,
+    ))?;
     if let Err(InjectedExporterHeaders(variable)) = destination {
         eprintln!(
             "PostHog telemetry export disabled because Railway still injects {variable}; disable Railway tracing for this service"

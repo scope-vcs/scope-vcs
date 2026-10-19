@@ -4,6 +4,8 @@ use crate::error::PostgresError;
 use scope_domain::repository::git::GitSegmentRef;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
+const GIT_SEGMENT_REFERENCE_INSERT_BATCH: usize = 1_000;
+
 pub(in crate::db) async fn insert_git_segment_references<'a, C>(
     conn: &C,
     ref_kind: &str,
@@ -15,16 +17,26 @@ where
 {
     require_reference_kind(ref_kind)?;
     require_text(ref_id, "Git segment reference id")?;
-    for segment in segments {
+    let segment_ids = segments
+        .into_iter()
+        .map(|segment| segment.segment_id.clone())
+        .collect::<Vec<_>>();
+    for chunk in segment_ids.chunks(GIT_SEGMENT_REFERENCE_INSERT_BATCH) {
+        let rows = (0..chunk.len())
+            .map(|index| format!("(${}, $1, $2)", index + 3))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut values = Vec::with_capacity(chunk.len() + 2);
+        values.push(ref_kind.into());
+        values.push(ref_id.into());
+        values.extend(chunk.iter().cloned().map(sea_orm::Value::from));
         conn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "INSERT INTO scope_git_segment_references (segment_id, ref_kind, ref_id)
-             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-            [
-                segment.segment_id.clone().into(),
-                ref_kind.into(),
-                ref_id.into(),
-            ],
+            format!(
+                "INSERT INTO scope_git_segment_references (segment_id, ref_kind, ref_id)
+                 VALUES {rows} ON CONFLICT DO NOTHING"
+            ),
+            values,
         ))
         .await?;
     }

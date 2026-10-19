@@ -601,15 +601,20 @@ async fn receive_pack_access(
 }
 
 async fn published_staging_repo(state: &AppState) -> PathBuf {
-    ensure_ready_receive_pack_staging_repo(
-        state,
-        &test_repo_incarnation(),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &test_owner_id(),
-    )
-    .await
-    .unwrap()
+    ensure_ready_receive_pack_staging_repo(state, &owner_push_context(state).await)
+        .await
+        .unwrap()
+        .path
+}
+
+async fn owner_push_context(state: &AppState) -> scope_postgres::db::GitPushContext {
+    state
+        .metadata
+        .repositories()
+        .git_push_context(TEST_REPO_OWNER, TEST_REPO_NAME, &test_owner_id())
+        .await
+        .unwrap()
+        .unwrap()
 }
 
 async fn find_repo(

@@ -12,7 +12,7 @@ async fn private_request_run_source_supplies_its_old_main_base_before_runner_che
     let incarnation = state
         .metadata
         .repositories()
-        .git_push_context("owner", "repo", "user-owner")
+        .git_push_state("owner", "repo", "user-owner")
         .await
         .unwrap()
         .unwrap()
@@ -150,7 +150,7 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
         let incarnation = state
             .metadata
             .repositories()
-            .git_push_context("owner", "repo", "user-owner")
+            .git_push_state("owner", "repo", "user-owner")
             .await
             .unwrap()
             .unwrap()

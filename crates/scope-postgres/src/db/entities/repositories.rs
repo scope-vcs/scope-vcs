@@ -324,7 +324,7 @@ pub mod git_head {
 pub mod git_pack_span {
     use super::*;
 
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, serde::Deserialize)]
     #[sea_orm(table_name = "scope_git_segments")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
@@ -387,7 +387,7 @@ pub mod git_pack_span {
 pub mod git_segment_upload {
     use super::*;
 
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel, serde::Deserialize)]
     #[sea_orm(table_name = "scope_git_segment_uploads")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]

@@ -26,32 +26,35 @@ use scope_storage::{ContentObjectKind, content_object_for_bytes};
 use scope_storage::{GitStorageError, StagedGitSegment};
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
-pub(super) fn pushed_commit_time(staging_repo: &FsPath, head_oid: &str) -> Result<i64, ApiError> {
-    git_stdout_text(
-        staging_repo,
-        &["log", "-1", "--format=%ct", head_oid],
-        "reading pushed commit time",
-    )?
-    .trim()
-    .parse()
-    .map_err(|_| ApiError::internal_message("invalid pushed Git commit time"))
+pub(super) struct PushedCommit {
+    pub(super) message: String,
+    pub(super) committed_at_unix: i64,
 }
 
-pub(super) fn pushed_commit_message(
+pub(super) fn pushed_commit(
     staging_repo: &FsPath,
     head_oid: &str,
-) -> Result<String, ApiError> {
-    let message = git_stdout_text(
+) -> Result<PushedCommit, ApiError> {
+    let output = git_stdout_text(
         staging_repo,
-        &["log", "-1", "--format=%B", head_oid],
-        "reading pushed commit message",
+        &["log", "-1", "--format=%ct%n%B", head_oid],
+        "reading pushed commit",
     )?;
-    let message = message.trim_end_matches(&['\r', '\n'][..]).to_string();
-    if message.trim().is_empty() {
-        Ok(format!("Push to {DEFAULT_GIT_BRANCH}"))
+    let (committed_at, message) = output.split_once('\n').unwrap_or((output.as_str(), ""));
+    let committed_at_unix = committed_at
+        .trim()
+        .parse()
+        .map_err(|_| ApiError::internal_message("invalid pushed Git commit time"))?;
+    let message = message.trim_end_matches(&['\r', '\n'][..]);
+    let message = if message.trim().is_empty() {
+        format!("Push to {DEFAULT_GIT_BRANCH}")
     } else {
-        Ok(message)
-    }
+        message.to_string()
+    };
+    Ok(PushedCommit {
+        message,
+        committed_at_unix,
+    })
 }
 
 pub(crate) fn git_refs(staging_repo: &FsPath) -> Result<Vec<(String, String)>, ApiError> {
@@ -500,7 +503,7 @@ pub(crate) async fn git_push_from_repo(
         segment_id = staged_segment.segment.segment_id,
         success = true,
         duration_us = timings.total.as_micros(),
-        local_write_and_fsync_us = timings.local_write_and_fsync.as_micros(),
+        local_write_us = timings.local_write.as_micros(),
         remote_upload_us = timings.remote_upload.as_micros(),
         uploaded_parts = timings.uploaded_parts,
         bytes = timings.plaintext_bytes,

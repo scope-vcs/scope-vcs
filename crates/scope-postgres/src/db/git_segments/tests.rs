@@ -161,6 +161,51 @@ async fn repository_git_write_lease_is_session_scoped() {
 }
 
 #[tokio::test]
+async fn a_cancelled_release_closes_the_session_instead_of_pooling_the_held_lock() {
+    let store = store_with_repository("segment-user/repo").await;
+    let schema = content_fences::current_schema(store.db.as_ref())
+        .await
+        .unwrap();
+    let key = sea_orm::sqlx::postgres::PgAdvisoryLock::new(format!(
+        "scope:git-write:{schema}:segment-user/repo"
+    ))
+    .key()
+    .as_bigint()
+    .unwrap();
+    let lease = store
+        .repositories()
+        .acquire_git_write_lease("segment-user/repo")
+        .await
+        .unwrap();
+    tokio::select! {
+        biased;
+        () = lease.release() => panic!("release finished before its unlock round trip"),
+        () = std::future::ready(()) => {}
+    }
+    for _ in 0..100 {
+        let held = store
+            .db
+            .query_one_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT count(*) AS held FROM pg_locks
+                 WHERE locktype = 'advisory' AND objsubid = 1
+                   AND ((classid::bigint << 32) | objid::bigint) = $1",
+                [key.into()],
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<i64>("", "held")
+            .unwrap();
+        if held == 0 {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("a cancelled release left the repository Git write lease held");
+}
+
+#[tokio::test]
 async fn repository_deletion_keeps_segment_ledger_for_physical_cleanup() {
     let store = store_with_repository("segment-user/repo").await;
     let repositories = store.repositories();

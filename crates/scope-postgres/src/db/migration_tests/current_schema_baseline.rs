@@ -139,9 +139,13 @@ async fn preflight_checks_the_baseline_schema_with_writers_online_without_changi
     let (target, db, _lease) = isolated_database().await;
     baseline_database(&db).await;
     let database_url = target.schema_database_url();
-    let writer = crate::db::connect_writer_database(&database_url, database_url.parse().unwrap())
-        .await
-        .unwrap();
+    let writer = crate::db::connect_writer_database(
+        &database_url,
+        database_url.parse().unwrap(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
+    )
+    .await
+    .unwrap();
     let before = representative_business_snapshot(&db).await;
     let sequence = sequence_state(&db).await;
     let plan = migrations::plan(db.as_ref()).await.unwrap();

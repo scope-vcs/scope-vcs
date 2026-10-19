@@ -1,4 +1,4 @@
-use super::MetadataStore;
+use super::{MetadataStore, git_segments::GitWriteLeaseSessions};
 use crate::error::PostgresError;
 use sea_orm::{
     AccessMode, ConnectOptions, DatabaseConnection, DatabaseTransaction, IsolationLevel,
@@ -8,25 +8,50 @@ use sqlx::{AssertSqlSafe, Connection as _, PgConnection};
 use std::sync::Arc;
 
 const WRITER_FENCE_KEY: &str = "scope:metadata-writers";
+pub const DEFAULT_METADATA_POOL_MAX_CONNECTIONS: u32 = 10;
+pub const DEFAULT_GIT_WRITE_LEASE_SESSIONS: u32 = 16;
 
-pub(super) async fn connect_postgres_store(database_url: String) -> anyhow::Result<MetadataStore> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MetadataPoolLimits {
+    pub connections: u32,
+    pub git_write_lease_sessions: u32,
+}
+
+impl Default for MetadataPoolLimits {
+    fn default() -> Self {
+        Self {
+            connections: DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
+            git_write_lease_sessions: DEFAULT_GIT_WRITE_LEASE_SESSIONS,
+        }
+    }
+}
+
+pub(super) async fn connect_postgres_store(
+    database_url: String,
+    limits: MetadataPoolLimits,
+) -> anyhow::Result<MetadataStore> {
     let options = database_url.parse()?;
-    connect_postgres_store_with_options(database_url, options).await
+    connect_postgres_store_with_options(database_url, options, limits).await
 }
 
 pub(super) async fn connect_postgres_store_with_options(
     database_url: String,
     connection_options: sqlx::postgres::PgConnectOptions,
+    limits: MetadataPoolLimits,
 ) -> anyhow::Result<MetadataStore> {
     let database_url = Arc::<str>::from(database_url);
-    let db = connect_writer_database(&database_url, connection_options).await?;
+    let db = connect_writer_database(&database_url, connection_options, limits.connections).await?;
     if let Err(error) = crate::migrations::assert_exact_state(&db).await {
         db.close().await?;
         return Err(error.into());
     }
+    let git_write_lease_sessions =
+        GitWriteLeaseSessions::lazy(&database_url, limits.git_write_lease_sessions)?;
     Ok(MetadataStore {
         db: Arc::new(db),
         postgres_database_url: Some(database_url),
+        repo_change_notifier: Default::default(),
+        git_write_lease_sessions,
         #[cfg(any(test, feature = "test-support"))]
         _test_schema: None,
     })
@@ -99,9 +124,11 @@ impl ExclusiveWriterFence {
 pub(super) async fn connect_writer_database(
     database_url: &str,
     connection_options: sqlx::postgres::PgConnectOptions,
+    max_connections: u32,
 ) -> anyhow::Result<DatabaseConnection> {
     let mut options = ConnectOptions::new(database_url.to_string());
     options.min_connections(1);
+    options.max_connections(max_connections);
     let fence_statement = writer_fence_statement("pg_advisory_lock_shared");
     let pool = options
         .sqlx_pool_options()

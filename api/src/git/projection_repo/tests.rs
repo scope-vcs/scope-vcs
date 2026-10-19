@@ -375,7 +375,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
             engine.lease_derived(repo.clone()).unwrap(),
             &request(hidden_oid),
             RuntimeBudgets::default_git_command_timeout(),
-            budgets.try_upload_pack().unwrap(),
+            budgets.admit_upload_pack().await.unwrap(),
         )
         .await
         .unwrap_err();
@@ -394,7 +394,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(repo.clone()).unwrap(),
         shallow_request.as_bytes(),
         RuntimeBudgets::default_git_command_timeout(),
-        budgets.try_upload_pack().unwrap(),
+        budgets.admit_upload_pack().await.unwrap(),
     )
     .await
     .unwrap_err();
@@ -415,7 +415,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(repo.clone()).unwrap(),
         &have_request(&private_oid),
         RuntimeBudgets::default_git_command_timeout(),
-        budgets.try_upload_pack().unwrap(),
+        budgets.admit_upload_pack().await.unwrap(),
     )
     .await
     .unwrap();
@@ -428,7 +428,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(repo.clone()).unwrap(),
         &unknown_have,
         RuntimeBudgets::default_git_command_timeout(),
-        budgets.try_upload_pack().unwrap(),
+        budgets.admit_upload_pack().await.unwrap(),
     )
     .await
     .unwrap();
@@ -442,7 +442,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(repo.clone()).unwrap(),
         &request(&native_oid),
         RuntimeBudgets::default_git_command_timeout(),
-        budgets.try_upload_pack().unwrap(),
+        budgets.admit_upload_pack().await.unwrap(),
     )
     .await
     .unwrap();

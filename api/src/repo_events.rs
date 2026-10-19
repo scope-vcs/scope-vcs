@@ -497,7 +497,10 @@ pub(crate) async fn publish_repo_event(
             return;
         }
     };
-    if let Err(error) = metadata.repositories().notify_repo_change(&payload).await {
+    if let Err(error) = metadata
+        .repositories()
+        .queue_repo_change_notification(payload)
+    {
         tracing::warn!(
             repo_id = %event.repo_id,
             error = %error.message,

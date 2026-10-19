@@ -159,7 +159,7 @@ pub(crate) async fn git_info_refs(
                 Ok(access) => access,
                 Err(error) => return git_error_response(error),
             };
-            let permit = match state.runtime_budgets.try_receive_pack() {
+            let permit = match state.runtime_budgets.admit_receive_pack().await {
                 Ok(permit) => permit,
                 Err(error) => return git_error_response(error),
             };
@@ -177,7 +177,7 @@ pub(crate) async fn git_info_refs(
             }
         }
         Some(GIT_UPLOAD_PACK) => {
-            let permit = match state.runtime_budgets.try_upload_pack() {
+            let permit = match state.runtime_budgets.admit_upload_pack().await {
                 Ok(permit) => permit,
                 Err(error) => return git_advertisement_error(error.into_public_message()),
             };
@@ -244,7 +244,11 @@ pub(crate) async fn git_receive_pack(
         Ok(access) => access,
         Err(error) => return git_error_response(error),
     };
-    let permit = match state.runtime_budgets.try_receive_pack() {
+    let request = match answer_receive_pack_probe(request).await {
+        ReceivePackProbe::Answered(response) => return response,
+        ReceivePackProbe::Upload(request) => request,
+    };
+    let permit = match state.runtime_budgets.admit_receive_pack().await {
         Ok(permit) => permit,
         Err(error) => return git_error_response(error),
     };
@@ -260,6 +264,34 @@ pub(crate) async fn git_receive_pack(
                 "Git receive operation failed: {error}"
             )))
         })
+}
+
+const RECEIVE_PACK_PROBE_BODY: &[u8] = b"0000";
+
+enum ReceivePackProbe {
+    Answered(Response),
+    Upload(Request),
+}
+
+async fn answer_receive_pack_probe(request: Request) -> ReceivePackProbe {
+    let probe_length = request
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim() == "4");
+    if !probe_length || request.headers().contains_key(CONTENT_ENCODING) {
+        return ReceivePackProbe::Upload(request);
+    }
+    let (parts, body) = request.into_parts();
+    match to_bytes(body, RECEIVE_PACK_PROBE_BODY.len()).await {
+        Ok(bytes) if bytes.as_ref() == RECEIVE_PACK_PROBE_BODY => ReceivePackProbe::Answered(
+            git_response("application/x-git-receive-pack-result", Vec::new()),
+        ),
+        Ok(bytes) => ReceivePackProbe::Upload(Request::from_parts(parts, Body::from(bytes))),
+        Err(error) => ReceivePackProbe::Answered(git_error_response(ApiError::bad_request(
+            format!("invalid Git receive-pack body: {error}"),
+        ))),
+    }
 }
 
 async fn receive_pack_request(
@@ -333,7 +365,7 @@ pub(crate) async fn git_upload_pack_rpc(
         Ok(view) => view,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
-    let permit = match state.runtime_budgets.try_upload_pack() {
+    let permit = match state.runtime_budgets.admit_upload_pack().await {
         Ok(permit) => permit,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
