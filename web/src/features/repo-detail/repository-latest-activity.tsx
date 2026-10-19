@@ -50,7 +50,13 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
     )
   }
   const { entry, head_oid: headOid } = current.value
-  if (!entry) return null
+  if (!entry) {
+    return (
+      <div className={cn(STRIP, 'text-muted-foreground')} data-repo-activity>
+        <p>No changes visible in this view.</p>
+      </div>
+    )
+  }
   const message = entry.message.split('\n', 1)[0] || 'Repository updated'
   return (
     <div
