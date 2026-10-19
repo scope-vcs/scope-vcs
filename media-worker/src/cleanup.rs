@@ -4,14 +4,17 @@ use crate::{
     health::{MediaWorkerLoop, WorkerHealth},
     runtime::{Cadence, JobLoop, JobOutcome, lease_expiry, retry_delay},
 };
-use scope_domain::requests::attachments::RequestAttachmentCleanupLease;
-use scope_media_storage::MediaStorage;
+use scope_domain::requests::attachments::{
+    REQUEST_MEDIA_LATE_WRITE_GRACE_SECONDS, RequestAttachmentCleanupLease,
+};
+use scope_media_storage::{MEDIA_PUT_TIMEOUT, MediaStorage};
 use scope_postgres::db::{MediaLeaseMutation, MetadataStore};
 use scope_service_runtime::{random_hex, unix_now};
 use std::time::Duration;
 use tracing::Instrument as _;
 
 const EXPIRY_DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
+const _: () = assert!(MEDIA_PUT_TIMEOUT.as_secs() <= REQUEST_MEDIA_LATE_WRITE_GRACE_SECONDS);
 
 pub async fn run(
     metadata: MetadataStore,
@@ -129,12 +132,7 @@ async fn clean_up_lease(
     }
     let result = metadata
         .media()
-        .complete_cleanup_job(
-            &lease.attachment_id,
-            &lease.lease_token,
-            lease.lease_generation,
-            unix_now()?,
-        )
+        .complete_cleanup_job(lease, unix_now()?)
         .await?;
     Ok(match result {
         MediaLeaseMutation::Applied(()) => JobOutcome::Completed,

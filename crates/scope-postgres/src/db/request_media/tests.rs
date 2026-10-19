@@ -753,12 +753,7 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
         fixture
             .store
             .media()
-            .complete_cleanup_job(
-                "deleted_attachment",
-                &cleanup.lease_token,
-                cleanup.lease_generation,
-                91,
-            )
+            .complete_cleanup_job(&cleanup, 91)
             .await
             .unwrap(),
         MediaLeaseMutation::Applied(())
@@ -792,12 +787,7 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
         fixture
             .store
             .media()
-            .complete_cleanup_job(
-                "deleted_attachment",
-                &reconciled.lease_token,
-                reconciled.lease_generation,
-                reconciliation_time + 1,
-            )
+            .complete_cleanup_job(&reconciled, reconciliation_time + 1)
             .await
             .unwrap(),
         MediaLeaseMutation::Applied(())
