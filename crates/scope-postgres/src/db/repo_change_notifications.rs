@@ -134,19 +134,20 @@ async fn listen_for_repo_changes(
 #[cfg(test)]
 mod tests {
     use crate::db::{MetadataStore, TestDatabaseTarget};
-    use std::{sync::Mutex, time::Duration};
+    use std::time::Duration;
 
     #[tokio::test]
     async fn queued_notifications_reach_listeners_in_order() {
         let target = TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        let received = std::sync::Arc::new(Mutex::new(Vec::new()));
-        let sink = std::sync::Arc::clone(&received);
-        store
-            .repositories()
-            .start_repo_change_listener(move |payload| sink.lock().unwrap().push(payload))
+        let mut listener =
+            sqlx::postgres::PgListener::connect_with(store.db.get_postgres_connection_pool())
+                .await
+                .unwrap();
+        listener
+            .listen(super::POSTGRES_REPO_CHANGE_CHANNEL)
+            .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(500)).await;
         let expected = (0..300)
             .map(|index| format!("change-{index}"))
             .collect::<Vec<_>>();
@@ -156,12 +157,15 @@ mod tests {
                 .queue_repo_change_notification(payload.clone())
                 .unwrap();
         }
-        for _ in 0..100 {
-            if received.lock().unwrap().len() >= expected.len() {
-                break;
+        let received = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut received = Vec::with_capacity(expected.len());
+            for _ in &expected {
+                received.push(listener.recv().await.unwrap().payload().to_string());
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        assert_eq!(*received.lock().unwrap(), expected);
+            received
+        })
+        .await
+        .unwrap();
+        assert_eq!(received, expected);
     }
 }
