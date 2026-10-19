@@ -30,6 +30,7 @@ import {
 } from '@/api/github-inputs'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
 import { VisibilityLogSection } from '@/features/repo-detail/visibility-log-section'
+import { RepositoryDependencySection } from '@/features/repo-detail/repository-dependency-check'
 import { RepoSettingsPending } from '@/features/repo-detail/repo-settings-pending'
 import { RepoContentError } from '@/components/repo-content-error'
 import { WorkbenchBar, WorkbenchBody, WorkbenchPane } from '@/components/page-header'
@@ -159,6 +160,7 @@ function RepoSettingsRoute() {
         {!resource.error || resource.value ? (
           <RepoSettingsPage
             key={scope}
+            dependencyCheck={<RepositoryDependencySection params={params} repo={repo} />}
             visibilityLog={views.full && <VisibilityLogSection params={params} view={views.full} />}
             createInvite={(data) => retainResult(
               createRepoInvite({ data }),
