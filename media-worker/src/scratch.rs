@@ -6,6 +6,7 @@ use std::{
 const SCRATCH_PREFIX: &str = "job-";
 const MAX_STARTUP_ENTRIES: usize = 1_024;
 
+#[derive(Clone)]
 pub struct ScratchSpace {
     root: PathBuf,
 }

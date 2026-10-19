@@ -66,7 +66,6 @@ pub struct WorkerSettings {
     pub scratch_root: PathBuf,
     pub poll_interval: Duration,
     pub lease_duration: Duration,
-    pub max_attempts: u32,
     pub codec_programs: CodecPrograms,
     pub codec_limits: CodecLimits,
 }
@@ -82,7 +81,6 @@ impl WorkerSettings {
             scratch_root,
             poll_interval: Duration::from_secs(1),
             lease_duration: Duration::from_secs(120),
-            max_attempts: 4,
             codec_programs: CodecPrograms::from_env(),
             codec_limits: CodecLimits::default(),
         })

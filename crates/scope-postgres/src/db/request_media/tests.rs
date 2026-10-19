@@ -13,9 +13,10 @@ use scope_domain::{
         RequestActorRole, StartRequestInput,
         attachments::{
             RequestAttachmentDerivative, RequestAttachmentDerivativeKind,
-            RequestAttachmentImageMetadata, RequestAttachmentPartReceipt, RequestAttachmentSource,
-            RequestAttachmentStagedPart, RequestAttachmentState, RequestAttachmentStoredObject,
-            RequestAttachmentTarget, RequestMediaChunk,
+            RequestAttachmentImageMetadata, RequestAttachmentPartReceipt,
+            RequestAttachmentProcessingLane, RequestAttachmentSource, RequestAttachmentStagedPart,
+            RequestAttachmentState, RequestAttachmentStoredObject, RequestAttachmentTarget,
+            RequestMediaChunk,
         },
     },
     views::ViewId,
@@ -433,7 +434,12 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
     let (first_lease, _) = fixture
         .store
         .media()
-        .claim_processing_job("first-processing-token", 20, 30)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "first-processing-token",
+            20,
+            30,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -457,7 +463,12 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
     let (replacement_lease, _) = fixture
         .store
         .media()
-        .claim_processing_job("replacement-processing-token", 30, 40)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "replacement-processing-token",
+            30,
+            40,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -509,7 +520,12 @@ async fn successful_processing_completion_persists_derivative_with_repository_bu
     let (lease, _) = fixture
         .store
         .media()
-        .claim_processing_job("completion-token", 20, 40)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "completion-token",
+            20,
+            40,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -623,7 +639,12 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
     let (processing_lease, _) = fixture
         .store
         .media()
-        .claim_processing_job("processing-before-delete", 20, 30)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "processing-before-delete",
+            20,
+            30,
+        )
         .await
         .unwrap()
         .unwrap();

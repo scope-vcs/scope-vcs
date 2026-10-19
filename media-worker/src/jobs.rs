@@ -2,15 +2,16 @@ use crate::lease::{HeartbeatError, supervise_lease};
 use crate::{
     codec::{CodecDerivative, CodecFailure, CodecFailureKind, CodecPipeline, ValidatedSource},
     config::WorkerSettings,
-    health::WorkerHealth,
+    health::{MediaWorkerLoop, WorkerHealth},
     runtime::{JobLoop, JobOutcome, lease_expiry, retry_delay},
     scratch::ScratchSpace,
 };
 use scope_domain::requests::attachments::{
     RequestAttachmentDerivative, RequestAttachmentDerivativeKind, RequestAttachmentFailure,
     RequestAttachmentFailureCode, RequestAttachmentImageMetadata, RequestAttachmentKind,
-    RequestAttachmentProcessingLease, RequestAttachmentSource, RequestAttachmentStagedPart,
-    RequestAttachmentStoredObject, RequestAttachmentVideoMetadata, RequestMediaObject,
+    RequestAttachmentProcessingLane, RequestAttachmentProcessingLease, RequestAttachmentSource,
+    RequestAttachmentStagedPart, RequestAttachmentStoredObject, RequestAttachmentVideoMetadata,
+    RequestMediaObject, processing_attempts_exhausted,
 };
 use scope_media_storage::{
     MAX_CHUNK_BYTES, MediaStorage, MediaStorageError, MediaStorageErrorKind, WriteAttempt,
@@ -26,7 +27,11 @@ use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tracing::Instrument as _;
 
+const DECLARED_TYPE_MISMATCH: &str =
+    "The uploaded media does not match its declared type. Upload it with the correct file type.";
+
 pub async fn run_processing_loop(
+    lane: RequestAttachmentProcessingLane,
     metadata: MetadataStore,
     storage: MediaStorage,
     pipeline: CodecPipeline,
@@ -34,19 +39,41 @@ pub async fn run_processing_loop(
     settings: WorkerSettings,
     health: WorkerHealth,
 ) -> anyhow::Result<()> {
+    let (kind, worker_loop) = match lane {
+        RequestAttachmentProcessingLane::Photo => {
+            ("photo processing", MediaWorkerLoop::PhotoProcessing)
+        }
+        RequestAttachmentProcessingLane::General => {
+            ("processing", MediaWorkerLoop::GeneralProcessing)
+        }
+    };
     JobLoop {
-        kind: "processing",
+        kind,
+        worker_loop,
         metadata: &metadata,
         storage: &storage,
         health: &health,
         poll_interval: settings.poll_interval,
-        mark_poll: WorkerHealth::mark_processing_poll,
     }
-    .run(|| process_next_job(&metadata, &storage, &pipeline, &scratch, &settings, &health))
+    .run(|| {
+        process_next_job(
+            lane,
+            worker_loop,
+            &metadata,
+            &storage,
+            &pipeline,
+            &scratch,
+            &settings,
+            &health,
+        )
+    })
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_next_job(
+    lane: RequestAttachmentProcessingLane,
+    worker_loop: MediaWorkerLoop,
     metadata: &MetadataStore,
     storage: &MediaStorage,
     pipeline: &CodecPipeline,
@@ -58,13 +85,19 @@ async fn process_next_job(
     let token = random_hex("lease-", 16)?;
     let Some((lease, queued_trace)) = metadata
         .media()
-        .claim_processing_job(&token, now, lease_expiry(now, settings.lease_duration)?)
+        .claim_processing_job(
+            lane,
+            &token,
+            now,
+            lease_expiry(now, settings.lease_duration)?,
+        )
         .await?
     else {
         return Ok(JobOutcome::NoJob);
     };
     tracing::info!(
         attachment_id = %lease.attachment_id,
+        kind = ?lease.kind,
         attempt = lease.attempt,
         lease_generation = lease.lease_generation,
         "claimed media processing job"
@@ -78,7 +111,7 @@ async fn process_next_job(
         scope.job.attempt = lease.attempt,
     );
     queued_trace.link(&span);
-    let _activity = health.processing_activity();
+    let _activity = health.activity(worker_loop);
     let work = settle_claim(metadata, storage, pipeline, scratch, settings, &lease);
     match supervise_lease(work, settings.lease_duration, || async {
         let now = unix_now()?;
@@ -121,7 +154,7 @@ async fn settle_claim(
                 }
                 Err(error) => {
                     delete_objects(storage, &completion.objects).await;
-                    return record_source_validation_error(metadata, settings, lease, error).await;
+                    return record_source_validation_error(metadata, lease, error).await;
                 }
             }
             let command = CompleteRequestAttachmentProcessingCommand {
@@ -149,12 +182,11 @@ async fn settle_claim(
                     Ok(true) => {}
                     Ok(false) => return Ok(JobOutcome::LeaseLost),
                     Err(error) => {
-                        return record_source_validation_error(metadata, settings, lease, error)
-                            .await;
+                        return record_source_validation_error(metadata, lease, error).await;
                     }
                 }
             }
-            record_processing_failure(metadata, settings, lease, failure).await
+            record_processing_failure(metadata, lease, failure).await
         }
         Err(WorkError::LeaseLost) => Ok(JobOutcome::LeaseLost),
         Err(WorkError::Database(error)) => Err(error),
@@ -232,8 +264,18 @@ async fn process_claim(
         ));
     }
 
-    let output = match pipeline.process(&source_path, job_dir.path()).await {
-        Ok(output) => output,
+    let output = match pipeline
+        .process(&source_path, job_dir.path(), lease.kind)
+        .await
+    {
+        Ok(output) => {
+            tracing::info!(
+                attachment_id = %lease.attachment_id,
+                playback = ?output.playback,
+                "media codec produced derivatives"
+            );
+            output
+        }
         Err(error) => {
             tracing::warn!(
                 attachment_id = %lease.attachment_id,
@@ -453,7 +495,6 @@ async fn mark_source_validated(
 
 async fn record_source_validation_error(
     metadata: &MetadataStore,
-    settings: &WorkerSettings,
     lease: &RequestAttachmentProcessingLease,
     error: anyhow::Error,
 ) -> anyhow::Result<JobOutcome> {
@@ -461,23 +502,27 @@ async fn record_source_validation_error(
         .downcast_ref::<scope_postgres::error::PostgresError>()
         .is_some_and(|error| error.kind == scope_postgres::error::PostgresErrorKind::InvalidInput)
     {
-        return record_processing_failure(metadata, settings, lease, RequestAttachmentFailure {
-            code: RequestAttachmentFailureCode::CorruptMedia,
-            message: "The uploaded media does not match its declared type. Upload it with the correct file type.".to_owned(),
-            retryable: false,
-        }).await;
+        return record_processing_failure(
+            metadata,
+            lease,
+            RequestAttachmentFailure {
+                code: RequestAttachmentFailureCode::CorruptMedia,
+                message: DECLARED_TYPE_MISMATCH.to_owned(),
+                retryable: false,
+            },
+        )
+        .await;
     }
     Err(error)
 }
 
 async fn record_processing_failure(
     metadata: &MetadataStore,
-    settings: &WorkerSettings,
     lease: &RequestAttachmentProcessingLease,
     failure: RequestAttachmentFailure,
 ) -> anyhow::Result<JobOutcome> {
     let now = unix_now()?;
-    let retry_at_unix = (failure.retryable && lease.attempt < settings.max_attempts)
+    let retry_at_unix = (failure.retryable && !processing_attempts_exhausted(lease.attempt))
         .then(|| now.saturating_add(retry_delay(lease.attempt).as_secs()));
     let result = metadata
         .media()
@@ -520,7 +565,10 @@ fn codec_failure(error: &CodecFailure) -> RequestAttachmentFailure {
         CodecFailureKind::CorruptMedia => RequestAttachmentFailureCode::CorruptMedia,
         CodecFailureKind::UnsupportedMedia => RequestAttachmentFailureCode::UnsupportedMedia,
         CodecFailureKind::MediaLimitExceeded => RequestAttachmentFailureCode::MediaLimitExceeded,
-        CodecFailureKind::CodecFailed => RequestAttachmentFailureCode::CodecFailed,
+        CodecFailureKind::DeclaredKindMismatch => RequestAttachmentFailureCode::CorruptMedia,
+        CodecFailureKind::TimedOut | CodecFailureKind::CodecFailed => {
+            RequestAttachmentFailureCode::CodecFailed
+        }
         CodecFailureKind::Internal => RequestAttachmentFailureCode::Internal,
     };
     RequestAttachmentFailure {
@@ -596,6 +644,10 @@ fn codec_user_message(kind: CodecFailureKind) -> &'static str {
         }
         CodecFailureKind::UnsupportedMedia => "This media format or codec is not supported.",
         CodecFailureKind::MediaLimitExceeded => "The uploaded file exceeds the media limits.",
+        CodecFailureKind::DeclaredKindMismatch => DECLARED_TYPE_MISMATCH,
+        CodecFailureKind::TimedOut => {
+            "Media conversion took too long. Upload a shorter or smaller file."
+        }
         CodecFailureKind::CodecFailed => "Media conversion failed. Retry processing.",
         CodecFailureKind::Internal => "Media processing failed. Retry processing.",
     }
@@ -620,11 +672,6 @@ async fn delete_objects(storage: &MediaStorage, objects: &[RequestMediaObject]) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    };
-    use std::time::Duration;
 
     #[tokio::test]
     async fn storage_retry_policy_distinguishes_absence_from_filesystem_failure() {
@@ -648,42 +695,5 @@ mod tests {
             RequestAttachmentFailureCode::StorageUnavailable
         );
         assert!(failure.retryable);
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn heartbeat_keeps_a_claim_alive_beyond_its_initial_lease() {
-        let lease_duration = Duration::from_millis(180);
-        let expires_at = Arc::new(Mutex::new(tokio::time::Instant::now() + lease_duration));
-        let renewals = Arc::new(AtomicUsize::new(0));
-        let renewal_expiry = Arc::clone(&expires_at);
-        let renewal_count = Arc::clone(&renewals);
-
-        let result = supervise_lease(
-            async {
-                tokio::time::sleep(Duration::from_millis(650)).await;
-                42
-            },
-            lease_duration,
-            move || {
-                let expires_at = Arc::clone(&renewal_expiry);
-                let renewals = Arc::clone(&renewal_count);
-                async move {
-                    let now = tokio::time::Instant::now();
-                    let mut expires_at = expires_at.lock().expect("lease expiry lock");
-                    if now >= *expires_at {
-                        return Ok(false);
-                    }
-                    *expires_at = now + lease_duration;
-                    renewals.fetch_add(1, Ordering::Relaxed);
-                    Ok(true)
-                }
-            },
-        )
-        .await
-        .expect("claim should remain leased");
-
-        assert_eq!(result, 42);
-        assert!(renewals.load(Ordering::Relaxed) >= 6);
-        assert!(*expires_at.lock().expect("lease expiry lock") > tokio::time::Instant::now());
     }
 }

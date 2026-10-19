@@ -253,6 +253,7 @@ pub struct RequestAttachmentSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestAttachmentProcessingLease {
     pub attachment_id: String,
+    pub kind: RequestAttachmentKind,
     pub lease_token: String,
     pub lease_generation: u64,
     pub attempt: u32,
