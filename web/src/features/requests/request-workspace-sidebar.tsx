@@ -33,6 +33,7 @@ import {
   REQUEST_MERGE_STEP_LABELS,
   requestAgeLabel,
   requestAttentionLabel,
+  requestStackParentLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
 import { useRequestKeyboard } from './use-request-keyboard'
@@ -165,11 +166,11 @@ export function RequestWorkspaceSidebar({
   }
   function showHint(event: ReactPointerEvent | FocusEvent) {
     const target = (event.target as Element).closest<HTMLElement>(
-      '[data-rail-hint], .request-workspace-row[data-rail]',
+      '[data-rail-hint], .request-workspace-row[data-request-id]',
     )
     const anchor = target?.dataset.railHint ? target : target?.querySelector('.request-workspace-row-avatar')
     const key = target?.dataset.railHint ?? target?.dataset.requestId
-    if (state !== 'closed' || !key || !anchor) return setHint(null)
+    if (!key || !anchor) return setHint(null)
     const { top, height } = anchor.getBoundingClientRect()
     setHint({
       key,
@@ -236,8 +237,11 @@ export function RequestWorkspaceSidebar({
     }))
     .filter(({ count }) => count > 0)
   const folded = foldedGroups.reduce((total, { count }) => total + count, 0)
-  const hinted = hint && state === 'closed' ? railHint(hint.key, hint.now) : undefined
+  const hinted = hint ? railHint(hint.key, hint.now) : undefined
   function railHint(key: string, now: number) {
+    const row = allRows.find((row) => row.item.request.id === key)
+    const parent = row && requestStackParentLabel(row.item)
+    if (state !== 'closed') return parent ? { title: parent, details: [] } : undefined
     if (key === 'needs-you') {
       const count = activeCount(needsYou.length)
       return {
@@ -250,12 +254,11 @@ export function RequestWorkspaceSidebar({
         title: `${folded} more`,
         details: foldedGroups.map(({ group, count }) => `${count} ${FOLDED_LABELS[group]}`),
       }
-    const row = allRows.find((row) => row.item.request.id === key)
     if (!row) return undefined
     const label = REQUEST_MERGE_STEP_LABELS[row.item.next_step] ?? requestAttentionLabel(row.item, true)
     return {
       title: row.item.request.title,
-      details: [`${label} · ${requestAgeLabel(row.item.attention_at_unix, now, true)}`],
+      details: [`${label} · ${requestAgeLabel(row.item.attention_at_unix, now, true)}`, ...(parent ? [parent] : [])],
     }
   }
   return (

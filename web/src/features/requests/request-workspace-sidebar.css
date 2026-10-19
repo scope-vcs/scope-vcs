@@ -615,15 +615,3 @@ html[data-focus] .application-topbar {
 .request-workspace-row--stacked {
   border-left: 1px solid var(--border-strong);
 }
-
-.request-workspace-row-parent {
-  overflow: hidden;
-  padding: 5px 8px 0 calc(var(--request-workspace-row-inset) + 22px);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.request-workspace-sidebar[data-state="closed"] .request-workspace-row-parent,
-.request-workspace-sidebar[data-closing] .request-workspace-row-parent {
-  display: none;
-}

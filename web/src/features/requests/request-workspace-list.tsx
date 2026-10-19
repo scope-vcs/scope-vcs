@@ -19,6 +19,7 @@ import {
   requestAttentionHeat,
   requestAttentionLabel,
   requestHasNewActivity,
+  requestStackParentLabel,
 } from './request-workspace-model'
 import { actorHandle } from './request-actor'
 
@@ -128,6 +129,7 @@ function RequestWorkspaceRow({
   const hot = attention.group === 'needs_you'
   const unread = requestHasNewActivity(item)
   const mergeStep = rail ? REQUEST_MERGE_STEP_LABELS[item.next_step] : undefined
+  const stackParent = requestStackParentLabel(item)
   const canSetAside = section === 'active' && attention.can_set_aside
   const actions = [
     { action: 'settle', label: 'Settle', icon: Check, visible: canSetAside },
@@ -154,9 +156,6 @@ function RequestWorkspaceRow({
       data-request-id={request.id}
       style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px` } as CSSProperties}
     >
-      {request.stack_parent ? <div className="request-workspace-row-parent text-[10px] text-muted-foreground">
-        {request.stack_parent.kind === 'available' ? <><span>Based on </span><Link className="underline-offset-4 hover:underline" params={{ ...params, requestId: request.stack_parent.request.id }} search={(current) => ({ view: current.view })} to="/$owner/$repo/requests/$requestId">{request.stack_parent.request.title}</Link></> : 'Unavailable dependency'}
-      </div> : null}
       <Link
         aria-current={selected ? 'page' : undefined}
         className="request-workspace-row-link"
@@ -200,6 +199,7 @@ function RequestWorkspaceRow({
               <span className="truncate" suppressHydrationWarning>
                 {requestAttentionLabel(item, hydrated)}
                 {mergeStep && <span className="sr-only">, {mergeStep}</span>}
+                {stackParent && <span className="sr-only">, {stackParent}</span>}
               </span>
             </span>
             <time
