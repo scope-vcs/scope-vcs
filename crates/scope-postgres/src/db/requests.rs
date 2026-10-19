@@ -222,7 +222,7 @@ impl RequestStore {
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
-        acquire_aggregate_lock(&tx, "repository", &observed.repo_id).await?;
+        super::locks::acquire_shared_repository_lock(&tx, &observed.repo_id).await?;
         let request = request_by_id(&tx, &input.request_id)
             .await?
             .filter(|request| request.repo_id == observed.repo_id)

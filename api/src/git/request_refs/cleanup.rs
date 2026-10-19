@@ -1,6 +1,4 @@
-use super::{
-    acquire_request_ref_update_lock_async, locks::acquire_request_ref_store_lock, request_ref_head,
-};
+use super::{acquire_request_ref_update_lock_async, request_ref_head};
 use crate::{
     error::ApiError,
     git::{command::run_git, storage::request_ref_store_repo_path},
@@ -31,7 +29,6 @@ pub(crate) async fn cleanup_deleted_request_ref(
     let expected_head_oid = expected_head_oid.to_string();
     crate::git::blocking::run(move || {
         let _update_lock = update_lock;
-        let _store_lock = acquire_request_ref_store_lock(&state, &incarnation)?;
         let store_repo = request_ref_store_repo_path(&state, &incarnation);
         if !store_repo.exists() {
             return Ok(());

@@ -66,23 +66,8 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
     let state = state.clone();
     let incarnation = incarnation.clone();
     crate::git::blocking::run(move || {
-        let main_head = match known_head {
-            Some(head) => Some(head),
-            None => seed_main_head(&seed)?,
-        };
-        let repo_root = receive_pack_staging_repo_path(&state, &incarnation)?;
-        if let Some(parent) = repo_root.parent() {
-            ensure_private_dir(parent)?;
-        }
-        let built = create_receive_pack_staging_repo(
-            &repo_root,
-            Some(StagingSeed {
-                repo: &seed,
-                main_head: main_head.as_deref(),
-            }),
-        )
-        .and_then(|()| install_ready_pre_receive_hook(&repo_root));
-        if let Err(error) = built {
+        let repo_root = staging_repo_from_seed(&state, &incarnation, &seed, known_head)?;
+        if let Err(error) = install_ready_pre_receive_hook(&repo_root) {
             let _ = fs::remove_dir_all(&repo_root);
             return Err(error);
         }
@@ -138,6 +123,55 @@ fn create_receive_pack_staging_repo(
         .map_err(ApiError::internal)?;
     }
     Ok(())
+}
+
+pub(crate) fn create_seeded_receive_pack_staging_repo(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    seed: &FsPath,
+) -> Result<PathBuf, ApiError> {
+    staging_repo_from_seed(state, incarnation, seed, None)
+}
+
+fn staging_repo_from_seed(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    seed: &FsPath,
+    known_head: Option<String>,
+) -> Result<PathBuf, ApiError> {
+    let main_head = match known_head {
+        Some(head) => Some(head),
+        None => seed_main_head(seed)?,
+    };
+    let repo_root = receive_pack_staging_repo_path(state, incarnation)?;
+    if let Some(parent) = repo_root.parent() {
+        ensure_private_dir(parent)?;
+    }
+    if let Err(error) = create_receive_pack_staging_repo(
+        &repo_root,
+        Some(StagingSeed {
+            repo: seed,
+            main_head: main_head.as_deref(),
+        }),
+    ) {
+        let _ = fs::remove_dir_all(&repo_root);
+        return Err(error);
+    }
+    Ok(repo_root)
+}
+
+pub(crate) fn add_receive_pack_alternate(
+    repo_root: &FsPath,
+    objects: &FsPath,
+) -> Result<(), ApiError> {
+    let objects = fs::canonicalize(objects).map_err(ApiError::internal)?;
+    let alternates = repo_root.join("objects/info/alternates");
+    let mut lines = fs::read_to_string(&alternates).unwrap_or_default();
+    if lines.lines().any(|line| FsPath::new(line) == objects) {
+        return Ok(());
+    }
+    lines.push_str(&format!("{}\n", objects.display()));
+    fs::write(alternates, lines).map_err(ApiError::internal)
 }
 
 fn seed_main_head(seed: &FsPath) -> Result<Option<String>, ApiError> {

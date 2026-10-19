@@ -46,12 +46,16 @@ async fn assert_restored_request_head(state: &AppState, expected: &str) -> PathB
         &test_repo_incarnation(),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        &public_user_id(),
-        &scope_domain::views::ViewId::public(),
+        crate::use_cases::git_receive::request_ref::RequestPusher {
+            actor_user_id: &public_user_id(),
+            address_view: &scope_domain::views::ViewId::public(),
+        },
         crate::use_cases::git_receive::request_ref::RequestStagingKind::RequestRefsOnly,
+        crate::use_cases::git_receive::RequestRefSeeding::Pushed(&[REQUEST_REF.to_string()]),
     )
     .await
-    .unwrap();
+    .unwrap()
+    .path;
     let head = git_stdout_text(&staging, &["rev-parse", REQUEST_REF], "read request ref")
         .unwrap()
         .trim()

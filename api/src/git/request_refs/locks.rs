@@ -35,7 +35,7 @@ pub(crate) async fn acquire_request_ref_update_lock_async(
     .await
 }
 
-pub(super) fn acquire_request_ref_store_lock(
+pub(super) fn acquire_request_ref_store_init_lock(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
 ) -> Result<GitLockFile, ApiError> {

@@ -7,6 +7,7 @@ mod credentials;
 pub(crate) mod http_backend;
 pub(crate) mod import;
 pub(crate) mod projection_repo;
+pub(crate) mod receive_protocol;
 pub(crate) mod repository_engine;
 pub(crate) mod repository_git;
 pub(crate) mod request_commit;
@@ -28,7 +29,7 @@ use crate::{
     error::ApiError,
     git::{http_backend::*, upload::*},
     state::AppState,
-    use_cases::git_receive::{self, ReceivePackAccess},
+    use_cases::git_receive::{self, ReceivePackAccess, RequestRefSeeding},
 };
 use axum::{
     Json,
@@ -41,6 +42,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use flate2::read::GzDecoder;
+use receive_protocol::{advertise_additional_refs, read_receive_pack_commands};
 use scope_domain::views::ViewId;
 use serde::Deserialize;
 use std::{
@@ -467,10 +469,17 @@ pub(crate) async fn handle_git_receive_pack(
     content_type: Option<String>,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
-    let preparation = git_receive::prepare(state, owner, repo_name, access, true).await?;
+    let preparation = git_receive::prepare(
+        state,
+        owner,
+        repo_name,
+        access,
+        RequestRefSeeding::Advertise,
+    )
+    .await?;
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo);
-    let cgi = git_http_backend(
+    let mut cgi = git_http_backend(
         &staging_repo,
         method,
         "info/refs",
@@ -479,6 +488,9 @@ pub(crate) async fn handle_git_receive_pack(
         content_type,
         &remote_user,
     )?;
+    if cgi.status.is_success() {
+        cgi.body = advertise_additional_refs(&cgi.body, &preparation.advertised_request_refs)?;
+    }
     Ok(cgi.into_response())
 }
 
@@ -498,7 +510,15 @@ async fn handle_git_receive_pack_body(
     >,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
-    let mut preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
+    let commands = read_receive_pack_commands(input.body).await?;
+    let mut preparation = git_receive::prepare(
+        state,
+        owner,
+        repo_name,
+        access,
+        RequestRefSeeding::Pushed(&commands.refs),
+    )
+    .await?;
     preparation.base_publication = base_publication;
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo.clone());
@@ -506,7 +526,7 @@ async fn handle_git_receive_pack_body(
     let cgi = git_http_backend_streaming(
         &staging_repo,
         "git-receive-pack",
-        input.body,
+        commands.body,
         input.content_length,
         MAX_RECEIVE_PACK_BYTES,
         input.content_type,

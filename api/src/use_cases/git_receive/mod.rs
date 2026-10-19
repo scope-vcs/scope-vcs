@@ -19,6 +19,7 @@ use crate::{
     state::AppState,
 };
 pub(crate) use authorization::authorize;
+pub(crate) use request_ref::RequestRefSeeding;
 use request_ref::RequestStagingKind;
 use scope_domain::{repository::RepositoryIncarnation, views::ViewId};
 use scope_postgres::db::GitPushContext;
@@ -84,6 +85,7 @@ pub(crate) struct ReceivePreparation {
     pub(crate) staging_repo: PathBuf,
     _staging_seed: Option<GitRepoHandle>,
     pub(crate) refs_before: Option<Vec<(String, String)>>,
+    pub(crate) advertised_request_refs: Vec<(String, String)>,
     pub(crate) base_publication:
         Option<crate::use_cases::request_base_publication::RequestBasePublicationHeaders>,
 }
@@ -102,58 +104,63 @@ pub(crate) async fn prepare(
     owner: &str,
     repo_name: &str,
     access: ReceivePackAccess,
-    advertisement_only: bool,
+    seeding: RequestRefSeeding<'_>,
 ) -> Result<ReceivePreparation, ApiError> {
     let incarnation = access.incarnation().clone();
-    let mut staging_seed = None;
-    let staging_repo = match &access {
-        ReceivePackAccess::FirstPush { .. } => {
-            ensure_first_push_receive_pack_staging_repo(state, &incarnation).await?
-        }
+    let (staging_repo, staging_seed, advertised_request_refs) = match &access {
+        ReceivePackAccess::FirstPush { .. } => (
+            ensure_first_push_receive_pack_staging_repo(state, &incarnation).await?,
+            None,
+            Vec::new(),
+        ),
         ReceivePackAccess::ReadyMember {
             author_id, context, ..
         } => {
             let staging = ensure_ready_receive_pack_staging_repo(state, context).await?;
-            if let Err(error) =
-                request_ref::seed_editable_request_refs(state, context, author_id, &staging.path)
-                    .await
+            match request_ref::seed_editable_request_refs(
+                state,
+                context,
+                author_id,
+                &staging.path,
+                seeding,
+            )
+            .await
             {
-                let _ = crate::git::storage::remove_dir_if_exists(&staging.path);
-                return Err(error);
+                Ok(advertised) => (staging.path, Some(staging.seed), advertised),
+                Err(error) => {
+                    let _ = crate::git::storage::remove_dir_if_exists(&staging.path);
+                    return Err(error);
+                }
             }
-            staging_seed = Some(staging.seed);
-            staging.path
         }
         ReceivePackAccess::ViewMainPusher {
             author_id, view, ..
-        } => {
-            request_ref::prepare_request_staging_repo(
-                state,
-                &incarnation,
-                owner,
-                repo_name,
-                author_id,
-                view,
-                RequestStagingKind::WithViewMain,
-            )
-            .await?
         }
-        ReceivePackAccess::RequestContributor {
+        | ReceivePackAccess::RequestContributor {
             author_id, view, ..
         } => {
-            request_ref::prepare_request_staging_repo(
+            let kind = if matches!(&access, ReceivePackAccess::ViewMainPusher { .. }) {
+                RequestStagingKind::WithViewMain
+            } else {
+                RequestStagingKind::RequestRefsOnly
+            };
+            let staging = request_ref::prepare_request_staging_repo(
                 state,
                 &incarnation,
                 owner,
                 repo_name,
-                author_id,
-                view,
-                RequestStagingKind::RequestRefsOnly,
+                request_ref::RequestPusher {
+                    actor_user_id: author_id,
+                    address_view: view,
+                },
+                kind,
+                seeding,
             )
-            .await?
+            .await?;
+            (staging.path, Some(staging.seed), staging.advertised_refs)
         }
     };
-    let refs_before = if advertisement_only {
+    let refs_before = if matches!(seeding, RequestRefSeeding::Advertise) {
         None
     } else {
         let path = staging_repo.clone();
@@ -170,6 +177,7 @@ pub(crate) async fn prepare(
         staging_repo,
         _staging_seed: staging_seed,
         refs_before,
+        advertised_request_refs,
         base_publication: None,
     })
 }
