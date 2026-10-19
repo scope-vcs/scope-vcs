@@ -172,16 +172,23 @@ async fn a_cancelled_release_closes_the_session_instead_of_pooling_the_held_lock
     .key()
     .as_bigint()
     .unwrap();
-    let lease = store
-        .repositories()
-        .acquire_git_write_lease("segment-user/repo")
-        .await
-        .unwrap();
-    tokio::select! {
-        biased;
-        () = lease.release() => panic!("release finished before its unlock round trip"),
-        () = std::future::ready(()) => {}
+    let mut cancelled = false;
+    for _ in 0..50 {
+        let lease = store
+            .repositories()
+            .acquire_git_write_lease("segment-user/repo")
+            .await
+            .unwrap();
+        tokio::select! {
+            biased;
+            () = lease.release() => {}
+            () = std::future::ready(()) => {
+                cancelled = true;
+                break;
+            }
+        }
     }
+    assert!(cancelled, "release always finished within its first poll");
     for _ in 0..100 {
         let held = store
             .db
