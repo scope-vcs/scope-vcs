@@ -838,7 +838,7 @@ async fn public_actor_cannot_push_private_request_after_membership_loss() {
 }
 
 #[tokio::test]
-async fn restricted_view_push_cannot_borrow_objects_from_the_request_store() {
+async fn restricted_view_push_staging_borrows_no_objects() {
     let state = test_state_with_request().await;
     let store_repo =
         crate::git::storage::request_ref_store_repo_path(&state, &test_repo_incarnation());
@@ -863,14 +863,11 @@ async fn restricted_view_push_cannot_borrow_objects_from_the_request_store() {
     .await
     .unwrap();
 
-    let alternates =
-        fs::read_to_string(preparation.staging_repo.join("objects/info/alternates")).unwrap();
-    let store_objects = fs::canonicalize(store_repo.join("objects")).unwrap();
+    let alternates = fs::read_to_string(preparation.staging_repo.join("objects/info/alternates"))
+        .unwrap_or_default();
     assert!(
-        alternates
-            .lines()
-            .all(|line| std::path::Path::new(line) != store_objects),
-        "a public-view push must not see objects from other views' requests: {alternates}"
+        alternates.trim().is_empty(),
+        "a public-view push must only see objects its view can reach: {alternates}"
     );
     let _ = fs::remove_dir_all(&preparation.staging_repo);
 }

@@ -6,8 +6,8 @@ use crate::{
         request_refs::{
             RequestRefUpdate, StoredRequestRefs, acquire_request_ref_update_lock_async,
             attach_request_refs_from_store, attach_visible_request_refs,
-            install_request_receive_pack_hook, persist_request_ref_to_store, request_view_bases,
-            rollback_request_ref,
+            create_request_receive_pack_staging_repo, install_request_receive_pack_hook,
+            persist_request_ref_to_store, request_view_bases, rollback_request_ref,
         },
         staging::{create_seeded_receive_pack_staging_repo, install_ready_pre_receive_hook},
         storage::remove_dir_if_exists,
@@ -152,7 +152,11 @@ pub(crate) async fn prepare_request_staging_repo(
         let incarnation = incarnation.clone();
         let seed_path = seed_repo.to_path_buf();
         crate::git::blocking::run(move || {
-            create_seeded_receive_pack_staging_repo(&state, &incarnation, &seed_path)
+            if seeds_canonical_main {
+                create_seeded_receive_pack_staging_repo(&state, &incarnation, &seed_path)
+            } else {
+                create_request_receive_pack_staging_repo(&state, &incarnation, &seed_path)
+            }
         })
         .await?
     };

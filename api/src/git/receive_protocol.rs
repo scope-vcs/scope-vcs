@@ -1,6 +1,7 @@
 use crate::{error::ApiError, git::upload::pkt_line};
 use axum::body::{Body, Bytes};
 use futures_util::{StreamExt, stream};
+use std::time::Duration;
 
 const MAX_COMMAND_BYTES: usize = 1024 * 1024;
 const FLUSH: &[u8] = b"0000";
@@ -13,7 +14,9 @@ pub(crate) struct ReceivePackCommands {
 
 pub(crate) async fn read_receive_pack_commands(
     body: Body,
+    deadline: Duration,
 ) -> Result<ReceivePackCommands, ApiError> {
+    let deadline = tokio::time::Instant::now() + deadline;
     let mut chunks = body.into_data_stream();
     let mut buffered = Vec::new();
     loop {
@@ -30,7 +33,12 @@ pub(crate) async fn read_receive_pack_commands(
                 "git receive-pack commands are too large",
             ));
         }
-        match chunks.next().await {
+        let Ok(chunk) = tokio::time::timeout_at(deadline, chunks.next()).await else {
+            return Err(ApiError::infrastructure_unavailable(
+                "git request upload timed out",
+            ));
+        };
+        match chunk {
             Some(Ok(chunk)) => buffered.extend_from_slice(&chunk),
             Some(Err(error)) => {
                 return Err(ApiError::bad_request(format!(

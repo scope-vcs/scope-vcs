@@ -79,3 +79,43 @@ async fn revisions_wait_for_an_exclusive_repository_mutation() {
     let revised = revising.await.unwrap().unwrap();
     assert_eq!(revised.request.head_oid, "independent_head");
 }
+
+#[tokio::test]
+async fn a_revision_that_waited_for_its_request_builds_on_the_committed_request() {
+    use sea_orm::ConnectionTrait;
+    let store = store_with_independent_request().await;
+    let before = store
+        .requests()
+        .request_for_tests("req_independent")
+        .await
+        .unwrap()
+        .unwrap()
+        .activity_version;
+    let held = store.db.begin().await.unwrap();
+    super::super::super::request_access::lock_request_repository(
+        &held,
+        "req_independent",
+        "user_public",
+    )
+    .await
+    .unwrap();
+    held.execute_unprepared(
+        "UPDATE scope_requests SET activity_version = activity_version + 1 WHERE id = 'req_independent'",
+    )
+    .await
+    .unwrap();
+    let held_pid = super::super::super::locks::backend_pid(&held).await;
+
+    let revising_store = store.clone();
+    let revising = tokio::spawn(async move {
+        revising_store
+            .requests()
+            .record_request_revision(independent_revision("independent_head"))
+            .await
+    });
+    super::super::super::locks::wait_for_transaction_waiter(&store, held_pid).await;
+    held.commit().await.unwrap();
+
+    let revised = revising.await.unwrap().unwrap();
+    assert_eq!(revised.request.activity_version, before + 2);
+}

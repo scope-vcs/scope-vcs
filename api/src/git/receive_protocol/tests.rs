@@ -54,7 +54,9 @@ async fn reading_commands_replays_the_whole_body() {
         Ok(Bytes::from(rest)),
     ]));
 
-    let commands = read_receive_pack_commands(body).await.unwrap();
+    let commands = read_receive_pack_commands(body, Duration::from_secs(5))
+        .await
+        .unwrap();
 
     assert_eq!(commands.refs, vec!["refs/heads/agent-1".to_string()]);
     let replayed = axum::body::to_bytes(commands.body, usize::MAX)
@@ -66,7 +68,11 @@ async fn reading_commands_replays_the_whole_body() {
 #[tokio::test]
 async fn reading_commands_rejects_a_body_without_a_flush() {
     let body = Body::from(command("refs/heads/agent-1", true));
-    assert!(read_receive_pack_commands(body).await.is_err());
+    assert!(
+        read_receive_pack_commands(body, Duration::from_secs(5))
+            .await
+            .is_err()
+    );
 }
 
 fn advertisement(refs: &[(&str, &str)]) -> Vec<u8> {
@@ -117,4 +123,24 @@ fn additional_refs_replace_an_empty_advertisement() {
 fn no_additional_refs_leaves_the_advertisement_unchanged() {
     let base = advertisement(&[(OLD, "refs/heads/main")]);
     assert_eq!(advertise_additional_refs(&base, &[]).unwrap(), base);
+}
+
+#[tokio::test]
+async fn reading_commands_stops_at_the_deadline_when_the_client_stalls() {
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(1);
+    sender
+        .send(Ok(Bytes::from(command("refs/heads/agent-1", true))))
+        .await
+        .unwrap();
+    let body = Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(receiver));
+
+    let read = tokio::time::timeout(
+        Duration::from_secs(5),
+        read_receive_pack_commands(body, Duration::from_millis(100)),
+    )
+    .await
+    .expect("the command read must end at its deadline");
+
+    assert!(read.is_err());
+    drop(sender);
 }

@@ -510,7 +510,8 @@ async fn handle_git_receive_pack_body(
     >,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
-    let commands = read_receive_pack_commands(input.body).await?;
+    let commands =
+        read_receive_pack_commands(input.body, state.runtime_budgets.git_command_timeout()).await?;
     let mut preparation = git_receive::prepare(
         state,
         owner,
