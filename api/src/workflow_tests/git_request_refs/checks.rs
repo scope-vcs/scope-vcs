@@ -451,7 +451,7 @@ async fn removing_the_owner_stops_admission_and_ends_the_wait_on_checks() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_merge_rejects_main_that_moved_after_authorization() {
+async fn a_merge_rechecks_a_repository_that_moved_after_authorization() {
     let (state, request_id, _server) = owner_request_push(
         "request-merge-moved-main",
         &[(".scope/runs/manual.yml", WORKFLOW.to_string())],
@@ -485,8 +485,7 @@ async fn a_merge_rejects_main_that_moved_after_authorization() {
     .await;
 
     assert_eq!(
-        expect_json(merge, StatusCode::CONFLICT).await["message"],
-        "repository changed while the merge was checked; retry"
+        expect_json(merge, StatusCode::OK).await["request"]["state"],
+        "Merged"
     );
-    assert_eq!(listed_status(&state, &request_id).await, "Ready");
 }

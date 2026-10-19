@@ -2,20 +2,16 @@ use crate::{
     error::ApiError,
     git::{
         command::run_git,
-        import::{
-            PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
-            reviewed_update_from_staging_repo,
-        },
+        import::{PreparedReceivePackUpdate, ReceivePackUpdate, reviewed_merge_under_lease},
         projection_repo::verify_and_restore_projection,
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, validate_view_request_merge_range},
-        request_refs::{
-            RequestViewBases, attach_visible_request_refs, clone_without_shared_objects,
-        },
-        storage::{receive_pack_staging_repo_path, remove_dir_if_exists},
+        request_refs::{RequestViewBases, StoredRequestRefs, attach_request_refs_from_store},
+        staging::create_seeded_receive_pack_staging_repo,
+        storage::remove_dir_if_exists,
     },
     operation_analytics::ObservedOperation,
-    persistence::{ensure_private_dir, unix_now},
+    persistence::unix_now,
     repo_events::RepoChangeReason,
     state::AppState,
 };
@@ -111,61 +107,27 @@ pub(crate) async fn merge_request_inner(
     state: &AppState,
     command: &MergeRequestCommand,
 ) -> Result<MergeRequestResult, RequestMergeFailure> {
-    let context = crate::repo_access::find_read_access(
-        state,
-        &command.owner,
-        &command.repo_name,
-        Some(&command.actor_user_id),
-    )
-    .await?;
-    let access = context.access.clone();
-    let request = state
-        .metadata
-        .requests()
-        .request_by_id(&command.request_id)
-        .await?
-        .ok_or_else(|| ApiError::not_found("request not found"))?;
-    let is_invitee = state
-        .metadata
-        .requests()
-        .request_is_invitee(&request.id, &command.actor_user_id)
+    let checked = check_merge(state, command).await?;
+    crate::use_cases::github_check_results::confirm_recent_github_checks(state, &checked.request)
         .await?;
-    let viewer = RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee);
-    let policy = request_policy(&request, viewer.clone(), &context.views);
-    if request.repo_id != context.record.id || !policy.exact_visible {
-        return Err(ApiError::not_found("request not found").into());
-    }
-    if !policy.permissions.can_merge {
-        if matches!(access.actor, RepositoryActor::Public) {
-            return Err(ApiError::forbidden("repo maintainer required").into());
+    let write_lease = state
+        .metadata
+        .repositories()
+        .acquire_git_write_lease(&checked.context.record.id)
+        .await
+        .map_err(ApiError::from)?;
+    let checked = match check_merge(state, command).await {
+        Ok(checked) => checked,
+        Err(error) => {
+            write_lease.release().await;
+            return Err(error);
         }
-        return Err(ApiError::conflict("request cannot be merged").into());
-    }
-    if command
-        .expected_head_oid
-        .as_ref()
-        .is_some_and(|expected| *expected != request.head_oid)
-    {
-        return Err(
-            ApiError::conflict("request has a new revision; review it before merging").into(),
-        );
-    }
-    crate::use_cases::github_check_results::confirm_recent_github_checks(state, &request).await?;
-    let checks =
-        crate::use_cases::request_checks::checks_outcome(state, &context.record, &request).await?;
-    let decision = evaluate_merge_gate(MergeGateInput::RequestMerge {
-        repository_lifecycle: context.record.lifecycle_state,
-        subject: (&request).into(),
-        viewer: &viewer,
-        views: &context.views,
-        checks,
-    });
-    if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
-        return Err(
-            ApiError::conflict(decision.reason().unwrap_or("request CI has not cleared")).into(),
-        );
-    }
-
+    };
+    let CheckedMerge {
+        context,
+        access,
+        request,
+    } = checked;
     let analytics_event = ProductEvent::request_merged(
         &command.actor_user_id,
         &context.record.incarnation_id,
@@ -173,24 +135,30 @@ pub(crate) async fn merge_request_inner(
         request.view.clone(),
         request_actor_role(access.clone()),
     );
-    let repo = state
+    let repo = match state
         .metadata
         .repositories()
         .repository(&command.owner, &command.repo_name)
-        .await?
-        .ok_or_else(|| {
-            ApiError::not_found(format!(
-                "repo {}/{} not found",
-                command.owner, command.repo_name
-            ))
-        })?;
-    if repo.incarnation() != context.incarnation()
-        || repo.record.change_version != context.record.change_version
+        .await
     {
-        return Err(
-            ApiError::conflict("repository changed while the merge was checked; retry").into(),
-        );
-    }
+        Ok(Some(repo))
+            if repo.incarnation() == context.incarnation()
+                && repo.record.change_version == context.record.change_version =>
+        {
+            repo
+        }
+        Ok(_) => {
+            write_lease.release().await;
+            return Err(ApiError::conflict(
+                "repository changed while the merge was checked; retry",
+            )
+            .into());
+        }
+        Err(error) => {
+            write_lease.release().await;
+            return Err(ApiError::from(error).into());
+        }
+    };
     let prepared = prepare_request_merge_for_execution(
         state,
         &command.owner,
@@ -198,6 +166,7 @@ pub(crate) async fn merge_request_inner(
         &command.actor_user_id,
         &repo,
         &request,
+        write_lease,
     )
     .await?;
     let merged_event_id = match crate::persistence_ids::generate_prefixed_id("event_request_merged")
@@ -254,6 +223,76 @@ pub(crate) async fn merge_request_inner(
     })
 }
 
+struct CheckedMerge {
+    context: scope_domain::repository::access::RepositoryAccessContext,
+    access: RepositoryAccess,
+    request: Request,
+}
+
+async fn check_merge(
+    state: &AppState,
+    command: &MergeRequestCommand,
+) -> Result<CheckedMerge, RequestMergeFailure> {
+    let context = crate::repo_access::find_read_access(
+        state,
+        &command.owner,
+        &command.repo_name,
+        Some(&command.actor_user_id),
+    )
+    .await?;
+    let access = context.access.clone();
+    let request = state
+        .metadata
+        .requests()
+        .request_by_id(&command.request_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("request not found"))?;
+    let is_invitee = state
+        .metadata
+        .requests()
+        .request_is_invitee(&request.id, &command.actor_user_id)
+        .await?;
+    let viewer = RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee);
+    let policy = request_policy(&request, viewer.clone(), &context.views);
+    if request.repo_id != context.record.id || !policy.exact_visible {
+        return Err(ApiError::not_found("request not found").into());
+    }
+    if !policy.permissions.can_merge {
+        if matches!(access.actor, RepositoryActor::Public) {
+            return Err(ApiError::forbidden("repo maintainer required").into());
+        }
+        return Err(ApiError::conflict("request cannot be merged").into());
+    }
+    if command
+        .expected_head_oid
+        .as_ref()
+        .is_some_and(|expected| *expected != request.head_oid)
+    {
+        return Err(
+            ApiError::conflict("request has a new revision; review it before merging").into(),
+        );
+    }
+    let checks =
+        crate::use_cases::request_checks::checks_outcome(state, &context.record, &request).await?;
+    let decision = evaluate_merge_gate(MergeGateInput::RequestMerge {
+        repository_lifecycle: context.record.lifecycle_state,
+        subject: (&request).into(),
+        viewer: &viewer,
+        views: &context.views,
+        checks,
+    });
+    if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
+        return Err(
+            ApiError::conflict(decision.reason().unwrap_or("request CI has not cleared")).into(),
+        );
+    }
+    Ok(CheckedMerge {
+        context,
+        access,
+        request,
+    })
+}
+
 async fn persist_prepared_merge(
     state: &AppState,
     command: &MergeRequestCommand,
@@ -289,18 +328,16 @@ async fn persist_prepared_merge(
         .await;
     match mutation {
         Ok(mutation) => {
-            if let Err(error) = state
-                .git_segment_store
-                .promote_verified_pack(&repository_incarnation, &staged_segment)
-                .await
-            {
-                tracing::warn!(
-                    repository_id,
-                    segment_id = staged_segment.segment.segment_id,
-                    error = %error,
-                    "merged Git segment retention failed"
-                );
-            }
+            crate::use_cases::git_receive::best_effort_sync_cache(
+                state,
+                &command.owner,
+                &command.repo_name,
+                &command.actor_user_id,
+                &repository_incarnation,
+                &staged_segment,
+                &mutation.git_head,
+            )
+            .await;
             if let Err(error) = state.git_segment_store.delete_local(&staged_segment).await {
                 tracing::warn!(
                     repository_id,
@@ -338,9 +375,22 @@ pub(crate) async fn prepare_request_merge(
     repo: &Repository,
     request: &Request,
 ) -> Result<PreparedRequestMerge, ApiError> {
-    prepare_request_merge_for_execution(state, owner, repo_name, actor_user_id, repo, request)
-        .await
-        .map_err(RequestMergeFailure::into_api_error)
+    let write_lease = state
+        .metadata
+        .repositories()
+        .acquire_git_write_lease(&repo.record.id)
+        .await?;
+    prepare_request_merge_for_execution(
+        state,
+        owner,
+        repo_name,
+        actor_user_id,
+        repo,
+        request,
+        write_lease,
+    )
+    .await
+    .map_err(RequestMergeFailure::into_api_error)
 }
 
 async fn prepare_request_merge_for_execution(
@@ -350,6 +400,7 @@ async fn prepare_request_merge_for_execution(
     actor_user_id: &str,
     repo: &Repository,
     request: &Request,
+    write_lease: RepositoryGitWriteLease,
 ) -> Result<PreparedRequestMerge, RequestMergeFailure> {
     let expected_merge_evidence = state
         .metadata
@@ -368,24 +419,30 @@ async fn prepare_request_merge_for_execution(
         .repository_engine
         .materialize_repository(state, &repo.incarnation(), current, &repo.git_pack_spans)
         .await?;
-    let staging_repo = receive_pack_staging_repo_path(state, &repo.incarnation())?;
-    if let Some(parent) = staging_repo.parent() {
-        ensure_private_dir(parent)?;
-    }
-    clone_without_shared_objects(
-        &base_repo,
-        &staging_repo,
-        "preparing request merge repository",
-    )?;
+    let staging_repo = {
+        let state = state.clone();
+        let incarnation = repo.incarnation();
+        let seed = base_repo.to_path_buf();
+        crate::git::blocking::run(move || {
+            create_seeded_receive_pack_staging_repo(&state, &incarnation, &seed)
+        })
+        .await?
+    };
+    let request_incarnation = repo.incarnation();
     let prepared = async {
         let attach = {
             let state = state.clone();
             let request = request.clone();
             let staging_repo = staging_repo.clone();
+            let incarnation = request_incarnation.clone();
             crate::git::blocking::run(move || {
-                attach_visible_request_refs(
+                attach_request_refs_from_store(
                     &state,
-                    std::slice::from_ref(&request),
+                    &incarnation,
+                    StoredRequestRefs {
+                        objects_for: &[],
+                        refs_for: std::slice::from_ref(&request),
+                    },
                     &staging_repo,
                     &RequestViewBases::new(),
                 )
@@ -459,14 +516,14 @@ async fn prepare_request_merge_for_execution(
             staged_segment,
             write_lease,
             upload_heartbeat: _upload_heartbeat,
-        } = reviewed_update_from_staging_repo(
+        } = reviewed_merge_under_lease(
             state,
             owner,
             repo_name,
             &staging_repo,
             actor_user_id,
             repo.repo_config.clone(),
-            ReviewedUpdateMode::RequestMerge,
+            write_lease,
         )
         .await
         .map_err(RequestMergeFailure::from)?;

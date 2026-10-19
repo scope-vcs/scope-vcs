@@ -77,6 +77,71 @@ pub(crate) async fn reviewed_update_from_staging_repo(
     config: RepoConfig,
     mode: ReviewedUpdateMode,
 ) -> Result<PreparedReceivePackUpdate, ApiError> {
+    let (branch, head_oid) = single_pushed_branch(staging_repo).await?;
+    let repository_id = scope_domain::repository::repo_id(owner, repo_name);
+    let lease_started = Instant::now();
+    let write_lease = state
+        .metadata
+        .repositories()
+        .acquire_git_write_lease(&repository_id)
+        .await?;
+    let lease_wait_ms = lease_started.elapsed().as_millis();
+    reviewed_update_under_lease(
+        state,
+        ReviewedUpdateTarget {
+            owner,
+            repo_name,
+            staging_repo,
+            author_id,
+            branch,
+            head_oid,
+        },
+        config,
+        mode,
+        write_lease,
+        lease_wait_ms,
+    )
+    .await
+}
+
+pub(crate) async fn reviewed_merge_under_lease(
+    state: &AppState,
+    owner: &str,
+    repo_name: &str,
+    staging_repo: &FsPath,
+    author_id: &str,
+    config: RepoConfig,
+    write_lease: RepositoryGitWriteLease,
+) -> Result<PreparedReceivePackUpdate, ApiError> {
+    let (branch, head_oid) = single_pushed_branch(staging_repo).await?;
+    reviewed_update_under_lease(
+        state,
+        ReviewedUpdateTarget {
+            owner,
+            repo_name,
+            staging_repo,
+            author_id,
+            branch,
+            head_oid,
+        },
+        config,
+        ReviewedUpdateMode::RequestMerge,
+        write_lease,
+        0,
+    )
+    .await
+}
+
+struct ReviewedUpdateTarget<'a> {
+    owner: &'a str,
+    repo_name: &'a str,
+    staging_repo: &'a FsPath,
+    author_id: &'a str,
+    branch: String,
+    head_oid: String,
+}
+
+async fn single_pushed_branch(staging_repo: &FsPath) -> Result<(String, String), ApiError> {
     let path = staging_repo.to_path_buf();
     let refs = crate::git::blocking::run(move || git_refs(&path)).await?;
     if refs.len() != 1 {
@@ -87,14 +152,25 @@ pub(crate) async fn reviewed_update_from_staging_repo(
     }
     let (branch, head_oid) = refs.into_iter().next().expect("length checked");
     ensure_default_branch(&branch)?;
-    let repository_id = scope_domain::repository::repo_id(owner, repo_name);
-    let lease_started = Instant::now();
-    let write_lease = state
-        .metadata
-        .repositories()
-        .acquire_git_write_lease(&repository_id)
-        .await?;
-    let lease_wait_ms = lease_started.elapsed().as_millis();
+    Ok((branch, head_oid))
+}
+
+async fn reviewed_update_under_lease(
+    state: &AppState,
+    target: ReviewedUpdateTarget<'_>,
+    config: RepoConfig,
+    mode: ReviewedUpdateMode,
+    write_lease: RepositoryGitWriteLease,
+    lease_wait_ms: u128,
+) -> Result<PreparedReceivePackUpdate, ApiError> {
+    let ReviewedUpdateTarget {
+        owner,
+        repo_name,
+        staging_repo,
+        author_id,
+        branch,
+        head_oid,
+    } = target;
     let repo = state
         .metadata
         .repositories()

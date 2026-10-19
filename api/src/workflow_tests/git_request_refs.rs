@@ -30,6 +30,7 @@ pub(super) mod github_checks;
 mod github_setup_and_runs;
 mod http;
 mod landed;
+mod landing;
 mod merge;
 mod policy;
 mod privacy;
