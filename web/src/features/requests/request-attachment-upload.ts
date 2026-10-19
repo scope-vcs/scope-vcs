@@ -56,6 +56,10 @@ export type AttachmentUploadActions = {
 }
 
 const activeUploads = new Map<string, AbortController>()
+const MAX_TAB_PART_UPLOADS = 4
+const PART_ATTEMPTS = 5
+const PART_RETRY_BASE_MS = 500
+const partUploadSlots = createSlots(MAX_TAB_PART_UPLOADS)
 
 registerRequestAttachmentDraftUploadCanceller((draftKey) => {
   for (const [key, controller] of activeUploads) {
@@ -225,7 +229,7 @@ async function uploadParts({
       }
       const start = (partNumber - 1) * partBytes
       const part = file.slice(start, Math.min(file.size, start + partBytes))
-      const receipt = await putPart({
+      const receipt = await putPartWithRetry({
         grant: transfer.grant,
         onProgress: (loaded) => {
           inFlightBytes.set(partNumber, loaded)
@@ -261,6 +265,72 @@ async function uploadParts({
   return [...receipts.values()].sort((left, right) => left.part_number - right.part_number)
 }
 
+async function putPartWithRetry(input: Parameters<typeof putPart>[0]) {
+  for (let attempt = 1; ; attempt += 1) {
+    const release = await partUploadSlots.acquire(input.signal)
+    try {
+      return await putPart(input)
+    } catch (error) {
+      if (!(error instanceof RetryablePartFailure) || attempt === PART_ATTEMPTS) throw error
+    } finally {
+      release()
+    }
+    input.onProgress(0)
+    await wait(retryDelay(attempt), input.signal)
+  }
+}
+
+function retryDelay(attempt: number) {
+  const ceiling = PART_RETRY_BASE_MS * 2 ** (attempt - 1)
+  return ceiling / 2 + Math.random() * (ceiling / 2)
+}
+
+function wait(milliseconds: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    signal.throwIfAborted()
+    const abort = () => {
+      clearTimeout(timeout)
+      reject(new DOMException('Upload canceled.', 'AbortError'))
+    }
+    const timeout = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, milliseconds)
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+function createSlots(limit: number) {
+  let active = 0
+  const waiting: Array<() => void> = []
+  function release() {
+    const next = waiting.shift()
+    if (next) next()
+    else active -= 1
+  }
+  return {
+    acquire(signal: AbortSignal) {
+      signal.throwIfAborted()
+      if (active < limit) {
+        active += 1
+        return Promise.resolve(release)
+      }
+      return new Promise<() => void>((resolve, reject) => {
+        const grant = () => {
+          signal.removeEventListener('abort', abort)
+          resolve(release)
+        }
+        const abort = () => {
+          waiting.splice(waiting.indexOf(grant), 1)
+          reject(new DOMException('Upload canceled.', 'AbortError'))
+        }
+        waiting.push(grant)
+        signal.addEventListener('abort', abort, { once: true })
+      })
+    },
+  }
+}
+
 function putPart({
   grant,
   onProgress,
@@ -287,9 +357,7 @@ function putPart({
     request.addEventListener('load', () => {
       signal.removeEventListener('abort', abort)
       if (request.status < 200 || request.status >= 300) {
-        reject(request.status === 401
-          ? new TransferAuthorizationExpired()
-          : new Error(`Part ${partNumber} upload failed (${request.status}).`))
+        reject(partFailure(request.status, partNumber))
         return
       }
       try {
@@ -303,10 +371,28 @@ function putPart({
         reject(error)
       }
     })
-    request.addEventListener('error', () => reject(new Error(`Part ${partNumber} upload lost its connection.`)))
+    request.addEventListener('error', () => {
+      signal.removeEventListener('abort', abort)
+      reject(new RetryablePartFailure(`Part ${partNumber} upload lost its connection.`))
+    })
     request.addEventListener('abort', () => reject(new DOMException('Upload canceled.', 'AbortError')))
     request.send(part)
   })
+}
+
+function partFailure(status: number, partNumber: number) {
+  if (status === 401) return new TransferAuthorizationExpired()
+  const message = `Part ${partNumber} upload failed (${status}).`
+  return [408, 409, 429].includes(status) || status >= 500
+    ? new RetryablePartFailure(message)
+    : new Error(message)
+}
+
+class RetryablePartFailure extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RetryablePartFailure'
+  }
 }
 
 class TransferAuthorizationExpired extends Error {

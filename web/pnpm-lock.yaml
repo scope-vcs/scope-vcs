@@ -96,6 +96,9 @@ importers:
       github-slugger:
         specifier: 2.0.0
         version: 2.0.0
+      hash-wasm:
+        specifier: 4.12.0
+        version: 4.12.0
       lucide-react:
         specifier: ^1.46.0
         version: 1.46.0(react@19.3.0)
@@ -1895,6 +1898,9 @@ packages:
         optional: true
       ocache:
         optional: true
+
+  hash-wasm@4.12.0:
+    resolution: {integrity: sha512-+/2B2rYLb48I/evdOIhP+K/DD2ca2fgBjp6O+GBEnCDk2e4rpeXIK8GvIyRPjTezgmWn9gmKwkQjjx6BtqDHVQ==}
 
   hast-util-heading-rank@3.0.0:
     resolution: {integrity: sha512-EJKb8oMUXVHcWZTDepnr+WNbfnXKFNf9duMesmr4S8SXTJBJ9M4Yok08pu9vxdJwdlGRhVumk9mEhkEvKGifwA==}
@@ -4275,6 +4281,8 @@ snapshots:
     optionalDependencies:
       crossws: 0.4.12(srvx@1.0.5)
       ocache: 0.3.0
+
+  hash-wasm@4.12.0: {}
 
   hast-util-heading-rank@3.0.0:
     dependencies:

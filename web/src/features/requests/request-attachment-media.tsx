@@ -10,6 +10,13 @@ import { CircleAlert, Download, Expand, LoaderCircle, RotateCcw, X } from 'lucid
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useRequestAttachments } from './request-attachment-context'
 import {
+  initialMediaRecovery,
+  type MediaRecovery,
+  recoverByRetry,
+  recoverFromMediaError,
+  recoverFromMediaLoad,
+} from './request-attachment-media-recovery'
+import {
   requestAttachmentMediaGrantResource,
   requestAttachmentResource,
   requestAttachmentResourceIdentity,
@@ -53,9 +60,10 @@ function PhotoAttachment({
   const media = useAttachmentMediaGrant(attachment.id, derivative?.id)
   const alt = label || attachment.filename
   if (!derivative) return <MissingDerivative attachment={attachment} label="Photo preview" />
-  if (media.status !== 'loaded') {
+  if (media.unavailable || !media.value) {
     return <MediaLoadStatus filename={attachment.filename} media={media} />
   }
+  const source = media.value.media_url
   return (
     <>
       <figure className="my-3 min-w-0">
@@ -70,7 +78,9 @@ function PhotoAttachment({
             className="max-h-[38rem] max-w-full object-contain"
             height={derivative.height ?? undefined}
             loading="lazy"
-            src={media.value.media_url}
+            onError={() => media.mediaErrored(source)}
+            onLoad={() => media.mediaLoaded(source)}
+            src={source}
             width={derivative.width ?? undefined}
           />
           <span className="absolute bottom-2 right-2 rounded bg-background/90 p-1.5 opacity-0 shadow transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Expand className="size-4" /></span>
@@ -87,7 +97,13 @@ function PhotoAttachment({
               <Dialog.Close asChild><Button aria-label="Close photo viewer" size="icon-sm" type="button" variant="ghost"><X /></Button></Dialog.Close>
             </div>
             <div className="grid min-h-0 place-items-center overflow-auto bg-black/5 p-3">
-              <img alt={alt} className="max-h-full max-w-full object-contain" src={media.value.media_url} />
+              <img
+                alt={alt}
+                className="max-h-full max-w-full object-contain"
+                onError={() => media.mediaErrored(source)}
+                onLoad={() => media.mediaLoaded(source)}
+                src={source}
+              />
             </div>
           </Dialog.Content>
         </Dialog.Portal>
@@ -129,16 +145,18 @@ function VideoAttachment({
   }, [source])
 
   if (!playback) return <MissingDerivative attachment={attachment} label="Video playback" />
-  if (media.status !== 'loaded') {
+  if (media.unavailable || !media.value) {
     return <MediaLoadStatus filename={attachment.filename} media={media} />
   }
+  const loadedSource = media.value.media_url
   return (
     <figure className="my-3 min-w-0">
       <video
         aria-label={label || attachment.filename}
         className="max-h-[38rem] w-full rounded-md border border-border bg-black"
         controls
-        onError={media.retry}
+        onError={() => media.mediaErrored(loadedSource)}
+        onLoadedMetadata={() => media.mediaLoaded(loadedSource)}
         onPause={() => { playingRef.current = false }}
         onPlay={() => { playingRef.current = true }}
         onTimeUpdate={(event) => { positionRef.current = event.currentTarget.currentTime }}
@@ -146,7 +164,7 @@ function VideoAttachment({
         poster={posterMedia.value?.media_url}
         preload="metadata"
         ref={videoRef}
-        src={media.value.media_url}
+        src={loadedSource}
       />
       <AttachmentCaption attachment={attachment} />
     </figure>
@@ -301,13 +319,33 @@ function useAttachmentMediaGrant(
     load,
     resource: requestAttachmentMediaGrantResource,
   })
-  useEffect(() => {
-    if (!identity || !media.value) return
-    const delay = Math.max(1_000, media.value.expires_at_unix * 1_000 - Date.now() - 30_000)
-    const timeout = window.setTimeout(() => requestAttachmentMediaGrantResource.invalidate(identity), delay)
-    return () => window.clearTimeout(timeout)
-  }, [identity, media.value])
-  return media
+  const recoveryRef = useRef(initialMediaRecovery)
+  const [recovery, setRecovery] = useState(initialMediaRecovery)
+  const update = (next: MediaRecovery) => {
+    recoveryRef.current = next
+    setRecovery(next)
+  }
+  const source = media.value?.media_url ?? null
+  const replaced = source !== null && (source === recovery.failed || source === recovery.renewedFrom)
+  const unavailable = media.status !== 'loaded' || source === recovery.failed || (replaced && media.error !== null)
+  const error = media.status !== 'loaded' || (replaced && media.error !== null)
+    ? media.error
+    : source === recovery.failed && !media.refreshing ? 'The media could not be loaded.' : null
+  return {
+    ...media,
+    error,
+    unavailable,
+    mediaErrored: (failedSource: string) => {
+      const next = recoverFromMediaError(recoveryRef.current, failedSource)
+      update(next.recovery)
+      if (next.renew) media.retry()
+    },
+    mediaLoaded: (loadedSource: string) => update(recoverFromMediaLoad(recoveryRef.current, loadedSource)),
+    retry: () => {
+      update(recoverByRetry(recoveryRef.current))
+      media.retry()
+    },
+  }
 }
 
 function derivativeOf(
