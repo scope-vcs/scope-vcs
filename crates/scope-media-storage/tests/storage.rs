@@ -2,7 +2,9 @@ mod support;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use scope_media_storage::{MAX_CHUNK_BYTES, MediaStorage, WriteAttempt};
+use scope_media_storage::{
+    MAX_CHUNK_BYTES, MediaStorage, MediaStorageErrorKind, WriteAttempt, seal_parts,
+};
 use scope_storage::{
     BackendError, MemoryBackend, MultipartUpload, ObjectBackend, RemoteReader, UploadedPart,
 };
@@ -10,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -41,15 +43,13 @@ async fn encrypted_chunks_support_verified_ranges_across_boundaries() {
         .unwrap();
 
     assert!(!raw.contains_bytes(&plaintext[..MAX_CHUNK_BYTES]));
-    let object = storage
-        .seal_parts(
-            "video/mp4",
-            plaintext.len() as u64,
-            &digest,
-            vec![first, second],
-        )
-        .await
-        .unwrap();
+    let object = seal_parts(
+        "video/mp4",
+        plaintext.len() as u64,
+        &digest,
+        vec![first, second],
+    )
+    .unwrap();
     assert_eq!(object.chunks[0].plaintext_offset, 0);
     assert_eq!(object.chunks[1].plaintext_offset, MAX_CHUNK_BYTES as u64);
 
@@ -89,6 +89,56 @@ async fn writer_download_preserves_all_chunks() {
     assert_eq!(received, plaintext);
 }
 
+#[tokio::test]
+async fn reads_fail_when_stored_bytes_disagree_with_the_manifest_digests() {
+    let storage = MediaStorage::encrypted(Arc::new(MemoryBackend::default()), [17; 32], 2).unwrap();
+    let attempt = WriteAttempt::new("att_5", "original", "lease_5").unwrap();
+    let plaintext = vec![0x33; MAX_CHUNK_BYTES + 5];
+    let object = support::store_bytes(&storage, &attempt, &plaintext).await;
+
+    let mut wrong_chunk = object.clone();
+    wrong_chunk.chunks[1].sha256 = hex::encode(Sha256::digest(b"other"));
+    let mut stream = storage
+        .read_range(
+            &wrong_chunk,
+            MAX_CHUNK_BYTES as u64..=plaintext.len() as u64 - 1,
+        )
+        .await
+        .unwrap();
+    let mut failure = None;
+    while let Some(item) = stream.next().await {
+        if let Err(error) = item {
+            failure = Some(error.kind);
+        }
+    }
+    assert_eq!(failure, Some(MediaStorageErrorKind::Integrity));
+
+    let mut wrong_object = object;
+    wrong_object.sha256 = hex::encode(Sha256::digest(b"other"));
+    let error = storage
+        .download_to_writer(&wrong_object, &mut tokio::io::sink())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, MediaStorageErrorKind::Integrity);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stalled_backend_read_fails_as_unavailable() {
+    let backend = Arc::new(TrackingBackend::default());
+    let storage = MediaStorage::encrypted(backend.clone(), [19; 32], 2).unwrap();
+    let attempt = WriteAttempt::new("att_6", "original", "lease_6").unwrap();
+    let object = support::store_bytes(&storage, &attempt, b"stalled").await;
+    backend.stall_reads.store(true, Ordering::SeqCst);
+    let mut stream = storage.read_range(&object, 0..=1).await.unwrap();
+    let item = tokio::time::timeout(Duration::from_secs(60), stream.next())
+        .await
+        .expect("stalled reads end within the frame timeout");
+    assert_eq!(
+        item.unwrap().unwrap_err().kind,
+        MediaStorageErrorKind::ServiceUnavailable
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn store_work_never_exceeds_configured_slots() {
     let tracker = Arc::new(TrackingBackend::default());
@@ -114,6 +164,7 @@ struct TrackingBackend {
     inner: MemoryBackend,
     active: AtomicUsize,
     high_water: AtomicUsize,
+    stall_reads: AtomicBool,
 }
 
 #[async_trait]
@@ -156,6 +207,9 @@ impl ObjectBackend for TrackingBackend {
     }
 
     async fn read(&self, key: &str) -> Result<RemoteReader, BackendError> {
+        if self.stall_reads.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
         self.inner.read(key).await
     }
 

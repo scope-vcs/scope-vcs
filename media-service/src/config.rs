@@ -6,9 +6,9 @@ const DATABASE_URL: &str = "DATABASE_URL";
 const MEDIA_GRANT_PUBLIC_KEY: &str = "SCOPE_MEDIA_GRANT_PUBLIC_KEY";
 const MEDIA_ALLOWED_ORIGIN: &str = "SCOPE_MEDIA_ALLOWED_ORIGIN";
 
-const DEFAULT_STORAGE_OPERATIONS: usize = 4;
-const DEFAULT_CONCURRENT_UPLOADS: usize = 4;
-const DEFAULT_CONCURRENT_READS: usize = 8;
+const DEFAULT_STORAGE_OPERATIONS: usize = 16;
+const DEFAULT_CONCURRENT_UPLOADS: usize = 8;
+const DEFAULT_CONCURRENT_READS: usize = 16;
 
 pub struct Settings {
     pub(crate) database_url: String,
