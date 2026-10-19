@@ -7,14 +7,14 @@ import { formatBytes } from '@/lib/format-bytes'
 import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
 import * as Dialog from '@radix-ui/react-dialog'
 import { CircleAlert, Download, Expand, LoaderCircle, RotateCcw, X } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { useRequestAttachments } from './request-attachment-context'
 import {
   initialMediaRecovery,
-  type MediaRecovery,
-  recoverByRetry,
+  mediaGrantExpiring,
   recoverFromMediaError,
-  recoverFromMediaLoad,
+  retryMedia,
+  settledMediaRecovery,
 } from './request-attachment-media-recovery'
 import {
   requestAttachmentMediaGrantResource,
@@ -64,6 +64,7 @@ function PhotoAttachment({
     return <MediaLoadStatus filename={attachment.filename} media={media} />
   }
   const source = media.value.media_url
+  const onError = media.mediaErrored(media.value, media.generation)
   return (
     <>
       <figure className="my-3 min-w-0">
@@ -77,9 +78,9 @@ function PhotoAttachment({
             alt={alt}
             className="max-h-[38rem] max-w-full object-contain"
             height={derivative.height ?? undefined}
+            key={media.generation}
             loading="lazy"
-            onError={() => media.mediaErrored(source)}
-            onLoad={() => media.mediaLoaded(source)}
+            onError={onError}
             src={source}
             width={derivative.width ?? undefined}
           />
@@ -100,8 +101,8 @@ function PhotoAttachment({
               <img
                 alt={alt}
                 className="max-h-full max-w-full object-contain"
-                onError={() => media.mediaErrored(source)}
-                onLoad={() => media.mediaLoaded(source)}
+                key={media.generation}
+                onError={onError}
                 src={source}
               />
             </div>
@@ -127,6 +128,7 @@ function VideoAttachment({
   const positionRef = useRef(0)
   const playingRef = useRef(false)
   const source = media.value?.media_url
+  const generation = media.generation
 
   useEffect(() => {
     const video = videoRef.current
@@ -142,26 +144,26 @@ function VideoAttachment({
     video.addEventListener('loadedmetadata', restore, { once: true })
     video.load()
     return () => video.removeEventListener('loadedmetadata', restore)
-  }, [source])
+  }, [generation, source])
 
   if (!playback) return <MissingDerivative attachment={attachment} label="Video playback" />
   if (media.unavailable || !media.value) {
     return <MediaLoadStatus filename={attachment.filename} media={media} />
   }
   const loadedSource = media.value.media_url
+  const onError = media.mediaErrored(media.value, generation)
   return (
     <figure className="my-3 min-w-0">
       <video
         aria-label={label || attachment.filename}
         className="max-h-[38rem] w-full rounded-md border border-border bg-black"
         controls
-        onError={() => media.mediaErrored(loadedSource)}
-        onLoadedMetadata={() => media.mediaLoaded(loadedSource)}
+        onError={onError}
         onPause={() => { playingRef.current = false }}
         onPlay={() => { playingRef.current = true }}
         onTimeUpdate={(event) => { positionRef.current = event.currentTarget.currentTime }}
         playsInline
-        poster={posterMedia.value?.media_url}
+        poster={posterMedia.unavailable ? undefined : posterMedia.value?.media_url}
         preload="metadata"
         ref={videoRef}
         src={loadedSource}
@@ -319,31 +321,35 @@ function useAttachmentMediaGrant(
     load,
     resource: requestAttachmentMediaGrantResource,
   })
+  const [mountedGrant] = useState(() => identity ? requestAttachmentMediaGrantResource.peek(identity) : null)
+  const [mountedAt] = useState(Date.now)
+  const expiredAtMount = mountedGrant !== null && media.value === mountedGrant && mediaGrantExpiring(mountedGrant, mountedAt)
+  useLayoutEffect(() => {
+    if (identity && expiredAtMount) requestAttachmentMediaGrantResource.invalidate(identity)
+  }, [expiredAtMount, identity])
   const recoveryRef = useRef(initialMediaRecovery)
-  const [recovery, setRecovery] = useState(initialMediaRecovery)
-  const update = (next: MediaRecovery) => {
-    recoveryRef.current = next
-    setRecovery(next)
-  }
-  const source = media.value?.media_url ?? null
-  const replaced = source !== null && (source === recovery.failed || source === recovery.renewedFrom)
-  const unavailable = media.status !== 'loaded' || source === recovery.failed || (replaced && media.error !== null)
-  const error = media.status !== 'loaded' || (replaced && media.error !== null)
+  const [, rerender] = useReducer((count: number) => count + 1, 0)
+  const recovery = settledMediaRecovery(recoveryRef.current, media.value)
+  const renewalFailed = media.error !== null && (expiredAtMount || recovery.renewingFrom !== null)
+  const unavailable = media.status !== 'loaded' || expiredAtMount || recovery.failed || renewalFailed
+  const error = media.status !== 'loaded' || renewalFailed
     ? media.error
-    : source === recovery.failed && !media.refreshing ? 'The media could not be loaded.' : null
+    : recovery.failed && !media.refreshing ? 'The media could not be loaded.' : null
+  const apply = (next: { recovery: typeof recovery; renew: boolean }) => {
+    recoveryRef.current = next.recovery
+    rerender()
+    if (next.renew) media.retry()
+  }
   return {
     ...media,
     error,
+    generation: recovery.generation,
     unavailable,
-    mediaErrored: (failedSource: string) => {
-      const next = recoverFromMediaError(recoveryRef.current, failedSource)
-      update(next.recovery)
-      if (next.renew) media.retry()
-    },
-    mediaLoaded: (loadedSource: string) => update(recoverFromMediaLoad(recoveryRef.current, loadedSource)),
+    mediaErrored: (grant: NonNullable<typeof media.value>, renderedGeneration: number) => () =>
+      apply(recoverFromMediaError(recoveryRef.current, { generation: renderedGeneration, grant, now: Date.now() })),
     retry: () => {
-      update(recoverByRetry(recoveryRef.current))
-      media.retry()
+      const next = retryMedia(recoveryRef.current, media.value, Date.now())
+      apply({ ...next, renew: next.renew || media.error !== null })
     },
   }
 }

@@ -57,8 +57,9 @@ export type AttachmentUploadActions = {
 
 const activeUploads = new Map<string, AbortController>()
 const MAX_TAB_PART_UPLOADS = 4
-const PART_ATTEMPTS = 5
+const PART_RETRY_BUDGET_MS = 90_000
 const PART_RETRY_BASE_MS = 500
+const PART_RETRY_CAP_MS = 10_000
 const partUploadSlots = createSlots(MAX_TAB_PART_UPLOADS)
 
 registerRequestAttachmentDraftUploadCanceller((draftKey) => {
@@ -266,22 +267,25 @@ async function uploadParts({
 }
 
 async function putPartWithRetry(input: Parameters<typeof putPart>[0]) {
-  for (let attempt = 1; ; attempt += 1) {
+  let firstFailureAt: number | null = null
+  for (let retry = 0; ; retry += 1) {
     const release = await partUploadSlots.acquire(input.signal)
     try {
       return await putPart(input)
     } catch (error) {
-      if (!(error instanceof RetryablePartFailure) || attempt === PART_ATTEMPTS) throw error
+      if (!(error instanceof RetryablePartFailure)) throw error
+      firstFailureAt ??= Date.now()
+      if (Date.now() - firstFailureAt >= PART_RETRY_BUDGET_MS) throw error
     } finally {
       release()
     }
     input.onProgress(0)
-    await wait(retryDelay(attempt), input.signal)
+    await wait(retryDelay(retry), input.signal)
   }
 }
 
-function retryDelay(attempt: number) {
-  const ceiling = PART_RETRY_BASE_MS * 2 ** (attempt - 1)
+function retryDelay(retry: number) {
+  const ceiling = Math.min(PART_RETRY_CAP_MS, PART_RETRY_BASE_MS * 2 ** retry)
   return ceiling / 2 + Math.random() * (ceiling / 2)
 }
 

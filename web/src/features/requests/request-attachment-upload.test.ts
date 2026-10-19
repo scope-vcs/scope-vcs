@@ -298,7 +298,7 @@ async function settle() {
 function useFakeTimers(t: TestContext) {
   const original = globalThis.XMLHttpRequest
   t.after(() => { globalThis.XMLHttpRequest = original })
-  t.mock.timers.enable({ apis: ['setTimeout'] })
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
   t.mock.method(Math, 'random', () => 1)
 }
 
@@ -355,28 +355,27 @@ for (const status of [400, 403, 404, 413]) {
   })
 }
 
-test('gives up on a part after five attempts with doubling backoff', async (t) => {
+test('keeps retrying a part with capped backoff until its retry budget is spent', async (t) => {
   useFakeTimers(t)
-  const send = t.mock.fn(async (request: FakeRequest) => request.respond(503, {}))
+  const attemptTimes: number[] = []
+  const send = t.mock.fn(async (request: FakeRequest) => {
+    attemptTimes.push(Date.now())
+    request.respond(503, {})
+  })
   installFakeXhr(send)
   const key = 'retry-exhausted'
   const localId = addDraftFile(key)
 
   const upload = uploadRequestAttachment({ actions: singlePartActions(key), draftKey: key, hashFile, localId, params, target })
-  await settle()
-  for (const [delay, attempts] of [[500, 2], [1_000, 3], [2_000, 4], [4_000, 5]] as const) {
-    t.mock.timers.tick(delay - 1)
+  for (let elapsed = 0; elapsed < 120_000; elapsed += 500) {
     await settle()
-    assert.equal(send.mock.callCount(), attempts - 1)
-    t.mock.timers.tick(1)
-    await settle()
-    assert.equal(send.mock.callCount(), attempts)
+    t.mock.timers.tick(500)
   }
   await upload
-  t.mock.timers.tick(60_000)
-  await settle()
 
-  assert.equal(send.mock.callCount(), 5)
+  const gaps = attemptTimes.slice(1).map((time, index) => time - attemptTimes[index]!)
+  assert.deepEqual(gaps, [500, 1_000, 2_000, 4_000, 8_000, ...Array.from({ length: 8 }, () => 10_000)])
+  assert.equal(send.mock.callCount(), 14)
   const draft = readRequestAttachmentDraft(key).attachments[0]
   assert.equal(draft?.status, 'failed')
   assert.equal(draft?.error, 'Part 1 upload failed (503).')
