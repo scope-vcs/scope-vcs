@@ -1,14 +1,17 @@
 use crate::lease::{HeartbeatError, supervise_lease};
 use crate::{
     config::WorkerSettings,
-    health::WorkerHealth,
-    runtime::{JobLoop, JobOutcome, lease_expiry, retry_delay},
+    health::{MediaWorkerLoop, WorkerHealth},
+    runtime::{Cadence, JobLoop, JobOutcome, lease_expiry, retry_delay},
 };
 use scope_domain::requests::attachments::RequestAttachmentCleanupLease;
 use scope_media_storage::MediaStorage;
 use scope_postgres::db::{MediaLeaseMutation, MetadataStore};
 use scope_service_runtime::{random_hex, unix_now};
+use std::time::Duration;
 use tracing::Instrument as _;
+
+const EXPIRY_DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
 
 pub async fn run(
     metadata: MetadataStore,
@@ -16,15 +19,15 @@ pub async fn run(
     settings: WorkerSettings,
     health: WorkerHealth,
 ) -> anyhow::Result<()> {
+    let expiry_discovery = Cadence::new(EXPIRY_DISCOVERY_INTERVAL);
     JobLoop {
-        kind: "cleanup",
+        worker_loop: MediaWorkerLoop::Cleanup,
         metadata: &metadata,
         storage: &storage,
         health: &health,
         poll_interval: settings.poll_interval,
-        mark_poll: WorkerHealth::mark_cleanup_poll,
     }
-    .run(|| cleanup_next_job(&metadata, &storage, &settings, &health))
+    .run(|| cleanup_next_job(&metadata, &storage, &settings, &health, &expiry_discovery))
     .await
 }
 
@@ -33,12 +36,16 @@ async fn cleanup_next_job(
     storage: &MediaStorage,
     settings: &WorkerSettings,
     health: &WorkerHealth,
+    expiry_discovery: &Cadence,
 ) -> anyhow::Result<JobOutcome> {
     let now = unix_now()?;
-    metadata
-        .media()
-        .enqueue_expired_attachment_cleanup(now)
-        .await?;
+    if expiry_discovery.due(now) {
+        metadata
+            .media()
+            .enqueue_expired_attachment_cleanup(now)
+            .await?;
+        expiry_discovery.completed(now);
+    }
     let token = random_hex("cleanup-", 16)?;
     let Some((lease, queued_trace)) = metadata
         .media()
@@ -68,7 +75,7 @@ async fn clean_up_lease(
     health: &WorkerHealth,
     lease: &RequestAttachmentCleanupLease,
 ) -> anyhow::Result<JobOutcome> {
-    let _activity = health.cleanup_activity();
+    let _activity = health.activity(MediaWorkerLoop::Cleanup);
     for key in &lease.object_keys {
         let deletion = storage.delete_object_key(key);
         tokio::pin!(deletion);

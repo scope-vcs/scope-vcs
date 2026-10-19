@@ -130,12 +130,13 @@ where
         "WITH due AS (
             SELECT attachment_id FROM scope_request_media_cleanup_jobs
             WHERE state = 'Completed' AND completed_at_unix <= $2
+              AND reconciled_at_unix IS NULL
             ORDER BY completed_at_unix, attachment_id
             FOR UPDATE SKIP LOCKED LIMIT $3
          )
          UPDATE scope_request_media_cleanup_jobs cleanup
          SET state = 'Queued', available_at_unix = $1, completed_at_unix = NULL,
-             updated_at_unix = $1
+             reconciled_at_unix = $1, updated_at_unix = $1
          FROM due WHERE cleanup.attachment_id = due.attachment_id",
         [now.into(), cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))
@@ -146,18 +147,19 @@ where
             SELECT abandoned.object_key
             FROM scope_request_media_abandoned_objects abandoned
             WHERE abandoned.deleted_at_unix IS NOT NULL
-              AND abandoned.deleted_at_unix <= $1
+              AND abandoned.deleted_at_unix <= $2
+              AND abandoned.reconciled_at_unix IS NULL
               AND NOT EXISTS (
                     SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
                     WHERE cleanup.attachment_id = abandoned.attachment_id
             )
             ORDER BY abandoned.deleted_at_unix, abandoned.object_key
-            FOR UPDATE OF abandoned SKIP LOCKED LIMIT $2
+            FOR UPDATE OF abandoned SKIP LOCKED LIMIT $3
          )
          UPDATE scope_request_media_abandoned_objects abandoned
-         SET deleted_at_unix = NULL
+         SET deleted_at_unix = NULL, reconciled_at_unix = $1
          FROM due WHERE abandoned.object_key = due.object_key",
-        [cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
+        [now.into(), cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))
     .await?;
     conn.execute_raw(Statement::from_sql_and_values(
@@ -167,6 +169,7 @@ where
             FROM scope_request_media_processing_objects object
             WHERE object.state = 'Deleted' AND object.updated_at_unix <= $2
               AND object.manifest_id IS NULL
+              AND object.reconciled_at_unix IS NULL
               AND NOT EXISTS (
                     SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
                     WHERE cleanup.attachment_id = object.attachment_id
@@ -175,7 +178,7 @@ where
             FOR UPDATE OF object SKIP LOCKED LIMIT $3
          )
          UPDATE scope_request_media_processing_objects object
-         SET state = 'Orphaned', updated_at_unix = $1
+         SET state = 'Orphaned', reconciled_at_unix = $1, updated_at_unix = $1
          FROM due WHERE object.object_key = due.object_key",
         [now.into(), cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))

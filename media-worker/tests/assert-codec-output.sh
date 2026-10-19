@@ -28,6 +28,17 @@ for fixture in fixture.mp4 fixture-1080p.mp4 fixture.mov fixture.webm fixture-ro
   fi
 done
 
+for fixture in fixture.mp4 fixture.mov; do
+  sei_units="$(ffmpeg -hide_banner -nostdin -loglevel trace \
+    -i "$output_dir/$fixture/video-playback.mp4" -map 0:v:0 -c copy \
+    -bsf:v trace_headers -f null - 2>&1 \
+    | grep trace_headers | grep -cE 'nal_unit_type +[01]+ = 6$' || true)"
+  if [ "$sei_units" -ne 0 ]; then
+    echo "$fixture remuxed playback kept $sei_units SEI units" >&2
+    exit 1
+  fi
+done
+
 rotated_size="$(ffprobe -v error -select_streams v:0 \
   -show_entries stream=width,height -of csv=p=0:s=x \
   "$output_dir/fixture-rotated.mov/video-playback.mp4")"

@@ -1,4 +1,5 @@
 mod model;
+mod processing;
 mod references;
 mod rules;
 
@@ -11,6 +12,10 @@ pub use model::{
     RequestAttachmentPartReceipt, RequestAttachmentProcessingLease, RequestAttachmentSource,
     RequestAttachmentStagedPart, RequestAttachmentState, RequestAttachmentStoredObject,
     RequestAttachmentTarget, RequestAttachmentVideoMetadata, RequestMediaChunk, RequestMediaObject,
+};
+pub use processing::{
+    REQUEST_ATTACHMENT_MAX_PROCESSING_ATTEMPTS, RequestAttachmentProcessingLane,
+    fail_interrupted_processing, processing_attempts_exhausted,
 };
 pub use references::request_attachment_references;
 pub use rules::{

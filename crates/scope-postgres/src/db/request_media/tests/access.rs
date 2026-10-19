@@ -138,7 +138,12 @@ async fn single_attachment_and_media_reads_follow_list_visibility() {
     assert!(unvalidated.is_none());
 
     let (lease, _) = media
-        .claim_processing_job("access-processing-token", 40, 60)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "access-processing-token",
+            40,
+            60,
+        )
         .await
         .unwrap()
         .unwrap();

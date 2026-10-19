@@ -14,7 +14,12 @@ async fn claimed_media_jobs_carry_the_trace_that_queued_them() {
     let (_, processing_trace) = fixture
         .store
         .media()
-        .claim_processing_job("traced-processing", 20, 30)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "traced-processing",
+            20,
+            30,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -38,7 +43,12 @@ async fn claimed_media_jobs_carry_the_trace_that_queued_them() {
     let (_, retried_trace) = fixture
         .store
         .media()
-        .claim_processing_job("traced-retry-processing", 21, 30)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "traced-retry-processing",
+            21,
+            30,
+        )
         .await
         .unwrap()
         .unwrap();

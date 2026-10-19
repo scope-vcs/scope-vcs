@@ -13,9 +13,10 @@ use scope_domain::{
         RequestActorRole, StartRequestInput,
         attachments::{
             RequestAttachmentDerivative, RequestAttachmentDerivativeKind,
-            RequestAttachmentImageMetadata, RequestAttachmentPartReceipt, RequestAttachmentSource,
-            RequestAttachmentStagedPart, RequestAttachmentState, RequestAttachmentStoredObject,
-            RequestAttachmentTarget, RequestMediaChunk,
+            RequestAttachmentImageMetadata, RequestAttachmentPartReceipt,
+            RequestAttachmentProcessingLane, RequestAttachmentSource, RequestAttachmentStagedPart,
+            RequestAttachmentState, RequestAttachmentStoredObject, RequestAttachmentTarget,
+            RequestMediaChunk,
         },
     },
     views::ViewId,
@@ -96,6 +97,17 @@ async fn prepare_attachment(
     attachment_id: &str,
     now_unix: u64,
 ) -> PreparedRequestAttachment {
+    prepare_attachment_as(fixture, request_id, attachment_id, "image/png", now_unix).await
+}
+
+async fn prepare_attachment_as(
+    fixture: &Fixture,
+    request_id: &str,
+    attachment_id: &str,
+    media_type: &str,
+    now_unix: u64,
+) -> PreparedRequestAttachment {
+    let extension = media_type.rsplit('/').next().unwrap();
     fixture
         .store
         .media()
@@ -106,8 +118,8 @@ async fn prepare_attachment(
             request_id: request_id.to_string(),
             actor_user_id: OWNER_ID.to_string(),
             target: RequestAttachmentTarget::Description,
-            filename: format!("{attachment_id}.png"),
-            declared_media_type: "image/png".to_string(),
+            filename: format!("{attachment_id}.{extension}"),
+            declared_media_type: media_type.to_string(),
             size_bytes: 4,
             sha256: SOURCE_SHA256.to_string(),
             now_unix,
@@ -146,7 +158,18 @@ async fn upload_attachment(
     attachment_id: &str,
     now_unix: u64,
 ) {
-    let prepared = prepare_attachment(fixture, request_id, attachment_id, now_unix).await;
+    upload_attachment_as(fixture, request_id, attachment_id, "image/png", now_unix).await;
+}
+
+async fn upload_attachment_as(
+    fixture: &Fixture,
+    request_id: &str,
+    attachment_id: &str,
+    media_type: &str,
+    now_unix: u64,
+) {
+    let prepared =
+        prepare_attachment_as(fixture, request_id, attachment_id, media_type, now_unix).await;
     let stored_part = part(attachment_id, "part-1");
     assert_eq!(
         fixture
@@ -433,7 +456,12 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
     let (first_lease, _) = fixture
         .store
         .media()
-        .claim_processing_job("first-processing-token", 20, 30)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "first-processing-token",
+            20,
+            30,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -457,7 +485,12 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
     let (replacement_lease, _) = fixture
         .store
         .media()
-        .claim_processing_job("replacement-processing-token", 30, 40)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "replacement-processing-token",
+            30,
+            40,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -509,7 +542,12 @@ async fn successful_processing_completion_persists_derivative_with_repository_bu
     let (lease, _) = fixture
         .store
         .media()
-        .claim_processing_job("completion-token", 20, 40)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "completion-token",
+            20,
+            40,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -623,7 +661,12 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
     let (processing_lease, _) = fixture
         .store
         .media()
-        .claim_processing_job("processing-before-delete", 20, 30)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "processing-before-delete",
+            20,
+            30,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -745,6 +788,36 @@ async fn request_deletion_fences_processing_and_reconciles_every_known_object_ke
             .iter()
             .any(|key| key == late_output_key)
     );
+    assert_eq!(
+        fixture
+            .store
+            .media()
+            .complete_cleanup_job(
+                "deleted_attachment",
+                &reconciled.lease_token,
+                reconciled.lease_generation,
+                reconciliation_time + 1,
+            )
+            .await
+            .unwrap(),
+        MediaLeaseMutation::Applied(())
+    );
+    let later = reconciliation_time + 2 * 24 * 60 * 60;
+    fixture
+        .store
+        .media()
+        .enqueue_expired_attachment_cleanup(later)
+        .await
+        .unwrap();
+    assert!(
+        fixture
+            .store
+            .media()
+            .claim_cleanup_job("cleanup-after-reconciliation", later, later + 10)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -862,4 +935,5 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
 
 mod access;
 mod cleanup;
+mod processing_queue;
 mod queued_traces;
