@@ -94,10 +94,8 @@ impl Drop for TestSchemaLease {
                     database_name,
                     outstanding,
                 } => {
-                    let (_, ()) = tokio::join!(
-                        database.close_by_ref(),
-                        database_templates::drop_database(&admin_url, &database_name),
-                    );
+                    test_runtime().spawn(async move { database.close_by_ref().await });
+                    database_templates::drop_database(&admin_url, &database_name).await;
                     drop(outstanding);
                 }
                 #[cfg(test)]
