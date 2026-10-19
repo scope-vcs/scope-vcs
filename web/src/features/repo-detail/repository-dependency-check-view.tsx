@@ -13,7 +13,7 @@ export function DependencyCheckDetailsBody({
   return (
     <>
       {report.findings.length > 0 && (
-        <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto">
+        <ul aria-label="Public files importing private files" className="max-w-4xl">
           {report.findings.map((finding, index) => (
             <li
               className="grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-center gap-2 border-t border-border py-2.5 sm:gap-4"
@@ -39,7 +39,7 @@ export function DependencyCheckDetailsBody({
       {report.gaps.length > 0 && (
         <div className={report.findings.length > 0 ? 'mt-3' : undefined}>
           <p className="font-medium text-foreground">Coverage gaps</p>
-          <ul aria-label="Dependency check coverage gaps" className="mt-1 max-h-48 max-w-4xl overflow-y-auto">
+          <ul aria-label="Dependency check coverage gaps" className="mt-1 max-w-4xl">
             {report.gaps.map((gap, index) => (
               <li className="border-t border-border py-2 text-muted-foreground" key={`${gap.path}\0${index}`}>
                 {gap.path === '.' ? (
