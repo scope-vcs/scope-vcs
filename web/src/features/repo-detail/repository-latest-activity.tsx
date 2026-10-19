@@ -41,7 +41,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   }
   if (current.status === 'failed') {
     return (
-      <div className={cn(STRIP, 'gap-3 text-muted-foreground')}>
+      <div className={cn(STRIP, 'gap-3 text-muted-foreground')} data-repo-activity>
         <output>Latest change unavailable.</output>
         <button className="rounded underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" onClick={current.retry} type="button">
           Retry latest change
@@ -55,6 +55,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   return (
     <div
       aria-label="Latest repository change"
+      data-repo-activity
       className={cn(STRIP, 'flex-wrap gap-x-6 gap-y-0.5', !current.error && 'sm:flex-nowrap')}
     >
       <Link
@@ -85,7 +86,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
 
 export function RepositoryLatestActivityPending({ onRetry }: { onRetry?: () => void }) {
   return (
-    <div className={STRIP}>
+    <div className={STRIP} data-repo-activity>
       <PendingSurface label="Loading latest repository change" onRetry={onRetry}>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-0.5 sm:flex-nowrap">
           <span className="flex h-5 min-w-0 basis-full items-center sm:flex-1 sm:basis-auto">

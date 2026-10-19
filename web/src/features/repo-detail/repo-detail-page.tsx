@@ -4,10 +4,11 @@ import type {
   RepoSummaryResponse,
 } from '@/api/types.generated'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
-import { ExternalLink, Eye } from 'lucide-react'
+import { Eye } from 'lucide-react'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
+import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
 import { RepositoryCodeView } from './repository-code-view'
 import { RepositoryLatestActivity } from './repository-latest-activity'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
@@ -61,7 +62,7 @@ export function RepoDetailPage({
             />
           </>
         )}
-        summary={<RepositoryAbout repo={repo} />}
+        summary={hasRepositoryAbout(repo) ? <RepositoryAbout repo={repo} /> : undefined}
         title="Code"
       />
       <RepositoryLatestActivity params={params} repo={repo} />
@@ -75,29 +76,4 @@ export function RepoDetailPage({
       />
     </WorkbenchPane>
   )
-}
-
-function RepositoryAbout({ repo }: { repo: RepoSummaryResponse }) {
-  if (!repo.description && !repo.website_url) return null
-  return (
-    <p className="flex min-w-0 items-center gap-x-3 text-xs">
-      {repo.description && <span className="min-w-0 truncate" title={repo.description}>{repo.description}</span>}
-      {repo.website_url && (
-        <a
-          className="inline-flex min-w-0 max-w-1/2 shrink-0 items-center gap-1 rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-          href={repo.website_url}
-          rel="noopener noreferrer"
-          target="_blank"
-          title={repo.website_url}
-        >
-          <span className="truncate">{websiteLabel(repo.website_url)}</span>
-          <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
-        </a>
-      )}
-    </p>
-  )
-}
-
-function websiteLabel(url: string) {
-  return url.replace(/^https?:\/\//, '').replace(/\/$/, '')
 }
