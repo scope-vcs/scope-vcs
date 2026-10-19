@@ -9,12 +9,8 @@ import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
 import { RepositoryCodeView } from './repository-code-view'
-import { useRepositoryDependencyCheck } from './repository-dependency-check'
-import { RepositoryDependencyLeak } from './repository-dependency-check-view'
-import { RepositoryDependencyStatus } from './repository-dependency-status'
 import { RepositoryLatestActivity } from './repository-latest-activity'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
-import { displayRouteFilePath } from '@/lib/route-file'
 import type { CachedResource } from '@/lib/use-cached-resource'
 import { useRepoViews } from './repo-layout-context'
 import { RepoViewingAsPicker, useViewingAs } from './use-viewing-as'
@@ -37,23 +33,12 @@ export function RepoDetailPage({
   const workspaceTabs = useWorkspaceTabs({ activeId: selectedPath })
   const { options, view } = useViewingAs()
   const views = useRepoViews()
-  const dependencyCheck = useRepositoryDependencyCheck({ params, repo })
-
-  function selectResource(path: string) {
-    workspaceTabs.open(displayRouteFilePath(path), false)
-    onSelectFilePath(path)
-  }
 
   return (
     <WorkbenchPane>
       <WorkbenchBar
         actions={(
           <>
-            <RepositoryDependencyStatus
-              onSelectFilePath={selectResource}
-              presentation={dependencyCheck}
-              views={views}
-            />
             {options.length > 1 ? <RepoViewingAsPicker /> : (
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Eye aria-hidden="true" className="size-3.5" />
@@ -83,11 +68,6 @@ export function RepoDetailPage({
           </div>
         )}
         title="Code"
-      />
-      <RepositoryDependencyLeak
-        onSelectFilePath={selectResource}
-        presentation={dependencyCheck}
-        views={views}
       />
       <RepositoryCodeView
         content={content}
