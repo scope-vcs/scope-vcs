@@ -45,6 +45,7 @@ test('request rows exchange age and actions and restore the selected view across
   await waitOpacity(actions, '1')
   assert.deepEqual(await row.boundingBox(), rowBounds)
   assert.equal(await age.evaluate((node) => getComputedStyle(node).transitionDuration), '0.15s')
+  assert.deepEqual(await actions.locator('button[title]').evaluateAll((buttons) => buttons.map((button) => button.title)), ['Snooze', 'Settle'])
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.hover.png` })
   }

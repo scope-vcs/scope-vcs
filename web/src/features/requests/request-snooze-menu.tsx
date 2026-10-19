@@ -60,7 +60,7 @@ export function RequestSnoozeMenu({
         disabled={disabled}
         popoverTarget={id}
         ref={trigger}
-        title={`Snooze request ${requestId}`}
+        title="Snooze"
         type="button"
       >
         <Clock3 aria-hidden="true" />

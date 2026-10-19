@@ -231,7 +231,7 @@ function RequestWorkspaceRow({
                   disabled={pending}
                   key={action}
                   onClick={() => onAction(item, { action })}
-                  title={`${label} request ${request.id}`}
+                  title={label}
                   type="button"
                 >
                   <Icon aria-hidden="true" />
