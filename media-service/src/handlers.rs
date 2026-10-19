@@ -101,11 +101,26 @@ pub(crate) async fn put_upload_part(
             ));
         }
     };
-    state
-        .storage
-        .write_part(&reserved, part_bytes)
-        .await
-        .map_err(media_storage_error)?;
+    if let Err(error) = state.storage.write_part(&reserved, part_bytes).await {
+        let released = match unix_now() {
+            Ok(now_unix) => state
+                .metadata
+                .media()
+                .release_upload_part_write(
+                    &claims.attachment_id,
+                    part_number,
+                    &write_token,
+                    now_unix,
+                )
+                .await
+                .map_err(|error| error.to_string()),
+            Err(error) => Err(error.to_string()),
+        };
+        if let Err(release_error) = released {
+            tracing::warn!(%release_error, "releasing a failed media part write failed");
+        }
+        return Err(media_storage_error(error));
+    }
     let store_result = state
         .metadata
         .media()
