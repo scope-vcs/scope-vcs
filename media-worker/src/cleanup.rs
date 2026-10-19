@@ -50,9 +50,10 @@ async fn cleanup_next_job(
         expiry_discovery.completed(now);
     }
     let token = random_hex("cleanup-", 16)?;
+    let expires_at = lease_expiry(now, settings.lease_duration)?;
     let Some((lease, queued_trace)) = metadata
         .media()
-        .claim_cleanup_job(&token, now, lease_expiry(now, settings.lease_duration)?)
+        .claim_cleanup_job(&token, now, expires_at)
         .await?
     else {
         return Ok(JobOutcome::NoJob);
@@ -66,7 +67,7 @@ async fn cleanup_next_job(
         scope.job.attempt = lease.attempt,
     );
     queued_trace.link(&span);
-    clean_up_lease(metadata, storage, settings, health, &lease)
+    clean_up_lease(metadata, storage, settings, health, &lease, expires_at)
         .instrument(span)
         .await
 }
@@ -77,12 +78,24 @@ async fn clean_up_lease(
     settings: &WorkerSettings,
     health: &WorkerHealth,
     lease: &RequestAttachmentCleanupLease,
+    expires_at: u64,
 ) -> anyhow::Result<JobOutcome> {
     let _activity = health.activity(MediaWorkerLoop::Cleanup);
-    for key in &lease.object_keys {
-        let deletion = storage.delete_object_key(key);
-        tokio::pin!(deletion);
-        match supervise_lease(&mut deletion, settings.lease_duration, || async {
+    let deletion = async {
+        for key in &lease.object_keys {
+            storage
+                .delete_object_key(key)
+                .await
+                .map_err(|error| (key, error))?;
+        }
+        Ok::<_, (&String, scope_media_storage::MediaStorageError)>(())
+    };
+    let initial_remaining = Duration::from_secs(expires_at.saturating_sub(unix_now()?));
+    match supervise_lease(
+        deletion,
+        settings.lease_duration,
+        initial_remaining,
+        || async {
             let now = unix_now()?;
             metadata
                 .media()
@@ -95,39 +108,36 @@ async fn clean_up_lease(
                 )
                 .await
                 .map_err(anyhow::Error::from)
-        })
-        .await
-        {
-            Ok(Ok(())) => {}
-            Err(HeartbeatError::LeaseLost) => {
-                let _ = deletion.await;
-                return Ok(JobOutcome::LeaseLost);
-            }
-            Err(HeartbeatError::Database(error)) => return Err(error),
-            Ok(Err(error)) => {
-                tracing::warn!(
-                    attachment_id = %lease.attachment_id,
-                    object_key = %key,
-                    %error,
-                    "media object cleanup failed"
-                );
-                let now = unix_now()?;
-                let result = metadata
-                    .media()
-                    .fail_cleanup_job(
-                        &lease.attachment_id,
-                        &lease.lease_token,
-                        lease.lease_generation,
-                        now,
-                        now.saturating_add(retry_delay(lease.attempt).as_secs()),
-                        "Media object deletion failed; retry scheduled.",
-                    )
-                    .await?;
-                return Ok(match result {
-                    MediaLeaseMutation::Applied(()) => JobOutcome::Failed,
-                    MediaLeaseMutation::LeaseLost => JobOutcome::LeaseLost,
-                });
-            }
+        },
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Err(HeartbeatError::LeaseLost) => return Ok(JobOutcome::LeaseLost),
+        Err(HeartbeatError::Database(error)) => return Err(error),
+        Ok(Err((key, error))) => {
+            tracing::warn!(
+                attachment_id = %lease.attachment_id,
+                object_key = %key,
+                %error,
+                "media object cleanup failed"
+            );
+            let now = unix_now()?;
+            let result = metadata
+                .media()
+                .fail_cleanup_job(
+                    &lease.attachment_id,
+                    &lease.lease_token,
+                    lease.lease_generation,
+                    now,
+                    now.saturating_add(retry_delay(lease.attempt).as_secs()),
+                    "Media object deletion failed; retry scheduled.",
+                )
+                .await?;
+            return Ok(match result {
+                MediaLeaseMutation::Applied(()) => JobOutcome::Failed,
+                MediaLeaseMutation::LeaseLost => JobOutcome::LeaseLost,
+            });
         }
     }
     let result = metadata

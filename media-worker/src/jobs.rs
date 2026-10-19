@@ -64,14 +64,10 @@ async fn process_next_job(
 ) -> anyhow::Result<JobOutcome> {
     let now = unix_now()?;
     let token = random_hex("lease-", 16)?;
+    let expires_at = lease_expiry(now, settings.lease_duration)?;
     let Some((lease, queued_trace)) = metadata
         .media()
-        .claim_processing_job(
-            lane,
-            &token,
-            now,
-            lease_expiry(now, settings.lease_duration)?,
-        )
+        .claim_processing_job(lane, &token, now, expires_at)
         .await?
     else {
         return Ok(JobOutcome::NoJob);
@@ -94,7 +90,8 @@ async fn process_next_job(
     queued_trace.link(&span);
     let _activity = health.activity(lane.into());
     let work = settle_claim(metadata, storage, pipeline, scratch, settings, &lease);
-    match supervise_lease(work, settings.lease_duration, || async {
+    let initial_remaining = std::time::Duration::from_secs(expires_at.saturating_sub(unix_now()?));
+    match supervise_lease(work, settings.lease_duration, initial_remaining, || async {
         let now = unix_now()?;
         Ok(metadata
             .media()

@@ -34,6 +34,7 @@ impl RenewalSchedule {
 pub(crate) async fn supervise_lease<T, F, R, RFut>(
     future: F,
     lease_duration: Duration,
+    initial_remaining: Duration,
     mut renew: R,
 ) -> Result<T, HeartbeatError>
 where
@@ -43,8 +44,14 @@ where
 {
     tokio::pin!(future);
     let schedule = RenewalSchedule::new(lease_duration);
-    let mut granted_until = Instant::now() + schedule.lease_duration;
-    let mut next_renewal = Instant::now() + schedule.heartbeat;
+    if initial_remaining <= schedule.safety_margin {
+        return Err(HeartbeatError::LeaseLost);
+    }
+    let mut granted_until = Instant::now() + initial_remaining;
+    let mut next_renewal = Instant::now()
+        + schedule
+            .heartbeat
+            .min((initial_remaining - schedule.safety_margin) / 2);
     loop {
         tokio::select! {
             result = &mut future => return Ok(result),
@@ -53,14 +60,22 @@ where
         let requested_at = Instant::now();
         let renewal = renew();
         tokio::pin!(renewal);
+        let give_up_at = granted_until - schedule.safety_margin;
         let renewed = tokio::select! {
+            biased;
             result = &mut future => return Ok(result),
+            _ = tokio::time::sleep_until(give_up_at) => {
+                return Err(HeartbeatError::Database(anyhow::anyhow!(
+                    "lease renewal did not finish before the safety margin"
+                )));
+            }
             renewed = &mut renewal => renewed,
         };
         match renewed {
             Ok(true) => {
                 granted_until = requested_at + schedule.lease_duration;
-                next_renewal = Instant::now() + schedule.heartbeat;
+                next_renewal = (Instant::now() + schedule.heartbeat)
+                    .min(granted_until - schedule.safety_margin);
             }
             Ok(false) => return Err(HeartbeatError::LeaseLost),
             Err(error) => {
@@ -139,6 +154,7 @@ mod tests {
                 42
             },
             LEASE,
+            LEASE,
             || row.renew(),
         )
         .await
@@ -159,6 +175,7 @@ mod tests {
                 42
             },
             LEASE,
+            LEASE,
             || row.renew(),
         )
         .await
@@ -174,11 +191,44 @@ mod tests {
         let row = LeaseRow::granted(LEASE, usize::MAX);
         let started = Instant::now();
 
-        let outcome = supervise_lease(std::future::pending::<()>(), LEASE, || row.renew()).await;
+        let outcome =
+            supervise_lease(std::future::pending::<()>(), LEASE, LEASE, || row.renew()).await;
 
         assert!(matches!(outcome, Err(HeartbeatError::Database(_))));
         assert!(started.elapsed() <= LEASE - LEASE / 4);
         assert!(row.failures.load(Ordering::Relaxed) > 1);
         assert_eq!(row.renewals.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn stalled_renewal_stops_work_before_the_lease_expires() {
+        let started = Instant::now();
+        let outcome = supervise_lease(std::future::pending::<()>(), LEASE, LEASE, || {
+            std::future::pending::<anyhow::Result<bool>>()
+        })
+        .await;
+
+        assert!(matches!(outcome, Err(HeartbeatError::Database(_))));
+        assert!(started.elapsed() <= LEASE - LEASE / 4);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn delayed_claim_renews_before_its_original_expiry() {
+        let row = LeaseRow::granted(LEASE, 0);
+        let initial_remaining = Duration::from_secs(35);
+        *row.expires_at.lock().expect("lease expiry lock") = Instant::now() + initial_remaining;
+        let result = supervise_lease(
+            async {
+                tokio::time::sleep(LEASE).await;
+                42
+            },
+            LEASE,
+            initial_remaining,
+            || row.renew(),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(row.renewals.load(Ordering::Relaxed) > 0);
     }
 }

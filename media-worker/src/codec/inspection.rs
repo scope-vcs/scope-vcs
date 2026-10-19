@@ -17,17 +17,27 @@ pub(super) struct Probe {
 
 impl Probe {
     pub(super) fn display_dimensions(&self, stream: &ProbeStream) -> (u32, u32) {
-        let rotation = stream.rotation().or_else(|| {
-            self.frames
-                .iter()
-                .find(|frame| frame.width > 0 && frame.height > 0)
-                .and_then(ProbeFrame::rotation)
-        });
+        let rotation = stream
+            .rotation()
+            .filter(|rotation| rotation.rem_euclid(360) != 0)
+            .or_else(|| {
+                self.frames
+                    .iter()
+                    .find(|frame| frame.width > 0 && frame.height > 0)
+                    .and_then(ProbeFrame::rotation)
+            });
         if rotation.is_some_and(|rotation| matches!(rotation.rem_euclid(360), 90 | 270)) {
             (stream.height, stream.width)
         } else {
             (stream.width, stream.height)
         }
+    }
+
+    pub(super) fn has_rotated_frame(&self) -> bool {
+        self.frames
+            .iter()
+            .filter_map(ProbeFrame::rotation)
+            .any(|rotation| rotation.rem_euclid(360) != 0)
     }
 }
 

@@ -25,7 +25,12 @@ pub enum PlaybackConversion {
 }
 
 impl PlaybackConversion {
-    fn choose(format: InputFormat, probe: &Probe, stream: &ProbeStream) -> Self {
+    fn choose(
+        format: InputFormat,
+        probe: &Probe,
+        stream: &ProbeStream,
+        frame_rotated: bool,
+    ) -> Self {
         let (width, height) = probe.display_dimensions(stream);
         let remuxable = matches!(format, InputFormat::Mp4 | InputFormat::Mov)
             && stream.codec_name.as_deref() == Some("h264")
@@ -40,6 +45,7 @@ impl PlaybackConversion {
             && stream.color_range.as_deref() != Some("pc")
             && !stream.is_hdr()
             && !stream.is_rotated()
+            && !frame_rotated
             && width <= VIDEO_MAX_WIDTH
             && height <= VIDEO_MAX_HEIGHT;
         if remuxable {
@@ -76,7 +82,8 @@ impl CodecPipeline {
     ) -> Result<CodecOutput, CodecFailure> {
         let source_probe = self.probe(source, work_dir).await?;
         let source_stream = single_video_stream(&source_probe)?;
-        let (display_width, display_height) = source_probe.display_dimensions(source_stream);
+        let frame_probe = self.probe_first_frame(source, work_dir).await?;
+        let (display_width, display_height) = frame_probe.display_dimensions(source_stream);
         validate_pixels(
             display_width,
             display_height,
@@ -105,7 +112,12 @@ impl CodecPipeline {
 
         let playback = work_dir.join("video-playback.mp4");
         let hdr = source_stream.is_hdr();
-        let mut conversion = PlaybackConversion::choose(format, &source_probe, source_stream);
+        let mut conversion = PlaybackConversion::choose(
+            format,
+            &source_probe,
+            source_stream,
+            frame_probe.has_rotated_frame(),
+        );
         let mut playback_probe = self
             .encode_playback(conversion, source, hdr, &playback, work_dir)
             .await
@@ -324,7 +336,7 @@ mod tests {
     fn conversion(format: InputFormat, probe: Value) -> PlaybackConversion {
         let probe: Probe = serde_json::from_value(probe).unwrap();
         let stream = single_video_stream(&probe).unwrap();
-        PlaybackConversion::choose(format, &probe, stream)
+        PlaybackConversion::choose(format, &probe, stream, probe.has_rotated_frame())
     }
 
     #[test]
@@ -381,6 +393,16 @@ mod tests {
         }
         assert_eq!(
             conversion(InputFormat::Webm, screen_recording()),
+            PlaybackConversion::Transcode
+        );
+        let mut frame_rotation = screen_recording();
+        frame_rotation["frames"] = json!([{
+            "width": 1920,
+            "height": 1080,
+            "side_data_list": [{ "rotation": 90 }]
+        }]);
+        assert_eq!(
+            conversion(InputFormat::Mp4, frame_rotation),
             PlaybackConversion::Transcode
         );
     }
