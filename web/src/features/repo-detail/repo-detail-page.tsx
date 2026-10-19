@@ -61,14 +61,10 @@ export function RepoDetailPage({
             />
           </>
         )}
-        summary={(
-          <div className="grid min-w-0 gap-1">
-            <RepositoryLatestActivity params={params} repo={repo} />
-            <RepositoryAbout repo={repo} />
-          </div>
-        )}
+        summary={<RepositoryAbout repo={repo} />}
         title="Code"
       />
+      <RepositoryLatestActivity params={params} repo={repo} />
       <RepositoryCodeView
         content={content}
         file={file}
@@ -84,11 +80,11 @@ export function RepoDetailPage({
 function RepositoryAbout({ repo }: { repo: RepoSummaryResponse }) {
   if (!repo.description && !repo.website_url) return null
   return (
-    <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
-      {repo.description && <span className="min-w-0 break-words">{repo.description}</span>}
+    <p className="flex min-w-0 items-center gap-x-3 text-xs">
+      {repo.description && <span className="min-w-0 truncate" title={repo.description}>{repo.description}</span>}
       {repo.website_url && (
         <a
-          className="inline-flex min-w-0 max-w-full items-center gap-1 rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          className="inline-flex min-w-0 max-w-1/2 shrink-0 items-center gap-1 rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           href={repo.website_url}
           rel="noopener noreferrer"
           target="_blank"
