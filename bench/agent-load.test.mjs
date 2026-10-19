@@ -7,7 +7,7 @@ import test from 'node:test';
 import {
   agentBranchName, parseMarks, seedFilePath, slug, writeAgentHistoryStream, writeSeedStream,
 } from './agent-fixtures.mjs';
-import { configuration, publicConfig, seedFileBytes } from './agent-load-config.mjs';
+import { configuration, mergeBatchSize, publicConfig, seedFileBytes } from './agent-load-config.mjs';
 import { reportPath, stageRow } from './agent-load-report.mjs';
 import { execute } from './subprocess.mjs';
 
@@ -37,7 +37,8 @@ test('overrides are parsed and secrets stay out of the public config', () => {
     SCOPE_BENCH_GIT_URL: 'https://scope-git-loadtest.up.railway.app/',
     SCOPE_AGENT_MODE: 'merge',
     SCOPE_AGENT_STAGES: '32, 4,4',
-    SCOPE_AGENT_COUNT: '10',
+    SCOPE_AGENT_COUNT: '36',
+    SCOPE_AGENT_MERGES_PER_STAGE: '4',
     SCOPE_AGENT_REPO: 'owner/name',
     SCOPE_AGENT_SEED_FILES: '90000',
     SCOPE_BENCH_RUN_LABEL: 'tree-90k',
@@ -45,7 +46,7 @@ test('overrides are parsed and secrets stay out of the public config', () => {
   assert.equal(config.gitUrl, 'https://scope-git-loadtest.up.railway.app');
   assert.equal(config.mode, 'merge');
   assert.deepEqual(config.stages, [4, 32]);
-  assert.equal(config.agents, 10);
+  assert.equal(config.agents, 36);
   assert.deepEqual(config.repo, { owner: 'owner', name: 'name' });
   assert.equal(config.seedFileBytes, 64);
   assert.equal(config.runLabel, 'tree-90k');
@@ -67,7 +68,13 @@ test('invalid configuration is rejected before any request is made', () => {
     () => configuration({ ...REQUIRED, SCOPE_AGENT_STAGES: '1,16', SCOPE_AGENT_COUNT: '8' }),
     /SCOPE_AGENT_COUNT must be at least the largest/,
   );
-  assert.doesNotThrow(() => configuration({ ...REQUIRED, SCOPE_AGENT_MODE: 'merge', SCOPE_AGENT_STAGES: '1,16', SCOPE_AGENT_COUNT: '8' }));
+  assert.throws(
+    () => configuration({ ...REQUIRED, SCOPE_AGENT_MODE: 'merge', SCOPE_AGENT_STAGES: '1,128', SCOPE_AGENT_COUNT: '160' }),
+    /SCOPE_AGENT_COUNT must be at least 168/,
+  );
+  assert.doesNotThrow(() => configuration({ ...REQUIRED, SCOPE_AGENT_MODE: 'merge', SCOPE_AGENT_STAGES: '1,128', SCOPE_AGENT_COUNT: '168' }));
+  assert.equal(mergeBatchSize(40, 128), 128);
+  assert.equal(mergeBatchSize(40, 4), 40);
 });
 
 test('agent branch names are unique, bounded, and ref safe', () => {

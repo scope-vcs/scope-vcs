@@ -7,7 +7,7 @@ import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
 import { agentBranchName, parseMarks, slug, writeAgentHistoryStream, writeSeedStream } from './agent-fixtures.mjs';
-import { configuration, publicConfig } from './agent-load-config.mjs';
+import { configuration, mergeBatchSize, publicConfig } from './agent-load-config.mjs';
 import { persistReport, reportPath, stageRow } from './agent-load-report.mjs';
 import { FixtureCleanup } from './fixture-cleanup.mjs';
 import { message } from './host.mjs';
@@ -230,7 +230,7 @@ async function runMergeStages(context, repository, agents, report) {
   let cursor = 0;
   for (const concurrency of config.stages) {
     if (context.interrupted) break;
-    const batch = ready.slice(cursor, cursor + config.mergesPerStage);
+    const batch = ready.slice(cursor, cursor + mergeBatchSize(config.mergesPerStage, concurrency));
     cursor += batch.length;
     const samples = [];
     const startedAt = new Date().toISOString();
@@ -258,12 +258,15 @@ function record(report, row) {
 async function mapConcurrent(items, concurrency, operation) {
   const queue = [...items];
   const results = [];
-  await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-    while (queue.length) {
+  let failure = null;
+  await Promise.allSettled(Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length && !failure) {
       const item = queue.shift();
-      results.push(await operation(item));
+      try { results.push(await operation(item)); }
+      catch (error) { failure ??= error; }
     }
   }));
+  if (failure) throw failure;
   return results.sort((left, right) => (left?.index ?? 0) - (right?.index ?? 0));
 }
 

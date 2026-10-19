@@ -220,7 +220,7 @@ The run:
 1. Creates one repository and seeds `main` through a push intent, or reuses `SCOPE_AGENT_REPO`, which is cloned and never deleted.
 2. Starts one request per agent and builds a chain of commits per agent in a local bare repository that borrows the base clone's objects. Each commit adds one random file of `SCOPE_AGENT_DELTA_BYTES` under `agents/<branch>/`.
 3. In `push` mode, runs each stage by having the first `concurrency` agents push their next commit with `--force-with-lease` until the stage time ends. After a failed push it reads the remote ref and resumes from what the server holds.
-4. In `merge` mode, pushes one commit per agent, submits every request, then merges a batch of `SCOPE_AGENT_MERGES_PER_STAGE` requests per stage at that stage's concurrency, sending each request's pushed head as `expected_head_oid`.
+4. In `merge` mode, pushes one commit per agent, submits every request, then merges a batch of `SCOPE_AGENT_MERGES_PER_STAGE` requests, or the stage's concurrency if larger, at that concurrency. `SCOPE_AGENT_COUNT` must cover every stage's batch, sending each request's pushed head as `expected_head_oid`.
 5. Deletes the repository it created and removes all local clones.
 
 Requests created in a reused `SCOPE_AGENT_REPO` stay there. Use a distinct `SCOPE_BENCH_RUN_LABEL` for every run against the same repository so request branch names do not collide.
@@ -235,7 +235,7 @@ Requests created in a reused `SCOPE_AGENT_REPO` stay there. Use a distinct `SCOP
 | `SCOPE_AGENT_COUNT` | largest stage | Agents and requests to prepare; push mode needs at least the largest stage |
 | `SCOPE_AGENT_COMMITS` | `40` | Prepared commits per agent |
 | `SCOPE_AGENT_DELTA_BYTES` | `4096` | Random bytes in each agent commit's file |
-| `SCOPE_AGENT_MERGES_PER_STAGE` | `40` | Requests merged in each merge stage |
+| `SCOPE_AGENT_MERGES_PER_STAGE` | `40` | Minimum requests merged in each merge stage |
 | `SCOPE_AGENT_PREP_CONCURRENCY` | `16` | Parallel agent preparation, setup pushes, and submits |
 | `SCOPE_AGENT_REPO` | create one | Existing `owner/name` to use and keep |
 | `SCOPE_AGENT_SEED_FILES` | `1` | Files in the seed commit. One file is 64 KiB; more files are 64 bytes each, spread over directories of at most 1000 entries |

@@ -8,6 +8,10 @@ const MODES = new Set(['push', 'merge']);
 const SINGLE_SEED_FILE_BYTES = 64 * 1024;
 const TREE_SEED_FILE_BYTES = 64;
 
+export function mergeBatchSize(mergesPerStage, concurrency) {
+  return Math.max(mergesPerStage, concurrency);
+}
+
 export function seedFileBytes(seedFiles) {
   return seedFiles === 1 ? SINGLE_SEED_FILE_BYTES : TREE_SEED_FILE_BYTES;
 }
@@ -21,6 +25,11 @@ export function configuration(env = process.env) {
   if (mode === 'push' && agents < Math.max(...stages)) {
     throw new Error('SCOPE_AGENT_COUNT must be at least the largest SCOPE_AGENT_STAGES value in push mode');
   }
+  const mergesPerStage = positiveInteger('SCOPE_AGENT_MERGES_PER_STAGE', 40, env);
+  const mergeRequests = stages.reduce((total, stage) => total + mergeBatchSize(mergesPerStage, stage), 0);
+  if (mode === 'merge' && agents < mergeRequests) {
+    throw new Error(`SCOPE_AGENT_COUNT must be at least ${mergeRequests} to give every merge stage a full batch`);
+  }
   const seedFiles = positiveInteger('SCOPE_AGENT_SEED_FILES', 1, env);
   return {
     apiUrl: required('SCOPE_BENCH_API_URL', env).replace(/\/$/, ''),
@@ -33,7 +42,7 @@ export function configuration(env = process.env) {
     agents,
     commits: positiveInteger('SCOPE_AGENT_COMMITS', 40, env),
     deltaBytes: positiveInteger('SCOPE_AGENT_DELTA_BYTES', 4096, env),
-    mergesPerStage: positiveInteger('SCOPE_AGENT_MERGES_PER_STAGE', 40, env),
+    mergesPerStage,
     prepConcurrency: positiveInteger('SCOPE_AGENT_PREP_CONCURRENCY', 16, env),
     repo: existingRepository(env.SCOPE_AGENT_REPO),
     seedFiles,
