@@ -98,8 +98,8 @@ export function RequestWorkspaceSidebar({
   const aside = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
-  const [hint, setHint] = useState<{ key: string; left: number; top: number; now: number } | null>(null)
   const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
+  const [hint, setHint] = useState<{ key: string; left: number; top: number; now: number; state: typeof state } | null>(null)
   const openRail = useCallback(() => {
     setOpen(true)
     setClosing(false)
@@ -177,6 +177,7 @@ export function RequestWorkspaceSidebar({
       left: event.currentTarget.getBoundingClientRect().right + 3,
       top: top + height / 2,
       now: Math.floor(Date.now() / 1000),
+      state,
     })
   }
 
@@ -237,7 +238,7 @@ export function RequestWorkspaceSidebar({
     }))
     .filter(({ count }) => count > 0)
   const folded = foldedGroups.reduce((total, { count }) => total + count, 0)
-  const hinted = hint ? railHint(hint.key, hint.now) : undefined
+  const hinted = hint?.state === state ? railHint(hint.key, hint.now) : undefined
   function railHint(key: string, now: number) {
     const row = allRows.find((row) => row.item.request.id === key)
     const parent = row && requestStackParentLabel(row.item)
