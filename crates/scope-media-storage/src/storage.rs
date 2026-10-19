@@ -64,8 +64,7 @@ impl MediaStorage {
     }
 
     pub async fn readiness_check(&self) -> Result<(), MediaStorageError> {
-        let _slot = self.operation_slot().await?;
-        within(
+        self.bounded_operation(
             READINESS_TIMEOUT,
             "media storage readiness check",
             self.store.readiness_check(),
@@ -110,13 +109,11 @@ impl MediaStorage {
                 "media part bytes do not match the planned storage object",
             ));
         }
-        within(MEDIA_PUT_TIMEOUT, "media part write", async {
-            let _slot = self.operation_slot().await?;
-            self.store
-                .put(&part.object_key, bytes)
-                .await
-                .map_err(MediaStorageError::from)
-        })
+        self.bounded_operation(
+            MEDIA_PUT_TIMEOUT,
+            "media part write",
+            self.store.put(&part.object_key, bytes),
+        )
         .await
     }
 
@@ -209,8 +206,7 @@ impl MediaStorage {
                 "media object key is outside the staged media namespace",
             ));
         }
-        let _slot = self.operation_slot().await?;
-        within(
+        self.bounded_operation(
             DELETE_TIMEOUT,
             "media object delete",
             self.store.delete(object_key),
@@ -278,6 +274,19 @@ impl MediaStorage {
             return Err(chunk_mismatch());
         }
         Ok(ControlFlow::Continue(()))
+    }
+
+    async fn bounded_operation<T>(
+        &self,
+        limit: Duration,
+        operation: &str,
+        work: impl Future<Output = Result<T, ObjectStoreError>>,
+    ) -> Result<T, MediaStorageError> {
+        within(limit, operation, async {
+            let _slot = self.operation_slot().await?;
+            work.await.map_err(MediaStorageError::from)
+        })
+        .await
     }
 
     async fn backend_read<T>(

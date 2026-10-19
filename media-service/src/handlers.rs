@@ -58,6 +58,22 @@ pub(crate) async fn put_upload_part(
     let claims = state
         .verifier
         .verify_upload(request.headers(), &upload_id, unix_now()?)?;
+    state
+        .metadata
+        .media()
+        .request_attachment_for_viewer(
+            &claims.request_id,
+            &claims.attachment_id,
+            Some(&claims.uploader_user_id),
+        )
+        .await
+        .map_err(media_metadata_error)?
+        .filter(|authorized| {
+            authorized.repository_id == claims.repository_id
+                && authorized.upload_id == claims.upload_id
+                && authorized.uploader_user_id == claims.uploader_user_id
+        })
+        .ok_or_else(media_not_found)?;
     let _permit = admit(
         &state.upload_slots,
         UPLOAD_ADMISSION_WAIT,

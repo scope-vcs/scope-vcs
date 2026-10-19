@@ -11,12 +11,12 @@ use scope_storage::{
 use sha2::{Digest, Sha256};
 use std::{
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, DuplexStream};
 use tokio_stream::StreamExt;
 
 #[tokio::test]
@@ -123,18 +123,52 @@ async fn reads_fail_when_stored_bytes_disagree_with_the_manifest_digests() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_stalled_backend_read_fails_as_unavailable() {
+async fn authenticated_frames_stream_before_a_stalled_backend_read_fails() {
     let backend = Arc::new(TrackingBackend::default());
     let storage = MediaStorage::encrypted(backend.clone(), [19; 32], 2).unwrap();
     let attempt = WriteAttempt::new("att_6", "original", "lease_6").unwrap();
     let object = support::store_bytes(&storage, &attempt, b"stalled").await;
-    backend.stall_reads.store(true, Ordering::SeqCst);
-    let mut stream = storage.read_range(&object, 0..=1).await.unwrap();
-    let item = tokio::time::timeout(Duration::from_secs(60), stream.next())
+    backend
+        .stall_before_final_byte
+        .store(true, Ordering::SeqCst);
+    let mut stream = storage.read_range(&object, 0..=6).await.unwrap();
+    let first = tokio::time::timeout(Duration::from_secs(1), stream.next())
         .await
-        .expect("stalled reads end within the frame timeout");
+        .expect("an authenticated frame reaches the caller before its chunk ends");
+    assert_eq!(first.unwrap().unwrap(), "stalled");
+    let next = tokio::time::timeout(Duration::from_secs(60), stream.next())
+        .await
+        .expect("a stalled frame read ends within the frame timeout");
     assert_eq!(
-        item.unwrap().unwrap_err().kind,
+        next.unwrap().unwrap_err().kind,
+        MediaStorageErrorKind::ServiceUnavailable
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn readiness_and_deletes_keep_their_deadlines_while_writes_hold_every_slot() {
+    let backend = Arc::new(TrackingBackend::default());
+    let storage = MediaStorage::encrypted(backend.clone(), [23; 32], 1).unwrap();
+    let attempt = WriteAttempt::new("att_7", "original", "lease_7").unwrap();
+    let part = storage.plan_part(&attempt, 1, b"held").unwrap();
+    backend.stall_puts.store(true, Ordering::SeqCst);
+    let held = tokio::spawn({
+        let storage = storage.clone();
+        let part = part.clone();
+        async move { storage.write_part(&part, b"held".to_vec()).await }
+    });
+    tokio::time::sleep(Duration::from_millis(1)).await;
+
+    let readiness = storage.readiness_check().await.unwrap_err();
+    assert_eq!(readiness.kind, MediaStorageErrorKind::ServiceUnavailable);
+    let delete = storage
+        .delete_object_key(&part.object_key)
+        .await
+        .unwrap_err();
+    assert_eq!(delete.kind, MediaStorageErrorKind::ServiceUnavailable);
+    assert!(!held.is_finished());
+    assert_eq!(
+        held.await.unwrap().unwrap_err().kind,
         MediaStorageErrorKind::ServiceUnavailable
     );
 }
@@ -164,12 +198,17 @@ struct TrackingBackend {
     inner: MemoryBackend,
     active: AtomicUsize,
     high_water: AtomicUsize,
-    stall_reads: AtomicBool,
+    stall_puts: AtomicBool,
+    stall_before_final_byte: AtomicBool,
+    stalled_writers: Mutex<Vec<DuplexStream>>,
 }
 
 #[async_trait]
 impl ObjectBackend for TrackingBackend {
     async fn put(&self, key: &str, bytes: Bytes) -> Result<(), BackendError> {
+        if self.stall_puts.load(Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
         let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
         self.high_water.fetch_max(active, Ordering::SeqCst);
         tokio::time::sleep(Duration::from_millis(30)).await;
@@ -207,8 +246,12 @@ impl ObjectBackend for TrackingBackend {
     }
 
     async fn read(&self, key: &str) -> Result<RemoteReader, BackendError> {
-        if self.stall_reads.load(Ordering::SeqCst) {
-            std::future::pending::<()>().await;
+        if self.stall_before_final_byte.load(Ordering::SeqCst) {
+            let stored = self.inner.object(key).expect("stored object");
+            let (writer, never_written) = tokio::io::duplex(1);
+            self.stalled_writers.lock().unwrap().push(writer);
+            let prefix = std::io::Cursor::new(stored.slice(..stored.len() - 1));
+            return Ok(Box::pin(prefix.chain(never_written)));
         }
         self.inner.read(key).await
     }
