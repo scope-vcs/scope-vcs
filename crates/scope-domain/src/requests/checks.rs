@@ -16,6 +16,9 @@ use sha2::{Digest, Sha256};
 
 mod context;
 mod github;
+mod github_pull_request;
+#[cfg(test)]
+mod github_pull_request_tests;
 mod github_push;
 mod planning;
 mod reviewer;
@@ -24,6 +27,12 @@ pub use context::RequestCheckContext;
 pub use github::{
     GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun,
     GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED,
+};
+pub use github_pull_request::{
+    GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestJobState,
+    GitHubPullRequestObservation, GitHubPullRequestState, GitHubPullRequestStatus,
+    GitHubPullRequestStatusState, GitHubPullRequestStep, OpenedGitHubPullRequest,
+    carrier_pull_request_intent, closes_carrier_pull_request, may_carry_on_github,
 };
 pub use github_push::{
     GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,

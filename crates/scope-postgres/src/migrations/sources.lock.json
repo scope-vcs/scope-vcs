@@ -8,5 +8,6 @@
   "m0088_request_navigation_children_index.rs": "d118b488ade02ca1ba0cda2cba32f2596b45770f4a828824797f0ba7e795de62",
   "m0089_contribution_request_stacks.rs": "a8185ebde19d4e200685a4f4d31c543a8908e2c4e922870b4511a7c4182090f5",
   "m0090_job_traceparents.rs": "9cffcf57835e07b8b9b137cd8e944546b464eed058e65bee5656ad91c8be63c7",
-  "m0091_media_reconcile_once.rs": "1c224b97a65c01509665baeea150cbee32ce1bbc04fda1cfa5b8068fe3ad5582"
+  "m0091_media_reconcile_once.rs": "1c224b97a65c01509665baeea150cbee32ce1bbc04fda1cfa5b8068fe3ad5582",
+  "m0094_github_carrier_pull_requests.rs": "e50c6767b6719db2d80f3f913cce0476507fd9670c2c7bfa450bf5b4bbe755f5"
 }

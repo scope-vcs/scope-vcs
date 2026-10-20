@@ -26,12 +26,21 @@ checklist for the production app.
 - **Webhook URL**: `https://<api origin>/v1/github/webhooks`, with a random
   webhook secret.
 - **Repository permissions**: Contents read and write, Workflows read and
-  write, Checks read, Actions read, Metadata read.
+  write, Pull requests read and write, Checks read, Actions read, Issues
+  read, Metadata read.
 - **Subscribed events**: Check run, Check suite, Workflow run, Workflow job,
-  Repository, Installation, Installation repositories. Installation events
-  are always delivered to GitHub Apps; the others are chosen on the
-  registration page. Repository events report a repository made public or
-  private, and Workflow job events keep an open run's jobs current.
+  Repository, Pull request, Pull request review, Pull request review comment,
+  Pull request review thread, Issue comment, Installation, Installation
+  repositories. Installation events are always delivered to GitHub Apps; the
+  others are chosen on the registration page. Repository events report a
+  repository made public or private, Workflow job events keep an open run's
+  jobs current, and Pull request events keep review bot pull requests in
+  step. Scope does not act on the review and comment events yet.
+
+Adding permissions to a registered app asks every installation to accept
+them. Until an installation accepts Pull requests read and write, a review
+bot pull request for its repositories fails with a message saying so in the
+request's pull request status.
 - **Where can this app be installed**: any account.
 
 Generate a private key and a client secret on the app's page. The callback
@@ -269,6 +278,47 @@ seconds, then 2, 10 and 30 minutes, and then gives up. While the revision is
 being sent, the request view says its CI is starting, and if sending
 fails, that it couldn't start. Maintainers also see the last error. A push to a repository whose link is
 gone gives up at once.
+
+### Pull requests for review bots
+
+Review bots on GitHub review pull requests, not branches. A maintainer can
+turn on **Open pull requests for review bots** in the repository's CI
+settings. Scope then keeps one carrier pull request per submitted request,
+from `scope/requests/<request id>` into `main`, or into the parent's branch
+for a stacked request whose parent is still open. Its title is the
+request's title, and its body links to the request in Scope and then repeats
+the description. Scope never opens a draft.
+
+A request gets a carrier only when its branch was pushed with the request's
+own head: an open request in the repository's full view, while the link is
+connected. A request tested through a check commit never gets one, because
+the diff against `main` would expose the private main it was built from.
+Turning the setting on queues a carrier for every open request whose latest
+push reached GitHub.
+
+After each successful push of a request head, Scope looks for an open pull
+request from that branch in the same repository and adopts it, or creates
+one. It moves the base when a stacked request's parent is gone. When the
+repository sets a **Review request comment**, up to 500 characters, Scope
+posts it once per pushed head: after opening the pull request and after each
+later head. Some bots review only when asked, so this is where a mention
+such as a bot's review command goes.
+
+Closing or merging the request closes its carrier. The decision lives in
+`closes_carrier_pull_request` in `scope-domain`. A `pull_request` delivery
+for a carrier records its number, state and base. When someone other than
+the app closes a carrier while its request is open, Scope records it as
+closed on GitHub and leaves it closed until someone reopens it there. A
+carrier GitHub closed because the app deleted its base branch is replaced by
+the next push.
+
+The work is a job per request in `scope_github_pull_requests`, run by a
+background loop with leases. A newer intent, such as a new head or the
+request ending, replaces an older one, also while a claim is running; that
+claim records what it did and the newer intent runs next. Failures retry on
+the push schedule and then give up. The request view and
+`scope request ci` show "Pull request #N on GitHub" with its state, and
+maintainers see the last error. Disconnecting clears both settings.
 
 ### Reading results
 

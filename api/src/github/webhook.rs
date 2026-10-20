@@ -1,7 +1,7 @@
 use super::{GitHubApp, InstallationStatus};
 use crate::error::ApiError;
 use hmac::{Hmac, KeyInit, Mac};
-use scope_domain::github_connection::GitHubInstallationChange;
+use scope_domain::{github_connection::GitHubInstallationChange, requests::GitHubBranch};
 use serde::Deserialize;
 use sha2::Sha256;
 use std::collections::BTreeSet;
@@ -39,6 +39,15 @@ pub(crate) enum GitHubWebhookEvent {
     RepositoryVisibilityChanged {
         github_repository_id: u64,
     },
+    PullRequestChanged {
+        github_repository_id: u64,
+        request_id: String,
+        number: u64,
+        url: String,
+        base: String,
+        open: bool,
+        sender_login: Option<String>,
+    },
     Ignored,
 }
 
@@ -47,6 +56,7 @@ impl GitHubWebhookEvent {
         if !matches!(
             event,
             "repository"
+                | "pull_request"
                 | "check_run"
                 | "check_suite"
                 | "workflow_run"
@@ -70,6 +80,36 @@ impl GitHubWebhookEvent {
                         github_repository_id: repository.id,
                     }
                 }
+                _ => Self::Ignored,
+            },
+            "pull_request" => match (
+                required(payload.action.as_deref(), "action")?,
+                payload.repository,
+                payload.pull_request,
+            ) {
+                (
+                    "opened" | "closed" | "reopened" | "edited",
+                    Some(repository),
+                    Some(pull_request),
+                ) => match (
+                    GitHubBranch::parse(&pull_request.head.name),
+                    pull_request.head.repo,
+                ) {
+                    (Some(GitHubBranch::Request(request_id)), Some(head_repository))
+                        if head_repository.id == repository.id =>
+                    {
+                        Self::PullRequestChanged {
+                            github_repository_id: repository.id,
+                            request_id,
+                            number: pull_request.number,
+                            url: pull_request.html_url,
+                            base: pull_request.base.name,
+                            open: pull_request.state == "open",
+                            sender_login: payload.sender.map(|sender| sender.login),
+                        }
+                    }
+                    _ => Self::Ignored,
+                },
                 _ => Self::Ignored,
             },
             "check_run" | "check_suite" | "workflow_run" => {
@@ -164,6 +204,29 @@ struct Payload {
     check_suite: Option<ChecksSubject>,
     workflow_run: Option<ChecksSubject>,
     workflow_job: Option<Id>,
+    pull_request: Option<PullRequestSubject>,
+    sender: Option<Sender>,
+}
+
+#[derive(Deserialize)]
+struct PullRequestSubject {
+    number: u64,
+    html_url: String,
+    state: String,
+    head: PullRequestBranch,
+    base: PullRequestBranch,
+}
+
+#[derive(Deserialize)]
+struct PullRequestBranch {
+    #[serde(rename = "ref")]
+    name: String,
+    repo: Option<Id>,
+}
+
+#[derive(Deserialize)]
+struct Sender {
+    login: String,
 }
 
 #[derive(Deserialize)]
@@ -293,6 +356,73 @@ mod tests {
             parse(serde_json::json!({ "action": "renamed", "repository": { "id": 42 } })),
             GitHubWebhookEvent::Ignored
         );
+    }
+
+    #[test]
+    fn pull_request_events_on_a_request_branch_name_the_carrier_and_who_acted() {
+        let parse = |action: &str, head: &str, head_repository: u64| {
+            GitHubWebhookEvent::parse(
+                "pull_request",
+                serde_json::json!({
+                    "action": action,
+                    "repository": { "id": 42 },
+                    "sender": { "login": "scope-checks[bot]" },
+                    "pull_request": {
+                        "number": 5,
+                        "html_url": "https://github.com/octo/repo/pull/5",
+                        "state": if action == "closed" { "closed" } else { "open" },
+                        "head": { "ref": head, "repo": { "id": head_repository } },
+                        "base": { "ref": "main", "repo": { "id": 42 } },
+                    },
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap()
+        };
+        for (action, open) in [
+            ("opened", true),
+            ("reopened", true),
+            ("edited", true),
+            ("closed", false),
+        ] {
+            assert_eq!(
+                parse(action, "scope/requests/req_1", 42),
+                GitHubWebhookEvent::PullRequestChanged {
+                    github_repository_id: 42,
+                    request_id: "req_1".into(),
+                    number: 5,
+                    url: "https://github.com/octo/repo/pull/5".into(),
+                    base: "main".into(),
+                    open,
+                    sender_login: Some("scope-checks[bot]".into()),
+                },
+                "{action}"
+            );
+        }
+        for (action, head, head_repository) in [
+            ("synchronize", "scope/requests/req_1", 42),
+            ("closed", "feature", 42),
+            ("closed", "scope/setup-check", 42),
+            ("closed", "scope/requests/req_1", 99),
+        ] {
+            assert_eq!(
+                parse(action, head, head_repository),
+                GitHubWebhookEvent::Ignored,
+                "{action} {head} {head_repository}"
+            );
+        }
+        for event in [
+            "pull_request_review",
+            "pull_request_review_comment",
+            "pull_request_review_thread",
+            "issue_comment",
+        ] {
+            assert_eq!(
+                GitHubWebhookEvent::parse(event, b"{}").unwrap(),
+                GitHubWebhookEvent::Ignored
+            );
+        }
     }
 
     #[test]

@@ -9,6 +9,7 @@ import {
   githubWithheldRequestsText,
 } from './repo-github-connection-model'
 import { useRepoViews } from './repo-layout-context'
+import { RepoGitHubReviewBots } from './repo-github-review-bots'
 import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
@@ -20,6 +21,8 @@ export function RepoCiSection({
   disconnect,
   github,
   setRequiredChecks,
+  setReviewBotPullRequests,
+  setReviewRequestComment,
   setRunImportCount,
   startAuthorization,
   startRunImport,
@@ -29,6 +32,8 @@ export function RepoCiSection({
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
+  setReviewBotPullRequests: (enabled: boolean) => Promise<GitHubConnectionResponse>
+  setReviewRequestComment: (comment: string) => Promise<GitHubConnectionResponse>
   setRunImportCount: (count: number) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
   startRunImport: () => Promise<GitHubConnectionResponse>
@@ -143,6 +148,15 @@ export function RepoCiSection({
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (
           <RepoRequiredChecks github={github} save={setRequiredChecks} />
+        )}
+
+        {view.kind === 'connected' && github.connection && (
+          <RepoGitHubReviewBots
+            connection={github.connection}
+            key={github.connection.review_request_comment ?? ''}
+            saveComment={setReviewRequestComment}
+            setEnabled={setReviewBotPullRequests}
+          />
         )}
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (

@@ -2,8 +2,9 @@ use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
     GitHubConnectionParts, GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
     GitHubWorkflowNamesResponse, GitHubWorkflowRunListResponse, GitHubWorkflowRunsResponse,
-    SetGitHubRequiredChecksRequest, SetGitHubRunImportCountRequest, github_connection_response,
-    github_repository_response, github_workflow_run_response,
+    SetGitHubRequiredChecksRequest, SetGitHubReviewBotPullRequestsRequest,
+    SetGitHubReviewRequestCommentRequest, SetGitHubRunImportCountRequest,
+    github_connection_response, github_repository_response, github_workflow_run_response,
 };
 use crate::{
     auth::scope::require_scope_user,
@@ -22,8 +23,8 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
-        github_check_results, github_pushes, github_workflow_jobs, github_workflow_runs,
-        run_inspection::require_full_view_member,
+        github_check_results, github_pull_requests, github_pushes, github_workflow_jobs,
+        github_workflow_runs, run_inspection::require_full_view_member,
     },
 };
 use axum::{
@@ -37,7 +38,7 @@ use scope_domain::{
         ConnectGitHubRepository, can_publish_to_github, ensure_can_manage_github_connection,
     },
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
-    requests::RequestCheckProvider,
+    requests::{GitHubPullRequestObservation, RequestCheckProvider},
 };
 use scope_postgres::db::{GitHubWorkflowRunCursor, GitHubWorkflowRunPageQuery};
 use serde::Deserialize;
@@ -215,6 +216,42 @@ pub(crate) async fn set_github_required_checks(
         .metadata
         .repositories()
         .set_github_required_checks(&context.record.id, &user_id, input.names)
+        .await?;
+    changed(&state, &context, &incarnation).await
+}
+
+pub(crate) async fn set_github_review_bot_pull_requests(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<SetGitHubReviewBotPullRequestsRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    let incarnation = state
+        .metadata
+        .repositories()
+        .set_github_review_bot_pull_requests(
+            &context.record.id,
+            &user_id,
+            input.enabled,
+            unix_now()?,
+        )
+        .await?;
+    state.wakeups.github_pull_requests.notify_one();
+    changed(&state, &context, &incarnation).await
+}
+
+pub(crate) async fn set_github_review_request_comment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<SetGitHubReviewRequestCommentRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    let incarnation = state
+        .metadata
+        .repositories()
+        .set_github_review_request_comment(&context.record.id, &user_id, &input.comment)
         .await?;
     changed(&state, &context, &incarnation).await
 }
@@ -463,6 +500,29 @@ pub(crate) async fn receive_github_webhook(
                     "reading a GitHub repository's visibility failed"
                 );
             }
+        }
+        GitHubWebhookEvent::PullRequestChanged {
+            github_repository_id,
+            request_id,
+            number,
+            url,
+            base,
+            open,
+            sender_login,
+        } => {
+            github_pull_requests::observe_github_pull_request(
+                &state,
+                github_repository_id,
+                &request_id,
+                GitHubPullRequestObservation {
+                    number,
+                    url,
+                    base,
+                    open,
+                    closed_by_scope: sender_login.as_deref() == Some(app.bot_login().as_str()),
+                },
+            )
+            .await?;
         }
         GitHubWebhookEvent::Ignored => {}
     }

@@ -27,6 +27,7 @@ mod git_segments;
 mod git_transport_reads;
 mod github_check_runs;
 mod github_connections;
+mod github_pull_requests;
 mod github_pushes;
 mod github_read_queue;
 mod github_required_checks;

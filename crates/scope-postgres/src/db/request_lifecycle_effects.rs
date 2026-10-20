@@ -23,6 +23,7 @@ pub(super) async fn persist_lifecycle_mutation(
             request.updated_at_unix,
         )
         .await?;
+        super::github_pull_requests::queue_carrier_close(tx, request).await?;
     }
     for event in events {
         insert_request_event_row(tx, event).await?;

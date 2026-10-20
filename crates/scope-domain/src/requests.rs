@@ -42,14 +42,17 @@ pub mod attachments;
 mod checks;
 pub use checks::{
     CheckCommitBase, GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubBranch, GitHubCheckConclusion,
-    GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, GitHubCheckTarget, GitHubPush,
-    GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubRequestChecks,
-    GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck,
-    PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
-    RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
-    RequestCheckReviewer, RequestChecksOutcome, changes_github_workflows, check_commit_message,
-    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, request_checks_message,
-    request_checks_outcome, request_head_awaits_evaluation,
+    GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, GitHubCheckTarget, GitHubPullRequest,
+    GitHubPullRequestIntent, GitHubPullRequestJobState, GitHubPullRequestObservation,
+    GitHubPullRequestState, GitHubPullRequestStatus, GitHubPullRequestStatusState,
+    GitHubPullRequestStep, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,
+    GitHubRequestChecks, GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck,
+    OpenedGitHubPullRequest, PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext,
+    RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider,
+    RequestCheckResults, RequestCheckReviewer, RequestChecksOutcome, carrier_pull_request_intent,
+    changes_github_workflows, check_commit_message, closes_carrier_pull_request,
+    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, may_carry_on_github,
+    request_checks_message, request_checks_outcome, request_head_awaits_evaluation,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};

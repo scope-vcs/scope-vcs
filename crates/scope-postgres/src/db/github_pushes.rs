@@ -228,6 +228,14 @@ impl RequestStore {
         else {
             return Ok(None);
         };
+        if let (GitHubBranch::Request(request_id), Some(target_oid), Some(Ok(()))) =
+            (&push.branch, &push.target_oid, &push_result)
+        {
+            super::github_pull_requests::queue_carrier_for_pushed_head(
+                &tx, request_id, target_oid, now_unix,
+            )
+            .await?;
+        }
         if push.branch == GitHubSetupCheck::branch()
             && push.target_oid.is_some()
             && let Some(result) = push_result
