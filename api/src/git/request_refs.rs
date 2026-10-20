@@ -28,6 +28,7 @@ use std::{
 };
 
 mod ancestry;
+mod pack_consolidation;
 mod pool;
 mod pool_pack;
 mod revision;

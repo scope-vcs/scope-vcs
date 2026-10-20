@@ -1,5 +1,6 @@
 use super::{
     RequestViewBases, attach_visible_request_refs,
+    pack_consolidation::consolidate_pool_repos,
     pool::{
         PoolInstall, RequestObjectRepos, install_request_pool_packs, request_object_repos,
         shares_objects,
@@ -155,28 +156,33 @@ async fn provide_request_objects(
     }
     install_request_pool_packs(state, &install, &missing).await;
     let missing = missing_request_heads(staging_repo, missing).await?;
-    if missing.is_empty() {
-        return Ok(());
+    if !missing.is_empty() {
+        let state = state.clone();
+        let config = install.config.clone();
+        let repos = install.repos.clone();
+        let actor_user_id = install.actor_user_id.to_string();
+        let staging_repo = staging_repo.to_path_buf();
+        crate::git::blocking::run(move || {
+            for request in &missing {
+                let (target, prerequisites_from) = if shares_objects(request, &config) {
+                    (repos.shared.as_path(), Some(staging_repo.as_path()))
+                } else if request.is_author(&actor_user_id) {
+                    (repos.authored.as_path(), Some(staging_repo.as_path()))
+                } else {
+                    (staging_repo.as_path(), None)
+                };
+                restore_request_objects(&state, target, prerequisites_from, request)?;
+            }
+            Ok(())
+        })
+        .await?;
     }
-    let state = state.clone();
-    let config = install.config.clone();
-    let repos = install.repos.clone();
-    let actor_user_id = install.actor_user_id.to_string();
-    let staging_repo = staging_repo.to_path_buf();
-    crate::git::blocking::run(move || {
-        for request in &missing {
-            let (target, prerequisites_from) = if shares_objects(request, &config) {
-                (repos.shared.as_path(), Some(staging_repo.as_path()))
-            } else if request.is_author(&actor_user_id) {
-                (repos.authored.as_path(), Some(staging_repo.as_path()))
-            } else {
-                (staging_repo.as_path(), None)
-            };
-            restore_request_objects(&state, target, prerequisites_from, request)?;
-        }
-        Ok(())
-    })
-    .await
+    consolidate_pool_repos(
+        install.incarnation.repository_id(),
+        vec![install.repos.shared.clone(), install.repos.authored.clone()],
+    )
+    .await;
+    Ok(())
 }
 
 async fn missing_request_heads(

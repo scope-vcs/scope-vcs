@@ -128,7 +128,7 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_replica_behind_by_a_few_revisions_of_a_long_request_catches_up_from_the_pool() {
+async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidated() {
     let (state, main_source, _) =
         super::super::push_intent_completion::published_git_fixture("request-pool-long").await;
     let replica = state.replica_for_tests();
@@ -167,6 +167,25 @@ async fn a_replica_behind_by_a_few_revisions_of_a_long_request_catches_up_from_t
     let behind_head = push(&first_remote, 21);
     push(&second_remote, 22);
 
+    let pushing_objects = object_repos(&state, &test_owner_id()).await.shared;
+    let packs = fs::read_dir(pushing_objects.join("objects/pack"))
+        .unwrap()
+        .filter(|entry| {
+            entry
+                .as_ref()
+                .unwrap()
+                .path()
+                .extension()
+                .is_some_and(|ext| ext == "idx")
+        })
+        .count();
+    assert!(packs <= 16, "{packs} packs after 21 retained revisions");
+    run_git(
+        Some(&pushing_objects),
+        &["rev-list", "--objects", &behind_head],
+        "read consolidated request history",
+    )
+    .unwrap();
     let replica_objects = object_repos(&replica, &test_owner_id()).await.shared;
     assert!(has_commit(&replica_objects, &behind_head));
     assert_eq!(
