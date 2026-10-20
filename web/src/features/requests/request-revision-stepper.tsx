@@ -10,7 +10,7 @@ import { actorHandle } from './request-actor'
 type RequestRouteParams = { owner: string; repo: string; requestId: string }
 type Revision = RequestRevisionListResponse['revisions'][number]
 
-const STEP_CLASS = 'flex items-center gap-1 rounded-md border border-border px-2.5 py-1'
+const STEP_CLASS = 'flex items-center gap-1 rounded-md border border-border px-2.5 py-1 pointer-coarse:min-h-11'
 
 export function RequestRevisionStepper({
   params,

@@ -74,8 +74,8 @@ body {
 }
 
 @media (pointer: coarse) {
-  button,
-  input,
+  button:not([role="switch"]),
+  input:not([type="checkbox"], [type="radio"]),
   select,
   [role="button"] {
     min-height: 44px;
