@@ -283,7 +283,7 @@ pub(crate) async fn observe_github_pull_request(
     if let Some(repo_id) = state
         .metadata
         .requests()
-        .observe_github_pull_request(github_repository_id, request_id, observation)
+        .observe_github_pull_request(github_repository_id, request_id, observation, unix_now()?)
         .await?
     {
         publish_pull_request_change(state, &repo_id, request_id).await;

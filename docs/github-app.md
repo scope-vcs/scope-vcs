@@ -319,7 +319,10 @@ the next push.
 The work is a job per request in `scope_github_pull_requests`, run by a
 background loop with leases. A newer intent, such as a new head or the
 request ending, replaces an older one, also while a claim is running; that
-claim records what it did and the newer intent runs next. Failures retry on
+claim records what it did and the newer intent runs next. A `pull_request` delivery is
+recorded at once and also requeues the job. A claim running across it keeps
+the delivery's number, state and base, records only the comment it posted on
+that pull request, and the next run starts from what GitHub reported. Failures retry on
 the push schedule and then give up. The request view and
 `scope request ci` show "Pull request #N on GitHub" with its state, and
 maintainers see the last error. Disconnecting clears both settings.
