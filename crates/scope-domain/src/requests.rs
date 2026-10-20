@@ -53,7 +53,7 @@ pub use checks::{
     carries_private_request, changes_github_workflows, check_commit_message,
     closes_carrier_pull_request, ensure_approving_reviewed_head, github_push_retry_at,
     github_retry_at, may_carry_on_github, request_checks_message, request_checks_outcome,
-    request_head_awaits_evaluation,
+    request_head_awaits_evaluation, review_request_comment_body, review_request_marker,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};

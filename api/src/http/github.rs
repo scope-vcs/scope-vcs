@@ -38,7 +38,7 @@ use scope_domain::{
         ConnectGitHubRepository, can_publish_to_github, ensure_can_manage_github_connection,
     },
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
-    requests::{GitHubPullRequestObservation, RequestCheckProvider},
+    requests::RequestCheckProvider,
 };
 use scope_postgres::db::{GitHubWorkflowRunCursor, GitHubWorkflowRunPageQuery};
 use serde::Deserialize;
@@ -504,23 +504,11 @@ pub(crate) async fn receive_github_webhook(
         GitHubWebhookEvent::PullRequestChanged {
             github_repository_id,
             request_id,
-            number,
-            url,
-            base,
-            open,
-            sender_login,
         } => {
-            github_pull_requests::observe_github_pull_request(
+            github_pull_requests::note_github_pull_request_delivery(
                 &state,
                 github_repository_id,
                 &request_id,
-                GitHubPullRequestObservation {
-                    number,
-                    url,
-                    base,
-                    open,
-                    closed_by_scope: sender_login.as_deref() == Some(app.bot_login().as_str()),
-                },
             )
             .await?;
         }

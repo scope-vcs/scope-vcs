@@ -14,10 +14,13 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE,
+    github_connection::{
+        GitHubConnection, GitHubReviewBotSettings, PRIVATE_REQUESTS_WITHHELD_MESSAGE,
+    },
     requests::{
-        GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestStep, carries_private_request,
-        github_retry_at, may_carry_on_github,
+        GitHubPullRequest, GitHubPullRequestObservation, GitHubPullRequestStep,
+        carries_private_request, github_retry_at, may_carry_on_github, review_request_comment_body,
+        review_request_marker,
     },
 };
 use scope_postgres::db::GitHubJobOutcome;
@@ -102,41 +105,81 @@ async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<()
         .github_connection(&carrier.repo_id)
         .await?
         .filter(|connection| carrier.destination.is_connected_through(connection));
-    let comment = connection
+    let review_bots = connection
         .as_ref()
-        .and_then(|connection| connection.review_bots.review_request_comment.clone());
-    if matches!(carrier.intent, GitHubPullRequestIntent::Open { .. }) {
-        let Some(connection) = &connection else {
-            return Err(JobFailure::GiveUp(
-                "This repository is no longer connected to that GitHub repository.".to_string(),
-            ));
-        };
-        let request = state
-            .metadata
-            .requests()
-            .request_by_id(&carrier.request_id)
-            .await?
-            .ok_or_else(|| JobFailure::GiveUp("Scope no longer has this request.".to_string()))?;
-        let refreshed;
-        let connection = if carries_private_request(&request) {
-            refreshed = refresh_github_visibility(state, connection).await?;
-            &refreshed
-        } else {
-            connection
-        };
-        if !may_carry_on_github(connection, &request) {
-            return Err(JobFailure::GiveUp(
-                PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string(),
-            ));
-        }
-    }
+        .map(|connection| connection.review_bots.clone())
+        .unwrap_or_default();
+    refresh_from_github(&app, carrier).await?;
+    let mut checked_visibility = false;
     for _ in 0..MAX_STEPS {
-        let Some(step) = carrier.next_step(comment.as_deref()) else {
+        let Some(step) = carrier.next_step(&review_bots) else {
             return Ok(());
         };
-        take_step(state, &app, carrier, step, comment.as_deref()).await?;
+        if !checked_visibility && !matches!(step, GitHubPullRequestStep::Close { .. }) {
+            let connection = connection.as_ref().ok_or_else(|| {
+                JobFailure::GiveUp(
+                    "This repository is no longer connected to that GitHub repository.".to_string(),
+                )
+            })?;
+            ensure_may_carry(state, carrier, connection).await?;
+            checked_visibility = true;
+        }
+        take_step(state, &app, carrier, step, &review_bots).await?;
     }
     Ok(())
+}
+
+async fn refresh_from_github(
+    app: &GitHubApp,
+    carrier: &mut GitHubPullRequest,
+) -> Result<(), JobFailure> {
+    let Some(number) = carrier.pull_request.as_ref().map(|opened| opened.number) else {
+        return Ok(());
+    };
+    let destination = &carrier.destination;
+    let snapshot = app
+        .pull_request_snapshot(
+            destination.installation_id,
+            &destination.github_full_name,
+            number,
+        )
+        .await
+        .map_err(call_failure)?;
+    carrier.observe(GitHubPullRequestObservation {
+        number,
+        url: snapshot.url,
+        base: snapshot.base,
+        open: snapshot.open,
+        closed_by_scope: snapshot.closed_by.as_deref() == Some(app.bot_login().as_str()),
+    });
+    Ok(())
+}
+
+async fn ensure_may_carry(
+    state: &AppState,
+    carrier: &GitHubPullRequest,
+    connection: &GitHubConnection,
+) -> Result<(), JobFailure> {
+    let request = state
+        .metadata
+        .requests()
+        .request_by_id(&carrier.request_id)
+        .await?
+        .ok_or_else(|| JobFailure::GiveUp("Scope no longer has this request.".to_string()))?;
+    let refreshed;
+    let connection = if carries_private_request(&request) {
+        refreshed = refresh_github_visibility(state, connection).await?;
+        &refreshed
+    } else {
+        connection
+    };
+    if may_carry_on_github(connection, &request) {
+        Ok(())
+    } else {
+        Err(JobFailure::GiveUp(
+            PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string(),
+        ))
+    }
 }
 
 async fn take_step(
@@ -144,7 +187,7 @@ async fn take_step(
     app: &GitHubApp,
     carrier: &mut GitHubPullRequest,
     step: GitHubPullRequestStep,
-    comment: Option<&str>,
+    review_bots: &GitHubReviewBotSettings,
 ) -> Result<(), JobFailure> {
     let destination = &carrier.destination;
     let (installation_id, full_name) = (
@@ -190,10 +233,26 @@ async fn take_step(
             carrier.record_retargeted(updated.base);
         }
         GitHubPullRequestStep::Comment { number, head_oid } => {
-            if let Some(comment) = comment {
-                app.comment_on_pull_request(installation_id, &full_name, number, comment)
+            if let Some(comment) = &review_bots.review_request_comment {
+                let posted = app
+                    .app_commented_with(
+                        installation_id,
+                        &full_name,
+                        number,
+                        &review_request_marker(&head_oid),
+                    )
                     .await
                     .map_err(call_failure)?;
+                if !posted {
+                    app.comment_on_pull_request(
+                        installation_id,
+                        &full_name,
+                        number,
+                        &review_request_comment_body(comment, &head_oid),
+                    )
+                    .await
+                    .map_err(call_failure)?;
+                }
             }
             carrier.record_commented(head_oid);
         }
@@ -207,7 +266,17 @@ async fn take_step(
                 )
                 .await
             {
-                Ok(_) | Err(PullRequestCallError::Unreachable) => carrier.record_closed(),
+                Ok(_) => carrier.record_closed(),
+                Err(PullRequestCallError::Rejected(message)) => {
+                    let snapshot = app
+                        .pull_request_snapshot(installation_id, &full_name, number)
+                        .await
+                        .map_err(call_failure)?;
+                    if snapshot.open {
+                        return Err(JobFailure::GiveUp(message));
+                    }
+                    carrier.record_closed();
+                }
                 Err(error) => return Err(call_failure(error)),
             }
         }
@@ -247,9 +316,15 @@ async fn pull_request_text(
 
 fn call_failure(error: PullRequestCallError) -> JobFailure {
     match error {
-        PullRequestCallError::Unreachable => JobFailure::GiveUp(
-            "The Scope GitHub App can no longer reach this GitHub repository.".to_string(),
+        PullRequestCallError::Unreachable => JobFailure::Retry(
+            "The Scope GitHub App cannot reach this pull request on GitHub.".to_string(),
         ),
+        PullRequestCallError::RateLimited { retry_at_unix } => JobFailure::RetryAt {
+            error: "GitHub's rate limit for the Scope GitHub App was reached; Scope tries again \
+                when it resets."
+                .to_string(),
+            at_unix: retry_at_unix,
+        },
         PullRequestCallError::PermissionMissing => {
             JobFailure::GiveUp(PULL_REQUEST_PERMISSION_MESSAGE.to_string())
         }
@@ -274,19 +349,18 @@ async fn publish_pull_request_change(state: &AppState, repo_id: &str, request_id
     }
 }
 
-pub(crate) async fn observe_github_pull_request(
+pub(crate) async fn note_github_pull_request_delivery(
     state: &AppState,
     github_repository_id: u64,
     request_id: &str,
-    observation: scope_domain::requests::GitHubPullRequestObservation,
 ) -> Result<(), ApiError> {
-    if let Some(repo_id) = state
+    if state
         .metadata
         .requests()
-        .observe_github_pull_request(github_repository_id, request_id, observation, unix_now()?)
+        .requeue_github_pull_request(github_repository_id, request_id, unix_now()?)
         .await?
     {
-        publish_pull_request_change(state, &repo_id, request_id).await;
+        state.wakeups.github_pull_requests.notify_one();
     }
     Ok(())
 }

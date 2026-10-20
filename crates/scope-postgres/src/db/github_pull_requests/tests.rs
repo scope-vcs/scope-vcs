@@ -262,58 +262,6 @@ async fn ending_a_request_turns_its_carrier_intent_into_a_close() {
 }
 
 #[tokio::test]
-async fn an_observation_records_a_close_from_github_only_for_the_carrier_repository() {
-    let store = postgres_store();
-    connect(&store, true).await;
-    submitted_full_view_request(&store, "req_1").await;
-    push_succeeds(&store, "req_1", 'a', 10).await;
-    let mut opened = claim(&store, "claim_1", 10).await.remove(0);
-    opened.record_opened(
-        5,
-        "https://github.com/octo/checks/pull/5".into(),
-        "main".into(),
-    );
-    store
-        .requests()
-        .finish_github_pull_request(&opened, "claim_1", GitHubJobOutcome::Succeeded(()), 11)
-        .await
-        .unwrap();
-
-    let closed = GitHubPullRequestObservation {
-        number: 5,
-        url: "https://github.com/octo/checks/pull/5".into(),
-        base: "main".into(),
-        open: false,
-        closed_by_scope: false,
-    };
-    let requests = store.requests();
-    assert_eq!(
-        requests
-            .observe_github_pull_request(43, "req_1", closed.clone(), 12)
-            .await
-            .unwrap(),
-        None
-    );
-    assert_eq!(
-        requests
-            .observe_github_pull_request(42, "req_1", closed, 12)
-            .await
-            .unwrap()
-            .as_deref(),
-        Some(REPO)
-    );
-    assert_eq!(
-        carrier(&store, "req_1")
-            .await
-            .unwrap()
-            .pull_request
-            .unwrap()
-            .state,
-        GitHubPullRequestState::ClosedOnGitHub
-    );
-}
-
-#[tokio::test]
 async fn a_claim_for_the_old_repository_cannot_record_its_pull_request_after_a_reconnect() {
     let store = postgres_store();
     connect(&store, true).await;
@@ -348,16 +296,6 @@ async fn a_claim_for_the_old_repository_cannot_record_its_pull_request_after_a_r
     assert_eq!(head_of(&reconnected), oid('b'));
 }
 
-fn observed(number: u64, open: bool) -> GitHubPullRequestObservation {
-    GitHubPullRequestObservation {
-        number,
-        url: format!("https://github.com/octo/checks-42/pull/{number}"),
-        base: "main".into(),
-        open,
-        closed_by_scope: false,
-    }
-}
-
 async fn opened_carrier(store: &MetadataStore) {
     connect(store, true).await;
     submitted_full_view_request(store, "req_1").await;
@@ -377,7 +315,32 @@ async fn opened_carrier(store: &MetadataStore) {
 }
 
 #[tokio::test]
-async fn a_close_seen_on_github_during_a_running_claim_outlives_that_claims_progress() {
+async fn a_delivery_requeues_only_the_carrier_in_that_github_repository() {
+    let store = postgres_store();
+    opened_carrier(&store).await;
+    let requests = store.requests();
+    assert!(claim(&store, "claim_2", 20).await.is_empty());
+
+    assert!(
+        !requests
+            .requeue_github_pull_request(43, "req_1", 20)
+            .await
+            .unwrap()
+    );
+    assert!(claim(&store, "claim_2", 20).await.is_empty());
+    assert!(
+        requests
+            .requeue_github_pull_request(42, "req_1", 20)
+            .await
+            .unwrap()
+    );
+    let rereading = claim(&store, "claim_3", 20).await.remove(0);
+    assert_eq!(rereading.pull_request.unwrap().number, 5);
+    assert_eq!(rereading.attempts, 1);
+}
+
+#[tokio::test]
+async fn a_delivery_during_a_running_claim_runs_the_job_again_after_it() {
     let store = postgres_store();
     opened_carrier(&store).await;
     push_succeeds(&store, "req_1", 'b', 20).await;
@@ -387,52 +350,17 @@ async fn a_close_seen_on_github_during_a_running_claim_outlives_that_claims_prog
     let requests = store.requests();
     assert!(
         requests
-            .observe_github_pull_request(42, "req_1", observed(5, false), 21)
+            .requeue_github_pull_request(42, "req_1", 21)
             .await
             .unwrap()
-            .is_some()
     );
-    requests
-        .finish_github_pull_request(&commenting, "claim_2", GitHubJobOutcome::Succeeded(()), 22)
-        .await
-        .unwrap();
-
-    let recorded = carrier(&store, "req_1").await.unwrap();
-    assert_eq!(
-        recorded.pull_request.as_ref().unwrap().state,
-        GitHubPullRequestState::ClosedOnGitHub
+    assert!(
+        requests
+            .finish_github_pull_request(&commenting, "claim_2", GitHubJobOutcome::Succeeded(()), 22)
+            .await
+            .unwrap()
     );
-    assert_eq!(recorded.commented_head_oid, Some(oid('b')));
-    let reconciling = claim(&store, "claim_3", 22).await.remove(0);
-    assert_eq!(reconciling.next_step(Some("review please")), None);
-}
-
-#[tokio::test]
-async fn the_opened_webhook_for_scopes_own_pull_request_keeps_the_comment_it_posted() {
-    let store = postgres_store();
-    connect(&store, true).await;
-    submitted_full_view_request(&store, "req_1").await;
-    push_succeeds(&store, "req_1", 'a', 10).await;
-    let mut opening = claim(&store, "claim_1", 10).await.remove(0);
-    opening.record_opened(
-        5,
-        "https://github.com/octo/checks-42/pull/5".into(),
-        "main".into(),
-    );
-    opening.record_commented(oid('a'));
-
-    let requests = store.requests();
-    requests
-        .observe_github_pull_request(42, "req_1", observed(5, true), 11)
-        .await
-        .unwrap();
-    requests
-        .finish_github_pull_request(&opening, "claim_1", GitHubJobOutcome::Succeeded(()), 12)
-        .await
-        .unwrap();
-
-    let recorded = carrier(&store, "req_1").await.unwrap();
-    assert_eq!(recorded.pull_request.as_ref().unwrap().number, 5);
-    assert_eq!(recorded.commented_head_oid, Some(oid('a')));
-    assert_eq!(recorded.next_step(Some("review please")), None);
+    let rereading = claim(&store, "claim_3", 22).await.remove(0);
+    assert_eq!(rereading.commented_head_oid, Some(oid('b')));
+    assert_eq!(rereading.pull_request.unwrap().number, 5);
 }

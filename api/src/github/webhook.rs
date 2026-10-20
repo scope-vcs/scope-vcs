@@ -42,11 +42,6 @@ pub(crate) enum GitHubWebhookEvent {
     PullRequestChanged {
         github_repository_id: u64,
         request_id: String,
-        number: u64,
-        url: String,
-        base: String,
-        open: bool,
-        sender_login: Option<String>,
     },
     Ignored,
 }
@@ -101,11 +96,6 @@ impl GitHubWebhookEvent {
                         Self::PullRequestChanged {
                             github_repository_id: repository.id,
                             request_id,
-                            number: pull_request.number,
-                            url: pull_request.html_url,
-                            base: pull_request.base.name,
-                            open: pull_request.state == "open",
-                            sender_login: payload.sender.map(|sender| sender.login),
                         }
                     }
                     _ => Self::Ignored,
@@ -205,16 +195,11 @@ struct Payload {
     workflow_run: Option<ChecksSubject>,
     workflow_job: Option<Id>,
     pull_request: Option<PullRequestSubject>,
-    sender: Option<Sender>,
 }
 
 #[derive(Deserialize)]
 struct PullRequestSubject {
-    number: u64,
-    html_url: String,
-    state: String,
     head: PullRequestBranch,
-    base: PullRequestBranch,
 }
 
 #[derive(Deserialize)]
@@ -222,11 +207,6 @@ struct PullRequestBranch {
     #[serde(rename = "ref")]
     name: String,
     repo: Option<Id>,
-}
-
-#[derive(Deserialize)]
-struct Sender {
-    login: String,
 }
 
 #[derive(Deserialize)]
@@ -359,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn pull_request_events_on_a_request_branch_name_the_carrier_and_who_acted() {
+    fn pull_request_events_on_a_request_branch_name_the_carrier_to_read_again() {
         let parse = |action: &str, head: &str, head_repository: u64| {
             GitHubWebhookEvent::parse(
                 "pull_request",
@@ -380,22 +360,12 @@ mod tests {
             )
             .unwrap()
         };
-        for (action, open) in [
-            ("opened", true),
-            ("reopened", true),
-            ("edited", true),
-            ("closed", false),
-        ] {
+        for action in ["opened", "reopened", "edited", "closed"] {
             assert_eq!(
                 parse(action, "scope/requests/req_1", 42),
                 GitHubWebhookEvent::PullRequestChanged {
                     github_repository_id: 42,
                     request_id: "req_1".into(),
-                    number: 5,
-                    url: "https://github.com/octo/repo/pull/5".into(),
-                    base: "main".into(),
-                    open,
-                    sender_login: Some("scope-checks[bot]".into()),
                 },
                 "{action}"
             );

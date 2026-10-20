@@ -1,6 +1,6 @@
 use super::{GitHubBranch, GitHubCheckTarget, GitHubPushDestination};
 use crate::{
-    github_connection::GitHubConnection,
+    github_connection::{GitHubConnection, GitHubReviewBotSettings},
     requests::{Request, RequestState},
     views::Views,
 };
@@ -127,6 +127,14 @@ fn carrier_pull_request_base(request: &Request, parent: Option<&Request>) -> Str
         )
 }
 
+pub fn review_request_marker(head_oid: &str) -> String {
+    format!("<!-- scope-review-request head={head_oid} -->")
+}
+
+pub fn review_request_comment_body(comment: &str, head_oid: &str) -> String {
+    format!("{comment}\n\n{}", review_request_marker(head_oid))
+}
+
 pub fn closes_carrier_pull_request(request: &Request) -> bool {
     matches!(request.state(), RequestState::Closed | RequestState::Merged)
 }
@@ -136,9 +144,13 @@ impl GitHubPullRequest {
         GitHubBranch::Request(self.request_id.clone())
     }
 
-    pub fn next_step(&self, review_request_comment: Option<&str>) -> Option<GitHubPullRequestStep> {
+    pub fn next_step(
+        &self,
+        review_bots: &GitHubReviewBotSettings,
+    ) -> Option<GitHubPullRequestStep> {
         let opened = self.pull_request.as_ref();
         match &self.intent {
+            GitHubPullRequestIntent::Open { .. } if !review_bots.open_pull_requests => None,
             GitHubPullRequestIntent::Open { base, head_oid } => match opened {
                 Some(opened) if opened.state == GitHubPullRequestState::ClosedOnGitHub => None,
                 Some(opened) if opened.state == GitHubPullRequestState::Open => {
@@ -147,7 +159,7 @@ impl GitHubPullRequest {
                             number: opened.number,
                             base: base.clone(),
                         })
-                    } else if review_request_comment.is_some()
+                    } else if review_bots.review_request_comment.is_some()
                         && self.commented_head_oid.as_ref() != Some(head_oid)
                     {
                         Some(GitHubPullRequestStep::Comment {
@@ -196,29 +208,24 @@ impl GitHubPullRequest {
         }
     }
 
-    pub fn observe(&mut self, observation: GitHubPullRequestObservation) -> bool {
-        let before = self.clone();
-        match &mut self.pull_request {
-            Some(opened) if opened.number == observation.number => {
-                opened.url = observation.url;
-                opened.base = observation.base;
-                opened.state = if observation.open {
-                    GitHubPullRequestState::Open
-                } else if observation.closed_by_scope
-                    || self.intent == GitHubPullRequestIntent::Close
-                {
-                    GitHubPullRequestState::Closed
-                } else {
-                    GitHubPullRequestState::ClosedOnGitHub
-                };
-            }
-            Some(opened) if opened.state == GitHubPullRequestState::Open => {}
-            _ if observation.open => {
-                self.record_opened(observation.number, observation.url, observation.base);
-            }
-            _ => {}
-        }
-        *self != before
+    pub fn observe(&mut self, observation: GitHubPullRequestObservation) {
+        let closing = self.intent == GitHubPullRequestIntent::Close;
+        let Some(opened) = self
+            .pull_request
+            .as_mut()
+            .filter(|opened| opened.number == observation.number)
+        else {
+            return;
+        };
+        opened.url = observation.url;
+        opened.base = observation.base;
+        opened.state = if observation.open {
+            GitHubPullRequestState::Open
+        } else if observation.closed_by_scope || closing {
+            GitHubPullRequestState::Closed
+        } else {
+            GitHubPullRequestState::ClosedOnGitHub
+        };
     }
 
     pub fn status(&self) -> Option<GitHubPullRequestStatus> {
@@ -232,6 +239,7 @@ impl GitHubPullRequest {
                     GitHubPullRequestStatusState::ClosedOnGitHub
                 }
             },
+            (GitHubPullRequestJobState::Done, None) => return None,
             (_, None) if self.intent == GitHubPullRequestIntent::Close => return None,
             (_, None) => GitHubPullRequestStatusState::Opening,
         };

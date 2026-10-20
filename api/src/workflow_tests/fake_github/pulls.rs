@@ -4,7 +4,7 @@ use axum::{
     extract::{Path as AxumPath, Query as AxumQuery, State as AxumState},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, patch, post},
+    routing::get,
 };
 use std::{
     collections::HashMap,
@@ -14,11 +14,15 @@ use std::{
     },
 };
 
+const APP_LOGIN: &str = "scope-checks[bot]";
+
 #[derive(Default)]
 pub(in crate::workflow_tests) struct FakePulls {
     pub(in crate::workflow_tests) pulls: Mutex<Vec<serde_json::Value>>,
     pub(in crate::workflow_tests) comments: Mutex<Vec<(u64, String)>>,
     pub(in crate::workflow_tests) forbidden: AtomicBool,
+    pub(in crate::workflow_tests) rate_limited_once: AtomicBool,
+    pub(in crate::workflow_tests) writes_unreachable: AtomicBool,
 }
 
 impl FakePulls {
@@ -34,15 +38,50 @@ impl FakePulls {
             "draft": false,
             "head": { "ref": head },
             "base": { "ref": base },
+            "closed_by": null,
         }));
         number
+    }
+
+    pub(in crate::workflow_tests) fn close_as(&self, number: u64, login: &str) {
+        let mut pulls = self.pulls.lock().unwrap();
+        let pull = &mut pulls[number as usize - 1];
+        pull["state"] = "closed".into();
+        pull["closed_by"] = serde_json::json!({ "login": login });
+    }
+
+    pub(in crate::workflow_tests) fn comment_as_app(&self, number: u64, body: &str) {
+        self.comments
+            .lock()
+            .unwrap()
+            .push((number, body.to_string()));
     }
 
     pub(in crate::workflow_tests) fn pull(&self, number: u64) -> serde_json::Value {
         self.pulls.lock().unwrap()[number as usize - 1].clone()
     }
 
+    fn refused_write(&self) -> Option<axum::response::Response> {
+        if self.writes_unreachable.load(Ordering::SeqCst) {
+            return Some(StatusCode::NOT_FOUND.into_response());
+        }
+        self.refused()
+    }
+
     fn refused(&self) -> Option<axum::response::Response> {
+        if self.rate_limited_once.swap(false, Ordering::SeqCst) {
+            return Some(
+                (
+                    StatusCode::FORBIDDEN,
+                    [
+                        ("x-ratelimit-remaining", "0"),
+                        ("x-ratelimit-reset", "4102444800"),
+                    ],
+                    Json(serde_json::json!({ "message": "API rate limit exceeded" })),
+                )
+                    .into_response(),
+            );
+        }
         self.forbidden.load(Ordering::SeqCst).then(|| {
             (
                 StatusCode::FORBIDDEN,
@@ -83,7 +122,7 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             .post(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  Json(body): Json<serde_json::Value>| async move {
-                    if let Some(refused) = fake.pulls.refused() {
+                    if let Some(refused) = fake.pulls.refused_write() {
                         return refused;
                     }
                     let number = fake.pulls.open(
@@ -101,17 +140,27 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
         )
         .route(
             "/repos/{owner}/{name}/pulls/{number}",
-            patch(
+            get(
+                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                 AxumPath((_, _, number)): AxumPath<(String, String, u64)>| async move {
+                    if let Some(refused) = fake.pulls.refused() {
+                        return refused;
+                    }
+                    Json(fake.pulls.pull(number)).into_response()
+                },
+            )
+            .patch(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  AxumPath((_, _, number)): AxumPath<(String, String, u64)>,
                  Json(body): Json<serde_json::Value>| async move {
-                    if let Some(refused) = fake.pulls.refused() {
+                    if let Some(refused) = fake.pulls.refused_write() {
                         return refused;
                     }
                     let mut pulls = fake.pulls.pulls.lock().unwrap();
                     let pull = &mut pulls[number as usize - 1];
                     if let Some(state) = body.get("state") {
                         pull["state"] = state.clone();
+                        pull["closed_by"] = serde_json::json!({ "login": APP_LOGIN });
                     }
                     if let Some(base) = body.get("base") {
                         pull["base"]["ref"] = base.clone();
@@ -121,12 +170,52 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             ),
         )
         .route(
+            "/repos/{owner}/{name}/issues/{number}",
+            get(
+                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                 AxumPath((_, _, number)): AxumPath<(String, String, u64)>| async move {
+                    if let Some(refused) = fake.pulls.refused() {
+                        return refused;
+                    }
+                    let pull = fake.pulls.pull(number);
+                    Json(serde_json::json!({
+                        "number": number, "state": pull["state"], "closed_by": pull["closed_by"],
+                    }))
+                    .into_response()
+                },
+            ),
+        )
+        .route(
             "/repos/{owner}/{name}/issues/{number}/comments",
-            post(
+            get(
+                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                 AxumPath((_, _, number)): AxumPath<(String, String, u64)>,
+                 AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
+                    if let Some(refused) = fake.pulls.refused() {
+                        return refused;
+                    }
+                    let comments = if query["page"] == "1" {
+                        fake.pulls
+                            .comments
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .filter(|(on, _)| *on == number)
+                            .map(|(_, body)| {
+                                serde_json::json!({ "body": body, "user": { "login": APP_LOGIN } })
+                            })
+                            .collect::<Vec<_>>()
+                    } else {
+                        Vec::new()
+                    };
+                    Json(comments).into_response()
+                },
+            )
+            .post(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  AxumPath((_, _, number)): AxumPath<(String, String, u64)>,
                  Json(body): Json<serde_json::Value>| async move {
-                    if let Some(refused) = fake.pulls.refused() {
+                    if let Some(refused) = fake.pulls.refused_write() {
                         return refused;
                     }
                     fake.pulls

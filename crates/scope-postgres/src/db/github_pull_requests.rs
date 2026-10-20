@@ -9,11 +9,10 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{
-    GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestObservation,
-    GitHubPushDestination, OpenedGitHubPullRequest, Request, carrier_pull_request_intent,
-    closes_carrier_pull_request,
+    GitHubPullRequest, GitHubPullRequestIntent, GitHubPushDestination, OpenedGitHubPullRequest,
+    Request, carrier_pull_request_intent, closes_carrier_pull_request,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 const SELECT_PULL_REQUEST: &str = "request_id, repo_id, installation_id, github_repository_id, \
     github_full_name, intent, intent_base, intent_head_oid, intent_sequence, number, url, base, \
@@ -134,7 +133,7 @@ impl RequestStore {
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!(
-                    "UPDATE scope_github_pull_requests pull_request SET {PROGRESS},
+                    "UPDATE scope_github_pull_requests pull_request SET {RECORDED},
                         job_state = CASE WHEN intent_sequence <> $8 THEN 'queued' ELSE $9 END,
                         attempts = CASE WHEN intent_sequence <> $8 THEN 0 ELSE attempts END,
                         next_attempt_at_unix = CASE WHEN intent_sequence <> $8 THEN $12
@@ -151,68 +150,37 @@ impl RequestStore {
         Ok(finished.rows_affected() > 0)
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "observe_github_pull_request"))]
-    pub async fn observe_github_pull_request(
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requeue_github_pull_request"))]
+    pub async fn requeue_github_pull_request(
         &self,
         github_repository_id: u64,
         request_id: &str,
-        observation: GitHubPullRequestObservation,
         now_unix: u64,
-    ) -> Result<Option<String>, PostgresError> {
-        let tx = self.db.begin().await?;
-        let Some(mut carrier) = PullRequestRow::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            format!(
-                "SELECT {SELECT_PULL_REQUEST} FROM scope_github_pull_requests pull_request
-                  WHERE request_id = $1 AND github_repository_id = $2
-                  FOR UPDATE"
-            ),
-            [
-                request_id.into(),
-                u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
-            ],
-        ))
-        .one(&tx)
-        .await?
-        .map(PullRequestRow::into_domain)
-        .transpose()?
-        else {
-            return Ok(None);
-        };
-        if !carrier.observe(observation) {
-            return Ok(None);
-        }
-        tx.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            format!(
-                "UPDATE scope_github_pull_requests pull_request SET {RECORDED},
-                    next_attempt_at_unix = CASE WHEN pull_request.job_state = 'running'
-                        THEN pull_request.next_attempt_at_unix ELSE $7 END,
-                    updated_at_unix = greatest($7, pull_request.updated_at_unix),
-                    {REQUEUE}
-                  WHERE request_id = $1"
-            ),
-            {
-                let mut values = recorded_values(&carrier)?;
-                values.push(u64_to_i64(now_unix, "GitHub pull request time")?.into());
-                values
-            },
-        ))
-        .await?;
-        tx.commit().await?;
-        Ok(Some(carrier.repo_id))
+    ) -> Result<bool, PostgresError> {
+        let requeued = self
+            .db
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                format!(
+                    "UPDATE scope_github_pull_requests pull_request SET
+                        next_attempt_at_unix = CASE WHEN pull_request.job_state = 'running'
+                            THEN pull_request.next_attempt_at_unix ELSE $3 END,
+                        updated_at_unix = greatest($3, pull_request.updated_at_unix),
+                        {REQUEUE}
+                      WHERE request_id = $1 AND github_repository_id = $2"
+                ),
+                [
+                    request_id.into(),
+                    u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+                    u64_to_i64(now_unix, "GitHub pull request time")?.into(),
+                ],
+            ))
+            .await?;
+        Ok(requeued.rows_affected() > 0)
     }
 }
 
 const RECORDED: &str = "number = $2, url = $3, base = $4, state = $5, commented_head_oid = $6";
-
-const PROGRESS: &str =
-    "number = CASE WHEN (intent_sequence = $8 OR number IS NULL) THEN $2 ELSE number END,
-    url = CASE WHEN (intent_sequence = $8 OR number IS NULL) THEN $3 ELSE url END,
-    base = CASE WHEN (intent_sequence = $8 OR number IS NULL) THEN $4 ELSE base END,
-    state = CASE WHEN (intent_sequence = $8 OR number IS NULL) THEN $5 ELSE state END,
-    commented_head_oid = CASE WHEN (intent_sequence = $8 OR number IS NULL) OR number = $2 THEN $6
-        ELSE commented_head_oid END";
 
 fn recorded_values(carrier: &GitHubPullRequest) -> Result<Vec<sea_orm::Value>, PostgresError> {
     let opened = carrier.pull_request.as_ref();
