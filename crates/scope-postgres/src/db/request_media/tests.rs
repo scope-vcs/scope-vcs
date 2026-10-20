@@ -863,3 +863,4 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
 mod access;
 mod cleanup;
 mod queued_traces;
+mod upload_parts;

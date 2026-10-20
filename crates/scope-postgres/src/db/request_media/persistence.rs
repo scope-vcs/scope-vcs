@@ -44,7 +44,7 @@ struct AttachmentRow {
     upload_expires_at_unix: i64,
 }
 
-#[derive(FromQueryResult)]
+#[derive(FromQueryResult, serde::Deserialize)]
 struct DerivativeRow {
     id: String,
     attachment_id: String,
@@ -59,22 +59,18 @@ struct DerivativeRow {
 }
 
 #[derive(FromQueryResult)]
-struct ManifestRow {
+struct ManifestChunkRow {
     media_type: String,
     size_bytes: i64,
     sha256: String,
+    chunk_index: Option<i32>,
+    object_key: Option<String>,
+    plaintext_offset: Option<i64>,
+    plaintext_size_bytes: Option<i64>,
+    chunk_sha256: Option<String>,
 }
 
-#[derive(FromQueryResult)]
-struct ManifestChunkRow {
-    chunk_index: i32,
-    object_key: String,
-    plaintext_offset: i64,
-    plaintext_size_bytes: i64,
-    sha256: String,
-}
-
-#[derive(FromQueryResult)]
+#[derive(FromQueryResult, serde::Deserialize)]
 struct BindingRow {
     attachment_id: String,
     request_id: String,
@@ -106,6 +102,58 @@ where
     let row = AttachmentRow::from_query_result(&row, "")?;
     let derivatives = derivatives_for_attachment(conn, &row.id).await?;
     Ok(Some(attachment_from_row(row, derivatives)?))
+}
+
+pub(super) async fn live_attachment_with_bindings<C>(
+    conn: &C,
+    attachment_id: &str,
+) -> Result<Option<(RequestAttachment, Vec<RequestAttachmentBinding>)>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let Some(row) = conn
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT attachment.*, original.size_bytes AS original_size_bytes, original.sha256 AS original_sha256,
+                 COALESCE((
+                     SELECT json_agg(derivative ORDER BY derivative.id)
+                     FROM scope_request_media_derivatives derivative
+                     WHERE derivative.attachment_id = attachment.id
+                 ), '[]'::json) AS derivatives_json,
+                 COALESCE((
+                     SELECT json_agg(binding ORDER BY binding.target_key)
+                     FROM scope_request_media_bindings binding
+                     WHERE binding.attachment_id = attachment.id
+                 ), '[]'::json) AS bindings_json
+             FROM scope_request_media_attachments attachment
+             LEFT JOIN scope_request_media_manifests original ON original.id = attachment.original_manifest_id
+             WHERE attachment.id = $1 AND NOT EXISTS (
+                 SELECT 1 FROM scope_request_media_cleanup_jobs cleanup WHERE cleanup.attachment_id = attachment.id
+             )",
+            [attachment_id.into()],
+        ))
+        .await?
+    else {
+        return Ok(None);
+    };
+    let derivatives = json_rows::<DerivativeRow>(&row, "derivatives_json")?
+        .into_iter()
+        .map(derivative_from_row)
+        .collect::<Result<_, _>>()?;
+    let bindings = json_rows::<BindingRow>(&row, "bindings_json")?
+        .into_iter()
+        .map(binding_from)
+        .collect::<Result<_, _>>()?;
+    let attachment = attachment_from_row(AttachmentRow::from_query_result(&row, "")?, derivatives)?;
+    Ok(Some((attachment, bindings)))
+}
+
+fn json_rows<T: serde::de::DeserializeOwned>(
+    row: &QueryResult,
+    column: &str,
+) -> Result<Vec<T>, PostgresError> {
+    serde_json::from_value(row.try_get::<serde_json::Value>("", column)?)
+        .map_err(PostgresError::internal)
 }
 
 pub(super) async fn attachments_for_request<C: ConnectionTrait>(
@@ -286,42 +334,57 @@ pub(super) async fn manifest_by_id<C>(
 where
     C: ConnectionTrait,
 {
-    let Some(row) = conn
-        .query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT * FROM scope_request_media_manifests WHERE id = $1",
-            [manifest_id.into()],
-        ))
-        .await?
-    else {
-        return Ok(None);
-    };
-    let row = ManifestRow::from_query_result(&row, "")?;
-    let chunks = conn
+    let rows = conn
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "SELECT * FROM scope_request_media_manifest_chunks WHERE manifest_id = $1 ORDER BY chunk_index",
+            "SELECT manifest.media_type, manifest.size_bytes, manifest.sha256,
+                 chunk.chunk_index, chunk.object_key, chunk.plaintext_offset,
+                 chunk.plaintext_size_bytes, chunk.sha256 AS chunk_sha256
+             FROM scope_request_media_manifests manifest
+             LEFT JOIN scope_request_media_manifest_chunks chunk ON chunk.manifest_id = manifest.id
+             WHERE manifest.id = $1
+             ORDER BY chunk.chunk_index",
             [manifest_id.into()],
         ))
         .await?
         .into_iter()
-        .map(|chunk| {
-            let chunk = ManifestChunkRow::from_query_result(&chunk, "")?;
-            Ok(RequestMediaChunk {
-                part_number: to_u32(chunk.chunk_index, "manifest chunk index")?,
-                plaintext_offset: to_u64(chunk.plaintext_offset, "manifest chunk offset")?,
-                plaintext_bytes: to_u64(chunk.plaintext_size_bytes, "manifest chunk size")?,
-                sha256: chunk.sha256,
-                object_key: chunk.object_key,
-            })
-        })
-        .collect::<Result<Vec<_>, PostgresError>>()?;
-    Ok(Some(RequestMediaObject {
-        media_type: row.media_type,
-        plaintext_bytes: to_u64(row.size_bytes, "manifest size")?,
-        sha256: row.sha256,
-        chunks,
-    }))
+        .map(|row| ManifestChunkRow::from_query_result(&row, ""))
+        .collect::<Result<Vec<_>, _>>()?;
+    let Some(manifest) = rows.first() else {
+        return Ok(None);
+    };
+    let mut object = RequestMediaObject {
+        media_type: manifest.media_type.clone(),
+        plaintext_bytes: to_u64(manifest.size_bytes, "manifest size")?,
+        sha256: manifest.sha256.clone(),
+        chunks: Vec::with_capacity(rows.len()),
+    };
+    for row in rows {
+        match (
+            row.chunk_index,
+            row.object_key,
+            row.plaintext_offset,
+            row.plaintext_size_bytes,
+            row.chunk_sha256,
+        ) {
+            (Some(index), Some(object_key), Some(offset), Some(size_bytes), Some(sha256)) => {
+                object.chunks.push(RequestMediaChunk {
+                    part_number: to_u32(index, "manifest chunk index")?,
+                    plaintext_offset: to_u64(offset, "manifest chunk offset")?,
+                    plaintext_bytes: to_u64(size_bytes, "manifest chunk size")?,
+                    sha256,
+                    object_key,
+                });
+            }
+            (None, None, None, None, None) => {}
+            _ => {
+                return Err(PostgresError::internal_message(
+                    "request media manifest chunk is incomplete",
+                ));
+            }
+        }
+    }
+    Ok(Some(object))
 }
 
 pub(super) async fn insert_manifest<C>(
@@ -410,7 +473,10 @@ pub(super) async fn bindings_for_request<C: ConnectionTrait>(
 }
 
 fn binding_from_row(row: QueryResult) -> Result<RequestAttachmentBinding, PostgresError> {
-    let row = BindingRow::from_query_result(&row, "")?;
+    binding_from(BindingRow::from_query_result(&row, "")?)
+}
+
+fn binding_from(row: BindingRow) -> Result<RequestAttachmentBinding, PostgresError> {
     let target = match (row.target_kind.as_str(), row.discussion_id, row.reply_id) {
         ("Description", None, None) => RequestAttachmentBindingTarget::Description,
         ("Discussion", Some(discussion_id), None) => {
