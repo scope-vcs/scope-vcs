@@ -111,12 +111,7 @@ async fn completed_cleanup_never_reserves_bytes_again_during_reconciliation() {
     let lease = claim_cleanup(&fixture, "delete", expired, expired + 10).await;
     assert_eq!(
         media
-            .complete_cleanup_job(
-                &lease.attachment_id,
-                &lease.lease_token,
-                lease.lease_generation,
-                expired + 1,
-            )
+            .complete_cleanup_job(&lease, expired + 1)
             .await
             .unwrap(),
         MediaLeaseMutation::Applied(())
@@ -178,4 +173,165 @@ async fn concurrent_orphan_claimers_each_take_distinct_work() {
     }
     claimed.sort();
     assert_eq!(claimed, attachment_ids);
+}
+
+const DAY: u64 = 24 * 60 * 60;
+
+async fn upload_after_abandoning_a_part(fixture: &Fixture, attachment_id: &str) -> String {
+    abandon_first_part_write(fixture, attachment_id).await;
+    let media = fixture.store.media();
+    let replacement = part(attachment_id, "replacement");
+    assert_eq!(
+        media
+            .mark_upload_part_stored(
+                attachment_id,
+                &format!("upload_{attachment_id}"),
+                OWNER_ID,
+                1,
+                &replacement.object_key,
+                "write_replacement",
+                12,
+            )
+            .await
+            .unwrap(),
+        StorePartResult::Recorded
+    );
+    media
+        .finish_request_attachment_upload(FinishRequestAttachmentUploadCommand {
+            request_id: "orphan_request".to_string(),
+            attachment_id: attachment_id.to_string(),
+            upload_id: format!("upload_{attachment_id}"),
+            actor_user_id: OWNER_ID.to_string(),
+            parts: vec![replacement.receipt],
+            now_unix: 12,
+        })
+        .await
+        .unwrap();
+    format!("media/v1/staged/{attachment_id}/first")
+}
+
+async fn orphan_processing_output(fixture: &Fixture, attachment_id: &str, now_unix: u64) -> String {
+    let media = fixture.store.media();
+    let (lease, _) = media
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            &format!("output-{now_unix}"),
+            now_unix,
+            now_unix + 10,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let output = format!("media/v1/staged/{attachment_id}/output-{now_unix}");
+    assert_eq!(
+        media
+            .reserve_processing_object_key(
+                attachment_id,
+                &lease.lease_token,
+                lease.lease_generation,
+                &output,
+                now_unix + 1,
+            )
+            .await
+            .unwrap(),
+        MediaLeaseMutation::Applied(())
+    );
+    media
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            &format!("takeover-{now_unix}"),
+            now_unix + 10,
+            now_unix + 20,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    output
+}
+
+#[tokio::test]
+async fn completed_orphan_inventory_is_reconciled_once_then_never() {
+    let fixture = fixture();
+    start_request(&fixture, "orphan_request", "orphan-request", 1).await;
+    let attachment_id = "reconciled_attachment";
+    let abandoned_part = upload_after_abandoning_a_part(&fixture, attachment_id).await;
+    let orphaned_output = orphan_processing_output(&fixture, attachment_id, 20).await;
+    let expected_keys = [abandoned_part, orphaned_output];
+    let media = fixture.store.media();
+
+    let mut sweep = 200;
+    for _ in 0..2 {
+        media
+            .enqueue_expired_attachment_cleanup(sweep)
+            .await
+            .unwrap();
+        let lease = claim_cleanup(&fixture, "orphans", sweep, sweep + 10).await;
+        assert_eq!(lease.object_keys, expected_keys);
+        let completed_at = sweep + 1;
+        assert_eq!(
+            media
+                .complete_cleanup_job(&lease, completed_at)
+                .await
+                .unwrap(),
+            MediaLeaseMutation::Applied(())
+        );
+        let too_early = completed_at + DAY - 1;
+        media
+            .enqueue_expired_attachment_cleanup(too_early)
+            .await
+            .unwrap();
+        assert!(
+            media
+                .claim_cleanup_job("too-early", too_early, too_early + 10)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        sweep = completed_at + DAY;
+    }
+    media
+        .enqueue_expired_attachment_cleanup(sweep)
+        .await
+        .unwrap();
+    assert!(
+        media
+            .claim_cleanup_job("never-again", sweep, sweep + 10)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn orphan_completion_deletes_only_its_leased_keys_when_a_sweep_interleaves() {
+    let fixture = fixture();
+    start_request(&fixture, "orphan_request", "orphan-request", 1).await;
+    let attachment_id = "interleaved_attachment";
+    let abandoned_part = upload_after_abandoning_a_part(&fixture, attachment_id).await;
+    let orphaned_output = orphan_processing_output(&fixture, attachment_id, 20).await;
+    let media = fixture.store.media();
+    let first = claim_cleanup(&fixture, "first-orphans", 200, 210).await;
+    assert_eq!(
+        media.complete_cleanup_job(&first, 201).await.unwrap(),
+        MediaLeaseMutation::Applied(())
+    );
+
+    let sweep = 201 + DAY;
+    let late_output = orphan_processing_output(&fixture, attachment_id, sweep - 20).await;
+    let leased = claim_cleanup(&fixture, "late-orphans", sweep, sweep + 10).await;
+    assert_eq!(leased.object_keys, [late_output]);
+    media
+        .enqueue_expired_attachment_cleanup(sweep)
+        .await
+        .unwrap();
+    assert_eq!(
+        media
+            .complete_cleanup_job(&leased, sweep + 1)
+            .await
+            .unwrap(),
+        MediaLeaseMutation::Applied(())
+    );
+
+    let reconciled = claim_cleanup(&fixture, "reconciled-orphans", sweep + 2, sweep + 12).await;
+    assert_eq!(reconciled.object_keys, [abandoned_part, orphaned_output]);
 }
