@@ -2,27 +2,28 @@ import { FileWorkbench } from '@/components/file-workbench'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useState } from 'react'
 import {
   FileNavigatorSkeleton,
   SourceCodeSkeleton,
   SourceTabStripSkeleton,
 } from './repository-code-skeletons'
-import { useRepoLayout } from './repo-layout-context'
+import { useLoadedRepoLayout } from './repo-layout-context'
 import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
 import { RepositoryLatestActivityPending } from './repository-latest-activity'
 
 export function RepositoryCodePending() {
   const [navigationOpen, setNavigationOpen] = useState(false)
-  const { repo } = useRepoLayout()
+  const repo = useLoadedRepoLayout()?.repo ?? null
   return (
     <WorkbenchPane>
       <WorkbenchBar
         actions={<BlockSkeleton className="h-8 w-24" />}
-        summary={hasRepositoryAbout(repo) ? <RepositoryAbout repo={repo} /> : undefined}
+        summary={repo ? hasRepositoryAbout(repo) && <RepositoryAbout repo={repo} /> : <TextSkeleton length="long" size="meta" />}
         title="Code"
       />
-      {repo.lifecycle_state === 'Ready' && <RepositoryLatestActivityPending />}
+      {repo?.lifecycle_state !== 'AwaitingFirstPush' && <RepositoryLatestActivityPending />}
       <FileWorkbench
         className="border-t border-border lg:min-h-[calc(100dvh-var(--app-chrome))]"
         navigationOpen={navigationOpen}
