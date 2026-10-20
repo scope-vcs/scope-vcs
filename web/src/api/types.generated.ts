@@ -570,6 +570,8 @@ export type RequestMergeabilityResponse = { status: RequestMergeabilityStatus, c
 
 export type RequestCheckEvaluationState = "no-checks" | "awaiting-approval" | "started" | "configuration-error";
 
+export type RequestChecksOutcome = "clear" | "not-evaluated" | "awaiting-approval" | "pending" | "failed" | "configuration-error";
+
 export type RequestAutoMergeIntentStatus = "Active" | "Cancelled" | "Stopped" | "Fulfilled";
 
 export type RequestAutoMergeStopReason = "RequestChanged" | "RequestClosed" | "AccessRevoked" | "ChecksFailed" | "ChecksConfigurationError" | "MergeConflict" | "RequestBranchMissing" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "NeedsMainUpdate";
@@ -607,7 +609,13 @@ export type RequestChecksResponse = { request_id: string, head_oid: GitOid,
 /**
  * `None` while the head has no evaluation: nothing is known about its checks yet.
  */
-state: RequestCheckEvaluationState | null, message: string | null, checks: Array<RequestCheckResponse>,
+state: RequestCheckEvaluationState | null,
+/**
+ * What the head's required checks add up to, the answer mergeability
+ * gates on: `clear` once every one passed or none is required,
+ * `pending` while any is unfinished, `failed` once one did not succeed.
+ */
+outcome: RequestChecksOutcome, message: string | null, checks: Array<RequestCheckResponse>,
 /**
  * Whether the viewer can start checks that wait for a maintainer.
  */
