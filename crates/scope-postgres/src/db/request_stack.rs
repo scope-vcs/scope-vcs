@@ -12,6 +12,7 @@ use scope_domain::requests::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder,
+    TransactionTrait,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -289,15 +290,39 @@ pub(super) async fn close_children(
     refresh_children(tx, parent, &facts, now_unix).await
 }
 
+const GRAPH_LOCK_ATTEMPTS: usize = 8;
+
 pub(super) async fn lock_graph(
     tx: &DatabaseTransaction,
     request: &Request,
     selected_base: Option<&RequestBase>,
 ) -> Result<(), PostgresError> {
-    let request = request_by_id(tx, &request.id)
+    for _ in 0..GRAPH_LOCK_ATTEMPTS {
+        let ids = graph_ids(tx, request, selected_base).await?;
+        let attempt = tx.begin().await?;
+        for id in &ids {
+            acquire_aggregate_lock(&attempt, "request", id).await?;
+        }
+        if graph_ids(&attempt, request, selected_base).await? == ids {
+            attempt.commit().await?;
+            return Ok(());
+        }
+        attempt.rollback().await?;
+    }
+    Err(PostgresError::conflict(
+        "request stack kept changing while it was locked; retry",
+    ))
+}
+
+async fn graph_ids<C: ConnectionTrait>(
+    conn: &C,
+    request: &Request,
+    selected_base: Option<&RequestBase>,
+) -> Result<BTreeSet<String>, PostgresError> {
+    let request = request_by_id(conn, &request.id)
         .await?
         .ok_or_else(|| PostgresError::not_found("request not found"))?;
-    let mut ids = ancestry(tx, &request.base)
+    let mut ids = ancestry(conn, &request.base)
         .await?
         .into_iter()
         .map(|parent| parent.id)
@@ -307,10 +332,10 @@ pub(super) async fn lock_graph(
         if !ids.insert(id.clone()) {
             return Err(PostgresError::conflict("request stack contains a cycle"));
         }
-        pending.extend(children(tx, &id).await?.into_iter().map(|child| child.id));
+        pending.extend(children(conn, &id).await?.into_iter().map(|child| child.id));
     }
     if let Some(selected_base) = selected_base {
-        for ancestor in ancestry(tx, selected_base).await? {
+        for ancestor in ancestry(conn, selected_base).await? {
             if ancestor.repo_id != request.repo_id || ancestor.view != request.view {
                 return Err(PostgresError::conflict(
                     "request parent must share the repository and view",
@@ -319,10 +344,7 @@ pub(super) async fn lock_graph(
             ids.insert(ancestor.id);
         }
     }
-    for id in ids {
-        acquire_aggregate_lock(tx, "request", &id).await?;
-    }
-    Ok(())
+    Ok(ids)
 }
 
 pub(super) async fn retarget_children(

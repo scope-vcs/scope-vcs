@@ -251,47 +251,52 @@ async fn seed_editable_request_refs_for_repo(
                 .collect());
         }
         RequestRefSeeding::Pushed(_) if !reads_every_request => (Vec::new(), requests),
-        RequestRefSeeding::Pushed(refs)
-            if !refs
+        RequestRefSeeding::Pushed(refs) => {
+            let attached = if refs
                 .iter()
-                .any(|refname| refname.strip_prefix("refs/heads/") == Some(DEFAULT_GIT_BRANCH)) =>
-        {
-            let attached = pushed_request_ids_with_bases(&requests, refs);
-            let (attached, others): (Vec<_>, Vec<_>) = requests
+                .any(|refname| refname.strip_prefix("refs/heads/") == Some(DEFAULT_GIT_BRANCH))
+            {
+                BTreeSet::new()
+            } else {
+                pushed_request_ids_with_bases(&requests, refs)
+            };
+            requests
                 .into_iter()
-                .partition(|request| attached.contains(&request.id));
-            let stored = others
-                .into_iter()
-                .filter(|request| request.git_snapshot.is_some())
-                .collect::<Vec<_>>();
-            (stored, attached)
+                .partition(|request| !attached.contains(&request.id))
         }
-        RequestRefSeeding::Pushed(_) => requests
-            .into_iter()
-            .partition(|request| request.git_snapshot.is_some()),
     };
     let git = RepositoryGit::of_push_context(context);
     let view_bases = request_view_bases(state, &git, views, &refs_for, address_view).await?;
-    let state = state.clone();
+    let state_for_attach = state.clone();
     let incarnation = context.incarnation.clone();
-    let staging_repo = staging_repo.to_path_buf();
-    crate::git::blocking::run(move || {
+    let staging_path = staging_repo.to_path_buf();
+    let unreachable = crate::git::blocking::run(move || {
         if reads_every_request {
             attach_request_refs_from_store(
-                &state,
+                &state_for_attach,
                 &incarnation,
                 StoredRequestRefs {
                     objects_for: &objects_for,
                     refs_for: &refs_for,
                 },
-                &staging_repo,
+                &staging_path,
                 &view_bases,
             )
         } else {
-            attach_visible_request_refs(&state, &refs_for, &staging_repo, &view_bases)
+            attach_visible_request_refs(&state_for_attach, &refs_for, &staging_path, &view_bases)
+                .map(|()| Vec::new())
         }
     })
     .await?;
+    if !unreachable.is_empty() {
+        let view_bases = request_view_bases(state, &git, views, &unreachable, address_view).await?;
+        let state = state.clone();
+        let staging_path = staging_repo.to_path_buf();
+        crate::git::blocking::run(move || {
+            attach_visible_request_refs(&state, &unreachable, &staging_path, &view_bases)
+        })
+        .await?;
+    }
     Ok(Vec::new())
 }
 
