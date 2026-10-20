@@ -59,7 +59,7 @@ test('repository components retain drafts, previews and pending actions across r
   await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
   await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
   await page.evaluate(() => window.calls.splice(0))
-  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false, open_review_bot_pull_requests: false, review_request_comment: null }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
   await checks.getByText('This GitHub repository became public, so Scope stopped sending requests outside the Public view there.', { exact: false }).waitFor()
   await checks.getByRole('button', { name: 'Allow these requests', exact: true }).click()
@@ -67,7 +67,7 @@ test('repository components retain drafts, previews and pending actions across r
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
   ])
-  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true }, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true, open_review_bot_pull_requests: false, review_request_comment: null }, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), github)
   await checks.getByText('ci / test', { exact: true }).waitFor()
   const saveRequirements = checks.getByRole('button', { name: 'Save requirements', exact: true })
@@ -179,6 +179,51 @@ test('repository components retain drafts, previews and pending actions across r
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { setGitHubRunImportCount: 200 },
     { startGitHubRunImport: { owner: 'owner', repo: 'demo' } },
+  ])
+
+  const reviewBots = checks.getByRole('switch', { name: 'Open pull requests for review bots' })
+  assert.equal(await reviewBots.isChecked(), false)
+  await reviewBots.click()
+  assert.equal(await reviewBots.isDisabled(), true)
+  await page.evaluate(() => window.finishAction('review-bot-pull-requests'))
+  await page.waitForFunction(() => window.fixtureGitHub().connection.open_review_bot_pull_requests === true)
+  assert.equal(await reviewBots.isChecked(), true)
+  assert.equal(await reviewBots.isDisabled(), false)
+  const reviewComment = checks.getByRole('textbox', { name: 'Review request comment' })
+  const saveComment = checks.getByRole('button', { name: 'Save comment', exact: true })
+  assert.equal(await reviewComment.inputValue(), '')
+  assert.equal(await saveComment.isDisabled(), true)
+  await reviewComment.fill('x'.repeat(501))
+  await checks.getByText('Keep it to 500 characters.', { exact: true }).waitFor()
+  assert.equal(await saveComment.isDisabled(), true)
+  await reviewComment.fill(' @bot review ')
+  await saveComment.click()
+  assert.equal(await reviewComment.isDisabled(), true)
+  await page.evaluate(() => window.finishAction('review-request-comment', 'Comment denied by fixture'))
+  await checks.getByRole('alert').filter({ hasText: 'Comment denied by fixture' }).waitFor()
+  assert.equal(await reviewComment.inputValue(), ' @bot review ')
+  await saveComment.click()
+  await page.evaluate(() => window.finishAction('review-request-comment'))
+  await page.waitForFunction(() => window.fixtureGitHub().connection.review_request_comment === '@bot review')
+  await page.waitForFunction(() => [...document.querySelectorAll('input')].some((input) => input.value === '@bot review'))
+  assert.equal(await reviewComment.inputValue(), '@bot review')
+  assert.equal(await checks.getByRole('button', { name: 'Save comment', exact: true }).isDisabled(), true)
+  for (const [width, name] of [[1280, 'desktop'], [320, 'narrow-phone']]) {
+    await page.setViewportSize({ width, height: 900 })
+    const bounds = await checks.last().boundingBox()
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `${name} review bot settings fit`)
+    const field = await checks.getByRole('textbox', { name: 'Review request comment' }).boundingBox()
+    assert(field.x >= bounds.x && field.x + field.width <= bounds.x + bounds.width, `${name} comment field fits`)
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await reviewBots.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.review-bots-${name}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubReviewBotPullRequests: true },
+    { setGitHubReviewRequestComment: ' @bot review ' },
+    { setGitHubReviewRequestComment: ' @bot review ' },
   ])
 
   await checks.getByRole('button', { name: 'Disconnect', exact: true }).click()

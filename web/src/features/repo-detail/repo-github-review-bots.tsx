@@ -68,7 +68,7 @@ export function RepoGitHubReviewBots({
           />
           <Button disabled={!canSave} size="sm" type="submit" variant="secondary">
             {pending === 'save' && <LoaderCircle className="size-3.5 animate-spin" />}
-            <span>Save</span>
+            <span>Save comment</span>
           </Button>
         </div>
         {comment.tooLong && <p className="leading-5 text-danger-strong">{REVIEW_REQUEST_COMMENT_HINT}</p>}
