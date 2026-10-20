@@ -2,6 +2,7 @@ use super::*;
 use crate::db::AuthorizeRequestAutoMergeCommand;
 use scope_domain::requests::RequestAutoMergeIntentStatus;
 
+mod concurrency;
 mod fixtures;
 use fixtures::*;
 

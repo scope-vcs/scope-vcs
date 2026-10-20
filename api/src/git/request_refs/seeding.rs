@@ -27,7 +27,7 @@ pub(crate) fn attach_request_refs_from_store(
     requests: StoredRequestRefs<'_>,
     staging_repo: &FsPath,
     view_bases: &RequestViewBases,
-) -> Result<(), ApiError> {
+) -> Result<Vec<Request>, ApiError> {
     let snapshotted = requests
         .objects_for
         .iter()
@@ -65,7 +65,24 @@ pub(crate) fn attach_request_refs_from_store(
             .iter()
             .map(|request| (canonical_request_ref(&request.name), &request.head_oid)),
     )?;
-    attach_visible_request_refs(state, &snapshotless, staging_repo, view_bases)
+    attach_visible_request_refs(state, &snapshotless, staging_repo, view_bases)?;
+    let unseeded = requests
+        .objects_for
+        .iter()
+        .filter(|request| request.git_snapshot.is_none())
+        .collect::<Vec<_>>();
+    if unseeded.is_empty() {
+        return Ok(Vec::new());
+    }
+    let reachable = present_commits(
+        staging_repo,
+        unseeded.iter().map(|request| request.head_oid.as_str()),
+    )?;
+    Ok(unseeded
+        .into_iter()
+        .filter(|request| !reachable.contains(&request.head_oid))
+        .cloned()
+        .collect())
 }
 
 fn restore_request_objects(
