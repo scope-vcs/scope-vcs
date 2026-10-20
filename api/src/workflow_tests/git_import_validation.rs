@@ -350,3 +350,103 @@ fn a_tree_with_more_than_ten_thousand_files_validates_and_imports() {
 
     assert_eq!(changes.len(), 10_001);
 }
+
+fn commit_object(repo: &FsPath, tree: &str, parents: &[&str]) -> String {
+    let mut args = vec!["commit-tree", tree];
+    for parent in parents {
+        args.extend(["-p", parent]);
+    }
+    let output = git_command_output(
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(&args)
+            .env("GIT_AUTHOR_NAME", "Scope Test")
+            .env("GIT_AUTHOR_EMAIL", "scope-test@example.test")
+            .env("GIT_COMMITTER_NAME", "Scope Test")
+            .env("GIT_COMMITTER_EMAIL", "scope-test@example.test"),
+        Some(b"range validation\n"),
+    )
+    .unwrap();
+    String::from_utf8(output).unwrap().trim().to_string()
+}
+
+fn readme_base(repo: &FsPath) -> (String, String) {
+    let readme = git_object_from_stdin(repo, &["hash-object", "-w", "--stdin"], b"hello\n");
+    let tree = git_object_from_stdin(
+        repo,
+        &["mktree"],
+        format!("100644 blob {readme}\tREADME.md\n").as_bytes(),
+    );
+    let base = commit_object(repo, &tree, &[]);
+    (readme, base)
+}
+
+fn range_error_through_intermediate(repo: &FsPath, entry: &str) -> crate::error::ApiError {
+    let (readme, base) = readme_base(repo);
+    let readme_entry = format!("100644 blob {readme}\tREADME.md\n");
+    let with_entry = git_object_from_stdin(
+        repo,
+        &["mktree"],
+        format!("{readme_entry}{entry}").as_bytes(),
+    );
+    let added = commit_object(repo, &with_entry, &[&base]);
+    let base_tree = git_object_from_stdin(repo, &["mktree"], readme_entry.as_bytes());
+    let removed = commit_object(repo, &base_tree, &[&added]);
+    validate_pushed_commit_range(repo, Some(&base), &removed).unwrap_err()
+}
+
+#[test]
+fn a_gitlink_added_and_removed_inside_the_range_is_rejected() {
+    let repo = temp_git_repo("range-gitlink");
+    let (_, base) = readme_base(&repo);
+    let error =
+        range_error_through_intermediate(&repo, &format!("160000 commit {base}\tvendored\n"));
+    assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+    assert!(error.public_message().contains("unsupported Git file mode"));
+}
+
+#[test]
+fn an_oversized_blob_added_and_removed_inside_the_range_is_rejected() {
+    let repo = temp_git_repo("range-oversized");
+    let large = repo.join("large.bin");
+    fs::File::create(&large)
+        .unwrap()
+        .set_len((MAX_PENDING_IMPORT_BLOB_BYTES + 1) as u64)
+        .unwrap();
+    let blob = git_object_from_stdin(&repo, &["hash-object", "-w", large.to_str().unwrap()], b"");
+    let error =
+        range_error_through_intermediate(&repo, &format!("100644 blob {blob}\tlarge.bin\n"));
+    assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        error
+            .public_message()
+            .contains(&MAX_PENDING_IMPORT_BLOB_BYTES.to_string())
+    );
+}
+
+#[test]
+fn a_merge_that_adds_an_invalid_path_is_rejected() {
+    let repo = temp_git_repo("range-evil-merge");
+    let (readme, base) = readme_base(&repo);
+    let side_blob = git_object_from_stdin(&repo, &["hash-object", "-w", "--stdin"], b"side\n");
+    let readme_entry = format!("100644 blob {readme}\tREADME.md\n");
+    let side_tree = git_object_from_stdin(
+        &repo,
+        &["mktree"],
+        format!("{readme_entry}100644 blob {side_blob}\tside.txt\n").as_bytes(),
+    );
+    let side = commit_object(&repo, &side_tree, &[&base]);
+    let merged_tree = git_object_from_stdin(
+        &repo,
+        &["mktree"],
+        format!("{readme_entry}100644 blob {side_blob}\tside.txt\n100644 blob {side_blob}\t.GiT\n")
+            .as_bytes(),
+    );
+    let merge = commit_object(&repo, &merged_tree, &[&base, &side]);
+
+    let error = validate_pushed_commit_range(&repo, Some(&base), &merge).unwrap_err();
+
+    assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+    assert!(error.public_message().contains("reserved .git component"));
+}
