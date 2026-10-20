@@ -23,6 +23,7 @@ async fn live_file_rules_move_from_the_repository_policy_onto_their_files() {
                 {"path":"/docs","view":"public"},
                 {"path":"/docs/guide.md","view":"public"},
                 {"path":"/gone.md","view":"public"},
+                {"path":"/secret.md","view":"public"},
                 {"path":"/secret.md","view":"private"}
              ]}',
              'repoi_live_file_views_pinned'),
