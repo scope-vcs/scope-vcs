@@ -105,23 +105,20 @@ pub(crate) async fn list_discussions(
         .transpose()
         .map_err(ApiError::bad_request)?
         .map(String::from);
-    let include_carried_line_anchors = match query.revision.as_deref() {
-        Some(revision_id)
-            if query.include_carried_line_anchors == Some(true) && commit_oid.is_none() =>
-        {
-            state
-                .metadata
-                .requests()
-                .latest_request_revision(&request.id)
-                .await?
-                .is_some_and(|latest| latest.id == revision_id)
-        }
-        _ => false,
-    };
     let snapshot_version = cursor
         .as_ref()
         .map(|cursor| cursor.snapshot_version)
         .unwrap_or(request.activity_version);
+    let include_carried_line_anchors = match query.revision.as_deref() {
+        Some(revision_id)
+            if query.include_carried_line_anchors == Some(true) && commit_oid.is_none() =>
+        {
+            request_anchor_projection::latest_revision_through(&state, &request, snapshot_version)
+                .await
+                .is_some_and(|latest| latest.id == revision_id)
+        }
+        _ => false,
+    };
     let batch = state
         .metadata
         .requests()
@@ -158,6 +155,7 @@ pub(crate) async fn list_discussions(
         state: &state,
         request: &request,
         repo: &repo,
+        through_position: snapshot_version,
     };
     let discussions = discussion_summaries(&projection, discussions, &batch.users).await?;
     Ok(Json(RequestDiscussionPageResponse {
@@ -409,6 +407,7 @@ pub(crate) async fn changed_discussions(
         state: &state,
         request: &request,
         repo: &repo,
+        through_position: request.activity_version,
     };
     let discussions = discussion_summaries(&projection, batch.discussions, &batch.users).await?;
     Ok(Json(RequestDiscussionChangesResponse {
@@ -601,6 +600,7 @@ struct DiscussionProjection<'a> {
     state: &'a AppState,
     request: &'a scope_domain::requests::Request,
     repo: &'a scope_domain::repository::access::RepositoryAccessContext,
+    through_position: u64,
 }
 
 async fn discussion_summaries(
@@ -612,6 +612,7 @@ async fn discussion_summaries(
         projection.state,
         projection.repo,
         projection.request,
+        projection.through_position,
         models.iter().map(|model| &model.discussion),
     )
     .await;

@@ -417,6 +417,7 @@ async fn load_discussion_result(
         state,
         &context.repo,
         &context.request,
+        context.request.activity_version,
         [&discussion.discussion],
     )
     .await;

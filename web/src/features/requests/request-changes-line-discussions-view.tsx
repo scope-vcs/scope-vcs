@@ -12,6 +12,7 @@ import {
   canStartLineDiscussion,
   extendLineSelection,
   lineDiscussionAnchor,
+  lineDiscussionDraftTarget,
   lineDiscussionsForFile,
   lineRangeLabel,
   type FileLineDiscussion,
@@ -97,6 +98,7 @@ export function useLineDiscussionAnnotations({
           label={lineRangeLabel(selection.lines)}
           onCancel={() => setDraft(null)}
           onSubmit={(body, submissionId) => submit(selection.lines, body, submissionId)}
+          target={lineDiscussionDraftTarget(lineDiscussionAnchor(comparison, selection.lines))}
         />
       ),
     } : null

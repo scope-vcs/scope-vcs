@@ -17,13 +17,16 @@ use scope_domain::{
         access::{RepositoryAccess, RepositoryAccessContext},
     },
     requests::{
-        Request, RequestDiffSide, RequestDiscussion, RequestDiscussionAnchor, RequestLinePosition,
-        RequestLineRange, RequestRevision, carry_forward_line_range,
+        Request, RequestDiffSide, RequestDiscussion, RequestDiscussionAnchor,
+        RequestDiscussionLines, RequestLinePosition, RequestRevision, carry_forward_line_range,
     },
     views::Views,
 };
 use scope_postgres::db::RepositoryReadPolicy;
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path as FsPath,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AnchorProjection {
@@ -46,16 +49,25 @@ impl AnchorProjection {
 
 pub(crate) type AnchorProjections = BTreeMap<String, AnchorProjection>;
 
-struct PathAnchor<'a> {
-    anchor: &'a RequestDiscussionAnchor,
-    path: &'a ScopePath,
-    carry_to: Option<&'a RequestRevision>,
+struct PathAnchor {
+    discussion_id: String,
+    range: RequestDiffRange,
+    path: ScopePath,
+    carried: Option<RequestDiscussionLines>,
+}
+
+struct CarriedAnchor {
+    discussion_id: String,
+    path: ScopePath,
+    lines: RequestDiscussionLines,
+    original: Option<String>,
 }
 
 pub(crate) async fn project_anchors<'a>(
     state: &AppState,
     repo: &RepositoryAccessContext,
     request: &Request,
+    through_position: u64,
     discussions: impl IntoIterator<Item = &'a RequestDiscussion>,
 ) -> AnchorProjections {
     let anchored = discussions
@@ -73,56 +85,148 @@ pub(crate) async fn project_anchors<'a>(
     )
     .await;
     let latest = if anchored.iter().any(|(_, anchor)| anchor.lines.is_some()) {
-        latest_revision(state, request).await
+        latest_revision_through(state, request, through_position).await
     } else {
         None
     };
     let full_view = repo.access.view == *repo.views.full();
-    let mut reader = None;
-    let mut projections = AnchorProjections::new();
-    for (discussion_id, anchor) in anchored {
-        let commit_visible = anchor.commit_oid.as_ref().is_none_or(|commit_oid| {
-            visible_commits.contains(&(anchor.revision_id.clone(), commit_oid.clone()))
-        });
-        let carry_to = latest
-            .as_ref()
-            .filter(|latest| anchor.lines.is_some() && latest.id != anchor.revision_id);
-        let inspected_path = anchor
-            .path
-            .as_ref()
-            .filter(|_| commit_visible && (!full_view || carry_to.is_some()));
-        let projection = match inspected_path {
-            Some(path) => {
-                if reader.is_none() {
-                    reader = repository_reader(state, repo, request).await;
-                }
-                match reader.as_ref() {
-                    Some(reader) => {
-                        let target = PathAnchor {
-                            anchor,
-                            path,
-                            carry_to,
-                        };
-                        project_path_anchor(state, reader, request, target).await
+    let (mut projections, inspections) = plan_inspections(
+        anchored,
+        &visible_commits,
+        latest.as_ref().map(|latest| latest.id.as_str()),
+        full_view,
+    );
+    if inspections.is_empty() {
+        return projections;
+    }
+    let Some(reader) = repository_reader(state, repo, request).await else {
+        for anchors in inspections.into_values() {
+            for anchor in anchors {
+                projections.insert(anchor.discussion_id, AnchorProjection::HIDDEN);
+            }
+        }
+        return projections;
+    };
+    let mut carried = Vec::new();
+    for (revision_id, anchors) in inspections {
+        let ids = anchors
+            .iter()
+            .map(|anchor| anchor.discussion_id.clone())
+            .collect::<Vec<_>>();
+        match inspect_revision_anchors(state, &reader, request, &revision_id, anchors).await {
+            Ok(inspected) => {
+                for (anchor, original) in inspected {
+                    let Some(original) = original else {
+                        projections.insert(anchor.discussion_id, AnchorProjection::HIDDEN);
+                        continue;
+                    };
+                    projections.insert(
+                        anchor.discussion_id.clone(),
+                        AnchorProjection {
+                            context_visible: true,
+                            latest: None,
+                        },
+                    );
+                    if let Some(lines) = anchor.carried {
+                        carried.push(CarriedAnchor {
+                            discussion_id: anchor.discussion_id,
+                            path: anchor.path,
+                            lines,
+                            original,
+                        });
                     }
-                    None => AnchorProjection::HIDDEN,
                 }
             }
-            None => AnchorProjection {
-                context_visible: commit_visible,
-                latest: None,
-            },
-        };
-        projections.insert(discussion_id.to_string(), projection);
+            Err(error) => {
+                tracing::warn!(
+                    request_id = %request.id,
+                    revision_id,
+                    error = ?error,
+                    "redacting discussion path anchors because request revision inspection failed"
+                );
+                for id in ids {
+                    projections.insert(id, AnchorProjection::HIDDEN);
+                }
+            }
+        }
+    }
+    if let (Some(latest), false) = (latest, carried.is_empty()) {
+        match carry_to_latest(state, &reader, request, &latest, carried).await {
+            Ok(positions) => {
+                for (discussion_id, position) in positions {
+                    if let Some(projection) = projections.get_mut(&discussion_id) {
+                        projection.latest = Some(LatestAnchorPosition {
+                            revision_id: latest.id.clone(),
+                            position,
+                        });
+                    }
+                }
+            }
+            Err(error) => tracing::warn!(
+                request_id = %request.id,
+                revision_id = latest.id,
+                error = ?error,
+                "omitting discussion anchor latest positions because request revision inspection failed"
+            ),
+        }
     }
     projections
 }
 
-async fn latest_revision(state: &AppState, request: &Request) -> Option<RequestRevision> {
+type InspectionPlan = (AnchorProjections, BTreeMap<String, Vec<PathAnchor>>);
+
+fn plan_inspections(
+    anchored: Vec<(&str, &RequestDiscussionAnchor)>,
+    visible_commits: &BTreeSet<(String, String)>,
+    latest_revision_id: Option<&str>,
+    full_view: bool,
+) -> InspectionPlan {
+    let mut projections = AnchorProjections::new();
+    let mut inspections = BTreeMap::<String, Vec<PathAnchor>>::new();
+    for (discussion_id, anchor) in anchored {
+        let commit_visible = anchor.commit_oid.as_ref().is_none_or(|commit_oid| {
+            visible_commits.contains(&(anchor.revision_id.clone(), commit_oid.clone()))
+        });
+        let carried = anchor
+            .lines
+            .filter(|_| latest_revision_id.is_some_and(|latest| latest != anchor.revision_id));
+        match anchor
+            .path
+            .as_ref()
+            .filter(|_| commit_visible && (!full_view || carried.is_some()))
+        {
+            Some(path) => inspections
+                .entry(anchor.revision_id.clone())
+                .or_default()
+                .push(PathAnchor {
+                    discussion_id: discussion_id.to_string(),
+                    range: RequestDiffRange::of_anchor(anchor),
+                    path: path.clone(),
+                    carried,
+                }),
+            None => {
+                projections.insert(
+                    discussion_id.to_string(),
+                    AnchorProjection {
+                        context_visible: commit_visible,
+                        latest: None,
+                    },
+                );
+            }
+        }
+    }
+    (projections, inspections)
+}
+
+pub(crate) async fn latest_revision_through(
+    state: &AppState,
+    request: &Request,
+    through_position: u64,
+) -> Option<RequestRevision> {
     match state
         .metadata
         .requests()
-        .latest_request_revision(&request.id)
+        .latest_request_revision_through(&request.id, through_position)
         .await
     {
         Ok(revision) => revision,
@@ -160,168 +264,120 @@ async fn repository_reader(
     }
 }
 
-async fn project_path_anchor(
+type InspectedAnchor = (PathAnchor, Option<Option<String>>);
+
+async fn inspect_revision_anchors(
     state: &AppState,
     reader: &RepositoryReadPolicy,
     request: &Request,
-    target: PathAnchor<'_>,
-) -> AnchorProjection {
-    let PathAnchor {
-        anchor,
-        path,
-        carry_to,
-    } = target;
-    let carried = carry_to.zip(anchor.lines);
-    let original = match anchor_side(
-        state,
-        reader,
-        request,
-        anchor,
-        path,
-        carried.map(|(_, lines)| lines.side),
-    )
-    .await
-    {
-        Ok(Some(original)) => original,
-        Ok(None) => return AnchorProjection::HIDDEN,
-        Err(error) => {
-            tracing::warn!(
-                request_id = %request.id,
-                revision_id = anchor.revision_id,
-                error = ?error,
-                "redacting a discussion path anchor because request revision inspection failed"
-            );
-            return AnchorProjection::HIDDEN;
-        }
-    };
-    let Some((latest, lines)) = carried else {
-        return AnchorProjection {
-            context_visible: true,
-            latest: None,
-        };
-    };
-    let position = read_side(
-        state,
-        reader,
-        request,
-        latest,
-        SideSelection {
-            range: RequestDiffRange::Request,
-            path: path.clone(),
-            side: Some(lines.side),
-        },
-        move |newer| carry_forward(lines.range, original, newer),
-    )
-    .await;
-    let latest_position = match position {
-        Ok(position) => Some(LatestAnchorPosition {
-            revision_id: latest.id.clone(),
-            position,
-        }),
-        Err(error) => {
-            tracing::warn!(
-                request_id = %request.id,
-                revision_id = latest.id,
-                error = ?error,
-                "omitting a discussion anchor latest position because request revision inspection failed"
-            );
-            None
-        }
-    };
-    AnchorProjection {
-        context_visible: true,
-        latest: latest_position,
-    }
-}
-
-struct SideContent {
-    text: Option<String>,
-}
-
-fn carry_forward(
-    range: RequestLineRange,
-    original: SideContent,
-    newer: Option<SideContent>,
-) -> RequestLinePosition {
-    match (original.text, newer) {
-        (Some(original), Some(newer)) => {
-            carry_forward_line_range(range, &original, newer.text.as_deref())
-        }
-        _ => RequestLinePosition::Outdated,
-    }
-}
-
-async fn anchor_side(
-    state: &AppState,
-    reader: &RepositoryReadPolicy,
-    request: &Request,
-    anchor: &RequestDiscussionAnchor,
-    path: &ScopePath,
-    side: Option<RequestDiffSide>,
-) -> Result<Option<SideContent>, ApiError> {
+    revision_id: &str,
+    anchors: Vec<PathAnchor>,
+) -> Result<Vec<InspectedAnchor>, ApiError> {
     let revision = state
         .metadata
         .requests()
-        .request_revision(&request.id, &anchor.revision_id)
+        .request_revision(&request.id, revision_id)
         .await?
         .ok_or_else(|| ApiError::not_found("request revision not found"))?;
-    let selection = SideSelection {
-        range: RequestDiffRange::of_anchor(anchor),
-        path: path.clone(),
-        side,
-    };
-    read_side(state, reader, request, &revision, selection, |side| side).await
-}
-
-struct SideSelection {
-    range: RequestDiffRange,
-    path: ScopePath,
-    side: Option<RequestDiffSide>,
-}
-
-async fn read_side<T: Send + 'static>(
-    state: &AppState,
-    reader: &RepositoryReadPolicy,
-    request: &Request,
-    revision: &RequestRevision,
-    selection: SideSelection,
-    finish: impl FnOnce(Option<SideContent>) -> T + Send + 'static,
-) -> Result<T, ApiError> {
     let inspection_state = state.clone();
     let reader = reader.clone();
     with_request_revision_store_repo(
         state,
         &reader.context.incarnation(),
         request,
-        revision,
+        &revision,
         move |raw_repo, revision| {
-            let access = reader.context.access.clone();
-            let Some(file) = request_diff_file(
-                &inspection_state,
-                &reader,
-                &access,
-                raw_repo,
-                revision,
-                &selection.range,
-                &selection.path,
-            )?
-            else {
-                return Ok(finish(None));
-            };
-            let text = match selection
-                .side
-                .and_then(|side| request_diff_side_oid(&file, side))
-            {
-                Some(oid) => match request_blob_content(raw_repo, oid)? {
-                    RequestBlobContent::Text(text) => Some(text),
-                    RequestBlobContent::Binary { .. } => None,
-                },
-                None => None,
-            };
-            Ok(finish(Some(SideContent { text })))
+            anchors
+                .into_iter()
+                .map(|anchor| {
+                    let side = anchor.carried.map(|lines| lines.side);
+                    let original = side_text(
+                        &inspection_state,
+                        &reader,
+                        raw_repo,
+                        revision,
+                        (&anchor.range, &anchor.path, side),
+                    )?;
+                    Ok((anchor, original))
+                })
+                .collect()
         },
     )
     .await
+}
+
+async fn carry_to_latest(
+    state: &AppState,
+    reader: &RepositoryReadPolicy,
+    request: &Request,
+    latest: &RequestRevision,
+    anchors: Vec<CarriedAnchor>,
+) -> Result<Vec<(String, RequestLinePosition)>, ApiError> {
+    let inspection_state = state.clone();
+    let reader = reader.clone();
+    with_request_revision_store_repo(
+        state,
+        &reader.context.incarnation(),
+        request,
+        latest,
+        move |raw_repo, revision| {
+            anchors
+                .into_iter()
+                .map(|anchor| {
+                    let newer = side_text(
+                        &inspection_state,
+                        &reader,
+                        raw_repo,
+                        revision,
+                        (
+                            &RequestDiffRange::Request,
+                            &anchor.path,
+                            Some(anchor.lines.side),
+                        ),
+                    )?;
+                    let position = match (anchor.original, newer) {
+                        (Some(original), Some(newer)) => carry_forward_line_range(
+                            anchor.lines.range,
+                            &original,
+                            newer.as_deref(),
+                        ),
+                        _ => RequestLinePosition::Outdated,
+                    };
+                    Ok((anchor.discussion_id, position))
+                })
+                .collect()
+        },
+    )
+    .await
+}
+
+fn side_text(
+    state: &AppState,
+    reader: &RepositoryReadPolicy,
+    raw_repo: &FsPath,
+    revision: &RequestRevision,
+    (range, path, side): (&RequestDiffRange, &ScopePath, Option<RequestDiffSide>),
+) -> Result<Option<Option<String>>, ApiError> {
+    let Some(file) = request_diff_file(
+        state,
+        reader,
+        &reader.context.access,
+        raw_repo,
+        revision,
+        range,
+        path,
+    )?
+    else {
+        return Ok(None);
+    };
+    let text = match side.and_then(|side| request_diff_side_oid(&file, side)) {
+        Some(oid) => match request_blob_content(raw_repo, oid)? {
+            RequestBlobContent::Text(text) => Some(text),
+            RequestBlobContent::Binary { .. } => None,
+        },
+        None => None,
+    };
+    Ok(Some(text))
 }
 
 async fn visible_commits<'a>(
@@ -480,3 +536,6 @@ async fn visible_commits_in_revision(
     )
     .await
 }
+
+#[cfg(test)]
+mod tests;

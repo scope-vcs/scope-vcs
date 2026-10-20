@@ -34,8 +34,17 @@ export function diffLineAt(target: EventTarget | null): ReviewDiffLine | null {
   if (!cell || !Number.isSafeInteger(line) || line < 1) return null
   return {
     line,
-    side: cell.getAttribute('data-line-type') === 'change-deletion' ? 'old' : 'new',
+    side: diffLineSide(
+      cell.getAttribute('data-line-type'),
+      cell.closest('[data-code]')?.hasAttribute('data-deletions') ?? false,
+    ),
   }
+}
+
+export function diffLineSide(lineType: string | null, inDeletionsColumn: boolean): RequestDiffSide {
+  if (lineType === 'change-deletion') return 'old'
+  if (lineType === 'change-addition') return 'new'
+  return inDeletionsColumn ? 'old' : 'new'
 }
 
 export function syncDiffAnnotationRows(root: ParentNode, lines: ReviewDiffLine[]) {

@@ -178,7 +178,7 @@ async fn line_anchors_validate_against_the_request_diff_and_follow_the_latest_re
         ["deleted", "edited", "kept", "plain"]
     );
     let timeline = api_request(
-        app,
+        app.clone(),
         "GET",
         &format!("{route}/timeline"),
         Some(&bearer),
@@ -210,4 +210,29 @@ async fn line_anchors_validate_against_the_request_diff_and_follow_the_latest_re
             "{client_id}"
         );
     }
+
+    let page = |query: String| {
+        let app = app.clone();
+        let bearer = bearer.clone();
+        let uri = format!("{timeline_route}?{query}");
+        async move { response_json(api_request(app, "GET", &uri, Some(&bearer), None).await).await }
+    };
+    let first_page = page("limit=2".to_string()).await;
+    let cursor = first_page["next_cursor"].as_str().unwrap().to_string();
+    push(
+        &[("notes.txt", Some("third\nnew\nnew\na\nb\nc\nd\nE\n"))],
+        "third revision",
+    );
+    let later_page = page(format!("limit=10&cursor={cursor}")).await;
+    let carried_revisions = later_page["discussions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|discussion| discussion["anchor"]["latest"]["revision_id"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        carried_revisions,
+        vec![serde_json::json!(second_revision); 3],
+        "pages of one snapshot project onto the revision that was latest at that snapshot"
+    );
 }

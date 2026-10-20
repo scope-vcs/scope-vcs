@@ -1,7 +1,7 @@
 export type RequestAttachmentDraftTarget =
   | 'description'
   | 'discussion'
-  | 'line-discussion'
+  | `line-discussion:${string}`
   | `reply:${string}`
 
 type RequestAttachmentDraftScope = {

@@ -1,4 +1,8 @@
-use super::{entities, integer_columns::i64_to_u64, object_references::replace_object_reference};
+use super::{
+    entities,
+    integer_columns::{i64_to_u64, u64_to_i64},
+    object_references::replace_object_reference,
+};
 use crate::error::PostgresError;
 use scope_domain::requests::RequestRevision;
 use sea_orm::{
@@ -33,6 +37,28 @@ where
 {
     entities::request_revision::Entity::find()
         .filter(entities::request_revision::Column::RequestId.eq(request_id))
+        .order_by_desc(entities::request_revision::Column::Position)
+        .order_by_desc(entities::request_revision::Column::Id)
+        .one(conn)
+        .await?
+        .map(entities::request_revision::Model::try_into_domain)
+        .transpose()
+}
+
+pub async fn latest_revision_through<C>(
+    conn: &C,
+    request_id: &str,
+    through_position: u64,
+) -> Result<Option<RequestRevision>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    entities::request_revision::Entity::find()
+        .filter(entities::request_revision::Column::RequestId.eq(request_id))
+        .filter(
+            entities::request_revision::Column::Position
+                .lte(u64_to_i64(through_position, "request revision position")?),
+        )
         .order_by_desc(entities::request_revision::Column::Position)
         .order_by_desc(entities::request_revision::Column::Id)
         .one(conn)

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { Worker } from 'node:worker_threads'
 import { REVIEW_FILE_DIFF_RENDER_BUDGET } from './review-file-diff-render-contract'
-import { renderedDiffLines } from './review-file-diff-lines'
+import { diffLineSide, renderedDiffLines } from './review-file-diff-lines'
 import { runReviewFileDiffWorker } from './review-file-diff-worker-pool'
 
 test('rendered diff lines follow each side of the prerendered diff, including context and hidden ranges', async () => {
@@ -30,4 +30,11 @@ test('rendered diff lines follow each side of the prerendered diff, including co
   const lines = renderedDiffLines(result.html)
   assert.deepEqual([...lines.old].sort((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14, 15, 16])
   assert.deepEqual([...lines.new].sort((a, b) => a - b), [1, 2, 3, 4, 5, 6, 7, 11, 12, 13, 14, 15, 16, 17])
+})
+
+test('a clicked line number takes its side from the row type, and context rows from their code column', () => {
+  assert.equal(diffLineSide('change-deletion', false), 'old')
+  assert.equal(diffLineSide('change-addition', true), 'new')
+  assert.equal(diffLineSide('context', true), 'old')
+  assert.equal(diffLineSide('context', false), 'new')
 })

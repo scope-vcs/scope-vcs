@@ -2,8 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestDiscussionAnchor } from '@/api/types.generated'
 import {
+  beginRequestAttachmentSubmission,
+  finishRequestAttachmentSubmission,
+  requestAttachmentDraftKey,
+} from './request-attachment-drafts'
+import {
   extendLineSelection,
   lineDiscussionAnchor,
+  lineDiscussionDraftTarget,
   lineDiscussionsForFile,
   type LineDiscussionComparison,
 } from './request-changes-line-discussions'
@@ -92,3 +98,28 @@ function anchor(overrides: Partial<RequestDiscussionAnchor>): RequestDiscussionA
     ...overrides,
   }
 }
+
+test('each line range keeps its own draft, so a retried submission id never moves to another line', () => {
+  const draftKey = (lines: { side: 'old' | 'new'; start_line: number; end_line: number }) => requestAttachmentDraftKey({
+    accessScope: 'scope',
+    repoId: 'repo',
+    requestId: 'request',
+    target: lineDiscussionDraftTarget(lineDiscussionAnchor(requestLayer, lines)),
+    viewerId: 'viewer',
+  })
+  const first = draftKey({ side: 'new', start_line: 3, end_line: 3 })
+  const firstId = beginRequestAttachmentSubmission(first, 'Same body')
+  assert.ok(firstId)
+  finishRequestAttachmentSubmission(firstId, false)
+  assert.equal(beginRequestAttachmentSubmission(first, 'Same body'), firstId)
+  finishRequestAttachmentSubmission(firstId, false)
+  for (const lines of [
+    { side: 'new', start_line: 4, end_line: 4 },
+    { side: 'old', start_line: 3, end_line: 3 },
+    { side: 'new', start_line: 2, end_line: 3 },
+  ] as const) {
+    const other = beginRequestAttachmentSubmission(draftKey(lines), 'Same body')
+    assert.ok(other)
+    assert.notEqual(other, firstId)
+  }
+})

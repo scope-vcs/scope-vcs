@@ -5,6 +5,7 @@ import type {
 } from '@/api/types.generated'
 import { displayRouteFilePath } from '../../lib/route-file'
 import type { ReviewDiffLine, ReviewDiffRenderedLines } from '../review/review-file-diff-lines'
+import type { RequestAttachmentDraftTarget } from './request-attachment-drafts'
 import type { RequestDiscussion } from './request-discussion-types'
 
 export type LineDiscussionComparison = {
@@ -102,6 +103,17 @@ export function lineDiscussionAnchor(
     path: comparison.path,
     revision_id: comparison.revisionId,
   }
+}
+
+export function lineDiscussionDraftTarget(anchor: RequestDiscussionAnchorInput): RequestAttachmentDraftTarget {
+  return `line-discussion:${JSON.stringify([
+    anchor.revision_id,
+    anchor.commit_oid,
+    anchor.path,
+    anchor.lines?.side,
+    anchor.lines?.start_line,
+    anchor.lines?.end_line,
+  ])}`
 }
 
 export function lineRangeLabel(lines: RequestDiscussionLineRange) {

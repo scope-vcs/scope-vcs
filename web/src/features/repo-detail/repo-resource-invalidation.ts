@@ -71,6 +71,7 @@ export function invalidateRepoResources(
     requestRatingsResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
   } else if (typeof event.kind === 'object' && 'RequestStateChanged' in event.kind) {
     refreshRequestState(scope, event.kind.RequestStateChanged.request_id)
+    refreshRequestDiscussionReferences(scope, event.kind.RequestStateChanged.request_id)
     if (!summaryPending) invalidateRequestQueues(scope)
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)
