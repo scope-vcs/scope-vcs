@@ -16,7 +16,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 const SELECT_PULL_REQUEST: &str = "request_id, repo_id, installation_id, github_repository_id, \
     github_full_name, intent, intent_base, intent_head_oid, intent_sequence, number, url, base, \
-    state, commented_head_oid, job_state, attempts, last_error";
+    state, commented_head_oid, job_state, attempts, last_error, written_text_sha256";
 
 const REQUEUE: &str = "intent_sequence = pull_request.intent_sequence + 1,
     job_state = CASE WHEN pull_request.job_state = 'running' THEN 'running' ELSE 'queued' END,
@@ -43,6 +43,7 @@ struct PullRequestRow {
     job_state: String,
     attempts: i32,
     last_error: Option<String>,
+    written_text_sha256: Option<String>,
 }
 
 impl RequestStore {
@@ -127,6 +128,11 @@ impl RequestStore {
                 "GitHub repository id",
             )?
             .into(),
+            progress
+                .pull_request
+                .as_ref()
+                .and_then(|opened| opened.written_text.clone())
+                .into(),
         ]);
         let finished = self
             .db
@@ -134,6 +140,7 @@ impl RequestStore {
                 DatabaseBackend::Postgres,
                 format!(
                     "UPDATE scope_github_pull_requests pull_request SET {RECORDED},
+                        written_text_sha256 = $15,
                         job_state = CASE WHEN intent_sequence <> $8 THEN 'queued' ELSE $9 END,
                         attempts = CASE WHEN intent_sequence <> $8 THEN 0 ELSE attempts END,
                         next_attempt_at_unix = CASE WHEN intent_sequence <> $8 THEN $12
@@ -259,6 +266,8 @@ pub(super) async fn queue_carrier_for_pushed_head<C: ConnectionTrait>(
                 state = CASE WHEN {SAME_REPOSITORY} THEN pull_request.state END,
                 commented_head_oid = CASE WHEN {SAME_REPOSITORY}
                     THEN pull_request.commented_head_oid END,
+                written_text_sha256 = CASE WHEN {SAME_REPOSITORY}
+                    THEN pull_request.written_text_sha256 END,
                 intent = 'open', intent_base = EXCLUDED.intent_base,
                 intent_head_oid = EXCLUDED.intent_head_oid,
                 next_attempt_at_unix = EXCLUDED.next_attempt_at_unix,
@@ -321,6 +330,47 @@ pub(super) async fn queue_carriers_for_repository<C: ConnectionTrait>(
     Ok(())
 }
 
+pub(super) async fn queue_carriers_after_parent_ended<C: ConnectionTrait>(
+    conn: &C,
+    parent: &Request,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    for child in super::request_stack::children(conn, &parent.id).await? {
+        if let Some(GitHubPullRequest {
+            intent: GitHubPullRequestIntent::Open { head_oid, .. },
+            ..
+        }) = github_pull_request(conn, &child.id).await?
+        {
+            queue_carrier_for_pushed_head(conn, &child.id, &head_oid, now_unix).await?;
+        }
+    }
+    Ok(())
+}
+
+pub(super) async fn requeue_carrier<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "UPDATE scope_github_pull_requests pull_request SET
+                next_attempt_at_unix = CASE WHEN pull_request.job_state = 'running'
+                    THEN pull_request.next_attempt_at_unix ELSE $2 END,
+                updated_at_unix = greatest($2, pull_request.updated_at_unix),
+                {REQUEUE}
+              WHERE request_id = $1 AND intent = 'open'"
+        ),
+        [
+            request_id.into(),
+            u64_to_i64(now_unix, "GitHub pull request time")?.into(),
+        ],
+    ))
+    .await?;
+    Ok(())
+}
+
 pub(super) async fn queue_carrier_close<C: ConnectionTrait>(
     conn: &C,
     request: &Request,
@@ -371,6 +421,7 @@ impl PullRequestRow {
                 url,
                 base,
                 state: decode_enum(state)?,
+                written_text: self.written_text_sha256,
             }),
             (None, None, None, None) => None,
             _ => {

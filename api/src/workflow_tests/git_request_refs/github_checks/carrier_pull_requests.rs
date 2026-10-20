@@ -44,6 +44,20 @@ async fn close_request(request: &OwnerRequest) {
     assert_eq!(closed.status(), StatusCode::OK);
 }
 
+async fn retitle(request: &OwnerRequest, title: &str, description: &str) {
+    let edited = api_request(
+        router(request.state.clone()),
+        "PATCH",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{}", request.request_id),
+        Some(&bearer_header()),
+        Some(
+            &serde_json::json!({ "title": title, "description_markdown": description }).to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(edited.status(), StatusCode::OK);
+}
+
 async fn revise(request: &OwnerRequest, contents: &str) {
     push_change(
         &request.source,
@@ -294,4 +308,40 @@ async fn a_private_request_gets_no_pull_request_when_github_turned_public_before
         request.checks().await["private_request_on_public_github"],
         true
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn editing_the_request_rewrites_the_title_and_body_scope_wrote() {
+    let request = opted_in_request("carrier-retitled").await;
+    let (state, fake) = (&request.state, &request.fake);
+    push_pass(state, unix_now()).await;
+    pull_request_pass(state).await;
+
+    retitle(&request, "Parser fix, take two", "Now with tests.").await;
+    assert_eq!(pull_request_pass(state).await, 1);
+    let pull = fake.pulls.pull(1);
+    assert_eq!(pull["title"], "Parser fix, take two");
+    let body = pull["body"].as_str().unwrap();
+    assert!(
+        body.starts_with("Review copy of [this Scope request]("),
+        "{body}"
+    );
+    assert!(body.ends_with("\n\nNow with tests."), "{body}");
+    assert_eq!(pull_request_pass(state).await, 0);
+    assert_eq!(comments(fake).len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_adopted_pull_request_keeps_the_title_and_body_its_author_wrote() {
+    let request = opted_in_request("carrier-adopted-text").await;
+    let (state, fake) = (&request.state, &request.fake);
+    let adopted = fake.pulls.open(&request.branch(), "main");
+    fake.pulls.pulls.lock().unwrap()[0]["title"] = "Written by hand".into();
+    push_pass(state, unix_now()).await;
+    pull_request_pass(state).await;
+
+    retitle(&request, "Scope title", "Scope description").await;
+    pull_request_pass(state).await;
+    assert_eq!(fake.pulls.pull(adopted)["title"], "Written by hand");
+    assert_eq!(fake.pulls.pull(adopted)["body"], "");
 }

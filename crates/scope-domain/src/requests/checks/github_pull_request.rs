@@ -5,6 +5,7 @@ use crate::{
     views::Views,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 const MAIN_BRANCH: &str = "main";
 
@@ -23,6 +24,7 @@ pub struct OpenedGitHubPullRequest {
     pub url: String,
     pub base: String,
     pub state: GitHubPullRequestState,
+    pub written_text: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,6 +60,7 @@ pub struct GitHubPullRequest {
 pub enum GitHubPullRequestStep {
     OpenOrAdopt { base: String },
     Retarget { number: u64, base: String },
+    UpdateText { number: u64, text: String },
     Comment { number: u64, head_oid: String },
     Close { number: u64 },
 }
@@ -135,6 +138,14 @@ pub fn review_request_comment_body(comment: &str, head_oid: &str) -> String {
     format!("{comment}\n\n{}", review_request_marker(head_oid))
 }
 
+pub fn carrier_text_digest(title: &str, body: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(title.as_bytes());
+    digest.update([0]);
+    digest.update(body.as_bytes());
+    hex::encode(digest.finalize())
+}
+
 pub fn closes_carrier_pull_request(request: &Request) -> bool {
     matches!(request.state(), RequestState::Closed | RequestState::Merged)
 }
@@ -147,6 +158,7 @@ impl GitHubPullRequest {
     pub fn next_step(
         &self,
         review_bots: &GitHubReviewBotSettings,
+        text: Option<&str>,
     ) -> Option<GitHubPullRequestStep> {
         let opened = self.pull_request.as_ref();
         match &self.intent {
@@ -154,10 +166,21 @@ impl GitHubPullRequest {
             GitHubPullRequestIntent::Open { base, head_oid } => match opened {
                 Some(opened) if opened.state == GitHubPullRequestState::ClosedOnGitHub => None,
                 Some(opened) if opened.state == GitHubPullRequestState::Open => {
+                    let stale_text = text.filter(|text| {
+                        opened
+                            .written_text
+                            .as_deref()
+                            .is_some_and(|written| written != *text)
+                    });
                     if &opened.base != base {
                         Some(GitHubPullRequestStep::Retarget {
                             number: opened.number,
                             base: base.clone(),
+                        })
+                    } else if let Some(text) = stale_text {
+                        Some(GitHubPullRequestStep::UpdateText {
+                            number: opened.number,
+                            text: text.to_string(),
                         })
                     } else if review_bots.review_request_comment.is_some()
                         && self.commented_head_oid.as_ref() != Some(head_oid)
@@ -180,7 +203,13 @@ impl GitHubPullRequest {
         }
     }
 
-    pub fn record_opened(&mut self, number: u64, url: String, base: String) {
+    pub fn record_opened(
+        &mut self,
+        number: u64,
+        url: String,
+        base: String,
+        written_text: Option<String>,
+    ) {
         if self.pull_request.as_ref().map(|opened| opened.number) != Some(number) {
             self.commented_head_oid = None;
         }
@@ -189,7 +218,14 @@ impl GitHubPullRequest {
             url,
             base,
             state: GitHubPullRequestState::Open,
+            written_text,
         });
+    }
+
+    pub fn record_text_written(&mut self, text: String) {
+        if let Some(opened) = &mut self.pull_request {
+            opened.written_text = Some(text);
+        }
     }
 
     pub fn record_retargeted(&mut self, base: String) {
@@ -209,7 +245,10 @@ impl GitHubPullRequest {
     }
 
     pub fn observe(&mut self, observation: GitHubPullRequestObservation) {
-        let closing = self.intent == GitHubPullRequestIntent::Close;
+        let moving_base = match &self.intent {
+            GitHubPullRequestIntent::Close => true,
+            GitHubPullRequestIntent::Open { base, .. } => base != &observation.base,
+        };
         let Some(opened) = self
             .pull_request
             .as_mut()
@@ -221,7 +260,7 @@ impl GitHubPullRequest {
         opened.base = observation.base;
         opened.state = if observation.open {
             GitHubPullRequestState::Open
-        } else if observation.closed_by_scope || closing {
+        } else if observation.closed_by_scope || moving_base {
             GitHubPullRequestState::Closed
         } else {
             GitHubPullRequestState::ClosedOnGitHub

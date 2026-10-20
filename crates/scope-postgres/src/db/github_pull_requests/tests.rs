@@ -145,6 +145,7 @@ async fn a_pushed_head_queues_one_carrier_and_the_newest_intent_wins_over_a_runn
         5,
         "https://github.com/octo/checks/pull/5".into(),
         "main".into(),
+        None,
     );
     assert!(
         store
@@ -241,6 +242,7 @@ async fn ending_a_request_turns_its_carrier_intent_into_a_close() {
         5,
         "https://github.com/octo/checks/pull/5".into(),
         "main".into(),
+        None,
     );
     store
         .requests()
@@ -282,6 +284,7 @@ async fn a_claim_for_the_old_repository_cannot_record_its_pull_request_after_a_r
         5,
         "https://github.com/octo/checks-42/pull/5".into(),
         "main".into(),
+        None,
     );
     assert!(
         !store
@@ -305,6 +308,7 @@ async fn opened_carrier(store: &MetadataStore) {
         5,
         "https://github.com/octo/checks-42/pull/5".into(),
         "main".into(),
+        None,
     );
     opened.record_commented(oid('a'));
     store

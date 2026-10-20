@@ -165,6 +165,11 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                     if let Some(base) = body.get("base") {
                         pull["base"]["ref"] = base.clone();
                     }
+                    for field in ["title", "body"] {
+                        if let Some(value) = body.get(field) {
+                            pull[field] = value.clone();
+                        }
+                    }
                     Json(pull.clone()).into_response()
                 },
             ),

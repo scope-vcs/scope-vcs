@@ -18,9 +18,9 @@ use scope_domain::{
         GitHubConnection, GitHubReviewBotSettings, PRIVATE_REQUESTS_WITHHELD_MESSAGE,
     },
     requests::{
-        GitHubPullRequest, GitHubPullRequestObservation, GitHubPullRequestStep,
-        carries_private_request, github_retry_at, may_carry_on_github, review_request_comment_body,
-        review_request_marker,
+        GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestObservation,
+        GitHubPullRequestStep, carrier_text_digest, carries_private_request, github_retry_at,
+        may_carry_on_github, review_request_comment_body, review_request_marker,
     },
 };
 use scope_postgres::db::GitHubJobOutcome;
@@ -110,9 +110,16 @@ async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<()
         .map(|connection| connection.review_bots.clone())
         .unwrap_or_default();
     refresh_from_github(&app, carrier).await?;
+    let text = match &carrier.intent {
+        GitHubPullRequestIntent::Open { .. } if review_bots.open_pull_requests => {
+            Some(pull_request_text(state, carrier).await?)
+        }
+        _ => None,
+    };
     let mut checked_visibility = false;
     for _ in 0..MAX_STEPS {
-        let Some(step) = carrier.next_step(&review_bots) else {
+        let digest = text.as_ref().map(|text| text.digest.as_str());
+        let Some(step) = carrier.next_step(&review_bots, digest) else {
             return Ok(());
         };
         if !checked_visibility && !matches!(step, GitHubPullRequestStep::Close { .. }) {
@@ -124,7 +131,7 @@ async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<()
             ensure_may_carry(state, carrier, connection).await?;
             checked_visibility = true;
         }
-        take_step(state, &app, carrier, step, &review_bots).await?;
+        take_step(&app, carrier, step, &review_bots, text.as_ref()).await?;
     }
     Ok(())
 }
@@ -183,12 +190,17 @@ async fn ensure_may_carry(
 }
 
 async fn take_step(
-    state: &AppState,
     app: &GitHubApp,
     carrier: &mut GitHubPullRequest,
     step: GitHubPullRequestStep,
     review_bots: &GitHubReviewBotSettings,
+    text: Option<&CarrierText>,
 ) -> Result<(), JobFailure> {
+    let text = || {
+        text.ok_or_else(|| {
+            JobFailure::GiveUp("Scope could not prepare the pull request text.".to_string())
+        })
+    };
     let destination = &carrier.destination;
     let (installation_id, full_name) = (
         destination.installation_id,
@@ -197,28 +209,45 @@ async fn take_step(
     match step {
         GitHubPullRequestStep::OpenOrAdopt { base } => {
             let head = carrier.branch().name();
-            let opened = match app
+            match app
                 .open_pull_request_for_head(installation_id, &full_name, &head)
                 .await
                 .map_err(call_failure)?
             {
-                Some(adopted) => adopted,
-                None => {
-                    let (title, body) = pull_request_text(state, carrier).await?;
-                    app.create_pull_request(
-                        installation_id,
-                        &full_name,
-                        &head,
-                        &base,
-                        &title,
-                        &body,
-                    )
-                    .await
-                    .map_err(call_failure)?
+                Some(GitHubPullRequestRecord { number, url, base }) => {
+                    carrier.record_opened(number, url, base, None);
                 }
-            };
-            let GitHubPullRequestRecord { number, url, base } = opened;
-            carrier.record_opened(number, url, base);
+                None => {
+                    let text = text()?;
+                    let GitHubPullRequestRecord { number, url, base } = app
+                        .create_pull_request(
+                            installation_id,
+                            &full_name,
+                            &head,
+                            &base,
+                            &text.title,
+                            &text.body,
+                        )
+                        .await
+                        .map_err(call_failure)?;
+                    carrier.record_opened(number, url, base, Some(text.digest.clone()));
+                }
+            }
+        }
+        GitHubPullRequestStep::UpdateText {
+            number,
+            text: digest,
+        } => {
+            let text = text()?;
+            app.update_pull_request(
+                installation_id,
+                &full_name,
+                number,
+                serde_json::json!({ "title": text.title, "body": text.body }),
+            )
+            .await
+            .map_err(call_failure)?;
+            carrier.record_text_written(digest);
         }
         GitHubPullRequestStep::Retarget { number, base } => {
             let updated = app
@@ -284,10 +313,16 @@ async fn take_step(
     Ok(())
 }
 
+struct CarrierText {
+    title: String,
+    body: String,
+    digest: String,
+}
+
 async fn pull_request_text(
     state: &AppState,
     carrier: &GitHubPullRequest,
-) -> Result<(String, String), JobFailure> {
+) -> Result<CarrierText, JobFailure> {
     let gone = || JobFailure::GiveUp("Scope no longer has this request.".to_string());
     let request = state
         .metadata
@@ -311,7 +346,11 @@ async fn pull_request_text(
     } else {
         format!("{link}\n\n{}", request.description_markdown)
     };
-    Ok((request.title, body))
+    Ok(CarrierText {
+        digest: carrier_text_digest(&request.title, &body),
+        title: request.title,
+        body,
+    })
 }
 
 fn call_failure(error: PullRequestCallError) -> JobFailure {

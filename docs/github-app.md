@@ -304,7 +304,14 @@ close with their requests.
 
 After each successful push of a request head, Scope looks for an open pull
 request from that branch in the same repository and adopts it, or creates
-one. It moves the base when a stacked request's parent is gone. When the
+one. When a pull request Scope created gets out of step with the request's
+title or description, Scope rewrites its title and body; it never rewrites
+an adopted pull request's text. When a stacked request's parent closes or
+merges, the same transaction requeues each open child's carrier to move it
+onto `main`. If GitHub closes the child's pull request first, because Scope
+deleted the parent's branch, that close happened while Scope was moving the
+base, so it counts as Scope's and the next run opens a new pull request
+against `main`. When the
 repository sets a **Review request comment**, up to 500 characters, Scope
 posts it once per pushed head: after opening the pull request and after each
 later head. Some bots review only when asked, so this is where a mention

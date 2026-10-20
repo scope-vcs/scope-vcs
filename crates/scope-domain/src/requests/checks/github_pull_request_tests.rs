@@ -157,7 +157,7 @@ fn an_open_intent_opens_retargets_then_comments_once_per_head() {
     let silent = &settings(true, None);
     let mut carrier = carrier(open_intent("main"));
     assert_eq!(
-        carrier.next_step(comment),
+        carrier.next_step(comment, None),
         Some(GitHubPullRequestStep::OpenOrAdopt {
             base: "main".into()
         })
@@ -166,32 +166,33 @@ fn an_open_intent_opens_retargets_then_comments_once_per_head() {
         5,
         "https://github.com/octo/repo/pull/5".into(),
         "other".into(),
+        None,
     );
     assert_eq!(
-        carrier.next_step(comment),
+        carrier.next_step(comment, None),
         Some(GitHubPullRequestStep::Retarget {
             number: 5,
             base: "main".into()
         })
     );
     carrier.record_retargeted("main".into());
-    assert_eq!(carrier.next_step(silent), None);
+    assert_eq!(carrier.next_step(silent, None), None);
     assert_eq!(
-        carrier.next_step(comment),
+        carrier.next_step(comment, None),
         Some(GitHubPullRequestStep::Comment {
             number: 5,
             head_oid: HEAD.into()
         })
     );
     carrier.record_commented(HEAD.into());
-    assert_eq!(carrier.next_step(comment), None);
+    assert_eq!(carrier.next_step(comment, None), None);
 
     carrier.intent = GitHubPullRequestIntent::Open {
         base: "main".into(),
         head_oid: "next".into(),
     };
     assert_eq!(
-        carrier.next_step(comment),
+        carrier.next_step(comment, None),
         Some(GitHubPullRequestStep::Comment {
             number: 5,
             head_oid: "next".into()
@@ -202,6 +203,7 @@ fn an_open_intent_opens_retargets_then_comments_once_per_head() {
         6,
         "https://github.com/octo/repo/pull/6".into(),
         "main".into(),
+        None,
     );
     assert_eq!(carrier.commented_head_oid, None);
 }
@@ -210,26 +212,26 @@ fn an_open_intent_opens_retargets_then_comments_once_per_head() {
 fn a_close_intent_closes_only_an_open_carrier_even_with_the_setting_off() {
     let off = &settings(false, None);
     let mut carrier = carrier(GitHubPullRequestIntent::Close);
-    assert_eq!(carrier.next_step(off), None);
+    assert_eq!(carrier.next_step(off, None), None);
     assert_eq!(carrier.status(), None);
-    carrier.record_opened(5, "url".into(), "main".into());
+    carrier.record_opened(5, "url".into(), "main".into(), None);
     assert_eq!(
-        carrier.next_step(off),
+        carrier.next_step(off, None),
         Some(GitHubPullRequestStep::Close { number: 5 })
     );
     carrier.record_closed();
-    assert_eq!(carrier.next_step(off), None);
+    assert_eq!(carrier.next_step(off, None), None);
 }
 
 #[test]
 fn turning_the_setting_off_stops_every_open_step() {
     let off = &settings(false, Some("review please"));
     let mut carrier = carrier(open_intent("main"));
-    assert_eq!(carrier.next_step(off), None);
-    carrier.record_opened(5, "url".into(), "other".into());
-    assert_eq!(carrier.next_step(off), None);
+    assert_eq!(carrier.next_step(off, None), None);
+    carrier.record_opened(5, "url".into(), "other".into(), None);
+    assert_eq!(carrier.next_step(off, None), None);
     carrier.record_retargeted("main".into());
-    assert_eq!(carrier.next_step(off), None);
+    assert_eq!(carrier.next_step(off, None), None);
     carrier.job_state = GitHubPullRequestJobState::Done;
     assert_eq!(
         carrier.status().unwrap().state,
@@ -261,14 +263,14 @@ fn observation(number: u64, open: bool, closed_by_scope: bool) -> GitHubPullRequ
 fn a_carrier_someone_closes_on_github_stays_closed_until_reopened_there() {
     let comment = &settings(true, Some("review please"));
     let mut carrier = carrier(open_intent("main"));
-    carrier.record_opened(5, "url".into(), "main".into());
+    carrier.record_opened(5, "url".into(), "main".into(), None);
 
     carrier.observe(observation(5, false, false));
     assert_eq!(
         carrier.pull_request.as_ref().unwrap().state,
         GitHubPullRequestState::ClosedOnGitHub
     );
-    assert_eq!(carrier.next_step(comment), None);
+    assert_eq!(carrier.next_step(comment, None), None);
     assert_eq!(
         carrier.status().unwrap().state,
         GitHubPullRequestStatusState::ClosedOnGitHub
@@ -287,10 +289,15 @@ fn a_carrier_someone_closes_on_github_stays_closed_until_reopened_there() {
 #[test]
 fn a_carrier_scope_closes_is_replaced_by_the_next_open_intent() {
     let mut carrier = carrier(open_intent("scope/requests/request_parent"));
-    carrier.record_opened(5, "url".into(), "scope/requests/request_parent".into());
+    carrier.record_opened(
+        5,
+        "url".into(),
+        "scope/requests/request_parent".into(),
+        None,
+    );
     carrier.observe(observation(5, false, true));
     assert_eq!(
-        carrier.next_step(&settings(true, None)),
+        carrier.next_step(&settings(true, None), None),
         Some(GitHubPullRequestStep::OpenOrAdopt {
             base: "scope/requests/request_parent".into()
         })
@@ -319,5 +326,58 @@ fn status_reports_opening_retrying_and_giving_up() {
             url: None,
             error: Some("no permission".into()),
         }
+    );
+}
+
+#[test]
+fn scope_rewrites_only_the_title_and_body_it_wrote_when_they_change() {
+    let silent = &settings(true, None);
+    let written = carrier_text_digest("Fix parser", "Review copy");
+    let edited = carrier_text_digest("Fix the parser", "Review copy");
+    assert_ne!(written, edited);
+
+    let mut created = carrier(open_intent("main"));
+    created.record_opened(5, "url".into(), "main".into(), Some(written.clone()));
+    assert_eq!(created.next_step(silent, Some(&written)), None);
+    assert_eq!(
+        created.next_step(silent, Some(&edited)),
+        Some(GitHubPullRequestStep::UpdateText {
+            number: 5,
+            text: edited.clone()
+        })
+    );
+    created.record_text_written(edited.clone());
+    assert_eq!(created.next_step(silent, Some(&edited)), None);
+
+    let mut adopted = carrier(open_intent("main"));
+    adopted.record_opened(7, "url".into(), "main".into(), None);
+    assert_eq!(adopted.next_step(silent, Some(&edited)), None);
+}
+
+#[test]
+fn a_close_while_scope_is_moving_the_base_is_scopes_and_the_carrier_is_recreated() {
+    let mut child = carrier(open_intent("main"));
+    child.record_opened(
+        5,
+        "url".into(),
+        "scope/requests/request_parent".into(),
+        None,
+    );
+    child.observe(GitHubPullRequestObservation {
+        number: 5,
+        url: "url".into(),
+        base: "scope/requests/request_parent".into(),
+        open: false,
+        closed_by_scope: false,
+    });
+    assert_eq!(
+        child.pull_request.as_ref().unwrap().state,
+        GitHubPullRequestState::Closed
+    );
+    assert_eq!(
+        child.next_step(&settings(true, None), None),
+        Some(GitHubPullRequestStep::OpenOrAdopt {
+            base: "main".into()
+        })
     );
 }
