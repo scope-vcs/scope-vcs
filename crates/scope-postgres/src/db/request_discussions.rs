@@ -65,6 +65,7 @@ pub struct RequestDiscussionsPageQuery<'a> {
     pub anchor_revision_id: Option<&'a str>,
     pub anchor_commit_oid: Option<&'a str>,
     pub include_revision_anchor: bool,
+    pub include_carried_line_anchors: bool,
     pub limit: u64,
 }
 
@@ -100,6 +101,7 @@ impl RequestStore {
                 revision_id: query.anchor_revision_id,
                 commit_oid: query.anchor_commit_oid,
                 include_revision_anchor: query.include_revision_anchor,
+                include_carried_line_anchors: query.include_carried_line_anchors,
             },
             query.limit,
         )

@@ -52,7 +52,7 @@ test('continuation preserves snapshot consistency and rejects a repeated cursor'
   assert.deepEqual(appendDiscussionReferencePage(previous, discussionPage(['last'], null, 1)).discussions.map(d => d.id), ['first', 'last'])
 })
 
-test('many revisions and commits produce only the selected reference query, unfiltered for the latest request layer', () => {
+test('many revisions and commits produce only the selected reference query', () => {
   const revisions = {
     comparison: null,
     has_earlier_revisions: false,
@@ -74,14 +74,17 @@ test('many revisions and commits produce only the selected reference query, unfi
     assert.equal(aggregate?.input.include_revision_anchor, false)
   }
   const defaultLayer = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request' }, revisions)
-  assert.equal(defaultLayer?.input.revision_id, undefined)
+  assert.equal(defaultLayer?.input.revision_id, 'revision-19')
   assert.equal(defaultLayer?.input.commit_oid, undefined)
+  assert.equal(defaultLayer?.input.include_carried_line_anchors, true)
   const latestPush = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request', comparison: 'push' }, revisions)
-  assert.equal(latestPush?.input.revision_id, 'revision-19')
-  assert.notEqual(latestPush?.key, defaultLayer?.key)
+  assert.equal(latestPush?.key, defaultLayer?.key)
+  const earlier = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request', revision_id: 'revision-3', comparison: 'request' }, revisions)
+  assert.equal(earlier?.input.include_carried_line_anchors, undefined)
   const latest = selectedDiscussionReferenceQuery({ owner: 'owner', repo: 'repo', request_id: 'request', comparison: 'commit', commit_oid: 'commit-19-99' }, revisions)
   assert.equal(latest?.input.commit_oid, 'commit-19-99')
   assert.equal(latest?.input.include_revision_anchor, true)
+  assert.equal(latest?.input.include_carried_line_anchors, undefined)
 })
 
 function requestInput(): LoadDiscussionsInput {

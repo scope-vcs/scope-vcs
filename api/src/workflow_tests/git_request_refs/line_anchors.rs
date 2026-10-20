@@ -106,6 +106,11 @@ async fn line_anchors_validate_against_the_request_diff_and_follow_the_latest_re
         let response = start(anchor_body(client_id, path, "new", line, line)).await;
         assert_eq!(response.status(), StatusCode::OK, "{client_id}");
     }
+    let plain = serde_json::json!({
+        "body_markdown": "Revision review", "client_discussion_id": "plain",
+        "anchor": {"revision_id": first_revision, "commit_oid": null, "path": null, "lines": null},
+    });
+    assert_eq!(start(plain.to_string()).await.status(), StatusCode::OK);
 
     push(
         &[
@@ -124,6 +129,54 @@ async fn line_anchors_validate_against_the_request_diff_and_follow_the_latest_re
     .await;
     let second_revision = latest_revision_id(response_json(changes).await);
     assert_ne!(second_revision, first_revision);
+    let newer = serde_json::json!({
+        "body_markdown": "Newer line review", "client_discussion_id": "newer",
+        "anchor": {
+            "revision_id": second_revision, "commit_oid": null, "path": "notes.txt",
+            "lines": {"side": "new", "start_line": 1, "end_line": 1},
+        },
+    });
+    assert_eq!(start(newer.to_string()).await.status(), StatusCode::OK);
+    let referenced = |query: String| {
+        let app = app.clone();
+        let bearer = bearer.clone();
+        let uri = format!("{timeline_route}?{query}");
+        async move {
+            let page =
+                response_json(api_request(app, "GET", &uri, Some(&bearer), None).await).await;
+            let mut ids = page["discussions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|discussion| {
+                    discussion["client_discussion_id"]
+                        .as_str()
+                        .unwrap()
+                        .to_string()
+                })
+                .collect::<Vec<_>>();
+            ids.sort();
+            ids
+        }
+    };
+    assert_eq!(
+        referenced(format!("revision={second_revision}")).await,
+        ["newer"]
+    );
+    assert_eq!(
+        referenced(format!(
+            "revision={second_revision}&include_carried_line_anchors=true"
+        ))
+        .await,
+        ["deleted", "edited", "kept", "newer"]
+    );
+    assert_eq!(
+        referenced(format!(
+            "revision={first_revision}&include_carried_line_anchors=true"
+        ))
+        .await,
+        ["deleted", "edited", "kept", "plain"]
+    );
     let timeline = api_request(
         app,
         "GET",

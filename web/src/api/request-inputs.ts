@@ -94,16 +94,19 @@ export function parseLoadRequestRevisionDiffInput(input: unknown) {
   }
 }
 
+function optionalFlag(value: unknown, name: string) {
+  if (value !== undefined && typeof value !== 'boolean') throw new Error(`${name} must be a boolean.`)
+  return value
+}
+
 export function parseLoadDiscussionsInput(input: unknown): LoadDiscussionsInput {
   const data = object(input)
-  if (data.include_revision_anchor !== undefined && typeof data.include_revision_anchor !== 'boolean') {
-    throw new Error('include_revision_anchor must be a boolean.')
-  }
   return {
     ...parseLoadRequestRevisionsInput(data),
     discussion_id: optionalId(data.discussion_id, 'discussion_id'),
     cursor: data.cursor === undefined ? undefined : text(data.cursor, 'cursor', 4096),
-    include_revision_anchor: data.include_revision_anchor,
+    include_carried_line_anchors: optionalFlag(data.include_carried_line_anchors, 'include_carried_line_anchors'),
+    include_revision_anchor: optionalFlag(data.include_revision_anchor, 'include_revision_anchor'),
     limit: data.limit === undefined ? undefined : position(data.limit, 'limit', 1, 100),
   }
 }

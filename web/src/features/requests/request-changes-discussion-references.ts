@@ -32,13 +32,14 @@ export function comparisonDiscussionReferenceQuery(
   commit: string | null,
 ) {
   if (mode === 'commit' && !commit) return null
-  const filter = mode === 'request' && revision.id === latestRequestRevision(revisions)?.id
-    ? { include_revision_anchor: false }
-    : {
-        commit_oid: mode === 'commit' ? commit ?? undefined : undefined,
-        include_revision_anchor: mode === 'commit' && commit === revision.commits.at(-1)?.oid,
-        revision_id: revision.id,
-      }
+  const filter = {
+    commit_oid: mode === 'commit' ? commit ?? undefined : undefined,
+    include_carried_line_anchors: mode !== 'commit' && revision.id === latestRequestRevision(revisions)?.id
+      ? true
+      : undefined,
+    include_revision_anchor: mode === 'commit' && commit === revision.commits.at(-1)?.oid,
+    revision_id: revision.id,
+  }
   return { key: JSON.stringify(filter), input: { ...params, ...filter } }
 }
 

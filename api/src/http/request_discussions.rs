@@ -45,6 +45,7 @@ pub(crate) struct DiscussionListQuery {
     revision: Option<String>,
     commit: Option<String>,
     include_revision_anchor: Option<bool>,
+    include_carried_line_anchors: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,6 +105,19 @@ pub(crate) async fn list_discussions(
         .transpose()
         .map_err(ApiError::bad_request)?
         .map(String::from);
+    let include_carried_line_anchors = match query.revision.as_deref() {
+        Some(revision_id)
+            if query.include_carried_line_anchors == Some(true) && commit_oid.is_none() =>
+        {
+            state
+                .metadata
+                .requests()
+                .latest_request_revision(&request.id)
+                .await?
+                .is_some_and(|latest| latest.id == revision_id)
+        }
+        _ => false,
+    };
     let snapshot_version = cursor
         .as_ref()
         .map(|cursor| cursor.snapshot_version)
@@ -122,6 +136,7 @@ pub(crate) async fn list_discussions(
             anchor_revision_id: query.revision.as_deref(),
             anchor_commit_oid: commit_oid.as_deref(),
             include_revision_anchor: query.include_revision_anchor.unwrap_or(false),
+            include_carried_line_anchors,
             limit: (limit + 1) as u64,
         })
         .await?;
