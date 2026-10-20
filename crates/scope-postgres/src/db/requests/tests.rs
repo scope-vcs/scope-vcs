@@ -510,16 +510,18 @@ async fn close_draft_request_deletes_request_and_events() {
             .await
             .unwrap();
     assert!(initial_references.contains(&snapshot_refs[0]));
+    let pool_segment = scope_domain::repository::git::GitSegmentRef {
+        segment_id: "pool-draft".to_string(),
+        sha256: "e".repeat(64),
+        plaintext_bytes: 10,
+        encoding_version: 2,
+    };
     let pool_pack = scope_domain::repository::git::GitPoolPack {
-        segment: scope_domain::repository::git::GitSegmentRef {
-            segment_id: "pool-draft".to_string(),
-            sha256: "e".repeat(64),
-            plaintext_bytes: 10,
-            encoding_version: 2,
-        },
+        id: "pool-draft".to_string(),
         request_id: "req_1".to_string(),
         head_oid: "head-2".to_string(),
         prerequisites: vec!["head".to_string()],
+        storage: scope_domain::repository::git::GitPoolPackStorage::Segment(pool_segment.clone()),
     };
     store
         .repositories()
@@ -528,7 +530,7 @@ async fn close_draft_request_deletes_request_and_events() {
         .unwrap();
     store
         .repositories()
-        .mark_git_segment_upload_ready(&pool_pack.segment, 12, 3)
+        .mark_git_segment_upload_ready(&pool_segment, 12, 3)
         .await
         .unwrap();
     store

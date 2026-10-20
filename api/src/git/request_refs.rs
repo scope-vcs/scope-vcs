@@ -3,10 +3,7 @@ use crate::{
     error::ApiError,
     git::{
         command::{git_ref_listing, run_git, run_git_output},
-        import::{
-            StagedGitPack, best_effort_delete_staged_git_segment, git_snapshot_from_ref,
-            stage_git_pack, validate_pushed_commit_range,
-        },
+        import::{git_snapshot_from_ref, validate_pushed_commit_range},
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
         staging::write_receive_pack_hook,
@@ -17,7 +14,7 @@ use crate::{
 use scope_domain::{
     content::SourceBlob,
     repo_config::RepoConfig,
-    repository::{RepositoryIncarnation, git::GitPoolPack},
+    repository::RepositoryIncarnation,
     requests::{
         Request, RequestRevisionGitFacts, canonical_request_ref,
         request_main_ancestor_after_revision,
@@ -32,6 +29,7 @@ use std::{
 
 mod ancestry;
 mod pool;
+mod pool_pack;
 mod revision;
 mod seeding;
 mod snapshot;
@@ -43,8 +41,10 @@ use ancestry::{
 pub(crate) use pool::retain_staged_pool_pack;
 #[cfg(test)]
 pub(crate) use pool::{RequestObjectRepos, request_object_repos};
+pub(crate) use pool_pack::StagedPoolPack;
+use pool_pack::{PoolPackRevision, stage_pool_pack};
 pub(crate) use revision::with_request_revision_store_repo;
-pub(crate) use seeding::attach_request_refs_from_pool;
+pub(crate) use seeding::{DeferredRequestObjects, attach_request_refs_from_pool};
 #[cfg(test)]
 use snapshot::bundle_prerequisites;
 use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};
@@ -294,11 +294,6 @@ pub(crate) struct PersistedRequestRef {
     pub(crate) pool_pack: Option<StagedPoolPack>,
 }
 
-pub(crate) struct StagedPoolPack {
-    pub(crate) pack: GitPoolPack,
-    pub(crate) staged: StagedGitPack,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RequestObjectSharing {
     Pool,
@@ -367,11 +362,13 @@ pub(crate) async fn persist_request_ref(
         RequestObjectSharing::Pool => Some(
             stage_pool_pack(
                 state,
-                git,
+                git.incarnation.repository_id(),
                 staging_repo,
-                request,
-                update,
-                pool_prerequisites,
+                PoolPackRevision {
+                    request_id: &request.id,
+                    head_oid: &update.new_head_oid,
+                    prerequisites: pool_prerequisites,
+                },
             )
             .await?,
         ),
@@ -379,12 +376,9 @@ pub(crate) async fn persist_request_ref(
     };
     let discard_pool_pack = |pool_pack: Option<StagedPoolPack>| async {
         if let Some(pool_pack) = pool_pack {
-            best_effort_delete_staged_git_segment(
-                state,
-                git.incarnation.repository_id(),
-                &pool_pack.staged.staged_segment,
-            )
-            .await;
+            pool_pack
+                .discard(state, git.incarnation.repository_id())
+                .await;
         }
     };
     let fence = match state
@@ -409,44 +403,6 @@ pub(crate) async fn persist_request_ref(
         git_facts,
         fence,
         pool_pack,
-    })
-}
-
-async fn stage_pool_pack(
-    state: &AppState,
-    git: &RepositoryGit,
-    staging_repo: &FsPath,
-    request: &Request,
-    update: &RequestRefUpdate,
-    prerequisites: Vec<String>,
-) -> Result<StagedPoolPack, ApiError> {
-    let revisions = std::iter::once(update.new_head_oid.clone())
-        .chain(prerequisites.iter().map(|oid| format!("^{oid}")))
-        .collect::<Vec<_>>();
-    let started = std::time::Instant::now();
-    let staged = stage_git_pack(
-        state,
-        git.incarnation.repository_id(),
-        staging_repo,
-        &revisions,
-    )
-    .await?;
-    tracing::info!(
-        repository_id = git.incarnation.repository_id(),
-        bytes = staged.staged_segment.segment.plaintext_bytes,
-        duration_ms = started.elapsed().as_millis(),
-        local_write_us = staged.staged_segment.timings.local_write.as_micros(),
-        remote_upload_us = staged.staged_segment.timings.remote_upload.as_micros(),
-        "request pool pack staged"
-    );
-    Ok(StagedPoolPack {
-        pack: GitPoolPack {
-            segment: staged.staged_segment.segment.clone(),
-            request_id: request.id.clone(),
-            head_oid: update.new_head_oid.clone(),
-            prerequisites,
-        },
-        staged,
     })
 }
 

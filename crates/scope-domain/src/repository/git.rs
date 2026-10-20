@@ -70,10 +70,17 @@ pub struct GitSegmentRef {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitPoolPack {
-    pub segment: GitSegmentRef,
+    pub id: String,
     pub request_id: String,
     pub head_oid: String,
     pub prerequisites: Vec<String>,
+    pub storage: GitPoolPackStorage,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitPoolPackStorage {
+    Inline { sealed: Vec<u8> },
+    Segment(GitSegmentRef),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

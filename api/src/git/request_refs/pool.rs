@@ -1,29 +1,37 @@
-use super::{StagedPoolPack, seeding::present_commits};
+use super::{
+    pool_pack::{LocalPoolPack, StagedPoolPack},
+    seeding::present_commits,
+};
 use crate::{
     error::ApiError,
     git::{
-        restore::install_verified_git_pack, staging::add_receive_pack_alternate,
-        storage::request_objects_root,
+        command::git_command_output, restore::install_verified_git_pack,
+        staging::add_receive_pack_alternate, storage::request_objects_root,
     },
     state::AppState,
 };
 use futures_util::{StreamExt as _, stream};
 use scope_domain::{
     repo_config::RepoConfig,
-    repository::{RepositoryIncarnation, git::GitPoolPack},
+    repository::{
+        RepositoryIncarnation,
+        git::{GitPoolPack, GitPoolPackStorage},
+    },
     requests::{Request, request_visible_to_every_maintainer},
 };
 use scope_postgres::db::PooledRequestPack;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     fs,
-    io::Write,
     path::{Path as FsPath, PathBuf},
+    process::Command,
 };
 
-const WATERMARK_FILE: &str = "pool-watermark";
-const CONCURRENT_POOL_DOWNLOADS: usize = 4;
+const CONCURRENT_POOL_FETCHES: usize = 4;
+const MAX_POOL_PACKS_PER_REQUEST: usize = 16;
 
+#[derive(Clone)]
 pub(crate) struct RequestObjectRepos {
     pub(crate) shared: PathBuf,
     pub(crate) authored: PathBuf,
@@ -54,111 +62,141 @@ pub(crate) fn request_object_repos(
     Ok(RequestObjectRepos { shared, authored })
 }
 
-pub(crate) async fn sync_request_pool(
+pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
+    request_visible_to_every_maintainer(&request.view, request.is_submitted(), &config.views)
+}
+
+pub(super) struct PoolInstall<'a> {
+    pub(super) incarnation: &'a RepositoryIncarnation,
+    pub(super) config: &'a RepoConfig,
+    pub(super) repos: &'a RequestObjectRepos,
+    pub(super) actor_user_id: &'a str,
+}
+
+pub(super) async fn install_request_pool_packs(
     state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    config: &RepoConfig,
-    repos: &RequestObjectRepos,
-    author_id: &str,
+    install: &PoolInstall<'_>,
+    missing: &[Request],
 ) {
-    let shared = |listed: &PooledRequestPack| {
-        request_visible_to_every_maintainer(
-            &listed.request_view,
-            listed.request_submitted,
-            &config.views,
-        )
-    };
+    if missing.is_empty() {
+        return;
+    }
     let started = std::time::Instant::now();
-    let installs = [
-        (
-            &repos.shared,
-            install_registered_pool_packs(state, incarnation, &repos.shared, shared).await,
+    match install_missing_request_packs(state, install, missing).await {
+        Ok(installed) => tracing::info!(
+            repository_id = install.incarnation.repository_id(),
+            requests = missing.len(),
+            installed,
+            duration_ms = started.elapsed().as_millis(),
+            "request pool packs installed"
         ),
-        (
-            &repos.authored,
-            install_registered_pool_packs(state, incarnation, &repos.authored, |listed| {
-                !shared(listed)
-                    && config.views.get(&listed.request_view).is_some()
-                    && listed.request_author_id.as_deref() == Some(author_id)
-            })
-            .await,
-        ),
-    ];
-    let mut installed_total = 0;
-    for (repo, installed) in installs {
-        match installed {
-            Ok(installed) => installed_total += installed,
-            Err(error) => tracing::warn!(
-                repository_id = incarnation.repository_id(),
-                objects = %repo.display(),
-                error = %error.operator_diagnostic(),
-                "request object pool sync failed; missing requests restore from their snapshots"
-            ),
-        }
-    }
-    tracing::info!(
-        repository_id = incarnation.repository_id(),
-        installed = installed_total,
-        duration_ms = started.elapsed().as_millis(),
-        "request object pool synced"
-    );
-}
-
-pub(crate) async fn retain_staged_pool_pack(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    (config, generation): (&RepoConfig, &str),
-    pusher_id: &str,
-    request: &Request,
-    pool_pack: &StagedPoolPack,
-) {
-    let staged = &pool_pack.staged.staged_segment;
-    if (shares_objects(request, config) || request.is_author(pusher_id))
-        && let Err(error) = install_staged_pool_pack(
-            state,
-            incarnation,
-            (config, generation),
-            pusher_id,
-            request,
-            pool_pack,
-        )
-        .await
-    {
-        tracing::warn!(
-            repository_id = incarnation.repository_id(),
-            segment_id = staged.segment.segment_id,
+        Err(error) => tracing::warn!(
+            repository_id = install.incarnation.repository_id(),
             error = %error.operator_diagnostic(),
-            "request revision committed but its pool pack was not installed locally"
-        );
-    }
-    if let Err(error) = state.git_segment_store.delete_local(staged).await {
-        tracing::warn!(
-            repository_id = incarnation.repository_id(),
-            segment_id = staged.segment.segment_id,
-            error = %error,
-            "failed to delete local request pool pack"
-        );
+            "request pool packs were not installed; missing requests restore from their snapshots"
+        ),
     }
 }
 
-async fn install_registered_pool_packs(
+async fn install_missing_request_packs(
     state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    objects_repo: &FsPath,
-    installs: impl Fn(&PooledRequestPack) -> bool,
+    install: &PoolInstall<'_>,
+    missing: &[Request],
 ) -> Result<usize, ApiError> {
-    let watermark = read_watermark(objects_repo)?;
+    let repository_id = install.incarnation.repository_id();
+    let request_ids = missing
+        .iter()
+        .map(|request| request.id.clone())
+        .collect::<Vec<_>>();
     let listed = state
         .metadata
         .repositories()
-        .git_pool_packs_after(incarnation.repository_id(), watermark)
+        .git_pool_packs_for_requests(repository_id, &request_ids)
         .await?;
-    let mut pending = listed
-        .packs
-        .into_iter()
-        .filter(|listed| installs(listed))
-        .map(|listed| listed.pack)
+    let mut by_repo = BTreeMap::<&FsPath, Vec<PooledRequestPack>>::new();
+    for listed in listed {
+        if let Some(repo) = pack_target(install, &listed) {
+            by_repo.entry(repo).or_default().push(listed);
+        }
+    }
+    let mut needed = Vec::new();
+    for (repo, packs) in by_repo {
+        let objects_repo = repo.to_path_buf();
+        let packs =
+            crate::git::blocking::run(move || packs_to_catch_up(&objects_repo, packs)).await?;
+        needed.push((repo, packs));
+    }
+    let pack_ids = needed
+        .iter()
+        .flat_map(|(_, packs)| packs.iter().map(|pack| pack.id.clone()))
         .collect::<Vec<_>>();
+    let mut storage = state
+        .metadata
+        .repositories()
+        .git_pool_pack_storage(repository_id, &pack_ids)
+        .await?
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+    let mut installed = 0;
+    for (repo, packs) in needed {
+        let packs = packs
+            .into_iter()
+            .filter_map(|listed| {
+                storage.remove(&listed.id).map(|storage| GitPoolPack {
+                    id: listed.id,
+                    request_id: listed.request_id,
+                    head_oid: listed.head_oid,
+                    prerequisites: listed.prerequisites,
+                    storage,
+                })
+            })
+            .collect();
+        installed += install_chain(state, install.incarnation, repo, packs).await?;
+    }
+    Ok(installed)
+}
+
+fn packs_to_catch_up(
+    objects_repo: &FsPath,
+    packs: Vec<PooledRequestPack>,
+) -> Result<Vec<PooledRequestPack>, ApiError> {
+    let present = present_commits(
+        objects_repo,
+        packs.iter().map(|pack| pack.head_oid.as_str()),
+    )?;
+    let missing = packs
+        .into_iter()
+        .filter(|pack| !present.contains(&pack.head_oid))
+        .collect::<Vec<_>>();
+    let mut per_request = BTreeMap::<String, usize>::new();
+    for pack in &missing {
+        *per_request.entry(pack.request_id.clone()).or_default() += 1;
+    }
+    Ok(missing
+        .into_iter()
+        .filter(|pack| per_request[&pack.request_id] <= MAX_POOL_PACKS_PER_REQUEST)
+        .collect())
+}
+
+fn pack_target<'a>(install: &PoolInstall<'a>, listed: &PooledRequestPack) -> Option<&'a FsPath> {
+    let views = &install.config.views;
+    if request_visible_to_every_maintainer(&listed.request_view, listed.request_submitted, views) {
+        Some(&install.repos.shared)
+    } else if views.get(&listed.request_view).is_some()
+        && listed.request_author_id.as_deref() == Some(install.actor_user_id)
+    {
+        Some(&install.repos.authored)
+    } else {
+        None
+    }
+}
+
+async fn install_chain(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    objects_repo: &FsPath,
+    mut pending: Vec<GitPoolPack>,
+) -> Result<usize, ApiError> {
     let mut installed_total = 0;
     loop {
         let (installable, waiting) = {
@@ -168,28 +206,24 @@ async fn install_registered_pool_packs(
         if installable.is_empty() {
             break;
         }
-        let mut downloads = stream::iter(installable.into_iter().map(|pack| async move {
-            let verified = state
-                .git_segment_store
-                .get_verified_pack(incarnation, &pack.segment)
-                .await
-                .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()));
-            (pack, verified)
+        let mut fetched = stream::iter(installable.into_iter().map(|pack| async move {
+            let fetched = fetch_pack(state, incarnation, &pack).await;
+            (pack, fetched)
         }))
-        .buffered(CONCURRENT_POOL_DOWNLOADS);
+        .buffered(CONCURRENT_POOL_FETCHES);
         let mut installed = 0;
-        while let Some((pack, verified)) = downloads.next().await {
-            let installed_pack = match verified {
-                Ok(verified) => install_pack(state, objects_repo, verified)
+        while let Some((pack, fetched)) = fetched.next().await {
+            let result = match fetched {
+                Ok(fetched) => install_fetched(state, objects_repo, fetched)
                     .await
                     .map_err(|error| ("install", error)),
-                Err(error) => Err(("download", error)),
+                Err(error) => Err(("fetch", error)),
             };
-            match installed_pack {
+            match result {
                 Ok(()) => installed += 1,
                 Err((step, error)) => tracing::warn!(
                     repository_id = incarnation.repository_id(),
-                    segment_id = pack.segment.segment_id,
+                    pack_id = pack.id,
                     step,
                     error = %error.operator_diagnostic(),
                     "skipping an unusable request pool pack"
@@ -202,19 +236,111 @@ async fn install_registered_pool_packs(
         installed_total += installed;
         pending = waiting;
     }
-    write_watermark(objects_repo, listed.watermark)?;
     Ok(installed_total)
 }
 
-async fn install_staged_pool_pack(
+enum FetchedPack {
+    Bytes(Vec<u8>),
+    Verified(scope_storage::VerifiedGitPack),
+}
+
+async fn fetch_pack(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    pack: &GitPoolPack,
+) -> Result<FetchedPack, ApiError> {
+    let unavailable = |error: scope_storage::GitStorageError| {
+        ApiError::infrastructure_unavailable(error.to_string())
+    };
+    match &pack.storage {
+        GitPoolPackStorage::Inline { sealed } => state
+            .git_segment_store
+            .open_inline_pack(incarnation.repository_id(), &pack.id, sealed)
+            .await
+            .map(FetchedPack::Bytes)
+            .map_err(unavailable),
+        GitPoolPackStorage::Segment(segment) => state
+            .git_segment_store
+            .get_verified_pack(incarnation, segment)
+            .await
+            .map(FetchedPack::Verified)
+            .map_err(unavailable),
+    }
+}
+
+async fn install_fetched(
+    state: &AppState,
+    objects_repo: &FsPath,
+    fetched: FetchedPack,
+) -> Result<(), ApiError> {
+    let objects_repo = objects_repo.to_path_buf();
+    let timeout = state.runtime_budgets.git_command_timeout();
+    crate::git::blocking::run(move || match fetched {
+        FetchedPack::Bytes(pack) => git_command_output(
+            Command::new("git")
+                .arg("-C")
+                .arg(&objects_repo)
+                .args(["index-pack", "--stdin"]),
+            Some(&pack),
+        )
+        .map(drop),
+        FetchedPack::Verified(verified) => {
+            install_verified_git_pack(&objects_repo, verified.path(), timeout)
+        }
+    })
+    .await
+}
+
+pub(crate) async fn retain_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     (config, generation): (&RepoConfig, &str),
     pusher_id: &str,
     request: &Request,
+    pool_pack: StagedPoolPack,
+) {
+    let shared = shares_objects(request, config);
+    if (shared || request.is_author(pusher_id))
+        && let Err(error) = install_staged_pool_pack(
+            state,
+            incarnation,
+            generation,
+            pusher_id,
+            shared,
+            &pool_pack,
+        )
+        .await
+    {
+        tracing::warn!(
+            repository_id = incarnation.repository_id(),
+            pack_id = pool_pack.pack.id,
+            error = %error.operator_diagnostic(),
+            "request revision committed but its pool pack was not installed locally"
+        );
+    }
+    if let LocalPoolPack::Segment(staged) = &pool_pack.local
+        && let Err(error) = state
+            .git_segment_store
+            .delete_local(&staged.staged_segment)
+            .await
+    {
+        tracing::warn!(
+            repository_id = incarnation.repository_id(),
+            pack_id = pool_pack.pack.id,
+            error = %error,
+            "failed to delete local request pool pack"
+        );
+    }
+}
+
+async fn install_staged_pool_pack(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    generation: &str,
+    pusher_id: &str,
+    shared: bool,
     pool_pack: &StagedPoolPack,
 ) -> Result<(), ApiError> {
-    let shared = shares_objects(request, config);
     let (objects_repo, installable) = {
         let state = state.clone();
         let incarnation = incarnation.clone();
@@ -232,29 +358,47 @@ async fn install_staged_pool_pack(
     if !installable {
         return Ok(());
     }
-    let verified = state
-        .git_segment_store
-        .promote_verified_pack(incarnation, &pool_pack.staged.staged_segment)
-        .await
-        .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
-    install_pack(state, &objects_repo, verified).await
+    match &pool_pack.local {
+        LocalPoolPack::Files(files) => {
+            let target = objects_repo.join("objects/pack");
+            let files = (
+                files.checksum.clone(),
+                files.pack.clone(),
+                files.index.clone(),
+            );
+            crate::git::blocking::run(move || link_pack_files(&target, files)).await
+        }
+        LocalPoolPack::Segment(staged) => {
+            let verified = state
+                .git_segment_store
+                .promote_verified_pack(incarnation, &staged.staged_segment)
+                .await
+                .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
+            install_fetched(state, &objects_repo, FetchedPack::Verified(verified)).await
+        }
+    }
 }
 
-pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
-    request_visible_to_every_maintainer(&request.view, request.is_submitted(), &config.views)
-}
-
-async fn install_pack(
-    state: &AppState,
-    objects_repo: &FsPath,
-    verified: scope_storage::VerifiedGitPack,
+fn link_pack_files(
+    pack_directory: &FsPath,
+    (checksum, pack, index): (String, PathBuf, PathBuf),
 ) -> Result<(), ApiError> {
-    let objects_repo = objects_repo.to_path_buf();
-    let timeout = state.runtime_budgets.git_command_timeout();
-    crate::git::blocking::run(move || {
-        install_verified_git_pack(&objects_repo, verified.path(), timeout)
-    })
-    .await
+    fs::create_dir_all(pack_directory).map_err(ApiError::internal)?;
+    for (source, extension) in [(pack, "pack"), (index, "idx")] {
+        let target = pack_directory.join(format!("pack-{checksum}.{extension}"));
+        if target.is_file() {
+            continue;
+        }
+        if fs::hard_link(&source, &target).is_err() {
+            let copied =
+                tempfile::NamedTempFile::new_in(pack_directory).map_err(ApiError::internal)?;
+            fs::copy(&source, copied.path()).map_err(ApiError::internal)?;
+            copied
+                .persist(&target)
+                .map_err(|error| ApiError::internal(error.error))?;
+        }
+    }
+    Ok(())
 }
 
 fn installable_packs(
@@ -276,21 +420,4 @@ fn installable_packs(
                 .iter()
                 .all(|prerequisite| present.contains(prerequisite))
         }))
-}
-
-fn read_watermark(objects_repo: &FsPath) -> Result<Option<i64>, ApiError> {
-    match fs::read_to_string(objects_repo.join(WATERMARK_FILE)) {
-        Ok(text) => text.trim().parse().map(Some).map_err(ApiError::internal),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(ApiError::internal(error)),
-    }
-}
-
-fn write_watermark(objects_repo: &FsPath, watermark: i64) -> Result<(), ApiError> {
-    let mut file = tempfile::NamedTempFile::new_in(objects_repo).map_err(ApiError::internal)?;
-    file.write_all(watermark.to_string().as_bytes())
-        .map_err(ApiError::internal)?;
-    file.persist(objects_repo.join(WATERMARK_FILE))
-        .map_err(|error| ApiError::internal(error.error))?;
-    Ok(())
 }

@@ -7,6 +7,7 @@ mod credentials;
 pub(crate) mod http_backend;
 pub(crate) mod import;
 pub(crate) mod projection_repo;
+mod receive_pack;
 pub(crate) mod receive_protocol;
 pub(crate) mod repository_engine;
 pub(crate) mod repository_git;
@@ -524,14 +525,23 @@ async fn handle_git_receive_pack_body(
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo.clone());
     let receive_started_at = Instant::now();
-    let cgi = git_http_backend_streaming(
-        &staging_repo,
-        "git-receive-pack",
+    let cgi = receive_pack::receive_pack(
+        state,
+        receive_pack::ReceivePackRun {
+            staging_repo: &staging_repo,
+            content_length: input.content_length,
+            max_bytes: MAX_RECEIVE_PACK_BYTES,
+            content_type: input.content_type,
+            remote_user: &remote_user,
+        },
         commands.body,
-        input.content_length,
-        MAX_RECEIVE_PACK_BYTES,
-        input.content_type,
-        &remote_user,
+        preparation
+            .deferred_request_objects
+            .as_ref()
+            .map(|requests| receive_pack::DeferredObjects {
+                requests,
+                refs_before: preparation.refs_before.as_deref(),
+            }),
     )
     .await?;
     let receive_elapsed = receive_started_at.elapsed();
