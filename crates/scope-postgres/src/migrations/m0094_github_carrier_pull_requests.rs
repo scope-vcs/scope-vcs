@@ -41,6 +41,7 @@ impl MigrationTrait for Migration {
                     base character varying,
                     state character varying,
                     commented_head_oid character varying,
+                    written_text_sha256 character varying,
                     job_state character varying NOT NULL,
                     attempts integer NOT NULL,
                     next_attempt_at_unix bigint NOT NULL,
@@ -70,6 +71,10 @@ impl MigrationTrait for Migration {
                         AND next_attempt_at_unix >= 0
                         AND created_at_unix >= 0
                         AND updated_at_unix >= created_at_unix
+                    ),
+                    CONSTRAINT scope_github_pull_request_written_text CHECK (
+                        written_text_sha256 IS NULL
+                        OR (number IS NOT NULL AND length(written_text_sha256) = 64)
                     )
                 );
 

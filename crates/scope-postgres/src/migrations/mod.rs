@@ -9,7 +9,6 @@ mod m0089_contribution_request_stacks;
 mod m0090_job_traceparents;
 mod m0091_media_reconcile_once;
 mod m0094_github_carrier_pull_requests;
-mod m0095_github_carrier_pull_request_text;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -94,10 +93,6 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0094_github_carrier_pull_requests::Migration),
-            metadata_restore_safe: true,
-        },
-        RegisteredMigration {
-            migration: Box::new(m0095_github_carrier_pull_request_text::Migration),
             metadata_restore_safe: true,
         },
     ]
