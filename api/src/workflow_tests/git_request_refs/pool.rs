@@ -261,6 +261,70 @@ async fn a_push_restores_another_requests_objects_only_when_its_pack_needs_them(
     ));
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_push_without_report_status_still_restores_another_requests_objects() {
+    let (state, main_source, _) =
+        super::super::push_intent_completion::published_git_fixture("request-pool-quiet").await;
+    let replica = state.replica_for_tests();
+    let bearer = bearer_header();
+    start_request(&state, "base-work").await;
+    let quiet_id = start_request(&state, "quiet").await;
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    let source = clone_test_repo(&main_source, "request-pool-quiet-checkout", false);
+    configure_bearer_header(&source, &remote, &bearer);
+    run_git(
+        Some(&source),
+        &["checkout", "-b", "base-work"],
+        "create base request branch",
+    )
+    .unwrap();
+    push_change(
+        &source,
+        &remote,
+        "refs/heads/base-work",
+        "base.txt",
+        "base request\n",
+        "base request revision",
+    )
+    .unwrap();
+    let base_head = git_head_oid(&source);
+    fs::write(source.join("quiet.txt"), "pushed without a status report\n").unwrap();
+    run_git(Some(&source), &["add", "-A"], "stage quiet change").unwrap();
+    commit_all(&source, "quiet revision");
+    let quiet_head = git_head_oid(&source);
+    let old = stored_request(&state, &quiet_id).await.head_oid;
+    let command = format!("{old} {quiet_head} refs/heads/quiet\n");
+    let mut payload = format!("{:04x}{command}0000", command.len() + 4).into_bytes();
+    let mut pack = std::process::Command::new("git");
+    pack.current_dir(&source)
+        .args(["pack-objects", "--revs", "--stdout"]);
+    payload.extend(
+        crate::git::command::git_command_output_with_timeout(
+            &mut pack,
+            Some(format!("{quiet_head}\n^{base_head}\n").into_bytes()),
+            std::time::Duration::from_secs(5),
+        )
+        .unwrap(),
+    );
+
+    let response = router(replica.clone())
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(format!("/git/private/{TEST_REPO_ID}/git-receive-pack"))
+                .header(CONTENT_TYPE, "application/x-git-receive-pack-request")
+                .header(AUTHORIZATION, bearer)
+                .body(Body::from(payload))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(stored_request(&state, &quiet_id).await.head_oid, quiet_head);
+}
+
 async fn start_request(state: &AppState, name: &str) -> String {
     let started = api_request(
         router(state.clone()),
