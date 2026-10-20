@@ -12,6 +12,7 @@ import {
   RUN_ROW_DURATION_CLASS,
   RUN_ROW_PRIMARY_CLASS,
   RUN_ROW_TIMESTAMP_CLASS,
+  RUN_ROW_WIDE_COLUMN_CLASS,
 } from './run-layout'
 
 export function RunRow({
@@ -23,6 +24,8 @@ export function RunRow({
 }) {
   const state = runDisplayState(run)
   const isRunning = runStatus(state).tone === 'running'
+  const duration = <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
+  const updated = <RelativeTimestamp value={run.updated_at_unix} />
 
   return (
     <Link
@@ -44,13 +47,16 @@ export function RunRow({
           <span className="text-muted-foreground/70">
             {' '}· {runTriggerLabel(run.trigger)}
           </span>
+          <span className="text-muted-foreground/70 sm:hidden">
+            {' '}· {duration} · {updated}
+          </span>
         </span>
       </span>
-      <span className={`${RUN_ROW_DURATION_CLASS} text-right text-xs tabular-nums text-muted-foreground`}>
-        <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
+      <span className={cn(RUN_ROW_DURATION_CLASS, RUN_ROW_WIDE_COLUMN_CLASS, 'text-right text-xs tabular-nums text-muted-foreground')}>
+        {duration}
       </span>
-      <span className={`${RUN_ROW_TIMESTAMP_CLASS} text-right text-xs tabular-nums text-muted-foreground`}>
-        <RelativeTimestamp value={run.updated_at_unix} />
+      <span className={cn(RUN_ROW_TIMESTAMP_CLASS, RUN_ROW_WIDE_COLUMN_CLASS, 'text-right text-xs tabular-nums text-muted-foreground')}>
+        {updated}
       </span>
     </Link>
   )

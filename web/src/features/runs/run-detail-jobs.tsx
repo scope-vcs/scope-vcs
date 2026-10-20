@@ -57,7 +57,7 @@ export function RunDetailJobs({
     <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
       <nav
         aria-label="Jobs"
-        className="flex min-w-0 items-center border-b border-border lg:block lg:overflow-y-auto lg:border-b-0 lg:border-r lg:py-2"
+        className="flex min-w-0 items-start border-b border-border lg:block lg:overflow-y-auto lg:border-b-0 lg:border-r lg:py-2"
       >
         <div className="min-w-0 flex-1" ref={jobListRef}>
           <RunJobList
@@ -69,7 +69,7 @@ export function RunDetailJobs({
         {jobsHaveDependencies(jobs) ? (
           <button
             aria-pressed={showGraph}
-            className="shrink-0 px-4 py-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            className="mt-2 h-9 shrink-0 px-4 text-xs text-muted-foreground underline-offset-2 lg:mt-0 lg:h-auto lg:py-2 hover:text-foreground hover:underline"
             onClick={onToggleGraph}
             type="button"
           >

@@ -322,7 +322,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
         >
           <div className="min-h-0 overflow-hidden">
             {availableReplies.length > 0 || hasOlderReplies ? (
-              <div className="mt-1 ml-0 border-l border-border pb-3 pl-4">
+              <div className="mt-1 ml-0 border-l border-border pb-3 pl-3 min-[701px]:pl-4">
                 {hasOlderReplies ? (
                   <button
                     className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground disabled:cursor-wait disabled:opacity-70"
