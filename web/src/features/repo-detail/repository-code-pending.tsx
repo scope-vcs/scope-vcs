@@ -2,7 +2,6 @@ import { FileWorkbench } from '@/components/file-workbench'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
-import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useState } from 'react'
 import {
   FileNavigatorSkeleton,
@@ -20,7 +19,7 @@ export function RepositoryCodePending() {
     <WorkbenchPane>
       <WorkbenchBar
         actions={<BlockSkeleton className="h-8 w-24" />}
-        summary={repo ? hasRepositoryAbout(repo) && <RepositoryAbout repo={repo} /> : <TextSkeleton length="long" size="meta" />}
+        summary={repo && hasRepositoryAbout(repo) ? <RepositoryAbout repo={repo} /> : undefined}
         title="Code"
       />
       {repo?.lifecycle_state !== 'AwaitingFirstPush' && <RepositoryLatestActivityPending />}
