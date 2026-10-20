@@ -440,6 +440,8 @@ async fn a_pool_pack_committed_after_a_listing_is_returned_by_the_next_one() {
         [PooledRequestPack {
             pack: early,
             request_view: scope_domain::views::ViewId::private(),
+            request_author_id: Some("segment_user".to_string()),
+            request_submitted: false,
         }]
     );
     late_tx.commit().await.unwrap();

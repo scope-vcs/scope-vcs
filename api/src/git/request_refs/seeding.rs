@@ -1,6 +1,6 @@
 use super::{
     RequestViewBases, attach_visible_request_refs,
-    pool::{request_objects_repo, sync_request_pool},
+    pool::{RequestObjectRepos, request_object_repos, shares_objects, sync_request_pool},
     snapshot::{BundleRef, fetch_snapshot_into_ref},
 };
 use crate::{
@@ -24,30 +24,38 @@ pub(crate) async fn attach_request_refs_from_pool(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     config: &RepoConfig,
-    objects_for: Vec<Request>,
-    refs_for: Vec<Request>,
+    actor_user_id: &str,
+    requests: (Vec<Request>, Vec<Request>),
     staging_repo: &FsPath,
     view_bases: RequestViewBases,
 ) -> Result<Vec<Request>, ApiError> {
-    let objects_repo = {
+    let repos = {
         let state = state.clone();
         let incarnation = incarnation.clone();
         let config = config.clone();
+        let actor_user_id = actor_user_id.to_string();
         let staging_repo = staging_repo.to_path_buf();
         crate::git::blocking::run(move || {
-            let objects_repo = request_objects_repo(&state, &incarnation, &config)?;
-            add_receive_pack_alternate(&staging_repo, &objects_repo.join("objects"))?;
-            Ok(objects_repo)
+            let repos = request_object_repos(&state, &incarnation, &config, &actor_user_id)?;
+            for repo in [&repos.shared, &repos.authored] {
+                add_receive_pack_alternate(&staging_repo, &repo.join("objects"))?;
+            }
+            Ok(repos)
         })
         .await?
     };
-    sync_request_pool(state, incarnation, config, &objects_repo).await;
+    sync_request_pool(state, incarnation, config, &repos, actor_user_id).await;
     let state = state.clone();
+    let config = config.clone();
+    let actor_user_id = actor_user_id.to_string();
     let staging_repo = staging_repo.to_path_buf();
+    let (objects_for, refs_for) = requests;
     crate::git::blocking::run(move || {
         attach_request_refs(
             &state,
-            &objects_repo,
+            &config,
+            &repos,
+            &actor_user_id,
             StoredRequestRefs {
                 objects_for: &objects_for,
                 refs_for: &refs_for,
@@ -61,7 +69,9 @@ pub(crate) async fn attach_request_refs_from_pool(
 
 fn attach_request_refs(
     state: &AppState,
-    objects_repo: &FsPath,
+    config: &RepoConfig,
+    repos: &RequestObjectRepos,
+    actor_user_id: &str,
     requests: StoredRequestRefs<'_>,
     staging_repo: &FsPath,
     view_bases: &RequestViewBases,
@@ -77,15 +87,18 @@ fn attach_request_refs(
             staging_repo,
             snapshotted.iter().map(|request| request.head_oid.as_str()),
         )?;
-        let (shared, private): (Vec<_>, Vec<_>) = snapshotted
+        for request in snapshotted
             .into_iter()
             .filter(|request| !present.contains(&request.head_oid))
-            .partition(|request| request.is_submitted());
-        for request in private {
-            restore_request_objects(state, staging_repo, None, request)?;
-        }
-        for request in shared {
-            restore_request_objects(state, objects_repo, Some(staging_repo), request)?;
+        {
+            let (target, prerequisites_from) = if shares_objects(request, config) {
+                (repos.shared.as_path(), Some(staging_repo))
+            } else if request.is_author(actor_user_id) {
+                (repos.authored.as_path(), Some(staging_repo))
+            } else {
+                (staging_repo, None)
+            };
+            restore_request_objects(state, target, prerequisites_from, request)?;
         }
     }
     let (stored, snapshotless): (Vec<_>, Vec<_>) = requests

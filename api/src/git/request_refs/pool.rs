@@ -11,7 +11,9 @@ use futures_util::{StreamExt as _, stream};
 use scope_domain::{
     repo_config::RepoConfig,
     repository::{RepositoryIncarnation, git::GitPoolPack},
+    requests::{Request, request_visible_to_every_maintainer},
 };
+use scope_postgres::db::PooledRequestPack;
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -22,40 +24,79 @@ use std::{
 const WATERMARK_FILE: &str = "pool-watermark";
 const CONCURRENT_POOL_DOWNLOADS: usize = 4;
 
-pub(crate) fn request_objects_repo(
+pub(crate) struct RequestObjectRepos {
+    pub(crate) shared: PathBuf,
+    pub(crate) authored: PathBuf,
+}
+
+pub(crate) fn request_object_repos(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     config: &RepoConfig,
-) -> Result<PathBuf, ApiError> {
-    let generation =
-        serde_json::to_vec(&(&config.views, &config.history)).map_err(ApiError::internal)?;
-    let repo = super::ensure_local_bare_repo(request_objects_root(state, incarnation).join(
-        format!("{}.git", hex::encode(&Sha256::digest(generation)[..16])),
-    ))?;
+    author_id: &str,
+) -> Result<RequestObjectRepos, ApiError> {
+    let generation = hex::encode(
+        &Sha256::digest(
+            serde_json::to_vec(&(&config.views, &config.history)).map_err(ApiError::internal)?,
+        )[..16],
+    );
+    let root = request_objects_root(state, incarnation);
     let canonical = state
         .repository_engine
         .repository_path(incarnation)
         .join("objects");
-    if canonical.is_dir() {
-        add_receive_pack_alternate(&repo, &canonical)?;
+    let shared = super::ensure_local_bare_repo(root.join(format!("{generation}.git")))?;
+    let authored = super::ensure_local_bare_repo(root.join(format!(
+        "{generation}-{}.git",
+        hex::encode(&Sha256::digest(author_id.as_bytes())[..16])
+    )))?;
+    for repo in [&shared, &authored] {
+        if canonical.is_dir() {
+            add_receive_pack_alternate(repo, &canonical)?;
+        }
     }
-    Ok(repo)
+    add_receive_pack_alternate(&authored, &shared.join("objects"))?;
+    Ok(RequestObjectRepos { shared, authored })
 }
 
 pub(crate) async fn sync_request_pool(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     config: &RepoConfig,
-    objects_repo: &FsPath,
+    repos: &RequestObjectRepos,
+    author_id: &str,
 ) {
-    if let Err(error) =
-        install_registered_pool_packs(state, incarnation, config, objects_repo).await
-    {
-        tracing::warn!(
-            repository_id = incarnation.repository_id(),
-            error = %error.operator_diagnostic(),
-            "request object pool sync failed; missing requests restore from their snapshots"
-        );
+    let shared = |listed: &PooledRequestPack| {
+        request_visible_to_every_maintainer(
+            &listed.request_view,
+            listed.request_submitted,
+            &config.views,
+        )
+    };
+    let installs = [
+        (
+            &repos.shared,
+            install_registered_pool_packs(state, incarnation, &repos.shared, shared).await,
+        ),
+        (
+            &repos.authored,
+            install_registered_pool_packs(state, incarnation, &repos.authored, |listed| {
+                !shared(listed)
+                    && config.views.get(&listed.request_view).is_some()
+                    && listed.request_author_id.as_deref() == Some(author_id)
+            })
+            .await,
+        ),
+    ];
+    for (repo, installed) in installs {
+        if let Err(error) = installed {
+            tracing::warn!(
+                repository_id = incarnation.repository_id(),
+                objects = %repo.display(),
+                error = %error.operator_diagnostic(),
+                "request object pool sync failed; missing requests restore from their snapshots"
+            );
+        }
     }
 }
 
@@ -63,10 +104,16 @@ pub(crate) async fn retain_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     config: &RepoConfig,
+    pusher_id: &str,
+    request: &Request,
     pool_pack: &StagedPoolPack,
 ) {
     let staged = &pool_pack.staged.staged_segment;
-    if let Err(error) = install_staged_pool_pack(state, incarnation, config, pool_pack).await {
+    if (shares_objects(request, config) || request.is_author(pusher_id))
+        && let Err(error) =
+            install_staged_pool_pack(state, incarnation, config, pusher_id, request, pool_pack)
+                .await
+    {
         tracing::warn!(
             repository_id = incarnation.repository_id(),
             segment_id = staged.segment.segment_id,
@@ -87,8 +134,8 @@ pub(crate) async fn retain_staged_pool_pack(
 async fn install_registered_pool_packs(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    config: &RepoConfig,
     objects_repo: &FsPath,
+    installs: impl Fn(&PooledRequestPack) -> bool,
 ) -> Result<(), ApiError> {
     let watermark = read_watermark(objects_repo)?;
     let listed = state
@@ -99,7 +146,7 @@ async fn install_registered_pool_packs(
     let mut pending = listed
         .packs
         .into_iter()
-        .filter(|listed| config.views.get(&listed.request_view).is_some())
+        .filter(|listed| installs(listed))
         .map(|listed| listed.pack)
         .collect::<Vec<_>>();
     loop {
@@ -143,15 +190,20 @@ async fn install_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     config: &RepoConfig,
+    pusher_id: &str,
+    request: &Request,
     pool_pack: &StagedPoolPack,
 ) -> Result<(), ApiError> {
+    let shared = shares_objects(request, config);
     let (objects_repo, installable) = {
         let state = state.clone();
         let incarnation = incarnation.clone();
         let config = config.clone();
+        let pusher_id = pusher_id.to_string();
         let pack = pool_pack.pack.clone();
         crate::git::blocking::run(move || {
-            let objects_repo = request_objects_repo(&state, &incarnation, &config)?;
+            let repos = request_object_repos(&state, &incarnation, &config, &pusher_id)?;
+            let objects_repo = if shared { repos.shared } else { repos.authored };
             let (installable, _) = installable_packs(&objects_repo, vec![pack])?;
             Ok((objects_repo, !installable.is_empty()))
         })
@@ -166,6 +218,10 @@ async fn install_staged_pool_pack(
         .await
         .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
     install_pack(state, &objects_repo, verified).await
+}
+
+pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
+    request_visible_to_every_maintainer(&request.view, request.is_submitted(), &config.views)
 }
 
 async fn install_pack(

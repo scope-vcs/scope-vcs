@@ -812,13 +812,14 @@ async fn public_actor_cannot_push_private_request_after_membership_loss() {
 #[tokio::test]
 async fn restricted_view_push_staging_borrows_no_objects() {
     let state = test_state_with_request().await;
-    crate::git::request_refs::request_objects_repo(
+    crate::git::request_refs::request_object_repos(
         &state,
         &test_repo_incarnation(),
         &find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
             .unwrap()
             .repo_config,
+        &public_user_id(),
     )
     .unwrap();
     let preparation = git_receive_use_case::prepare(

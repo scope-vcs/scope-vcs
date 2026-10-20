@@ -368,8 +368,8 @@ async fn prepare_request_merge_for_execution(
             state,
             &request_incarnation,
             &repo.repo_config,
-            Vec::new(),
-            vec![request.clone()],
+            actor_user_id,
+            (Vec::new(), vec![request.clone()]),
             &staging_repo,
             RequestViewBases::new(),
         );

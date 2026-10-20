@@ -1,17 +1,22 @@
 use super::*;
+use crate::git::request_refs::{RequestObjectRepos, request_object_repos};
 use crate::use_cases::git_receive::{
     RequestRefSeeding,
     request_ref::{RequestPusher, RequestStagingKind, prepare_request_staging_repo},
 };
 
 async fn prepare_owner_push(state: &AppState, request_ref: &str) -> PathBuf {
+    prepare_push(state, &test_owner_id(), request_ref).await
+}
+
+async fn prepare_push(state: &AppState, actor_user_id: &str, request_ref: &str) -> PathBuf {
     prepare_request_staging_repo(
         state,
         &test_repo_incarnation(),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         RequestPusher {
-            actor_user_id: &test_owner_id(),
+            actor_user_id,
             address_view: &ViewId::private(),
         },
         RequestStagingKind::RequestRefsOnly,
@@ -103,9 +108,13 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
             .iter()
             .map(|listed| listed.pack.head_oid.as_str())
             .collect::<Vec<_>>(),
-        [first_head.as_str(), git_head_oid(&source).as_str()]
+        [
+            submitted_head.as_str(),
+            first_head.as_str(),
+            git_head_oid(&source).as_str()
+        ]
     );
-    let replica_objects = objects_repo(&replica).await;
+    let replica_objects = object_repos(&replica, &test_owner_id()).await.shared;
     assert!(has_commit(&replica_objects, &first_head));
     assert_eq!(
         git_stdout_text(
@@ -119,14 +128,15 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
     );
 }
 
-async fn objects_repo(state: &AppState) -> PathBuf {
-    crate::git::request_refs::request_objects_repo(
+async fn object_repos(state: &AppState, author_id: &str) -> RequestObjectRepos {
+    request_object_repos(
         state,
         &test_repo_incarnation(),
         &find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
             .unwrap()
             .repo_config,
+        author_id,
     )
     .unwrap()
 }
@@ -142,29 +152,34 @@ fn has_commit(repo: &FsPath, oid: &str) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_draft_revision_stays_out_of_shared_replica_objects() {
-    let (state, main_source, _) =
+async fn a_draft_revision_is_pooled_only_for_its_author() {
+    let (state, _main_source, _) =
         super::super::push_intent_completion::published_git_fixture("request-pool-draft").await;
+    drain_outbox(&state, "request-pool-draft-public-projection").await;
     let bearer = bearer_header();
     let started = api_request(
         router(state.clone()),
         "POST",
         &format!("/v1/repos/{TEST_REPO_ID}/requests"),
         Some(&bearer),
-        Some(r#"{"name":"drafted","view":"private"}"#),
+        Some(r#"{"name":"drafted","view":"public"}"#),
     )
     .await;
     assert_eq!(started.status(), StatusCode::OK);
     let (origin, _server) = spawn_test_server(&state).await;
     let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
-    let source = clone_test_repo(&main_source, "request-pool-draft-checkout", false);
-    configure_bearer_header(&source, &remote, &bearer);
+    let source = TempGitRepo(unique_test_path("request-pool-draft-checkout"));
     run_git(
-        Some(&source),
-        &["checkout", "-b", "drafted"],
-        "create draft branch",
+        None,
+        &[
+            "clone",
+            &format!("{origin}/git/public/{TEST_REPO_ID}"),
+            source.to_str().unwrap(),
+        ],
+        "clone public main for a public draft",
     )
     .unwrap();
+    configure_bearer_header(&source, &remote, &bearer);
     let request_ref = "refs/heads/drafted";
     push_change(
         &source,
@@ -177,10 +192,8 @@ async fn a_draft_revision_stays_out_of_shared_replica_objects() {
     .unwrap();
     let draft_head = git_head_oid(&source);
 
-    let staging = prepare_owner_push(&state, request_ref).await;
+    let repos = object_repos(&state, &test_owner_id()).await;
 
-    assert!(has_commit(&staging, &draft_head));
-    let _ = fs::remove_dir_all(staging);
     assert!(
         state
             .metadata
@@ -189,9 +202,37 @@ async fn a_draft_revision_stays_out_of_shared_replica_objects() {
             .await
             .unwrap()
             .packs
-            .is_empty()
+            .iter()
+            .any(|listed| listed.pack.head_oid == draft_head)
     );
-    assert!(!has_commit(&objects_repo(&state).await, &draft_head));
+    let author_staging = prepare_owner_push(&state, request_ref).await;
+    assert!(has_commit(&author_staging, &draft_head));
+    let _ = fs::remove_dir_all(author_staging);
+    assert!(has_commit(&repos.authored, &draft_head));
+    assert!(!has_commit(&repos.shared, &draft_head));
+    insert_member_user(&state).await;
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            for member in &mut repo.collaboration.members {
+                member.permissions.can_push = true;
+            }
+        })
+        .await
+        .unwrap();
+    let member_request = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests"),
+        Some(&bearer_header_for(MEMBER_SUBJECT, MEMBER_EMAIL)),
+        Some(r#"{"name":"member-work","view":"private"}"#),
+    )
+    .await;
+    assert_eq!(member_request.status(), StatusCode::OK);
+    let member_staging = prepare_push(&state, &member_user_id(), "refs/heads/member-work").await;
+    assert!(!has_commit(&member_staging, &draft_head));
+    let _ = fs::remove_dir_all(member_staging);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

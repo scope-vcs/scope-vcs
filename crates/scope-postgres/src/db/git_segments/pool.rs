@@ -17,6 +17,8 @@ pub struct GitPoolPacks {
 pub struct PooledRequestPack {
     pub pack: GitPoolPack,
     pub request_view: ViewId,
+    pub request_author_id: Option<String>,
+    pub request_submitted: bool,
 }
 
 pub(in crate::db) async fn register_git_pool_pack<C>(
@@ -65,7 +67,9 @@ where
             "SELECT (pg_snapshot_xmin(pg_current_snapshot())::text)::bigint AS next_watermark,
                     packs.segment_id, packs.request_id, packs.head_oid, packs.prerequisites,
                     packs.sha256, packs.plaintext_bytes, packs.encoding_version,
-                    requests.audience AS request_view
+                    requests.audience AS request_view,
+                    requests.author_user_id AS request_author_id,
+                    requests.submitted_at_unix IS NOT NULL AS request_submitted
              FROM (SELECT 1) AS snapshot
              LEFT JOIN (
                  scope_git_pool_packs packs
@@ -111,6 +115,8 @@ where
                     &row.try_get::<String>("", "request_view").map_err(read)?,
                 )
                 .map_err(PostgresError::internal)?,
+                request_author_id: row.try_get("", "request_author_id").map_err(read)?,
+                request_submitted: row.try_get("", "request_submitted").map_err(read)?,
             })
         })
         .collect::<Result<Vec<_>, PostgresError>>()?;

@@ -40,9 +40,9 @@ pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
     ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
 };
-#[cfg(test)]
-pub(crate) use pool::request_objects_repo;
 pub(crate) use pool::retain_staged_pool_pack;
+#[cfg(test)]
+pub(crate) use pool::{RequestObjectRepos, request_object_repos};
 pub(crate) use revision::with_request_revision_store_repo;
 pub(crate) use seeding::attach_request_refs_from_pool;
 #[cfg(test)]
