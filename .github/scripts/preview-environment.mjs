@@ -72,12 +72,18 @@ function deleteVariables(railway, projectId, environmentId, names) {
   }
 }
 
+function postgresVolume(railway, environmentId, serviceId) {
+  return railway.query('query PreviewVolumes($environmentId:String!){environment(id:$environmentId){volumeInstances{edges{node{serviceId mountPath state}}}}}',
+    { environmentId }).environment.volumeInstances.edges.map(({ node }) => node)
+    .find((volume) => volume.serviceId === serviceId && volume.mountPath === POSTGRES_MOUNT);
+}
+
 function ensurePostgresVolume(railway, projectId, environmentId, serviceId) {
-  const volumes = railway.query('query PreviewVolumes($environmentId:String!){environment(id:$environmentId){volumeInstances{edges{node{serviceId mountPath}}}}}',
-    { environmentId }).environment.volumeInstances.edges.map(({ node }) => node);
-  if (volumes.some((volume) => volume.serviceId === serviceId && volume.mountPath === POSTGRES_MOUNT)) return;
-  railway.mutate('mutation PreviewVolume($input:VolumeCreateInput!){volumeCreate(input:$input){id}}',
-    { input: { projectId, environmentId, serviceId, mountPath: POSTGRES_MOUNT } });
+  if (!postgresVolume(railway, environmentId, serviceId)) {
+    railway.mutate('mutation PreviewVolume($input:VolumeCreateInput!){volumeCreate(input:$input){id}}',
+      { input: { projectId, environmentId, serviceId, mountPath: POSTGRES_MOUNT } });
+  }
+  waitFor(railway, 'preview postgres volume', () => postgresVolume(railway, environmentId, serviceId)?.state === 'READY');
 }
 
 function configureMaintenanceRegistry(railway, environmentId, serviceId, credentials) {
