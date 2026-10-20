@@ -250,10 +250,10 @@ function RequestStackLines({ placement: { depth, guides, elbow, children } }: { 
   if (!depth && !children) return null
   return (
     <span aria-hidden="true" className="request-workspace-stack">
-      {guides.map((column) => (
-        <span data-line="pass" key={column} style={{ '--stack-column': column } as CSSProperties} />
+      {guides.map(({ column, dashed }) => (
+        <span data-dashed={dashed || undefined} data-line="pass" key={column} style={{ '--stack-column': column } as CSSProperties} />
       ))}
-      {elbow && <span data-line={elbow} style={{ '--stack-column': depth - 1 } as CSSProperties} />}
+      {elbow && <span data-line={elbow} style={{ '--stack-column': elbow === 'chain' ? depth : depth - 1 } as CSSProperties} />}
       {children && <span data-line="down" style={{ '--stack-column': depth } as CSSProperties} />}
     </span>
   )

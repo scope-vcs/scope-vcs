@@ -1,18 +1,19 @@
 import type { RequestDetailResponse, RequestStackNodeResponse, RequestStackStatus } from '@/api/types.generated'
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
+import { Popover } from '@/components/ui/popover'
 import { shortOid } from '@/lib/short-oid'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 const STATUS: Record<Exclude<RequestStackStatus, 'main'>, { label: string; variant: BadgeVariant; detail: string }> = {
-  waiting_for_parent: { label: 'Waiting for parent', variant: 'neutral', detail: 'Merges after its parent lands.' },
-  parent_extended: { label: 'Parent extended', variant: 'info', detail: 'The parent has new commits. This request’s pinned layer is unchanged and waits for the parent to land.' },
-  parent_rewritten: { label: 'Parent rewritten', variant: 'warning', detail: 'The parent was rewritten after this request was pinned.' },
-  parent_closed: { label: 'Parent closed', variant: 'danger', detail: 'The parent was closed without landing.' },
-  ancestor_blocked: { label: 'Ancestor blocked', variant: 'warning', detail: 'A request further down the stack is blocked.' },
-  integration_conflict: { label: 'Integration conflict', variant: 'danger', detail: 'This layer conflicts with the parent it builds on.' },
-  needs_main_update: { label: 'Update from main required', variant: 'warning', detail: 'Main moved underneath this stack.' },
+  waiting_for_parent: { label: 'Waiting for parent', variant: 'neutral', detail: 'The parent request must land first.' },
+  parent_extended: { label: 'Parent extended', variant: 'info', detail: 'The parent has new commits. This request stays pinned to the earlier revision and merges after the parent lands.' },
+  parent_rewritten: { label: 'Parent rewritten', variant: 'warning', detail: 'The parent no longer contains the pinned revision.' },
+  parent_closed: { label: 'Parent closed', variant: 'danger', detail: 'The parent request was closed.' },
+  ancestor_blocked: { label: 'Ancestor blocked', variant: 'warning', detail: 'An ancestor request is blocked.' },
+  integration_conflict: { label: 'Integration conflict', variant: 'danger', detail: 'This request conflicts with main.' },
+  needs_main_update: { label: 'Update from main required', variant: 'warning', detail: 'This request must contain the latest main.' },
 }
 
 type StackParams = { owner: string; repo: string }
@@ -50,7 +51,7 @@ export function RequestStackContext({ detail, params, childrenLoading = false, c
             </StackStep>
           ))}
           <StackStep dashed={request.base.kind === 'request' && !parent} dot="current">
-            <span aria-current="page" className="max-w-[18rem] truncate font-medium text-foreground" title={request.title}>{request.title}</span>
+            <span aria-current="page" className="min-w-0 max-w-[18rem] truncate font-medium text-foreground" title={request.title}>{request.title}</span>
           </StackStep>
           {children.map((node, index) => (
             <StackStep dot="child" joined={index === 0} key={node.id}>
@@ -65,7 +66,18 @@ export function RequestStackContext({ detail, params, childrenLoading = false, c
             </li>
           ) : null}
         </ol>
-        {status ? <Badge title={status.detail} variant={status.variant}>{status.label}</Badge> : null}
+        {status ? (
+          <Popover
+            align="auto"
+            label={status.label}
+            panel={() => <p className="w-64 text-xs text-muted-foreground">{status.detail}</p>}
+            trigger={(props) => (
+              <button {...props} className="rounded-md focus-visible:outline-2 focus-visible:outline-ring" title={status.detail} type="button">
+                <Badge variant={status.variant}>{status.label}</Badge>
+              </button>
+            )}
+          />
+        ) : null}
       </div>
       {childrenError ? <p className="mt-1.5 text-danger-strong" role="alert">{childrenError}</p> : null}
     </section>
@@ -88,8 +100,8 @@ function StackStep({ children, dot, dashed = false, first = false, joined = true
   title?: string
 }) {
   return (
-    <li className={cn('flex min-w-0 shrink-0 items-center', !joined && 'ml-3')} title={title}>
-      {first || !joined ? null : <span aria-hidden="true" className={cn('mx-1.5 w-4 border-t border-border-strong', dashed && 'border-dashed')} />}
+    <li className={cn('flex min-w-0 max-w-full items-center', !joined && 'ml-3')} title={title}>
+      {first || !joined ? null : <span aria-hidden="true" className={cn('mx-1.5 w-4 shrink-0 border-t border-border-strong', dashed && 'border-dashed')} />}
       {dot ? <span aria-hidden="true" className={cn('mr-1.5 size-2 shrink-0 rounded-full', DOTS[dot])} /> : null}
       {children}
     </li>
@@ -98,7 +110,7 @@ function StackStep({ children, dot, dashed = false, first = false, joined = true
 
 function StackLink({ node, params, detail }: { node: RequestStackNodeResponse; params: StackParams; detail?: string }) {
   return (
-    <Link className="max-w-[14rem] truncate text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" params={{ ...params, requestId: node.id }} search={(current) => ({ view: current.view })} title={detail ? `${node.title} · ${detail}` : node.title} to="/$owner/$repo/requests/$requestId">
+    <Link className="min-w-0 max-w-[14rem] truncate text-muted-foreground underline-offset-4 hover:text-foreground hover:underline" params={{ ...params, requestId: node.id }} search={(current) => ({ view: current.view })} title={detail ? `${node.title} · ${detail}` : node.title} to="/$owner/$repo/requests/$requestId">
       {node.title}
     </Link>
   )

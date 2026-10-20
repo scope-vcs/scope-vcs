@@ -37,18 +37,32 @@ test('a stack moves to its most urgent request and lists parents before children
 test('siblings branch from one parent and the line continues past the earlier sibling', () => {
   assert.deepEqual(layout([row('parent'), row('first', 'parent'), row('nested', 'first'), row('second', 'parent')]), [
     ['parent', { depth: 0, guides: [], elbow: null, children: true }],
-    ['first', { depth: 1, guides: [0], elbow: 'parent', children: true }],
-    ['nested', { depth: 2, guides: [0], elbow: 'parent', children: false }],
+    ['first', { depth: 1, guides: [{ column: 0, dashed: false }], elbow: 'parent', children: true }],
+    ['nested', { depth: 2, guides: [{ column: 0, dashed: false }], elbow: 'parent', children: false }],
     ['second', { depth: 1, guides: [], elbow: 'parent', children: false }],
   ])
 })
 
 test('requests whose parent is elsewhere hang from a shared parent outside the list', () => {
   assert.deepEqual(layout([row('child', 'hidden'), row('plain'), row('sibling', 'hidden'), row('opaque', 'unavailable')]), [
-    ['child', { depth: 1, guides: [0], elbow: 'elsewhere', children: false }],
+    ['child', { depth: 1, guides: [{ column: 0, dashed: true }], elbow: 'elsewhere', children: false }],
     ['sibling', { depth: 1, guides: [], elbow: 'elsewhere', children: false }],
     ['plain', { depth: 0, guides: [], elbow: null, children: false }],
     ['opaque', { depth: 1, guides: [], elbow: 'elsewhere', children: false }],
+  ])
+})
+
+test('indentation stops at the cap and deeper requests join their parent in a straight line', () => {
+  const chain = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6'].map((id, index, ids) => row(id, index ? ids[index - 1] : null))
+  assert.deepEqual(layout([...chain, row('r6b', 'r5')]).map(([id, { depth, guides, elbow }]) => [id, depth, guides.map(({ column }) => column), elbow]), [
+    ['r0', 0, [], null],
+    ['r1', 1, [], 'parent'],
+    ['r2', 2, [], 'parent'],
+    ['r3', 3, [], 'parent'],
+    ['r4', 4, [], 'parent'],
+    ['r5', 4, [], 'chain'],
+    ['r6', 4, [], 'chain'],
+    ['r6b', 4, [], 'chain'],
   ])
 })
 

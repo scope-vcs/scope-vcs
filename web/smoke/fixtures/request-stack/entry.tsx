@@ -30,15 +30,16 @@ function Stack() {
   const [opaque, setOpaque] = useState(false)
   const [childrenError, setChildrenError] = useState<string | null>(null)
   const [stackStatus, setStackStatus] = useState<RequestStackStatus>('waiting_for_parent')
+  const [title, setTitle] = useState('Child UI')
   const [search, setSearch] = useState<RequestChangesSearch>({ revision: revision.id })
-  Object.assign(window, { setStackStatus, setOpaque, setChildrenError, calls, referenceCalls })
+  Object.assign(window, { setStackStatus, setTitle, setOpaque, setChildrenError, calls, referenceCalls })
   const requestBase = revision.base
   const status = stackStatus === 'main' ? 'Ready' : stackStatus === 'parent_rewritten' ? 'ParentRewritten'
     : stackStatus === 'parent_closed' ? 'ParentClosed'
     : stackStatus === 'ancestor_blocked' ? 'AncestorBlocked'
     : stackStatus === 'integration_conflict' ? 'IntegrationConflict' : 'WaitingForParent'
   const request = {
-    id: 'child', title: 'Child UI', author_role: 'Member', head_oid: head, view, stack_status: stackStatus, stack_depth: 2, base_version: 1,
+    id: 'child', title, author_role: 'Member', head_oid: head, view, stack_status: stackStatus, stack_depth: 2, base_version: 1,
     base: requestBase,
     permissions: { can_merge: true, can_submit: false }, mergeability: { status, reason: status },
   } as RequestSummaryResponse

@@ -360,6 +360,13 @@ test('stack context preserves actionable children and row order when parents are
   const avatarLeft = (id) => page.locator(`[data-request-id="${id}"] .request-workspace-row-avatar`).evaluate((node) => node.getBoundingClientRect().left)
   assert.equal(await avatarLeft('child') - await avatarLeft('parent'), 25)
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack.png` })
+  const deep = ['d0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6'].map((id, index, ids) => row(id, index ? { kind: 'available', request: { ...node, id: ids[index - 1], title: `Actionable ${ids[index - 1]}` } } : null))
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { ...pages, active: { ...empty, requests: deep }, set_aside: empty })
+  await page.locator('[data-request-id="d6"]').waitFor()
+  assert.equal(await avatarLeft('d6'), await avatarLeft('d4'))
+  assert.deepEqual(await lines('d6'), ['chain'])
+  assert.equal(await page.locator('[data-request-id="d6"] .request-workspace-row-link').evaluate((node) => node.scrollWidth <= node.clientWidth && node.closest('.request-workspace-sidebar').getBoundingClientRect().right >= node.getBoundingClientRect().right), true)
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), pages)
   const searched = { ...pages, active: { ...empty, requests: [requests[0]] }, set_aside: empty }
   await page.evaluate((pages) => { window.setQuery('child'); window.setQueue({ pages, maintainer: true, loading: false }) }, searched)
   await page.locator('[data-request-id="sibling"]').waitFor({ state: 'detached' })

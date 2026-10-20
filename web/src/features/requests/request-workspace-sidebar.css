@@ -657,3 +657,13 @@ html[data-focus] .application-topbar {
 .request-workspace-stack > [data-line="elsewhere"] {
   border-style: dashed;
 }
+
+.request-workspace-stack > [data-line="pass"][data-dashed] {
+  border-left: 1px dashed var(--border-strong);
+  background: none;
+}
+
+.request-workspace-stack > [data-line="chain"] {
+  bottom: auto;
+  height: calc(var(--stack-pad) - 3px);
+}

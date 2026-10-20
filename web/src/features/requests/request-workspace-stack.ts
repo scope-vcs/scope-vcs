@@ -1,9 +1,13 @@
 import type { RequestQueueItemResponse } from '../../api/types.generated'
 
+const REQUEST_STACK_MAX_INDENT = 4
+
+type RequestStackGuide = { column: number; dashed: boolean }
+
 export type RequestStackPlacement = {
   depth: number
-  guides: number[]
-  elbow: 'parent' | 'elsewhere' | null
+  guides: RequestStackGuide[]
+  elbow: 'parent' | 'elsewhere' | 'chain' | null
   children: boolean
 }
 
@@ -37,11 +41,18 @@ export function stackRequestRows<T extends StackRow>(rows: T[]): { row: T; place
   }
   const placed: { row: T; placement: RequestStackPlacement }[] = []
   const seen = new Set<StackNode<T>>()
-  const visit = (node: StackNode<T>, depth: number, guides: number[], elbow: RequestStackPlacement['elbow'], last: boolean) => {
+  const visit = (node: StackNode<T>, depth: number, guides: RequestStackGuide[], elbow: RequestStackPlacement['elbow'], last: boolean) => {
     if (seen.has(node)) return
     seen.add(node)
-    const own = depth > 0 && !last ? [...guides, depth - 1] : guides
-    if (node.row) placed.push({ row: node.row, placement: { depth, guides: own, elbow, children: node.children.length > 0 } })
+    const indented = depth <= REQUEST_STACK_MAX_INDENT
+    const own = depth > 0 && indented && !last ? [...guides, { column: depth - 1, dashed: elbow === 'elsewhere' }] : guides
+    const placement = {
+      depth: Math.min(depth, REQUEST_STACK_MAX_INDENT),
+      guides: own,
+      elbow: indented ? elbow : 'chain',
+      children: node.children.length > 0,
+    } as const
+    if (node.row) placed.push({ row: node.row, placement })
     node.children.forEach((child, index) =>
       visit(child, depth + 1, own, node.row ? 'parent' : 'elsewhere', index === node.children.length - 1),
     )
