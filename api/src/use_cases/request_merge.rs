@@ -367,6 +367,7 @@ async fn prepare_request_merge_for_execution(
         let attach = attach_request_refs_from_pool(
             state,
             &request_incarnation,
+            &repo.repo_config,
             Vec::new(),
             vec![request.clone()],
             &staging_repo,

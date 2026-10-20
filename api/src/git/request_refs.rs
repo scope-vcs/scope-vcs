@@ -10,7 +10,7 @@ use crate::{
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
         staging::write_receive_pack_hook,
-        storage::{receive_pack_staging_repo_path, request_ref_store_repo_path},
+        storage::receive_pack_staging_repo_path,
     },
     state::AppState,
 };
@@ -40,6 +40,8 @@ pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
     ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
 };
+#[cfg(test)]
+pub(crate) use pool::request_objects_repo;
 pub(crate) use pool::retain_staged_pool_pack;
 pub(crate) use revision::with_request_revision_store_repo;
 pub(crate) use seeding::attach_request_refs_from_pool;
@@ -501,13 +503,6 @@ fn ensure_request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<(), ApiE
     Err(ApiError::bad_request(REQUEST_REF_COMMIT_ERROR))
 }
 
-fn ensure_request_ref_store_repo(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-) -> Result<PathBuf, ApiError> {
-    ensure_local_bare_repo(request_ref_store_repo_path(state, incarnation))
-}
-
 fn ensure_local_bare_repo(repo: PathBuf) -> Result<PathBuf, ApiError> {
     if repo.join("objects").is_dir() {
         return Ok(repo);
@@ -540,6 +535,13 @@ fn ensure_local_bare_repo(repo: PathBuf) -> Result<PathBuf, ApiError> {
                 &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
             ],
             "setting local Git repository head",
+        )
+    })
+    .and_then(|()| {
+        run_git(
+            Some(&initializing),
+            &["config", "gc.auto", "0"],
+            "keeping local Git repository objects",
         )
     })
     .and_then(|()| fs::rename(&initializing, &repo).map_err(ApiError::internal));

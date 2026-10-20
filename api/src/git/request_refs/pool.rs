@@ -2,14 +2,17 @@ use super::{StagedPoolPack, seeding::present_commits};
 use crate::{
     error::ApiError,
     git::{
-        restore::install_verified_git_pack,
-        staging::add_receive_pack_alternate,
-        storage::{request_pool_repo_path, request_ref_store_repo_path},
+        restore::install_verified_git_pack, staging::add_receive_pack_alternate,
+        storage::request_objects_root,
     },
     state::AppState,
 };
 use futures_util::{StreamExt as _, stream};
-use scope_domain::repository::{RepositoryIncarnation, git::GitPoolPack};
+use scope_domain::{
+    repo_config::RepoConfig,
+    repository::{RepositoryIncarnation, git::GitPoolPack},
+};
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Write,
@@ -19,12 +22,35 @@ use std::{
 const WATERMARK_FILE: &str = "pool-watermark";
 const CONCURRENT_POOL_DOWNLOADS: usize = 4;
 
+pub(crate) fn request_objects_repo(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+) -> Result<PathBuf, ApiError> {
+    let generation =
+        serde_json::to_vec(&(&config.views, &config.history)).map_err(ApiError::internal)?;
+    let repo = super::ensure_local_bare_repo(request_objects_root(state, incarnation).join(
+        format!("{}.git", hex::encode(&Sha256::digest(generation)[..16])),
+    ))?;
+    let canonical = state
+        .repository_engine
+        .repository_path(incarnation)
+        .join("objects");
+    if canonical.is_dir() {
+        add_receive_pack_alternate(&repo, &canonical)?;
+    }
+    Ok(repo)
+}
+
 pub(crate) async fn sync_request_pool(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    staging_repo: &FsPath,
+    config: &RepoConfig,
+    objects_repo: &FsPath,
 ) {
-    if let Err(error) = install_registered_pool_packs(state, incarnation, staging_repo).await {
+    if let Err(error) =
+        install_registered_pool_packs(state, incarnation, config, objects_repo).await
+    {
         tracing::warn!(
             repository_id = incarnation.repository_id(),
             error = %error.operator_diagnostic(),
@@ -36,10 +62,11 @@ pub(crate) async fn sync_request_pool(
 pub(crate) async fn retain_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
     pool_pack: &StagedPoolPack,
 ) {
     let staged = &pool_pack.staged.staged_segment;
-    if let Err(error) = install_staged_pool_pack(state, incarnation, pool_pack).await {
+    if let Err(error) = install_staged_pool_pack(state, incarnation, config, pool_pack).await {
         tracing::warn!(
             repository_id = incarnation.repository_id(),
             segment_id = staged.segment.segment_id,
@@ -60,30 +87,25 @@ pub(crate) async fn retain_staged_pool_pack(
 async fn install_registered_pool_packs(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    staging_repo: &FsPath,
+    config: &RepoConfig,
+    objects_repo: &FsPath,
 ) -> Result<(), ApiError> {
-    let pool_repo = {
-        let state = state.clone();
-        let incarnation = incarnation.clone();
-        let staging_repo = staging_repo.to_path_buf();
-        crate::git::blocking::run(move || {
-            let pool_repo = ensure_request_pool_repo(&state, &incarnation)?;
-            add_receive_pack_alternate(&staging_repo, &pool_repo.join("objects"))?;
-            Ok(pool_repo)
-        })
-        .await?
-    };
-    let watermark = read_watermark(&pool_repo)?;
+    let watermark = read_watermark(objects_repo)?;
     let listed = state
         .metadata
         .repositories()
         .git_pool_packs_after(incarnation.repository_id(), watermark)
         .await?;
-    let mut pending = listed.packs;
+    let mut pending = listed
+        .packs
+        .into_iter()
+        .filter(|listed| config.views.get(&listed.request_view).is_some())
+        .map(|listed| listed.pack)
+        .collect::<Vec<_>>();
     loop {
         let (installable, waiting) = {
-            let pool_repo = pool_repo.clone();
-            crate::git::blocking::run(move || installable_packs(&pool_repo, pending)).await?
+            let objects_repo = objects_repo.to_path_buf();
+            crate::git::blocking::run(move || installable_packs(&objects_repo, pending)).await?
         };
         if installable.is_empty() {
             break;
@@ -99,7 +121,7 @@ async fn install_registered_pool_packs(
         .buffered(CONCURRENT_POOL_DOWNLOADS);
         let mut installed = 0;
         while let Some((pack, verified)) = downloads.next().await {
-            match async { install_pack(state, &pool_repo, verified?).await }.await {
+            match async { install_pack(state, objects_repo, verified?).await }.await {
                 Ok(()) => installed += 1,
                 Err(error) => tracing::warn!(
                     repository_id = incarnation.repository_id(),
@@ -114,22 +136,24 @@ async fn install_registered_pool_packs(
         }
         pending = waiting;
     }
-    write_watermark(&pool_repo, listed.watermark)
+    write_watermark(objects_repo, listed.watermark)
 }
 
 async fn install_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
     pool_pack: &StagedPoolPack,
 ) -> Result<(), ApiError> {
-    let (pool_repo, installable) = {
+    let (objects_repo, installable) = {
         let state = state.clone();
         let incarnation = incarnation.clone();
+        let config = config.clone();
         let pack = pool_pack.pack.clone();
         crate::git::blocking::run(move || {
-            let pool_repo = ensure_request_pool_repo(&state, &incarnation)?;
-            let (installable, _) = installable_packs(&pool_repo, vec![pack])?;
-            Ok((pool_repo, !installable.is_empty()))
+            let objects_repo = request_objects_repo(&state, &incarnation, &config)?;
+            let (installable, _) = installable_packs(&objects_repo, vec![pack])?;
+            Ok((objects_repo, !installable.is_empty()))
         })
         .await?
     };
@@ -141,28 +165,28 @@ async fn install_staged_pool_pack(
         .promote_verified_pack(incarnation, &pool_pack.staged.staged_segment)
         .await
         .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
-    install_pack(state, &pool_repo, verified).await
+    install_pack(state, &objects_repo, verified).await
 }
 
 async fn install_pack(
     state: &AppState,
-    pool_repo: &FsPath,
+    objects_repo: &FsPath,
     verified: scope_storage::VerifiedGitPack,
 ) -> Result<(), ApiError> {
-    let pool_repo = pool_repo.to_path_buf();
+    let objects_repo = objects_repo.to_path_buf();
     let timeout = state.runtime_budgets.git_command_timeout();
     crate::git::blocking::run(move || {
-        install_verified_git_pack(&pool_repo, verified.path(), timeout)
+        install_verified_git_pack(&objects_repo, verified.path(), timeout)
     })
     .await
 }
 
 fn installable_packs(
-    pool_repo: &FsPath,
+    objects_repo: &FsPath,
     packs: Vec<GitPoolPack>,
 ) -> Result<(Vec<GitPoolPack>, Vec<GitPoolPack>), ApiError> {
     let present = present_commits(
-        pool_repo,
+        objects_repo,
         packs
             .iter()
             .flat_map(|pack| std::iter::once(&pack.head_oid).chain(&pack.prerequisites))
@@ -178,38 +202,19 @@ fn installable_packs(
         }))
 }
 
-fn ensure_request_pool_repo(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-) -> Result<PathBuf, ApiError> {
-    let pool_repo = super::ensure_local_bare_repo(request_pool_repo_path(state, incarnation))?;
-    for objects in [
-        request_ref_store_repo_path(state, incarnation).join("objects"),
-        state
-            .repository_engine
-            .repository_path(incarnation)
-            .join("objects"),
-    ] {
-        if objects.is_dir() {
-            add_receive_pack_alternate(&pool_repo, &objects)?;
-        }
-    }
-    Ok(pool_repo)
-}
-
-fn read_watermark(pool_repo: &FsPath) -> Result<Option<i64>, ApiError> {
-    match fs::read_to_string(pool_repo.join(WATERMARK_FILE)) {
+fn read_watermark(objects_repo: &FsPath) -> Result<Option<i64>, ApiError> {
+    match fs::read_to_string(objects_repo.join(WATERMARK_FILE)) {
         Ok(text) => text.trim().parse().map(Some).map_err(ApiError::internal),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(ApiError::internal(error)),
     }
 }
 
-fn write_watermark(pool_repo: &FsPath, watermark: i64) -> Result<(), ApiError> {
-    let mut file = tempfile::NamedTempFile::new_in(pool_repo).map_err(ApiError::internal)?;
+fn write_watermark(objects_repo: &FsPath, watermark: i64) -> Result<(), ApiError> {
+    let mut file = tempfile::NamedTempFile::new_in(objects_repo).map_err(ApiError::internal)?;
     file.write_all(watermark.to_string().as_bytes())
         .map_err(ApiError::internal)?;
-    file.persist(pool_repo.join(WATERMARK_FILE))
+    file.persist(objects_repo.join(WATERMARK_FILE))
         .map_err(|error| ApiError::internal(error.error))?;
     Ok(())
 }

@@ -1,16 +1,15 @@
 use super::{
-    RequestViewBases, attach_visible_request_refs, ensure_request_ref_store_repo,
+    RequestViewBases, attach_visible_request_refs,
+    pool::{request_objects_repo, sync_request_pool},
     snapshot::{BundleRef, fetch_snapshot_into_ref},
 };
 use crate::{
     error::ApiError,
-    git::{
-        command::git_command_output, staging::add_receive_pack_alternate,
-        storage::request_ref_store_repo_path,
-    },
+    git::{command::git_command_output, staging::add_receive_pack_alternate},
     state::AppState,
 };
 use scope_domain::{
+    repo_config::RepoConfig,
     repository::RepositoryIncarnation,
     requests::{Request, canonical_request_ref},
 };
@@ -24,19 +23,31 @@ struct StoredRequestRefs<'a> {
 pub(crate) async fn attach_request_refs_from_pool(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
     objects_for: Vec<Request>,
     refs_for: Vec<Request>,
     staging_repo: &FsPath,
     view_bases: RequestViewBases,
 ) -> Result<Vec<Request>, ApiError> {
-    super::pool::sync_request_pool(state, incarnation, staging_repo).await;
+    let objects_repo = {
+        let state = state.clone();
+        let incarnation = incarnation.clone();
+        let config = config.clone();
+        let staging_repo = staging_repo.to_path_buf();
+        crate::git::blocking::run(move || {
+            let objects_repo = request_objects_repo(&state, &incarnation, &config)?;
+            add_receive_pack_alternate(&staging_repo, &objects_repo.join("objects"))?;
+            Ok(objects_repo)
+        })
+        .await?
+    };
+    sync_request_pool(state, incarnation, config, &objects_repo).await;
     let state = state.clone();
-    let incarnation = incarnation.clone();
     let staging_repo = staging_repo.to_path_buf();
     crate::git::blocking::run(move || {
-        attach_request_refs_from_store(
+        attach_request_refs(
             &state,
-            &incarnation,
+            &objects_repo,
             StoredRequestRefs {
                 objects_for: &objects_for,
                 refs_for: &refs_for,
@@ -48,9 +59,9 @@ pub(crate) async fn attach_request_refs_from_pool(
     .await
 }
 
-fn attach_request_refs_from_store(
+fn attach_request_refs(
     state: &AppState,
-    incarnation: &RepositoryIncarnation,
+    objects_repo: &FsPath,
     requests: StoredRequestRefs<'_>,
     staging_repo: &FsPath,
     view_bases: &RequestViewBases,
@@ -61,31 +72,20 @@ fn attach_request_refs_from_store(
         .chain(requests.refs_for)
         .filter(|request| request.git_snapshot.is_some())
         .collect::<Vec<_>>();
-    let store_repo = request_ref_store_repo_path(state, incarnation);
-    if store_repo.join("objects").is_dir() {
-        add_receive_pack_alternate(staging_repo, &store_repo.join("objects"))?;
-    }
     if !snapshotted.is_empty() {
         let present = present_commits(
             staging_repo,
             snapshotted.iter().map(|request| request.head_oid.as_str()),
         )?;
-        let missing = snapshotted
-            .iter()
-            .filter(|request| !present.contains(&request.head_oid))
-            .collect::<Vec<_>>();
-        let (shared, private): (Vec<_>, Vec<_>) = missing
+        let (shared, private): (Vec<_>, Vec<_>) = snapshotted
             .into_iter()
+            .filter(|request| !present.contains(&request.head_oid))
             .partition(|request| request.is_submitted());
         for request in private {
             restore_request_objects(state, staging_repo, None, request)?;
         }
-        if !shared.is_empty() {
-            let store_repo = ensure_request_ref_store_repo(state, incarnation)?;
-            for request in shared {
-                restore_request_objects(state, &store_repo, Some(staging_repo), request)?;
-            }
-            add_receive_pack_alternate(staging_repo, &store_repo.join("objects"))?;
+        for request in shared {
+            restore_request_objects(state, objects_repo, Some(staging_repo), request)?;
         }
     }
     let (stored, snapshotless): (Vec<_>, Vec<_>) = requests

@@ -272,6 +272,7 @@ async fn seed_editable_request_refs_for_repo(
         attach_request_refs_from_pool(
             state,
             &context.incarnation,
+            &context.repo_config,
             objects_for,
             refs_for,
             staging_repo,
@@ -461,7 +462,7 @@ pub(super) async fn persist_request_ref_revision(
                 .await;
             persisted.fence.release().await;
             if let Some(pool_pack) = &persisted.pool_pack {
-                retain_staged_pool_pack(state, &incarnation, pool_pack).await;
+                retain_staged_pool_pack(state, &incarnation, &context.repo_config, pool_pack).await;
             }
             crate::use_cases::request_checks::best_effort_evaluate_request_checks(
                 state,

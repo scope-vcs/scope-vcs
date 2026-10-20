@@ -1,13 +1,22 @@
 use super::publish_git_segment;
 use crate::db::integer_columns::{i32_to_u32, i64_to_u64, u32_to_i32, u64_to_i64};
 use crate::error::PostgresError;
-use scope_domain::repository::git::{GitPoolPack, GitSegmentRef};
+use scope_domain::{
+    repository::git::{GitPoolPack, GitSegmentRef},
+    views::ViewId,
+};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitPoolPacks {
-    pub packs: Vec<GitPoolPack>,
+    pub packs: Vec<PooledRequestPack>,
     pub watermark: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PooledRequestPack {
+    pub pack: GitPoolPack,
+    pub request_view: ViewId,
 }
 
 pub(in crate::db) async fn register_git_pool_pack<C>(
@@ -55,10 +64,13 @@ where
             DatabaseBackend::Postgres,
             "SELECT (pg_snapshot_xmin(pg_current_snapshot())::text)::bigint AS next_watermark,
                     packs.segment_id, packs.request_id, packs.head_oid, packs.prerequisites,
-                    packs.sha256, packs.plaintext_bytes, packs.encoding_version
+                    packs.sha256, packs.plaintext_bytes, packs.encoding_version,
+                    requests.audience AS request_view
              FROM (SELECT 1) AS snapshot
-             LEFT JOIN scope_git_pool_packs packs
-               ON packs.repo_id = $1 AND packs.transaction_id >= $2
+             LEFT JOIN (
+                 scope_git_pool_packs packs
+                 JOIN scope_requests requests ON requests.id = packs.request_id
+             ) ON packs.repo_id = $1 AND packs.transaction_id >= $2
              ORDER BY packs.transaction_id, packs.segment_id",
             [repo_id.into(), watermark.unwrap_or(i64::MAX).into()],
         ))
@@ -76,7 +88,7 @@ where
         })
         .map(|row| {
             let read = PostgresError::internal;
-            Ok(GitPoolPack {
+            let pack = GitPoolPack {
                 segment: GitSegmentRef {
                     segment_id: row.try_get("", "segment_id").map_err(read)?,
                     sha256: row.try_get("", "sha256").map_err(read)?,
@@ -92,6 +104,13 @@ where
                 request_id: row.try_get("", "request_id").map_err(read)?,
                 head_oid: row.try_get("", "head_oid").map_err(read)?,
                 prerequisites: row.try_get("", "prerequisites").map_err(read)?,
+            };
+            Ok(PooledRequestPack {
+                pack,
+                request_view: ViewId::parse(
+                    &row.try_get::<String>("", "request_view").map_err(read)?,
+                )
+                .map_err(PostgresError::internal)?,
             })
         })
         .collect::<Result<Vec<_>, PostgresError>>()?;

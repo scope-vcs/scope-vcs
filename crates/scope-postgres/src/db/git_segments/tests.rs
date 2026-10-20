@@ -435,12 +435,18 @@ async fn a_pool_pack_committed_after_a_listing_is_returned_by_the_next_one() {
         .git_pool_packs_after("segment-user/repo", Some(0))
         .await
         .unwrap();
-    assert_eq!(first.packs, std::slice::from_ref(&early));
+    assert_eq!(
+        first.packs,
+        [PooledRequestPack {
+            pack: early,
+            request_view: scope_domain::views::ViewId::private(),
+        }]
+    );
     late_tx.commit().await.unwrap();
 
     let second = repositories
         .git_pool_packs_after("segment-user/repo", Some(first.watermark))
         .await
         .unwrap();
-    assert!(second.packs.contains(&late));
+    assert!(second.packs.iter().any(|listed| listed.pack == late));
 }
