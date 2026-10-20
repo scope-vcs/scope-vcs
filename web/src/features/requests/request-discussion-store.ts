@@ -55,6 +55,7 @@ export function useRequestDiscussionStore({
   initialPage,
   params,
   repoId,
+  requestHead,
   viewerId,
 }: {
   actions: RequestDiscussionActions
@@ -62,6 +63,7 @@ export function useRequestDiscussionStore({
   initialPage: RequestDiscussionPage
   params: RequestParams
   repoId: string
+  requestHead: string
   viewerId: string
 }) {
   const key = requestDiscussionCacheKey({
@@ -76,22 +78,17 @@ export function useRequestDiscussionStore({
   const subscribe = useCallback((listener: () => void) => requestDiscussionResource.subscribe(key, listener), [key])
   const read = useCallback(() => requestDiscussionResource.peek(key) ?? session, [key, session])
   const { collection, error, loadingMore } = useSyncExternalStore(subscribe, read, () => session)
-  const { sync, refreshAnchors, updateCollection, setError, setLoadingMore } = session
+  const { sync, syncProjections, updateCollection, setError, setLoadingMore } = session
 
   useEffect(() => { void session.refresh(initialPage) }, [initialPage, session])
+  useEffect(() => {
+    void syncProjections(requestHead, (page) => actions.load({ ...params, ...page }))
+  }, [actions, params, requestHead, syncProjections])
 
   const onRepoChange = useCallback(
     (event: RepoChangeEvent) => {
       if (event.kind === 'Lagged') {
         void sync.catchUp({ lagged: true })
-        return
-      }
-      if (
-        typeof event.kind === 'object' &&
-        'RequestStateChanged' in event.kind &&
-        event.kind.RequestStateChanged.request_id === params.request_id
-      ) {
-        void refreshAnchors((limit) => actions.load({ ...params, limit }))
         return
       }
       if (
@@ -106,7 +103,7 @@ export function useRequestDiscussionStore({
         })
       }
     },
-    [actions, params, read, refreshAnchors, sync],
+    [params.request_id, read, sync],
   )
   useRepoChangeSubscription(onRepoChange)
 
