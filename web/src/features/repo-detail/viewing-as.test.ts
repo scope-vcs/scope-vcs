@@ -56,5 +56,6 @@ test('the picker trigger names the selected view it is viewing as', () => {
     options: views.readableBy('private'),
     value: 'agent',
   }))
-  assert.equal(html.replace(/<[^>]+>/g, ''), 'Viewing as Agent')
+  const trigger = html.match(/<button[^>]*aria-haspopup="menu"[^>]*>([\s\S]*?)<\/button>/)?.[1] ?? ''
+  assert.equal(trigger.replace(/<[^>]+>/g, ''), 'Viewing as Agent')
 })

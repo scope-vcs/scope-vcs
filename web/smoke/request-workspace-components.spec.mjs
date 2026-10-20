@@ -239,16 +239,28 @@ test('the viewing-as picker names the current view and switches views from its m
   await trigger.hover()
   assert.equal(await page.getByRole('tooltip').textContent(), 'Viewing as Private')
   await trigger.click()
-  const menu = page.getByRole('dialog', { name: 'Viewing as' })
-  assert.deepEqual(await menu.getByRole('button').allTextContents(), ['Public', 'Private'])
-  assert.equal(await menu.getByRole('button', { name: 'Private' }).getAttribute('aria-current'), 'true')
+  const menu = page.getByRole('menu', { name: 'Viewing as' })
+  assert.deepEqual(await menu.getByRole('menuitemradio').allTextContents(), ['Public', 'Private'])
+  assert.equal(await menu.getByRole('menuitemradio', { name: 'Private' }).getAttribute('aria-checked'), 'true')
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.viewing-as-menu.png` })
   }
-  await menu.getByRole('button', { name: 'Public' }).click()
-  await page.getByRole('button', { name: 'Viewing as Public' }).waitFor()
+  await page.keyboard.press('j')
+  assert.equal(await menu.getByRole('menuitemradio', { name: 'Private' }).evaluate((node) => node === document.activeElement), true)
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Enter')
+  const publicTrigger = page.getByRole('button', { name: 'Viewing as Public' })
+  await publicTrigger.waitFor()
   assert.equal(await menu.isVisible(), false)
+  assert.equal(await publicTrigger.evaluate((node) => node === document.activeElement), true)
   assert.equal(new URL(page.url()).searchParams.get('view'), 'public')
+
+  await page.setViewportSize({ width: 1280, height: 200 })
+  await publicTrigger.click()
+  await page.waitForFunction((node) => {
+    const { bottom, top } = node.getBoundingClientRect()
+    return top >= 0 && bottom <= window.innerHeight
+  }, await menu.elementHandle())
   assert.deepEqual(errors, [])
 })
 
