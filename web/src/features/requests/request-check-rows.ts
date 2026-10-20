@@ -12,8 +12,7 @@ export type RequestCheckRow = {
   parents: string[]
   state: string
   tone: RunTone
-  label: string
-  labelVisible: boolean
+  reason: string | null
   run: { id: string; hash?: string } | null
 }
 
@@ -37,7 +36,7 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
       null,
       check.workflow_name,
       check.run_state === 'canceled' ? 'failed' : check.run_state ?? 'pending',
-      check.run_state ? runStatus(check.run_state).label : 'not started',
+      runStatus(check.run_state ?? 'pending').label,
       check.run_id ? { id: check.run_id } : null,
     )
   }
@@ -140,7 +139,7 @@ function row(
 ): RequestCheckRow {
   const parts = name.split(' / ')
   const leaf = parts.pop()!
-  const status = runStatus(state)
-  const labelVisible = status.tone === 'danger' && label !== status.label
-  return { key, provider, workflow, name, leaf, parents: parts, state, tone: status.tone, label, labelVisible, run }
+  const tone = runStatus(state).tone
+  const reason = tone === 'danger' && label !== 'failed' ? label : null
+  return { key, provider, workflow, name, leaf, parents: parts, state, tone, reason, run }
 }

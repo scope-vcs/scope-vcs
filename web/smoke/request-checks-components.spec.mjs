@@ -16,7 +16,7 @@ test('request CI states its count once, names workflows only when several share 
   await workflow.getByRole('heading', { name: 'CI', exact: true }).waitFor()
   assert.deepEqual(
     await workflow.getByRole('list', { name: 'CI jobs', exact: true }).getByRole('listitem').allTextContents(),
-    ['Check operationsin progress', 'CLI validationValidate selected componentsqueued'],
+    ['Check operations', 'CLI validationValidate selected components'],
   )
   await checks.getByRole('list', { name: 'Results without a workflow' }).getByText('Integration validation', { exact: true }).waitFor()
   assert.deepEqual(
@@ -63,7 +63,7 @@ test('request CI states its count once, names workflows only when several share 
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-failed.png`, fullPage: true })
   }
-  await checks.getByRole('link', { name: /checks.*failed/ }).click()
+  await checks.getByRole('link', { name: 'failed checks', exact: true }).click()
   await page.getByRole('heading', { name: 'Run run_checks' }).waitFor()
   assert.equal(new URL(page.url()).pathname, '/octo/demo/runs/run_checks')
   await page.goBack()

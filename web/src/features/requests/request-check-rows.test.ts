@@ -38,8 +38,7 @@ test('a native check links its run, and one without a run has not started', () =
     key: 'native:/.scope/runs/checks.yml',
     provider: 'native',
     workflow: null,
-    label: 'starting',
-    labelVisible: false,
+    reason: null,
     leaf: 'checks',
     name: 'checks',
     parents: [],
@@ -53,8 +52,7 @@ test('a native check links its run, and one without a run has not started', () =
       key: 'native:/.scope/runs/checks.yml',
       provider: 'native',
       workflow: null,
-      label: 'not started',
-      labelVisible: false,
+      reason: null,
       leaf: 'checks',
       name: 'checks',
       parents: [],
@@ -65,14 +63,13 @@ test('a native check links its run, and one without a run has not started', () =
   )
 })
 
-test('a GitHub check labels its conclusion, then its status, shows only failure reasons, and opens its job on Scope', () => {
+test('a GitHub check takes its conclusion, then its status, names only a specific failure reason, and opens its job on Scope', () => {
   const run = { run_id: '42', workflow_name: 'Build and test', job_id: '7' }
   assert.deepEqual(rows(github('ci / unit / test', 'completed', 'timed_out', run))[0], {
     key: 'github:ci / unit / test',
     provider: 'github',
     workflow: { id: '42', name: 'Build and test' },
-    label: 'timed out',
-    labelVisible: true,
+    reason: 'timed out',
     leaf: 'test',
     name: 'ci / unit / test',
     parents: ['ci', 'unit'],
@@ -81,10 +78,10 @@ test('a GitHub check labels its conclusion, then its status, shows only failure 
     tone: 'danger',
   })
   assert.equal(rows(github('ci', 'completed', 'neutral'))[0]!.state, 'succeeded')
-  assert.equal(rows(github('ci', 'in_progress'))[0]!.label, 'in progress')
-  assert.equal(rows(github('ci', null))[0]!.label, 'waiting')
+  assert.equal(rows(github('ci', 'in_progress'))[0]!.state, 'running')
+  assert.equal(rows(github('ci', null))[0]!.state, 'pending')
   assert.equal(rows(github('ci', 'completed', 'success'))[0]!.run, null)
-  assert.equal(rows(github('ci', 'completed', 'failure'))[0]!.labelVisible, false)
+  assert.equal(rows(github('ci', 'completed', 'failure'))[0]!.reason, null)
 })
 
 test('the summary leads with its most urgent count and lists only checks that need someone', () => {
@@ -123,7 +120,12 @@ test('the summary leads with its most urgent count and lists only checks that ne
     { provider: 'native', workflow_path: '/b.yml', workflow_name: 'b', run_id: 'run_b', run_state: 'canceled' },
   ]))
   assert.deepEqual(canceled.status, { tone: 'danger', text: '1 failed' })
-  assert.deepEqual(canceled.attention.map((row) => [row.name, row.label, row.labelVisible]), [['b', 'canceled', true]])
+  assert.deepEqual(canceled.attention.map((row) => [row.name, row.reason]), [['b', 'canceled']])
+
+  const lost = requestChecksSummary(checks([
+    { provider: 'native', workflow_path: '/c.yml', workflow_name: 'c', run_id: 'run_c', run_state: 'lost' },
+  ]))
+  assert.deepEqual(lost.attention.map((row) => row.reason), ['lost'])
 })
 
 test('the summary says when checks are starting or could not start, without naming the host', () => {

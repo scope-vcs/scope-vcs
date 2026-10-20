@@ -47,7 +47,7 @@ function ResultRow({ params, row }: { params: RepoParams; row: RequestCheckRow }
         <span className={cn('block break-words', row.tone === 'inert' && 'text-muted-foreground')}>{row.leaf}</span>
         {row.parents.length ? <span className="block break-words text-xs text-muted-foreground">{row.parents.join(' / ')}</span> : null}
       </span>
-      <span className={cn('shrink-0 text-xs text-danger-strong', !row.labelVisible && 'sr-only')}>{row.label}</span>
+      {row.reason ? <span className="shrink-0 text-xs text-danger-strong">{row.reason}</span> : null}
       <ChevronRight aria-hidden="true" className={cn('size-3 shrink-0', row.run ? 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100' : 'invisible')} />
     </>
   )
