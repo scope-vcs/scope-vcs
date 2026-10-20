@@ -16,6 +16,10 @@
     display: block;
   }
 
+  .request-details-rail .request-details-body {
+    padding-inline-end: var(--app-inset);
+  }
+
   .request-details-trigger {
     display: none;
   }
