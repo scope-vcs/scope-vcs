@@ -423,6 +423,7 @@ async fn stage_pool_pack(
     let revisions = std::iter::once(update.new_head_oid.clone())
         .chain(prerequisites.iter().map(|oid| format!("^{oid}")))
         .collect::<Vec<_>>();
+    let started = std::time::Instant::now();
     let staged = stage_git_pack(
         state,
         git.incarnation.repository_id(),
@@ -430,6 +431,14 @@ async fn stage_pool_pack(
         &revisions,
     )
     .await?;
+    tracing::info!(
+        repository_id = git.incarnation.repository_id(),
+        bytes = staged.staged_segment.segment.plaintext_bytes,
+        duration_ms = started.elapsed().as_millis(),
+        local_write_us = staged.staged_segment.timings.local_write.as_micros(),
+        remote_upload_us = staged.staged_segment.timings.remote_upload.as_micros(),
+        "request pool pack staged"
+    );
     Ok(StagedPoolPack {
         pack: GitPoolPack {
             segment: staged.staged_segment.segment.clone(),

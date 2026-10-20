@@ -68,6 +68,7 @@ pub(crate) async fn sync_request_pool(
             &config.views,
         )
     };
+    let started = std::time::Instant::now();
     let installs = [
         (
             &repos.shared,
@@ -83,16 +84,24 @@ pub(crate) async fn sync_request_pool(
             .await,
         ),
     ];
+    let mut installed_total = 0;
     for (repo, installed) in installs {
-        if let Err(error) = installed {
-            tracing::warn!(
+        match installed {
+            Ok(installed) => installed_total += installed,
+            Err(error) => tracing::warn!(
                 repository_id = incarnation.repository_id(),
                 objects = %repo.display(),
                 error = %error.operator_diagnostic(),
                 "request object pool sync failed; missing requests restore from their snapshots"
-            );
+            ),
         }
     }
+    tracing::info!(
+        repository_id = incarnation.repository_id(),
+        installed = installed_total,
+        duration_ms = started.elapsed().as_millis(),
+        "request object pool synced"
+    );
 }
 
 pub(crate) async fn retain_staged_pool_pack(
@@ -137,7 +146,7 @@ async fn install_registered_pool_packs(
     incarnation: &RepositoryIncarnation,
     objects_repo: &FsPath,
     installs: impl Fn(&PooledRequestPack) -> bool,
-) -> Result<(), ApiError> {
+) -> Result<usize, ApiError> {
     let watermark = read_watermark(objects_repo)?;
     let listed = state
         .metadata
@@ -150,6 +159,7 @@ async fn install_registered_pool_packs(
         .filter(|listed| installs(listed))
         .map(|listed| listed.pack)
         .collect::<Vec<_>>();
+    let mut installed_total = 0;
     loop {
         let (installable, waiting) = {
             let objects_repo = objects_repo.to_path_buf();
@@ -169,11 +179,18 @@ async fn install_registered_pool_packs(
         .buffered(CONCURRENT_POOL_DOWNLOADS);
         let mut installed = 0;
         while let Some((pack, verified)) = downloads.next().await {
-            match async { install_pack(state, objects_repo, verified?).await }.await {
+            let installed_pack = match verified {
+                Ok(verified) => install_pack(state, objects_repo, verified)
+                    .await
+                    .map_err(|error| ("install", error)),
+                Err(error) => Err(("download", error)),
+            };
+            match installed_pack {
                 Ok(()) => installed += 1,
-                Err(error) => tracing::warn!(
+                Err((step, error)) => tracing::warn!(
                     repository_id = incarnation.repository_id(),
                     segment_id = pack.segment.segment_id,
+                    step,
                     error = %error.operator_diagnostic(),
                     "skipping an unusable request pool pack"
                 ),
@@ -182,9 +199,11 @@ async fn install_registered_pool_packs(
         if installed == 0 {
             break;
         }
+        installed_total += installed;
         pending = waiting;
     }
-    write_watermark(objects_repo, listed.watermark)
+    write_watermark(objects_repo, listed.watermark)?;
+    Ok(installed_total)
 }
 
 async fn install_staged_pool_pack(
