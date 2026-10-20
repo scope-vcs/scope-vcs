@@ -126,7 +126,8 @@ main, whether a request merge, an auto-merge, or an authorized push to main,
 queue a push of the new main commit to the connected repository's `main`. The
 push is queued in the same transaction that moves Scope main.
 `PUT /v1/repos/{owner}/{repo}/github/main-publication` with `{ "enabled": true }`
-turns it on. Only a maintainer who reads the full view and can change file
+turns it on. Turning it on also queues the current Scope main, so GitHub
+catches up with changes made while it was off. Only a maintainer who reads the full view and can change file
 visibility can turn it on; any maintainer can turn it off. Connecting a
 repository leaves it off, and disconnecting, or GitHub taking the repository
 away from Scope, turns it off.
@@ -135,7 +136,11 @@ Main contains every file, so Scope publishes it only to a private GitHub
 repository, or a public one whose public acknowledgement is confirmed (see
 [Public GitHub repositories](#public-github-repositories)). Turning publishing
 on is refused otherwise, and each push asks GitHub for the repository's
-visibility first and gives up if it is public and unconfirmed. A connected
+visibility first and gives up if it is public and unconfirmed. That check
+looks the repository up by its GitHub id, and the push goes to the name GitHub
+reports now, so a renamed repository still receives main and a repository that
+took over its old name does not. When the installation no longer lists the
+repository, the push gives up. A connected
 repository that becomes public turns publishing off; after the public
 acknowledgement, a maintainer who may publish main turns it on again.
 
@@ -147,7 +152,8 @@ them from GitHub, and the next change to Scope main publishes again. When
 GitHub refuses the push, for example because of branch protection, the push
 gives up at once with GitHub's answer. Other failures follow the retry
 schedule in [Pushing revisions](#pushing-revisions), and a newer change to
-Scope main replaces a queued one. Settings show the latest publication, its
+Scope main replaces a queued one. A push whose commit is no longer Scope
+main's head is dropped without pushing. Settings show the latest publication, its
 commit and any error.
 
 A merge commit Scope creates has no CI run on GitHub, so GitHub branch

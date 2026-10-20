@@ -274,11 +274,14 @@ pub(crate) async fn set_github_main_publication(
     Json(input): Json<SetGitHubMainPublicationRequest>,
 ) -> Result<Json<GitHubConnectionResponse>, ApiError> {
     let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
-    let incarnation = state
+    let (incarnation, queued) = state
         .metadata
         .repositories()
-        .set_github_main_publication(&context.record.id, &user_id, input.enabled)
+        .set_github_main_publication(&context.record.id, &user_id, input.enabled, unix_now()?)
         .await?;
+    if queued {
+        state.wakeups.github_pushes.notify_one();
+    }
     changed(&state, &context, &incarnation).await
 }
 
@@ -471,14 +474,19 @@ pub(crate) async fn receive_github_webhook(
                 .repositories()
                 .github_connection_for_github_repository(github_repository_id)
                 .await?
-                && let Err(error) =
-                    github_pushes::refresh_github_visibility(&state, &connection).await
             {
-                tracing::warn!(
-                    github_repository_id,
-                    error = %error.operator_diagnostic(),
-                    "reading a GitHub repository's visibility failed"
-                );
+                match github_pushes::refresh_github_visibility(&state, &connection).await {
+                    Ok(Some(_)) => {}
+                    Ok(None) => tracing::warn!(
+                        github_repository_id,
+                        "the Scope GitHub App no longer lists a connected repository"
+                    ),
+                    Err(error) => tracing::warn!(
+                        github_repository_id,
+                        error = %error.operator_diagnostic(),
+                        "reading a GitHub repository's visibility failed"
+                    ),
+                }
             }
         }
         GitHubWebhookEvent::Ignored => {}

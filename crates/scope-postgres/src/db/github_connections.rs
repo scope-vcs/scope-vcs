@@ -1,6 +1,7 @@
 use super::{
     RepositoryStore, acquire_aggregate_lock,
-    entities::{decode_enum, encode_enum},
+    entities::{self, decode_enum, encode_enum},
+    github_pushes::queue_main_publication,
     github_run_imports::{
         delete_github_run_import, queue_github_run_import, save_run_import_count,
     },
@@ -21,7 +22,7 @@ use scope_domain::{
     requests::{GitHubBranch, GitHubPushDestination},
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, Statement,
+    ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, FromQueryResult, Statement,
     TransactionTrait, Value,
 };
 
@@ -192,7 +193,7 @@ impl RepositoryStore {
         let (tx, context) = self
             .begin_github_change(repo_id, user_id, &["github-connection"])
             .await?;
-        let current = repository_github_connection(&tx, repo_id).await?;
+        let current = locked_repository_github_connection(&tx, repo_id).await?;
         let connection =
             acknowledge_public_github_repository(context.access.clone(), current.as_ref())?;
         save_visibility(&tx, &connection).await?;
@@ -207,11 +208,12 @@ impl RepositoryStore {
         repo_id: &str,
         user_id: &str,
         enabled: bool,
-    ) -> Result<RepositoryIncarnation, PostgresError> {
+        now_unix: u64,
+    ) -> Result<(RepositoryIncarnation, bool), PostgresError> {
         let (tx, context) = self
             .begin_github_change(repo_id, user_id, &["github-connection"])
             .await?;
-        let current = repository_github_connection(&tx, repo_id).await?;
+        let current = locked_repository_github_connection(&tx, repo_id).await?;
         let connection = set_github_main_publication(
             &context.access,
             &context.views,
@@ -224,8 +226,18 @@ impl RepositoryStore {
             [repo_id.into(), connection.publishes_main.into()],
         ))
         .await?;
+        let main_oid = entities::git_head::Entity::find_by_id(repo_id)
+            .one(&tx)
+            .await?
+            .map(entities::git_head::Model::try_into_domain)
+            .transpose()?
+            .map(|head| head.head_oid);
+        let queued = match main_oid {
+            Some(main_oid) => queue_main_publication(&tx, repo_id, &main_oid, now_unix).await?,
+            None => false,
+        };
         tx.commit().await?;
-        Ok(context.incarnation())
+        Ok((context.incarnation(), queued))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "disconnect_github_repository"))]
@@ -432,6 +444,19 @@ pub(super) async fn repository_github_connection<C: ConnectionTrait>(
         .map(|read| read.connection))
 }
 
+async fn locked_repository_github_connection<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<Option<GitHubConnection>, PostgresError> {
+    Ok(load_connection(
+        conn,
+        &format!("{BY_REPO} FOR UPDATE OF connection"),
+        [repo_id.into()],
+    )
+    .await?
+    .map(|read| read.connection))
+}
+
 async fn connected_github_repository<C: ConnectionTrait>(
     conn: &C,
     github_repository_id: u64,
@@ -546,3 +571,6 @@ impl ConnectionRow {
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

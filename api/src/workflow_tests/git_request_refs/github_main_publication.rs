@@ -102,11 +102,13 @@ async fn an_authorized_main_push_reaches_github_main_only_while_publishing_is_on
     assert_eq!(latest["error"], serde_json::Value::Null);
 
     expect_json(set_publication(state, false).await, StatusCode::OK).await;
-    main.push("after publishing\n").await;
+    let unpublished = main.push("after publishing\n").await;
     assert_eq!(push_pass(state, unix_now()).await, 0);
-    assert_eq!(fake.branch_head("main"), Some(published.clone()));
+    assert_eq!(fake.branch_head("main"), Some(published));
 
     expect_json(set_publication(state, true).await, StatusCode::OK).await;
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head("main"), Some(unpublished.clone()));
     fake.installation_states
         .lock()
         .unwrap()
@@ -122,7 +124,79 @@ async fn an_authorized_main_push_reaches_github_main_only_while_publishing_is_on
     assert_eq!(publication(state).await["enabled"], false);
     main.push("while disconnected\n").await;
     assert_eq!(push_pass(state, unix_now()).await, 0);
-    assert_eq!(fake.branch_head("main"), Some(published));
+    assert_eq!(fake.branch_head("main"), Some(unpublished));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn turning_publishing_on_publishes_the_current_main() {
+    let main = scope_main("github-main-publication-backfill").await;
+    let (state, fake) = (&main.state, &main.fake);
+    let head = main.push("before publishing\n").await;
+    assert_eq!(push_pass(state, unix_now()).await, 0);
+
+    let enabled = expect_json(set_publication(state, true).await, StatusCode::OK).await;
+    assert_eq!(
+        enabled["connection"]["main_publication"]["latest"]["state"],
+        "queued"
+    );
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head("main"), Some(head.clone()));
+    let latest = publication(state).await["latest"].clone();
+    assert_eq!(latest["state"], "succeeded");
+    assert_eq!(latest["commit_oid"], head);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_main_job_that_scope_main_has_moved_past_is_dropped_without_pushing() {
+    let main = scope_main("github-main-publication-stale").await;
+    let (state, fake) = (&main.state, &main.fake);
+    expect_json(set_publication(state, true).await, StatusCode::OK).await;
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.git_head.as_mut().unwrap().head_oid = "b".repeat(40);
+            repo.bump_content_version();
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head("main"), None);
+    assert_eq!(publication(state).await["latest"], serde_json::Value::Null);
+    assert_eq!(push_pass(state, unix_now() + LATER).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn main_goes_to_the_github_repository_the_connection_names_now() {
+    let main = scope_main("github-main-publication-renamed").await;
+    let (state, fake) = (&main.state, &main.fake);
+    expect_json(set_publication(state, true).await, StatusCode::OK).await;
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    fake.create_repository("octo/renamed");
+    for (_, repository) in fake.installation_repositories.lock().unwrap().iter_mut() {
+        repository["full_name"] = serde_json::json!("octo/renamed");
+    }
+
+    let head = main.push("after the rename\n").await;
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(fake.branch_head_of("octo/renamed", "main"), Some(head));
+    assert_ne!(
+        fake.branch_head("main"),
+        fake.branch_head_of("octo/renamed", "main")
+    );
+
+    fake.installation_repositories.lock().unwrap().clear();
+    main.push("after the repository left the installation\n")
+        .await;
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    let latest = publication(state).await["latest"].clone();
+    assert_eq!(latest["state"], "failed");
+    assert_eq!(
+        latest["error"],
+        "The Scope GitHub App can no longer reach this GitHub repository."
+    );
+    assert_eq!(push_pass(state, unix_now() + LATER).await, 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

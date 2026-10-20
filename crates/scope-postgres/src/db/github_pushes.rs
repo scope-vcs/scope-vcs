@@ -98,6 +98,23 @@ impl RequestStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "drop_stale_github_push"))]
+    pub async fn drop_stale_github_push(
+        &self,
+        id: &str,
+        claim_token: &str,
+    ) -> Result<(), PostgresError> {
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "DELETE FROM scope_github_pushes
+                  WHERE id = $1 AND claim_token = $2 AND state = 'running'",
+                [id.into(), claim_token.into()],
+            ))
+            .await?;
+        Ok(())
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_github_pushes"))]
     pub async fn claim_due_github_pushes(
         &self,
