@@ -5,7 +5,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m0092_request_object_pool"
+        "m0093_request_object_pool"
     }
 }
 
