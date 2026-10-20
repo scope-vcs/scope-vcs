@@ -6,6 +6,7 @@ import type {
   RepoGitHubWorkflowRunsInput,
   RunActionInput,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubReviewBotsInput,
   SetRepoGitHubRunImportCountInput,
 } from './types'
 import { parseRepoParams } from './repo-params'
@@ -100,6 +101,18 @@ export function parseSetRepoGitHubRequiredChecksInput(
     throw new Error('CI requirements must be a list of result names.')
   }
   return { ...params, names }
+}
+
+export function parseSetRepoGitHubReviewBotsInput(input: unknown): SetRepoGitHubReviewBotsInput {
+  const params = parseRepoParams(input)
+  const bots = (input as Partial<SetRepoGitHubReviewBotsInput>).bots
+  if (
+    !Array.isArray(bots)
+    || bots.some((bot) => typeof bot !== 'object' || bot === null || typeof bot.login !== 'string')
+  ) {
+    throw new Error('Review bots must be a list of GitHub logins.')
+  }
+  return { ...params, bots: bots.map(({ login }) => ({ login })) }
 }
 
 function requiredText(value: unknown, message: string) {

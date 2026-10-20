@@ -30,6 +30,7 @@ mod github_connections;
 mod github_pushes;
 mod github_read_queue;
 mod github_required_checks;
+mod github_review_bots;
 mod github_review_imports;
 mod github_run_imports;
 mod github_setup_checks;
@@ -150,8 +151,8 @@ pub use github_connections::GitHubConnectionRead;
 pub use github_pushes::GitHubPushStanding;
 pub use github_read_queue::GitHubJobOutcome;
 pub use github_review_imports::{
-    GitHubImportedComment, GitHubReviewImport, GitHubReviewImportJob, GitHubThreadTransition,
-    ImportGitHubReviewCommand, TransitionGitHubDiscussionCommand,
+    GitHubImportedComment, GitHubReviewImport, GitHubReviewImportFinish, GitHubReviewImportJob,
+    GitHubThreadTransition, ImportGitHubReviewCommand, TransitionGitHubDiscussionCommand,
 };
 pub use github_setup_checks::GitHubSetupCheckRead;
 pub use github_workflow_job_log_reads::GitHubJobLogReadJob;

@@ -2,6 +2,7 @@ use super::super::super::fake_github::webhook;
 use super::*;
 use crate::use_cases::github_review_imports::import_due_github_reviews;
 use scope_api_contract::routes::repo_request_action;
+use scope_domain::github_review_bots::GitHubReviewBotInput;
 
 const BOT_ID: u64 = 136622811;
 const REVIEW_ID: u64 = 101;
@@ -13,6 +14,51 @@ fn bot() -> serde_json::Value {
         "type": "Bot",
         "avatar_url": "https://avatars.githubusercontent.com/in/867647",
     })
+}
+
+fn user(id: u64, login: &str, account_type: &str) -> serde_json::Value {
+    serde_json::json!({ "id": id, "login": login, "type": account_type, "avatar_url": null })
+}
+
+fn review(id: u64, author: serde_json::Value, head: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "user": author,
+        "body": format!("Review {id}"),
+        "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/pull/1#pullrequestreview-{id}"),
+        "commit_id": head,
+        "submitted_at": "2026-10-20T12:00:00Z",
+    })
+}
+
+fn authored(mut comment: serde_json::Value, author: &serde_json::Value) -> serde_json::Value {
+    comment["user"] = author.clone();
+    comment
+}
+
+async fn list_review_bots(owner: &OwnerRequest, logins: &[&str]) {
+    owner
+        .state
+        .metadata
+        .repositories()
+        .set_github_review_bots(
+            TEST_REPO_ID,
+            &test_owner_id(),
+            logins
+                .iter()
+                .map(|login| GitHubReviewBotInput {
+                    login: login.to_string(),
+                })
+                .collect(),
+        )
+        .await
+        .unwrap();
+}
+
+async fn import_pass(owner: &OwnerRequest) -> usize {
+    import_due_github_reviews(&owner.state, unix_now())
+        .await
+        .unwrap()
 }
 
 fn line_comment(
@@ -43,6 +89,10 @@ fn line_comment(
 }
 
 async fn deliver_review(owner: &OwnerRequest, head_repository_id: u64) {
+    deliver_review_id(owner, REVIEW_ID, head_repository_id).await;
+}
+
+async fn deliver_review_id(owner: &OwnerRequest, review_id: u64, head_repository_id: u64) {
     let delivery = webhook(
         &owner.state,
         "pull_request_review",
@@ -53,8 +103,33 @@ async fn deliver_review(owner: &OwnerRequest, head_repository_id: u64) {
                 "number": 1,
                 "head": { "ref": owner.branch(), "repo": { "id": head_repository_id } },
             },
-            "review": { "id": REVIEW_ID },
+            "review": { "id": review_id },
             "sender": bot(),
+        }),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+}
+
+async fn deliver_thread(
+    owner: &OwnerRequest,
+    action: &str,
+    root_comment_id: u64,
+    sender: serde_json::Value,
+) {
+    let delivery = webhook(
+        &owner.state,
+        "pull_request_review_thread",
+        serde_json::json!({
+            "action": action,
+            "repository": { "id": GITHUB_REPOSITORY_ID },
+            "pull_request": {
+                "number": 1,
+                "head": { "ref": owner.branch(), "repo": { "id": GITHUB_REPOSITORY_ID } },
+            },
+            "thread": { "comments": [{ "id": root_comment_id, "in_reply_to_id": null }] },
+            "sender": sender,
         }),
         WEBHOOK_SECRET,
     )
@@ -93,6 +168,7 @@ fn by_client_id<'a>(threads: &'a [serde_json::Value], client_id: &str) -> &'a se
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_bot_review_on_the_carrier_pull_request_becomes_anchored_discussions() {
     let owner = owner_request("review-import", &[]).await;
+    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
     let head = owner.head();
     owner.fake.report_pull_review(
         serde_json::json!({
@@ -163,4 +239,80 @@ async fn a_bot_review_on_the_carrier_pull_request_becomes_anchored_discussions()
     assert_eq!(body["body_markdown"], "Two things to look at.");
     assert_eq!(body["anchor"]["revision_id"], line["anchor"]["revision_id"]);
     assert!(body["anchor"]["path"].is_null());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn only_listed_review_bots_and_github_users_who_can_write_are_imported() {
+    let owner = owner_request("review-import-authors", &[]).await;
+    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
+    let head = owner.head();
+    let spam = user(501, "spam-reviewer[bot]", "Bot");
+    let writer = user(502, "octo-writer", "User");
+    let reader = user(503, "octo-reader", "User");
+    let hidden = user(504, "octo-hidden", "User");
+    owner.fake.report_permission("octo-writer", Some("write"));
+    owner.fake.report_permission("octo-reader", Some("read"));
+    owner.fake.report_permission("octo-hidden", None);
+    for (review_id, author, comment_ids) in [
+        (301, &spam, vec![311]),
+        (302, &writer, vec![321, 322]),
+        (303, &reader, vec![331]),
+        (304, &hidden, vec![341]),
+    ] {
+        owner.fake.report_pull_review(
+            review(review_id, author.clone(), &head),
+            comment_ids
+                .into_iter()
+                .map(|id| authored(line_comment(id, &head, "request.txt", None, 1), author))
+                .collect(),
+        );
+        deliver_review_id(&owner, review_id, GITHUB_REPOSITORY_ID).await;
+    }
+
+    assert_eq!(import_pass(&owner).await, 4);
+    assert_eq!(owner.fake.permission_reads.load(Ordering::SeqCst), 3);
+    let mut imported = threads(&owner)
+        .await
+        .iter()
+        .map(|thread| thread["client_discussion_id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    imported.sort();
+    assert_eq!(
+        imported,
+        [
+            "github:review-comment:321",
+            "github:review-comment:322",
+            "github:review:302",
+        ]
+    );
+    assert!(import_pass(&owner).await == 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_thread_resolved_by_someone_who_cannot_write_stays_open() {
+    let owner = owner_request("review-import-threads", &[]).await;
+    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
+    let head = owner.head();
+    owner.fake.report_permission("octo-reader", Some("read"));
+    owner.fake.report_permission("octo-writer", Some("admin"));
+    owner.fake.report_pull_review(
+        review(REVIEW_ID, bot(), &head),
+        vec![line_comment(401, &head, "request.txt", None, 1)],
+    );
+    deliver_review(&owner, GITHUB_REPOSITORY_ID).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    let status = |threads: Vec<serde_json::Value>| {
+        by_client_id(&threads, "github:review-comment:401")["status"].clone()
+    };
+
+    deliver_thread(&owner, "resolved", 401, user(503, "octo-reader", "User")).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    assert_eq!(status(threads(&owner).await), "Open");
+
+    deliver_thread(&owner, "resolved", 401, user(502, "octo-writer", "User")).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    let threads = threads(&owner).await;
+    let resolved = by_client_id(&threads, "github:review-comment:401");
+    assert_eq!(resolved["status"], "Resolved");
+    assert_eq!(resolved["resolved_by"]["account"]["login"], "octo-writer");
 }

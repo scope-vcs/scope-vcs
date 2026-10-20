@@ -59,7 +59,7 @@ test('repository components retain drafts, previews and pending actions across r
   await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
   await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
   await page.evaluate(() => window.calls.splice(0))
-  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
   await checks.getByText('This GitHub repository became public, so Scope stopped sending requests outside the Public view there.', { exact: false }).waitFor()
   await checks.getByRole('button', { name: 'Allow these requests', exact: true }).click()
@@ -67,7 +67,7 @@ test('repository components retain drafts, previews and pending actions across r
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
   ])
-  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true }, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true }, required_checks: ['ci / test'], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), github)
   await checks.getByText('ci / test', { exact: true }).waitFor()
   const saveRequirements = checks.getByRole('button', { name: 'Save requirements', exact: true })
@@ -130,6 +130,24 @@ test('repository components retain drafts, previews and pending actions across r
   assert.equal(await lint.isChecked(), true)
   assert.equal(await remote.isChecked(), true)
   assert.equal(await saveRequirements.isDisabled(), true)
+  const reviewBots = checks.getByRole('textbox', { name: 'Review bots', exact: true })
+  await checks.getByText('Scope imports GitHub reviews from these bots and from GitHub users who can write to the repository.', { exact: true }).waitFor()
+  const saveReviewBots = checks.getByRole('button', { name: 'Save review bots', exact: true })
+  assert.equal(await saveReviewBots.isDisabled(), true)
+  await reviewBots.fill(' greptile-apps[bot],\nchatgpt-codex-connector[bot] ')
+  await saveReviewBots.click()
+  await page.evaluate(() => window.finishAction('review-bots'))
+  await checks.getByText('Review bots saved.', { exact: true }).waitFor()
+  assert.equal(await reviewBots.inputValue(), 'greptile-apps[bot], chatgpt-codex-connector[bot]')
+  assert.equal(await saveReviewBots.isDisabled(), true)
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubReviewBots: [{ login: 'greptile-apps[bot]' }, { login: 'chatgpt-codex-connector[bot]' }] },
+  ])
+  await page.evaluate(() => {
+    const github = window.fixtureGitHub()
+    window.setFixtureGitHub({ ...github, review_bots: [{ login: 'octo-reviewer[bot]' }] })
+  })
+  await checks.getByRole('textbox', { name: 'Review bots', exact: true }).and(page.locator('[value="octo-reviewer[bot]"]')).waitFor()
   for (const [width, name] of [[1280, 'desktop'], [320, 'narrow-phone'], [390, 'phone'], [768, 'tablet']]) {
     await page.setViewportSize({ width, height: 900 })
     const bounds = await checks.last().boundingBox()

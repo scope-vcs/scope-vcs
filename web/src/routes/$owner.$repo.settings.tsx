@@ -20,12 +20,14 @@ import {
   confirmRepoGitHubPublicForRequest,
   disconnectRepoGitHubForRequest,
   setRepoGitHubRequiredChecksForRequest,
+  setRepoGitHubReviewBotsForRequest,
   setRepoGitHubRunImportCountForRequest,
   startRepoGitHubRunImportForRequest,
   startRepoGitHubSetupCheckForRequest,
 } from '@/api/github'
 import {
   parseSetRepoGitHubRequiredChecksInput,
+  parseSetRepoGitHubReviewBotsInput,
   parseSetRepoGitHubRunImportCountInput,
 } from '@/api/github-inputs'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
@@ -69,6 +71,10 @@ const confirmRepoGitHubPublic = createServerFn({ method: 'POST' })
 const setRepoGitHubRequiredChecks = createServerFn({ method: 'POST' })
   .validator(parseSetRepoGitHubRequiredChecksInput)
   .handler(({ data }) => setRepoGitHubRequiredChecksForRequest(data))
+
+const setRepoGitHubReviewBots = createServerFn({ method: 'POST' })
+  .validator(parseSetRepoGitHubReviewBotsInput)
+  .handler(({ data }) => setRepoGitHubReviewBotsForRequest(data))
 
 const setRepoGitHubRunImportCount = createServerFn({ method: 'POST' })
   .validator(parseSetRepoGitHubRunImportCountInput)
@@ -202,6 +208,11 @@ function RepoSettingsRoute() {
             github={settings?.github ?? null}
             setGitHubRequiredChecks={async (data) => {
               const github = await setRepoGitHubRequiredChecks({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            setGitHubReviewBots={async (data) => {
+              const github = await setRepoGitHubReviewBots({ data })
               if (scope) retainGitHubConnection(scope, github)
               return github
             }}

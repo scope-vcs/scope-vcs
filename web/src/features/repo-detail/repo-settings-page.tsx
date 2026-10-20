@@ -4,6 +4,7 @@ import type {
   DeleteRepoMemberInput,
   RepoParams,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubReviewBotsInput,
   SetRepoGitHubRunImportCountInput,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
@@ -56,6 +57,7 @@ export function RepoSettingsPage({
   github,
   params,
   setGitHubRequiredChecks,
+  setGitHubReviewBots,
   setGitHubRunImportCount,
   startGitHubAuthorization,
   startGitHubRunImport,
@@ -81,6 +83,9 @@ export function RepoSettingsPage({
   params: RepoParams
   setGitHubRequiredChecks: (
     input: SetRepoGitHubRequiredChecksInput,
+  ) => Promise<GitHubConnectionResponse>
+  setGitHubReviewBots: (
+    input: SetRepoGitHubReviewBotsInput,
   ) => Promise<GitHubConnectionResponse>
   setGitHubRunImportCount: (
     input: SetRepoGitHubRunImportCountInput,
@@ -188,6 +193,10 @@ export function RepoSettingsPage({
           disconnect={() => disconnectGitHub(params)}
           github={github}
           setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
+          setReviewBots={(logins) => setGitHubReviewBots({
+            ...params,
+            bots: logins.map((login) => ({ login })),
+          })}
           setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}
           startAuthorization={() => startGitHubAuthorization(params)}
           startRunImport={() => startGitHubRunImport(params)}

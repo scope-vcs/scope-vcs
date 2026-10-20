@@ -1,8 +1,10 @@
 use super::GitHubApp;
-use super::client::{parse_enum, parse_time};
+use super::client::{parse_enum, parse_time, unavailable};
 use crate::error::ApiError;
+use reqwest::{Method, StatusCode};
 use scope_domain::{
     github_account::{GitHubAccount, GitHubAccountType},
+    github_review_bots::GitHubRepositoryPermission,
     requests::{GitHubCommentPosition, GitHubCommentSubject, RequestDiffSide},
 };
 use serde::Deserialize;
@@ -61,6 +63,17 @@ struct ReviewComment {
     commit_id: String,
     original_commit_id: String,
     created_at: String,
+}
+
+#[derive(Deserialize)]
+struct RepositoryPermission {
+    permission: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum GitHubPermissionAnswer {
+    Known(GitHubRepositoryPermission),
+    Refused(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -184,6 +197,59 @@ impl GitHubApp {
             )
             .await?
             .map(GitHubPullReviewComment::from))
+    }
+}
+
+impl GitHubApp {
+    pub(crate) async fn repository_permission(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        login: &str,
+    ) -> Result<GitHubPermissionAnswer, ApiError> {
+        const ROUTE: &str = "/repos/{owner}/{repo}/collaborators/{username}/permission";
+        let refused = |answer: String| {
+            GitHubPermissionAnswer::Refused(format!(
+                "GitHub {answer} when Scope asked whether {login} can write to {full_name}."
+            ))
+        };
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(refused("refused an installation token".to_string()));
+        };
+        let username = url::form_urlencoded::byte_serialize(login.as_bytes()).collect::<String>();
+        let request = self
+            .request(
+                Method::GET,
+                &format!("/repos/{full_name}/collaborators/{username}/permission"),
+            )
+            .bearer_auth(token);
+        let response = scope_service_runtime::outbound_http::send_traced(request, ROUTE)
+            .await
+            .map_err(|error| {
+                unavailable(format!("GitHub was unreachable: {}", error.without_url()))
+            })?;
+        let status = response.status();
+        if matches!(status, StatusCode::FORBIDDEN | StatusCode::NOT_FOUND) {
+            return Ok(refused(format!("answered {status}")));
+        }
+        if !status.is_success() {
+            return Err(unavailable(format!(
+                "GitHub answered {status} for the permission of {login} on {full_name}"
+            )));
+        }
+        let answer = response
+            .json::<RepositoryPermission>()
+            .await
+            .map_err(|error| unavailable(format!("GitHub answered unreadably: {error}")))?;
+        Ok(
+            match parse_enum::<GitHubRepositoryPermission>(&answer.permission) {
+                Some(permission) => GitHubPermissionAnswer::Known(permission),
+                None => refused(format!(
+                    "answered the unknown permission {}",
+                    answer.permission
+                )),
+            },
+        )
     }
 }
 

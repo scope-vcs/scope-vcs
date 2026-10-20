@@ -232,6 +232,10 @@ configured: boolean, connection: GitHubConnectionDetailsResponse | null,
  */
 required_checks: Array<string>,
 /**
+ * GitHub accounts whose reviews Scope imports without asking GitHub whether they can write; cleared on disconnect.
+ */
+review_bots: Array<GitHubReviewBotResponse>,
+/**
  * Whether the viewer may confirm that a public GitHub repository
  * receives what Scope pushes, private requests included.
  */
@@ -310,6 +314,12 @@ acknowledge_public: boolean,
 run_import_count: number, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
+
+export type GitHubReviewBotResponse = { login: string, };
+
+export type SetGitHubReviewBotsRequest = { bots: Array<GitHubReviewBotRequest>, };
+
+export type GitHubReviewBotRequest = { login: string, };
 
 export type SetGitHubRunImportCountRequest = { count: number, };
 
@@ -826,6 +836,7 @@ export const ApiRouteTemplates = {
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
   repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
+  repoGitHubReviewBots: "/v1/repos/{owner}/{repo}/github/review-bots",
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",

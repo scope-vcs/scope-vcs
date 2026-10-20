@@ -54,7 +54,7 @@ impl DiscussionActorIds {
     }
 }
 
-async fn github_accounts_by_ids<C: ConnectionTrait>(
+pub(super) async fn github_accounts_by_ids<C: ConnectionTrait>(
     conn: &C,
     ids: BTreeSet<u64>,
 ) -> Result<BTreeMap<u64, GitHubAccount>, PostgresError> {

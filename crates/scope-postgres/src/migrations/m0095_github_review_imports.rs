@@ -88,7 +88,8 @@ impl MigrationTrait for Migration {
                     thread_status character varying,
                     github_actor_id bigint,
                     attempts integer NOT NULL,
-                    next_attempt_at_unix bigint NOT NULL,
+                    next_attempt_at_unix bigint,
+                    last_error text,
                     CONSTRAINT scope_github_review_imports_pkey
                         PRIMARY KEY (request_id, subject, github_subject_id),
                     CONSTRAINT fk_scope_github_review_imports_request
@@ -101,7 +102,8 @@ impl MigrationTrait for Migration {
                         AND github_repository_id > 0
                         AND pull_number > 0
                         AND attempts >= 0
-                        AND next_attempt_at_unix >= 0
+                        AND (next_attempt_at_unix >= 0 OR last_error IS NOT NULL)
+                        AND (last_error IS NULL OR length(btrim(last_error)) > 0)
                         AND (
                             (subject IN ('review', 'reply')
                                 AND thread_status IS NULL
@@ -115,6 +117,24 @@ impl MigrationTrait for Migration {
 
                 CREATE INDEX idx_scope_github_review_imports_due
                     ON scope_github_review_imports (next_attempt_at_unix);
+
+                CREATE TABLE scope_github_review_bots (
+                    repo_id character varying NOT NULL,
+                    "position" integer NOT NULL,
+                    login text NOT NULL,
+                    CONSTRAINT scope_github_review_bots_pkey PRIMARY KEY (repo_id, "position"),
+                    CONSTRAINT scope_github_review_bots_repo_id_fkey
+                        FOREIGN KEY (repo_id) REFERENCES scope_repositories(id) ON DELETE CASCADE,
+                    CONSTRAINT scope_github_review_bot_values CHECK (
+                        "position" >= 0
+                        AND length(btrim(login)) > 0
+                        AND login = btrim(login)
+                        AND char_length(login) <= 44
+                    )
+                );
+
+                CREATE UNIQUE INDEX idx_scope_github_review_bots_login
+                    ON scope_github_review_bots (repo_id, lower(login));
                 "#,
             )
             .await?;

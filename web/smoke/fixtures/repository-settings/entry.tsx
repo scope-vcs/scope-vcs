@@ -49,7 +49,7 @@ const githubConnection = {
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
 function setGitHub(github: GitHubConnectionResponse) {
@@ -70,7 +70,7 @@ function App() {
       <button onClick={() => setGitHub({
         configured: true,
         connection: { ...githubConnection, disconnected: { reason: 'app_uninstalled', at_unix: 1_767_312_000 } },
-        required_checks: ['ci / test'],
+        required_checks: ['ci / test'], review_bots: [],
         can_confirm_public: true,
         setup_check: null,
         run_import_count: 50,
@@ -99,7 +99,7 @@ function App() {
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+          const github = { configured: true, connection: null, required_checks: [], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
@@ -115,6 +115,14 @@ function App() {
           await hold('required-checks')
           const current = repoSettingsResource.peek(settingsScope)!.github!
           const github = { ...current, required_checks: input.names }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubReviewBots={async (input) => {
+          calls.push({ setGitHubReviewBots: input.bots })
+          await hold('review-bots')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = { ...current, review_bots: input.bots }
           retainGitHubConnection(settingsScope, github)
           return github
         }}

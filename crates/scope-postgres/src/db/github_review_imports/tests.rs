@@ -343,7 +343,7 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         .await
         .unwrap();
     requests
-        .finish_github_review_import(&claimed_thread, None)
+        .finish_github_review_import(&claimed_thread, GitHubReviewImportFinish::Done)
         .await
         .unwrap();
     let claimed_review = claimed
@@ -351,7 +351,7 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         .find(|job| job.subject == review_job.subject)
         .unwrap();
     requests
-        .finish_github_review_import(claimed_review, None)
+        .finish_github_review_import(claimed_review, GitHubReviewImportFinish::Done)
         .await
         .unwrap();
 
@@ -369,4 +369,87 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         }
     );
     assert_eq!(remaining[0].attempts, 1);
+}
+
+async fn last_errors(store: &MetadataStore) -> Vec<(i64, Option<i64>, Option<String>)> {
+    store
+        .db
+        .query_all_raw(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT github_subject_id, next_attempt_at_unix, last_error
+               FROM scope_github_review_imports ORDER BY github_subject_id",
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "github_subject_id").unwrap(),
+                row.try_get("", "next_attempt_at_unix").unwrap(),
+                row.try_get("", "last_error").unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_recorded_reason_keeps_the_job_until_github_delivers_it_again() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let requests = store.requests();
+    let job = GitHubReviewImportJob {
+        request_id: "req_1".to_string(),
+        repo_id: "owner/repo".to_string(),
+        github_repository_id: 42,
+        pull_number: 7,
+        subject: GitHubReviewImportSubject::Reply { comment_id: 9 },
+        attempts: 0,
+    };
+    requests
+        .queue_github_review_import(&job, &[], 10)
+        .await
+        .unwrap();
+    let claimed = requests
+        .claim_due_github_review_imports(10, 100, 10)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    requests
+        .finish_github_review_import(
+            &claimed,
+            GitHubReviewImportFinish::Record {
+                error: "GitHub refused to say whether octocat can write".to_string(),
+                retry_at_unix: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        last_errors(&store).await,
+        [(
+            9,
+            None,
+            Some("GitHub refused to say whether octocat can write".to_string())
+        )]
+    );
+    assert!(
+        requests
+            .claim_due_github_review_imports(1_000, 1_100, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    requests
+        .queue_github_review_import(&job, &[], 20)
+        .await
+        .unwrap();
+    assert_eq!(last_errors(&store).await, [(9, Some(20), None)]);
+    let again = requests
+        .claim_due_github_review_imports(20, 120, 10)
+        .await
+        .unwrap();
+    assert_eq!(again.len(), 1);
+    assert_eq!(again[0].attempts, 1);
 }

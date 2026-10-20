@@ -19,24 +19,24 @@ const connection: GitHubConnectionDetailsResponse = {
 }
 
 test('the CI section describes each connection state', () => {
-  assert.deepEqual(githubConnectionView({ configured: false, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'unconfigured' })
-  assert.deepEqual(githubConnectionView({ configured: false, connection, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'unconfigured' })
-  assert.deepEqual(githubConnectionView({ configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'not_connected' })
-  assert.deepEqual(githubConnectionView({ configured: true, connection, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), {
+  assert.deepEqual(githubConnectionView({ configured: false, connection: null, required_checks: [], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'unconfigured' })
+  assert.deepEqual(githubConnectionView({ configured: false, connection, required_checks: [], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'unconfigured' })
+  assert.deepEqual(githubConnectionView({ configured: true, connection: null, required_checks: [], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), { kind: 'not_connected' })
+  assert.deepEqual(githubConnectionView({ configured: true, connection, required_checks: [], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }), {
     kind: 'connected',
     name: 'octo/checks',
     url: 'https://github.com/octo/checks',
     detail: 'Connected by @owner on Jan 01, 2026, 12:00 AM UTC.',
   })
   assert.equal(
-    githubConnectionView({ configured: true, connection: { ...connection, connected_by: null }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }).kind,
+    githubConnectionView({ configured: true, connection: { ...connection, connected_by: null }, required_checks: [], review_bots: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }).kind,
     'connected',
   )
   assert.deepEqual(
     githubConnectionView({
       configured: true,
       connection: { ...connection, disconnected: { reason: 'repository_removed', at_unix: 1_767_312_000 } },
-      required_checks: [],
+      required_checks: [], review_bots: [],
       can_confirm_public: true,
       setup_check: null,
       run_import_count: 50,
@@ -55,7 +55,7 @@ test('a public GitHub repository is shown, and one that became public waits for 
   const github = (patch: Partial<GitHubConnectionDetailsResponse>, can_confirm_public = true) => ({
     configured: true,
     connection: { ...connection, ...patch },
-    required_checks: [],
+    required_checks: [], review_bots: [],
     can_confirm_public,
     setup_check: null,
     run_import_count: 50,

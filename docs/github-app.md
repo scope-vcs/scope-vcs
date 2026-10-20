@@ -337,6 +337,22 @@ one after 30 seconds, 2, 10, and 30 minutes, then gives up.
   reopens the discussion made from the thread's first comment, recording the
   GitHub account that did it as the resolver.
 
+Scope imports a review, review comment, reply, or thread resolution only
+from a listed review bot or from a GitHub user who can write to the
+repository; for a resolution the author is the account that resolved it.
+Maintainers list review bots by GitHub login (for example
+`greptile-apps[bot]` or `chatgpt-codex-connector[bot]`, at most 20) under
+CI in repository settings, or with
+`PUT /v1/repos/{owner}/{repo}/github/review-bots`. The list belongs to one
+live link: disconnecting, losing the installation or repository on GitHub,
+or connecting to a different GitHub repository clears it. Any other GitHub user is checked once per import job with
+`GET /repos/{owner}/{repo}/collaborators/{username}/permission`, which
+needs only the Metadata read permission: admin and write count, read and
+none do not, and other bot accounts are never asked about. When GitHub
+refuses that answer the user counts as unable to write, and the job keeps
+GitHub's refusal as its last error. Skipped activity is acknowledged and not
+retried; a later delivery of the same review or comment is read again.
+
 Imported discussions and replies use the client IDs
 `github:review:<review id>` and `github:review-comment:<comment id>`, so a
 redelivered webhook or a retry creates nothing twice. Edits and deletions on

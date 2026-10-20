@@ -6,6 +6,7 @@ use crate::{
     state::AppState,
     use_cases::request_discussion_mutation::first_valid_anchor,
 };
+use authors::ImportAuthors;
 use scope_domain::{
     github_account::GitHubAccount,
     github_connection::GitHubConnection,
@@ -17,13 +18,15 @@ use scope_domain::{
     },
 };
 use scope_postgres::db::{
-    GitHubImportedComment, GitHubReviewImportJob, GitHubThreadTransition,
+    GitHubImportedComment, GitHubReviewImportFinish, GitHubReviewImportJob, GitHubThreadTransition,
     ImportGitHubReviewCommand, TransitionGitHubDiscussionCommand,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
     time::Duration,
 };
+
+mod authors;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 const BATCH_SIZE: u64 = 10;
@@ -72,29 +75,43 @@ pub(crate) async fn import_due_github_reviews(
         .await?;
     let mut imported = 0;
     for job in jobs {
-        let retry_at = match run_job(state, &job).await {
-            Ok(()) => {
+        let finish = match run_job(state, &job).await {
+            Ok(None) => {
                 imported += 1;
-                None
+                GitHubReviewImportFinish::Done
+            }
+            Ok(Some(refusals)) => {
+                imported += 1;
+                GitHubReviewImportFinish::Record {
+                    error: refusals,
+                    retry_at_unix: None,
+                }
             }
             Err(error) => {
-                let retry_at = github_retry_at(job.attempts, now_unix);
+                let retry_at_unix = github_retry_at(job.attempts, now_unix);
+                let error = error.into_operator_diagnostic();
                 tracing::warn!(
                     request_id = job.request_id,
                     attempts = job.attempts,
-                    gives_up = retry_at.is_none(),
-                    error = %error.operator_diagnostic(),
+                    gives_up = retry_at_unix.is_none(),
+                    %error,
                     "importing a GitHub review failed"
                 );
-                retry_at
+                GitHubReviewImportFinish::Record {
+                    error,
+                    retry_at_unix,
+                }
             }
         };
-        requests.finish_github_review_import(&job, retry_at).await?;
+        requests.finish_github_review_import(&job, finish).await?;
     }
     Ok(imported)
 }
 
-async fn run_job(state: &AppState, job: &GitHubReviewImportJob) -> Result<(), ApiError> {
+async fn run_job(
+    state: &AppState,
+    job: &GitHubReviewImportJob,
+) -> Result<Option<String>, ApiError> {
     let Some(connection) = state
         .metadata
         .repositories()
@@ -102,8 +119,19 @@ async fn run_job(state: &AppState, job: &GitHubReviewImportJob) -> Result<(), Ap
         .await?
         .filter(|connection| connection.is_connected_to(job.github_repository_id))
     else {
-        return Ok(());
+        return Ok(None);
     };
+    let mut authors = ImportAuthors::load(state, &connection).await?;
+    import_subject(state, &connection, job, &mut authors).await?;
+    Ok(authors.refusals())
+}
+
+async fn import_subject(
+    state: &AppState,
+    connection: &GitHubConnection,
+    job: &GitHubReviewImportJob,
+    authors: &mut ImportAuthors<'_>,
+) -> Result<(), ApiError> {
     match job.subject {
         GitHubReviewImportSubject::Review { review_id } => {
             let app = state.github_app()?;
@@ -127,7 +155,7 @@ async fn run_job(state: &AppState, job: &GitHubReviewImportJob) -> Result<(), Ap
                 )
                 .await?
                 .unwrap_or_default();
-            import_comments(state, &connection, job, Some(review), comments).await
+            import_comments(state, connection, job, authors, Some(review), comments).await
         }
         GitHubReviewImportSubject::Reply { comment_id } => {
             let Some(comment) = state
@@ -141,13 +169,24 @@ async fn run_job(state: &AppState, job: &GitHubReviewImportJob) -> Result<(), Ap
             else {
                 return Ok(());
             };
-            import_comments(state, &connection, job, None, vec![comment]).await
+            import_comments(state, connection, job, authors, None, vec![comment]).await
         }
         GitHubReviewImportSubject::Thread {
             root_comment_id,
             status,
             github_account_id,
         } => {
+            let Some(resolver) = state
+                .metadata
+                .requests()
+                .github_account(github_account_id)
+                .await?
+            else {
+                return Ok(());
+            };
+            if !authors.admits(&resolver).await? {
+                return Ok(());
+            }
             let transition = state
                 .metadata
                 .requests()
@@ -177,8 +216,9 @@ async fn import_comments(
     state: &AppState,
     connection: &GitHubConnection,
     job: &GitHubReviewImportJob,
+    authors: &mut ImportAuthors<'_>,
     review: Option<GitHubPullReview>,
-    mut comments: Vec<GitHubPullReviewComment>,
+    fetched: Vec<GitHubPullReviewComment>,
 ) -> Result<(), ApiError> {
     let requests = state.metadata.requests();
     let Some(request) = requests
@@ -188,6 +228,16 @@ async fn import_comments(
     else {
         return Ok(());
     };
+    let review = match review {
+        Some(review) if authors.admits(&review.author).await? => Some(review),
+        _ => None,
+    };
+    let mut comments = Vec::with_capacity(fetched.len());
+    for comment in fetched {
+        if authors.admits(&comment.author).await? {
+            comments.push(comment);
+        }
+    }
     let known = comments
         .iter()
         .map(|comment| comment.id)
@@ -212,6 +262,7 @@ async fn import_comments(
                 root_id,
             )
             .await?
+            && authors.admits(&root.author).await?
         {
             comments.push(root);
         }

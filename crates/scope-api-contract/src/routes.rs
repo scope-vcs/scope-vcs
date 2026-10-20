@@ -44,6 +44,8 @@ routes! {
         REPO_GITHUB_AUTHORIZE = "/v1/repos/{owner}/{repo}/github/authorize" => "repoGitHubAuthorize";
         REPO_GITHUB_REQUIRED_CHECKS = "/v1/repos/{owner}/{repo}/github/required-checks"
             => "repoGitHubRequiredChecks";
+        REPO_GITHUB_REVIEW_BOTS = "/v1/repos/{owner}/{repo}/github/review-bots"
+            => "repoGitHubReviewBots";
         REPO_GITHUB_PUBLIC_CONFIRMATION = "/v1/repos/{owner}/{repo}/github/public-confirmation"
             => "repoGitHubPublicConfirmation";
         REPO_GITHUB_SETUP_CHECK = "/v1/repos/{owner}/{repo}/github/setup-check"

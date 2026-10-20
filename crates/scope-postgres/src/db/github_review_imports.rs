@@ -9,7 +9,7 @@ use super::{
     locks::acquire_shared_repository_lock,
     projection_read_models::repository_views,
     request_attention::reactivate_author_attention_for_github_activity,
-    request_discussion_actors::save_github_accounts,
+    request_discussion_actors::{github_accounts_by_ids, save_github_accounts},
     request_discussion_rows::{
         github_discussion_by_client_id, github_reply_by_client_id, insert_discussion, insert_reply,
         save_discussion,
@@ -80,6 +80,15 @@ struct SubjectColumns {
     github_actor_id: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubReviewImportFinish {
+    Done,
+    Record {
+        error: String,
+        retry_at_unix: Option<u64>,
+    },
+}
+
 #[derive(Clone, Debug)]
 pub struct GitHubImportedComment {
     pub client_id: String,
@@ -145,8 +154,10 @@ impl RequestStore {
                 SET thread_status = EXCLUDED.thread_status,
                     github_actor_id = EXCLUDED.github_actor_id,
                     attempts = 0,
-                    next_attempt_at_unix = EXCLUDED.next_attempt_at_unix
-              WHERE (scope_github_review_imports.thread_status,
+                    next_attempt_at_unix = EXCLUDED.next_attempt_at_unix,
+                    last_error = NULL
+              WHERE scope_github_review_imports.next_attempt_at_unix IS NULL
+                 OR (scope_github_review_imports.thread_status,
                      scope_github_review_imports.github_actor_id)
                     IS DISTINCT FROM (EXCLUDED.thread_status, EXCLUDED.github_actor_id)",
             [
@@ -185,7 +196,7 @@ impl RequestStore {
     pub async fn finish_github_review_import(
         &self,
         job: &GitHubReviewImportJob,
-        retry_at_unix: Option<u64>,
+        finish: GitHubReviewImportFinish,
     ) -> Result<(), PostgresError> {
         let columns = subject_columns(&job.subject)?;
         let mut values = vec![
@@ -198,12 +209,20 @@ impl RequestStore {
         let claimed = "request_id = $1 AND subject = $2 AND github_subject_id = $3
             AND thread_status IS NOT DISTINCT FROM $4
             AND github_actor_id IS NOT DISTINCT FROM $5";
-        let sql = match retry_at_unix {
-            None => format!("DELETE FROM scope_github_review_imports WHERE {claimed}"),
-            Some(retry_at_unix) => {
-                values.push(u64_to_i64(retry_at_unix, "GitHub review import time")?.into());
+        let sql = match finish {
+            GitHubReviewImportFinish::Done => {
+                format!("DELETE FROM scope_github_review_imports WHERE {claimed}")
+            }
+            GitHubReviewImportFinish::Record {
+                error,
+                retry_at_unix,
+            } => {
+                values
+                    .push(optional_u64_to_i64(retry_at_unix, "GitHub review import time")?.into());
+                values.push(error.into());
                 format!(
-                    "UPDATE scope_github_review_imports SET next_attempt_at_unix = $6
+                    "UPDATE scope_github_review_imports
+                        SET next_attempt_at_unix = $6, last_error = $7
                       WHERE {claimed}"
                 )
             }
@@ -216,6 +235,18 @@ impl RequestStore {
             ))
             .await?;
         Ok(())
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_account"))]
+    pub async fn github_account(
+        &self,
+        github_account_id: u64,
+    ) -> Result<Option<GitHubAccount>, PostgresError> {
+        Ok(
+            github_accounts_by_ids(self.db.as_ref(), [github_account_id].into())
+                .await?
+                .remove(&github_account_id),
+        )
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_has_github_discussion"))]

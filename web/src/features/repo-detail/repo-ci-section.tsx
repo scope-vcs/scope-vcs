@@ -12,6 +12,7 @@ import { useRepoViews } from './repo-layout-context'
 import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
+import { RepoReviewBots } from './repo-review-bots'
 import { CiSection } from './repo-settings-sections'
 import { useSettingsAction } from './use-settings-action'
 
@@ -20,6 +21,7 @@ export function RepoCiSection({
   disconnect,
   github,
   setRequiredChecks,
+  setReviewBots,
   setRunImportCount,
   startAuthorization,
   startRunImport,
@@ -29,6 +31,7 @@ export function RepoCiSection({
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
+  setReviewBots: (logins: string[]) => Promise<GitHubConnectionResponse>
   setRunImportCount: (count: number) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
   startRunImport: () => Promise<GitHubConnectionResponse>
@@ -144,6 +147,8 @@ export function RepoCiSection({
         {(view.kind === 'connected' || view.kind === 'disconnected') && (
           <RepoRequiredChecks github={github} save={setRequiredChecks} />
         )}
+
+        {view.kind === 'connected' && <RepoReviewBots github={github} save={setReviewBots} />}
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (
           <RepoGitHubRunImport

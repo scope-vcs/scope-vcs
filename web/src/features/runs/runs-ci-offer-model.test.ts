@@ -6,7 +6,7 @@ import { runsCiOffer } from './runs-ci-offer-model'
 const notConnected: GitHubConnectionResponse = {
   configured: true,
   connection: null,
-  required_checks: [],
+  required_checks: [], review_bots: [],
   can_confirm_public: true,
   setup_check: null,
   run_import_count: 50,
