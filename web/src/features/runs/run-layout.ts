@@ -28,7 +28,7 @@ export const RUN_JOB_LIST_CLASS =
 export const RUN_JOB_ITEM_CLASS = 'max-w-full shrink-0'
 
 export const RUN_JOB_ROW_CLASS =
-  'relative flex h-9 max-w-64 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm lg:w-full lg:max-w-none lg:rounded-none lg:px-4'
+  'relative flex h-9 max-w-[min(16rem,100%)] shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm lg:w-full lg:max-w-none lg:rounded-none lg:px-4'
 
 export function runJobButtonClass(selected: boolean) {
   return cn(
