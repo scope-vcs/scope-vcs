@@ -3025,6 +3025,16 @@ Repository: {"type": "git", "url": "h3js/h3"}
 LICENSE: text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94
 
 ==============================================================================
+hash-wasm 4.12.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/hash-wasm/-/hash-wasm-4.12.0.tgz
+
+Published author metadata: "Dani Biró <danibiro93@gmail.com> (https://danibiro.com)"
+Repository: {"type": "git", "url": "git+https://github.com/Daninet/hash-wasm.git"}
+LICENSE: text 65c34e71fd16373196cb23cd421a7717ca9fba1dc94ee28bd4ff2365e7511731
+
+==============================================================================
 hast-util-heading-rank 3.0.0
 Declared license: MIT
 Selected license: MIT
@@ -7946,6 +7956,30 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
 OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
+
+--- text 65c34e71fd16373196cb23cd421a7717ca9fba1dc94ee28bd4ff2365e7511731 ---
+MIT License
+
+Copyright (c) 2020 Dani Biró
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+Embedded C implementations might use other, similarly permissive licenses.
+Check the beginning of the files from the /src directory.
+
+Special thank you to the authors of original C algorithms:
+- Alexander Peslyak <solar@openwall.com>
+- Aleksey Kravchenko <rhash.admin@gmail.com>
+- Colin Percival
+- Stephan Brumme <create@stephan-brumme.com>
+- Steve Reid <steve@edmweb.com>
+- Samuel Neves <sneves@dei.uc.pt>
+- Solar Designer <solar@openwall.com>
+- Project Nayuki
+- ARM Limited
+- Yanbo Li dreamfly281@gmail.com, goldboar@163.comYanbo Li
+- Mark Adler
+- Yann Collet
 
 --- text 67ad6d13f0d5c1d8cea4143041a6498e24b9bb5a3a931dd4e4da830473935c72 ---
 MIT License
