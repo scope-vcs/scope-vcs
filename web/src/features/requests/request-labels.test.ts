@@ -67,18 +67,11 @@ test('approving workflow changes warns only the maintainer who can approve', () 
   assert.equal(requestChecksWorkflowWarning(checks(true, false)), null)
 })
 
-test('a request outside the anonymous view checked in a public repository names its view', () => {
+test('a request outside the anonymous view checked in a public repository says its changes are public', () => {
   const checks = (private_request_on_public_github: boolean) =>
     ({ private_request_on_public_github }) as RequestChecksResponse
-  assert.equal(requestPublicChecksNote(checks(false), 'Agent'), null)
-  assert.equal(
-    requestPublicChecksNote(checks(true), 'Agent'),
-    'CI runs publicly, so this Agent request’s changes are public.',
-  )
-  assert.equal(
-    requestPublicChecksNote(checks(true), 'Private'),
-    'CI runs publicly, so this Private request’s changes are public.',
-  )
+  assert.equal(requestPublicChecksNote(checks(false)), null)
+  assert.equal(requestPublicChecksNote(checks(true)), 'CI runs publicly, so these changes are public.')
 })
 
 test('activity describes submission', () => {

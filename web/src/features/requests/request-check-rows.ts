@@ -13,11 +13,14 @@ export type RequestCheckRow = {
   state: string
   tone: RunTone
   label: string
+  labelVisible: boolean
   run: { id: string; hash?: string } | null
 }
 
+type RequestChecksStatus = { tone: RunTone; text: string }
+
 type RequestChecksSummary = {
-  lead: { state: 'failed' | 'running' | 'succeeded'; text: string } | null
+  status: RequestChecksStatus | null
   counts: string | null
   startError: { text: string; failed: boolean } | null
   attention: RequestCheckRow[]
@@ -65,33 +68,30 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
   const passed = count('success')
   const skipped = count('inert')
 
+  const part = (total: number, tone: RunTone, text: string): RequestChecksStatus[] => total ? [{ tone, text }] : []
+  const tally = [
+    ...part(failed, 'danger', `${failed} failed`),
+    ...part(left, 'running', failed ? `${left} left` : `${left} of ${all.length - skipped} left`),
+    ...part(passed, 'success', `${passed} passed`),
+    ...part(skipped, 'inert', `${skipped} skipped`),
+  ]
+
   const push = checks.github_push
-  const lead: RequestChecksSummary['lead'] = checks.state !== 'started'
+  const status: RequestChecksStatus | null = checks.state !== 'started'
     ? null
     : push?.state === 'failed'
-      ? { state: 'failed', text: 'CI couldn’t start' }
+      ? { tone: 'danger', text: 'Couldn’t start' }
       : push?.state === 'sending'
-        ? { state: 'running', text: 'Starting CI' }
-        : failed
-          ? { state: 'failed', text: 'CI failed' }
-          : left
-            ? { state: 'running', text: 'CI running' }
-            : passed || skipped
-              ? { state: 'succeeded', text: 'CI passed' }
-              : null
-  const counts = [
-    failed ? `${failed} failed` : null,
-    left ? failed ? `${left} left` : `${left} of ${all.length - skipped} left` : null,
-    passed ? `${passed} passed` : null,
-    skipped ? `${skipped} skipped` : null,
-  ].filter(Boolean)
+        ? { tone: 'running', text: 'Starting' }
+        : tally[0] ?? null
+  const counts = tally.filter((part) => part !== status).map((part) => part.text)
   const startError = push?.error && (push.state === 'failed' || push.state === 'sending')
     ? push.state === 'failed'
       ? { text: push.error, failed: true }
       : { text: `The last attempt failed: ${push.error}`, failed: false }
     : null
 
-  return { lead, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
+  return { status, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
 }
 
 type RequestCheckGroup =
@@ -140,5 +140,7 @@ function row(
 ): RequestCheckRow {
   const parts = name.split(' / ')
   const leaf = parts.pop()!
-  return { key, provider, workflow, name, leaf, parents: parts, state, tone: runStatus(state).tone, label, run }
+  const status = runStatus(state)
+  const labelVisible = status.tone === 'danger' && label !== status.label
+  return { key, provider, workflow, name, leaf, parents: parts, state, tone: status.tone, label, labelVisible, run }
 }
