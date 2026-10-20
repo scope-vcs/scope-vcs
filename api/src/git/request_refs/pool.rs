@@ -1,4 +1,5 @@
 use super::{
+    pack_consolidation::consolidate_pool_repos,
     pool_pack::{LocalPoolPack, StagedPoolPack},
     seeding::present_commits,
 };
@@ -358,7 +359,7 @@ async fn install_staged_pool_pack(
     if !installable {
         return Ok(());
     }
-    match &pool_pack.local {
+    let installed = match &pool_pack.local {
         LocalPoolPack::Files(files) => {
             let target = objects_repo.join("objects/pack");
             let files = (
@@ -376,7 +377,11 @@ async fn install_staged_pool_pack(
                 .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
             install_fetched(state, &objects_repo, FetchedPack::Verified(verified)).await
         }
+    };
+    if installed.is_ok() {
+        consolidate_pool_repos(incarnation.repository_id(), vec![objects_repo]).await;
     }
+    installed
 }
 
 fn link_pack_files(

@@ -56,7 +56,7 @@ pub(super) async fn receive_pack(
     let spooled = spool_body(state, run.staging_repo, body, run.max_bytes).await?;
     let cgi = run.run(spooled_body(&spooled).await?).await?;
     if !cgi.status.is_success()
-        || !receive_pack_lacked_objects(&cgi.body)
+        || !receive_pack_may_lack_objects(&cgi.body)
         || !refs_unchanged(run.staging_repo, deferred.refs_before).await?
     {
         return Ok(cgi);
@@ -71,9 +71,9 @@ pub(super) async fn receive_pack(
     run.run(spooled_body(&spooled).await?).await
 }
 
-fn receive_pack_lacked_objects(report: &[u8]) -> bool {
+fn receive_pack_may_lack_objects(report: &[u8]) -> bool {
     let contains = |needle: &[u8]| report.windows(needle.len()).any(|window| window == needle);
-    contains(b"missing necessary objects") || (contains(b"unpack ") && !contains(b"unpack ok"))
+    contains(b"missing necessary objects") || !contains(b"unpack ok")
 }
 
 async fn refs_unchanged(
@@ -148,20 +148,21 @@ async fn spooled_body(path: &FsPath) -> Result<Body, ApiError> {
 
 #[cfg(test)]
 mod tests {
-    use super::receive_pack_lacked_objects;
+    use super::receive_pack_may_lack_objects;
 
     #[test]
-    fn missing_objects_are_recognized_in_receive_pack_reports() {
-        assert!(receive_pack_lacked_objects(
+    fn missing_objects_are_suspected_unless_the_report_rules_them_out() {
+        assert!(receive_pack_may_lack_objects(
             b"000eunpack ok\n0030ng refs/heads/topic missing necessary objects\n0000"
         ));
-        assert!(receive_pack_lacked_objects(
+        assert!(receive_pack_may_lack_objects(
             b"0029unpack unpack-objects abnormal exit\n0000"
         ));
-        assert!(!receive_pack_lacked_objects(
+        assert!(receive_pack_may_lack_objects(b""));
+        assert!(!receive_pack_may_lack_objects(
             b"000eunpack ok\n0017ok refs/heads/topic\n0000"
         ));
-        assert!(!receive_pack_lacked_objects(
+        assert!(!receive_pack_may_lack_objects(
             b"000eunpack ok\n0024ng refs/heads/topic pre-receive hook declined\n0000"
         ));
     }
