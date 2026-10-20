@@ -50,9 +50,10 @@ pub use checks::{
     OpenedGitHubPullRequest, PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext,
     RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider,
     RequestCheckResults, RequestCheckReviewer, RequestChecksOutcome, carrier_pull_request_intent,
-    changes_github_workflows, check_commit_message, closes_carrier_pull_request,
-    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, may_carry_on_github,
-    request_checks_message, request_checks_outcome, request_head_awaits_evaluation,
+    carries_private_request, changes_github_workflows, check_commit_message,
+    closes_carrier_pull_request, ensure_approving_reviewed_head, github_push_retry_at,
+    github_retry_at, may_carry_on_github, request_checks_message, request_checks_outcome,
+    request_head_awaits_evaluation,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};

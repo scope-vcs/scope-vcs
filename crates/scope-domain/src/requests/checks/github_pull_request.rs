@@ -107,7 +107,11 @@ pub fn carrier_pull_request_intent(
 }
 
 pub fn may_carry_on_github(connection: &GitHubConnection, request: &Request) -> bool {
-    request.view.is_public() || connection.may_receive_private_requests()
+    !carries_private_request(request) || connection.may_receive_private_requests()
+}
+
+pub fn carries_private_request(request: &Request) -> bool {
+    !request.view.is_public()
 }
 
 fn carrier_pull_request_base(request: &Request, parent: Option<&Request>) -> String {

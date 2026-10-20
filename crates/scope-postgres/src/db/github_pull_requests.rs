@@ -118,6 +118,16 @@ impl RequestStore {
             retry_at.into(),
             error.into(),
             now.into(),
+            u64_to_i64(
+                progress.destination.installation_id,
+                "GitHub installation id",
+            )?
+            .into(),
+            u64_to_i64(
+                progress.destination.github_repository_id,
+                "GitHub repository id",
+            )?
+            .into(),
         ]);
         let finished = self
             .db
@@ -132,7 +142,8 @@ impl RequestStore {
                         last_error = CASE WHEN intent_sequence <> $8 THEN NULL ELSE $11 END,
                         lease_until_unix = NULL, claim_token = NULL,
                         updated_at_unix = greatest($12, updated_at_unix)
-                      WHERE request_id = $1 AND claim_token = $7 AND job_state = 'running'"
+                      WHERE request_id = $1 AND claim_token = $7 AND job_state = 'running'
+                        AND installation_id = $13 AND github_repository_id = $14"
                 ),
                 values,
             ))
@@ -267,7 +278,12 @@ pub(super) async fn queue_carrier_for_pushed_head<C: ConnectionTrait>(
                 intent_head_oid = EXCLUDED.intent_head_oid,
                 next_attempt_at_unix = EXCLUDED.next_attempt_at_unix,
                 updated_at_unix = greatest(EXCLUDED.updated_at_unix, pull_request.updated_at_unix),
-                {REQUEUE}"
+                intent_sequence = pull_request.intent_sequence + 1,
+                job_state = CASE WHEN {KEEP_CLAIM} THEN 'running' ELSE 'queued' END,
+                lease_until_unix = CASE WHEN {KEEP_CLAIM} THEN pull_request.lease_until_unix END,
+                claim_token = CASE WHEN {KEEP_CLAIM} THEN pull_request.claim_token END,
+                attempts = CASE WHEN {KEEP_CLAIM} THEN pull_request.attempts ELSE 0 END,
+                last_error = CASE WHEN {KEEP_CLAIM} THEN pull_request.last_error END"
         ),
         [
             request.id.clone().into(),
@@ -285,6 +301,10 @@ pub(super) async fn queue_carrier_for_pushed_head<C: ConnectionTrait>(
 }
 
 const SAME_REPOSITORY: &str = "pull_request.github_repository_id = EXCLUDED.github_repository_id";
+
+const KEEP_CLAIM: &str = "pull_request.job_state = 'running'
+    AND pull_request.installation_id = EXCLUDED.installation_id
+    AND pull_request.github_repository_id = EXCLUDED.github_repository_id";
 
 pub(super) async fn queue_carriers_for_repository<C: ConnectionTrait>(
     conn: &C,

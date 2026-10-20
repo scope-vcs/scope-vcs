@@ -47,14 +47,18 @@ async fn submitted_full_view_request(store: &MetadataStore, id: &str) -> Request
 }
 
 async fn connect(store: &MetadataStore, open_pull_requests: bool) {
+    connect_to(store, 42, open_pull_requests).await;
+}
+
+async fn connect_to(store: &MetadataStore, github_repository_id: u64, open_pull_requests: bool) {
     let repositories = store.repositories();
     repositories
         .connect_github_repository(
             ConnectGitHubRepository {
                 repository_id: REPO.to_string(),
                 installation_id: 7,
-                github_repository_id: 42,
-                github_full_name: "octo/checks".to_string(),
+                github_repository_id,
+                github_full_name: format!("octo/checks-{github_repository_id}"),
                 github_private: true,
                 acknowledge_public: false,
                 run_import_count: 0,
@@ -307,4 +311,39 @@ async fn an_observation_records_a_close_from_github_only_for_the_carrier_reposit
             .state,
         GitHubPullRequestState::ClosedOnGitHub
     );
+}
+
+#[tokio::test]
+async fn a_claim_for_the_old_repository_cannot_record_its_pull_request_after_a_reconnect() {
+    let store = postgres_store();
+    connect(&store, true).await;
+    submitted_full_view_request(&store, "req_1").await;
+    push_succeeds(&store, "req_1", 'a', 10).await;
+    let mut running = claim(&store, "claim_1", 10).await.remove(0);
+    assert_eq!(running.destination.github_repository_id, 42);
+
+    store
+        .repositories()
+        .disconnect_github_repository(REPO, OWNER)
+        .await
+        .unwrap();
+    connect_to(&store, 43, true).await;
+    push_succeeds(&store, "req_1", 'b', 11).await;
+
+    running.record_opened(
+        5,
+        "https://github.com/octo/checks-42/pull/5".into(),
+        "main".into(),
+    );
+    assert!(
+        !store
+            .requests()
+            .finish_github_pull_request(&running, "claim_1", GitHubJobOutcome::Succeeded(()), 12)
+            .await
+            .unwrap()
+    );
+    let reconnected = claim(&store, "claim_2", 12).await.remove(0);
+    assert_eq!(reconnected.destination.github_repository_id, 43);
+    assert_eq!(reconnected.pull_request, None);
+    assert_eq!(head_of(&reconnected), oid('b'));
 }

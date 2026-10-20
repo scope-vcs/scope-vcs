@@ -292,7 +292,11 @@ the description. Scope never opens a draft.
 A request gets a carrier only when its branch was pushed with the request's
 own head: an open request in the repository's full view, while the link is
 connected. A request tested through a check commit never gets one, because
-the diff against `main` would expose the private main it was built from.
+the diff against `main` would expose the private main it was built from. A request outside the anyone view gets
+one only while the GitHub repository may receive private requests. Scope
+asks GitHub for the repository's visibility right before it opens, edits or
+comments on such a pull request, so a repository that turned public before
+its webhook arrived is caught.
 Turning the setting on queues a carrier for every open request whose latest
 push reached GitHub.
 

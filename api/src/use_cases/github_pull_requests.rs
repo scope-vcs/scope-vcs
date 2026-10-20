@@ -1,4 +1,4 @@
-use super::github_pushes::{JobFailure, job_outcome};
+use super::github_pushes::{JobFailure, job_outcome, refresh_github_visibility};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     auth::tokens::random_token,
@@ -16,8 +16,8 @@ use crate::{
 use scope_domain::{
     github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE,
     requests::{
-        GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestStep, github_retry_at,
-        may_carry_on_github,
+        GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestStep, carries_private_request,
+        github_retry_at, may_carry_on_github,
     },
 };
 use scope_postgres::db::GitHubJobOutcome;
@@ -117,6 +117,13 @@ async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<()
             .request_by_id(&carrier.request_id)
             .await?
             .ok_or_else(|| JobFailure::GiveUp("Scope no longer has this request.".to_string()))?;
+        let refreshed;
+        let connection = if carries_private_request(&request) {
+            refreshed = refresh_github_visibility(state, connection).await?;
+            &refreshed
+        } else {
+            connection
+        };
         if !may_carry_on_github(connection, &request) {
             return Err(JobFailure::GiveUp(
                 PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string(),

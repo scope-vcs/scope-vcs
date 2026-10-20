@@ -181,23 +181,25 @@ async fn closing_the_pull_request_on_github_is_recorded_and_not_undone() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_private_request_gets_no_pull_request_once_its_github_repository_turns_public() {
-    let request = opted_in_request("carrier-withheld").await;
+async fn a_private_request_gets_no_pull_request_when_github_turned_public_before_the_webhook() {
+    let request = opted_in_request("carrier-unannounced-public").await;
     let (state, fake) = (&request.state, &request.fake);
     push_pass(state, unix_now()).await;
-    state
-        .metadata
-        .repositories()
-        .apply_github_repository_visibility(GITHUB_REPOSITORY_ID, false)
-        .await
-        .unwrap();
+    for (_, repository) in fake.installation_repositories.lock().unwrap().iter_mut() {
+        repository["private"] = false.into();
+    }
 
     assert_eq!(pull_request_pass(state).await, 1);
     assert!(fake.pulls.pulls.lock().unwrap().is_empty());
+    assert!(comments(fake).is_empty());
     let withheld = request.checks().await["github_pull_request"].clone();
     assert_eq!(withheld["state"], "failed");
     assert_eq!(
         withheld["error"],
         scope_domain::github_connection::PRIVATE_REQUESTS_WITHHELD_MESSAGE
+    );
+    assert_eq!(
+        request.checks().await["private_request_on_public_github"],
+        true
     );
 }

@@ -32,7 +32,8 @@ pub use github_pull_request::{
     GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestJobState,
     GitHubPullRequestObservation, GitHubPullRequestState, GitHubPullRequestStatus,
     GitHubPullRequestStatusState, GitHubPullRequestStep, OpenedGitHubPullRequest,
-    carrier_pull_request_intent, closes_carrier_pull_request, may_carry_on_github,
+    carrier_pull_request_intent, carries_private_request, closes_carrier_pull_request,
+    may_carry_on_github,
 };
 pub use github_push::{
     GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,
