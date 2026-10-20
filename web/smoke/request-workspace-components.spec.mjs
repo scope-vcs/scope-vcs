@@ -52,7 +52,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.mouse.move(700, 400)
   await waitOpacity(age, '1')
   await waitOpacity(actions, '0')
-  await page.getByRole('combobox', { name: 'Viewing as' }).focus()
+  await page.getByRole('button', { name: 'Viewing as Private' }).focus()
   await page.keyboard.press('Tab')
   assert.equal(await row.getByRole('link').evaluate((node) => node === document.activeElement), true)
   await waitOpacity(age, '0')
@@ -138,7 +138,7 @@ test('request rows exchange age and actions and restore the selected view across
   const logoAxis = logo.x + logo.width / 2
   const expand = await page.getByRole('button', { name: 'Expand requests sidebar' }).boundingBox()
   for (const { x, width } of [...closedAvatars, expand]) assert(Math.abs(x + width / 2 - logoAxis) < 0.5, 'the rail column centers on the topbar logo')
-  assert.equal(await page.getByRole('combobox', { name: 'Viewing as' }).isVisible(), false)
+  assert.equal(await page.getByRole('button', { name: 'Viewing as Private' }).isVisible(), false)
   await page.locator('.request-workspace-needs-you > h2').hover()
   assert.equal(await page.locator('.request-workspace-rail-hint').textContent(), 'Needs you · 3')
   await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
@@ -229,6 +229,26 @@ test('request rows exchange age and actions and restore the selected view across
   await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
   await hint.waitFor({ state: 'attached' })
   assert.equal(await hint.isVisible(), false, 'phone layouts have no rail, so rail hints stay hidden')
+  assert.deepEqual(errors, [])
+})
+
+test('the viewing-as picker names the current view and switches views from its menu', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const trigger = page.getByRole('button', { name: 'Viewing as Private' })
+  await trigger.hover()
+  assert.equal(await page.getByRole('tooltip').textContent(), 'Viewing as Private')
+  await trigger.click()
+  const menu = page.getByRole('dialog', { name: 'Viewing as' })
+  assert.deepEqual(await menu.getByRole('button').allTextContents(), ['Public', 'Private'])
+  assert.equal(await menu.getByRole('button', { name: 'Private' }).getAttribute('aria-current'), 'true')
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.viewing-as-menu.png` })
+  }
+  await menu.getByRole('button', { name: 'Public' }).click()
+  await page.getByRole('button', { name: 'Viewing as Public' }).waitFor()
+  assert.equal(await menu.isVisible(), false)
+  assert.equal(new URL(page.url()).searchParams.get('view'), 'public')
   assert.deepEqual(errors, [])
 })
 

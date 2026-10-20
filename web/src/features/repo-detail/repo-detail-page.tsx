@@ -4,7 +4,6 @@ import type {
   RepoSummaryResponse,
 } from '@/api/types.generated'
 import { RepoPrimaryActionButton } from '@/components/repo-primary-action'
-import { Eye } from 'lucide-react'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { RepoCloneDropdown } from './repo-clone-dropdown'
@@ -15,6 +14,7 @@ import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
 import type { CachedResource } from '@/lib/use-cached-resource'
 import { useRepoViews } from './repo-layout-context'
 import { RepoViewingAsPicker, useViewingAs } from './use-viewing-as'
+import { ViewingAsStatus } from './viewing-as-picker'
 
 export function RepoDetailPage({
   content,
@@ -40,12 +40,7 @@ export function RepoDetailPage({
       <WorkbenchBar
         actions={(
           <>
-            {options.length > 1 ? <RepoViewingAsPicker /> : (
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Eye aria-hidden="true" className="size-3.5" />
-                Viewing as {views.name(view)}
-              </span>
-            )}
+            {options.length > 1 ? <RepoViewingAsPicker /> : <ViewingAsStatus name={views.name(view)} />}
             {repo.lifecycle_state === 'Ready' && (content.value ? (
               <RepoCloneDropdown
                 cloneRemoteUrl={content.value.clone_remote_url}
