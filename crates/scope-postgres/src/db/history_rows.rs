@@ -134,40 +134,46 @@ where
         )
         .await?;
     }
-    if commits_rewritten || after_graph.commits.len() != before_graph.commits.len() + 1 {
-        if before_live_files != after_live_files || before_policy != after_policy {
+    let changed_paths = if commits_rewritten
+        || after_graph.commits.len() != before_graph.commits.len() + 1
+    {
+        if before_live_files != after_live_files {
             replace_live_files(conn, &after_graph.repo_id, after_live_files, after_policy).await?;
+            return Ok(());
         }
-    } else if let Some(commit) = after_graph.commits.last() {
-        let after_rules = file_rules(after_policy.rules());
-        let mut paths = commit
-            .changes
-            .iter()
-            .map(|change| &change.path)
-            .collect::<BTreeSet<_>>();
-        if before_policy != after_policy {
-            let before_rules = file_rules(before_policy.rules());
-            paths.extend(
-                after_live_files
-                    .keys()
-                    .filter(|path| before_rules.get(path) != after_rules.get(path)),
-            );
-        }
-        save_live_files(
-            conn,
-            &after_graph.repo_id,
-            paths.into_iter().map(|path| {
-                (
-                    path,
-                    after_live_files.get(path).map(|content| LiveFileRow {
-                        content,
-                        view: after_rules.get(path).copied(),
-                    }),
-                )
-            }),
-        )
-        .await?;
+        BTreeSet::new()
+    } else {
+        after_graph
+            .commits
+            .last()
+            .into_iter()
+            .flat_map(|commit| commit.changes.iter().map(|change| &change.path))
+            .collect()
+    };
+    let after_rules = file_rules(after_policy.rules());
+    let mut paths = changed_paths;
+    if before_policy != after_policy {
+        let before_rules = file_rules(before_policy.rules());
+        paths.extend(
+            after_live_files
+                .keys()
+                .filter(|path| before_rules.get(path) != after_rules.get(path)),
+        );
     }
+    save_live_files(
+        conn,
+        &after_graph.repo_id,
+        paths.into_iter().map(|path| {
+            (
+                path,
+                after_live_files.get(path).map(|content| LiveFileRow {
+                    content,
+                    view: after_rules.get(path).copied(),
+                }),
+            )
+        }),
+    )
+    .await?;
     Ok(())
 }
 

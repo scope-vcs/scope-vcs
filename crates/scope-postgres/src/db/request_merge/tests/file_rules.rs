@@ -116,3 +116,58 @@ async fn main_pushes_keep_file_rules_on_live_files_instead_of_the_repository_pol
         assert_eq!(stored_policy_rules(&store).await, serde_json::json!([]));
     }
 }
+
+async fn live_file_versions(store: &crate::db::MetadataStore) -> Vec<(String, String)> {
+    store
+        .db
+        .query_all_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT path, xmin::text AS version FROM scope_live_files
+             WHERE repo_id = 'owner/repo' ORDER BY path COLLATE \"C\"",
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "path").unwrap(),
+                row.try_get("", "version").unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn relabelling_one_file_rewrites_only_its_row() {
+    let store = merge_store().await;
+    let prepared = merge_preparation(&store).await;
+    push(&store, PUSH_PATHS[0], prepared, Vec::new())
+        .await
+        .unwrap();
+    let before = live_file_versions(&store).await;
+
+    store
+        .repositories()
+        .mutate_repository_for_tests("owner/repo", |repo| {
+            repo.policy
+                .add_rule(LabelRule::private(ScopePath::parse("/README.md").unwrap()))
+                .unwrap();
+            repo.bump_content_version();
+        })
+        .await
+        .unwrap();
+
+    let after = live_file_versions(&store).await;
+    let rewritten = before
+        .iter()
+        .zip(&after)
+        .filter(|(before, after)| before != after)
+        .map(|(_, (path, _))| path.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(rewritten, ["/README.md"]);
+    assert!(
+        stored_live_file_views(&store)
+            .await
+            .contains(&("/README.md".to_string(), Some("private".to_string())))
+    );
+}
