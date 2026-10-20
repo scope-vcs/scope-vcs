@@ -345,3 +345,55 @@ async fn an_adopted_pull_request_keeps_the_title_and_body_its_author_wrote() {
     assert_eq!(fake.pulls.pull(adopted)["title"], "Written by hand");
     assert_eq!(fake.pulls.pull(adopted)["body"], "");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_close_delivered_before_the_first_run_saved_the_pull_request_still_wins() {
+    let request = opted_in_request("carrier-early-close").await;
+    let (state, fake) = (&request.state, &request.fake);
+    push_pass(state, unix_now()).await;
+    let requests = state.metadata.requests();
+    let now = unix_now();
+    let mut opening = requests
+        .claim_due_github_pull_requests("first_run", now, now + 300, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    let number = fake.pulls.open(&request.branch(), "main");
+    opening.record_opened(
+        number,
+        format!("https://github.com/{GITHUB_FULL_NAME}/pull/{number}"),
+        "main".into(),
+        None,
+    );
+
+    fake.pulls.close_as(number, "octocat");
+    let delivered = webhook(
+        state,
+        "pull_request",
+        pull_request_delivery(&request, "closed", "closed"),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(delivered.status(), StatusCode::NO_CONTENT);
+    assert!(
+        requests
+            .finish_github_pull_request(
+                &opening,
+                "first_run",
+                scope_postgres::db::GitHubJobOutcome::Succeeded(()),
+                now
+            )
+            .await
+            .unwrap()
+    );
+
+    assert_eq!(pull_request_pass(state).await, 1);
+    assert_eq!(
+        request.checks().await["github_pull_request"]["state"],
+        "closed_on_github"
+    );
+    revise(&request, "revised work\n").await;
+    pull_request_pass(state).await;
+    assert!(comments(fake).is_empty());
+    assert_eq!(fake.pulls.pulls.lock().unwrap().len(), 1);
+}

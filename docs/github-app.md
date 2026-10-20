@@ -330,7 +330,8 @@ carrier GitHub closed because the app deleted its base branch is replaced by
 the next push.
 
 A `pull_request` delivery is only a hint, because GitHub can deliver events
-late and out of order. It requeues the carrier's job, and each run first
+late and out of order. It requeues the carrier's job, even one still running
+before it has recorded the pull request's number, and each run first
 reads the pull request and who closed it from GitHub, then decides. The job
 is the only writer of a carrier's recorded number, state and base.
 
