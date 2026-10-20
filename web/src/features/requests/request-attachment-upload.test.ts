@@ -160,6 +160,52 @@ test('reauthorizes an expired transfer and reconciles acknowledged parts', async
   }
 })
 
+test('an expired transfer aborts concurrent parts before reauthorization', async (t) => {
+  const original = globalThis.XMLHttpRequest
+  t.after(() => { globalThis.XMLHttpRequest = original })
+  const firstTransferRequests: FakeRequest[] = []
+  const send = t.mock.fn(async (request: FakeRequest, part: Blob) => {
+    if (request.authorization === 'Bearer expired') {
+      firstTransferRequests.push(request)
+      if (request.url.endsWith('/1')) request.respond(401, {})
+      return
+    }
+    request.respond(200, partReceipt(request, part))
+  })
+  installFakeXhr(send)
+  const key = 'concurrent-renewal'
+  const localId = addDraftFile(key, 'abcdefgh')
+  let prepareCalls = 0
+  const actions: AttachmentUploadActions = {
+    prepare: async () => {
+      prepareCalls += 1
+      return {
+        attachment: { id: 'concurrent-attachment' },
+        transfer: {
+          acknowledged_parts: [],
+          expires_at_unix: Math.floor(Date.now() / 1_000) + 300,
+          grant: prepareCalls === 1 ? 'expired' : 'renewed',
+          max_concurrent_parts: 2,
+          media_base_url: 'https://media.example.test',
+          preferred_part_bytes: 4,
+          upload_id: 'concurrent-upload',
+        },
+      }
+    },
+    finish: async () => ({ id: 'concurrent-attachment' }),
+  }
+
+  const upload = uploadRequestAttachment({ actions, draftKey: key, hashFile, localId, params, target })
+  await settle()
+  assert.equal(prepareCalls, 2)
+  await upload
+
+  assert.equal(firstTransferRequests.length, 2)
+  assert.equal(firstTransferRequests.find((request) => request.url.endsWith('/2'))?.aborted, true)
+  assert.equal(send.mock.callCount(), 4)
+  assert.equal(readRequestAttachmentDraft(key).attachments[0]?.status, 'uploaded')
+})
+
 type FakeRequest = {
   aborted: boolean
   authorization: string
@@ -444,4 +490,29 @@ test('caps part uploads across the tab and frees slots when uploads are cancelle
   assert.equal(open.length, 4)
   respondToOpen()
   await Promise.all(laterUploads)
+})
+
+test('cancelling a queued upload during slot handoff frees the slot', async (t) => {
+  const original = globalThis.XMLHttpRequest
+  t.after(() => { globalThis.XMLHttpRequest = original })
+  const open: Array<{ part: Blob; request: FakeRequest }> = []
+  const send = t.mock.fn(async (request: FakeRequest, part: Blob) => { open.push({ part, request }) })
+  installFakeXhr(send)
+  const keys = ['handoff-one', 'handoff-two', 'handoff-three', 'handoff-four', 'handoff-cancelled', 'handoff-next']
+  const files = keys.map((key) => ({ key, localId: addDraftFile(key) }))
+  const uploads = files.map(({ key, localId }) =>
+    uploadRequestAttachment({ actions: singlePartActions(key), draftKey: key, hashFile, localId, params, target }))
+  await settle()
+  assert.equal(send.mock.callCount(), 4)
+
+  const first = open[0]!
+  first.request.respond(200, partReceipt(first.request, first.part))
+  queueMicrotask(() => removeUploadingRequestAttachment(files[4]!.key, files[4]!.localId))
+  await settle()
+
+  assert.equal(send.mock.callCount(), 5)
+  assert.equal(open.some(({ request }) => request.url.includes('/handoff-cancelled/')), false)
+  assert.equal(open.some(({ request }) => request.url.includes('/handoff-next/')), true)
+  for (const { key, localId } of files) removeUploadingRequestAttachment(key, localId)
+  await Promise.all(uploads)
 })

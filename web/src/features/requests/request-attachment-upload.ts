@@ -219,50 +219,61 @@ async function uploadParts({
     .filter((partNumber) => !receipts.has(partNumber))
   let cursor = 0
   const inFlightBytes = new Map<number, number>()
+  const partsController = new AbortController()
+  const abortParts = () => partsController.abort()
+  controller.signal.addEventListener('abort', abortParts, { once: true })
+  if (controller.signal.aborted) partsController.abort()
+  let failure: unknown = null
 
   async function worker() {
-    while (cursor < pending.length) {
-      const partNumber = pending[cursor++]
-      if (!partNumber) return
-      assertActive(controller)
-      if (Date.now() >= transfer.expires_at_unix * 1_000 - 30_000) {
-        throw new TransferAuthorizationExpired()
+    try {
+      while (cursor < pending.length) {
+        const partNumber = pending[cursor++]
+        if (!partNumber) return
+        assertActive(partsController)
+        if (Date.now() >= transfer.expires_at_unix * 1_000 - 30_000) {
+          throw new TransferAuthorizationExpired()
+        }
+        const start = (partNumber - 1) * partBytes
+        const part = file.slice(start, Math.min(file.size, start + partBytes))
+        const receipt = await putPartWithRetry({
+          grant: transfer.grant,
+          onProgress: (loaded) => {
+            inFlightBytes.set(partNumber, loaded)
+            const completed = acknowledgedBytes()
+            const uploading = [...inFlightBytes.values()].reduce((total, value) => total + value, 0)
+            patchRequestAttachmentDraftFile(draftKey, localId, {
+              progress: file.size === 0
+                ? 1
+                : Math.min((completed + uploading) / file.size, 0.99),
+            })
+          },
+          part,
+          partNumber,
+          signal: partsController.signal,
+          url: `${safeMediaBaseUrl(transfer.media_base_url)}/v1/uploads/${encodeURIComponent(transfer.upload_id)}/parts/${partNumber}`,
+        })
+        inFlightBytes.delete(partNumber)
+        receipts.set(partNumber, receipt)
+        patchRequestAttachmentDraftFile(draftKey, localId, {
+          progress: file.size === 0 ? 1 : Math.min(acknowledgedBytes() / file.size, 0.99),
+        })
       }
-      const start = (partNumber - 1) * partBytes
-      const part = file.slice(start, Math.min(file.size, start + partBytes))
-      const receipt = await putPartWithRetry({
-        grant: transfer.grant,
-        onProgress: (loaded) => {
-          inFlightBytes.set(partNumber, loaded)
-          const completed = acknowledgedBytes()
-          const uploading = [...inFlightBytes.values()].reduce((total, value) => total + value, 0)
-          patchRequestAttachmentDraftFile(draftKey, localId, {
-            progress: file.size === 0
-              ? 1
-              : Math.min((completed + uploading) / file.size, 0.99),
-          })
-        },
-        part,
-        partNumber,
-        signal: controller.signal,
-        url: `${safeMediaBaseUrl(transfer.media_base_url)}/v1/uploads/${encodeURIComponent(transfer.upload_id)}/parts/${partNumber}`,
-      })
-      inFlightBytes.delete(partNumber)
-      receipts.set(partNumber, receipt)
-      patchRequestAttachmentDraftFile(draftKey, localId, {
-        progress: file.size === 0 ? 1 : Math.min(acknowledgedBytes() / file.size, 0.99),
-      })
+    } catch (error) {
+      if (failure === null) {
+        failure = error
+        partsController.abort()
+      }
     }
   }
 
-  const workerCount = Math.max(1, Math.min(transfer.max_concurrent_parts, pending.length || 1))
-  const outcomes = await Promise.allSettled(
-    Array.from({ length: workerCount }, () => worker()),
-  )
-  const failure = outcomes.find(
-    (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected',
-  )
-  if (failure) throw failure.reason
+  const workerCount = Math.max(1, Math.min(transfer.max_concurrent_parts, pending.length || 1, MAX_TAB_PART_UPLOADS))
+  try {
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  } finally {
+    controller.signal.removeEventListener('abort', abortParts)
+  }
+  if (failure !== null) throw failure
   return [...receipts.values()].sort((left, right) => left.part_number - right.part_number)
 }
 
@@ -271,6 +282,7 @@ async function putPartWithRetry(input: Parameters<typeof putPart>[0]) {
   for (let retry = 0; ; retry += 1) {
     const release = await partUploadSlots.acquire(input.signal)
     try {
+      input.signal.throwIfAborted()
       return await putPart(input)
     } catch (error) {
       if (!(error instanceof RetryablePartFailure)) throw error

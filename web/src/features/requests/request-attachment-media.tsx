@@ -44,9 +44,10 @@ export function RequestAttachmentMedia({
   if (attachment.state !== 'Ready') {
     return <AttachmentNotReady attachment={attachment} />
   }
+  const mediaKey = `${environment.accessScope}\0${attachment.id}`
   return attachment.kind === 'Photo'
-    ? <PhotoAttachment attachment={attachment} label={label} />
-    : <VideoAttachment attachment={attachment} label={label} />
+    ? <PhotoAttachment attachment={attachment} key={mediaKey} label={label} />
+    : <VideoAttachment attachment={attachment} key={mediaKey} label={label} />
 }
 
 function PhotoAttachment({
