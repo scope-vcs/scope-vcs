@@ -51,7 +51,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: scope-production-backup-health
-      AlarmDescription: Production Railway backup is stale, schedules are missing, or the hourly checker stopped. Inspect GitHub Backup monitor runs and Railway production Postgres backups.
+      AlarmDescription: Production Railway backup is stale, schedules are missing, or the checker has not reported healthy for 24 hours. Inspect GitHub Backup monitor runs and Railway production Postgres backups.
       Namespace: Scope/Security/Backup
       MetricName: Healthy
       Dimensions:
@@ -59,8 +59,8 @@ Resources:
           Value: d849de88-290f-4f68-a6bb-33a8bac7c0fd
       Statistic: Minimum
       Period: 3600
-      EvaluationPeriods: 3
-      DatapointsToAlarm: 3
+      EvaluationPeriods: 24
+      DatapointsToAlarm: 24
       Threshold: 1
       ComparisonOperator: LessThanThreshold
       TreatMissingData: breaching
