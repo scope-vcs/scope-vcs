@@ -398,6 +398,7 @@ pub(super) async fn persist_request_ref_revision(
     let views = context.repo_config.views();
     let sharing = if address_view.unwrap_or(views.full()) == views.full()
         && context.access.reads_full_view(views)
+        && published_request.is_submitted()
     {
         RequestObjectSharing::Pool
     } else {

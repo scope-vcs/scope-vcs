@@ -74,10 +74,16 @@ fn attach_request_refs_from_store(
             .iter()
             .filter(|request| !present.contains(&request.head_oid))
             .collect::<Vec<_>>();
-        if !missing.is_empty() {
+        let (shared, private): (Vec<_>, Vec<_>) = missing
+            .into_iter()
+            .partition(|request| request.is_submitted());
+        for request in private {
+            restore_request_objects(state, staging_repo, None, request)?;
+        }
+        if !shared.is_empty() {
             let store_repo = ensure_request_ref_store_repo(state, incarnation)?;
-            for request in missing {
-                restore_request_objects(state, &store_repo, staging_repo, request)?;
+            for request in shared {
+                restore_request_objects(state, &store_repo, Some(staging_repo), request)?;
             }
             add_receive_pack_alternate(staging_repo, &store_repo.join("objects"))?;
         }
@@ -115,8 +121,8 @@ fn attach_request_refs_from_store(
 
 fn restore_request_objects(
     state: &AppState,
-    store_repo: &FsPath,
-    staging_repo: &FsPath,
+    target_repo: &FsPath,
+    prerequisites_from: Option<&FsPath>,
     request: &Request,
 ) -> Result<(), ApiError> {
     let Some(snapshot) = request.git_snapshot.as_ref() else {
@@ -126,16 +132,16 @@ fn restore_request_objects(
     let seeded_ref = format!("refs/scope/seeded/{}", request.name);
     let restored = fetch_snapshot_into_ref(
         state,
-        store_repo,
+        target_repo,
         BundleRef {
             source: &request_ref,
             destination: &seeded_ref,
         },
         snapshot,
-        Some(staging_repo),
+        prerequisites_from,
         "restoring request objects",
     );
-    if present_commits(store_repo, std::iter::once(request.head_oid.as_str()))?
+    if present_commits(target_repo, std::iter::once(request.head_oid.as_str()))?
         .contains(&request.head_oid)
     {
         return Ok(());

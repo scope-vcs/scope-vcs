@@ -5,7 +5,7 @@ mod retirement;
 mod spans;
 
 pub use pool::GitPoolPacks;
-pub(super) use pool::register_git_pool_pack;
+pub(super) use pool::{register_git_pool_pack, retire_request_pool_packs};
 pub(super) use references::{insert_git_segment_references, release_git_segment_references};
 pub(super) use retirement::retire_git_segment;
 pub(super) use spans::{load_git_pack_spans, publish_git_segment};

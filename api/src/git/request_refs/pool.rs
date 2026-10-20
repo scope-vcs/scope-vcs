@@ -89,15 +89,28 @@ async fn install_registered_pool_packs(
             break;
         }
         let mut downloads = stream::iter(installable.into_iter().map(|pack| async move {
-            state
+            let verified = state
                 .git_segment_store
                 .get_verified_pack(incarnation, &pack.segment)
                 .await
-                .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))
+                .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()));
+            (pack, verified)
         }))
         .buffered(CONCURRENT_POOL_DOWNLOADS);
-        while let Some(verified) = downloads.next().await {
-            install_pack(state, &pool_repo, verified?).await?;
+        let mut installed = 0;
+        while let Some((pack, verified)) = downloads.next().await {
+            match async { install_pack(state, &pool_repo, verified?).await }.await {
+                Ok(()) => installed += 1,
+                Err(error) => tracing::warn!(
+                    repository_id = incarnation.repository_id(),
+                    segment_id = pack.segment.segment_id,
+                    error = %error.operator_diagnostic(),
+                    "skipping an unusable request pool pack"
+                ),
+            }
+        }
+        if installed == 0 {
+            break;
         }
         pending = waiting;
     }

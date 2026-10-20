@@ -108,3 +108,28 @@ impl crate::db::RepositoryStore {
         git_pool_packs_after(self.db.as_ref(), repo_id, watermark).await
     }
 }
+
+pub(in crate::db) async fn retire_request_pool_packs<C>(
+    conn: &C,
+    request_id: &str,
+    now_unix: u64,
+) -> Result<(), PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let segment_ids = conn
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT segment_id FROM scope_git_pool_packs WHERE request_id = $1 ORDER BY segment_id",
+            [request_id.into()],
+        ))
+        .await?
+        .into_iter()
+        .map(|row| row.try_get::<String>("", "segment_id"))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(PostgresError::internal)?;
+    for segment_id in segment_ids {
+        super::retire_git_segment(conn, &segment_id, now_unix).await?;
+    }
+    Ok(())
+}

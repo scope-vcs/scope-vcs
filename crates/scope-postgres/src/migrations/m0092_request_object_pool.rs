@@ -32,7 +32,7 @@ impl MigrationTrait for Migration {
                     created_at_unix bigint NOT NULL,
                     CONSTRAINT scope_git_pool_pack_values CHECK (
                         length(btrim(segment_id)) > 0
-                        AND length(head_oid) IN (40, 64)
+                        AND length(btrim(head_oid)) > 0
                         AND length(sha256) = 64
                         AND plaintext_bytes >= 0
                         AND encoding_version > 0

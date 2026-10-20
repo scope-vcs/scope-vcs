@@ -481,6 +481,7 @@ pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
     orphan_objects: Vec<SourceBlob>,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
+    super::git_segments::retire_request_pool_packs(tx, &request.id, now_unix).await?;
     super::github_pushes::queue_github_branch_deletion(tx, &request.repo_id, &request.id, now_unix)
         .await?;
     tombstone_request_attachments(tx, &request.id, now_unix).await?;

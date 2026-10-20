@@ -42,8 +42,6 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
         .unwrap()
         .to_string();
     let request_ref = "refs/heads/pooled";
-    let _ = fs::remove_dir_all(prepare_owner_push(&replica, request_ref).await);
-
     let (first_origin, _first_server) = spawn_test_server(&state).await;
     let (second_origin, _second_server) = spawn_test_server(&replica).await;
     let first_remote = format!("{first_origin}/git/private/{TEST_REPO_ID}");
@@ -57,6 +55,17 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
         "create request branch",
     )
     .unwrap();
+    push_change(
+        &source,
+        &first_remote,
+        request_ref,
+        "draft.txt",
+        "before submission\n",
+        "draft revision",
+    )
+    .unwrap();
+    submit_request(router(state.clone()), &request_id, &bearer).await;
+    let _ = fs::remove_dir_all(prepare_owner_push(&replica, request_ref).await);
     push_change(
         &source,
         &first_remote,
@@ -118,4 +127,72 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
         .map(|output| output.status.success())
         .unwrap_or(false)
     );
+}
+
+fn has_commit(repo: &FsPath, oid: &str) -> bool {
+    run_git_output(
+        Some(repo),
+        &["cat-file", "-e", &format!("{oid}^{{commit}}")],
+        "check local commit",
+    )
+    .map(|output| output.status.success())
+    .unwrap_or(false)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_draft_revision_stays_out_of_shared_replica_objects() {
+    let (state, main_source, _) =
+        super::super::push_intent_completion::published_git_fixture("request-pool-draft").await;
+    let bearer = bearer_header();
+    let started = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests"),
+        Some(&bearer),
+        Some(r#"{"name":"drafted","view":"private"}"#),
+    )
+    .await;
+    assert_eq!(started.status(), StatusCode::OK);
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    let source = clone_test_repo(&main_source, "request-pool-draft-checkout", false);
+    configure_bearer_header(&source, &remote, &bearer);
+    run_git(
+        Some(&source),
+        &["checkout", "-b", "drafted"],
+        "create draft branch",
+    )
+    .unwrap();
+    let request_ref = "refs/heads/drafted";
+    push_change(
+        &source,
+        &remote,
+        request_ref,
+        "draft.txt",
+        "only the author sees this\n",
+        "draft revision",
+    )
+    .unwrap();
+    let draft_head = git_head_oid(&source);
+
+    let staging = prepare_owner_push(&state, request_ref).await;
+
+    assert!(has_commit(&staging, &draft_head));
+    let _ = fs::remove_dir_all(staging);
+    assert!(
+        state
+            .metadata
+            .repositories()
+            .git_pool_packs_after(TEST_REPO_ID, Some(0))
+            .await
+            .unwrap()
+            .packs
+            .is_empty()
+    );
+    for shared in [
+        crate::git::storage::request_pool_repo_path(&state, &test_repo_incarnation()),
+        crate::git::storage::request_ref_store_repo_path(&state, &test_repo_incarnation()),
+    ] {
+        assert!(!has_commit(&shared, &draft_head));
+    }
 }
