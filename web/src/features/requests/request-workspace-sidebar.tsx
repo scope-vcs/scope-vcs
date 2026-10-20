@@ -35,6 +35,7 @@ import {
   requestAttentionLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
+import { stackRequestRows } from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
 
@@ -423,13 +424,12 @@ export function RequestWorkspaceSidebar({
 }
 
 function groupRows(rows: QueueRow[]) {
-  const grouped = Object.fromEntries(
-    REQUEST_ATTENTION_GROUP_ORDER.map((group) => [group, [] as QueueRow[]]),
+  return Object.fromEntries(
+    REQUEST_ATTENTION_GROUP_ORDER.map((group) => [
+      group,
+      stackRequestRows(rows.filter((row) => row.item.attention.group === group)).map(({ row }) => row),
+    ]),
   ) as Record<RequestAttentionGroup, QueueRow[]>
-  for (const row of rows) {
-    grouped[row.item.attention.group].push(row)
-  }
-  return grouped
 }
 
 function RequestWorkspaceDisclosure({

@@ -19,8 +19,10 @@ import {
   requestAttentionHeat,
   requestAttentionLabel,
   requestHasNewActivity,
+  requestStackParentLabel,
 } from './request-workspace-model'
 import { actorHandle } from './request-actor'
+import { stackRequestRows, type RequestStackPlacement } from './request-workspace-stack'
 
 export type RequestWorkspaceListProps = {
   items: { item: RequestQueueItemResponse; section: RequestQueueSection }[]
@@ -50,8 +52,8 @@ export function RequestWorkspaceList({
   ...rowProps
 }: RequestWorkspaceListProps) {
   if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
-  const rows = items.map(({ item, section }, index) => (
-    <RequestWorkspaceRow item={item} key={item.request.id} section={section} stacked={adjacentStackRows(items[index - 1], { item, section }) || adjacentStackRows({ item, section }, items[index + 1])} {...rowProps} />
+  const rows = stackRequestRows(items).map(({ row: { item, section }, placement }) => (
+    <RequestWorkspaceRow item={item} key={item.request.id} placement={placement} section={section} {...rowProps} />
   ))
   return (
     <div className="request-workspace-rows">
@@ -114,11 +116,11 @@ function RequestWorkspaceRow({
   pendingId,
   selectedId,
   rail,
-  stacked,
+  placement,
 }: Pick<RequestWorkspaceListProps, 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
-  stacked: boolean
+  placement: RequestStackPlacement
 }) {
   const hydrated = useHydrated()
   const { request, attention, author } = item
@@ -128,6 +130,7 @@ function RequestWorkspaceRow({
   const hot = attention.group === 'needs_you'
   const unread = requestHasNewActivity(item)
   const mergeStep = rail ? REQUEST_MERGE_STEP_LABELS[item.next_step] : undefined
+  const stackParent = requestStackParentLabel(item)
   const canSetAside = section === 'active' && attention.can_set_aside
   const actions = [
     { action: 'settle', label: 'Settle', icon: Check, visible: canSetAside },
@@ -148,15 +151,13 @@ function RequestWorkspaceRow({
   const actionCount = actions.filter(({ visible }) => visible).length + Number(canSetAside)
   return (
     <article
-      className={cn('request-workspace-row', selected && 'request-workspace-row--selected', stacked && 'request-workspace-row--stacked')}
+      className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-rail={rail ? '' : undefined}
       data-request-id={request.id}
-      style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px` } as CSSProperties}
+      style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px`, '--stack-depth': placement.depth } as CSSProperties}
     >
-      {request.stack_parent ? <div className="request-workspace-row-parent text-[10px] text-muted-foreground">
-        {request.stack_parent.kind === 'available' ? <><span>Based on </span><Link className="underline-offset-4 hover:underline" params={{ ...params, requestId: request.stack_parent.request.id }} search={(current) => ({ view: current.view })} to="/$owner/$repo/requests/$requestId">{request.stack_parent.request.title}</Link></> : 'Unavailable dependency'}
-      </div> : null}
+      <RequestStackLines placement={placement} />
       <Link
         aria-current={selected ? 'page' : undefined}
         className="request-workspace-row-link"
@@ -200,6 +201,7 @@ function RequestWorkspaceRow({
               <span className="truncate" suppressHydrationWarning>
                 {requestAttentionLabel(item, hydrated)}
                 {mergeStep && <span className="sr-only">, {mergeStep}</span>}
+                {stackParent && <span className="sr-only">, {stackParent}</span>}
               </span>
             </span>
             <time
@@ -244,11 +246,15 @@ function RequestWorkspaceRow({
   )
 }
 
-function adjacentStackRows(left: RequestWorkspaceListProps['items'][number] | undefined, right: RequestWorkspaceListProps['items'][number] | undefined) {
-  if (!left || !right || left.section !== right.section) return false
-  const leftParent = left.item.request.stack_parent
-  const rightParent = right.item.request.stack_parent
-  const leftId = leftParent?.kind === 'available' ? leftParent.request.id : null
-  const rightId = rightParent?.kind === 'available' ? rightParent.request.id : null
-  return leftId === right.item.request.id || rightId === left.item.request.id || Boolean(leftId && leftId === rightId)
+function RequestStackLines({ placement: { depth, guides, elbow, children } }: { placement: RequestStackPlacement }) {
+  if (!depth && !children) return null
+  return (
+    <span aria-hidden="true" className="request-workspace-stack">
+      {guides.map(({ column, dashed }) => (
+        <span data-dashed={dashed || undefined} data-line="pass" key={column} style={{ '--stack-column': column } as CSSProperties} />
+      ))}
+      {elbow && <span data-line={elbow} style={{ '--stack-column': elbow === 'chain' ? depth : depth - 1 } as CSSProperties} />}
+      {children && <span data-line="down" style={{ '--stack-column': depth } as CSSProperties} />}
+    </span>
+  )
 }

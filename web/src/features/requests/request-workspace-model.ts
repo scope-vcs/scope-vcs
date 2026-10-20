@@ -62,6 +62,11 @@ export const REQUEST_MERGE_STEP_LABELS: Partial<Record<RequestQueueNextStep, str
   update: 'Needs an update',
 }
 
+export function requestStackParentLabel({ request }: RequestQueueItemResponse) {
+  if (!request.stack_parent) return undefined
+  return request.stack_parent.kind === 'available' ? `Based on ${request.stack_parent.request.title}` : 'Unavailable dependency'
+}
+
 export function requestHasNewActivity(item: RequestQueueItemResponse) {
   return item.attention.reason === 'new_activity'
 }
