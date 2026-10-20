@@ -19,6 +19,7 @@ async function withLanding(run, pageOptions = {}) {
   await withPage('/', async (page) => {
     await page.getByRole('heading', { name: 'One repository. Part of it is public.' }).waitFor()
     await waitForClientHydration(page.getByRole('button', { name: 'System', exact: true }))
+    await page.locator('.landing.lens-ready').waitFor()
     assert.equal(await page.locator('html').getAttribute('class'), '')
     await run(page)
   }, {
