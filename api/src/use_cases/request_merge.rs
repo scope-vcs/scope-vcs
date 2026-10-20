@@ -20,14 +20,8 @@ use scope_domain::{
     projection::project_graph,
     repo_actions::reviewed_update_domain_error,
     repository::updates::RequestMergeOrigin,
-    repository::{
-        Repository, RepositoryIncarnation,
-        access::{RepositoryAccess, RepositoryActor},
-    },
-    requests::{
-        MergeGateAuthority, MergeGateInput, Request, RequestViewer, canonical_request_ref,
-        evaluate_merge_gate, request_actor_role, request_policy,
-    },
+    repository::{Repository, RepositoryIncarnation, access::RepositoryAccess},
+    requests::{Request, canonical_request_ref, request_actor_role},
     reviewed_updates::content::apply_request_merge_to_repo,
     runs::catalog::RepositoryWorkflowCatalog,
 };
@@ -40,8 +34,10 @@ use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
 use scope_storage::StagedGitSegment;
 
 mod failures;
+mod gate;
 mod tree;
 pub(crate) use failures::RequestMergeFailure;
+use gate::{CheckedMerge, authorize_merge, ensure_checks_cleared};
 use tree::{MergeMainFailure, merge_main_oid_for_execution};
 
 pub(crate) struct MergeRequestCommand {
@@ -107,16 +103,23 @@ pub(crate) async fn merge_request_inner(
     state: &AppState,
     command: &MergeRequestCommand,
 ) -> Result<MergeRequestResult, RequestMergeFailure> {
-    let checked = check_merge(state, command).await?;
+    let checked = authorize_merge(state, command).await?;
     crate::use_cases::github_check_results::confirm_recent_github_checks(state, &checked.request)
         .await?;
+    ensure_checks_cleared(state, command, &checked).await?;
     let write_lease = state
         .metadata
         .repositories()
         .acquire_git_write_lease(&checked.context.record.id)
         .await
         .map_err(ApiError::from)?;
-    let checked = match check_merge(state, command).await {
+    let rechecked = async {
+        let checked = authorize_merge(state, command).await?;
+        ensure_checks_cleared(state, command, &checked).await?;
+        Ok::<_, RequestMergeFailure>(checked)
+    }
+    .await;
+    let checked = match rechecked {
         Ok(checked) => checked,
         Err(error) => {
             write_lease.release().await;
@@ -127,6 +130,7 @@ pub(crate) async fn merge_request_inner(
         context,
         access,
         request,
+        ..
     } = checked;
     let analytics_event = ProductEvent::request_merged(
         &command.actor_user_id,
@@ -220,76 +224,6 @@ pub(crate) async fn merge_request_inner(
         views: context.views,
         actor_user_id: command.actor_user_id.clone(),
         request: mutation.request,
-    })
-}
-
-struct CheckedMerge {
-    context: scope_domain::repository::access::RepositoryAccessContext,
-    access: RepositoryAccess,
-    request: Request,
-}
-
-async fn check_merge(
-    state: &AppState,
-    command: &MergeRequestCommand,
-) -> Result<CheckedMerge, RequestMergeFailure> {
-    let context = crate::repo_access::find_read_access(
-        state,
-        &command.owner,
-        &command.repo_name,
-        Some(&command.actor_user_id),
-    )
-    .await?;
-    let access = context.access.clone();
-    let request = state
-        .metadata
-        .requests()
-        .request_by_id(&command.request_id)
-        .await?
-        .ok_or_else(|| ApiError::not_found("request not found"))?;
-    let is_invitee = state
-        .metadata
-        .requests()
-        .request_is_invitee(&request.id, &command.actor_user_id)
-        .await?;
-    let viewer = RequestViewer::new(access.clone(), Some(&command.actor_user_id), is_invitee);
-    let policy = request_policy(&request, viewer.clone(), &context.views);
-    if request.repo_id != context.record.id || !policy.exact_visible {
-        return Err(ApiError::not_found("request not found").into());
-    }
-    if !policy.permissions.can_merge {
-        if matches!(access.actor, RepositoryActor::Public) {
-            return Err(ApiError::forbidden("repo maintainer required").into());
-        }
-        return Err(ApiError::conflict("request cannot be merged").into());
-    }
-    if command
-        .expected_head_oid
-        .as_ref()
-        .is_some_and(|expected| *expected != request.head_oid)
-    {
-        return Err(
-            ApiError::conflict("request has a new revision; review it before merging").into(),
-        );
-    }
-    let checks =
-        crate::use_cases::request_checks::checks_outcome(state, &context.record, &request).await?;
-    let decision = evaluate_merge_gate(MergeGateInput::RequestMerge {
-        repository_lifecycle: context.record.lifecycle_state,
-        subject: (&request).into(),
-        viewer: &viewer,
-        views: &context.views,
-        checks,
-    });
-    if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
-        return Err(
-            ApiError::conflict(decision.reason().unwrap_or("request CI has not cleared")).into(),
-        );
-    }
-    Ok(CheckedMerge {
-        context,
-        access,
-        request,
     })
 }
 

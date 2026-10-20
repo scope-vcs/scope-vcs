@@ -516,6 +516,26 @@ async fn a_merge_reads_stale_green_checks_again_and_refuses_when_github_cannot_a
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_merge_asks_github_before_refusing_checks_saved_as_pending() {
+    let request = owner_request("github-checks-pending-merge", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    push_pass(state, unix_now()).await;
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksPending"
+    );
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("success"))],
+    );
+
+    assert_eq!(
+        expect_json(merge(state, &request.request_id).await, StatusCode::OK).await["request"]["state"],
+        "Merged"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_repository_reconnected_to_another_github_repository_ignores_the_old_runs() {
     let request = owner_request("github-checks-reconnected", &[REQUIRED_CHECK]).await;
     let (state, fake, head) = (&request.state, &request.fake, request.head());
