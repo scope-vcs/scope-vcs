@@ -19,11 +19,19 @@ impl MigrationTrait for Migration {
                 ALTER TABLE scope_live_files ADD COLUMN view text;
 
                 UPDATE scope_live_files AS live
-                SET view = rule.value->>'view'
-                FROM scope_repositories AS repository,
-                     jsonb_array_elements(repository.policy->'rules') AS rule
-                WHERE live.repo_id = repository.id
-                  AND live.path = rule.value->>'path';
+                SET view = rule.view
+                FROM (
+                    SELECT DISTINCT ON (repository.id, entry.value->>'path')
+                        repository.id AS repo_id,
+                        entry.value->>'path' AS path,
+                        entry.value->>'view' AS view
+                    FROM scope_repositories AS repository,
+                         jsonb_array_elements(repository.policy->'rules')
+                             WITH ORDINALITY AS entry
+                    ORDER BY repository.id, entry.value->>'path', entry.ordinality DESC
+                ) AS rule
+                WHERE live.repo_id = rule.repo_id
+                  AND live.path = rule.path;
 
                 UPDATE scope_repositories AS repository
                 SET policy = jsonb_set(
