@@ -228,6 +228,10 @@ impl RequestStore {
             .filter(|request| request.repo_id == observed.repo_id)
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
         let repo = repo_by_id(&tx, &request.repo_id, &input.actor_user_id).await?;
+        super::request_stack::lock_graph(&tx, &request, input.new_base.as_ref()).await?;
+        let request = request_by_id(&tx, &input.request_id)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("request not found"))?;
         if let Some(context) = &context
             && let Some(accepted) = super::request_revision_context::receipt(
                 &tx,
@@ -241,10 +245,6 @@ impl RequestStore {
             tx.commit().await.map_err(PostgresError::internal)?;
             return Ok(accepted);
         }
-        super::request_stack::lock_graph(&tx, &request, input.new_base.as_ref()).await?;
-        let request = request_by_id(&tx, &input.request_id)
-            .await?
-            .ok_or_else(|| PostgresError::not_found("request not found"))?;
         if let Some(context) = &context {
             super::request_revision_context::validate(
                 &tx,
