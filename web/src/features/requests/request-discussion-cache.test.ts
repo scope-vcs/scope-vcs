@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import test, { mock } from 'node:test'
 import {
   openRequestDiscussion,
   readRequestDiscussionScroll,
@@ -55,4 +55,34 @@ test('bounds retained views and ignores late writes after eviction or reset', ()
   resetViewerState()
   replacement.setError('late error')
   assert.equal(requestDiscussionResource.peek('request'), null)
+})
+
+test('a pushed revision refreshes loaded line anchors in place without dropping other discussions', async () => {
+  resetViewerState()
+  const anchor = {
+    revision_id: 'revision-1', revision_position: 1, commit_oid: null, path: '/src/lib.rs',
+    lines: { side: 'new', start_line: 3, end_line: 4 }, latest: null,
+  } as const
+  const lined = discussion('lined', 2, { anchor })
+  const session = openRequestDiscussion('request', { discussions: [lined, discussion('plain', 1)], next_cursor: null, snapshot_version: 2 }, loadChanges)
+  const moved = { ...anchor, latest: { kind: 'mapped', revision_id: 'revision-2', start_line: 5, end_line: 6 } } as const
+  const load = mock.fn(async (limit: number) => ({
+    discussions: [discussion('lined', 2, { anchor: moved })].slice(0, limit),
+    next_cursor: null,
+    snapshot_version: 3,
+  }))
+
+  await session.refreshAnchors(load)
+
+  assert.equal(load.mock.callCount(), 1)
+  assert.equal(load.mock.calls[0].arguments[0], 2)
+  const current = requestDiscussionResource.peek('request')?.collection
+  assert.deepEqual(current?.byId.get('lined')?.anchor?.latest, moved.latest)
+  assert.ok(current?.byId.get('plain'))
+
+  resetViewerState()
+  const unanchored = openRequestDiscussion('request', page, loadChanges)
+  const unused = mock.fn(load)
+  await unanchored.refreshAnchors(unused)
+  assert.equal(unused.mock.callCount(), 0)
 })

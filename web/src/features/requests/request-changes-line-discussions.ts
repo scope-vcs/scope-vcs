@@ -105,6 +105,25 @@ export function lineDiscussionAnchor(
   }
 }
 
+export type LineDiscussionDraft = {
+  error: string | null
+  key: string
+  lines: RequestDiscussionLineRange
+}
+
+export function settleLineDiscussionDraft(
+  current: LineDiscussionDraft | null,
+  submitted: Pick<LineDiscussionDraft, 'key' | 'lines'>,
+  outcome: { posted: true } | { error: string },
+): LineDiscussionDraft | null {
+  if (!current || current.key !== submitted.key || !sameLineRange(current.lines, submitted.lines)) return current
+  return 'posted' in outcome ? null : { ...current, error: outcome.error }
+}
+
+function sameLineRange(left: RequestDiscussionLineRange, right: RequestDiscussionLineRange) {
+  return left.side === right.side && left.start_line === right.start_line && left.end_line === right.end_line
+}
+
 export function lineDiscussionDraftTarget(anchor: RequestDiscussionAnchorInput): RequestAttachmentDraftTarget {
   return `line-discussion:${JSON.stringify([
     anchor.revision_id,

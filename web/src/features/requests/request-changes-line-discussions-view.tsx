@@ -15,7 +15,9 @@ import {
   lineDiscussionDraftTarget,
   lineDiscussionsForFile,
   lineRangeLabel,
+  settleLineDiscussionDraft,
   type FileLineDiscussion,
+  type LineDiscussionDraft,
   type LineDiscussionComparison,
   type PlacedLineDiscussion,
 } from './request-changes-line-discussions'
@@ -45,11 +47,7 @@ export function useLineDiscussionAnnotations({
   params: RequestParams
 }): ReviewDiffAnnotations | undefined {
   const comparisonKey = comparison ? JSON.stringify(comparison) : null
-  const [draft, setDraft] = useState<{
-    error: string | null
-    key: string
-    lines: RequestDiscussionLineRange
-  } | null>(null)
+  const [draft, setDraft] = useState<LineDiscussionDraft | null>(null)
   const selection = draft && draft.key === comparisonKey ? draft : null
   const html = diff?.presentation.kind === 'html' ? diff.presentation.html : null
   const rendered = useMemo(() => html === null ? null : renderedDiffLines(html), [html])
@@ -69,7 +67,8 @@ export function useLineDiscussionAnnotations({
     }))
   }, [comparisonKey])
   const submit = useCallback((lines: RequestDiscussionLineRange, body: string, submissionId: string) => {
-    if (!comparison) return Promise.resolve(false)
+    if (!comparison || !comparisonKey) return Promise.resolve(false)
+    const submitted = { key: comparisonKey, lines }
     return runRequestContentSubmission(submissionId, async () => {
       try {
         await createDiscussion({
@@ -79,14 +78,15 @@ export function useLineDiscussionAnnotations({
           client_discussion_id: submissionId,
         })
       } catch (error) {
-        setDraft((current) => current && { ...current, error: resourceErrorMessage(error, 'Discussion could not be posted.') })
+        const message = resourceErrorMessage(error, 'Discussion could not be posted.')
+        setDraft((current) => settleLineDiscussionDraft(current, submitted, { error: message }))
         return false
       }
-      setDraft(null)
+      setDraft((current) => settleLineDiscussionDraft(current, submitted, { posted: true }))
       onCreated()
       return true
     })
-  }, [comparison, createDiscussion, onCreated, params])
+  }, [comparison, comparisonKey, createDiscussion, onCreated, params])
 
   return useMemo(() => {
     if (!comparison) return undefined

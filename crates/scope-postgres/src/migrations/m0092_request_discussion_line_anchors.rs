@@ -34,7 +34,10 @@ impl MigrationTrait for Migration {
                     ADD CONSTRAINT scope_request_discussion_line_anchor CHECK (
                         (line_side IS NULL AND start_line IS NULL AND end_line IS NULL)
                         OR (
-                            line_side IN ('Old', 'New')
+                            line_side IS NOT NULL
+                            AND start_line IS NOT NULL
+                            AND end_line IS NOT NULL
+                            AND line_side IN ('Old', 'New')
                             AND path IS NOT NULL
                             AND start_line >= 1
                             AND end_line >= start_line

@@ -76,7 +76,7 @@ export function useRequestDiscussionStore({
   const subscribe = useCallback((listener: () => void) => requestDiscussionResource.subscribe(key, listener), [key])
   const read = useCallback(() => requestDiscussionResource.peek(key) ?? session, [key, session])
   const { collection, error, loadingMore } = useSyncExternalStore(subscribe, read, () => session)
-  const { sync, updateCollection, setError, setLoadingMore } = session
+  const { sync, refreshAnchors, updateCollection, setError, setLoadingMore } = session
 
   useEffect(() => { void session.refresh(initialPage) }, [initialPage, session])
 
@@ -84,6 +84,14 @@ export function useRequestDiscussionStore({
     (event: RepoChangeEvent) => {
       if (event.kind === 'Lagged') {
         void sync.catchUp({ lagged: true })
+        return
+      }
+      if (
+        typeof event.kind === 'object' &&
+        'RequestStateChanged' in event.kind &&
+        event.kind.RequestStateChanged.request_id === params.request_id
+      ) {
+        void refreshAnchors((limit) => actions.load({ ...params, limit }))
         return
       }
       if (
@@ -98,7 +106,7 @@ export function useRequestDiscussionStore({
         })
       }
     },
-    [params.request_id, read, sync],
+    [actions, params, read, refreshAnchors, sync],
   )
   useRepoChangeSubscription(onRepoChange)
 

@@ -10,6 +10,7 @@ import {
   extendLineSelection,
   lineDiscussionAnchor,
   lineDiscussionDraftTarget,
+  settleLineDiscussionDraft,
   lineDiscussionsForFile,
   type LineDiscussionComparison,
 } from './request-changes-line-discussions'
@@ -122,4 +123,23 @@ test('each line range keeps its own draft, so a retried submission id never move
     assert.ok(other)
     assert.notEqual(other, firstId)
   }
+})
+
+test('a finished post settles only the composer it was submitted from', () => {
+  const lineA = { side: 'new', start_line: 3, end_line: 3 } as const
+  const lineB = { side: 'new', start_line: 8, end_line: 8 } as const
+  const draftOn = (key: string, lines: typeof lineA | typeof lineB) => ({ error: null, key, lines })
+  const submittedA = { key: 'layer', lines: lineA }
+
+  const openB = draftOn('layer', lineB)
+  assert.equal(settleLineDiscussionDraft(openB, submittedA, { posted: true }), openB)
+  assert.equal(settleLineDiscussionDraft(openB, submittedA, { error: 'Lost' }), openB)
+  const otherLayerA = draftOn('other-layer', lineA)
+  assert.equal(settleLineDiscussionDraft(otherLayerA, submittedA, { posted: true }), otherLayerA)
+
+  assert.equal(settleLineDiscussionDraft(draftOn('layer', lineA), submittedA, { posted: true }), null)
+  assert.deepEqual(
+    settleLineDiscussionDraft(draftOn('layer', lineA), submittedA, { error: 'Lost' }),
+    { ...draftOn('layer', lineA), error: 'Lost' },
+  )
 })

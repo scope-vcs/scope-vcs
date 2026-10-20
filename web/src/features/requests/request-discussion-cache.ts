@@ -12,10 +12,13 @@ type DiscussionSession = {
   scrollTop: number
   sync: ReturnType<typeof createRequestDiscussionSync>
   refresh: (page: RequestDiscussionPage) => Promise<void>
+  refreshAnchors: (load: (limit: number) => Promise<RequestDiscussionPage>) => Promise<void>
   updateCollection: (update: (current: DiscussionCollection) => DiscussionCollection, dataChanged?: boolean) => void
   setError: (error: string | null) => void
   setLoadingMore: (loadingMore: boolean) => void
 }
+
+const DISCUSSION_PAGE_MAX = 100
 
 export const requestDiscussionResource = createCachedResource<DiscussionSession>({
   maxEntries: 8,
@@ -91,6 +94,17 @@ function createDiscussionSession(
         updateCollection((current) => mergeRefreshedDiscussionPage(current, incoming, false))
       }
       await sync.catchUp()
+    },
+    refreshAnchors: async (load) => {
+      const loaded = read().collection
+      const lined = loaded.order.filter((id) => loaded.byId.get(id)?.anchor?.lines)
+      if (lined.length === 0) return
+      try {
+        const page = await load(Math.min(DISCUSSION_PAGE_MAX, loaded.order.length))
+        updateCollection((current) => mergeRefreshedDiscussionPage(current, page, false))
+      } catch (error) {
+        update({ error: resourceErrorMessage(error, 'Discussion positions could not be refreshed.') })
+      }
     },
     setError: (error) => update({ error }),
     setLoadingMore: (loadingMore) => update({ loadingMore }),
