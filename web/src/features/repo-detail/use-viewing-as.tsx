@@ -29,7 +29,7 @@ export function useViewingAs() {
   }
 }
 
-export function RepoViewingAsPicker({ className, compact }: { className?: string; compact?: boolean }) {
+export function RepoViewingAsPicker({ compact }: { compact?: boolean }) {
   const { options, select, view } = useViewingAs()
-  return <ViewingAsPicker className={className} compact={compact} onChange={select} options={options} value={view} />
+  return <ViewingAsPicker compact={compact} onChange={select} options={options} value={view} />
 }
