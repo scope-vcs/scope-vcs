@@ -264,6 +264,33 @@ test('the viewing-as picker names the current view and switches views from its m
   assert.deepEqual(errors, [])
 })
 
+test('constrained menus keep keyboard targets visible and stay open while scrolling', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
+  await page.setViewportSize({ width: 1280, height: 150 })
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  await page.getByRole('button', { name: 'Snooze request request-0' }).focus()
+  await page.keyboard.press('Enter')
+  const menu = page.getByRole('menu', { name: 'Snooze request request-0' })
+  await menu.waitFor()
+  assert.equal(await menu.evaluate((node) => node.scrollHeight > node.clientHeight), true)
+  for (const [key, item] of [['End', menu.getByRole('menuitem').last()], ['Home', menu.getByRole('menuitem').first()]]) {
+    await page.keyboard.press(key)
+    assert.equal(await item.evaluate((node) => {
+      const bounds = node.getBoundingClientRect()
+      const menuBounds = node.parentElement.getBoundingClientRect()
+      return node === document.activeElement && bounds.top >= menuBounds.top && bounds.bottom <= menuBounds.bottom
+    }), true, 'keyboard navigation must reveal the focused item')
+  }
+  const scrollTop = await menu.evaluate((node) => node.scrollTop)
+  await menu.hover()
+  await page.mouse.wheel(0, 200)
+  await page.waitForFunction((top) => document.querySelector(':popover-open')?.scrollTop > top, scrollTop)
+  assert.equal(await menu.isVisible(), true)
+  await page.keyboard.press('Escape')
+  assert.equal(await page.getByRole('button', { name: 'Snooze request request-0' }).evaluate((node) => node === document.activeElement), true)
+  assert.deepEqual(errors, [])
+})
+
 test('collapsed request loading keeps its header stable without guessing avatar rows', async (t) => {
   const { page, base, errors, railClosed } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests/request-0', base).href)

@@ -19,7 +19,10 @@ export function useAnchoredMenu({
 
   useEffect(() => {
     if (!open) return
-    const hide = () => menu.current?.hidePopover()
+    const hide = (event: Event) => {
+      if (event.target instanceof Node && menu.current?.contains(event.target)) return
+      menu.current?.hidePopover()
+    }
     window.addEventListener('resize', hide)
     window.addEventListener('scroll', hide, true)
     return () => {
@@ -70,8 +73,7 @@ function placeMenu(trigger: HTMLElement, menu: HTMLElement, align: 'start' | 'en
   menu.style.top = `${placeBelow ? bounds.bottom + GAP : bounds.top - height - GAP}px`
   menu.style.left = `${Math.max(EDGE, Math.min(preferredLeft, window.innerWidth - width - EDGE))}px`
   const initial = menu.querySelector<HTMLElement>('[aria-checked="true"]') ?? menu.querySelector<HTMLElement>('button')
-  initial?.focus({ preventScroll: true })
-  initial?.scrollIntoView({ block: 'nearest' })
+  focusItem(menu, initial)
 }
 
 function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
@@ -85,5 +87,14 @@ function moveFocus(event: KeyboardEvent<HTMLDivElement>) {
   }[event.key]
   if (next === undefined) return
   event.preventDefault()
-  buttons[next]?.focus({ preventScroll: true })
+  focusItem(event.currentTarget, buttons[next])
+}
+
+function focusItem(menu: HTMLElement, item: HTMLElement | null | undefined) {
+  if (!item) return
+  item.focus({ preventScroll: true })
+  const { top, bottom } = item.getBoundingClientRect()
+  const visibleTop = menu.getBoundingClientRect().top + menu.clientTop
+  const visibleBottom = visibleTop + menu.clientHeight
+  menu.scrollTop += top < visibleTop ? top - visibleTop : Math.max(0, bottom - visibleBottom)
 }
