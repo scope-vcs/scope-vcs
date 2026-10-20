@@ -180,6 +180,29 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
         })
         .count();
     assert!(packs <= 16, "{packs} packs after 21 retained revisions");
+    let main_head = git_head_oid(&main_source);
+    let local_objects = fs::read_dir(pushing_objects.join("objects/pack"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "idx"))
+        .map(|index| {
+            let mut show = std::process::Command::new("git");
+            show.arg("-C").arg(&pushing_objects).arg("show-index");
+            String::from_utf8(
+                crate::git::command::git_command_output_with_timeout(
+                    &mut show,
+                    Some(fs::read(index).unwrap()),
+                    std::time::Duration::from_secs(5),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        })
+        .collect::<String>();
+    assert!(
+        !local_objects.contains(&main_head),
+        "consolidation copied main from the canonical cache"
+    );
     run_git(
         Some(&pushing_objects),
         &["rev-list", "--objects", &behind_head],

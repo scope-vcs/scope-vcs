@@ -36,6 +36,7 @@ fn consolidate_pool_packs(objects_repo: &FsPath) -> Result<(), ApiError> {
         Command::new("git").arg("-C").arg(objects_repo).args([
             "repack",
             "--geometric=2",
+            "--local",
             "-d",
             "--no-write-bitmap-index",
             "-q",
