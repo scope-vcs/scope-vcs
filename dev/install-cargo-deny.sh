@@ -11,7 +11,7 @@ sha256="$(jq -er '.cargoDeny.linuxMuslSha256' "$versions")"
 name="cargo-deny-${version}-x86_64-unknown-linux-musl"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-curl --fail --location --silent --show-error --retry 3 \
+curl --fail --location --silent --show-error --retry 4 --retry-all-errors --retry-delay 3 \
   "https://github.com/EmbarkStudios/cargo-deny/releases/download/${version}/${name}.tar.gz" \
   --output "$work/${name}.tar.gz"
 printf '%s  %s\n' "$sha256" "$work/${name}.tar.gz" | sha256sum --check --strict
