@@ -380,3 +380,58 @@ test('stack context preserves actionable children and row order when parents are
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-mobile.png`, fullPage: true })
   assert.deepEqual(errors, [])
 })
+
+test('stacks fold behind their base request and show their details only on hover', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const node = { id: 'base', name: 'base', title: 'Stacked base', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
+  const row = (id, parent, extra = {}) => ({
+    request: { id, title: `Stacked ${id}`, stack_parent: parent && { kind: 'available', request: { ...node, id: parent, title: `Stacked ${parent}` } }, stack_depth: 1 },
+    author: { handle: 'adam' },
+    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention_at_unix: 1790000000,
+    ...extra,
+  })
+  const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  const invited = { group: 'needs_you', reason: 'invited', can_set_aside: true }
+  const requests = [row('base', null), row('first', 'base'), row('ready', 'first', { next_step: 'merge' }), row('plain', null, { attention: invited })]
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { active: { ...empty, requests }, unclaimed: empty, set_aside: empty, done: empty })
+  const ids = () => page.locator('.request-workspace-needs-you [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId))
+  const opacity = (locator, value) => locator.evaluate((node, value) => new Promise((resolve) => {
+    const check = () => (getComputedStyle(node).opacity === value ? resolve(true) : requestAnimationFrame(check))
+    check()
+  }), value)
+  const baseRow = page.locator('[data-request-id="base"]')
+  const toggle = baseRow.locator('.request-workspace-stack-toggle')
+  await page.locator('[data-request-id="first"] .request-workspace-row-link').click()
+  await page.mouse.move(1200, 800)
+  assert.deepEqual(await ids(), ['base', 'first', 'ready', 'plain'])
+  await opacity(toggle, '0')
+  await opacity(baseRow.locator('.request-workspace-row-hover-detail'), '0')
+  assert.equal(await page.locator('[data-request-id="plain"] .request-workspace-row-hover-detail').count(), 0)
+
+  await baseRow.hover()
+  await opacity(toggle, '1')
+  await opacity(baseRow.locator('.request-workspace-row-hover-detail'), '1')
+  await baseRow.getByRole('button', { name: 'Collapse 2 stacked requests' }).click()
+  await page.locator('[data-request-id="first"]').waitFor({ state: 'detached' })
+  assert.deepEqual(await ids(), ['base', 'plain'])
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
+  assert.equal(await baseRow.getAttribute('data-holds-selection'), 'true')
+  const summary = baseRow.locator('.request-workspace-row-hover-detail').last()
+  assert.equal((await summary.textContent()).trim(), '· 2 stacked, 1 ready')
+  await opacity(summary, '1')
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-folded-hover.png` })
+  await page.mouse.move(1200, 800)
+  await opacity(summary, '0')
+  await opacity(toggle, '0')
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-folded.png` })
+
+  await baseRow.hover()
+  await baseRow.getByRole('button', { name: 'Expand 2 stacked requests' }).click()
+  await page.locator('[data-request-id="ready"]').waitFor()
+  assert.deepEqual(await ids(), ['base', 'first', 'ready', 'plain'])
+  assert.equal(await baseRow.getAttribute('data-holds-selection'), null)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-expanded-hover.png` })
+  assert.deepEqual(errors, [])
+})

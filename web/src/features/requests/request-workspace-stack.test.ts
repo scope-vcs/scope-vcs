@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestQueueItemResponse, RequestStackParentResponse } from '../../api/types.generated'
-import { stackRequestRows } from './request-workspace-stack'
+import { foldStackedRequestRows, stackRequestRows } from './request-workspace-stack'
 
 function row(id: string, parent: string | 'unavailable' | null = null) {
   const stack_parent: RequestStackParentResponse | null =
@@ -74,4 +74,13 @@ test('laying out an already stacked list keeps its order', () => {
 
 test('inconsistent parents still render every request once', () => {
   assert.deepEqual(stackRequestRows([row('a', 'b'), row('b', 'a'), row('c')]).map(({ row }) => row.item.request.id).sort(), ['a', 'b', 'c'])
+})
+
+test('folding a stack hides its requests and reports them on the parent', () => {
+  const stacked = stackRequestRows([row('parent'), row('first', 'parent'), row('nested', 'first'), row('second', 'parent'), row('plain')])
+  const visible = (folded: string[]) =>
+    foldStackedRequestRows(stacked, new Set(folded)).map(({ row, folded }) => [row.item.request.id, folded.map(({ item }) => item.request.id)])
+  assert.deepEqual(visible(['first']), [['parent', []], ['first', ['nested']], ['second', []], ['plain', []]])
+  assert.deepEqual(visible(['parent', 'first']), [['parent', ['first', 'nested', 'second']], ['plain', []]])
+  assert.deepEqual(visible(['nested', 'plain']), visible([]))
 })

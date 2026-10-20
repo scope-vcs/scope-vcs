@@ -1,6 +1,5 @@
 import type { RepoParams } from '@/api/types'
 import type {
-  RequestQueueItemResponse,
   RequestQueuePageResponse,
   RequestQueueSection,
 } from '@/api/types.generated'
@@ -25,6 +24,7 @@ import { REQUEST_QUEUE_SECTION_ORDER, type RequestQueuePages } from './request-l
 import {
   RequestWorkspaceList,
   RequestWorkspaceListSkeleton,
+  type QueueRow,
   type RequestWorkspaceListProps,
 } from './request-workspace-list'
 import {
@@ -38,8 +38,6 @@ import {
 import { stackRequestRows } from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
-
-type QueueRow = { item: RequestQueueItemResponse; section: RequestQueueSection }
 
 const RAIL_AVATARS = 6
 
@@ -99,6 +97,7 @@ export function RequestWorkspaceSidebar({
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
   const [hint, setHint] = useState<{ key: string; left: number; top: number; now: number } | null>(null)
+  const [foldedStacks, setFoldedStacks] = useState<ReadonlySet<string>>(new Set())
   const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
   const openRail = useCallback(() => {
     setOpen(true)
@@ -181,7 +180,24 @@ export function RequestWorkspaceSidebar({
   }
 
   const searching = query.trim().length > 0
-  const common = { loading, skeleton, error, onRetry, onAction, params, pendingId, selectedId }
+  const common = {
+    loading,
+    skeleton,
+    error,
+    onRetry,
+    onAction,
+    params,
+    pendingId,
+    selectedId,
+    foldedStacks,
+    onFoldStack: (requestId: string, folded: boolean) =>
+      setFoldedStacks((current) => {
+        const next = new Set(current)
+        if (folded) next.add(requestId)
+        else next.delete(requestId)
+        return next
+      }),
+  }
   const rows = (section: RequestQueueSection): QueueRow[] =>
     pages?.[section].requests.map((item) => ({ item, section })) ?? []
   const allRows = REQUEST_QUEUE_SECTION_ORDER.flatMap(rows)
