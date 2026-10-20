@@ -189,7 +189,7 @@ export function attachmentTargetForDraft(
   if (target === 'description') {
     return { discussion_id: null, kind: 'Description' }
   }
-  if (target === 'discussion') {
+  if (target === 'discussion' || target === 'line-discussion') {
     return { discussion_id: null, kind: 'Discussion' }
   }
   return { discussion_id: target.slice('reply:'.length), kind: 'Reply' }

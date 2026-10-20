@@ -4,7 +4,7 @@ use crate::{
     http::{requests::*, responses::*},
     state::AppState,
     use_cases::{
-        request_anchor_visibility,
+        request_anchor_projection::{self, AnchorProjection, AnchorProjections},
         request_discussion_mutation::{
             self, CreateDiscussionCommand, CreateReplyCommand, DiscussionAnchorInput,
             DiscussionMutationResult, DiscussionTransition, MarkDiscussionReadCommand,
@@ -20,15 +20,17 @@ use axum::{
 use scope_api_contract::{
     CreateRequestDiscussionReplyRequest, CreateRequestDiscussionRequest, GitOid,
     MarkRequestDiscussionReadRequest, RequestActivityPageResponse, RequestDiscussionAnchor,
-    RequestDiscussionChangesResponse, RequestDiscussionMutationResponse,
-    RequestDiscussionPageResponse, RequestDiscussionReadResponse,
-    RequestDiscussionRepliesPageResponse, RequestDiscussionReplyMutationResponse,
-    RequestDiscussionReplyReferenceResponse, RequestDiscussionReplyResponse,
-    RequestDiscussionSummaryResponse,
+    RequestDiscussionChangesResponse, RequestDiscussionLatestPosition, RequestDiscussionLineRange,
+    RequestDiscussionMutationResponse, RequestDiscussionPageResponse,
+    RequestDiscussionReadResponse, RequestDiscussionRepliesPageResponse,
+    RequestDiscussionReplyMutationResponse, RequestDiscussionReplyReferenceResponse,
+    RequestDiscussionReplyResponse, RequestDiscussionSummaryResponse,
 };
-use scope_domain::requests::{REQUEST_ACTIVITY_PAGE_MAX_EVENTS, RequestViewer, request_policy};
+use scope_domain::requests::{
+    REQUEST_ACTIVITY_PAGE_MAX_EVENTS, RequestLinePosition, RequestViewer, request_policy,
+};
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 const DEFAULT_DISCUSSION_LIMIT: usize = 25;
 const MAX_DISCUSSION_LIMIT: usize = 100;
@@ -170,6 +172,7 @@ pub(crate) async fn create_discussion(
                 revision_id: anchor.revision_id,
                 commit_oid: anchor.commit_oid,
                 path: anchor.path,
+                lines: anchor.lines,
             }),
         },
     )
@@ -515,7 +518,9 @@ fn mutation_discussion_response(
 ) -> Result<RequestDiscussionSummaryResponse, ApiError> {
     let anchor = discussion_anchor_response(
         result.discussion.discussion.anchor.clone(),
-        &result.visible_anchor_commits,
+        result
+            .anchor_projections
+            .get(&result.discussion.discussion.id),
         result.discussion.anchor_revision_position,
     )?;
     discussion_summary(result.discussion, &result.users, anchor)
@@ -588,20 +593,18 @@ async fn discussion_summaries(
     models: Vec<scope_postgres::db::RequestDiscussionReadModel>,
     users: &BTreeMap<String, scope_domain::account::UserAccount>,
 ) -> Result<Vec<RequestDiscussionSummaryResponse>, ApiError> {
-    let visibility = request_anchor_visibility::visible_commits(
+    let projections: AnchorProjections = request_anchor_projection::project_anchors(
         projection.state,
         projection.repo,
         projection.request,
-        models
-            .iter()
-            .filter_map(|model| model.discussion.anchor.as_ref()),
+        models.iter().map(|model| &model.discussion),
     )
     .await;
     let mut summaries = Vec::with_capacity(models.len());
     for model in models {
         let anchor = discussion_anchor_response(
             model.discussion.anchor.clone(),
-            &visibility,
+            projections.get(&model.discussion.id),
             model.anchor_revision_position,
         )?;
         summaries.push(discussion_summary(model, users, anchor)?);
@@ -611,17 +614,11 @@ async fn discussion_summaries(
 
 fn discussion_anchor_response(
     anchor: Option<scope_domain::requests::RequestDiscussionAnchor>,
-    visible_commits: &BTreeSet<(String, String)>,
+    projection: Option<&AnchorProjection>,
     revision_position: Option<u64>,
 ) -> Result<Option<RequestDiscussionAnchor>, ApiError> {
     let Some(anchor) = anchor else {
         return Ok(None);
-    };
-    let commit_context_is_visible = match anchor.commit_oid.as_deref() {
-        None => anchor.path.is_none(),
-        Some(commit_oid) => {
-            visible_commits.contains(&(anchor.revision_id.clone(), commit_oid.to_string()))
-        }
     };
     let revision_position = revision_position.ok_or_else(|| {
         ApiError::internal_message(format!(
@@ -629,29 +626,38 @@ fn discussion_anchor_response(
             anchor.revision_id
         ))
     })?;
-    Ok(Some(project_discussion_anchor(
-        anchor,
-        revision_position,
-        commit_context_is_visible,
-    )))
-}
-
-fn project_discussion_anchor(
-    anchor: scope_domain::requests::RequestDiscussionAnchor,
-    revision_position: u64,
-    commit_context_is_visible: bool,
-) -> RequestDiscussionAnchor {
-    RequestDiscussionAnchor {
+    let projection = projection.filter(|projection| projection.context_visible);
+    let latest = projection
+        .and_then(|projection| projection.latest.as_ref())
+        .map(|latest| match latest.position {
+            RequestLinePosition::Mapped(range) => RequestDiscussionLatestPosition::Mapped {
+                revision_id: latest.revision_id.clone(),
+                start_line: range.start_line(),
+                end_line: range.end_line(),
+            },
+            RequestLinePosition::Outdated => RequestDiscussionLatestPosition::Outdated {
+                revision_id: latest.revision_id.clone(),
+            },
+        });
+    let visible = projection.is_some();
+    Ok(Some(RequestDiscussionAnchor {
         revision_id: anchor.revision_id,
         revision_position,
-        commit_oid: commit_context_is_visible
-            .then_some(anchor.commit_oid)
-            .flatten(),
-        path: commit_context_is_visible
-            .then_some(anchor.path)
-            .flatten()
+        commit_oid: anchor.commit_oid.filter(|_| visible),
+        path: anchor
+            .path
+            .filter(|_| visible)
             .map(|path| path.as_str().to_string()),
-    }
+        lines: anchor
+            .lines
+            .filter(|_| visible)
+            .map(|lines| RequestDiscussionLineRange {
+                side: lines.side.into(),
+                start_line: lines.range.start_line(),
+                end_line: lines.range.end_line(),
+            }),
+        latest,
+    }))
 }
 
 fn reply_response(

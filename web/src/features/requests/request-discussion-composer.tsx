@@ -46,6 +46,32 @@ export function RequestDiscussionComposer({
   )
 }
 
+export function RequestLineDiscussionComposer({
+  error,
+  label,
+  onCancel,
+  onSubmit,
+}: {
+  error: string | null
+  label: string
+  onCancel: () => void
+  onSubmit: (body: string, submissionId: string) => Promise<boolean>
+}) {
+  return (
+    <RequestAttachmentEditor
+      autoFocus
+      error={error}
+      label={`Start a discussion on ${label}`}
+      onCancel={onCancel}
+      onSubmit={(body, _base, submissionId) => onSubmit(body, submissionId)}
+      placeholder={`Discuss ${label}…`}
+      submitIcon={<MessageSquarePlus className="size-3.5" />}
+      submitLabel="Start discussion"
+      target="line-discussion"
+    />
+  )
+}
+
 export function RequestReplyComposer({
   discussionId,
   onCancel,

@@ -1,10 +1,11 @@
 use super::*;
 use scope_domain::requests::{
     CheckCommitBase, Request, RequestActorRole, RequestAttention, RequestAttentionReason,
-    RequestAttentionState, RequestBase, RequestCheckEvaluation, RequestClaim, RequestDiscussion,
-    RequestDiscussionAnchor, RequestDiscussionReadState, RequestDiscussionReply,
-    RequestDiscussionStatus, RequestEvent, RequestEventKind, RequestEventPayload, RequestInvitee,
-    RequestRating, RequestRevision, RequestStackStatus,
+    RequestAttentionState, RequestBase, RequestCheckEvaluation, RequestClaim, RequestDiffSide,
+    RequestDiscussion, RequestDiscussionAnchor, RequestDiscussionLines, RequestDiscussionReadState,
+    RequestDiscussionReply, RequestDiscussionStatus, RequestEvent, RequestEventKind,
+    RequestEventPayload, RequestInvitee, RequestLineRange, RequestRating, RequestRevision,
+    RequestStackStatus,
 };
 use scope_domain::views::ViewId;
 use scope_domain::{content::SourceBlob, policy::ScopePath};
@@ -272,6 +273,9 @@ pub mod request_discussion {
         pub revision_id: Option<String>,
         pub commit_oid: Option<String>,
         pub path: Option<String>,
+        pub line_side: Option<String>,
+        pub start_line: Option<i32>,
+        pub end_line: Option<i32>,
         pub status: String,
         pub client_discussion_id: String,
         pub created_at_unix: i64,
@@ -286,6 +290,7 @@ pub mod request_discussion {
 
     impl Model {
         pub fn from_domain(value: &RequestDiscussion) -> Result<Self, PostgresError> {
+            let lines = value.anchor.as_ref().and_then(|anchor| anchor.lines);
             Ok(Self {
                 id: value.id.clone(),
                 request_id: value.request_id.clone(),
@@ -309,6 +314,13 @@ pub mod request_discussion {
                     .as_ref()
                     .and_then(|anchor| anchor.path.as_ref())
                     .map(|path| path.as_str().to_string()),
+                line_side: lines.map(|lines| encode_enum(lines.side)).transpose()?,
+                start_line: lines
+                    .map(|lines| u32_to_i32(lines.range.start_line(), "discussion start line"))
+                    .transpose()?,
+                end_line: lines
+                    .map(|lines| u32_to_i32(lines.range.end_line(), "discussion end line"))
+                    .transpose()?,
                 status: encode_enum(value.status)?,
                 client_discussion_id: value.client_discussion_id.clone(),
                 created_at_unix: u64_to_i64(value.created_at_unix, "discussion creation time")?,
@@ -332,6 +344,7 @@ pub mod request_discussion {
                             .map(ScopePath::parse)
                             .transpose()
                             .map_err(PostgresError::internal)?,
+                        lines: discussion_lines(self.line_side, self.start_line, self.end_line)?,
                     })
                 })
                 .transpose()?;
@@ -355,6 +368,27 @@ pub mod request_discussion {
                 )?,
                 resolved_by_user_id: self.resolved_by_user_id,
             })
+        }
+    }
+
+    fn discussion_lines(
+        side: Option<String>,
+        start_line: Option<i32>,
+        end_line: Option<i32>,
+    ) -> Result<Option<RequestDiscussionLines>, PostgresError> {
+        match (side, start_line, end_line) {
+            (None, None, None) => Ok(None),
+            (Some(side), Some(start_line), Some(end_line)) => Ok(Some(RequestDiscussionLines {
+                side: decode_enum::<RequestDiffSide>(side)?,
+                range: RequestLineRange::new(
+                    i32_to_u32(start_line, "discussion start line")?,
+                    i32_to_u32(end_line, "discussion end line")?,
+                )
+                .map_err(PostgresError::internal)?,
+            })),
+            _ => Err(PostgresError::internal_message(
+                "request discussion line anchor is incomplete",
+            )),
         }
     }
 }

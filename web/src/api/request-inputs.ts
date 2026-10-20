@@ -1,6 +1,7 @@
 import { parseRepoParams, parseRepoViewInput } from './repo-params'
 import { parseFilePath } from './file-path-input'
 import type { ApproveRequestChecksInput, RequestParams } from './types'
+import type { RequestDiscussionLineRange } from './types.generated'
 import type { RequestActionInput } from '../features/requests/request-actions-api'
 import type {
   AuthorizeRequestAutoMergeInput,
@@ -142,7 +143,19 @@ export function parseCreateDiscussionInput(input: unknown): CreateDiscussionInpu
       revision_id: id(anchor.revision_id, 'revision_id'),
       commit_oid: anchor.commit_oid === null ? null : id(anchor.commit_oid, 'commit_oid'),
       path: anchor.path === null ? null : parseFilePath(anchor.path),
+      lines: anchor.lines === null ? null : parseLineRange(object(anchor.lines)),
     },
+  }
+}
+
+function parseLineRange(lines: Record<string, unknown>): RequestDiscussionLineRange {
+  const side = lines.side
+  if (side !== 'old' && side !== 'new') throw new Error('side must be old or new.')
+  const start = position(lines.start_line, 'start_line', 1, 0xffff_ffff)
+  return {
+    side,
+    start_line: start,
+    end_line: position(lines.end_line, 'end_line', start, 0xffff_ffff),
   }
 }
 

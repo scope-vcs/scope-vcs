@@ -3,6 +3,7 @@ import { GitCommit } from 'lucide-react'
 import { displayRouteFilePath } from '@/lib/route-file'
 import type { RequestDiscussion } from './request-discussion-types'
 import { shortOid } from '@/lib/short-oid'
+import { lineRangeLabel } from './request-changes-line-discussions'
 
 export function RequestDiscussionAnchor({
   anchor,
@@ -31,7 +32,11 @@ export function RequestDiscussionAnchor({
       to="/$owner/$repo/requests/$requestId/changes"
     >
       <GitCommit aria-hidden="true" className="size-3.5" />
-      <span aria-hidden="true" className="text-xs">rev {anchor.revision_position}</span>
+      <span aria-hidden="true" className="text-xs">
+        rev {anchor.revision_position}
+        {anchor.lines ? ` · L${lineSpan(anchor.lines)}` : null}
+        {anchor.latest?.kind === 'outdated' ? ' · outdated' : null}
+      </span>
     </Link>
   )
 }
@@ -43,5 +48,11 @@ function requestDiscussionAnchorLabel(
     ? ` at commit ${shortOid(anchor.commit_oid)}`
     : ''
   const path = anchor.path ? ` for ${displayRouteFilePath(anchor.path)}` : ''
-  return `View revision ${anchor.revision_position} changes${path}${commit}`
+  const lines = anchor.lines ? ` ${lineRangeLabel(anchor.lines)}` : ''
+  const outdated = anchor.latest?.kind === 'outdated' ? ', outdated on the latest revision' : ''
+  return `View revision ${anchor.revision_position} changes${path}${lines}${commit}${outdated}`
+}
+
+function lineSpan(lines: NonNullable<NonNullable<RequestDiscussion['anchor']>['lines']>) {
+  return lines.start_line === lines.end_line ? `${lines.start_line}` : `${lines.start_line}-${lines.end_line}`
 }

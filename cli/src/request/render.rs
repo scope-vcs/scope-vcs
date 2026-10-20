@@ -8,6 +8,7 @@ use crate::api::{
     RequestPermissionsResponse, RequestState, RequestSummaryResponse, ViewId,
 };
 use crate::display::{short_oid, terminal_text};
+use scope_api_contract::{RequestDiffSide, RequestDiscussionLatestPosition};
 use scope_domain::views::Views;
 
 mod auto_merge;
@@ -98,10 +99,50 @@ pub(super) fn discussion_started_receipt(
         }
         if let Some(path) = anchor.path.as_deref() {
             reference.push_str(&format!(" · {}", terminal_text(path)));
+            if let Some(lines) = anchor.lines.as_ref() {
+                reference.push_str(&format!(
+                    ":{} ({})",
+                    line_span(lines.start_line, lines.end_line),
+                    diff_side_label(lines.side)
+                ));
+            }
+        }
+        match anchor.latest.as_ref() {
+            Some(RequestDiscussionLatestPosition::Mapped {
+                revision_id,
+                start_line,
+                end_line,
+            }) => reference.push_str(&format!(
+                " · latest revision {}: {}",
+                terminal_text(revision_id),
+                line_span(*start_line, *end_line)
+            )),
+            Some(RequestDiscussionLatestPosition::Outdated { revision_id }) => {
+                reference.push_str(&format!(
+                    " · outdated on latest revision {}",
+                    terminal_text(revision_id)
+                ))
+            }
+            None => {}
         }
         lines.push(reference);
     }
     lines
+}
+
+fn line_span(start_line: u32, end_line: u32) -> String {
+    if start_line == end_line {
+        start_line.to_string()
+    } else {
+        format!("{start_line}-{end_line}")
+    }
+}
+
+fn diff_side_label(side: RequestDiffSide) -> &'static str {
+    match side {
+        RequestDiffSide::Old => "old",
+        RequestDiffSide::New => "new",
+    }
 }
 
 pub(super) fn discussion_replied_receipt(

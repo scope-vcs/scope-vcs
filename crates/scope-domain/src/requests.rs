@@ -55,16 +55,21 @@ mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};
 mod identity;
 pub use identity::{EditRequestIdentityInput, edit_request_identity, request_identity_audit_fact};
+mod discussion_anchor;
+pub use discussion_anchor::{
+    RequestDiffSide, RequestDiscussionAnchor, RequestDiscussionLines, RequestLinePosition,
+    RequestLineRange, RequestLineTarget, carry_forward_line_range,
+};
 mod discussions;
 pub use discussions::{
     CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
     CreateRequestDiscussionReplyInput, CreateRequestDiscussionReplyMutation,
     MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput, RequestDiscussion,
-    RequestDiscussionAnchor, RequestDiscussionMutation, RequestDiscussionReadState,
-    RequestDiscussionReply, RequestDiscussionStatus, RequestDiscussionTransitionInput,
-    create_request_discussion, create_request_discussion_reply,
-    ensure_request_discussion_transition_allowed, mark_request_discussion_read,
-    reopen_and_reply_to_request_discussion, reopen_request_discussion, resolve_request_discussion,
+    RequestDiscussionMutation, RequestDiscussionReadState, RequestDiscussionReply,
+    RequestDiscussionStatus, RequestDiscussionTransitionInput, create_request_discussion,
+    create_request_discussion_reply, ensure_request_discussion_transition_allowed,
+    mark_request_discussion_read, reopen_and_reply_to_request_discussion,
+    reopen_request_discussion, resolve_request_discussion,
 };
 mod lifecycle;
 pub use lifecycle::{

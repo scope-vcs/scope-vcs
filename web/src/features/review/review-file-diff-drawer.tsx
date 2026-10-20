@@ -12,15 +12,32 @@ import { shortOid } from '@/lib/short-oid'
 import { DiffSkeleton } from './diff-skeleton'
 import DOMPurify from 'dompurify'
 import { File, FileText, TriangleAlert, X } from 'lucide-react'
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { type ReactNode, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   reviewFileDiffEmptyLabel,
   reviewFileDiffModeChangeLabel,
   reviewFileDiffOmittedLabel,
 } from './review-file-diff-presentation'
+import {
+  diffLineAt,
+  markSelectedDiffLines,
+  reviewDiffSlotName,
+  syncDiffAnnotationRows,
+  type ReviewDiffLine,
+  type ReviewDiffLineRange,
+} from './review-file-diff-lines'
+
+export type ReviewDiffAnnotations = {
+  fileNotes: ReactNode
+  lines: Array<ReviewDiffLine & { content: ReactNode }>
+  onSelectLine?: (line: ReviewDiffLine, extend: boolean) => void
+  selection: ReviewDiffLineRange | null
+}
 
 export function ReviewFileDiffDrawer({
   actions,
+  annotations,
   cacheKey,
   context,
   diff,
@@ -33,6 +50,7 @@ export function ReviewFileDiffDrawer({
   selectedPath,
 }: {
   actions?: ReactNode
+  annotations?: ReviewDiffAnnotations
   cacheKey?: string | null
   context?: ReactNode
   diff: ReviewFileDiff | null
@@ -116,22 +134,13 @@ export function ReviewFileDiffDrawer({
                 </Button>
               )}
             </PanelState>
-          ) : diff?.presentation.kind === 'mixed' ? (
-            <MixedContentDiffState
-              binary={diff.presentation.binary}
-              text={diff.presentation.text}
-            />
-          ) : diff?.presentation.kind === 'binary' ? (
-            <BinaryDiffState sides={diff.presentation.sides} />
-          ) : diff?.presentation.kind === 'html' ? (
-            <PrerenderedDiff html={diff.presentation.html} />
-          ) : diff?.presentation.kind === 'omitted' ? (
-            <OmittedDiffState reason={diff.presentation.reason} />
           ) : (
-            <PanelState>
-              <FileText className="size-5" />
-              <span>{reviewFileDiffEmptyLabel(diff)}</span>
-            </PanelState>
+            <>
+              {annotations?.fileNotes}
+              {diff?.presentation.kind === 'html'
+                ? <PrerenderedDiff annotations={annotations} html={diff.presentation.html} />
+                : <ReviewFileDiffFallback diff={diff} />}
+            </>
           )}
         </div>
       </div>
@@ -139,8 +148,43 @@ export function ReviewFileDiffDrawer({
   )
 }
 
-function PrerenderedDiff({ html }: { html: string }) {
+function ReviewFileDiffFallback({ diff }: { diff: ReviewFileDiff | null }) {
+  return diff?.presentation.kind === 'mixed' ? (
+    <MixedContentDiffState
+      binary={diff.presentation.binary}
+      text={diff.presentation.text}
+    />
+  ) : diff?.presentation.kind === 'binary' ? (
+    <BinaryDiffState sides={diff.presentation.sides} />
+  ) : diff?.presentation.kind === 'omitted' ? (
+    <OmittedDiffState reason={diff.presentation.reason} />
+  ) : (
+    <PanelState>
+      <FileText className="size-5" />
+      <span>{reviewFileDiffEmptyLabel(diff)}</span>
+    </PanelState>
+  )
+}
+
+function PrerenderedDiff({
+  annotations,
+  html,
+}: {
+  annotations?: ReviewDiffAnnotations
+  html: string
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [host, setHost] = useState<HTMLElement | null>(null)
+  const onSelectLine = annotations?.onSelectLine
+  const selectLineRef = useRef(onSelectLine)
+  const lines = annotations?.lines
+  const lineKeys = JSON.stringify(lines?.map(({ line, side }) => ({ line, side })) ?? [])
+  const selection = annotations?.selection ?? null
+  const selectable = Boolean(onSelectLine)
+
+  useLayoutEffect(() => {
+    selectLineRef.current = onSelectLine
+  })
 
   useLayoutEffect(() => {
     const container = containerRef.current
@@ -149,17 +193,48 @@ function PrerenderedDiff({ html }: { html: string }) {
     const fragment = DOMPurify.sanitize(html, {
       RETURN_DOM_FRAGMENT: true,
     })
-    const host = document.createElement('diffs-container')
-    host.attachShadow({ mode: 'open' }).replaceChildren(fragment)
-    container.replaceChildren(host)
+    const nextHost = document.createElement('diffs-container')
+    const root = nextHost.attachShadow({ mode: 'open' })
+    root.replaceChildren(fragment)
+    root.addEventListener('click', (event) => {
+      if (!(event instanceof MouseEvent)) return
+      const line = diffLineAt(event.target)
+      if (!line || !selectLineRef.current) return
+      event.preventDefault()
+      selectLineRef.current(line, event.shiftKey)
+    })
+    container.replaceChildren(nextHost)
+    setHost(nextHost)
   }, [html])
 
+  useLayoutEffect(() => {
+    const root = host?.shadowRoot
+    if (!root) return
+    root.querySelector('[data-diff]')?.toggleAttribute('data-interactive-line-numbers', selectable)
+    syncDiffAnnotationRows(root, JSON.parse(lineKeys) as ReviewDiffLine[])
+    markSelectedDiffLines(root, selection)
+  }, [host, lineKeys, selectable, selection])
+
   return (
-    <div
-      className="review-diff-viewer scope-content-enter"
-      ref={containerRef}
-      suppressHydrationWarning
-    />
+    <>
+      <div
+        className="review-diff-viewer scope-content-enter"
+        ref={containerRef}
+        suppressHydrationWarning
+      />
+      {host && lines?.length ? createPortal(
+        lines.map((line) => (
+          <div
+            className="px-3 py-2 font-sans text-xs whitespace-normal"
+            key={reviewDiffSlotName(line)}
+            slot={reviewDiffSlotName(line)}
+          >
+            {line.content}
+          </div>
+        )),
+        host,
+      ) : null}
+    </>
   )
 }
 
