@@ -154,7 +154,7 @@
   .request-workspace-sidebar[data-state="closed"] .request-workspace-rows--pending,
   .request-workspace-sidebar[data-state="closed"] .request-workspace-rows > :not(.request-workspace-row),
   .request-workspace-sidebar[data-state="closed"] .request-workspace-row-actions,
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you .request-workspace-row:nth-child(n + 7):not(.request-workspace-row--selected) {
+  .request-workspace-sidebar[data-state="closed"] .request-workspace-needs-you .request-workspace-row:nth-child(n + 7):not(.request-workspace-row--selected, [data-holds-selection]) {
     display: none;
   }
 
@@ -179,7 +179,7 @@
     transition: opacity 150ms ease;
   }
 
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-row--selected .request-workspace-row-avatar {
+  .request-workspace-sidebar[data-state="closed"] :is(.request-workspace-row--selected, [data-holds-selection]) .request-workspace-row-avatar {
     outline: 1.5px solid var(--foreground);
     outline-offset: 2px;
   }

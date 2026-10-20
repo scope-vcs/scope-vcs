@@ -8,7 +8,7 @@ import { useUnixClock } from '@/lib/use-unix-clock'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { Check, ChevronDown, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-react'
-import { useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
 import { RequestDiscussionActorAvatar } from './request-discussion-byline'
 import { RequestRailMarker } from './request-workspace-rail-marker'
@@ -67,18 +67,24 @@ export function RequestWorkspaceList({
 }: RequestWorkspaceListProps) {
   const [folding, setFolding] = useState<{ parent: string; ids: ReadonlySet<string> } | null>(null)
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set())
+  const foldTimer = useRef<number>(undefined)
   if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
 
   function toggleStack({ row, descendants }: VisibleStackedRequestRow<QueueRow>) {
     const parent = row.item.request.id
     const ids = new Set(descendants.map(({ item }) => item.request.id))
+    if (folding?.parent === parent) {
+      window.clearTimeout(foldTimer.current)
+      setFolding(null)
+      return
+    }
     if (foldedStacks.has(parent)) {
       setRevealed(ids)
       onFoldStack(parent, false)
       return
     }
     setFolding({ parent, ids })
-    window.setTimeout(() => {
+    foldTimer.current = window.setTimeout(() => {
       onFoldStack(parent, true)
       setFolding(null)
     }, REQUEST_STACK_FOLD_MS)

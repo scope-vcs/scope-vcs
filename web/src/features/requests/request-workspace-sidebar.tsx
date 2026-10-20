@@ -35,7 +35,7 @@ import {
   requestAttentionLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
-import { stackRequestRows } from './request-workspace-stack'
+import { foldStackedRequestRows, stackRequestRows } from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
 
@@ -243,9 +243,12 @@ export function RequestWorkspaceSidebar({
       }),
     ),
   ]
-  const railed = needsYou.filter(
-    (row, index) => index < RAIL_AVATARS || row.item.request.id === selectedId,
-  )
+  const railed = foldStackedRequestRows(stackRequestRows(needsYou), foldedStacks)
+    .filter(
+      ({ row, folded }, index) =>
+        index < RAIL_AVATARS || [row, ...folded].some(({ item }) => item.request.id === selectedId),
+    )
+    .map(({ row }) => row)
   const foldedGroups = (Object.keys(FOLDED_LABELS) as (keyof typeof FOLDED_LABELS)[])
     .map((group) => ({
       group,
