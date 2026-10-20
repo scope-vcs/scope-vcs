@@ -2,7 +2,8 @@ use super::integer_columns;
 use super::{
     RunStore, acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows, entities,
-    git_segments::release_git_segment_references, request_auto_merge::request_id_for_check_run,
+    git_segments::release_git_segment_references, locks::acquire_shared_aggregate_lock,
+    request_auto_merge::request_id_for_check_run,
 };
 use crate::error::PostgresError;
 use scope_domain::{content::SourceBlob, runs::run::RunState};
@@ -58,7 +59,7 @@ impl RunStore {
         for request_id in request_ids {
             acquire_aggregate_lock(&tx, "request", &request_id).await?;
         }
-        lock_run_evidence_retention(&tx).await?;
+        lock_run_evidence_for_pruning(&tx).await?;
 
         let mut lock_ids = candidate_ids.clone();
         lock_ids.sort_unstable();
@@ -129,10 +130,18 @@ impl RunStore {
     }
 }
 
-pub(super) async fn lock_run_evidence_retention<C: ConnectionTrait>(
+const RUN_EVIDENCE_RETENTION: (&str, &str) = ("run-retention", "request-check-evidence");
+
+async fn lock_run_evidence_for_pruning<C: ConnectionTrait>(conn: &C) -> Result<(), PostgresError> {
+    let (namespace, id) = RUN_EVIDENCE_RETENTION;
+    acquire_aggregate_lock(conn, namespace, id).await
+}
+
+pub(super) async fn lock_run_evidence_for_recording<C: ConnectionTrait>(
     conn: &C,
 ) -> Result<(), PostgresError> {
-    acquire_aggregate_lock(conn, "run-retention", "request-check-evidence").await
+    let (namespace, id) = RUN_EVIDENCE_RETENTION;
+    acquire_shared_aggregate_lock(conn, namespace, id).await
 }
 
 fn active_auto_merge_evidence_is_absent() -> sea_orm::sea_query::SimpleExpr {
@@ -187,4 +196,50 @@ pub(super) async fn delete_orphaned_workflow_revisions<C: ConnectionTrait>(
         .exec(conn)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{lock_run_evidence_for_pruning, lock_run_evidence_for_recording};
+    use crate::db::{
+        MetadataStore, TestDatabaseTarget,
+        locks::{backend_pid, wait_for_transaction_waiter},
+    };
+    use sea_orm::TransactionTrait;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn check_recorders_share_run_evidence_while_pruning_waits_for_them() {
+        let store =
+            MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
+                .unwrap();
+        let seeded = store.db.begin().await.unwrap();
+        lock_run_evidence_for_pruning(&seeded).await.unwrap();
+        seeded.commit().await.unwrap();
+        let first = store.db.begin().await.unwrap();
+        lock_run_evidence_for_recording(&first).await.unwrap();
+        let second = store.db.begin().await.unwrap();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            lock_run_evidence_for_recording(&second),
+        )
+        .await
+        .expect("a second check recorder waited for the first")
+        .unwrap();
+
+        let first_pid = backend_pid(&first).await;
+        let pruning_store = store.clone();
+        let pruning = tokio::spawn(async move {
+            let tx = pruning_store.db.begin().await.unwrap();
+            lock_run_evidence_for_pruning(&tx).await.unwrap();
+            tx.commit().await.unwrap();
+        });
+        wait_for_transaction_waiter(&store, first_pid).await;
+        first.commit().await.unwrap();
+        second.commit().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), pruning)
+            .await
+            .expect("pruning proceeds once recorders finish")
+            .unwrap();
+    }
 }
