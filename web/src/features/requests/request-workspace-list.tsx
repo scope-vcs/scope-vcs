@@ -22,6 +22,7 @@ import {
   requestStackParentLabel,
 } from './request-workspace-model'
 import { actorHandle } from './request-actor'
+import { stackRequestRows, type RequestStackPlacement } from './request-workspace-stack'
 
 export type RequestWorkspaceListProps = {
   items: { item: RequestQueueItemResponse; section: RequestQueueSection }[]
@@ -51,8 +52,8 @@ export function RequestWorkspaceList({
   ...rowProps
 }: RequestWorkspaceListProps) {
   if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
-  const rows = items.map(({ item, section }, index) => (
-    <RequestWorkspaceRow item={item} key={item.request.id} section={section} stacked={adjacentStackRows(items[index - 1], { item, section }) || adjacentStackRows({ item, section }, items[index + 1])} {...rowProps} />
+  const rows = stackRequestRows(items).map(({ row: { item, section }, placement }) => (
+    <RequestWorkspaceRow item={item} key={item.request.id} placement={placement} section={section} {...rowProps} />
   ))
   return (
     <div className="request-workspace-rows">
@@ -115,11 +116,11 @@ function RequestWorkspaceRow({
   pendingId,
   selectedId,
   rail,
-  stacked,
+  placement,
 }: Pick<RequestWorkspaceListProps, 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
-  stacked: boolean
+  placement: RequestStackPlacement
 }) {
   const hydrated = useHydrated()
   const { request, attention, author } = item
@@ -150,12 +151,13 @@ function RequestWorkspaceRow({
   const actionCount = actions.filter(({ visible }) => visible).length + Number(canSetAside)
   return (
     <article
-      className={cn('request-workspace-row', selected && 'request-workspace-row--selected', stacked && 'request-workspace-row--stacked')}
+      className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-rail={rail ? '' : undefined}
       data-request-id={request.id}
-      style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px` } as CSSProperties}
+      style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px`, '--stack-depth': placement.depth } as CSSProperties}
     >
+      <RequestStackLines placement={placement} />
       <Link
         aria-current={selected ? 'page' : undefined}
         className="request-workspace-row-link"
@@ -244,11 +246,15 @@ function RequestWorkspaceRow({
   )
 }
 
-function adjacentStackRows(left: RequestWorkspaceListProps['items'][number] | undefined, right: RequestWorkspaceListProps['items'][number] | undefined) {
-  if (!left || !right || left.section !== right.section) return false
-  const leftParent = left.item.request.stack_parent
-  const rightParent = right.item.request.stack_parent
-  const leftId = leftParent?.kind === 'available' ? leftParent.request.id : null
-  const rightId = rightParent?.kind === 'available' ? rightParent.request.id : null
-  return leftId === right.item.request.id || rightId === left.item.request.id || Boolean(leftId && leftId === rightId)
+function RequestStackLines({ placement: { depth, guides, elbow, children } }: { placement: RequestStackPlacement }) {
+  if (!depth && !children) return null
+  return (
+    <span aria-hidden="true" className="request-workspace-stack">
+      {guides.map((column) => (
+        <span data-line="pass" key={column} style={{ '--stack-column': column } as CSSProperties} />
+      ))}
+      {elbow && <span data-line={elbow} style={{ '--stack-column': depth - 1 } as CSSProperties} />}
+      {children && <span data-line="down" style={{ '--stack-column': depth } as CSSProperties} />}
+    </span>
+  )
 }

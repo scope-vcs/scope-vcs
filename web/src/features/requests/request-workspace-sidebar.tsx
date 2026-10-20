@@ -33,9 +33,9 @@ import {
   REQUEST_MERGE_STEP_LABELS,
   requestAgeLabel,
   requestAttentionLabel,
-  requestStackParentLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
+import { stackRequestRows } from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
 
@@ -98,8 +98,8 @@ export function RequestWorkspaceSidebar({
   const aside = useRef<HTMLElement>(null)
   const [open, setOpen] = useState(false)
   const [closing, setClosing] = useState(false)
+  const [hint, setHint] = useState<{ key: string; left: number; top: number; now: number } | null>(null)
   const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
-  const [hint, setHint] = useState<{ key: string; left: number; top: number; now: number; state: typeof state } | null>(null)
   const openRail = useCallback(() => {
     setOpen(true)
     setClosing(false)
@@ -166,18 +166,17 @@ export function RequestWorkspaceSidebar({
   }
   function showHint(event: ReactPointerEvent | FocusEvent) {
     const target = (event.target as Element).closest<HTMLElement>(
-      '[data-rail-hint], .request-workspace-row[data-request-id]',
+      '[data-rail-hint], .request-workspace-row[data-rail]',
     )
     const anchor = target?.dataset.railHint ? target : target?.querySelector('.request-workspace-row-avatar')
     const key = target?.dataset.railHint ?? target?.dataset.requestId
-    if (!key || !anchor) return setHint(null)
+    if (state !== 'closed' || !key || !anchor) return setHint(null)
     const { top, height } = anchor.getBoundingClientRect()
     setHint({
       key,
       left: event.currentTarget.getBoundingClientRect().right + 3,
       top: top + height / 2,
       now: Math.floor(Date.now() / 1000),
-      state,
     })
   }
 
@@ -238,11 +237,8 @@ export function RequestWorkspaceSidebar({
     }))
     .filter(({ count }) => count > 0)
   const folded = foldedGroups.reduce((total, { count }) => total + count, 0)
-  const hinted = hint?.state === state ? railHint(hint.key, hint.now) : undefined
+  const hinted = hint && state === 'closed' ? railHint(hint.key, hint.now) : undefined
   function railHint(key: string, now: number) {
-    const row = allRows.find((row) => row.item.request.id === key)
-    const parent = row && requestStackParentLabel(row.item)
-    if (state !== 'closed') return parent ? { title: parent, details: [] } : undefined
     if (key === 'needs-you') {
       const count = activeCount(needsYou.length)
       return {
@@ -255,11 +251,12 @@ export function RequestWorkspaceSidebar({
         title: `${folded} more`,
         details: foldedGroups.map(({ group, count }) => `${count} ${FOLDED_LABELS[group]}`),
       }
+    const row = allRows.find((row) => row.item.request.id === key)
     if (!row) return undefined
     const label = REQUEST_MERGE_STEP_LABELS[row.item.next_step] ?? requestAttentionLabel(row.item, true)
     return {
       title: row.item.request.title,
-      details: [`${label} · ${requestAgeLabel(row.item.attention_at_unix, now, true)}`, ...(parent ? [parent] : [])],
+      details: [`${label} · ${requestAgeLabel(row.item.attention_at_unix, now, true)}`],
     }
   }
   return (
@@ -427,13 +424,12 @@ export function RequestWorkspaceSidebar({
 }
 
 function groupRows(rows: QueueRow[]) {
-  const grouped = Object.fromEntries(
-    REQUEST_ATTENTION_GROUP_ORDER.map((group) => [group, [] as QueueRow[]]),
+  return Object.fromEntries(
+    REQUEST_ATTENTION_GROUP_ORDER.map((group) => [
+      group,
+      stackRequestRows(rows.filter((row) => row.item.attention.group === group)).map(({ row }) => row),
+    ]),
   ) as Record<RequestAttentionGroup, QueueRow[]>
-  for (const row of rows) {
-    grouped[row.item.attention.group].push(row)
-  }
-  return grouped
 }
 
 function RequestWorkspaceDisclosure({
