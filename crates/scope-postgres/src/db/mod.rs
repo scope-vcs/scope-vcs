@@ -143,7 +143,7 @@ pub use fast_push::ApplyContentOnlyPushCommand;
 use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::{GitPushContext, GitPushCredentials, GitPushState};
-pub use git_segments::{GitPoolPacks, PooledRequestPack, RepositoryGitWriteLease};
+pub use git_segments::{PooledRequestPack, RepositoryGitWriteLease};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;

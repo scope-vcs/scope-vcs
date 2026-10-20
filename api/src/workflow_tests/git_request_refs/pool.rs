@@ -4,6 +4,7 @@ use crate::use_cases::git_receive::{
     RequestRefSeeding,
     request_ref::{RequestPusher, RequestStagingKind, prepare_request_staging_repo},
 };
+use std::collections::BTreeSet;
 
 async fn prepare_owner_push(state: &AppState, request_ref: &str) -> PathBuf {
     prepare_push(state, &test_owner_id(), request_ref).await
@@ -33,19 +34,7 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
         super::super::push_intent_completion::published_git_fixture("request-pool").await;
     let replica = state.replica_for_tests();
     let bearer = bearer_header();
-    let started = api_request(
-        router(state.clone()),
-        "POST",
-        &format!("/v1/repos/{TEST_REPO_ID}/requests"),
-        Some(&bearer),
-        Some(r#"{"name":"pooled","view":"private"}"#),
-    )
-    .await;
-    assert_eq!(started.status(), StatusCode::OK);
-    let request_id = response_json(started).await["request"]["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let request_id = start_request(&state, "pooled").await;
     let request_ref = "refs/heads/pooled";
     let (first_origin, _first_server) = spawn_test_server(&state).await;
     let (second_origin, _second_server) = spawn_test_server(&replica).await;
@@ -96,35 +85,31 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
         stored_request(&state, &request_id).await.head_oid,
         git_head_oid(&source)
     );
-    let packs = state
-        .metadata
-        .repositories()
-        .git_pool_packs_after(TEST_REPO_ID, Some(0))
-        .await
-        .unwrap()
-        .packs;
     assert_eq!(
-        packs
-            .iter()
-            .map(|listed| listed.pack.head_oid.as_str())
-            .collect::<Vec<_>>(),
-        [
-            submitted_head.as_str(),
-            first_head.as_str(),
-            git_head_oid(&source).as_str()
-        ]
+        pooled_heads(&state, &request_id).await,
+        BTreeSet::from([
+            submitted_head.clone(),
+            first_head.clone(),
+            git_head_oid(&source)
+        ])
     );
     let replica_objects = object_repos(&replica, &test_owner_id()).await.shared;
+    assert!(has_commit(&replica_objects, &submitted_head));
     assert!(has_commit(&replica_objects, &first_head));
-    assert_eq!(
-        git_stdout_text(
-            &replica_objects,
-            &["rev-parse", "refs/scope/seeded/pooled"],
-            "read the replica's bundle restore",
+    assert!(
+        !run_git_output(
+            Some(&replica_objects),
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "refs/scope/seeded/pooled"
+            ],
+            "check for a bundle restore",
         )
         .unwrap()
-        .trim(),
-        submitted_head
+        .status
+        .success()
     );
     assert!(
         replica
@@ -140,6 +125,149 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
     )
     .unwrap();
     fs::remove_dir_all(rematerialized).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_replica_behind_by_a_few_revisions_of_a_long_request_catches_up_from_the_pool() {
+    let (state, main_source, _) =
+        super::super::push_intent_completion::published_git_fixture("request-pool-long").await;
+    let replica = state.replica_for_tests();
+    let bearer = bearer_header();
+    start_request(&state, "long").await;
+    let request_ref = "refs/heads/long";
+    let (first_origin, _first_server) = spawn_test_server(&state).await;
+    let (second_origin, _second_server) = spawn_test_server(&replica).await;
+    let first_remote = format!("{first_origin}/git/private/{TEST_REPO_ID}");
+    let second_remote = format!("{second_origin}/git/private/{TEST_REPO_ID}");
+    let source = clone_test_repo(&main_source, "request-pool-long-checkout", false);
+    configure_bearer_header(&source, &first_remote, &bearer);
+    configure_bearer_header(&source, &second_remote, &bearer);
+    run_git(
+        Some(&source),
+        &["checkout", "-b", "long"],
+        "create request branch",
+    )
+    .unwrap();
+    let push = |remote: &str, revision: usize| {
+        push_change(
+            &source,
+            remote,
+            request_ref,
+            "long.txt",
+            &format!("revision {revision}\n"),
+            &format!("revision {revision}"),
+        )
+        .unwrap();
+        git_head_oid(&source)
+    };
+    for revision in 0..20 {
+        push(&first_remote, revision);
+    }
+    let restored_head = push(&second_remote, 20);
+    let behind_head = push(&first_remote, 21);
+    push(&second_remote, 22);
+
+    let replica_objects = object_repos(&replica, &test_owner_id()).await.shared;
+    assert!(has_commit(&replica_objects, &behind_head));
+    assert_eq!(
+        git_stdout_text(
+            &replica_objects,
+            &["rev-parse", "refs/scope/seeded/long"],
+            "read the replica's bundle restore",
+        )
+        .unwrap()
+        .trim(),
+        git_stdout_text(
+            &source,
+            &["rev-parse", &format!("{restored_head}^")],
+            "read the restored head"
+        )
+        .unwrap()
+        .trim()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_push_restores_another_requests_objects_only_when_its_pack_needs_them() {
+    let (state, main_source, _) =
+        super::super::push_intent_completion::published_git_fixture("request-pool-deferred").await;
+    let replica = state.replica_for_tests();
+    let bearer = bearer_header();
+    start_request(&state, "base-work").await;
+    let follow_up_id = start_request(&state, "follow-up").await;
+    let (first_origin, _first_server) = spawn_test_server(&state).await;
+    let (second_origin, _second_server) = spawn_test_server(&replica).await;
+    let first_remote = format!("{first_origin}/git/private/{TEST_REPO_ID}");
+    let second_remote = format!("{second_origin}/git/private/{TEST_REPO_ID}");
+    let source = clone_test_repo(&main_source, "request-pool-deferred-checkout", false);
+    configure_bearer_header(&source, &first_remote, &bearer);
+    configure_bearer_header(&source, &second_remote, &bearer);
+    run_git(
+        Some(&source),
+        &["checkout", "-b", "base-work"],
+        "create base request branch",
+    )
+    .unwrap();
+    push_change(
+        &source,
+        &first_remote,
+        "refs/heads/base-work",
+        "base.txt",
+        "base request\n",
+        "base request revision",
+    )
+    .unwrap();
+    let base_head = git_head_oid(&source);
+
+    let unrelated = prepare_owner_push(&replica, "refs/heads/follow-up").await;
+    assert!(!has_commit(&unrelated, &base_head));
+    fs::remove_dir_all(unrelated).unwrap();
+    push_change(
+        &source,
+        &second_remote,
+        "refs/heads/follow-up",
+        "follow-up.txt",
+        "built on the base request\n",
+        "follow-up revision",
+    )
+    .unwrap();
+
+    assert_eq!(
+        stored_request(&state, &follow_up_id).await.head_oid,
+        git_head_oid(&source)
+    );
+    assert!(has_commit(
+        &object_repos(&replica, &test_owner_id()).await.shared,
+        &base_head
+    ));
+}
+
+async fn start_request(state: &AppState, name: &str) -> String {
+    let started = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests"),
+        Some(&bearer_header()),
+        Some(&format!(r#"{{"name":"{name}","view":"private"}}"#)),
+    )
+    .await;
+    assert_eq!(started.status(), StatusCode::OK);
+    response_json(started).await["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+async fn pooled_heads(state: &AppState, request_id: &str) -> BTreeSet<String> {
+    state
+        .metadata
+        .repositories()
+        .git_pool_packs_for_requests(TEST_REPO_ID, &[request_id.to_string()])
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|listed| listed.head_oid)
+        .collect()
 }
 
 async fn object_repos(state: &AppState, author_id: &str) -> RequestObjectRepos {
@@ -181,6 +309,10 @@ async fn a_draft_revision_is_pooled_only_for_its_author() {
     )
     .await;
     assert_eq!(started.status(), StatusCode::OK);
+    let draft_id = response_json(started).await["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let (origin, _server) = spawn_test_server(&state).await;
     let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     let source = TempGitRepo(unique_test_path("request-pool-draft-checkout"));
@@ -209,17 +341,7 @@ async fn a_draft_revision_is_pooled_only_for_its_author() {
 
     let repos = object_repos(&state, &test_owner_id()).await;
 
-    assert!(
-        state
-            .metadata
-            .repositories()
-            .git_pool_packs_after(TEST_REPO_ID, Some(0))
-            .await
-            .unwrap()
-            .packs
-            .iter()
-            .any(|listed| listed.pack.head_oid == draft_head)
-    );
+    assert!(pooled_heads(&state, &draft_id).await.contains(&draft_head));
     let author_staging = prepare_owner_push(&state, request_ref).await;
     assert!(has_commit(&author_staging, &draft_head));
     let _ = fs::remove_dir_all(author_staging);
@@ -316,15 +438,9 @@ async fn assert_removed_view_pool_isolation(prepare_before_removal: bool) {
     .unwrap();
     let hidden_head = git_head_oid(&source);
     assert!(
-        state
-            .metadata
-            .repositories()
-            .git_pool_packs_after(TEST_REPO_ID, Some(0))
+        pooled_heads(&state, REQUEST_ID)
             .await
-            .unwrap()
-            .packs
-            .iter()
-            .any(|listed| listed.pack.head_oid == hidden_head)
+            .contains(&hidden_head)
     );
     state
         .metadata
@@ -425,10 +541,26 @@ async fn assert_removed_view_pool_isolation(prepare_before_removal: bool) {
     let mut pack = std::process::Command::new("git");
     pack.current_dir(&_main_source)
         .args(["pack-objects", "--stdout"]);
+    let packed = if prepare_before_removal {
+        run_git(
+            Some(&_main_source),
+            &[
+                "fetch",
+                source.to_str().unwrap(),
+                "+HEAD:refs/scope-test/hidden",
+            ],
+            "copy the hidden head into the grafting checkout",
+        )
+        .unwrap();
+        pack.arg("--revs");
+        format!("{graft}\n^{old}\n")
+    } else {
+        format!("{graft}\n")
+    };
     payload.extend(
         crate::git::command::git_command_output_with_timeout(
             &mut pack,
-            Some(format!("{graft}\n").into_bytes()),
+            Some(packed.into_bytes()),
             std::time::Duration::from_secs(5),
         )
         .unwrap(),

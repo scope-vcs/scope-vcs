@@ -407,7 +407,8 @@ async fn a_full_view_push_reaches_every_advertised_request_head() {
     .unwrap();
     assert!(
         advertised
-            .advertised_refs
+            .seeded
+            .advertised
             .iter()
             .any(|(name, oid)| name == REQUEST_REF && oid == &public_head)
     );

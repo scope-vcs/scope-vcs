@@ -6,6 +6,7 @@ mod envelope;
 mod error;
 mod file;
 mod ingest;
+mod inline;
 mod lifecycle;
 mod memory;
 mod objects;

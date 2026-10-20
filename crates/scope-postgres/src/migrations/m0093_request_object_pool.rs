@@ -17,30 +17,36 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
                 CREATE TABLE scope_git_pool_packs (
-                    segment_id text PRIMARY KEY,
+                    id text PRIMARY KEY,
                     repo_id character varying NOT NULL
                         REFERENCES scope_repositories(id) ON DELETE CASCADE,
                     request_id character varying NOT NULL
                         REFERENCES scope_requests(id) ON DELETE CASCADE,
                     head_oid text NOT NULL,
                     prerequisites text[] NOT NULL,
-                    sha256 text NOT NULL,
-                    plaintext_bytes bigint NOT NULL,
-                    encoding_version integer NOT NULL,
-                    transaction_id bigint NOT NULL
-                        DEFAULT (pg_current_xact_id()::text)::bigint,
+                    sealed_pack bytea,
+                    segment_id text UNIQUE,
+                    segment_sha256 text,
+                    segment_plaintext_bytes bigint,
+                    segment_encoding_version integer,
                     created_at_unix bigint NOT NULL,
                     CONSTRAINT scope_git_pool_pack_values CHECK (
-                        length(btrim(segment_id)) > 0
+                        length(btrim(id)) > 0
                         AND length(btrim(head_oid)) > 0
-                        AND length(sha256) = 64
-                        AND plaintext_bytes >= 0
-                        AND encoding_version > 0
                         AND created_at_unix >= 0
+                    ),
+                    CONSTRAINT scope_git_pool_pack_storage CHECK (
+                        (sealed_pack IS NOT NULL AND segment_id IS NULL
+                            AND segment_sha256 IS NULL AND segment_plaintext_bytes IS NULL
+                            AND segment_encoding_version IS NULL)
+                        OR (sealed_pack IS NULL AND segment_id IS NOT NULL
+                            AND length(segment_sha256) = 64
+                            AND segment_plaintext_bytes >= 0
+                            AND segment_encoding_version > 0)
                     )
                 );
-                CREATE INDEX scope_git_pool_packs_repo_transaction
-                    ON scope_git_pool_packs (repo_id, transaction_id);
+                CREATE INDEX scope_git_pool_packs_request
+                    ON scope_git_pool_packs (request_id, created_at_unix, id);
                 DROP TABLE scope_request_ref_cleanup_jobs;
                 "#,
             )
