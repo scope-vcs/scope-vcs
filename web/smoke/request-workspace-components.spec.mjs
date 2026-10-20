@@ -397,10 +397,8 @@ test('stacks fold behind their base request and show their details only on hover
   const requests = [row('base', null), row('first', 'base'), row('ready', 'first', { next_step: 'merge' }), row('plain', null, { attention: invited })]
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { active: { ...empty, requests }, unclaimed: empty, set_aside: empty, done: empty })
   const ids = () => page.locator('.request-workspace-needs-you [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId))
-  const opacity = (locator, value) => locator.evaluate((node, value) => new Promise((resolve) => {
-    const check = () => (getComputedStyle(node).opacity === value ? resolve(true) : requestAnimationFrame(check))
-    check()
-  }), value)
+  const opacity = async (locator, value) => page.waitForFunction(([node, value]) =>
+    getComputedStyle(node).opacity === value, [await locator.elementHandle(), value])
   const baseRow = page.locator('[data-request-id="base"]')
   const toggle = baseRow.locator('.request-workspace-stack-toggle')
   await page.locator('[data-request-id="first"] .request-workspace-row-link').click()
@@ -451,5 +449,16 @@ test('stacks fold behind their base request and show their details only on hover
   assert.equal(await baseRow.isVisible(), true)
   assert.equal(await baseRow.locator('.request-workspace-row-avatar').evaluate((node) => getComputedStyle(node).outlineStyle), 'solid')
   assert.equal(await page.locator('.request-workspace-rail-more').textContent(), '+2')
+
+  await page.keyboard.press('[')
+  await baseRow.getByRole('button', { name: 'Expand 2 stacked requests' }).click()
+  await page.clock.install({ time: new Date('2026-10-20T12:00:00Z') })
+  await page.clock.pauseAt(new Date('2026-10-20T12:00:00Z'))
+  const nestedToggle = page.locator('[data-request-id="first"] .request-workspace-stack-toggle')
+  await toggle.evaluate((button) => button.click())
+  await nestedToggle.evaluate((button) => button.click())
+  await toggle.evaluate((button) => button.click())
+  await page.clock.runFor(100)
+  assert.deepEqual(await ids(), ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'base', 'first'])
   assert.deepEqual(errors, [])
 })

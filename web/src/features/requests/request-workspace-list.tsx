@@ -65,17 +65,26 @@ export function RequestWorkspaceList({
   onFoldStack,
   ...rowProps
 }: RequestWorkspaceListProps) {
-  const [folding, setFolding] = useState<{ parent: string; ids: ReadonlySet<string> } | null>(null)
+  const [folding, setFolding] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map())
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set())
-  const foldTimer = useRef<number>(undefined)
+  const foldTimers = useRef(new Map<string, number>())
   if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
+
+  function cancelFold(parent: string) {
+    window.clearTimeout(foldTimers.current.get(parent))
+    foldTimers.current.delete(parent)
+    setFolding((current) => {
+      const next = new Map(current)
+      next.delete(parent)
+      return next
+    })
+  }
 
   function toggleStack({ row, descendants }: VisibleStackedRequestRow<QueueRow>) {
     const parent = row.item.request.id
     const ids = new Set(descendants.map(({ item }) => item.request.id))
-    if (folding?.parent === parent) {
-      window.clearTimeout(foldTimer.current)
-      setFolding(null)
+    if (folding.has(parent)) {
+      cancelFold(parent)
       return
     }
     if (foldedStacks.has(parent)) {
@@ -83,13 +92,14 @@ export function RequestWorkspaceList({
       onFoldStack(parent, false)
       return
     }
-    setFolding({ parent, ids })
-    foldTimer.current = window.setTimeout(() => {
+    setFolding((current) => new Map(current).set(parent, ids))
+    foldTimers.current.set(parent, window.setTimeout(() => {
       onFoldStack(parent, true)
-      setFolding(null)
-    }, REQUEST_STACK_FOLD_MS)
+      cancelFold(parent)
+    }, REQUEST_STACK_FOLD_MS))
   }
 
+  const leavingIds = new Set([...folding.values()].flatMap((ids) => [...ids]))
   let revealOrder = 0
   const rows = foldStackedRequestRows(stackRequestRows(items), foldedStacks).map((entry) => {
     const { item, section } = entry.row
@@ -99,12 +109,12 @@ export function RequestWorkspaceList({
         folded={entry.folded.map(({ item }) => item)}
         item={item}
         key={id}
-        leaving={folding?.ids.has(id) ?? false}
+        leaving={leavingIds.has(id)}
         onToggleStack={() => toggleStack(entry)}
         placement={entry.placement}
         revealOrder={revealed.has(id) ? revealOrder++ : undefined}
         section={section}
-        stackOpen={!foldedStacks.has(id) && folding?.parent !== id}
+        stackOpen={!foldedStacks.has(id) && !folding.has(id)}
         stackSize={entry.descendants.length}
         {...rowProps}
       />
