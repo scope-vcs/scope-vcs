@@ -14,12 +14,16 @@ const GITHUB_LOGIN_MAX_CHARS: usize = 39;
 const BOT_SUFFIX: &str = "[bot]";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GitHubLogin(String);
+pub struct GitHubBotLogin(String);
 
-impl GitHubLogin {
+impl GitHubBotLogin {
     pub fn parse(value: &str) -> Result<Self, DomainError> {
         let login = value.trim();
-        let name = login.strip_suffix(BOT_SUFFIX).unwrap_or(login);
+        let Some(name) = login.strip_suffix(BOT_SUFFIX) else {
+            return Err(DomainError::invalid_input(format!(
+                "\"{login}\" is not a bot. Review bots are GitHub bot logins ending in [bot], like greptile-apps[bot]; people who can write to the repository are imported without being listed."
+            )));
+        };
         let valid = !name.is_empty()
             && name.chars().count() <= GITHUB_LOGIN_MAX_CHARS
             && !name.starts_with('-')
@@ -31,7 +35,7 @@ impl GitHubLogin {
             Ok(Self(login.to_string()))
         } else {
             Err(DomainError::invalid_input(format!(
-                "\"{login}\" is not a GitHub login. Use a name like octocat or greptile-apps[bot]."
+                "\"{login}\" is not a GitHub bot login. Use a name like greptile-apps[bot]."
             )))
         }
     }
@@ -47,7 +51,7 @@ impl GitHubLogin {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubReviewBot {
-    pub login: GitHubLogin,
+    pub login: GitHubBotLogin,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,7 +77,7 @@ pub fn set_github_review_bots(
     }
     let mut bots = Vec::<GitHubReviewBot>::with_capacity(inputs.len());
     for input in inputs {
-        let login = GitHubLogin::parse(&input.login)?;
+        let login = GitHubBotLogin::parse(&input.login)?;
         if bots.iter().any(|bot| bot.login.names(login.as_str())) {
             return Err(DomainError::invalid_input(format!(
                 "{} is listed twice.",
@@ -117,12 +121,12 @@ pub fn github_author_standing(
     review_bots: &[GitHubReviewBot],
     author: &GitHubAccount,
 ) -> GitHubAuthorStanding {
-    if review_bots.iter().any(|bot| bot.login.names(&author.login)) {
-        GitHubAuthorStanding::ListedReviewBot
-    } else if author.account_type == GitHubAccountType::User {
-        GitHubAuthorStanding::NeedsPermission
-    } else {
-        GitHubAuthorStanding::Unlisted
+    match author.account_type {
+        GitHubAccountType::Bot if review_bots.iter().any(|bot| bot.login.names(&author.login)) => {
+            GitHubAuthorStanding::ListedReviewBot
+        }
+        GitHubAccountType::User => GitHubAuthorStanding::NeedsPermission,
+        GitHubAccountType::Bot | GitHubAccountType::Organization => GitHubAuthorStanding::Unlisted,
     }
 }
 

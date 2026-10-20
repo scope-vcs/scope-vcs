@@ -48,14 +48,14 @@ fn account(login: &str, account_type: GitHubAccountType) -> GitHubAccount {
 }
 
 #[test]
-fn review_bots_are_github_logins_listed_once_by_maintainers() {
+fn review_bots_are_github_bot_logins_listed_once_by_maintainers() {
     let bots = set_github_review_bots(
         maintainer(),
         Some(&connection()),
         inputs(&[
             " greptile-apps[bot] ",
             "chatgpt-codex-connector[bot]",
-            "octo-cat",
+            "octo-reviewer[bot]",
         ]),
     )
     .unwrap();
@@ -66,7 +66,7 @@ fn review_bots_are_github_logins_listed_once_by_maintainers() {
         [
             "greptile-apps[bot]",
             "chatgpt-codex-connector[bot]",
-            "octo-cat"
+            "octo-reviewer[bot]"
         ]
     );
     assert!(
@@ -79,21 +79,25 @@ fn review_bots_are_github_logins_listed_once_by_maintainers() {
         "",
         "  ",
         "[bot]",
-        "-octo",
-        "octo-",
-        "octo cat",
-        "octo/cat",
+        "-octo[bot]",
+        "octo-[bot]",
+        "octo cat[bot]",
+        "octo/cat[bot]",
         "octo[bot]x",
     ] {
         invalid(&[login]);
     }
-    invalid(&[&"a".repeat(40)]);
+    invalid(&[&format!("{}[bot]", "a".repeat(40))]);
+    assert_eq!(
+        invalid(&["greptile-apps[bot]", "octocat"]),
+        "\"octocat\" is not a bot. Review bots are GitHub bot logins ending in [bot], like greptile-apps[bot]; people who can write to the repository are imported without being listed."
+    );
     assert_eq!(
         invalid(&["greptile-apps[bot]", "Greptile-Apps[bot]"]),
         "Greptile-Apps[bot] is listed twice."
     );
     let many = (0..=GITHUB_REVIEW_BOTS_LIMIT)
-        .map(|index| format!("bot-{index}"))
+        .map(|index| format!("bot-{index}[bot]"))
         .collect::<Vec<_>>();
     invalid(&many.iter().map(String::as_str).collect::<Vec<_>>());
 
@@ -136,6 +140,13 @@ fn listed_bots_and_users_who_can_write_are_imported() {
         &unlisted_bot,
         Some(GitHubRepositoryPermission::Admin)
     ));
+
+    let impostor = github_author_standing(
+        &bots,
+        &account("greptile-apps[bot]", GitHubAccountType::User),
+    );
+    assert_eq!(impostor, GitHubAuthorStanding::NeedsPermission);
+    assert!(!may_import_github_author(&impostor, None));
 
     let user = github_author_standing(&bots, &account("octocat", GitHubAccountType::User));
     assert_eq!(user, GitHubAuthorStanding::NeedsPermission);

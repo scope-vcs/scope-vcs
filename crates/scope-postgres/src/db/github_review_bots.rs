@@ -2,7 +2,7 @@ use super::{RepositoryStore, github_connections::repository_github_connection};
 use crate::error::PostgresError;
 use scope_domain::{
     github_review_bots::{
-        GitHubLogin, GitHubReviewBot, GitHubReviewBotInput, set_github_review_bots,
+        GitHubBotLogin, GitHubReviewBot, GitHubReviewBotInput, set_github_review_bots,
     },
     repository::RepositoryIncarnation,
 };
@@ -79,7 +79,7 @@ async fn review_bots<C: ConnectionTrait>(
             .try_get::<String>("", "login")
             .map_err(PostgresError::internal)?;
         Ok(GitHubReviewBot {
-            login: GitHubLogin::parse(&login).map_err(PostgresError::internal)?,
+            login: GitHubBotLogin::parse(&login).map_err(PostgresError::internal)?,
         })
     })
     .collect()

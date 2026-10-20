@@ -130,6 +130,7 @@ impl MigrationTrait for Migration {
                         AND length(btrim(login)) > 0
                         AND login = btrim(login)
                         AND char_length(login) <= 44
+                        AND right(login, 5) = '[bot]'
                     )
                 );
 

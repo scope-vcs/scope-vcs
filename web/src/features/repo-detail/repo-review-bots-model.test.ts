@@ -4,8 +4,8 @@ import { reviewBotLogins, reviewBotsText, sameReviewBots } from './repo-review-b
 
 test('review bot logins are separated by commas, spaces, or lines', () => {
   assert.deepEqual(
-    reviewBotLogins(' greptile-apps[bot],chatgpt-codex-connector[bot]\n octocat ,, '),
-    ['greptile-apps[bot]', 'chatgpt-codex-connector[bot]', 'octocat'],
+    reviewBotLogins(' greptile-apps[bot],chatgpt-codex-connector[bot]\n octo-reviewer[bot] ,, '),
+    ['greptile-apps[bot]', 'chatgpt-codex-connector[bot]', 'octo-reviewer[bot]'],
   )
   assert.deepEqual(reviewBotLogins('  '), [])
 })

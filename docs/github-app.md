@@ -340,8 +340,11 @@ one after 30 seconds, 2, 10, and 30 minutes, then gives up.
 Scope imports a review, review comment, reply, or thread resolution only
 from a listed review bot or from a GitHub user who can write to the
 repository; for a resolution the author is the account that resolved it.
-Maintainers list review bots by GitHub login (for example
-`greptile-apps[bot]` or `chatgpt-codex-connector[bot]`, at most 20) under
+Maintainers list review bots by their GitHub bot login, which always ends in
+`[bot]` (for example `greptile-apps[bot]` or `chatgpt-codex-connector[bot]`,
+at most 20); a person's login is refused, since people come in through the
+write check, and a listed login matches only a GitHub bot account. They are
+set under
 CI in repository settings, or with
 `PUT /v1/repos/{owner}/{repo}/github/review-bots`. The list belongs to one
 live link: disconnecting, losing the installation or repository on GitHub,

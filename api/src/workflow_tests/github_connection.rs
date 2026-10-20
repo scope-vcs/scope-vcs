@@ -555,6 +555,17 @@ async fn maintainers_list_review_bots_until_the_repository_disconnects() {
         );
     }
     assert_eq!(connection(&state).await["review_bots"], listed);
+    let person = set(bearer_header(), &["greptile-apps[bot]", "octocat"]).await;
+    assert_eq!(person.status(), StatusCode::BAD_REQUEST);
+    let person = response_json(person).await;
+    assert!(
+        person["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("\"octocat\" is not a bot."),
+        "{person}"
+    );
+    assert_eq!(connection(&state).await["review_bots"], listed);
 
     fake.installation_states
         .lock()
