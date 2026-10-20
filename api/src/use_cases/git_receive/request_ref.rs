@@ -26,7 +26,7 @@ use scope_domain::{
     views::{ViewId, Views},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_postgres::db::GitPushContext;
+use scope_postgres::db::{GitPushContext, PushedRevisionObjects};
 use scope_product_analytics::ProductEvent;
 use std::{
     collections::BTreeSet,
@@ -48,6 +48,7 @@ pub(crate) struct RequestStagingRepo {
     pub(crate) path: PathBuf,
     pub(crate) seed: GitRepoHandle,
     pub(crate) advertised_refs: Vec<(String, String)>,
+    pub(crate) object_generation: String,
 }
 
 pub(super) async fn actor_has_open_editable_request(
@@ -191,6 +192,7 @@ pub(crate) async fn prepare_request_staging_repo(
         path: staging_repo,
         seed: seed_repo,
         advertised_refs,
+        object_generation: context.repo_config.object_generation(),
     })
 }
 
@@ -335,18 +337,27 @@ pub(super) async fn git_push_context(
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))
 }
 
+pub(super) struct RequestRevisionStaging<'a> {
+    pub(super) repo: &'a Path,
+    pub(super) object_generation: String,
+}
+
 #[tracing::instrument(skip_all, name = "use_case.git_receive.request_revision")]
 pub(super) async fn persist_request_ref_revision(
     state: &AppState,
     owner: &str,
     repo_name: &str,
     access: &super::ReceivePackAccess,
-    staging_repo: &Path,
+    staging: RequestRevisionStaging<'_>,
     update: RequestRefUpdate,
     base_publication: Option<
         crate::use_cases::request_base_publication::RequestBasePublicationHeaders,
     >,
 ) -> Result<(), ApiError> {
+    let RequestRevisionStaging {
+        repo: staging_repo,
+        object_generation,
+    } = staging;
     let expected_incarnation = access.incarnation();
     let actor_user_id = access.author_id();
     let address_view = access.request_ref_view();
@@ -440,10 +451,13 @@ pub(super) async fn persist_request_ref_revision(
             expected_base_version,
             parent_facts,
             child_facts,
-            persisted
-                .pool_pack
-                .as_ref()
-                .map(|pool_pack| pool_pack.pack.clone()),
+            PushedRevisionObjects {
+                object_generation: object_generation.clone(),
+                pool_pack: persisted
+                    .pool_pack
+                    .as_ref()
+                    .map(|pool_pack| pool_pack.pack.clone()),
+            },
         )
         .await;
     match mutation {
@@ -464,7 +478,7 @@ pub(super) async fn persist_request_ref_revision(
                 retain_staged_pool_pack(
                     state,
                     &incarnation,
-                    &context.repo_config,
+                    (&context.repo_config, &object_generation),
                     actor_user_id,
                     &mutation.request,
                     pool_pack,

@@ -43,6 +43,12 @@ pub struct RepoConfig {
 }
 
 impl RepoConfig {
+    pub fn object_generation(&self) -> String {
+        let visibility = serde_json::to_vec(&(&self.views, &self.history))
+            .expect("repository views and history serialize to JSON");
+        hex::encode(&Sha256::digest(visibility)[..16])
+    }
+
     pub fn with_default_view(default: ViewId) -> Self {
         Self {
             kind: REPO_CONFIG_KIND.to_string(),

@@ -36,7 +36,12 @@ pub(crate) async fn attach_request_refs_from_pool(
         let actor_user_id = actor_user_id.to_string();
         let staging_repo = staging_repo.to_path_buf();
         crate::git::blocking::run(move || {
-            let repos = request_object_repos(&state, &incarnation, &config, &actor_user_id)?;
+            let repos = request_object_repos(
+                &state,
+                &incarnation,
+                &config.object_generation(),
+                &actor_user_id,
+            )?;
             for repo in [&repos.shared, &repos.authored] {
                 add_receive_pack_alternate(&staging_repo, &repo.join("objects"))?;
             }

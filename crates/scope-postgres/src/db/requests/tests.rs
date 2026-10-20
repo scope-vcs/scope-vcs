@@ -561,7 +561,17 @@ async fn close_draft_request_deletes_request_and_events() {
                 .base_version,
             None,
             Vec::new(),
-            Some(pool_pack.clone()),
+            super::PushedRevisionObjects {
+                object_generation: store
+                    .repositories()
+                    .repository_for_tests("owner/repo")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .repo_config
+                    .object_generation(),
+                pool_pack: Some(pool_pack.clone()),
+            },
         )
         .await
         .unwrap();

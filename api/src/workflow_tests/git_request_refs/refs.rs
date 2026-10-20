@@ -818,7 +818,8 @@ async fn restricted_view_push_staging_borrows_no_objects() {
         &find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
             .unwrap()
-            .repo_config,
+            .repo_config
+            .object_generation(),
         &public_user_id(),
     )
     .unwrap();

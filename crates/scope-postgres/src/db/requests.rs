@@ -19,7 +19,7 @@ use super::{
         requests_by_repo_id, save_request_row,
     },
 };
-use sea_orm::TransactionTrait;
+use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
@@ -198,7 +198,7 @@ impl RequestStore {
         expected_base_version: u64,
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
-        pool_pack: Option<scope_domain::repository::git::GitPoolPack>,
+        objects: PushedRevisionObjects,
     ) -> Result<RequestRevisionMutation, PostgresError> {
         self.publish_request_revision(
             input,
@@ -206,7 +206,7 @@ impl RequestStore {
             facts,
             children,
             None,
-            pool_pack,
+            Some(objects),
         )
         .await
     }
@@ -236,7 +236,7 @@ impl RequestStore {
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
         context: Option<super::RequestRevisionContextPublication>,
-        pool_pack: Option<scope_domain::repository::git::GitPoolPack>,
+        pushed: Option<PushedRevisionObjects>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
         let observed = self
             .request_by_id(&input.request_id)
@@ -249,6 +249,9 @@ impl RequestStore {
             .filter(|request| request.repo_id == observed.repo_id)
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
         let repo = repo_by_id(&tx, &request.repo_id, &input.actor_user_id).await?;
+        if let Some(pushed) = &pushed {
+            ensure_object_generation(&tx, &request.repo_id, &pushed.object_generation).await?;
+        }
         super::request_stack::lock_graph(&tx, &request, input.new_base.as_ref()).await?;
         let request = request_by_id(&tx, &input.request_id)
             .await?
@@ -318,7 +321,7 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
-        if let Some(pack) = &pool_pack {
+        if let Some(pack) = pushed.as_ref().and_then(|pushed| pushed.pool_pack.as_ref()) {
             if pack.request_id != mutation.request.id || pack.head_oid != mutation.request.head_oid
             {
                 return Err(PostgresError::internal_message(
@@ -471,6 +474,35 @@ impl RequestStore {
         }
         tx.commit().await?;
         Ok(mutation)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PushedRevisionObjects {
+    pub object_generation: String,
+    pub pool_pack: Option<scope_domain::repository::git::GitPoolPack>,
+}
+
+async fn ensure_object_generation<C: sea_orm::ConnectionTrait>(
+    tx: &C,
+    repo_id: &str,
+    expected: &str,
+) -> Result<(), PostgresError> {
+    let config = super::entities::repository::Entity::find_by_id(repo_id)
+        .select_only()
+        .column(super::entities::repository::Column::RepoConfig)
+        .into_tuple::<serde_json::Value>()
+        .one(tx)
+        .await?
+        .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+    let config: scope_domain::repo_config::RepoConfig =
+        serde_json::from_value(config).map_err(PostgresError::internal)?;
+    if config.object_generation() == expected {
+        Ok(())
+    } else {
+        Err(PostgresError::conflict(
+            "repository visibility changed during the push; retry",
+        ))
     }
 }
 

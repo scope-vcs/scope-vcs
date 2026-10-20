@@ -91,6 +91,7 @@ pub use request_navigation::RequestChildrenPage;
 mod request_state;
 mod request_submission_transactions;
 mod requests;
+pub use requests::PushedRevisionObjects;
 mod run_admission;
 mod run_attempt_mutations;
 mod run_attempt_persistence;

@@ -32,14 +32,9 @@ pub(crate) struct RequestObjectRepos {
 pub(crate) fn request_object_repos(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    config: &RepoConfig,
+    generation: &str,
     author_id: &str,
 ) -> Result<RequestObjectRepos, ApiError> {
-    let generation = hex::encode(
-        &Sha256::digest(
-            serde_json::to_vec(&(&config.views, &config.history)).map_err(ApiError::internal)?,
-        )[..16],
-    );
     let root = request_objects_root(state, incarnation);
     let canonical = state
         .repository_engine
@@ -103,16 +98,22 @@ pub(crate) async fn sync_request_pool(
 pub(crate) async fn retain_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    config: &RepoConfig,
+    (config, generation): (&RepoConfig, &str),
     pusher_id: &str,
     request: &Request,
     pool_pack: &StagedPoolPack,
 ) {
     let staged = &pool_pack.staged.staged_segment;
     if (shares_objects(request, config) || request.is_author(pusher_id))
-        && let Err(error) =
-            install_staged_pool_pack(state, incarnation, config, pusher_id, request, pool_pack)
-                .await
+        && let Err(error) = install_staged_pool_pack(
+            state,
+            incarnation,
+            (config, generation),
+            pusher_id,
+            request,
+            pool_pack,
+        )
+        .await
     {
         tracing::warn!(
             repository_id = incarnation.repository_id(),
@@ -189,7 +190,7 @@ async fn install_registered_pool_packs(
 async fn install_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    config: &RepoConfig,
+    (config, generation): (&RepoConfig, &str),
     pusher_id: &str,
     request: &Request,
     pool_pack: &StagedPoolPack,
@@ -198,11 +199,11 @@ async fn install_staged_pool_pack(
     let (objects_repo, installable) = {
         let state = state.clone();
         let incarnation = incarnation.clone();
-        let config = config.clone();
+        let generation = generation.to_string();
         let pusher_id = pusher_id.to_string();
         let pack = pool_pack.pack.clone();
         crate::git::blocking::run(move || {
-            let repos = request_object_repos(&state, &incarnation, &config, &pusher_id)?;
+            let repos = request_object_repos(&state, &incarnation, &generation, &pusher_id)?;
             let objects_repo = if shared { repos.shared } else { repos.authored };
             let (installable, _) = installable_packs(&objects_repo, vec![pack])?;
             Ok((objects_repo, !installable.is_empty()))

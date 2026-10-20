@@ -126,6 +126,20 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
         .trim(),
         submitted_head
     );
+    assert!(
+        replica
+            .repository_engine
+            .delete_repository_cache(&test_repo_incarnation())
+            .unwrap()
+    );
+    let rematerialized = prepare_owner_push(&replica, request_ref).await;
+    run_git(
+        Some(&rematerialized),
+        &["rev-list", "--objects", &git_head_oid(&source)],
+        "read request history after canonical cache eviction",
+    )
+    .unwrap();
+    fs::remove_dir_all(rematerialized).unwrap();
 }
 
 async fn object_repos(state: &AppState, author_id: &str) -> RequestObjectRepos {
@@ -135,7 +149,8 @@ async fn object_repos(state: &AppState, author_id: &str) -> RequestObjectRepos {
         &find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
             .unwrap()
-            .repo_config,
+            .repo_config
+            .object_generation(),
         author_id,
     )
     .unwrap()
@@ -237,9 +252,23 @@ async fn a_draft_revision_is_pooled_only_for_its_author() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_request_whose_view_was_removed_cannot_be_grafted_from_the_pool() {
-    let (state, _main_source) = test_state_with_mergeable_request("removed-view-pool").await;
+    assert_removed_view_pool_isolation(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_push_prepared_before_view_removal_cannot_seed_the_new_generation() {
+    assert_removed_view_pool_isolation(true).await;
+}
+
+async fn assert_removed_view_pool_isolation(prepare_before_removal: bool) {
+    let label = if prepare_before_removal {
+        "removed-view-pool-delayed"
+    } else {
+        "removed-view-pool"
+    };
+    let (state, _main_source) = test_state_with_mergeable_request(label).await;
     let (source, public_remote, _server, _) =
-        request_checkout(&state, "removed-view-pool-checkout").await;
+        request_checkout(&state, &format!("{label}-checkout")).await;
     submit_request(
         router(state.clone()),
         REQUEST_ID,
@@ -263,6 +292,19 @@ async fn a_request_whose_view_was_removed_cannot_be_grafted_from_the_pool() {
     fs::remove_dir_all(prepare_owner_push(&replica, "refs/heads/other").await).unwrap();
     let private_remote = public_remote.replace("/git/public/", "/git/private/");
     configure_bearer_header(&source, &private_remote, &bearer_header());
+    if prepare_before_removal {
+        configure_bearer_header(&_main_source, &private_remote, &bearer_header());
+        push_change(
+            &_main_source,
+            &private_remote,
+            "refs/heads/other",
+            "other.txt",
+            "authorized request\n",
+            "authorized request revision",
+        )
+        .unwrap();
+        submit_request(router(state.clone()), &other_id, &bearer_header()).await;
+    }
     push_change(
         &source,
         &private_remote,
@@ -295,6 +337,25 @@ async fn a_request_whose_view_was_removed_cannot_be_grafted_from_the_pool() {
         })
         .await
         .unwrap();
+    let preparation = if prepare_before_removal {
+        Some(
+            git_receive_use_case::prepare(
+                &replica,
+                TEST_REPO_OWNER,
+                TEST_REPO_NAME,
+                ReceivePackAccess::RequestContributor {
+                    author_id: test_owner_id(),
+                    incarnation: test_repo_incarnation(),
+                    view: ViewId::private(),
+                },
+                RequestRefSeeding::Pushed(&["refs/heads/other".to_string()]),
+            )
+            .await
+            .unwrap(),
+        )
+    } else {
+        None
+    };
     for remove_public in [false, true] {
         let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
             .await
@@ -372,6 +433,53 @@ async fn a_request_whose_view_was_removed_cannot_be_grafted_from_the_pool() {
         )
         .unwrap(),
     );
+    if let Some(preparation) = preparation {
+        let staging = preparation.staging_repo.clone();
+        let mut receive = std::process::Command::new("git");
+        receive
+            .args(["receive-pack", "--stateless-rpc"])
+            .arg(&staging);
+        let received = crate::git::command::git_command_output_with_timeout(
+            &mut receive,
+            Some(payload),
+            std::time::Duration::from_secs(5),
+        )
+        .unwrap();
+        assert!(String::from_utf8_lossy(&received).contains("ok refs/heads/other"));
+        let completion = git_receive_use_case::complete(
+            &replica,
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            &staging,
+            preparation,
+            std::time::Duration::ZERO,
+        )
+        .await;
+        let generation = find_repo(&replica, TEST_REPO_OWNER, TEST_REPO_NAME)
+            .await
+            .unwrap()
+            .repo_config
+            .object_generation();
+        let current = request_object_repos(
+            &replica,
+            &test_repo_incarnation(),
+            &generation,
+            &test_owner_id(),
+        )
+        .unwrap();
+        let retained = has_commit(&current.shared, &hidden_head)
+            || has_commit(&current.authored, &hidden_head);
+        let fresh = replica.replica_for_tests();
+        let restored_staging = prepare_owner_push(&fresh, "refs/heads/other").await;
+        let restored = has_commit(&restored_staging, &hidden_head);
+        fs::remove_dir_all(restored_staging).unwrap();
+        fs::remove_dir_all(staging).unwrap();
+        assert!(
+            completion.is_err() && !retained && !restored,
+            "completion: {completion:?}; unreadable parent retained in new generation: {retained}; unreadable parent restored on fresh replica: {restored}"
+        );
+        return;
+    }
     let response = router(replica.clone())
         .oneshot(
             axum::http::Request::builder()
