@@ -652,21 +652,25 @@ export type RequestDiscussionStatus = "Open" | "Resolved";
 
 export type RequestDiscussionReplyReferenceResponse = { id: string, position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, };
 
 export type RequestDiscussionReplyResponse = { id: string, discussion_id: string, position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, reply_to: RequestDiscussionReplyReferenceResponse | null, created_at_unix: number, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, reply_to: RequestDiscussionReplyReferenceResponse | null, created_at_unix: number, };
 
 export type RequestDiscussionSummaryResponse = { id: string, request_id: string, client_discussion_id: string, opened_position: number, last_activity_position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null, resolved_by: RequestActorSummaryResponse | null, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null,
+/**
+ * Null while open, or once the resolving Scope account is deleted.
+ */
+resolved_by: RequestDiscussionResolverResponse | null, };
 
 export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null,
 /**
@@ -693,6 +697,14 @@ export type RequestDiffSide = "old" | "new";
 export type RequestDiscussionLineRange = { side: RequestDiffSide, start_line: number, end_line: number, };
 
 export type RequestDiscussionLatestPosition = { "kind": "mapped", revision_id: string, start_line: number, end_line: number, } | { "kind": "outdated", revision_id: string, };
+
+export type GitHubAccountType = "user" | "bot" | "organization";
+
+export type GitHubAccountResponse = { github_user_id: number, login: string, account_type: GitHubAccountType, avatar_url: string | null, };
+
+export type RequestDiscussionAuthorResponse = { "kind": "user", id: string, handle: string, } | { "kind": "github", account: GitHubAccountResponse, source_url: string, };
+
+export type RequestDiscussionResolverResponse = { "kind": "user", id: string, handle: string, } | { "kind": "github", account: GitHubAccountResponse, };
 
 export type RequestRevisionCommitResponse = { oid: string, parent_oids: Array<string>, author: string | null, authored_at_unix: number, message: string, change_count: number, files: Array<CommitFileResponse>, files_truncated: boolean, };
 

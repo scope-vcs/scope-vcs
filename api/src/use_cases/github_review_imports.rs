@@ -1,0 +1,375 @@
+use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
+use crate::{
+    error::ApiError,
+    github::{GitHubPullReview, GitHubPullReviewComment, webhook::GitHubReviewDelivery},
+    persistence::unix_now,
+    state::AppState,
+    use_cases::request_discussion_mutation::first_valid_anchor,
+};
+use scope_domain::{
+    github_account::GitHubAccount,
+    github_connection::GitHubConnection,
+    repository::access::{RepositoryAccess, RepositoryAccessContext},
+    requests::{
+        GitHubReviewImportSubject, Request, RequestDiscussion, RequestRevision,
+        github_comment_anchors, github_comment_body, github_retry_at, github_review_anchor,
+        github_review_client_id, github_review_comment_client_id,
+    },
+};
+use scope_postgres::db::{
+    GitHubImportedComment, GitHubReviewImportJob, GitHubThreadTransition,
+    ImportGitHubReviewCommand, TransitionGitHubDiscussionCommand,
+};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
+
+const POLL_INTERVAL: Duration = Duration::from_secs(30);
+const BATCH_SIZE: u64 = 10;
+const LEASE_SECS: u64 = 5 * 60;
+
+pub(crate) async fn queue_github_review_delivery(
+    state: &AppState,
+    delivery: GitHubReviewDelivery,
+    now_unix: u64,
+) -> Result<(), ApiError> {
+    let Some(connection) = state
+        .metadata
+        .repositories()
+        .github_connection_for_github_repository(delivery.github_repository_id)
+        .await?
+    else {
+        return Ok(());
+    };
+    state
+        .metadata
+        .requests()
+        .queue_github_review_import(
+            &GitHubReviewImportJob {
+                request_id: delivery.request_id,
+                repo_id: connection.repository_id,
+                github_repository_id: delivery.github_repository_id,
+                pull_number: delivery.pull_number,
+                subject: delivery.subject,
+                attempts: 0,
+            },
+            &delivery.accounts,
+            now_unix,
+        )
+        .await?;
+    state.wakeups.github_review_imports.notify_one();
+    Ok(())
+}
+
+pub(crate) async fn import_due_github_reviews(
+    state: &AppState,
+    now_unix: u64,
+) -> Result<usize, ApiError> {
+    let requests = state.metadata.requests();
+    let jobs = requests
+        .claim_due_github_review_imports(now_unix, now_unix.saturating_add(LEASE_SECS), BATCH_SIZE)
+        .await?;
+    let mut imported = 0;
+    for job in jobs {
+        let retry_at = match run_job(state, &job).await {
+            Ok(()) => {
+                imported += 1;
+                None
+            }
+            Err(error) => {
+                let retry_at = github_retry_at(job.attempts, now_unix);
+                tracing::warn!(
+                    request_id = job.request_id,
+                    attempts = job.attempts,
+                    gives_up = retry_at.is_none(),
+                    error = %error.operator_diagnostic(),
+                    "importing a GitHub review failed"
+                );
+                retry_at
+            }
+        };
+        requests.finish_github_review_import(&job, retry_at).await?;
+    }
+    Ok(imported)
+}
+
+async fn run_job(state: &AppState, job: &GitHubReviewImportJob) -> Result<(), ApiError> {
+    let Some(connection) = state
+        .metadata
+        .repositories()
+        .github_connection(&job.repo_id)
+        .await?
+        .filter(|connection| connection.is_connected_to(job.github_repository_id))
+    else {
+        return Ok(());
+    };
+    match job.subject {
+        GitHubReviewImportSubject::Review { review_id } => {
+            let app = state.github_app()?;
+            let Some(review) = app
+                .pull_request_review(
+                    connection.installation_id,
+                    &connection.github_full_name,
+                    job.pull_number,
+                    review_id,
+                )
+                .await?
+            else {
+                return Ok(());
+            };
+            let comments = app
+                .pull_request_review_comments(
+                    connection.installation_id,
+                    &connection.github_full_name,
+                    job.pull_number,
+                    review_id,
+                )
+                .await?
+                .unwrap_or_default();
+            import_comments(state, &connection, job, Some(review), comments).await
+        }
+        GitHubReviewImportSubject::Reply { comment_id } => {
+            let Some(comment) = state
+                .github_app()?
+                .pull_request_review_comment(
+                    connection.installation_id,
+                    &connection.github_full_name,
+                    comment_id,
+                )
+                .await?
+            else {
+                return Ok(());
+            };
+            import_comments(state, &connection, job, None, vec![comment]).await
+        }
+        GitHubReviewImportSubject::Thread {
+            root_comment_id,
+            status,
+            github_account_id,
+        } => {
+            let transition = state
+                .metadata
+                .requests()
+                .transition_github_discussion(TransitionGitHubDiscussionCommand {
+                    request_id: job.request_id.clone(),
+                    client_discussion_id: github_review_comment_client_id(root_comment_id),
+                    github_account_id,
+                    status,
+                    now_unix: unix_now()?,
+                })
+                .await?;
+            match transition {
+                GitHubThreadTransition::Applied(import) => {
+                    publish(state, &import.request, &import.discussions).await;
+                    Ok(())
+                }
+                GitHubThreadTransition::Unchanged | GitHubThreadTransition::Ignored => Ok(()),
+                GitHubThreadTransition::MissingDiscussion => Err(ApiError::conflict(
+                    "the GitHub thread's root comment has not been imported yet",
+                )),
+            }
+        }
+    }
+}
+
+async fn import_comments(
+    state: &AppState,
+    connection: &GitHubConnection,
+    job: &GitHubReviewImportJob,
+    review: Option<GitHubPullReview>,
+    mut comments: Vec<GitHubPullReviewComment>,
+) -> Result<(), ApiError> {
+    let requests = state.metadata.requests();
+    let Some(request) = requests
+        .request_by_id(&job.request_id)
+        .await?
+        .filter(|request| request.repo_id == job.repo_id)
+    else {
+        return Ok(());
+    };
+    let known = comments
+        .iter()
+        .map(|comment| comment.id)
+        .collect::<BTreeSet<_>>();
+    let missing_roots = comments
+        .iter()
+        .filter_map(|comment| comment.in_reply_to_id)
+        .filter(|root_id| !known.contains(root_id))
+        .collect::<BTreeSet<_>>();
+    for root_id in missing_roots {
+        if requests
+            .request_has_github_discussion(&request.id, &github_review_comment_client_id(root_id))
+            .await?
+        {
+            continue;
+        }
+        if let Some(root) = state
+            .github_app()?
+            .pull_request_review_comment(
+                connection.installation_id,
+                &connection.github_full_name,
+                root_id,
+            )
+            .await?
+        {
+            comments.push(root);
+        }
+    }
+    comments.sort_by_key(|comment| (comment.in_reply_to_id.is_some(), comment.id));
+    let revisions = revisions_for_commits(
+        state,
+        &request,
+        review
+            .iter()
+            .filter_map(|review| review.commit_oid.as_deref())
+            .chain(comments.iter().flat_map(|comment| {
+                [
+                    comment.position.commit_oid.as_str(),
+                    comment.position.original_commit_oid.as_str(),
+                ]
+            })),
+    )
+    .await?;
+    let repo = full_view_context(state, &request.repo_id).await?;
+    let now_unix = unix_now()?;
+    let mut accounts = BTreeMap::<u64, GitHubAccount>::new();
+    let mut imported = Vec::new();
+    if let Some(review) = review
+        && let Some(body) = github_comment_body(&review.body)
+    {
+        accounts.insert(review.author.id, review.author.clone());
+        imported.push(GitHubImportedComment {
+            client_id: github_review_client_id(review.id),
+            reply_to_client_id: None,
+            github_account_id: review.author.id,
+            source_url: review.source_url,
+            body_markdown: body,
+            anchor: github_review_anchor(review.commit_oid.as_deref(), &revisions),
+            created_at_unix: review.submitted_at_unix.unwrap_or(now_unix),
+        });
+    }
+    for comment in comments {
+        let Some(body) = github_comment_body(&comment.body) else {
+            continue;
+        };
+        let anchor = match comment.in_reply_to_id {
+            Some(root_id) if known.contains(&root_id) => None,
+            _ => {
+                first_valid_anchor(
+                    state,
+                    &repo,
+                    &request,
+                    github_comment_anchors(&comment.position, &revisions),
+                )
+                .await?
+            }
+        };
+        accounts.insert(comment.author.id, comment.author.clone());
+        imported.push(GitHubImportedComment {
+            client_id: github_review_comment_client_id(comment.id),
+            reply_to_client_id: comment.in_reply_to_id.map(github_review_comment_client_id),
+            github_account_id: comment.author.id,
+            source_url: comment.source_url,
+            body_markdown: body,
+            anchor,
+            created_at_unix: comment.created_at_unix.unwrap_or(now_unix),
+        });
+    }
+    if imported.is_empty() {
+        return Ok(());
+    }
+    let Some(import) = requests
+        .import_github_review(ImportGitHubReviewCommand {
+            request_id: request.id.clone(),
+            accounts: accounts.into_values().collect(),
+            comments: imported,
+            now_unix,
+        })
+        .await?
+    else {
+        return Ok(());
+    };
+    publish(state, &import.request, &import.discussions).await;
+    Ok(())
+}
+
+async fn revisions_for_commits<'a>(
+    state: &AppState,
+    request: &Request,
+    commits: impl Iterator<Item = &'a str>,
+) -> Result<Vec<RequestRevision>, ApiError> {
+    let mut revisions = Vec::new();
+    for commit_oid in commits.collect::<BTreeSet<_>>() {
+        if let Some(revision) = state
+            .metadata
+            .requests()
+            .request_revision_with_head(&request.id, commit_oid)
+            .await?
+        {
+            revisions.push(revision);
+        }
+    }
+    Ok(revisions)
+}
+
+async fn full_view_context(
+    state: &AppState,
+    repo_id: &str,
+) -> Result<RepositoryAccessContext, ApiError> {
+    let repositories = state.metadata.repositories();
+    let record = repositories
+        .repository_record(repo_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("repo not found"))?;
+    let views = repositories
+        .repository_views(&record.incarnation(), record.content_version)
+        .await?;
+    Ok(RepositoryAccessContext {
+        record,
+        access: RepositoryAccess::full_view_reader(&views),
+        views,
+    })
+}
+
+async fn publish(state: &AppState, request: &Request, discussions: &[RequestDiscussion]) {
+    let incarnation = match state.repository_incarnation(&request.repo_id).await {
+        Ok(Some(incarnation)) => incarnation,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(
+                request_id = request.id,
+                error = %error.operator_diagnostic(),
+                "could not announce imported GitHub review comments"
+            );
+            return;
+        }
+    };
+    for discussion in discussions {
+        state
+            .publish_request_timeline_change(
+                &incarnation,
+                request.id.clone(),
+                discussion.id.clone(),
+                discussion.last_activity_position,
+                request.view.clone(),
+            )
+            .await;
+    }
+}
+
+impl BackgroundWork {
+    pub(crate) fn start_github_review_imports(&mut self) {
+        self.spawn(
+            BackgroundLoop {
+                name: "GitHub review import pass",
+                cadence: Cadence::AfterPass {
+                    delay: POLL_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.github_review_imports),
+                },
+                readiness: Readiness::SchemaRequired,
+            },
+            |state| async move { import_due_github_reviews(&state, unix_now()?).await },
+        );
+    }
+}

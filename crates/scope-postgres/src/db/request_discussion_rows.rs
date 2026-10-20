@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
     scope_domain::requests::{
-        RequestDiscussion, RequestDiscussionReadState, RequestDiscussionReply,
+        RequestDiscussion, RequestDiscussionAuthor, RequestDiscussionReadState,
+        RequestDiscussionReply,
     },
 };
 
@@ -22,7 +23,7 @@ pub struct RequestDiscussionReplyReadModel {
 pub struct RequestDiscussionReplyReferenceReadModel {
     pub id: String,
     pub position: u64,
-    pub author_user_id: Option<String>,
+    pub author: RequestDiscussionAuthor,
     pub body_markdown: String,
 }
 
@@ -60,6 +61,24 @@ where
     entities::request_discussion::Entity::find()
         .filter(entities::request_discussion::Column::RequestId.eq(request_id))
         .filter(entities::request_discussion::Column::AuthorUserId.eq(author_user_id))
+        .filter(entities::request_discussion::Column::ClientDiscussionId.eq(client_discussion_id))
+        .one(conn)
+        .await?
+        .map(entities::request_discussion::Model::try_into_domain)
+        .transpose()
+}
+
+pub async fn github_discussion_by_client_id<C>(
+    conn: &C,
+    request_id: &str,
+    client_discussion_id: &str,
+) -> Result<Option<RequestDiscussion>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    entities::request_discussion::Entity::find()
+        .filter(entities::request_discussion::Column::RequestId.eq(request_id))
+        .filter(entities::request_discussion::Column::AuthorGithubUserId.is_not_null())
         .filter(entities::request_discussion::Column::ClientDiscussionId.eq(client_discussion_id))
         .one(conn)
         .await?
@@ -176,10 +195,13 @@ where
             SELECT replies.id, replies.discussion_id, replies.position,
                    replies.author_user_id, replies.body_markdown,
                    replies.reply_to_reply_id, replies.client_reply_id,
-                   replies.created_at_unix,
+                   replies.created_at_unix, replies.author_github_user_id,
+                   replies.source_url,
                    target.id AS target_id,
                    target.position AS target_position,
                    target.author_user_id AS target_author_user_id,
+                   target.author_github_user_id AS target_author_github_user_id,
+                   target.source_url AS target_source_url,
                    target.body_markdown AS target_body_markdown
             FROM scope_request_discussion_replies replies
             LEFT JOIN scope_request_discussion_replies target
@@ -236,8 +258,11 @@ where
          SELECT replies.id, replies.discussion_id, replies.position, \
            replies.author_user_id, replies.body_markdown, replies.reply_to_reply_id, \
            replies.client_reply_id, replies.created_at_unix, replies.reply_count, \
+           replies.author_github_user_id, replies.source_url, \
            target.id AS target_id, target.position AS target_position, \
            target.author_user_id AS target_author_user_id, \
+           target.author_github_user_id AS target_author_github_user_id, \
+           target.source_url AS target_source_url, \
            target.body_markdown AS target_body_markdown \
          FROM ranked replies \
          LEFT JOIN scope_request_discussion_replies target \
@@ -281,7 +306,11 @@ fn reply_read_model(row: &QueryResult) -> Result<RequestDiscussionReplyReadModel
                     .try_get::<i64>("", "target_position")?
                     .try_into()
                     .map_err(PostgresError::internal)?,
-                author_user_id: row.try_get("", "target_author_user_id")?,
+                author: entities::discussion_author(entities::AuthorColumns {
+                    user_id: row.try_get("", "target_author_user_id")?,
+                    github_user_id: row.try_get("", "target_author_github_user_id")?,
+                    source_url: row.try_get("", "target_source_url")?,
+                })?,
                 body_markdown: row.try_get("", "target_body_markdown")?,
             })
         })
@@ -399,6 +428,24 @@ where
         .transpose()
 }
 
+pub async fn github_reply_by_client_id<C>(
+    conn: &C,
+    discussion_id: &str,
+    client_reply_id: &str,
+) -> Result<Option<RequestDiscussionReply>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    entities::request_discussion_reply::Entity::find()
+        .filter(entities::request_discussion_reply::Column::DiscussionId.eq(discussion_id))
+        .filter(entities::request_discussion_reply::Column::AuthorGithubUserId.is_not_null())
+        .filter(entities::request_discussion_reply::Column::ClientReplyId.eq(client_reply_id))
+        .one(conn)
+        .await?
+        .map(entities::request_discussion_reply::Model::try_into_domain)
+        .transpose()
+}
+
 pub async fn read_states_for_user<C>(
     conn: &C,
     discussion_ids: &[String],
@@ -477,6 +524,10 @@ where
         .col_expr(
             entities::request_discussion::Column::ResolvedByUserId,
             Expr::value(row.resolved_by_user_id),
+        )
+        .col_expr(
+            entities::request_discussion::Column::ResolvedByGithubUserId,
+            Expr::value(row.resolved_by_github_user_id),
         )
         .exec(conn)
         .await?;

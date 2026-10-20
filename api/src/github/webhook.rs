@@ -6,6 +6,9 @@ use serde::Deserialize;
 use sha2::Sha256;
 use std::collections::BTreeSet;
 
+mod reviews;
+pub(crate) use reviews::GitHubReviewDelivery;
+
 pub(crate) const GITHUB_SIGNATURE_HEADER: &str = "x-hub-signature-256";
 pub(crate) const GITHUB_EVENT_HEADER: &str = "x-github-event";
 
@@ -39,11 +42,15 @@ pub(crate) enum GitHubWebhookEvent {
     RepositoryVisibilityChanged {
         github_repository_id: u64,
     },
+    ReviewActivity(GitHubReviewDelivery),
     Ignored,
 }
 
 impl GitHubWebhookEvent {
     pub(crate) fn parse(event: &str, body: &[u8]) -> Result<Self, ApiError> {
+        if reviews::EVENTS.contains(&event) {
+            return Ok(reviews::parse(event, body)?.map_or(Self::Ignored, Self::ReviewActivity));
+        }
         if !matches!(
             event,
             "repository"

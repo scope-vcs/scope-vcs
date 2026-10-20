@@ -22,8 +22,8 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
-        github_check_results, github_pushes, github_workflow_jobs, github_workflow_runs,
-        run_inspection::require_full_view_member,
+        github_check_results, github_pushes, github_review_imports, github_workflow_jobs,
+        github_workflow_runs, run_inspection::require_full_view_member,
     },
 };
 use axum::{
@@ -463,6 +463,10 @@ pub(crate) async fn receive_github_webhook(
                     "reading a GitHub repository's visibility failed"
                 );
             }
+        }
+        GitHubWebhookEvent::ReviewActivity(delivery) => {
+            github_review_imports::queue_github_review_delivery(&state, delivery, unix_now()?)
+                .await?;
         }
         GitHubWebhookEvent::Ignored => {}
     }

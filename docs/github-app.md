@@ -26,12 +26,14 @@ checklist for the production app.
 - **Webhook URL**: `https://<api origin>/v1/github/webhooks`, with a random
   webhook secret.
 - **Repository permissions**: Contents read and write, Workflows read and
-  write, Checks read, Actions read, Metadata read.
+  write, Checks read, Actions read, Pull requests read, Metadata read.
 - **Subscribed events**: Check run, Check suite, Workflow run, Workflow job,
-  Repository, Installation, Installation repositories. Installation events
+  Repository, Pull request review, Pull request review comment, Pull request
+  review thread, Installation, Installation repositories. Installation events
   are always delivered to GitHub Apps; the others are chosen on the
   registration page. Repository events report a repository made public or
-  private, and Workflow job events keep an open run's jobs current.
+  private, Workflow job events keep an open run's jobs current, and the pull
+  request review events bring GitHub reviews into requests.
 - **Where can this app be installed**: any account.
 
 Generate a private key and a client secret on the app's page. The callback
@@ -299,6 +301,50 @@ workflows has the push trigger. So when the tested commit has had no check run
 at all for 10 minutes after its push succeeded, the request view (web and
 `scope request ci`) says "No workflows started. Check that your workflows
 include the scope/** push trigger."
+
+## Importing GitHub reviews
+
+A submitted full-view request has a GitHub pull request from its
+`scope/requests/<request id>` branch, and review apps such as Greptile and
+Codex review it there. Scope imports those reviews as request discussions,
+credited to the GitHub account that wrote each comment.
+
+Only pull requests whose head is a `scope/requests/<id>` branch of the
+connected repository itself count; forks, other branches, requests outside
+the full view, drafts, and closed or merged requests import nothing. A
+webhook only records a durable import job (`scope_github_review_imports`); a
+background pass claims due jobs with a five-minute lease and retries a failed
+one after 30 seconds, 2, 10, and 30 minutes, then gives up.
+
+- **Pull request review** (`submitted`): Scope reads
+  `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{id}` and
+  `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{id}/comments`, then
+  creates the review's discussions in one transaction with one attention
+  change for the request author. A non-empty review body becomes a discussion
+  on the reviewed revision. Each comment becomes a discussion anchored to the
+  newest revision whose head is the comment's commit: `RIGHT` is the new
+  side, `LEFT` the old, `start_line` to `line` the range, and a file comment
+  anchors to the file. An outdated comment (no `line`) uses its original
+  commit and lines. A comment whose lines fail Scope's anchor checks anchors
+  to its file, then to its revision, and one whose commit Scope does not know
+  becomes a request-level discussion; no comment is dropped.
+- **Pull request review comment** (`created`): a reply imports just that
+  reply onto the discussion made from its thread's first comment, read with
+  `GET /repos/{owner}/{repo}/pulls/comments/{id}`. When that first comment was
+  never imported, Scope reads and imports it too. Top-level comments arrive
+  with their review instead.
+- **Pull request review thread** (`resolved`, `unresolved`): resolves or
+  reopens the discussion made from the thread's first comment, recording the
+  GitHub account that did it as the resolver.
+
+Imported discussions and replies use the client IDs
+`github:review:<review id>` and `github:review-comment:<comment id>`, so a
+redelivered webhook or a retry creates nothing twice. Edits and deletions on
+GitHub are not copied. A GitHub account can do nothing in Scope: read
+markers, permissions, and attention stay with Scope users. The web shows the
+account's login and avatar with a "via GitHub" link to the original comment,
+and the CLI's reply, resolve, and reopen receipts name the GitHub account and
+link.
 
 ## Runs page
 

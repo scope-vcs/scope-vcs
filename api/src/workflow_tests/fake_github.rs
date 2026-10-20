@@ -17,6 +17,8 @@ use std::{
     },
 };
 
+mod reviews;
+
 pub(super) const INSTALLATION_ID: u64 = 7;
 pub(super) const GITHUB_REPOSITORY_ID: u64 = 42;
 pub(super) const GITHUB_FULL_NAME: &str = "octo/checks";
@@ -75,6 +77,8 @@ pub(super) struct FakeGitHub {
     pub(super) job_log_bytes_served: AtomicUsize,
     pub(super) run_list_reads: AtomicUsize,
     pub(super) run_list_unavailable: AtomicBool,
+    pull_reviews: Mutex<HashMap<u64, (serde_json::Value, Vec<serde_json::Value>)>>,
+    review_comments: Mutex<HashMap<u64, serde_json::Value>>,
     git_root: GitRoot,
 }
 
@@ -626,6 +630,7 @@ impl FakeGitHub {
                     },
                 ),
             )
+            .merge(reviews::routes())
             .with_state(self);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());

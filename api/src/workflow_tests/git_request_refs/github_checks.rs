@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 mod native_runs_list;
 mod public;
 mod public_repositories;
+mod review_imports;
 mod run_page;
 
 pub(in crate::workflow_tests) const REQUIRED_CHECK: &str = "ci / test";

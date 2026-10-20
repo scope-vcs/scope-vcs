@@ -6,21 +6,19 @@ use crate::{
     use_cases::request_anchor_projection::{self, AnchorProjections},
 };
 use scope_domain::{
-    account::UserAccount,
     repository::access::{RepositoryAccess, RepositoryAccessContext},
     requests::{
-        MarkRequestDiscussionReadInput, Request, RequestDiscussionReply, RequestViewer,
-        request_actor_role, request_policy,
+        MarkRequestDiscussionReadInput, Request, RequestDiscussionAnchor, RequestDiscussionReply,
+        RequestViewer, request_actor_role, request_policy,
     },
 };
 pub(crate) use scope_postgres::db::DiscussionTransition;
 use scope_postgres::db::{
     CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand,
-    ReopenAndReplyToRequestDiscussionCommand, RequestDiscussionReadModel,
+    ReopenAndReplyToRequestDiscussionCommand, RequestDiscussionActors, RequestDiscussionReadModel,
     RequestDiscussionReplyReadModel, TransitionRequestDiscussionCommand,
 };
 use scope_product_analytics::ProductEvent;
-use std::collections::BTreeMap;
 
 mod anchor;
 #[cfg(test)]
@@ -87,14 +85,14 @@ pub(crate) struct MarkDiscussionReadCommand {
 
 pub(crate) struct DiscussionMutationResult {
     pub(crate) discussion: RequestDiscussionReadModel,
-    pub(crate) users: BTreeMap<String, UserAccount>,
+    pub(crate) actors: RequestDiscussionActors,
     pub(crate) anchor_projections: AnchorProjections,
 }
 
 pub(crate) struct ReplyMutationResult {
     pub(crate) discussion: DiscussionMutationResult,
     pub(crate) reply: RequestDiscussionReplyReadModel,
-    pub(crate) reply_users: BTreeMap<String, UserAccount>,
+    pub(crate) reply_actors: RequestDiscussionActors,
 }
 
 pub(crate) struct MarkDiscussionReadResult {
@@ -343,6 +341,37 @@ pub(crate) async fn mark_read(
     })
 }
 
+pub(crate) async fn first_valid_anchor(
+    state: &AppState,
+    repo: &RepositoryAccessContext,
+    request: &Request,
+    candidates: Vec<RequestDiscussionAnchor>,
+) -> Result<Option<RequestDiscussionAnchor>, ApiError> {
+    for anchor in candidates {
+        let Some(revision) = state
+            .metadata
+            .requests()
+            .request_revision(&request.id, &anchor.revision_id)
+            .await?
+        else {
+            continue;
+        };
+        match anchor::ensure_target(state, repo, &repo.access, request, &revision, &anchor).await {
+            Ok(()) => return Ok(Some(anchor)),
+            Err(error)
+                if matches!(
+                    error.status(),
+                    axum::http::StatusCode::BAD_REQUEST | axum::http::StatusCode::NOT_FOUND
+                ) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(None)
+}
+
 async fn mutation_context(
     state: &AppState,
     owner: &str,
@@ -389,7 +418,7 @@ async fn reply_mutation_result(
 ) -> Result<ReplyMutationResult, ApiError> {
     publish_timeline_change(state, context, discussion_id.clone(), reply.position).await;
     let discussion = load_discussion_result(state, context, &discussion_id, actor_user_id).await?;
-    let (reply, reply_users) = state
+    let (reply, reply_actors) = state
         .metadata
         .requests()
         .request_discussion_reply_read_model(reply)
@@ -397,7 +426,7 @@ async fn reply_mutation_result(
     Ok(ReplyMutationResult {
         discussion,
         reply,
-        reply_users,
+        reply_actors,
     })
 }
 
@@ -407,7 +436,7 @@ async fn load_discussion_result(
     discussion_id: &str,
     viewer_user_id: &str,
 ) -> Result<DiscussionMutationResult, ApiError> {
-    let (discussion, users) = state
+    let (discussion, actors) = state
         .metadata
         .requests()
         .request_discussion(&context.request.id, discussion_id, Some(viewer_user_id))
@@ -423,7 +452,7 @@ async fn load_discussion_result(
     .await;
     Ok(DiscussionMutationResult {
         discussion,
-        users,
+        actors,
         anchor_projections,
     })
 }

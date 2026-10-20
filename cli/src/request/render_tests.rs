@@ -158,6 +158,45 @@ fn discussion_receipts_show_line_ranges_and_their_latest_position() {
 }
 
 #[test]
+fn receipts_for_imported_discussions_credit_the_github_account() {
+    let response = |author: serde_json::Value| -> RequestDiscussionMutationResponse {
+        serde_json::from_value(json!({
+            "discussion": {
+                "id": "dsc_one", "request_id": "req_one", "client_discussion_id": "github:review-comment:7",
+                "opened_position": 1, "last_activity_position": 2, "author": author,
+                "body_markdown": "Guard this", "anchor": null, "status": "Resolved",
+                "reply_count": 0, "read_through_position": 2, "unread_count": 0,
+                "latest_replies": [], "created_at_unix": 1, "resolved_at_unix": 2,
+                "resolved_by": {"kind": "user", "id": "usr_author", "handle": "author"}
+            }
+        }))
+        .unwrap()
+    };
+    let bot = json!({
+        "kind": "github",
+        "account": {"github_user_id": 9, "login": "greptile-apps[bot]", "account_type": "bot",
+            "avatar_url": null},
+        "source_url": "https://github.com/octo/repo/pull/1#discussion_r7\u{001b}[31m"
+    });
+
+    assert_eq!(
+        discussion_resolved_receipt(&response(bot)),
+        "Resolved discussion dsc_one from greptile-apps[bot] via GitHub \
+         (https://github.com/octo/repo/pull/1#discussion_r7 [31m)"
+    );
+    assert_eq!(
+        discussion_resolved_receipt(&response(
+            json!({"kind": "user", "id": "usr_author", "handle": "author"})
+        )),
+        "Resolved discussion dsc_one"
+    );
+    assert_eq!(
+        discussion_resolved_receipt(&response(serde_json::Value::Null)),
+        "Resolved discussion dsc_one"
+    );
+}
+
+#[test]
 fn wait_labels_are_concise_and_saturating() {
     assert_eq!(wait_label(3_590, 3_600), "<1m");
     assert_eq!(wait_label(0, 3_600), "1h");

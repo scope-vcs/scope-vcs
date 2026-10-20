@@ -63,7 +63,7 @@ test('reply fragments identify one discussion and reply', () => {
 })
 
 const noBoundary = { date: false, unread: false }
-const otherAuthor = { handle: 'ravi', id: 'user-ravi' }
+const otherAuthor = { kind: 'user' as const, handle: 'ravi', id: 'user-ravi' }
 
 function reply(createdAtUnix: number): RequestDiscussionReplyView {
   return replyFixture(`reply-${createdAtUnix}`, createdAtUnix, {
