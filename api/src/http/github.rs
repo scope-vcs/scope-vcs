@@ -2,8 +2,9 @@ use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
     GitHubConnectionParts, GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
     GitHubWorkflowNamesResponse, GitHubWorkflowRunListResponse, GitHubWorkflowRunsResponse,
-    SetGitHubRequiredChecksRequest, SetGitHubRunImportCountRequest, github_connection_response,
-    github_repository_response, github_workflow_run_response,
+    SetGitHubMainPublicationRequest, SetGitHubRequiredChecksRequest,
+    SetGitHubRunImportCountRequest, github_connection_response, github_repository_response,
+    github_workflow_run_response,
 };
 use crate::{
     auth::scope::require_scope_user,
@@ -34,7 +35,8 @@ use axum::{
 };
 use scope_domain::{
     github_connection::{
-        ConnectGitHubRepository, can_publish_to_github, ensure_can_manage_github_connection,
+        ConnectGitHubRepository, can_publish_main_to_github, can_publish_to_github,
+        ensure_can_manage_github_connection,
     },
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
     requests::RequestCheckProvider,
@@ -261,6 +263,21 @@ pub(crate) async fn set_github_run_import_count(
         .metadata
         .repositories()
         .set_github_run_import_count(&context.record.id, &user_id, input.count)
+        .await?;
+    changed(&state, &context, &incarnation).await
+}
+
+pub(crate) async fn set_github_main_publication(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<SetGitHubMainPublicationRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    let incarnation = state
+        .metadata
+        .repositories()
+        .set_github_main_publication(&context.record.id, &user_id, input.enabled)
         .await?;
     changed(&state, &context, &incarnation).await
 }
@@ -542,12 +559,17 @@ async fn connection_response(
         .github_run_import_count(&context.record.id)
         .await?;
     let run_import = repositories.github_run_import(&context.record.id).await?;
+    let main_push = repositories
+        .latest_github_main_push(&context.record.id)
+        .await?;
     Ok(github_connection_response(
         state.github.is_some(),
         GitHubConnectionParts {
             read,
             required_checks,
             can_confirm_public: can_publish_to_github(context.access.clone()),
+            can_publish_main: can_publish_main_to_github(&context.access, &context.views),
+            main_push,
             setup_check,
             run_import_count,
             run_import,

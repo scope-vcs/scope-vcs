@@ -41,10 +41,10 @@ pub use auto_merge::{
 pub mod attachments;
 mod checks;
 pub use checks::{
-    CheckCommitBase, GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubBranch, GitHubCheckConclusion,
-    GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, GitHubCheckTarget, GitHubPush,
-    GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubRequestChecks,
-    GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck,
+    CheckCommitBase, GITHUB_MAIN_DIVERGED_MESSAGE, GITHUB_WORKFLOWS_START_WITHIN_SECS,
+    GitHubBranch, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus,
+    GitHubCheckTarget, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,
+    GitHubRequestChecks, GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck,
     PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
     RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
     RequestCheckReviewer, RequestChecksOutcome, changes_github_workflows, check_commit_message,

@@ -103,7 +103,7 @@ async fn github_is_off_when_the_app_is_not_configured() {
     let body = connection(&state).await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
+        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "can_confirm_public": true, "can_publish_main": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let install = authorize_response(&state, &bearer_header(), serde_json::json!({})).await;
     assert_eq!(install.status(), StatusCode::NOT_FOUND);
@@ -122,7 +122,7 @@ async fn a_maintainer_connects_through_github_setup() {
     let (state, fake) = github_state().await;
     assert_eq!(
         connection(&state).await,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "can_publish_main": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
@@ -175,6 +175,12 @@ async fn a_maintainer_connects_through_github_setup() {
     assert_eq!(owner_view["connection"], connected["connection"]);
     assert_eq!(connected["can_confirm_public"], false);
     assert_eq!(owner_view["can_confirm_public"], true);
+    assert_eq!(connected["can_publish_main"], false);
+    assert_eq!(owner_view["can_publish_main"], true);
+    assert_eq!(
+        owner_view["connection"]["main_publication"],
+        serde_json::json!({ "enabled": false, "latest": null })
+    );
     assert_eq!(
         events.try_recv().unwrap().kind,
         crate::repo_events::RepoChangeKind::RepositoryChanged {
@@ -493,7 +499,7 @@ async fn a_maintainer_disconnects() {
     let body = github_json(&state, "DELETE", "").await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "can_publish_main": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let again = github_api(&state, "DELETE", "", &bearer_header(), None).await;
     assert_eq!(again.status(), StatusCode::NOT_FOUND);

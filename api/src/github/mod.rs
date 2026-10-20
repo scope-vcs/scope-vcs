@@ -8,6 +8,7 @@ pub(crate) mod webhook;
 pub(crate) use client::{GitHubRepository, InstallationStatus};
 use config::GitHubAppConfig;
 use jsonwebtoken::EncodingKey;
+pub(crate) use push::GitHubPublishFailure;
 use setup_tokens::SetupTokenSigner;
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 

@@ -118,6 +118,43 @@ maintainer who can change file visibility can allow private requests with
 held requests again. Settings show a public repository as public, and a
 private request's CI says that its changes are public on GitHub.
 
+### Publishing main
+
+Scope main does not reach GitHub unless a repository opts in. Publish main to
+GitHub, in the CI section of repository settings, makes every change to Scope
+main, whether a request merge, an auto-merge, or an authorized push to main,
+queue a push of the new main commit to the connected repository's `main`. The
+push is queued in the same transaction that moves Scope main.
+`PUT /v1/repos/{owner}/{repo}/github/main-publication` with `{ "enabled": true }`
+turns it on. Only a maintainer who reads the full view and can change file
+visibility can turn it on; any maintainer can turn it off. Connecting a
+repository leaves it off, and disconnecting, or GitHub taking the repository
+away from Scope, turns it off.
+
+Main contains every file, so Scope publishes it only to a private GitHub
+repository, or a public one whose public acknowledgement is confirmed (see
+[Public GitHub repositories](#public-github-repositories)). Turning publishing
+on is refused otherwise, and each push asks GitHub for the repository's
+visibility first and gives up if it is public and unconfirmed. A connected
+repository that becomes public turns publishing off; after the public
+acknowledgement, a maintainer who may publish main turns it on again.
+
+Main is never forced and never deleted. Scope runs
+`git push <commit>:refs/heads/main` without `--force`. When GitHub main has
+commits Scope main does not have, the push gives up at once with "GitHub main
+has commits Scope does not have"; bring those commits into Scope, or remove
+them from GitHub, and the next change to Scope main publishes again. When
+GitHub refuses the push, for example because of branch protection, the push
+gives up at once with GitHub's answer. Other failures follow the retry
+schedule in [Pushing revisions](#pushing-revisions), and a newer change to
+Scope main replaces a queued one. Settings show the latest publication, its
+commit and any error.
+
+A merge commit Scope creates has no CI run on GitHub, so GitHub branch
+protection or rulesets that require status checks or pull requests on `main`
+refuse it. Allow the Scope GitHub App to push to `main`, for example by adding
+the app to the ruleset's bypass list.
+
 ## Request CI
 
 A repository with a GitHub link, connected or disconnected, answers its
@@ -244,7 +281,8 @@ connected repository with `git push --force`, so a new revision replaces the
 branch. The installation token reaches git as an `http.extraHeader` through
 git's environment, never in its arguments or the URL. Merging, closing or
 deleting the request deletes the branch from the GitHub repository it was
-pushed to. Deleting the Scope repository queues the same deletions; they
+pushed to. Deleting the Scope repository queues the same deletions, except
+for `main`, which Scope never deletes; they
 name the GitHub repository and installation themselves, so they run after
 the Scope repository is gone, while the installation exists.
 

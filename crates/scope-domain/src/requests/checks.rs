@@ -26,8 +26,8 @@ pub use github::{
     GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED,
 };
 pub use github_push::{
-    GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,
-    changes_github_workflows, github_push_retry_at, github_retry_at,
+    GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState,
+    GitHubPushStatus, changes_github_workflows, github_push_retry_at, github_retry_at,
 };
 pub use planning::{GitHubRequestChecks, RequestCheckPlan};
 pub use reviewer::RequestCheckReviewer;

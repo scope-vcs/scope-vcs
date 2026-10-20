@@ -457,6 +457,7 @@ fn a_repository_linked_to_github_uses_github_checks_even_once_disconnected() {
         connected_at_unix: 1,
         status: GitHubConnectionStatus::Connected,
         visibility: crate::github_connection::GitHubRepositoryVisibility::Private,
+        publishes_main: false,
     };
     assert_eq!(
         RequestCheckProvider::for_repository(None),
@@ -592,6 +593,7 @@ fn a_push_is_revoked_by_a_disconnect_or_a_reconnect_elsewhere() {
         connected_at_unix: 1,
         status: GitHubConnectionStatus::Connected,
         visibility: crate::github_connection::GitHubRepositoryVisibility::Private,
+        publishes_main: false,
     };
     let destination = GitHubPushDestination::of(&connection);
     assert!(destination.is_connected_through(&connection));
@@ -698,17 +700,27 @@ fn failed_pushes_back_off_and_then_give_up() {
 }
 
 #[test]
-fn scope_branches_name_their_request_or_the_connection_test() {
+fn scope_branches_name_their_request_the_connection_test_or_main() {
     let request = GitHubBranch::Request("req_1".into());
     assert_eq!(request.git_ref(), "refs/heads/scope/requests/req_1");
     assert_eq!(
         GitHubBranch::SetupCheck.git_ref(),
         "refs/heads/scope/setup-check"
     );
-    for branch in [request, GitHubBranch::SetupCheck] {
+    assert_eq!(GitHubBranch::Main.git_ref(), "refs/heads/main");
+    for branch in [request, GitHubBranch::SetupCheck, GitHubBranch::Main] {
         assert_eq!(GitHubBranch::parse(&branch.name()), Some(branch));
     }
-    assert_eq!(GitHubBranch::parse("main"), None);
+    for other in ["master", "scope/main", "main/x"] {
+        assert_eq!(GitHubBranch::parse(other), None, "{other}");
+    }
+}
+
+#[test]
+fn scope_owns_its_request_and_test_branches_but_shares_main_with_github() {
+    assert!(GitHubBranch::Request("req_1".into()).owned_by_scope());
+    assert!(GitHubBranch::SetupCheck.owned_by_scope());
+    assert!(!GitHubBranch::Main.owned_by_scope());
 }
 
 #[test]

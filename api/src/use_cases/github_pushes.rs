@@ -1,14 +1,18 @@
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
-    auth::tokens::random_token, error::ApiError,
-    git::request_refs::with_request_revision_store_repo, github::GitHubApp, persistence::unix_now,
-    repo_events::RepoChangeReason, state::AppState,
+    auth::tokens::random_token,
+    error::ApiError,
+    git::request_refs::with_request_revision_store_repo,
+    github::{GitHubApp, GitHubPublishFailure},
+    persistence::unix_now,
+    repo_events::RepoChangeReason,
+    state::AppState,
     use_cases::view_check_commits::with_check_commit,
 };
 use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
-    requests::{GitHubBranch, GitHubPush, github_push_retry_at},
+    requests::{GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, github_push_retry_at},
 };
 use scope_postgres::db::{GitHubJobOutcome, GitHubPushStanding};
 use std::path::Path;
@@ -149,13 +153,20 @@ async fn ensure_current(
                     .to_string(),
             )
         })?;
-    ensure_may_receive(&connection, view)
+    ensure_may_receive(&connection, &push.branch, view)
 }
 
 fn ensure_may_receive(
     connection: &GitHubConnection,
+    branch: &GitHubBranch,
     view: Option<ViewId>,
 ) -> Result<(), JobFailure> {
+    if *branch == GitHubBranch::Main {
+        return match connection.main_publication_refusal() {
+            Some(refusal) => Err(JobFailure::GiveUp(refusal.to_string())),
+            None => Ok(()),
+        };
+    }
     if view.as_ref().is_some_and(|view| !view.is_public())
         && !connection.may_receive_private_requests()
     {
@@ -226,7 +237,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
                 .ok_or_else(gone)?;
             Some((request, evaluation))
         }
-        GitHubBranch::SetupCheck => None,
+        GitHubBranch::SetupCheck | GitHubBranch::Main => None,
     };
     let view = Some(
         tested
@@ -245,6 +256,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     {
         ensure_may_receive(
             &refresh_github_visibility(state, &connection).await?,
+            &push.branch,
             view.clone(),
         )?;
     }
@@ -261,6 +273,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     let (check_state, check_push, claim_token) =
         (state.clone(), push.clone(), claim_token.to_string());
     let expected_oid = target_oid.clone();
+    let owned_by_scope = push.branch.owned_by_scope();
     let push_when_current = move |repo: &Path| {
         crate::git::blocking::block_on(ensure_current(
             &check_state,
@@ -269,9 +282,15 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             view,
         ))
         .and_then(|()| {
-            remote
-                .push(repo, &target_oid, &git_ref)
-                .map_err(JobFailure::Retry)
+            if owned_by_scope {
+                remote
+                    .push(repo, &target_oid, &git_ref)
+                    .map_err(JobFailure::Retry)
+            } else {
+                remote
+                    .publish(repo, &target_oid, &git_ref)
+                    .map_err(publish_failure)
+            }
         })
     };
     let Some((request, evaluation)) = tested else {
@@ -287,7 +306,9 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             .repository_engine
             .materialize_repository(state, &incarnation, &head, &spans)
             .await?;
-        record_setup_check_baseline(state, &app, push).await?;
+        if push.branch == GitHubBranch::SetupCheck {
+            record_setup_check_baseline(state, &app, push).await?;
+        }
         return crate::git::blocking::run(move || Ok(push_when_current(repo.as_ref()))).await?;
     };
     let revision = requests
@@ -317,6 +338,16 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             )
             .await?
         }
+    }
+}
+
+fn publish_failure(failure: GitHubPublishFailure) -> JobFailure {
+    match failure {
+        GitHubPublishFailure::Diverged => {
+            JobFailure::GiveUp(GITHUB_MAIN_DIVERGED_MESSAGE.to_string())
+        }
+        GitHubPublishFailure::Refused(error) => JobFailure::GiveUp(error),
+        GitHubPublishFailure::Failed(error) => JobFailure::Retry(error),
     }
 }
 
@@ -376,6 +407,14 @@ async fn publish_push_change(state: &AppState, push: &GitHubPush) {
         (Ok(Some(incarnation)), GitHubBranch::Request(request_id)) => {
             state
                 .publish_request_state_refresh(&incarnation, request_id)
+                .await;
+        }
+        (Ok(Some(incarnation)), GitHubBranch::Main) => {
+            state
+                .publish_request_summary_refresh(
+                    &incarnation,
+                    RepoChangeReason::GitHubConnectionChanged,
+                )
                 .await;
         }
         (Ok(Some(incarnation)), GitHubBranch::SetupCheck) => {

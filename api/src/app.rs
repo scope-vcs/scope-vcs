@@ -156,6 +156,10 @@ pub fn router(state: AppState) -> Router {
             post(http::github::start_github_setup_check),
         )
         .route(
+            routes::REPO_GITHUB_MAIN_PUBLICATION,
+            axum::routing::put(http::github::set_github_main_publication),
+        )
+        .route(
             routes::REPO_GITHUB_WORKFLOW_RUNS,
             get(http::github::get_github_workflow_runs),
         )
