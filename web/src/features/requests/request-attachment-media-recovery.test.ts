@@ -5,6 +5,7 @@ import {
   mediaGrantExpiring,
   type MediaRecovery,
   recoverFromMediaError,
+  recoverFromMediaStall,
   retryMedia,
   settledMediaRecovery,
 } from './request-attachment-media-recovery'
@@ -12,6 +13,7 @@ import {
 type Grant = { expires_at_unix: number }
 type Step =
   | { error: Grant; generation?: number; at: number }
+  | { stall: Grant; at: number }
   | { granted: Grant }
   | { retry: Grant | null; at: number }
 
@@ -27,13 +29,12 @@ function replay(start: Grant | null, steps: Step[]) {
       grant = step.granted
       continue
     }
+    const generation = settledMediaRecovery(recovery, grant).generation
     const next = 'error' in step
-      ? recoverFromMediaError(recovery, {
-          generation: step.generation ?? settledMediaRecovery(recovery, grant).generation,
-          grant: step.error,
-          now: step.at * 1_000,
-        })
-      : retryMedia(recovery, step.retry, step.at * 1_000)
+      ? recoverFromMediaError(recovery, { generation: step.generation ?? generation, grant: step.error, now: step.at * 1_000 })
+      : 'stall' in step
+        ? recoverFromMediaStall(recovery, { generation, grant: step.stall, now: step.at * 1_000 })
+        : retryMedia(recovery, step.retry, step.at * 1_000)
     recovery = next.recovery
     if (next.renew) renewals += 1
   }
@@ -69,6 +70,12 @@ const cases: Array<[string, Grant | null, (grants: Record<string, Grant>) => Ste
   ['a manual renewal reloads when its grant arrives', fresh('a'),
     ({ a, b }) => [{ error: a!, at: 0 }, { error: a!, at: 1 }, { retry: a!, at: 290 }, { granted: b! }],
     { failed: false, generation: 2, renewals: 1 }],
+  ['a stall on an expiring grant renews immediately and reloads when the renewal arrives', expiring('a'),
+    ({ a }) => [{ stall: a!, at: 0 }, { stall: a!, at: 0 }, { granted: { ...a! } }], { failed: false, generation: 1, renewals: 1 }],
+  ['a stall on a fresh grant is ordinary buffering and changes nothing', fresh('a'),
+    ({ a }) => [{ stall: a!, at: 0 }, { stall: a!, at: 1 }], { failed: false, generation: 0, renewals: 0 }],
+  ['a repeated stall within the recovery interval neither renews nor fails', expiring('a'),
+    ({ a }) => [{ stall: a!, at: 0 }, { granted: { ...a! } }, { stall: { ...a! }, at: 30 }], { failed: false, generation: 1, renewals: 1 }],
   ['a manual retry without a grant only reloads the grant', null,
     () => [{ retry: null, at: 0 }], { failed: false, generation: 0, renewals: 1 }],
 ]

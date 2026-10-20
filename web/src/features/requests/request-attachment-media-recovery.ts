@@ -34,16 +34,31 @@ export function recoverFromMediaError(
   if (recovery.failed || recovery.renewingFrom !== null || generation !== recovery.generation) {
     return { recovery, renew: false }
   }
-  if (recovery.lastAttemptAt !== null && now - recovery.lastAttemptAt < AUTOMATIC_RECOVERY_INTERVAL_MS) {
+  if (withinRecoveryInterval(recovery, now)) {
     return { recovery: { ...recovery, failed: true }, renew: false }
   }
   return reloadMedia(recovery, grant, now, false)
+}
+
+export function recoverFromMediaStall(
+  current: MediaRecovery,
+  event: { generation: number; grant: MediaGrant; now: number },
+) {
+  const recovery = settledMediaRecovery(current, event.grant)
+  if (!mediaGrantExpiring(event.grant, event.now) || withinRecoveryInterval(recovery, event.now)) {
+    return { recovery, renew: false }
+  }
+  return recoverFromMediaError(recovery, event)
 }
 
 export function retryMedia(current: MediaRecovery, grant: MediaGrant | null, now: number) {
   const recovery = settledMediaRecovery(current, grant)
   if (grant === null || recovery.renewingFrom !== null) return { recovery, renew: true }
   return reloadMedia(recovery, grant, now, true)
+}
+
+function withinRecoveryInterval(recovery: MediaRecovery, now: number) {
+  return recovery.lastAttemptAt !== null && now - recovery.lastAttemptAt < AUTOMATIC_RECOVERY_INTERVAL_MS
 }
 
 function reloadMedia(recovery: MediaRecovery, grant: MediaGrant, now: number, keepHidden: boolean) {

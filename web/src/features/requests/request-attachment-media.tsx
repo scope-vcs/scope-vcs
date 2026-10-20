@@ -13,6 +13,7 @@ import {
   initialMediaRecovery,
   mediaGrantExpiring,
   recoverFromMediaError,
+  recoverFromMediaStall,
   retryMedia,
   settledMediaRecovery,
 } from './request-attachment-media-recovery'
@@ -152,6 +153,7 @@ function VideoAttachment({
   }
   const loadedSource = media.value.media_url
   const onError = media.mediaErrored(media.value, generation)
+  const onStall = media.mediaStalled(media.value, generation)
   return (
     <figure className="my-3 min-w-0">
       <video
@@ -161,7 +163,9 @@ function VideoAttachment({
         onError={onError}
         onPause={() => { playingRef.current = false }}
         onPlay={() => { playingRef.current = true }}
+        onStalled={onStall}
         onTimeUpdate={(event) => { positionRef.current = event.currentTarget.currentTime }}
+        onWaiting={onStall}
         playsInline
         poster={posterMedia.unavailable ? undefined : posterMedia.value?.media_url}
         preload="metadata"
@@ -340,13 +344,16 @@ function useAttachmentMediaGrant(
     rerender()
     if (next.renew) media.retry()
   }
+  const handleMediaEvent = (transition: typeof recoverFromMediaError) =>
+    (grant: NonNullable<typeof media.value>, renderedGeneration: number) => () =>
+      apply(transition(recoveryRef.current, { generation: renderedGeneration, grant, now: Date.now() }))
   return {
     ...media,
     error,
     generation: recovery.generation,
     unavailable,
-    mediaErrored: (grant: NonNullable<typeof media.value>, renderedGeneration: number) => () =>
-      apply(recoverFromMediaError(recoveryRef.current, { generation: renderedGeneration, grant, now: Date.now() })),
+    mediaErrored: handleMediaEvent(recoverFromMediaError),
+    mediaStalled: handleMediaEvent(recoverFromMediaStall),
     retry: () => {
       const next = retryMedia(recoveryRef.current, media.value, Date.now())
       apply({ ...next, renew: next.renew || media.error !== null })
