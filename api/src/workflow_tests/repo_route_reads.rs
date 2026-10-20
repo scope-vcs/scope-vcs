@@ -77,14 +77,14 @@ async fn file_content_and_config_routes_read_no_commit_history() {
 }
 
 #[tokio::test]
-async fn projection_preview_reads_history_but_no_live_files() {
+async fn projection_preview_reads_no_repository_invites() {
     let state = state_with_docs().await;
     let app = router(state.clone());
     let preview = "/v1/repos/owner/repo/projection-preview?view=public";
     assert_eq!(get(&app, preview, None).await.status(), StatusCode::OK);
 
-    let history = ["scope_live_files", "scope_repository_invites"];
-    hide_tables(&state, &history).await;
+    let invites = ["scope_repository_invites"];
+    hide_tables(&state, &invites).await;
     let public = get(&app, preview, None).await;
     let private = get(
         &app,
@@ -92,7 +92,7 @@ async fn projection_preview_reads_history_but_no_live_files() {
         None,
     )
     .await;
-    restore_tables(&state, &history).await;
+    restore_tables(&state, &invites).await;
 
     assert_eq!(public.status(), StatusCode::OK);
     let public = response_json(public).await;

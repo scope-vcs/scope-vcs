@@ -7,5 +7,6 @@
   "m0087_stack_auto_merge_stop_reasons.rs": "57815084bd6e2e545703ae98751b574fbeb89bef3c7197bde4b7fdd526f72d5f",
   "m0088_request_navigation_children_index.rs": "d118b488ade02ca1ba0cda2cba32f2596b45770f4a828824797f0ba7e795de62",
   "m0089_contribution_request_stacks.rs": "a8185ebde19d4e200685a4f4d31c543a8908e2c4e922870b4511a7c4182090f5",
-  "m0090_job_traceparents.rs": "9cffcf57835e07b8b9b137cd8e944546b464eed058e65bee5656ad91c8be63c7"
+  "m0090_job_traceparents.rs": "9cffcf57835e07b8b9b137cd8e944546b464eed058e65bee5656ad91c8be63c7",
+  "m0091_live_file_views.rs": "b4a0b60387a376f388917effb01174f72d8b2eef014dec1a5342fb70e0c1cb05"
 }

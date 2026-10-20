@@ -3,7 +3,9 @@ use super::{
     entities,
     git_compaction::schedule_git_compaction,
     git_segments::{load_git_pack_spans, publish_git_segment},
-    history_rows::{insert_commits, save_live_files},
+    history_rows::{
+        LiveFileRow, LiveFiles, file_rules, insert_commits, load_live_files_at, save_live_files,
+    },
     integer_columns::{i64_to_u64, u64_to_i64},
     landing_files::apply_repository_landing_file_mutation,
     projection_read_models::fold_live_projection_read_models,
@@ -14,12 +16,12 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseTransaction, EntityTrait,
     IntoActiveModel, QueryFilter, QueryOrder,
 };
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use {
     crate::error::PostgresError,
     scope_domain::{
         landing_file::RepositoryLandingFileMutation,
-        policy::{Policy, ScopePath},
+        policy::Policy,
         repo_actions::reviewed_update_domain_error,
         repo_config::RepoConfig,
         repository::git::GitHead,
@@ -96,24 +98,15 @@ async fn accept_and_persist_content_update(
     } = snapshots;
     let repo_id = repo_row.id.clone();
     let repo_incarnation_id = repo_row.incarnation_id.clone();
-    let changed_paths = update
-        .changes
-        .iter()
-        .map(|change| change.path.as_str().to_string())
-        .collect::<Vec<_>>();
-    let live_files = entities::live_file::Entity::find()
-        .filter(entities::live_file::Column::RepoId.eq(&repo_id))
-        .filter(entities::live_file::Column::Path.is_in(changed_paths))
-        .all(tx)
-        .await?
-        .into_iter()
-        .map(|row| {
-            Ok((
-                ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                serde_json::from_value(row.content).map_err(PostgresError::internal)?,
-            ))
-        })
-        .collect::<Result<BTreeMap<_, _>, PostgresError>>()?;
+    let LiveFiles {
+        files: live_files,
+        rules: live_file_rules,
+    } = load_live_files_at(
+        tx,
+        &repo_id,
+        update.changes.iter().map(|change| &change.path),
+    )
+    .await?;
     let previous_commit = entities::logical_commit::Entity::find()
         .filter(entities::logical_commit::Column::RepoId.eq(&repo_id))
         .order_by_desc(entities::logical_commit::Column::Ordinal)
@@ -124,8 +117,10 @@ async fn accept_and_persist_content_update(
         .map_or(0, |commit| commit.ordinal.saturating_add(1));
     let repo_config: RepoConfig =
         serde_json::from_value(repo_row.repo_config.clone()).map_err(PostgresError::internal)?;
-    let policy: Policy =
+    let stored_policy: Policy =
         serde_json::from_value(repo_row.policy.clone()).map_err(PostgresError::internal)?;
+    let policy = stored_policy.clone().join_rules(live_file_rules);
+    let mut live_paths = live_files.keys().cloned().collect::<BTreeSet<_>>();
     let change_version = i64_to_u64(repo_row.change_version, "repository change version")?;
     let content_version = i64_to_u64(repo_row.content_version, "repository content version")?;
     let git_head = entities::git_head::Entity::find_by_id(&repo_id)
@@ -163,11 +158,24 @@ async fn accept_and_persist_content_update(
         .rebind_source_change_version(&repo_id, &git_head.head_oid, git_head.change_version)
         .map_err(PostgresError::internal)?;
 
+    for change in &logical_commit.changes {
+        if change.new_content.is_some() {
+            live_paths.insert(change.path.clone());
+        } else {
+            live_paths.remove(&change.path);
+        }
+    }
+    let (repository_policy, live_file_rules) = policy.split_rules(|path| live_paths.contains(path));
+    let file_rules = file_rules(&live_file_rules);
+
     let persisted_change_version = u64_to_i64(change_version, "repository change version")?;
     let mut repo_update = repo_row.into_active_model();
     repo_update.change_version = Set(persisted_change_version);
     repo_update.content_version = Set(u64_to_i64(content_version, "repository content version")?);
-    repo_update.policy = Set(serde_json::to_value(&policy).map_err(PostgresError::internal)?);
+    if repository_policy != stored_policy {
+        repo_update.policy =
+            Set(serde_json::to_value(&repository_policy).map_err(PostgresError::internal)?);
+    }
     repo_update.update(tx).await?;
     entities::git_head::Entity::delete_by_id(&repo_id)
         .exec(tx)
@@ -188,10 +196,15 @@ async fn accept_and_persist_content_update(
     save_live_files(
         tx,
         &repo_id,
-        logical_commit
-            .changes
-            .iter()
-            .map(|change| (&change.path, change.new_content.as_ref())),
+        logical_commit.changes.iter().map(|change| {
+            (
+                &change.path,
+                change.new_content.as_ref().map(|content| LiveFileRow {
+                    content,
+                    view: file_rules.get(&change.path).copied(),
+                }),
+            )
+        }),
     )
     .await?;
     enqueue_dependency_analysis_target(

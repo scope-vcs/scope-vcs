@@ -1,4 +1,6 @@
+mod file_rules;
 mod landed;
+mod push_paths;
 
 use crate::db::{
     AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand,

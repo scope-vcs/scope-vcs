@@ -214,7 +214,6 @@ impl AdminStore {
         self.lock_tables_for_tests(&[
             "scope_logical_commits",
             "scope_file_changes",
-            "scope_live_files",
             "scope_visibility_change_sets",
             "scope_visibility_changes",
         ])

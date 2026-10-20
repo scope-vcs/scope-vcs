@@ -14,6 +14,7 @@ mod github_connections;
 mod github_request_checks;
 mod github_run_imports;
 mod github_setup_checks_and_workflow_runs;
+mod live_file_views;
 mod maintenance_cutover;
 mod public_check_commits;
 mod repository_invite_emails;
