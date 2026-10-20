@@ -16,12 +16,39 @@ use scope_domain::{
 };
 use std::{collections::BTreeSet, path::Path as FsPath, process::Command};
 
-pub(crate) struct StoredRequestRefs<'a> {
-    pub(crate) objects_for: &'a [Request],
-    pub(crate) refs_for: &'a [Request],
+struct StoredRequestRefs<'a> {
+    objects_for: &'a [Request],
+    refs_for: &'a [Request],
 }
 
-pub(crate) fn attach_request_refs_from_store(
+pub(crate) async fn attach_request_refs_from_pool(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    objects_for: Vec<Request>,
+    refs_for: Vec<Request>,
+    staging_repo: &FsPath,
+    view_bases: RequestViewBases,
+) -> Result<Vec<Request>, ApiError> {
+    super::pool::sync_request_pool(state, incarnation, staging_repo).await;
+    let state = state.clone();
+    let incarnation = incarnation.clone();
+    let staging_repo = staging_repo.to_path_buf();
+    crate::git::blocking::run(move || {
+        attach_request_refs_from_store(
+            &state,
+            &incarnation,
+            StoredRequestRefs {
+                objects_for: &objects_for,
+                refs_for: &refs_for,
+            },
+            &staging_repo,
+            &view_bases,
+        )
+    })
+    .await
+}
+
+fn attach_request_refs_from_store(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     requests: StoredRequestRefs<'_>,
@@ -35,9 +62,12 @@ pub(crate) fn attach_request_refs_from_store(
         .filter(|request| request.git_snapshot.is_some())
         .collect::<Vec<_>>();
     let store_repo = request_ref_store_repo_path(state, incarnation);
+    if store_repo.join("objects").is_dir() {
+        add_receive_pack_alternate(staging_repo, &store_repo.join("objects"))?;
+    }
     if !snapshotted.is_empty() {
         let present = present_commits(
-            &store_repo,
+            staging_repo,
             snapshotted.iter().map(|request| request.head_oid.as_str()),
         )?;
         let missing = snapshotted
@@ -49,10 +79,8 @@ pub(crate) fn attach_request_refs_from_store(
             for request in missing {
                 restore_request_objects(state, &store_repo, staging_repo, request)?;
             }
+            add_receive_pack_alternate(staging_repo, &store_repo.join("objects"))?;
         }
-    }
-    if store_repo.join("objects").is_dir() {
-        add_receive_pack_alternate(staging_repo, &store_repo.join("objects"))?;
     }
     let (stored, snapshotless): (Vec<_>, Vec<_>) = requests
         .refs_for
@@ -117,7 +145,7 @@ fn restore_request_objects(
     )))
 }
 
-fn present_commits<'a>(
+pub(super) fn present_commits<'a>(
     repo: &FsPath,
     oids: impl Iterator<Item = &'a str>,
 ) -> Result<BTreeSet<String>, ApiError> {

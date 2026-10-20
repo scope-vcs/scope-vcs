@@ -672,11 +672,12 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
         "snapshot should require its base instead of carrying main: {header}"
     );
 
-    fs::remove_dir_all(crate::git::storage::request_ref_store_repo_path(
-        &state,
-        &test_repo_incarnation(),
-    ))
-    .unwrap();
+    for local_objects in [
+        crate::git::storage::request_ref_store_repo_path(&state, &test_repo_incarnation()),
+        crate::git::storage::request_pool_repo_path(&state, &test_repo_incarnation()),
+    ] {
+        let _ = fs::remove_dir_all(local_objects);
+    }
     commit_file(&source, "auto-merge.txt", "second revision\n");
     push_head(&source, &remote, AUTO_REQUEST_NAME, "push second revision");
     let request = state

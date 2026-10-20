@@ -159,6 +159,17 @@ impl GitSegmentStore {
         })
     }
 
+    pub fn with_local_root(&self, local_root: impl Into<PathBuf>) -> Result<Self, GitStorageError> {
+        Self::new(
+            self.backend.clone(),
+            self.encryption_key.clone(),
+            GitSegmentStoreConfig {
+                local_root: local_root.into(),
+                ..self.config.clone()
+            },
+        )
+    }
+
     fn local_directory(&self, repository_id: &str) -> PathBuf {
         self.config
             .local_root

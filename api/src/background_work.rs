@@ -58,7 +58,6 @@ impl AppState {
         work.start_run_attempt_recovery();
         work.start_run_cache_reconciliation();
         work.start_retention();
-        work.start_request_ref_cleanup();
         work.start_invite_email_delivery();
         work.start_github_pushes();
         work.start_github_run_imports();

@@ -40,6 +40,15 @@ pub(crate) fn request_ref_store_repo_path(
         .join(format!("{}.git", repository_storage_key(incarnation)))
 }
 
+pub(crate) fn request_pool_repo_path(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+) -> PathBuf {
+    git_repo_storage_root(state)
+        .join("git-request-pool")
+        .join(format!("{}.git", repository_storage_key(incarnation)))
+}
+
 pub(crate) fn repository_storage_key(incarnation: &RepositoryIncarnation) -> String {
     let mut hasher = Sha256::new();
     for value in [
@@ -69,6 +78,7 @@ pub(crate) fn delete_repo_storage(
         ));
     }
     remove_dir_if_exists(&request_ref_store_repo_path(state, &cleanup.incarnation))?;
+    remove_dir_if_exists(&request_pool_repo_path(state, &cleanup.incarnation))?;
 
     let rx_root = git_repo_storage_root(state).join("git-rx");
     let prefix = receive_pack_staging_repo_prefix(&cleanup.incarnation);

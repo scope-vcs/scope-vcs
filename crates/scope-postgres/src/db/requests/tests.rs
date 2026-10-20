@@ -587,17 +587,6 @@ async fn close_draft_request_deletes_request_and_events() {
             .unwrap()
             .is_empty()
     );
-    let ref_cleanup = store
-        .cleanup()
-        .pending_request_ref_cleanups(None)
-        .await
-        .unwrap();
-    assert_eq!(ref_cleanup.len(), 1);
-    assert_eq!(ref_cleanup[0].request_id, "req_1");
-    assert_eq!(ref_cleanup[0].request_name, "fix-parser");
-    assert_eq!(ref_cleanup[0].head_oid, "head-2");
-    assert_eq!(ref_cleanup[0].incarnation.repository_id(), "owner/repo");
-    assert_eq!(ref_cleanup[0].incarnation.incarnation_id(), "repoi_test");
     let pending_blobs = store
         .cleanup()
         .pending_source_blob_cleanups_for_tests()

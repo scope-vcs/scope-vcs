@@ -76,7 +76,6 @@ mod jobs;
 mod read_models;
 mod repositories;
 mod request_auto_merge;
-pub mod request_ref_cleanup_job;
 mod requests;
 mod runs;
 

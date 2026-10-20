@@ -2,12 +2,13 @@ use crate::{
     error::ApiError,
     git::{
         cache::GitRepoHandle,
+        import::best_effort_delete_staged_git_segment,
         repository_git::RepositoryGit,
         request_refs::{
-            RequestRefUpdate, StoredRequestRefs, acquire_request_ref_update_lock_async,
-            attach_request_refs_from_store, attach_visible_request_refs,
-            create_request_receive_pack_staging_repo, install_request_receive_pack_hook,
-            persist_request_ref_to_store, request_view_bases, rollback_request_ref,
+            RequestObjectSharing, RequestRefUpdate, attach_request_refs_from_pool,
+            attach_visible_request_refs, create_request_receive_pack_staging_repo,
+            install_request_receive_pack_hook, persist_request_ref, request_view_bases,
+            retain_staged_pool_pack,
         },
         staging::{create_seeded_receive_pack_staging_repo, install_ready_pre_receive_hook},
         storage::remove_dir_if_exists,
@@ -267,27 +268,25 @@ async fn seed_editable_request_refs_for_repo(
     };
     let git = RepositoryGit::of_push_context(context);
     let view_bases = request_view_bases(state, &git, views, &refs_for, address_view).await?;
-    let state_for_attach = state.clone();
-    let incarnation = context.incarnation.clone();
-    let staging_path = staging_repo.to_path_buf();
-    let unreachable = crate::git::blocking::run(move || {
-        if reads_every_request {
-            attach_request_refs_from_store(
-                &state_for_attach,
-                &incarnation,
-                StoredRequestRefs {
-                    objects_for: &objects_for,
-                    refs_for: &refs_for,
-                },
-                &staging_path,
-                &view_bases,
-            )
-        } else {
-            attach_visible_request_refs(&state_for_attach, &refs_for, &staging_path, &view_bases)
+    let unreachable = if reads_every_request {
+        attach_request_refs_from_pool(
+            state,
+            &context.incarnation,
+            objects_for,
+            refs_for,
+            staging_repo,
+            view_bases,
+        )
+        .await?
+    } else {
+        let state = state.clone();
+        let staging_path = staging_repo.to_path_buf();
+        crate::git::blocking::run(move || {
+            attach_visible_request_refs(&state, &refs_for, &staging_path, &view_bases)
                 .map(|()| Vec::new())
-        }
-    })
-    .await?;
+        })
+        .await?
+    };
     if !unreachable.is_empty() {
         let view_bases = request_view_bases(state, &git, views, &unreachable, address_view).await?;
         let state = state.clone();
@@ -366,8 +365,6 @@ pub(super) async fn persist_request_ref_revision(
             "repository changed after receive-pack; retry the push",
         ));
     }
-    let update_lock =
-        acquire_request_ref_update_lock_async(state, &incarnation, &update.request_ref).await?;
     let (publication, parent_facts) =
         crate::use_cases::request_base_publication::prepare_request_base_publication(
             state,
@@ -398,13 +395,22 @@ pub(super) async fn persist_request_ref_revision(
         .old_head_oid
         .clone()
         .or_else(|| Some(request.head_oid.clone()));
-    let persisted = persist_request_ref_to_store(
+    let views = context.repo_config.views();
+    let sharing = if address_view.unwrap_or(views.full()) == views.full()
+        && context.access.reads_full_view(views)
+    {
+        RequestObjectSharing::Pool
+    } else {
+        RequestObjectSharing::Private
+    };
+    let persisted = persist_request_ref(
         state,
         &git,
         &context.repo_config,
         staging_repo,
         &published_request,
         &update,
+        sharing,
     )
     .await?;
     let expected_base_version = publication
@@ -415,7 +421,7 @@ pub(super) async fn persist_request_ref_revision(
     let mutation = state
         .metadata
         .requests()
-        .record_request_revision_with_stack(
+        .record_pushed_request_revision(
             RecordRequestRevisionInput {
                 request_id: request.id.clone(),
                 actor_user_id: actor_user_id.to_string(),
@@ -433,11 +439,14 @@ pub(super) async fn persist_request_ref_revision(
             expected_base_version,
             parent_facts,
             child_facts,
+            persisted
+                .pool_pack
+                .as_ref()
+                .map(|pool_pack| pool_pack.pack.clone()),
         )
         .await;
     match mutation {
         Ok(mutation) => {
-            let _update_lock = update_lock;
             state
                 .product_analytics
                 .capture(ProductEvent::request_revised(
@@ -450,6 +459,9 @@ pub(super) async fn persist_request_ref_revision(
                 .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised)
                 .await;
             persisted.fence.release().await;
+            if let Some(pool_pack) = &persisted.pool_pack {
+                retain_staged_pool_pack(state, &incarnation, pool_pack).await;
+            }
             crate::use_cases::request_checks::best_effort_evaluate_request_checks(
                 state,
                 &git,
@@ -466,20 +478,14 @@ pub(super) async fn persist_request_ref_revision(
             .await;
         }
         Err(error) => {
-            let rollback_state = state.clone();
-            let rollback_incarnation = incarnation.clone();
-            let request_ref = update.request_ref.clone();
-            crate::git::blocking::run(move || {
-                let _update_lock = update_lock;
-                rollback_request_ref(
-                    &rollback_state,
-                    &rollback_incarnation,
-                    &request_ref,
-                    persisted.previous_head,
-                );
-                Ok(())
-            })
-            .await?;
+            if let Some(pool_pack) = &persisted.pool_pack {
+                best_effort_delete_staged_git_segment(
+                    state,
+                    incarnation.repository_id(),
+                    &pool_pack.staged.staged_segment,
+                )
+                .await;
+            }
             crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
                 state,
                 std::slice::from_ref(&persisted.git_snapshot),

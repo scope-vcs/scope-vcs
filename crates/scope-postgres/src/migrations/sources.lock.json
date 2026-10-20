@@ -8,5 +8,6 @@
   "m0088_request_navigation_children_index.rs": "d118b488ade02ca1ba0cda2cba32f2596b45770f4a828824797f0ba7e795de62",
   "m0089_contribution_request_stacks.rs": "a8185ebde19d4e200685a4f4d31c543a8908e2c4e922870b4511a7c4182090f5",
   "m0090_job_traceparents.rs": "9cffcf57835e07b8b9b137cd8e944546b464eed058e65bee5656ad91c8be63c7",
-  "m0091_live_file_views.rs": "b4a0b60387a376f388917effb01174f72d8b2eef014dec1a5342fb70e0c1cb05"
+  "m0091_live_file_views.rs": "b4a0b60387a376f388917effb01174f72d8b2eef014dec1a5342fb70e0c1cb05",
+  "m0092_request_object_pool.rs": "226d48ad7bed1993d24de18f162345cb6c6f6f325539cbd87162919bbe4348d7"
 }

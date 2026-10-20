@@ -23,7 +23,6 @@ pub(crate) mod request_identity;
 pub(crate) mod request_inspection_policy;
 pub(crate) mod request_invitee;
 pub(crate) mod request_merge;
-pub(crate) mod request_ref_cleanup;
 pub(crate) mod request_revision_inspection;
 pub(crate) mod request_start;
 pub(crate) mod request_submit;
