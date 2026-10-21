@@ -195,3 +195,14 @@ fn review_bots_belong_to_one_live_link() {
     };
     assert!(!github_review_bots_survive(Some(&disconnected), &linked));
 }
+
+#[test]
+fn a_permission_grant_applies_only_to_the_account_github_answered_for() {
+    let author = account("octocat", GitHubAccountType::User);
+    let grant = |account_id| GitHubPermissionGrant {
+        account_id,
+        permission: GitHubRepositoryPermission::Write,
+    };
+    assert!(grant(author.id).belongs_to(&author));
+    assert!(!grant(author.id + 1).belongs_to(&author));
+}

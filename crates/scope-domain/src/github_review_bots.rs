@@ -110,6 +110,18 @@ pub enum GitHubRepositoryPermission {
     None,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GitHubPermissionGrant {
+    pub account_id: u64,
+    pub permission: GitHubRepositoryPermission,
+}
+
+impl GitHubPermissionGrant {
+    pub fn belongs_to(&self, author: &GitHubAccount) -> bool {
+        self.account_id == author.id
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubAuthorStanding {
     ListedReviewBot,

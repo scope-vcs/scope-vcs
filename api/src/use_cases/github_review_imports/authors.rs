@@ -51,7 +51,19 @@ impl<'a> ImportAuthors<'a> {
                     )
                     .await?
                 {
-                    GitHubPermissionAnswer::Known(permission) => Some(permission),
+                    GitHubPermissionAnswer::Known(grant) if grant.belongs_to(author) => {
+                        Some(grant.permission)
+                    }
+                    GitHubPermissionAnswer::Known(grant) => {
+                        self.refusals.push(format!(
+                            "GitHub answered for account {} when Scope asked whether {} (account {}) can write to {}.",
+                            grant.account_id,
+                            author.login,
+                            author.id,
+                            self.connection.github_full_name
+                        ));
+                        None
+                    }
                     GitHubPermissionAnswer::Refused(reason) => {
                         self.refusals.push(reason);
                         None

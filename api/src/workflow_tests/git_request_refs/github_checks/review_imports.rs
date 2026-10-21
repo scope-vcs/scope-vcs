@@ -250,14 +250,23 @@ async fn only_listed_review_bots_and_github_users_who_can_write_are_imported() {
     let writer = user(502, "octo-writer", "User");
     let reader = user(503, "octo-reader", "User");
     let hidden = user(504, "octo-hidden", "User");
-    owner.fake.report_permission("octo-writer", Some("write"));
-    owner.fake.report_permission("octo-reader", Some("read"));
+    let renamed = user(505, "octo-renamed", "User");
+    owner
+        .fake
+        .report_permission("octo-writer", Some(("write", 502)));
+    owner
+        .fake
+        .report_permission("octo-reader", Some(("read", 503)));
     owner.fake.report_permission("octo-hidden", None);
+    owner
+        .fake
+        .report_permission("octo-renamed", Some(("admin", 999)));
     for (review_id, author, comment_ids) in [
         (301, &spam, vec![311]),
         (302, &writer, vec![321, 322]),
         (303, &reader, vec![331]),
         (304, &hidden, vec![341]),
+        (305, &renamed, vec![351]),
     ] {
         owner.fake.report_pull_review(
             review(review_id, author.clone(), &head),
@@ -269,8 +278,8 @@ async fn only_listed_review_bots_and_github_users_who_can_write_are_imported() {
         deliver_review_id(&owner, review_id, GITHUB_REPOSITORY_ID).await;
     }
 
-    assert_eq!(import_pass(&owner).await, 4);
-    assert_eq!(owner.fake.permission_reads.load(Ordering::SeqCst), 3);
+    assert_eq!(import_pass(&owner).await, 5);
+    assert_eq!(owner.fake.permission_reads.load(Ordering::SeqCst), 4);
     let mut imported = threads(&owner)
         .await
         .iter()
@@ -293,8 +302,12 @@ async fn a_thread_resolved_by_someone_who_cannot_write_stays_open() {
     let owner = owner_request("review-import-threads", &[]).await;
     list_review_bots(&owner, &["greptile-apps[bot]"]).await;
     let head = owner.head();
-    owner.fake.report_permission("octo-reader", Some("read"));
-    owner.fake.report_permission("octo-writer", Some("admin"));
+    owner
+        .fake
+        .report_permission("octo-reader", Some(("read", 503)));
+    owner
+        .fake
+        .report_permission("octo-writer", Some(("admin", 502)));
     owner.fake.report_pull_review(
         review(REVIEW_ID, bot(), &head),
         vec![line_comment(401, &head, "request.txt", None, 1)],
@@ -315,4 +328,28 @@ async fn a_thread_resolved_by_someone_who_cannot_write_stays_open() {
     let resolved = by_client_id(&threads, "github:review-comment:401");
     assert_eq!(resolved["status"], "Resolved");
     assert_eq!(resolved["resolved_by"]["account"]["login"], "octo-writer");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_resolution_by_a_renamed_login_that_now_belongs_to_a_writer_stays_open() {
+    let owner = owner_request("review-import-renamed-resolver", &[]).await;
+    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
+    let head = owner.head();
+    owner
+        .fake
+        .report_permission("octo-writer", Some(("admin", 502)));
+    owner.fake.report_pull_review(
+        review(REVIEW_ID, bot(), &head),
+        vec![line_comment(402, &head, "request.txt", None, 1)],
+    );
+    deliver_review(&owner, GITHUB_REPOSITORY_ID).await;
+    assert_eq!(import_pass(&owner).await, 1);
+
+    deliver_thread(&owner, "resolved", 402, user(777, "octo-writer", "User")).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    let threads = threads(&owner).await;
+    assert_eq!(
+        by_client_id(&threads, "github:review-comment:402")["status"],
+        "Open"
+    );
 }

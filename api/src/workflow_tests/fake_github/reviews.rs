@@ -12,7 +12,7 @@ impl FakeGitHub {
     pub(in crate::workflow_tests) fn report_permission(
         &self,
         login: &str,
-        permission: Option<&'static str>,
+        permission: Option<(&'static str, u64)>,
     ) {
         self.collaborator_permissions
             .lock()
@@ -82,10 +82,10 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                  AxumPath((_, _, username)): AxumPath<(String, String, String)>| async move {
                     fake.permission_reads.fetch_add(1, Ordering::SeqCst);
                     match fake.collaborator_permissions.lock().unwrap().get(&username) {
-                        Some(Some(permission)) => Json(serde_json::json!({
+                        Some(Some((permission, account_id))) => Json(serde_json::json!({
                             "permission": permission,
                             "role_name": permission,
-                            "user": { "login": username },
+                            "user": { "login": username, "id": account_id },
                         }))
                         .into_response(),
                         Some(None) => StatusCode::FORBIDDEN.into_response(),

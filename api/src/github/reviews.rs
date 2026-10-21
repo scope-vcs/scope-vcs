@@ -4,7 +4,7 @@ use crate::error::ApiError;
 use reqwest::{Method, StatusCode};
 use scope_domain::{
     github_account::{GitHubAccount, GitHubAccountType},
-    github_review_bots::GitHubRepositoryPermission,
+    github_review_bots::{GitHubPermissionGrant, GitHubRepositoryPermission},
     requests::{GitHubCommentPosition, GitHubCommentSubject, RequestDiffSide},
 };
 use serde::Deserialize;
@@ -68,11 +68,17 @@ struct ReviewComment {
 #[derive(Deserialize)]
 struct RepositoryPermission {
     permission: String,
+    user: Option<PermissionUser>,
+}
+
+#[derive(Deserialize)]
+struct PermissionUser {
+    id: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum GitHubPermissionAnswer {
-    Known(GitHubRepositoryPermission),
+    Known(GitHubPermissionGrant),
     Refused(String),
 }
 
@@ -241,9 +247,15 @@ impl GitHubApp {
             .json::<RepositoryPermission>()
             .await
             .map_err(|error| unavailable(format!("GitHub answered unreadably: {error}")))?;
+        let Some(user) = answer.user else {
+            return Ok(refused("named no account".to_string()));
+        };
         Ok(
             match parse_enum::<GitHubRepositoryPermission>(&answer.permission) {
-                Some(permission) => GitHubPermissionAnswer::Known(permission),
+                Some(permission) => GitHubPermissionAnswer::Known(GitHubPermissionGrant {
+                    account_id: user.id,
+                    permission,
+                }),
                 None => refused(format!(
                     "answered the unknown permission {}",
                     answer.permission
