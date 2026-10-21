@@ -256,11 +256,13 @@ async fn thread_resolution_resolves_and_reopens_the_root_discussion() {
     let store = postgres_store();
     open_full_view_request(&store).await;
     let link = live_link(&store).await;
+    let claim_token = claim_thread(&store, "PRRT_31", RESOLVER).await;
     let transition = |status| TransitionGitHubDiscussionCommand {
         request_id: "req_1".to_string(),
         github_link_id: link.clone(),
-        client_discussion_id: github_review_comment_client_id(31),
-        github_account_id: RESOLVER,
+        root_comment_id: 31,
+        claim_token: claim_token.clone(),
+        resolver: account(RESOLVER, "octocat"),
         status,
         now_unix: 40,
     };
@@ -345,10 +347,10 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         subject,
     };
     let review_job = job(GitHubReviewImportSubject::Review { review_id: 5 });
-    let thread = |status| {
+    let thread = |node_id: &str| {
         job(GitHubReviewImportSubject::Thread {
             root_comment_id: 31,
-            status,
+            node_id: node_id.to_string(),
             github_account_id: RESOLVER,
         })
     };
@@ -363,7 +365,7 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         .await
         .unwrap();
     requests
-        .queue_github_review_import(&thread(RequestDiscussionStatus::Resolved), &accounts, 10)
+        .queue_github_review_import(&thread("PRRT_first"), &accounts, 10)
         .await
         .unwrap();
     let mut other_repo = job(GitHubReviewImportSubject::Reply { comment_id: 9 });
@@ -385,7 +387,7 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         .clone();
     assert_eq!(claimed_thread.attempts, 1);
     requests
-        .queue_github_review_import(&thread(RequestDiscussionStatus::Open), &accounts, 20)
+        .queue_github_review_import(&thread("PRRT_second"), &accounts, 20)
         .await
         .unwrap();
     requests
@@ -410,11 +412,45 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         remaining[0].subject,
         GitHubReviewImportSubject::Thread {
             root_comment_id: 31,
-            status: RequestDiscussionStatus::Open,
+            node_id: "PRRT_second".to_string(),
             github_account_id: RESOLVER,
         }
     );
     assert_eq!(remaining[0].attempts, 1);
+}
+
+fn thread_job(node_id: &str, github_account_id: u64) -> QueueGitHubReviewImport {
+    QueueGitHubReviewImport {
+        request_id: "req_1".to_string(),
+        repo_id: "owner/repo".to_string(),
+        github_repository_id: 42,
+        pull_number: 7,
+        subject: GitHubReviewImportSubject::Thread {
+            root_comment_id: 31,
+            node_id: node_id.to_string(),
+            github_account_id,
+        },
+    }
+}
+
+async fn claim_thread(store: &MetadataStore, node_id: &str, github_account_id: u64) -> String {
+    store
+        .requests()
+        .queue_github_review_import(
+            &thread_job(node_id, github_account_id),
+            &[account(github_account_id, "octocat")],
+            10,
+        )
+        .await
+        .unwrap();
+    store
+        .requests()
+        .claim_due_github_review_imports(1_000, 2_000, 10)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap()
+        .claim_token
 }
 
 async fn last_errors(store: &MetadataStore) -> Vec<(i64, Option<i64>, Option<String>)> {
@@ -625,8 +661,9 @@ async fn an_import_that_loses_the_race_with_a_disconnect_commits_nothing() {
             .transition_github_discussion(TransitionGitHubDiscussionCommand {
                 request_id: "req_1".to_string(),
                 github_link_id: stale_link,
-                client_discussion_id: github_review_comment_client_id(51),
-                github_account_id: RESOLVER,
+                root_comment_id: 51,
+                claim_token: "stale-claim".to_string(),
+                resolver: account(RESOLVER, "octocat"),
                 status: RequestDiscussionStatus::Resolved,
                 now_unix: 22,
             })
@@ -684,5 +721,63 @@ async fn a_comment_imported_on_its_own_is_never_imported_again_as_a_reply() {
             ("github:review-comment:20", 0),
             ("github:review-comment:21", 0)
         ]
+    );
+}
+
+#[tokio::test]
+async fn an_older_thread_worker_cannot_apply_after_a_newer_delivery() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let link = live_link(&store).await;
+    let mut import = review(&link, vec![comment(31, None)], 10);
+    import.accounts.push(account(RESOLVER, "octocat"));
+    store.requests().import_github_review(import).await.unwrap();
+    let older = claim_thread(&store, "PRRT_31", RESOLVER).await;
+    let newer = claim_thread(&store, "PRRT_31", RESOLVER).await;
+    assert_ne!(older, newer);
+    let transition = |claim_token: &str, status| TransitionGitHubDiscussionCommand {
+        request_id: "req_1".to_string(),
+        github_link_id: link.clone(),
+        root_comment_id: 31,
+        claim_token: claim_token.to_string(),
+        resolver: account(RESOLVER, "octocat"),
+        status,
+        now_unix: 40,
+    };
+    let requests = store.requests();
+
+    assert!(matches!(
+        requests
+            .transition_github_discussion(transition(&newer, RequestDiscussionStatus::Resolved))
+            .await
+            .unwrap(),
+        GitHubThreadTransition::Applied(_)
+    ));
+    requests
+        .finish_github_review_import(
+            &GitHubReviewImportJob {
+                request_id: "req_1".to_string(),
+                repo_id: "owner/repo".to_string(),
+                github_repository_id: 42,
+                pull_number: 7,
+                github_link_id: link.clone(),
+                subject: thread_job("PRRT_31", RESOLVER).subject,
+                claim_token: newer.clone(),
+                attempts: 1,
+            },
+            GitHubReviewImportFinish::Done,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        requests
+            .transition_github_discussion(transition(&older, RequestDiscussionStatus::Open))
+            .await
+            .unwrap(),
+        GitHubThreadTransition::Superseded
+    );
+    assert_eq!(
+        discussions(&store).await.discussions[0].discussion.status,
+        RequestDiscussionStatus::Resolved
     );
 }

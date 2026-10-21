@@ -3,7 +3,7 @@ use crate::error::ApiError;
 use crate::github::reviews::{GitHubUser, github_account};
 use scope_domain::{
     github_account::GitHubAccount,
-    requests::{GitHubBranch, GitHubReviewImportSubject, RequestDiscussionStatus},
+    requests::{GitHubBranch, GitHubReviewImportSubject},
 };
 use serde::Deserialize;
 
@@ -59,6 +59,7 @@ struct Comment {
 
 #[derive(Deserialize)]
 struct Thread {
+    node_id: Option<String>,
     #[serde(default)]
     comments: Vec<Comment>,
 }
@@ -81,7 +82,9 @@ pub(super) fn parse(event: &str, body: &[u8]) -> Result<Option<GitHubReviewDeliv
             }
         }
         ("pull_request_review_thread", "resolved" | "unresolved") => {
-            let Some(root_comment_id) = required(payload.thread, "thread")?
+            let thread = required(payload.thread, "thread")?;
+            let node_id = required(thread.node_id, "thread.node_id")?;
+            let Some(root_comment_id) = thread
                 .comments
                 .iter()
                 .map(|comment| comment.in_reply_to_id.unwrap_or(comment.id))
@@ -94,11 +97,7 @@ pub(super) fn parse(event: &str, body: &[u8]) -> Result<Option<GitHubReviewDeliv
             accounts.push(resolver);
             GitHubReviewImportSubject::Thread {
                 root_comment_id,
-                status: if action == "resolved" {
-                    RequestDiscussionStatus::Resolved
-                } else {
-                    RequestDiscussionStatus::Open
-                },
+                node_id,
                 github_account_id,
             }
         }
@@ -138,7 +137,7 @@ mod tests {
             },
             "review": { "id": 70 },
             "comment": { "id": 71, "in_reply_to_id": 69 },
-            "thread": { "comments": [
+            "thread": { "node_id": "PRRT_thread", "comments": [
                 { "id": 72, "in_reply_to_id": 69 },
                 { "id": 69, "in_reply_to_id": null },
             ] },
@@ -179,15 +178,12 @@ mod tests {
             ),
             delivery(GitHubReviewImportSubject::Reply { comment_id: 71 })
         );
-        for (action, status) in [
-            ("resolved", RequestDiscussionStatus::Resolved),
-            ("unresolved", RequestDiscussionStatus::Open),
-        ] {
+        for action in ["resolved", "unresolved"] {
             assert_eq!(
                 parse("pull_request_review_thread", payload(action, 42, branch)),
                 delivery(GitHubReviewImportSubject::Thread {
                     root_comment_id: 69,
-                    status,
+                    node_id: "PRRT_thread".to_string(),
                     github_account_id: 5,
                 })
             );

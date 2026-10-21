@@ -1,8 +1,6 @@
 use super::{
     RequestStore, acquire_aggregate_lock,
-    entities::{decode_enum, encode_enum},
     generated_ids::{GeneratedIdKind, generate_id},
-    github_read_queue::GitHubReadQueue,
     integer_columns::{
         i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u64_to_i64,
     },
@@ -21,8 +19,8 @@ use scope_domain::{
     requests::{
         GitHubReviewImportSubject, ImportGitHubDiscussionInput, ImportGitHubReplyInput, Request,
         RequestDiscussion, RequestDiscussionAnchor, RequestDiscussionStatus,
-        accepts_github_reviews, import_github_discussion, import_github_reply,
-        transition_github_discussion,
+        accepts_github_reviews, github_review_comment_client_id, import_github_discussion,
+        import_github_reply, transition_github_discussion,
     },
     views::Views,
 };
@@ -37,17 +35,6 @@ mod tests;
 const REVIEW: &str = "review";
 const REPLY: &str = "reply";
 const THREAD: &str = "thread";
-
-const REVIEW_IMPORTS: GitHubReadQueue = GitHubReadQueue {
-    table: "scope_github_review_imports",
-    key: &["request_id", "subject", "github_subject_id"],
-    joined: "",
-    joined_on: "",
-    returning: "read.request_id, read.subject, read.github_subject_id, read.repo_id, \
-        read.github_repository_id, read.pull_number, read.github_link_id, read.thread_status, \
-        read.github_actor_id, read.attempts",
-    label: "GitHub review import",
-};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueueGitHubReviewImport {
@@ -66,6 +53,7 @@ pub struct GitHubReviewImportJob {
     pub pull_number: u64,
     pub github_link_id: String,
     pub subject: GitHubReviewImportSubject,
+    pub claim_token: String,
     pub attempts: u32,
 }
 
@@ -78,15 +66,16 @@ struct ImportJobRow {
     github_repository_id: i64,
     pull_number: i64,
     github_link_id: String,
-    thread_status: Option<String>,
+    github_thread_node_id: Option<String>,
     github_actor_id: Option<i64>,
+    claim_token: String,
     attempts: i32,
 }
 
 struct SubjectColumns {
     subject: &'static str,
     github_subject_id: u64,
-    thread_status: Option<String>,
+    thread_node_id: Option<String>,
     github_actor_id: Option<u64>,
 }
 
@@ -129,8 +118,9 @@ pub struct GitHubReviewImport {
 pub struct TransitionGitHubDiscussionCommand {
     pub request_id: String,
     pub github_link_id: String,
-    pub client_discussion_id: String,
-    pub github_account_id: u64,
+    pub root_comment_id: u64,
+    pub claim_token: String,
+    pub resolver: GitHubAccount,
     pub status: RequestDiscussionStatus,
     pub now_unix: u64,
 }
@@ -140,6 +130,7 @@ pub enum GitHubThreadTransition {
     Applied(Box<GitHubReviewImport>),
     Unchanged,
     MissingDiscussion,
+    Superseded,
     Ignored,
 }
 
@@ -157,8 +148,8 @@ impl RequestStore {
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_github_review_imports (request_id, subject, github_subject_id,
-                repo_id, github_repository_id, pull_number, github_link_id, thread_status,
-                github_actor_id, attempts, next_attempt_at_unix)
+                repo_id, github_repository_id, pull_number, github_link_id,
+                github_thread_node_id, github_actor_id, attempts, next_attempt_at_unix)
              SELECT request.id, $2, $3, request.repo_id, $5, $6, connection.link_id, $7, $8, 0, $9
                FROM scope_requests request
                JOIN scope_github_connections connection
@@ -168,16 +159,15 @@ impl RequestStore {
               WHERE request.id = $1 AND request.repo_id = $4
              ON CONFLICT (request_id, subject, github_subject_id) DO UPDATE
                 SET github_link_id = EXCLUDED.github_link_id,
-                    thread_status = EXCLUDED.thread_status,
+                    github_thread_node_id = EXCLUDED.github_thread_node_id,
                     github_actor_id = EXCLUDED.github_actor_id,
+                    claim_token = NULL,
                     attempts = 0,
                     next_attempt_at_unix = EXCLUDED.next_attempt_at_unix,
                     last_error = NULL
               WHERE scope_github_review_imports.next_attempt_at_unix IS NULL
                  OR scope_github_review_imports.github_link_id <> EXCLUDED.github_link_id
-                 OR (scope_github_review_imports.thread_status,
-                     scope_github_review_imports.github_actor_id)
-                    IS DISTINCT FROM (EXCLUDED.thread_status, EXCLUDED.github_actor_id)",
+                 OR scope_github_review_imports.subject = 'thread'",
             [
                 job.request_id.clone().into(),
                 columns.subject.into(),
@@ -185,7 +175,7 @@ impl RequestStore {
                 job.repo_id.clone().into(),
                 u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
                 u64_to_i64(job.pull_number, "GitHub pull request number")?.into(),
-                columns.thread_status.into(),
+                columns.thread_node_id.into(),
                 optional_u64_to_i64(columns.github_actor_id, "GitHub account id")?.into(),
                 u64_to_i64(now_unix, "GitHub review import time")?.into(),
             ],
@@ -202,12 +192,36 @@ impl RequestStore {
         retry_at_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubReviewImportJob>, PostgresError> {
-        REVIEW_IMPORTS
-            .claim_due::<ImportJobRow>(self.db.as_ref(), now_unix, retry_at_unix, limit)
-            .await?
-            .into_iter()
-            .map(ImportJobRow::into_job)
-            .collect()
+        ImportJobRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE scope_github_review_imports job
+                SET attempts = job.attempts + 1,
+                    next_attempt_at_unix = $2,
+                    claim_token = gen_random_uuid()::text
+               FROM (SELECT request_id, subject, github_subject_id
+                       FROM scope_github_review_imports
+                      WHERE next_attempt_at_unix <= $1
+                      ORDER BY next_attempt_at_unix
+                      LIMIT $3
+                      FOR UPDATE SKIP LOCKED) due
+              WHERE job.request_id = due.request_id
+                AND job.subject = due.subject
+                AND job.github_subject_id = due.github_subject_id
+          RETURNING job.request_id, job.subject, job.github_subject_id, job.repo_id,
+                    job.github_repository_id, job.pull_number, job.github_link_id,
+                    job.github_thread_node_id, job.github_actor_id, job.claim_token,
+                    job.attempts",
+            [
+                u64_to_i64(now_unix, "GitHub review import time")?.into(),
+                u64_to_i64(retry_at_unix, "GitHub review import time")?.into(),
+                u64_to_i64(limit, "GitHub review import batch size")?.into(),
+            ],
+        ))
+        .all(self.db.as_ref())
+        .await?
+        .into_iter()
+        .map(ImportJobRow::into_job)
+        .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_review_import"))]
@@ -221,12 +235,10 @@ impl RequestStore {
             job.request_id.clone().into(),
             columns.subject.into(),
             u64_to_i64(columns.github_subject_id, "GitHub review import subject")?.into(),
-            columns.thread_status.into(),
-            optional_u64_to_i64(columns.github_actor_id, "GitHub account id")?.into(),
+            job.claim_token.clone().into(),
         ];
         let claimed = "request_id = $1 AND subject = $2 AND github_subject_id = $3
-            AND thread_status IS NOT DISTINCT FROM $4
-            AND github_actor_id IS NOT DISTINCT FROM $5";
+            AND claim_token = $4";
         let sql = match finish {
             GitHubReviewImportFinish::Done => {
                 format!("DELETE FROM scope_github_review_imports WHERE {claimed}")
@@ -240,7 +252,7 @@ impl RequestStore {
                 values.push(error.into());
                 format!(
                     "UPDATE scope_github_review_imports
-                        SET next_attempt_at_unix = $6, last_error = $7
+                        SET next_attempt_at_unix = $5, last_error = $6
                       WHERE {claimed}"
                 )
             }
@@ -354,8 +366,37 @@ impl RequestStore {
             tx.commit().await?;
             return Ok(GitHubThreadTransition::Ignored);
         };
-        let Some(mut discussion) =
-            github_discussion_by_client_id(&tx, &request.id, &command.client_discussion_id).await?
+        let claimed = tx
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT 1 AS claimed FROM scope_github_review_imports
+                  WHERE request_id = $1 AND subject = $2 AND github_subject_id = $3
+                    AND claim_token = $4
+                  FOR UPDATE",
+                [
+                    request.id.clone().into(),
+                    THREAD.into(),
+                    u64_to_i64(command.root_comment_id, "GitHub review comment id")?.into(),
+                    command.claim_token.clone().into(),
+                ],
+            ))
+            .await?;
+        if claimed.is_none() {
+            tx.commit().await?;
+            return Ok(GitHubThreadTransition::Superseded);
+        }
+        save_github_accounts(
+            &tx,
+            std::slice::from_ref(&command.resolver),
+            command.now_unix,
+        )
+        .await?;
+        let Some(mut discussion) = github_discussion_by_client_id(
+            &tx,
+            &request.id,
+            &github_review_comment_client_id(command.root_comment_id),
+        )
+        .await?
         else {
             tx.commit().await?;
             return Ok(GitHubThreadTransition::MissingDiscussion);
@@ -364,7 +405,7 @@ impl RequestStore {
             &mut request,
             &views,
             &mut discussion,
-            command.github_account_id,
+            command.resolver.id,
             command.status,
             command.now_unix,
         )? {
@@ -498,23 +539,23 @@ fn subject_columns(subject: &GitHubReviewImportSubject) -> Result<SubjectColumns
         GitHubReviewImportSubject::Review { review_id } => SubjectColumns {
             subject: REVIEW,
             github_subject_id: *review_id,
-            thread_status: None,
+            thread_node_id: None,
             github_actor_id: None,
         },
         GitHubReviewImportSubject::Reply { comment_id } => SubjectColumns {
             subject: REPLY,
             github_subject_id: *comment_id,
-            thread_status: None,
+            thread_node_id: None,
             github_actor_id: None,
         },
         GitHubReviewImportSubject::Thread {
             root_comment_id,
-            status,
+            node_id,
             github_account_id,
         } => SubjectColumns {
             subject: THREAD,
             github_subject_id: *root_comment_id,
-            thread_status: Some(encode_enum(*status)?),
+            thread_node_id: Some(node_id.clone()),
             github_actor_id: Some(*github_account_id),
         },
     })
@@ -525,7 +566,7 @@ impl ImportJobRow {
         let github_subject_id = i64_to_u64(self.github_subject_id, "GitHub review import subject")?;
         let subject = match (
             self.subject.as_str(),
-            self.thread_status,
+            self.github_thread_node_id,
             optional_i64_to_u64(self.github_actor_id, "GitHub account id")?,
         ) {
             (REVIEW, None, None) => GitHubReviewImportSubject::Review {
@@ -534,9 +575,9 @@ impl ImportJobRow {
             (REPLY, None, None) => GitHubReviewImportSubject::Reply {
                 comment_id: github_subject_id,
             },
-            (THREAD, Some(status), Some(github_account_id)) => GitHubReviewImportSubject::Thread {
+            (THREAD, Some(node_id), Some(github_account_id)) => GitHubReviewImportSubject::Thread {
                 root_comment_id: github_subject_id,
-                status: decode_enum(status)?,
+                node_id,
                 github_account_id,
             },
             (subject, _, _) => {
@@ -552,6 +593,7 @@ impl ImportJobRow {
             pull_number: i64_to_u64(self.pull_number, "GitHub pull request number")?,
             github_link_id: self.github_link_id,
             subject,
+            claim_token: self.claim_token,
             attempts: i32_to_u32(self.attempts, "GitHub review import attempts")?,
         })
     }

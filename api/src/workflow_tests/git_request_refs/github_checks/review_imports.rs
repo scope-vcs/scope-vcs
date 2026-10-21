@@ -128,7 +128,10 @@ async fn deliver_thread(
                 "number": 1,
                 "head": { "ref": owner.branch(), "repo": { "id": GITHUB_REPOSITORY_ID } },
             },
-            "thread": { "comments": [{ "id": root_comment_id, "in_reply_to_id": null }] },
+            "thread": {
+                "node_id": format!("PRRT_{root_comment_id}"),
+                "comments": [{ "id": root_comment_id, "in_reply_to_id": null }],
+            },
             "sender": sender,
         }),
         WEBHOOK_SECRET,
@@ -318,10 +321,16 @@ async fn a_thread_resolved_by_someone_who_cannot_write_stays_open() {
         by_client_id(&threads, "github:review-comment:401")["status"].clone()
     };
 
+    owner
+        .fake
+        .report_review_thread(401, Some(("octo-reader", 503)));
     deliver_thread(&owner, "resolved", 401, user(503, "octo-reader", "User")).await;
     assert_eq!(import_pass(&owner).await, 1);
     assert_eq!(status(threads(&owner).await), "Open");
 
+    owner
+        .fake
+        .report_review_thread(401, Some(("octo-writer", 502)));
     deliver_thread(&owner, "resolved", 401, user(502, "octo-writer", "User")).await;
     assert_eq!(import_pass(&owner).await, 1);
     let threads = threads(&owner).await;
@@ -345,6 +354,9 @@ async fn a_resolution_by_a_renamed_login_that_now_belongs_to_a_writer_stays_open
     deliver_review(&owner, GITHUB_REPOSITORY_ID).await;
     assert_eq!(import_pass(&owner).await, 1);
 
+    owner
+        .fake
+        .report_review_thread(402, Some(("octo-writer", 777)));
     deliver_thread(&owner, "resolved", 402, user(777, "octo-writer", "User")).await;
     assert_eq!(import_pass(&owner).await, 1);
     let threads = threads(&owner).await;
@@ -352,4 +364,35 @@ async fn a_resolution_by_a_renamed_login_that_now_belongs_to_a_writer_stays_open
         by_client_id(&threads, "github:review-comment:402")["status"],
         "Open"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_late_resolution_delivery_follows_the_thread_state_on_github() {
+    let owner = owner_request("review-import-late-thread", &[]).await;
+    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
+    let head = owner.head();
+    owner
+        .fake
+        .report_permission("octo-writer", Some(("write", 502)));
+    owner.fake.report_pull_review(
+        review(REVIEW_ID, bot(), &head),
+        vec![line_comment(403, &head, "request.txt", None, 1)],
+    );
+    deliver_review(&owner, GITHUB_REPOSITORY_ID).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    let status = |threads: Vec<serde_json::Value>| {
+        by_client_id(&threads, "github:review-comment:403")["status"].clone()
+    };
+
+    owner.fake.report_review_thread(403, None);
+    deliver_thread(&owner, "resolved", 403, user(502, "octo-writer", "User")).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    assert_eq!(status(threads(&owner).await), "Open");
+
+    owner
+        .fake
+        .report_review_thread(403, Some(("octo-writer", 502)));
+    deliver_thread(&owner, "unresolved", 403, user(502, "octo-writer", "User")).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    assert_eq!(status(threads(&owner).await), "Resolved");
 }

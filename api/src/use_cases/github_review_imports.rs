@@ -12,9 +12,9 @@ use scope_domain::{
     github_connection::GitHubConnection,
     repository::access::{RepositoryAccess, RepositoryAccessContext},
     requests::{
-        GitHubReviewImportSubject, Request, RequestDiscussion, RequestRevision,
-        github_comment_anchors, github_comment_body, github_retry_at, github_review_anchor,
-        github_review_client_id, github_review_comment_client_id,
+        GitHubReviewImportSubject, Request, RequestDiscussion, RequestDiscussionStatus,
+        RequestRevision, github_comment_anchors, github_comment_body, github_retry_at,
+        github_review_anchor, github_review_client_id, github_review_comment_client_id,
     },
 };
 use scope_postgres::db::{
@@ -172,18 +172,35 @@ async fn import_subject(
         }
         GitHubReviewImportSubject::Thread {
             root_comment_id,
-            status,
+            ref node_id,
             github_account_id,
         } => {
-            let Some(resolver) = state
-                .metadata
-                .requests()
-                .github_account(github_account_id)
+            let Some(thread) = state
+                .github_app()?
+                .review_thread(connection.installation_id, node_id)
                 .await?
             else {
                 return Ok(());
             };
-            if !authors.admits(&resolver).await? {
+            if thread.root_comment_id != Some(root_comment_id) {
+                return Ok(());
+            }
+            let (status, actor) = if thread.resolved {
+                (RequestDiscussionStatus::Resolved, thread.resolver)
+            } else {
+                (
+                    RequestDiscussionStatus::Open,
+                    state
+                        .metadata
+                        .requests()
+                        .github_account(github_account_id)
+                        .await?,
+                )
+            };
+            let Some(actor) = actor else {
+                return Ok(());
+            };
+            if !authors.admits(&actor).await? {
                 return Ok(());
             }
             let transition = state
@@ -192,8 +209,9 @@ async fn import_subject(
                 .transition_github_discussion(TransitionGitHubDiscussionCommand {
                     request_id: job.request_id.clone(),
                     github_link_id: job.github_link_id.clone(),
-                    client_discussion_id: github_review_comment_client_id(root_comment_id),
-                    github_account_id,
+                    root_comment_id,
+                    claim_token: job.claim_token.clone(),
+                    resolver: actor,
                     status,
                     now_unix: unix_now()?,
                 })
@@ -203,7 +221,9 @@ async fn import_subject(
                     publish(state, &import.request, &import.discussions).await;
                     Ok(())
                 }
-                GitHubThreadTransition::Unchanged | GitHubThreadTransition::Ignored => Ok(()),
+                GitHubThreadTransition::Unchanged
+                | GitHubThreadTransition::Superseded
+                | GitHubThreadTransition::Ignored => Ok(()),
                 GitHubThreadTransition::MissingDiscussion => Err(ApiError::conflict(
                     "the GitHub thread's root comment has not been imported yet",
                 )),

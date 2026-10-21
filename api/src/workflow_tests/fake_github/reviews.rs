@@ -4,11 +4,28 @@ use axum::{
     extract::{Path as AxumPath, State as AxumState},
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use std::sync::{Arc, atomic::Ordering};
 
 impl FakeGitHub {
+    pub(in crate::workflow_tests) fn report_review_thread(
+        &self,
+        root_comment_id: u64,
+        resolved_by: Option<(&str, u64)>,
+    ) {
+        self.review_threads.lock().unwrap().insert(
+            format!("PRRT_{root_comment_id}"),
+            serde_json::json!({
+                "isResolved": resolved_by.is_some(),
+                "resolvedBy": resolved_by.map(|(login, id)| serde_json::json!({
+                    "login": login, "databaseId": id, "avatarUrl": null,
+                })),
+                "comments": { "nodes": [{ "databaseId": root_comment_id }] },
+            }),
+        );
+    }
+
     pub(in crate::workflow_tests) fn report_permission(
         &self,
         login: &str,
@@ -45,6 +62,20 @@ fn found(value: Option<serde_json::Value>) -> Response {
 
 pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
     Router::new()
+        .route(
+            "/graphql",
+            post(
+                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                 Json(body): Json<serde_json::Value>| async move {
+                    let node_id = body["variables"]["id"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .to_string();
+                    let node = fake.review_threads.lock().unwrap().get(&node_id).cloned();
+                    Json(serde_json::json!({ "data": { "node": node } }))
+                },
+            ),
+        )
         .route(
             "/repos/{owner}/{repo}/pulls/{number}/reviews/{id}",
             get(

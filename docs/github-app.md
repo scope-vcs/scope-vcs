@@ -333,9 +333,14 @@ one after 30 seconds, 2, 10, and 30 minutes, then gives up.
   `GET /repos/{owner}/{repo}/pulls/comments/{id}`. When that first comment was
   never imported, Scope reads and imports it too. Top-level comments arrive
   with their review instead.
-- **Pull request review thread** (`resolved`, `unresolved`): resolves or
-  reopens the discussion made from the thread's first comment, recording the
-  GitHub account that did it as the resolver.
+- **Pull request review thread** (`resolved`, `unresolved`): the delivery is
+  only a hint. When the job runs, Scope reads the thread's current state with
+  GraphQL (`node(id:)` on the thread's `node_id`, `isResolved` and
+  `resolvedBy`, under Pull requests read) and resolves or reopens the
+  discussion made from the thread's first comment to match, recording GitHub's
+  `resolvedBy` account as the resolver. A newer delivery for the same thread
+  replaces the job's claim, so an older worker that is still reading GitHub
+  commits nothing.
 
 Scope imports a review, review comment, reply, or thread resolution only
 from a listed review bot or from a GitHub user who can write to the

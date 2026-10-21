@@ -1,5 +1,5 @@
 use super::GitHubApp;
-use super::client::{parse_enum, parse_time, unavailable};
+use super::client::{parse_enum, parse_time, send, unavailable};
 use crate::error::ApiError;
 use reqwest::{Method, StatusCode};
 use scope_domain::{
@@ -63,6 +63,62 @@ struct ReviewComment {
     commit_id: String,
     original_commit_id: String,
     created_at: String,
+}
+
+const REVIEW_THREAD_QUERY: &str = "query($id: ID!) { node(id: $id) { \
+    ... on PullRequestReviewThread { isResolved \
+    resolvedBy { login databaseId avatarUrl } \
+    comments(first: 1) { nodes { databaseId } } } } }";
+
+#[derive(Deserialize)]
+struct GraphQlAnswer {
+    data: Option<ThreadData>,
+    #[serde(default)]
+    errors: Vec<GraphQlError>,
+}
+
+#[derive(Deserialize)]
+struct GraphQlError {
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct ThreadData {
+    node: Option<ThreadNode>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadNode {
+    is_resolved: Option<bool>,
+    resolved_by: Option<GraphQlUser>,
+    comments: Option<ThreadComments>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphQlUser {
+    login: String,
+    database_id: Option<u64>,
+    avatar_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ThreadComments {
+    nodes: Vec<ThreadComment>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadComment {
+    database_id: Option<u64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GitHubReviewThread {
+    pub(crate) resolved: bool,
+    pub(crate) resolver: Option<GitHubAccount>,
+    pub(crate) root_comment_id: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -207,6 +263,54 @@ impl GitHubApp {
 }
 
 impl GitHubApp {
+    pub(crate) async fn review_thread(
+        &self,
+        installation_id: u64,
+        node_id: &str,
+    ) -> Result<Option<GitHubReviewThread>, ApiError> {
+        let Some(token) = self.installation_token(installation_id).await? else {
+            return Ok(None);
+        };
+        let request = self
+            .request(Method::POST, "/graphql")
+            .bearer_auth(token)
+            .json(&serde_json::json!({
+                "query": REVIEW_THREAD_QUERY,
+                "variables": { "id": node_id },
+            }));
+        let Some(answer) = send::<GraphQlAnswer>(request, "/graphql").await? else {
+            return Ok(None);
+        };
+        if let Some(error) = answer.errors.first() {
+            return Err(unavailable(format!(
+                "GitHub could not read review thread {node_id}: {}",
+                error.message
+            )));
+        }
+        let Some(node) = answer.data.and_then(|data| data.node) else {
+            return Ok(None);
+        };
+        let Some(resolved) = node.is_resolved else {
+            return Ok(None);
+        };
+        Ok(Some(GitHubReviewThread {
+            resolved,
+            resolver: node.resolved_by.and_then(|user| {
+                GitHubAccount::new(
+                    user.database_id?,
+                    user.login,
+                    GitHubAccountType::User,
+                    user.avatar_url,
+                )
+                .ok()
+            }),
+            root_comment_id: node
+                .comments
+                .and_then(|comments| comments.nodes.into_iter().next())
+                .and_then(|comment| comment.database_id),
+        }))
+    }
+
     pub(crate) async fn repository_permission(
         &self,
         installation_id: u64,

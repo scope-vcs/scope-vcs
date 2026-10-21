@@ -33,7 +33,7 @@ pub enum GitHubReviewImportSubject {
     },
     Thread {
         root_comment_id: u64,
-        status: RequestDiscussionStatus,
+        node_id: String,
         github_account_id: u64,
     },
 }

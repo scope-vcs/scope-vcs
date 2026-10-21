@@ -98,8 +98,9 @@ impl MigrationTrait for Migration {
                     github_repository_id bigint NOT NULL,
                     pull_number bigint NOT NULL,
                     github_link_id character varying NOT NULL,
-                    thread_status character varying,
+                    github_thread_node_id character varying,
                     github_actor_id bigint,
+                    claim_token character varying,
                     attempts integer NOT NULL,
                     next_attempt_at_unix bigint,
                     last_error text,
@@ -119,10 +120,10 @@ impl MigrationTrait for Migration {
                         AND (last_error IS NULL OR length(btrim(last_error)) > 0)
                         AND (
                             (subject IN ('review', 'reply')
-                                AND thread_status IS NULL
+                                AND github_thread_node_id IS NULL
                                 AND github_actor_id IS NULL)
                             OR (subject = 'thread'
-                                AND thread_status IN ('Open', 'Resolved')
+                                AND length(btrim(github_thread_node_id)) > 0
                                 AND github_actor_id IS NOT NULL)
                         )
                     )

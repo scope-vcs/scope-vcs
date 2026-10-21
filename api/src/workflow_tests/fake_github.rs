@@ -81,6 +81,7 @@ pub(super) struct FakeGitHub {
     review_comments: Mutex<HashMap<u64, serde_json::Value>>,
     collaborator_permissions: Mutex<HashMap<String, Option<(&'static str, u64)>>>,
     pub(super) permission_reads: AtomicUsize,
+    review_threads: Mutex<HashMap<String, serde_json::Value>>,
     git_root: GitRoot,
 }
 
