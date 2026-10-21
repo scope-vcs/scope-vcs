@@ -780,7 +780,7 @@ fn checks_evaluation(state: &str, run: Option<(&str, &str)>) -> Value {
         "outcome": if awaiting { "awaiting-approval" } else { "pending" },
         "checks":[{"provider":"native","workflow_path":"/.scope/runs/checks.yml","workflow_name":"Checks",
             "run_id":run.map(|(id, _)| id),"run_state":run.map(|(_, state)| state)}],
-        "can_approve":awaiting,"github_push":null,"changes_github_workflows":false,"private_request_on_public_github":false,
+        "can_approve":awaiting,"github_push":null,"changes_github_workflows":false,"private_request_on_public_github":false,"review_bots":[],
         "mergeability":{
             "status": if awaiting { "ChecksAwaitingApproval" } else { "ChecksPending" },
             "current_main_oid":OID,"request_head_oid":OID,

@@ -17,11 +17,13 @@ use scope_domain::views::Views;
 
 mod auto_merge;
 mod navigation;
+mod review_bots;
 use auto_merge::activity_line as auto_merge_activity_line;
 pub(super) use auto_merge::{
     receipt_lines as auto_merge_receipt_lines, status_lines as auto_merge_status_lines,
 };
 pub(super) use navigation::parent_label;
+pub(super) use review_bots::detail_line as review_bots_detail_line;
 
 pub(super) fn repo_access_lines(repo: &RepoSummaryResponse) -> Vec<String> {
     vec![
@@ -417,6 +419,7 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     if let Some(pull_request) = &checks.github_pull_request {
         lines.push(github_pull_request_line(pull_request));
     }
+    lines.extend(review_bots::checks_lines(&checks.review_bots));
     if checks.private_request_on_public_github {
         lines.push(
             "GitHub: CI runs in a public GitHub repository, so this request is public there."
@@ -579,7 +582,7 @@ fn github_conclusion_label(conclusion: GitHubCheckConclusion) -> &'static str {
     }
 }
 
-fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> String {
+pub(super) fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> String {
     match mergeability.status {
         RequestMergeabilityStatus::Ready => "ready".to_string(),
         RequestMergeabilityStatus::Closed => "closed".to_string(),
@@ -613,6 +616,11 @@ fn mergeability_label(mergeability: &RequestMergeabilityResponse) -> String {
             .reason
             .clone()
             .unwrap_or_else(|| "CI has not passed".to_string()),
+        RequestMergeabilityStatus::ReviewsPending
+        | RequestMergeabilityStatus::ReviewFindingsOpen => mergeability
+            .reason
+            .clone()
+            .unwrap_or_else(|| "review bots have not cleared".to_string()),
     }
 }
 
