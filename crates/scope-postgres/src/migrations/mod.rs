@@ -17,9 +17,6 @@ mod m0097_review_bot_status_carriers;
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
 
-#[cfg(test)]
-pub(crate) use baseline::schema_inventory;
-
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
 };

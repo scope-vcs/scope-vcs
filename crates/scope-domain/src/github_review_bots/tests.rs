@@ -41,6 +41,7 @@ fn connection() -> GitHubConnection {
         connected_at_unix: 1,
         status: crate::github_connection::GitHubConnectionStatus::Connected,
         visibility: crate::github_connection::GitHubRepositoryVisibility::Private,
+        review_bots: Default::default(),
     }
 }
 
