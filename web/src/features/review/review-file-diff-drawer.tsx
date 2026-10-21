@@ -12,7 +12,7 @@ import { shortOid } from '@/lib/short-oid'
 import { DiffSkeleton } from './diff-skeleton'
 import DOMPurify from 'dompurify'
 import { File, FileText, TriangleAlert, X } from 'lucide-react'
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import {
   reviewFileDiffEmptyLabel,
   reviewFileDiffModeChangeLabel,
@@ -20,7 +20,9 @@ import {
 } from './review-file-diff-presentation'
 
 export function ReviewFileDiffDrawer({
+  actions,
   cacheKey,
+  context,
   diff,
   error,
   loading,
@@ -30,7 +32,9 @@ export function ReviewFileDiffDrawer({
   scrollTop = 0,
   selectedPath,
 }: {
+  actions?: ReactNode
   cacheKey?: string | null
+  context?: ReactNode
   diff: ReviewFileDiff | null
   error: string | null
   loading: boolean
@@ -74,6 +78,7 @@ export function ReviewFileDiffDrawer({
                   : reviewFileDiffModeChangeLabel(diff) ?? 'Diff'}
             </div>
           </div>
+          {actions}
           {onClose && (
             <Button
               aria-label="Close diff viewer"
@@ -86,6 +91,7 @@ export function ReviewFileDiffDrawer({
             </Button>
           )}
         </div>
+        {context}
 
         <div
           className="min-h-0 flex-1 overflow-auto"

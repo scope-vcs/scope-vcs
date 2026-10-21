@@ -1,8 +1,8 @@
 import { PanelState } from '@/components/empty-state'
-import { FileSystemTreeSkeleton } from '@/components/file-system-tree'
 import { FileWorkbench } from '@/components/file-workbench'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { useState } from 'react'
+import { ChangedPathsSkeleton, ChangedPathsToolbarSkeleton } from './changed-paths-navigator'
 
 export function UpdateDetailSkeleton() {
   const [navigationOpen, setNavigationOpen] = useState(true)
@@ -12,12 +12,13 @@ export function UpdateDetailSkeleton() {
         <TextSkeleton length="long" size="title" />
         <TextSkeleton className="mt-1.5" length="medium" size="meta" />
       </div>
+      <ChangedPathsToolbarSkeleton />
       <FileWorkbench
         navigationOpen={navigationOpen}
         onNavigationOpenChange={setNavigationOpen}
         selectedPath={null}
       >
-        <FileSystemTreeSkeleton metaColumnLabel="Change" />
+        <ChangedPathsSkeleton />
         <PanelState><TextSkeleton length="medium" /></PanelState>
       </FileWorkbench>
     </div>
