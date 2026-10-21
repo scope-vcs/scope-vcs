@@ -805,18 +805,6 @@ legal/upstream/apache-2.0.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b512
 Published package license and author metadata: text c8abe90a2fd6fa4caad581ba9097c43732acfa1606e91743cb9343d16597be4e
 
 ==============================================================================
-@posthog/hogvm 1.0.71
-Declared license: MIT
-Selected license: MIT
-Source: https://registry.npmjs.org/@posthog/hogvm/-/hogvm-1.0.71.tgz
-
-Published author metadata: "PostHog <hey@posthog.com>"
-Repository: "https://github.com/PostHog/posthog"
-License text recovered from the upstream repository at the published npm gitHead.
-
-legal/upstream/PostHog-hogvm-dbd5fe59fc8c-LICENSE: text 55836a061e08c8fee2c2cf838149fb6247bc2c1542b8ace8f9a6c3e3294d2a6c
-
-==============================================================================
 @radix-ui/primitive 1.2.0
 Declared license: MIT
 Selected license: MIT
@@ -3524,16 +3512,6 @@ LICENSE: text ee35498e6684b30c9efaae009415884772f4450b3f6a3ae49103cd550a2c8ceb
 dist/esm/icons/copyright.mjs: text 7d148e988aeec195bb0c63342bb7b3ca665a7d0c60683ba6678e28500c8aacb4
 
 ==============================================================================
-luxon 3.7.2
-Declared license: MIT
-Selected license: MIT
-Source: https://registry.npmjs.org/luxon/-/luxon-3.7.2.tgz
-
-Published author metadata: "Isaac Cambron"
-Repository: "https://github.com/moment/luxon"
-LICENSE.md: text f8f62778c92d145b6d7af0af71ca23c032a67e01e04fbc01586a3e5af5852296
-
-==============================================================================
 magic-string 0.30.21
 Declared license: MIT
 Selected license: MIT
@@ -5388,17 +5366,6 @@ Color support is based on https://github.com/jorgebucaran/colorette
 Copyright © Jorge Bucaran <https://jorgebucaran.com>
 
 [Shared terms ed1e240a96a36e5baa93b7fad4cc89dae42effbc8820657ff397f2cc7a079d15]
-
---- text 55836a061e08c8fee2c2cf838149fb6247bc2c1542b8ace8f9a6c3e3294d2a6c ---
-Copyright (c) 2020-2026 PostHog Inc.
-
-Portions of this software are licensed as follows:
-
-* All content that resides under the "ee/" directory of this repository, if that directory exists, is licensed under the license defined in "ee/LICENSE".
-* All third party components incorporated into the PostHog Software are licensed under the original license provided by the owner of the applicable component.
-* Content outside of the above mentioned directories or restrictions above is available under the "MIT Expat" license as defined below.
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text 586409690da31408c8348e6acb0bdbabdf4611308778edfc6210eb09492f23a1 ---
 Copyright 2010-2020 Mike Bostock
@@ -10701,11 +10668,6 @@ Copyright (c) 2019-present, Yuxi (Evan) You and Vite contributors
 (The MIT License)
 
 Copyright (c) 2014 Titus Wormer <tituswormer@gmail.com>
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text f8f62778c92d145b6d7af0af71ca23c032a67e01e04fbc01586a3e5af5852296 ---
-Copyright 2019 JS Foundation and other contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 

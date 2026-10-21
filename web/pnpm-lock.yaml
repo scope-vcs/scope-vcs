@@ -139,9 +139,6 @@ importers:
       '@clerk/testing':
         specifier: 2.2.45
         version: 2.2.45(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@posthog/hogvm':
-        specifier: 1.0.71
-        version: 1.0.71(luxon@3.7.2)
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@24.13.5)(jiti@2.7.0)(yaml@2.9.0))
@@ -597,11 +594,6 @@ packages:
         optional: true
       shiki:
         optional: true
-
-  '@posthog/hogvm@1.0.71':
-    resolution: {integrity: sha512-ccZgU56jSVIe0Fhvv2gQ7eNdAy4X3M+ipMnk66YArXopINCHfsQ1zL2LrgPhrLw6muoER8LjeDE4n9oFJFe7ww==}
-    peerDependencies:
-      luxon: ^3.4.4
 
   '@radix-ui/primitive@1.2.0':
     resolution: {integrity: sha512-KABY+VMIRPJL+Vyzv/335FEhXXD/xDv8BMb1kl48/aXJZMH0LtHCTx5ga5RnxaEP3nZHtmTLf1P9vanmFX46bw==}
@@ -2141,10 +2133,6 @@ packages:
       '@types/react':
         optional: true
 
-  luxon@3.7.2:
-    resolution: {integrity: sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew==}
-    engines: {node: '>=12'}
-
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
@@ -3115,10 +3103,6 @@ snapshots:
       react: 19.3.0
       react-dom: 19.3.0(react@19.3.0)
       shiki: 4.2.0
-
-  '@posthog/hogvm@1.0.71(luxon@3.7.2)':
-    dependencies:
-      luxon: 3.7.2
 
   '@radix-ui/primitive@1.2.0': {}
 
@@ -4451,8 +4435,6 @@ snapshots:
       react: 19.3.0
     optionalDependencies:
       '@types/react': 19.3.0
-
-  luxon@3.7.2: {}
 
   magic-string@0.30.21:
     dependencies:
