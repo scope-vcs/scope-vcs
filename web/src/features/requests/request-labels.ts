@@ -104,9 +104,9 @@ export function requestChecksWorkflowWarning(checks: RequestChecksResponse) {
     : null
 }
 
-export function requestPublicChecksNote(checks: RequestChecksResponse, requestViewName: string) {
+export function requestPublicChecksNote(checks: RequestChecksResponse) {
   return checks.private_request_on_public_github
-    ? `CI runs publicly, so this ${requestViewName} request’s changes are public.`
+    ? 'CI runs publicly, so these changes are public.'
     : null
 }
 

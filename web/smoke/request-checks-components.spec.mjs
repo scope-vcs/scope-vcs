@@ -2,20 +2,21 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { openFixture } from './support/fixture-server.mjs'
 
-test('request CI separates workflows from jobs, folds completed results, and links Scope runs', async (t) => {
+test('request CI states its count once, names workflows only when several share the list, and links Scope runs', async (t) => {
   const { base, errors, page } = await openFixture(t, 'request-checks', { tailwind: true })
   await page.goto(new URL('octo/demo/requests/req_1', base).href, { timeout: 30_000, waitUntil: 'domcontentloaded' })
   const checks = page.getByRole('region', { name: 'CI' })
 
-  await checks.getByText('CI running', { exact: true }).waitFor()
-  await checks.getByText('· 3 of 8 left · 5 passed · 4 skipped', { exact: true }).waitFor()
-  await checks.getByText('CI runs publicly, so this Agent request’s changes are public.', { exact: true }).waitFor()
+  await checks.getByText('3 of 8 left', { exact: true }).waitFor()
+  await checks.getByText('· 5 passed · 4 skipped', { exact: true }).waitFor()
+  await checks.getByText('CI runs publicly, so these changes are public.', { exact: true }).waitFor()
+  assert.equal(await checks.getByText(/Workflow|CI running/).count(), 0)
   assert.equal(await checks.getByText(/GitHub|scope\/requests/).count(), 0)
   const workflow = checks.getByRole('region', { name: 'CI workflow', exact: true })
-  await workflow.getByRole('heading', { name: 'CI Workflow', exact: true }).waitFor()
+  await workflow.getByRole('heading', { name: 'CI', exact: true }).waitFor()
   assert.deepEqual(
     await workflow.getByRole('list', { name: 'CI jobs', exact: true }).getByRole('listitem').allTextContents(),
-    ['Check operationsin progress', 'CLI validationValidate selected componentsqueued'],
+    ['Check operations', 'CLI validationValidate selected components'],
   )
   await checks.getByRole('list', { name: 'Results without a workflow' }).getByText('Integration validation', { exact: true }).waitFor()
   assert.deepEqual(
@@ -27,7 +28,7 @@ test('request CI separates workflows from jobs, folds completed results, and lin
   }
 
   await checks.getByRole('button', { name: 'Show all 12 results' }).click()
-  await checks.getByRole('heading', { name: 'PR requirements Workflow', exact: true }).waitFor()
+  await checks.getByRole('heading', { name: 'PR requirements', exact: true }).waitFor()
   assert.equal(await checks.getByRole('listitem').count(), 12)
   assert.equal(await workflow.getByRole('listitem').count(), 10)
   await checks.getByRole('region', { name: 'PR requirements workflow', exact: true }).getByRole('list', { name: 'PR requirements jobs' }).getByText('Required PR checks', { exact: true }).waitFor()
@@ -35,7 +36,8 @@ test('request CI separates workflows from jobs, folds completed results, and lin
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-workflows-expanded.png`, fullPage: true })
   }
   await page.evaluate(() => window.refresh())
-  await checks.getByText('· 2 of 8 left · 6 passed · 4 skipped', { exact: true }).waitFor()
+  await checks.getByText('· 6 passed · 4 skipped', { exact: true }).waitFor()
+  await checks.getByText('2 of 8 left', { exact: true }).waitFor()
   assert.equal(await checks.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded'), 'true')
 
   await checks.getByRole('button', { name: 'Show less' }).click()
@@ -55,9 +57,13 @@ test('request CI separates workflows from jobs, folds completed results, and lin
   await page.goBack()
 
   await page.evaluate(() => window.showNative())
-  await checks.getByText('CI failed', { exact: true }).waitFor()
+  await checks.getByText('1 failed', { exact: true }).waitFor()
+  assert.equal(await checks.getByRole('heading', { level: 3 }).count(), 0)
   assert.equal(await checks.locator('a[href^="http"]').count(), 0)
-  await checks.getByRole('link', { name: /checks.*failed/ }).click()
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-failed.png`, fullPage: true })
+  }
+  await checks.getByRole('link', { name: 'failed checks', exact: true }).click()
   await page.getByRole('heading', { name: 'Run run_checks' }).waitFor()
   assert.equal(new URL(page.url()).pathname, '/octo/demo/runs/run_checks')
   await page.goBack()
@@ -74,7 +80,7 @@ test('request CI separates workflows from jobs, folds completed results, and lin
   const dialog = page.getByRole('alertdialog', { name: 'Allow CI to run?' })
   await dialog.getByText('a'.repeat(40), { exact: true }).waitFor()
   await dialog.getByText(/repository’s secrets/).waitFor()
-  await dialog.getByText(/CI runs publicly/).waitFor()
+  await dialog.getByText('CI runs publicly, so these changes are public.', { exact: true }).waitFor()
   await page.evaluate(() => window.pushRevision())
   assert.equal(await dialog.getByText('a'.repeat(40), { exact: true }).isVisible(), true)
   assert.equal(await dialog.getByText('b'.repeat(40), { exact: true }).count(), 0)
