@@ -5,6 +5,7 @@ import type {
   RepoGitHubWorkflowJobLogInput,
   RepoGitHubWorkflowRunsInput,
   RunActionInput,
+  SetRepoGitHubMainPublicationInput,
   SetRepoGitHubRequiredChecksInput,
   SetRepoGitHubRunImportCountInput,
 } from './types'
@@ -46,6 +47,13 @@ export function parseConnectRepoGitHubInput(input: unknown): ConnectRepoGitHubIn
 export function parseSetRepoGitHubRunImportCountInput(input: unknown): SetRepoGitHubRunImportCountInput {
   const params = parseRepoParams(input)
   return { ...params, count: runImportCount((input as Partial<SetRepoGitHubRunImportCountInput>).count) }
+}
+
+export function parseSetRepoGitHubMainPublicationInput(input: unknown): SetRepoGitHubMainPublicationInput {
+  const params = parseRepoParams(input)
+  const enabled = (input as Partial<SetRepoGitHubMainPublicationInput>).enabled
+  if (typeof enabled !== 'boolean') throw new Error('Choose whether to publish main to GitHub.')
+  return { ...params, enabled }
 }
 
 export function parseRepoGitHubWorkflowRunsInput(input: unknown): RepoGitHubWorkflowRunsInput {

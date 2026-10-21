@@ -59,17 +59,61 @@ test('repository components retain drafts, previews and pending actions across r
   await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
   await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
   await page.evaluate(() => window.calls.splice(0))
-  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false, main_publication: { enabled: false, latest: null } }, required_checks: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
   await checks.getByText('This GitHub repository became public, so Scope stopped sending requests outside the Public view there.', { exact: false }).waitFor()
+  const blockedSwitch = checks.getByRole('switch', { name: 'Publish main to GitHub', exact: false })
+  assert.equal(await blockedSwitch.isDisabled(), true)
+  const unconfirmedReason = 'This GitHub repository is public and not confirmed. Allow it above before publishing main.'
+  await checks.getByText(unconfirmedReason, { exact: true }).waitFor()
+  assert.equal(await page.locator(`[id="${await blockedSwitch.getAttribute('aria-describedby')}"]`).textContent(), unconfirmedReason)
   await checks.getByRole('button', { name: 'Allow these requests', exact: true }).click()
   await checks.getByText('Public on GitHub: everything Scope pushes here is public.', { exact: true }).waitFor()
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
   ])
-  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true }, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true, main_publication: { enabled: false, latest: null } }, required_checks: ['ci / test'], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), github)
   await checks.getByText('ci / test', { exact: true }).waitFor()
+  const publishMain = checks.getByRole('switch', { name: 'Publish main to GitHub', exact: false })
+  await checks.getByText('Scope pushes its main to GitHub’s main and never force-pushes.', { exact: false }).waitFor()
+  assert.equal(await publishMain.isChecked(), false)
+  await publishMain.click()
+  assert.equal(await publishMain.isDisabled(), true)
+  await page.evaluate(() => window.finishAction('main-publication'))
+  await checks.getByText('Publishing main (abcdef1).', { exact: true }).waitFor()
+  assert.equal(await publishMain.isChecked(), true)
+  assert.equal(await publishMain.isDisabled(), false)
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubMainPublication: true },
+  ])
+  const publication = publishMain.locator('xpath=ancestor::div[contains(@class, "border-t")][1]')
+  const retrying = { state: 'queued', commit_oid: 'abcdef1234567890abcdef1234567890abcdef12', error: 'GitHub answered 502', updated_at_unix: 1_767_225_600 }
+  await page.evaluate((github) => window.setFixtureGitHub(github), { ...github, connection: { ...github.connection, main_publication: { enabled: true, latest: retrying } } })
+  await publication.getByText('Publishing main (abcdef1). Scope will try again.', { exact: true }).waitFor()
+  await publication.getByText('The last attempt failed: GitHub answered 502', { exact: true }).waitFor()
+  assert.equal(await publication.getByRole('alert').count(), 0)
+  for (const [width, name] of [[1280, 'desktop'], [390, 'phone'], [320, 'narrow-phone']]) {
+    await page.setViewportSize({ width, height: 900 })
+    const bounds = await publication.boundingBox()
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `${name} main publication fits`)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${name} page does not scroll sideways`)
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await publication.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.main-publication-${name}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.evaluate((github) => window.setFixtureGitHub(github), { ...github, can_publish_main: false })
+  const notAllowed = 'Only a maintainer who reads the full view and can change file visibility can turn this on.'
+  await publication.getByText(notAllowed, { exact: true }).waitFor()
+  assert.equal(await publishMain.isDisabled(), true)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.setViewportSize({ width: 320, height: 900 })
+    await publication.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.main-publication-blocked-narrow-phone.png` })
+    await page.setViewportSize({ width: 1280, height: 900 })
+  }
+  await page.evaluate((github) => window.setFixtureGitHub(github), github)
+  assert.equal(await publishMain.isDisabled(), false)
   const saveRequirements = checks.getByRole('button', { name: 'Save requirements', exact: true })
   assert.equal(await saveRequirements.isDisabled(), true)
   await checks.getByRole('button', { name: 'Enter an exact result name…', exact: true }).click()

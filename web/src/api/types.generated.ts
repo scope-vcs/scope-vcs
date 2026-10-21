@@ -237,6 +237,11 @@ required_checks: Array<string>,
  */
 can_confirm_public: boolean,
 /**
+ * Whether the viewer may turn on publishing main: a maintainer who reads
+ * the full view and can change file visibility.
+ */
+can_publish_main: boolean,
+/**
  * The latest connection test, while the repository has a link.
  */
 setup_check: GitHubSetupCheckResponse | null,
@@ -266,9 +271,29 @@ public_on_github: boolean,
  * False while a repository that became public waits for a maintainer to
  * confirm; private requests are not sent there meanwhile.
  */
-public_confirmed: boolean, };
+public_confirmed: boolean, main_publication: GitHubMainPublicationResponse, };
 
 export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonResponse, at_unix: number, };
+
+export type GitHubMainPublicationResponse = {
+/**
+ * Whether every change to Scope main is pushed to GitHub main, never forced.
+ */
+enabled: boolean,
+/**
+ * The latest push of main to this GitHub repository.
+ */
+latest: GitHubMainPushResponse | null, };
+
+export type GitHubMainPushResponse = { state: GitHubMainPushStateResponse, commit_oid: string,
+/**
+ * Why the latest attempt failed. A queued push with an error tries again.
+ */
+error: string | null, updated_at_unix: number, };
+
+export type GitHubMainPushStateResponse = "queued" | "running" | "succeeded" | "failed";
+
+export type SetGitHubMainPublicationRequest = { enabled: boolean, };
 
 export type GitHubDisconnectReasonResponse = "app_uninstalled" | "installation_suspended" | "repository_removed";
 
@@ -816,6 +841,7 @@ export const ApiRouteTemplates = {
   repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
+  repoGitHubMainPublication: "/v1/repos/{owner}/{repo}/github/main-publication",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
   repoGitHubWorkflowNames: "/v1/repos/{owner}/{repo}/github/workflow-names",
   repoGitHubWorkflowRun: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}",

@@ -209,3 +209,56 @@ async fn deleting_a_repository_leaves_deletions_of_the_branches_it_pushed() {
         assert_eq!(deletion.destination, destination());
     }
 }
+
+#[tokio::test]
+async fn main_is_pushed_through_the_same_queue_but_never_deleted() {
+    let store = postgres_store();
+    let requests = store.requests();
+    let db = store.db.as_ref();
+    let t = now();
+    queue_github_push(
+        db,
+        REPO,
+        &GitHubBranch::Main,
+        Some(&oid('a')),
+        &destination(),
+        t,
+    )
+    .await
+    .unwrap();
+    queue_github_push(
+        db,
+        REPO,
+        &GitHubBranch::Main,
+        Some(&oid('b')),
+        &destination(),
+        t,
+    )
+    .await
+    .unwrap();
+    assert!(
+        queue_github_push(db, REPO, &GitHubBranch::Main, None, &destination(), t)
+            .await
+            .is_err()
+    );
+    queue_github_branch_deletions_for_repository(db, REPO, t + 1)
+        .await
+        .unwrap();
+
+    let claimed = requests
+        .claim_due_github_pushes("claim", t + 1, t + 100, 10)
+        .await
+        .unwrap();
+    assert_eq!(claimed.len(), 1);
+    assert_eq!(claimed[0].branch, GitHubBranch::Main);
+    assert_eq!(claimed[0].target_oid.as_deref(), Some(oid('b').as_str()));
+    assert_eq!(
+        store
+            .repositories()
+            .latest_github_main_push(REPO)
+            .await
+            .unwrap()
+            .map(|push| push.id),
+        Some(claimed[0].id.clone())
+    );
+}
