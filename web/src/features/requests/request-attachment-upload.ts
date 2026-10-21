@@ -56,6 +56,11 @@ export type AttachmentUploadActions = {
 }
 
 const activeUploads = new Map<string, AbortController>()
+const MAX_TAB_PART_UPLOADS = 4
+const PART_RETRY_BUDGET_MS = 90_000
+const PART_RETRY_BASE_MS = 500
+const PART_RETRY_CAP_MS = 10_000
+const partUploadSlots = createSlots(MAX_TAB_PART_UPLOADS)
 
 registerRequestAttachmentDraftUploadCanceller((draftKey) => {
   for (const [key, controller] of activeUploads) {
@@ -214,51 +219,132 @@ async function uploadParts({
     .filter((partNumber) => !receipts.has(partNumber))
   let cursor = 0
   const inFlightBytes = new Map<number, number>()
+  const partsController = new AbortController()
+  const abortParts = () => partsController.abort()
+  controller.signal.addEventListener('abort', abortParts, { once: true })
+  if (controller.signal.aborted) partsController.abort()
+  let failure: unknown = null
 
   async function worker() {
-    while (cursor < pending.length) {
-      const partNumber = pending[cursor++]
-      if (!partNumber) return
-      assertActive(controller)
-      if (Date.now() >= transfer.expires_at_unix * 1_000 - 30_000) {
-        throw new TransferAuthorizationExpired()
+    try {
+      while (cursor < pending.length) {
+        const partNumber = pending[cursor++]
+        if (!partNumber) return
+        assertActive(partsController)
+        if (Date.now() >= transfer.expires_at_unix * 1_000 - 30_000) {
+          throw new TransferAuthorizationExpired()
+        }
+        const start = (partNumber - 1) * partBytes
+        const part = file.slice(start, Math.min(file.size, start + partBytes))
+        const receipt = await putPartWithRetry({
+          grant: transfer.grant,
+          onProgress: (loaded) => {
+            inFlightBytes.set(partNumber, loaded)
+            const completed = acknowledgedBytes()
+            const uploading = [...inFlightBytes.values()].reduce((total, value) => total + value, 0)
+            patchRequestAttachmentDraftFile(draftKey, localId, {
+              progress: file.size === 0
+                ? 1
+                : Math.min((completed + uploading) / file.size, 0.99),
+            })
+          },
+          part,
+          partNumber,
+          signal: partsController.signal,
+          url: `${safeMediaBaseUrl(transfer.media_base_url)}/v1/uploads/${encodeURIComponent(transfer.upload_id)}/parts/${partNumber}`,
+        })
+        inFlightBytes.delete(partNumber)
+        receipts.set(partNumber, receipt)
+        patchRequestAttachmentDraftFile(draftKey, localId, {
+          progress: file.size === 0 ? 1 : Math.min(acknowledgedBytes() / file.size, 0.99),
+        })
       }
-      const start = (partNumber - 1) * partBytes
-      const part = file.slice(start, Math.min(file.size, start + partBytes))
-      const receipt = await putPart({
-        grant: transfer.grant,
-        onProgress: (loaded) => {
-          inFlightBytes.set(partNumber, loaded)
-          const completed = acknowledgedBytes()
-          const uploading = [...inFlightBytes.values()].reduce((total, value) => total + value, 0)
-          patchRequestAttachmentDraftFile(draftKey, localId, {
-            progress: file.size === 0
-              ? 1
-              : Math.min((completed + uploading) / file.size, 0.99),
-          })
-        },
-        part,
-        partNumber,
-        signal: controller.signal,
-        url: `${safeMediaBaseUrl(transfer.media_base_url)}/v1/uploads/${encodeURIComponent(transfer.upload_id)}/parts/${partNumber}`,
-      })
-      inFlightBytes.delete(partNumber)
-      receipts.set(partNumber, receipt)
-      patchRequestAttachmentDraftFile(draftKey, localId, {
-        progress: file.size === 0 ? 1 : Math.min(acknowledgedBytes() / file.size, 0.99),
-      })
+    } catch (error) {
+      if (failure === null) {
+        failure = error
+        partsController.abort()
+      }
     }
   }
 
-  const workerCount = Math.max(1, Math.min(transfer.max_concurrent_parts, pending.length || 1))
-  const outcomes = await Promise.allSettled(
-    Array.from({ length: workerCount }, () => worker()),
-  )
-  const failure = outcomes.find(
-    (outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected',
-  )
-  if (failure) throw failure.reason
+  const workerCount = Math.max(1, Math.min(transfer.max_concurrent_parts, pending.length || 1, MAX_TAB_PART_UPLOADS))
+  try {
+    await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  } finally {
+    controller.signal.removeEventListener('abort', abortParts)
+  }
+  if (failure !== null) throw failure
   return [...receipts.values()].sort((left, right) => left.part_number - right.part_number)
+}
+
+async function putPartWithRetry(input: Parameters<typeof putPart>[0]) {
+  let firstFailureAt: number | null = null
+  for (let retry = 0; ; retry += 1) {
+    const release = await partUploadSlots.acquire(input.signal)
+    try {
+      input.signal.throwIfAborted()
+      return await putPart(input)
+    } catch (error) {
+      if (!(error instanceof RetryablePartFailure)) throw error
+      firstFailureAt ??= Date.now()
+      if (Date.now() - firstFailureAt >= PART_RETRY_BUDGET_MS) throw error
+    } finally {
+      release()
+    }
+    input.onProgress(0)
+    await wait(retryDelay(retry), input.signal)
+  }
+}
+
+function retryDelay(retry: number) {
+  const ceiling = Math.min(PART_RETRY_CAP_MS, PART_RETRY_BASE_MS * 2 ** retry)
+  return ceiling / 2 + Math.random() * (ceiling / 2)
+}
+
+function wait(milliseconds: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    signal.throwIfAborted()
+    const abort = () => {
+      clearTimeout(timeout)
+      reject(new DOMException('Upload canceled.', 'AbortError'))
+    }
+    const timeout = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, milliseconds)
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+function createSlots(limit: number) {
+  let active = 0
+  const waiting: Array<() => void> = []
+  function release() {
+    const next = waiting.shift()
+    if (next) next()
+    else active -= 1
+  }
+  return {
+    acquire(signal: AbortSignal) {
+      signal.throwIfAborted()
+      if (active < limit) {
+        active += 1
+        return Promise.resolve(release)
+      }
+      return new Promise<() => void>((resolve, reject) => {
+        const grant = () => {
+          signal.removeEventListener('abort', abort)
+          resolve(release)
+        }
+        const abort = () => {
+          waiting.splice(waiting.indexOf(grant), 1)
+          reject(new DOMException('Upload canceled.', 'AbortError'))
+        }
+        waiting.push(grant)
+        signal.addEventListener('abort', abort, { once: true })
+      })
+    },
+  }
 }
 
 function putPart({
@@ -287,9 +373,7 @@ function putPart({
     request.addEventListener('load', () => {
       signal.removeEventListener('abort', abort)
       if (request.status < 200 || request.status >= 300) {
-        reject(request.status === 401
-          ? new TransferAuthorizationExpired()
-          : new Error(`Part ${partNumber} upload failed (${request.status}).`))
+        reject(partFailure(request.status, partNumber))
         return
       }
       try {
@@ -303,10 +387,28 @@ function putPart({
         reject(error)
       }
     })
-    request.addEventListener('error', () => reject(new Error(`Part ${partNumber} upload lost its connection.`)))
+    request.addEventListener('error', () => {
+      signal.removeEventListener('abort', abort)
+      reject(new RetryablePartFailure(`Part ${partNumber} upload lost its connection.`))
+    })
     request.addEventListener('abort', () => reject(new DOMException('Upload canceled.', 'AbortError')))
     request.send(part)
   })
+}
+
+function partFailure(status: number, partNumber: number) {
+  if (status === 401) return new TransferAuthorizationExpired()
+  const message = `Part ${partNumber} upload failed (${status}).`
+  return [408, 409, 429].includes(status) || status >= 500
+    ? new RetryablePartFailure(message)
+    : new Error(message)
+}
+
+class RetryablePartFailure extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RetryablePartFailure'
+  }
 }
 
 class TransferAuthorizationExpired extends Error {

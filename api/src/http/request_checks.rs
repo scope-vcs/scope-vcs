@@ -126,6 +126,7 @@ pub(crate) fn snapshot_response(
             request_id: request.id.clone(),
             head_oid: git_oid_response(request.head_oid.clone())?,
             state: None,
+            outcome: outcome.into(),
             message: None,
             checks: Vec::new(),
             can_approve: false,
@@ -154,6 +155,7 @@ pub(crate) fn snapshot_response(
         request_id: request.id.clone(),
         head_oid: git_oid_response(request.head_oid.clone())?,
         state: Some(evaluation.state.into()),
+        outcome: outcome.into(),
         message: request_checks_message(evaluation, results, latest_push.as_ref(), now_unix),
         checks: evaluation
             .checks

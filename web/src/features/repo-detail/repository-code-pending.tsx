@@ -8,17 +8,21 @@ import {
   SourceCodeSkeleton,
   SourceTabStripSkeleton,
 } from './repository-code-skeletons'
+import { useLoadedRepoLayout } from './repo-layout-context'
+import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
 import { RepositoryLatestActivityPending } from './repository-latest-activity'
 
 export function RepositoryCodePending() {
   const [navigationOpen, setNavigationOpen] = useState(false)
+  const repo = useLoadedRepoLayout()?.repo ?? null
   return (
     <WorkbenchPane>
       <WorkbenchBar
         actions={<BlockSkeleton className="h-8 w-24" />}
-        summary={<RepositoryLatestActivityPending />}
+        summary={repo && hasRepositoryAbout(repo) ? <RepositoryAbout repo={repo} /> : undefined}
         title="Code"
       />
+      {repo?.lifecycle_state !== 'AwaitingFirstPush' && <RepositoryLatestActivityPending />}
       <FileWorkbench
         className="border-t border-border lg:min-h-[calc(100dvh-var(--app-chrome))]"
         navigationOpen={navigationOpen}

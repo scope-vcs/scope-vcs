@@ -19,7 +19,6 @@ use support::{
     reconcile_completed_inventories,
 };
 
-const LATE_WRITE_GRACE_SECONDS: u64 = 60;
 const TOMBSTONE_RECONCILIATION_SECONDS: u64 = 24 * 60 * 60;
 
 impl MediaStore {
@@ -180,11 +179,12 @@ impl MediaStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_cleanup_job"))]
     pub async fn complete_cleanup_job(
         &self,
-        attachment_id: &str,
-        lease_token: &str,
-        lease_generation: u64,
+        lease: &RequestAttachmentCleanupLease,
         now_unix: u64,
     ) -> Result<MediaLeaseMutation<()>, PostgresError> {
+        let attachment_id = lease.attachment_id.as_str();
+        let lease_token = lease.lease_token.as_str();
+        let lease_generation = lease.lease_generation;
         let tx = self.db.begin().await?;
         if let Some(expires_at) = locked_cleanup_lease_expiry(
             &tx,
@@ -241,7 +241,7 @@ impl MediaStore {
                 tx.commit().await?;
                 return Ok(MediaLeaseMutation::LeaseLost);
             }
-            mark_orphan_inventory_deleted(&tx, attachment_id, now_unix).await?;
+            mark_orphan_inventory_deleted(&tx, attachment_id, &lease.object_keys, now_unix).await?;
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "DELETE FROM scope_request_media_orphan_cleanup_leases WHERE attachment_id = $1",

@@ -43,11 +43,34 @@ fn has_one_service(uri: &Uri, expected: &str) -> bool {
     matches!(services.next(), Some(value) if value == expected) && services.next().is_none()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GitRequestPhase {
+    Discovery,
+    Transfer,
+}
+
+impl GitRequestPhase {
+    pub(crate) fn of(method: &Method) -> Self {
+        if *method == Method::GET {
+            Self::Discovery
+        } else {
+            Self::Transfer
+        }
+    }
+
+    fn index(self) -> usize {
+        match self {
+            Self::Discovery => 0,
+            Self::Transfer => 1,
+        }
+    }
+}
+
 pub(crate) struct BackendSelector {
     read_replicas: usize,
     write_replicas: usize,
-    next_read: AtomicUsize,
-    next_write: AtomicUsize,
+    next_read: [AtomicUsize; 2],
+    next_write: [AtomicUsize; 2],
 }
 
 impl BackendSelector {
@@ -57,14 +80,15 @@ impl BackendSelector {
         Self {
             read_replicas,
             write_replicas,
-            next_read: AtomicUsize::new(0),
-            next_write: AtomicUsize::new(0),
+            next_read: Default::default(),
+            next_write: Default::default(),
         }
     }
 
     pub(crate) fn candidate_indices(
         &self,
         kind: GitRequestKind,
+        phase: GitRequestPhase,
         backend_count: usize,
     ) -> Vec<usize> {
         if backend_count == 0 {
@@ -74,13 +98,15 @@ impl BackendSelector {
             GitRequestKind::PrimaryOnly => return vec![0],
             GitRequestKind::ReceivePack => {
                 let eligible = self.write_replicas.min(backend_count);
-                return vec![self.next_write.fetch_add(1, Ordering::Relaxed) % eligible];
+                return vec![
+                    self.next_write[phase.index()].fetch_add(1, Ordering::Relaxed) % eligible,
+                ];
             }
             GitRequestKind::UploadPackRead => {}
         }
 
         let eligible = self.read_replicas.min(backend_count);
-        let start = self.next_read.fetch_add(1, Ordering::Relaxed) % eligible;
+        let start = self.next_read[phase.index()].fetch_add(1, Ordering::Relaxed) % eligible;
         (0..eligible)
             .map(|offset| (start + offset) % eligible)
             .collect()
@@ -150,29 +176,66 @@ mod tests {
     }
 
     #[test]
+    fn sequential_pushes_and_fetches_rotate_their_transfers_across_every_replica() {
+        let selector = BackendSelector::new(2, 2);
+        let mut push_transfers = Vec::new();
+        let mut fetch_transfers = Vec::new();
+        for _ in 0..4 {
+            selector.candidate_indices(GitRequestKind::ReceivePack, GitRequestPhase::Discovery, 6);
+            push_transfers.push(
+                selector.candidate_indices(
+                    GitRequestKind::ReceivePack,
+                    GitRequestPhase::Transfer,
+                    6,
+                )[0],
+            );
+            selector.candidate_indices(
+                GitRequestKind::UploadPackRead,
+                GitRequestPhase::Discovery,
+                6,
+            );
+            fetch_transfers.push(
+                selector.candidate_indices(
+                    GitRequestKind::UploadPackRead,
+                    GitRequestPhase::Transfer,
+                    6,
+                )[0],
+            );
+        }
+        assert_eq!(push_transfers, vec![0, 1, 0, 1]);
+        assert_eq!(fetch_transfers, vec![0, 1, 0, 1]);
+    }
+
+    #[test]
     fn receive_pack_rotates_across_write_replicas_and_stays_primary_by_default() {
         let primary = BackendSelector::new(3, 1);
         for _ in 0..4 {
             assert_eq!(
-                primary.candidate_indices(GitRequestKind::ReceivePack, 6),
+                primary.candidate_indices(
+                    GitRequestKind::ReceivePack,
+                    GitRequestPhase::Transfer,
+                    6
+                ),
                 vec![0]
             );
         }
 
         let spread = BackendSelector::new(1, 3);
         let chosen = (0..6)
-            .map(|_| spread.candidate_indices(GitRequestKind::ReceivePack, 6))
+            .map(|_| {
+                spread.candidate_indices(GitRequestKind::ReceivePack, GitRequestPhase::Transfer, 6)
+            })
             .collect::<Vec<_>>();
         assert_eq!(
             chosen,
             vec![vec![0], vec![1], vec![2], vec![0], vec![1], vec![2]]
         );
         assert_eq!(
-            spread.candidate_indices(GitRequestKind::ReceivePack, 2),
+            spread.candidate_indices(GitRequestKind::ReceivePack, GitRequestPhase::Transfer, 2),
             vec![0]
         );
         assert_eq!(
-            spread.candidate_indices(GitRequestKind::PrimaryOnly, 6),
+            spread.candidate_indices(GitRequestKind::PrimaryOnly, GitRequestPhase::Transfer, 6),
             vec![0]
         );
     }

@@ -29,6 +29,8 @@ export function useChangedFileNavigation(onCloseDiff: () => void, initiallyOpen 
   return { open, setOpen, ref, closeDiff }
 }
 
+const DIFF_PANE_CLASS = 'h-[70vh] min-h-[340px] max-h-[720px] min-w-0 overflow-hidden'
+
 export function ChangedFilesWorkbench({
   diffIdentity, diffScrollTop, fileDiffState, onDiffScroll, onRetryDiff,
   onSelectFile, selectedFilePath, files, navigation, navigationLabel,
@@ -43,24 +45,25 @@ export function ChangedFilesWorkbench({
   expandFolders?: boolean
 }) {
   const placeholder = <PanelState><span>{emptyPreviewMessage ?? 'Select a changed file'}</span></PanelState>
-  const preview = selectedFilePath || emptyFilesMessage !== undefined ? (
-    <div className="h-[70vh] min-h-[340px] max-h-[720px] min-w-0 overflow-hidden">
-      {selectedFilePath ? (
-        <ReviewFileDiffDrawer
-          cacheKey={diffIdentity}
-          diff={fileDiffState.diff}
-          error={fileDiffState.error}
-          loading={fileDiffState.status === 'loading'}
-          onClose={navigation.closeDiff}
-          onRetry={onRetryDiff}
-          onScrollTopChange={onDiffScroll}
-          scrollTop={diffScrollTop}
-          selectedPath={selectedFilePath}
-        />
-      ) : placeholder}
+  const diff = selectedFilePath ? (
+    <div className={DIFF_PANE_CLASS}>
+      <ReviewFileDiffDrawer
+        cacheKey={diffIdentity}
+        diff={fileDiffState.diff}
+        error={fileDiffState.error}
+        loading={fileDiffState.status === 'loading'}
+        onClose={navigation.closeDiff}
+        onRetry={onRetryDiff}
+        onScrollTopChange={onDiffScroll}
+        scrollTop={diffScrollTop}
+        selectedPath={selectedFilePath}
+      />
     </div>
   ) : null
-  if (!files.length && emptyFilesMessage === undefined) return preview
+  if (!files.length && emptyFilesMessage === undefined) return diff
+  const desktopPlaceholder = emptyFilesMessage === undefined
+    ? placeholder
+    : <div className={DIFF_PANE_CLASS}>{placeholder}</div>
   return (
     <FileWorkbench
       navigationOpen={navigation.open}
@@ -88,7 +91,7 @@ export function ChangedFilesWorkbench({
           />
         ) : <EmptyState inline className="py-8" title={emptyFilesMessage ?? ''} />}
       </div>
-      {preview ?? placeholder}
+      {diff ?? <div className="hidden lg:contents">{desktopPlaceholder}</div>}
     </FileWorkbench>
   )
 }
