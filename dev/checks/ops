@@ -48,6 +48,7 @@ node --test \
   deploy/aws/cloud-runner-contract.test.mjs \
   .github/scripts/railway-artifact.test.mjs \
   .github/scripts/railway-read.test.mjs \
+  .github/scripts/railway-client.test.mjs \
   .github/scripts/railway-retry.test.mjs \
   .github/scripts/railway-environment-token.test.mjs \
   .github/scripts/release-availability.test.mjs \
