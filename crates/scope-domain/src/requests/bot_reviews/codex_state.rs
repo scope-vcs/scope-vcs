@@ -6,6 +6,7 @@ pub const CODEX_REVIEW_BOT_LOGIN: &str = "chatgpt-codex-connector[bot]";
 const MARKER: &str = "<!-- codex-review-state:v1 ";
 const MARKER_END: &str = "-->";
 const FULL_OID_LENGTH: usize = 40;
+const REVIEW_SUFFIX: &str = "_review";
 const COMPLETED: &str = "completed";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,9 +34,10 @@ impl CodexReviewState {
             body[start..start + length].trim(),
         )
         .ok()?
-        .into_values()
-        .filter_map(|part| serde_json::from_value::<CodexReviewPart>(part).ok())
-        .collect::<Vec<_>>();
+        .into_iter()
+        .filter(|(name, _)| name.ends_with(REVIEW_SUFFIX))
+        .map(|(_, part)| serde_json::from_value::<CodexReviewPart>(part).ok())
+        .collect::<Option<Vec<_>>>()?;
         (!parts.is_empty()).then_some(Self { parts })
     }
 

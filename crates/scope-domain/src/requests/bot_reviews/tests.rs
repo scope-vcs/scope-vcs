@@ -165,6 +165,40 @@ fn malformed_codex_state_comments_report_nothing() {
 }
 
 #[test]
+fn one_malformed_review_object_invalidates_the_whole_state_comment() {
+    let completed = part(HEAD, "completed", "false");
+    for security_review in [
+        format!(
+            "{{\"commit_sha\":\"{HEAD}\",\"has_any_findings\":false,\"has_unresolved_findings\":false,\"status\":false}}"
+        ),
+        format!(
+            "{{\"commit_sha\":\"{HEAD}\",\"has_any_findings\":false,\"has_unresolved_findings\":false}}"
+        ),
+        format!(
+            "{{\"commit_sha\":7,\"has_any_findings\":false,\"has_unresolved_findings\":false,\"status\":\"completed\"}}"
+        ),
+        "null".to_string(),
+        "\"completed\"".to_string(),
+    ] {
+        let comment = codex_comment(&completed, &security_review);
+        assert_eq!(CodexReviewState::parse(&comment), None, "{security_review}");
+        assert_eq!(
+            state(&[commented(comment)], CODEX),
+            GitHubReviewBotState::NotStarted,
+            "{security_review}"
+        );
+    }
+    let with_other_fields =
+        format!("<!-- codex-review-state:v1 {{\"version\":2,\"code_review\":{completed}}} -->");
+    assert_eq!(
+        CodexReviewState::parse(&with_other_fields)
+            .unwrap()
+            .state_for(HEAD),
+        Some(GitHubReviewBotState::Clear)
+    );
+}
+
+#[test]
 fn a_state_comment_names_the_head_only_by_its_full_sha() {
     let same_prefix = "1196d9ca00000000000000000000000000000000";
     for named in [
