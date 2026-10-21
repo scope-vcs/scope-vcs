@@ -6,6 +6,7 @@ pub(crate) mod content;
 mod credentials;
 pub(crate) mod http_backend;
 pub(crate) mod import;
+pub(crate) mod pool_install;
 pub(crate) mod projection_repo;
 mod receive_pack;
 pub(crate) mod receive_protocol;
