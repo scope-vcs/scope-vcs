@@ -9,6 +9,9 @@ mod m0089_contribution_request_stacks;
 mod m0090_job_traceparents;
 mod m0091_media_reconcile_once;
 
+#[cfg(test)]
+pub(crate) use baseline::schema_inventory;
+
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
 };

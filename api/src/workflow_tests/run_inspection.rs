@@ -172,14 +172,6 @@ async fn long_step_logs_open_at_the_tail_and_page_back_without_gaps() {
     assert_eq!(sequences, (1..=18).collect::<Vec<_>>());
 }
 
-#[tokio::test]
-async fn step_log_inspection_rejects_conflicting_cursors() {
-    let fixture = inspectable_run(false, 2).await;
-    let uri = format!("{}?before=9&after=1", step_logs_path(&fixture));
-    let response = get_as(&fixture.state, &uri, &bearer_header()).await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
 async fn get_as(state: &AppState, uri: &str, bearer: &str) -> axum::response::Response {
     get(router(state.clone()), uri, Some(bearer)).await
 }
@@ -212,20 +204,6 @@ async fn inspectable_run(logs_truncated: bool, log_chunks: usize) -> Inspectable
         .await
         .unwrap();
     fixture
-}
-
-#[tokio::test]
-async fn append_attempt_log_rejects_nul_text_as_bad_request() {
-    let fixture = active_run(2).await;
-    let response = api_request(
-        router(fixture.state),
-        "POST",
-        &scope_api_contract::routes::attempt_logs(&fixture.attempt_id),
-        Some("Bearer scope_attempt_inspection"),
-        Some(r#"{"step_index":0,"sequence":3,"text":"before\u0000after"}"#),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

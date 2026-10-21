@@ -37,6 +37,10 @@ pub(super) async fn isolated_database() -> (
     (target, db, lease)
 }
 
+pub(super) fn migrated_store() -> super::MetadataStore {
+    super::MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap()
+}
+
 pub(super) async fn relation_exists(db: &DatabaseConnection, relation: &str) -> bool {
     db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,

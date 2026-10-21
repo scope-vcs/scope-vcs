@@ -81,10 +81,8 @@ async fn constraint_definition(db: &DatabaseConnection, name: &str) -> String {
 
 #[tokio::test]
 async fn run_state_check_constraints_allow_exactly_the_domain_states() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
+    let store = migrated_store();
+    let db = Arc::clone(&store.db);
 
     for (constraint, states) in [
         (

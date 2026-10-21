@@ -21,6 +21,7 @@ test('repository components retain drafts, previews and pending actions across r
   assert.equal(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches), true)
   assert.equal(await initialClose.evaluate(node => getComputedStyle(node).opacity), '1')
   assert.equal(await initialClose.evaluate(node => getComputedStyle(node).minWidth), '44px')
+  assert.equal(await initialClose.evaluate(node => getComputedStyle(node).minHeight), '44px')
   await page.getByLabel('Description', { exact: true }).fill('Unsaved draft')
   await page.getByRole('button', { name: 'Remote metadata update' }).click()
   assert.equal(await page.getByLabel('Description', { exact: true }).inputValue(), 'Unsaved draft')

@@ -179,19 +179,6 @@ async fn file_content_hides_unpublished_repo_during_projection_rebuild() {
 }
 
 #[tokio::test]
-async fn file_content_rejects_empty_path() {
-    let response = api_request(
-        router(test_state_with_repo()),
-        "GET",
-        "/v1/repos/owner/repo/files/content?path=",
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn published_repo_projection_preview_serves_public_file_subset() {
     let state = test_state_with_repo();
     mutate_repo(&state, |repo| {

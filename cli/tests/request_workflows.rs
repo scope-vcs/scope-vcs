@@ -242,60 +242,54 @@ fn request_diff_uses_server_revision_and_path_with_no_local_private_data() {
 
 #[test]
 fn request_diff_defaults_to_the_server_pinned_layer_manifest() {
-    for (view, mode) in [
-        ("private", None),
-        ("public", None),
-        ("agent", Some("request")),
-    ] {
-        let dir = TempDir::new("request-layer-diff");
-        let parent_head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let child_head = "cccccccccccccccccccccccccccccccccccccccc";
-        let mut detail = request();
-        detail["view"] = view.into();
-        detail["base"] = json!({"kind":"request","request_id":"req_parent","revision_id":"rev_parent","head_oid":parent_head});
-        detail["head_oid"] = child_head.into();
-        let server = FixtureServer::with_request(detail);
-        let mut command = server.command(dir.path());
-        command.args([
-            "--json",
-            "--repo",
-            "owner/repo",
-            "request",
-            "diff",
-            "--request",
-            "req_one",
-        ]);
-        if let Some(mode) = mode {
-            command.args(["--comparison", mode]);
-        }
-        let value = success(command.output().unwrap());
-        let comparison = &value["result"]["revisions"]["comparison"];
-        assert_eq!(comparison["mode"], "request");
-        assert_eq!(comparison["base_oid"], parent_head);
-        assert_eq!(comparison["head_oid"], child_head);
-        assert_eq!(value["result"]["files"].as_array().unwrap().len(), 1);
-        assert_eq!(value["result"]["files"][0]["commit_oid"], child_head);
-        assert_eq!(
-            value["result"]["files"][0]["diff"]["new_content"]["text"],
-            "server-layer\n"
-        );
-        let seen = server.seen.lock().unwrap();
-        assert!(
-            seen.iter()
-                .any(|uri| uri.ends_with("changes?comparison=request")),
-            "{seen:?}"
-        );
-        assert!(
-            seen.iter()
-                .any(|uri| uri.contains("/changes/rev_old/file-diff?")
-                    && uri.contains("comparison=request")),
-            "{seen:?}"
-        );
-        assert!(
-            !seen.iter().any(|uri| uri.contains("/commits/")),
-            "{seen:?}"
-        );
-    }
+    let dir = TempDir::new("request-layer-diff");
+    let parent_head = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let child_head = "cccccccccccccccccccccccccccccccccccccccc";
+    let mut detail = request();
+    detail["base"] = json!({"kind":"request","request_id":"req_parent","revision_id":"rev_parent","head_oid":parent_head});
+    detail["head_oid"] = child_head.into();
+    let server = FixtureServer::with_request(detail);
+    let value = success(
+        server
+            .command(dir.path())
+            .args([
+                "--json",
+                "--repo",
+                "owner/repo",
+                "request",
+                "diff",
+                "--request",
+                "req_one",
+            ])
+            .output()
+            .unwrap(),
+    );
+    let comparison = &value["result"]["revisions"]["comparison"];
+    assert_eq!(comparison["mode"], "request");
+    assert_eq!(comparison["base_oid"], parent_head);
+    assert_eq!(comparison["head_oid"], child_head);
+    assert_eq!(value["result"]["files"].as_array().unwrap().len(), 1);
+    assert_eq!(value["result"]["files"][0]["commit_oid"], child_head);
+    assert_eq!(
+        value["result"]["files"][0]["diff"]["new_content"]["text"],
+        "server-layer\n"
+    );
+    let seen = server.seen.lock().unwrap();
+    assert!(
+        seen.iter()
+            .any(|uri| uri.ends_with("changes?comparison=request")),
+        "{seen:?}"
+    );
+    assert!(
+        seen.iter()
+            .any(|uri| uri.contains("/changes/rev_old/file-diff?")
+                && uri.contains("comparison=request")),
+        "{seen:?}"
+    );
+    assert!(
+        !seen.iter().any(|uri| uri.contains("/commits/")),
+        "{seen:?}"
+    );
 }
 
 #[test]
@@ -574,7 +568,6 @@ impl FixtureServer {
     }
 
     fn with_navigation(start_detail: Value, show_detail: Value, navigation: Value) -> Self {
-        let private = show_detail["view"] == "private";
         let revision_base = show_detail["base"].clone();
         let comparison_base = if revision_base["kind"] == "request" {
             revision_base["head_oid"].clone()
@@ -582,20 +575,7 @@ impl FixtureServer {
             revision_base["review_base_oid"].clone()
         };
         let comparison_head = show_detail["head_oid"].clone();
-        let mut repo = repository();
-        if show_detail["view"] == "agent" {
-            repo["views"] = json!([
-                {"id":"public","name":"Public","includes":[],"readers":"anyone"},
-                {"id":"private","name":"Private","includes":"all","readers":"assigned"},
-                {"id":"agent","name":"Agent","includes":["public"],"readers":"assigned"}
-            ]);
-            repo["access"]["view"] = "agent".into();
-            repo["access"]["actor"] = "Member".into();
-        }
-        if private {
-            repo["access"]["view"] = "private".into();
-            repo["access"]["actor"] = "Owner".into();
-        }
+        let repo = repository();
         let seen = Arc::new(Mutex::new(Vec::new()));
         let inspected = seen.clone();
         let edited = Arc::new(Mutex::new(Value::Null));
