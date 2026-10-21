@@ -1,0 +1,13 @@
+diff --git a/dist/_chunks/common-base-runner.mjs b/dist/_chunks/common-base-runner.mjs
+index 57e557dea157f2e6ef24316282082d923b531e8c..c9f3239133094e7efd7c3994869fb8cd75fd4041 100644
+--- a/dist/_chunks/common-base-runner.mjs
++++ b/dist/_chunks/common-base-runner.mjs
+@@ -29,7 +29,7 @@ var BaseEnvRunner = class {
+ 	async fetch(input, init) {
+ 		await this._waitForAddress();
+ 		if (!this._address) return new Response(`${this._runtimeType()} env runner is unavailable`, { status: 503 });
+-		return proxyFetch(this._address, this._resolveFetchInput(input), init);
++		return proxyFetch(this._address, this._resolveFetchInput(input), init, { agent: false });
+ 	}
+ 	async upgrade(context) {
+ 		if (!this.ready) await this.waitForReady().catch(() => {});

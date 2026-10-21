@@ -22,3 +22,5 @@ allowBuilds:
   bufferutil: false
   core-js: false
   utf-8-validate: false
+patchedDependencies:
+  env-runner@0.2.3: patches/env-runner@0.2.3.patch
