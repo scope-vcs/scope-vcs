@@ -128,7 +128,7 @@ pub(crate) async fn merge_request_inner(
     let mut attempt = 1;
     let (repo, mutation) = loop {
         let repo = current_repository(state, command, &context.incarnation()).await?;
-        let prepared = prepare_request_merge_for_execution(
+        let prepared = match prepare_request_merge_for_execution(
             state,
             &command.owner,
             &command.repo_name,
@@ -136,7 +136,31 @@ pub(crate) async fn merge_request_inner(
             &repo,
             &request,
         )
-        .await?;
+        .await
+        {
+            Ok(prepared) => prepared,
+            Err(failure) => {
+                let moved = if failure.is_conflict() && attempt < MERGE_ATTEMPTS {
+                    current_repository(state, command, &context.incarnation())
+                        .await?
+                        .record
+                        .content_version
+                        != repo.record.content_version
+                } else {
+                    false
+                };
+                if !retries_preparation(&failure, moved, attempt) {
+                    return Err(failure);
+                }
+                tracing::info!(
+                    attempt,
+                    request_id = %request.id,
+                    "main moved while the merge was being prepared; preparing it again"
+                );
+                attempt += 1;
+                continue;
+            }
+        };
         let now_unix = match unix_now() {
             Ok(now_unix) => now_unix,
             Err(error) => {
@@ -165,7 +189,15 @@ pub(crate) async fn merge_request_inner(
 
     state.product_analytics.capture(analytics_event);
     let incarnation = repo.incarnation();
-    let main_oid = if &access.view == repo.repo_config.views().full() {
+    let reader = crate::repo_access::find_read_access(
+        state,
+        &command.owner,
+        &command.repo_name,
+        Some(&command.actor_user_id),
+    )
+    .await?;
+    let access = reader.access;
+    let main_oid = if &access.view == reader.views.full() {
         Some(mutation.main_oid)
     } else {
         RepositoryGit::load(state, &incarnation)
@@ -191,10 +223,18 @@ pub(crate) async fn merge_request_inner(
     Ok(MergeRequestResult {
         main_oid,
         access,
-        views: context.views,
+        views: reader.views,
         actor_user_id: command.actor_user_id.clone(),
         request: mutation.request,
     })
+}
+
+fn retries_preparation(
+    failure: &RequestMergeFailure,
+    repository_moved: bool,
+    attempt: usize,
+) -> bool {
+    failure.is_conflict() && repository_moved && attempt < MERGE_ATTEMPTS
 }
 
 async fn current_repository(

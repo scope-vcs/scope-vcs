@@ -217,3 +217,23 @@ fn git_text(repo: &Path, args: &[&str]) -> String {
     );
     String::from_utf8(output.stdout).unwrap()
 }
+
+#[test]
+fn preparation_retries_only_conflicts_caused_by_main_moving() {
+    let moved_read = RequestMergeFailure::Other(ApiError::conflict(
+        "repository content changed while reading its history; retry",
+    ));
+    assert!(retries_preparation(&moved_read, true, 1));
+    assert!(!retries_preparation(&moved_read, false, 1));
+    assert!(!retries_preparation(&moved_read, true, MERGE_ATTEMPTS));
+    assert!(!retries_preparation(
+        &RequestMergeFailure::MergeConflict(ApiError::conflict("request conflicts with main")),
+        true,
+        1
+    ));
+    assert!(!retries_preparation(
+        &RequestMergeFailure::Other(ApiError::infrastructure_unavailable("store down")),
+        true,
+        1
+    ));
+}
