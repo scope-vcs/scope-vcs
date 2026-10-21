@@ -82,6 +82,13 @@ test('line discussions open from either side, post under their lines, and keep c
   await composer.waitFor()
   assert.equal(await diff.locator('[data-selected-line]').count(), 4)
   await assertFits(page, 'composer', [composer, diff.getByRole('button', { name: 'Start discussion' })])
+  const hint = diff.getByText('Shift+Enter for a new line')
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 })
+    const { height, lineHeight } = await hint.evaluate((node) => ({ height: node.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(node).lineHeight) }))
+    assert.ok(height <= lineHeight * 1.5, `composer hint wraps at ${width}: ${height}px`)
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
 
   await composer.fill('Check the tail lines')
   await gutter('change-addition', 9).click({ modifiers: ['Shift'] })
