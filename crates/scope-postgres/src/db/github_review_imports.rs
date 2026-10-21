@@ -67,6 +67,7 @@ struct ImportJobRow {
     pull_number: i64,
     github_link_id: String,
     github_thread_node_id: Option<String>,
+    thread_resolved: Option<bool>,
     github_actor_id: Option<i64>,
     claim_token: String,
     attempts: i32,
@@ -76,6 +77,7 @@ struct SubjectColumns {
     subject: &'static str,
     github_subject_id: u64,
     thread_node_id: Option<String>,
+    thread_resolved: Option<bool>,
     github_actor_id: Option<u64>,
 }
 
@@ -149,8 +151,10 @@ impl RequestStore {
             DatabaseBackend::Postgres,
             "INSERT INTO scope_github_review_imports (request_id, subject, github_subject_id,
                 repo_id, github_repository_id, pull_number, github_link_id,
-                github_thread_node_id, github_actor_id, attempts, next_attempt_at_unix)
-             SELECT request.id, $2, $3, request.repo_id, $5, $6, connection.link_id, $7, $8, 0, $9
+                github_thread_node_id, thread_resolved, github_actor_id, attempts,
+                next_attempt_at_unix)
+             SELECT request.id, $2, $3, request.repo_id, $5, $6, connection.link_id, $7, $10,
+                    $8, 0, $9
                FROM scope_requests request
                JOIN scope_github_connections connection
                  ON connection.repo_id = request.repo_id
@@ -160,6 +164,7 @@ impl RequestStore {
              ON CONFLICT (request_id, subject, github_subject_id) DO UPDATE
                 SET github_link_id = EXCLUDED.github_link_id,
                     github_thread_node_id = EXCLUDED.github_thread_node_id,
+                    thread_resolved = EXCLUDED.thread_resolved,
                     github_actor_id = EXCLUDED.github_actor_id,
                     claim_token = NULL,
                     attempts = 0,
@@ -178,6 +183,7 @@ impl RequestStore {
                 columns.thread_node_id.into(),
                 optional_u64_to_i64(columns.github_actor_id, "GitHub account id")?.into(),
                 u64_to_i64(now_unix, "GitHub review import time")?.into(),
+                columns.thread_resolved.into(),
             ],
         ))
         .await?;
@@ -209,7 +215,8 @@ impl RequestStore {
                 AND job.github_subject_id = due.github_subject_id
           RETURNING job.request_id, job.subject, job.github_subject_id, job.repo_id,
                     job.github_repository_id, job.pull_number, job.github_link_id,
-                    job.github_thread_node_id, job.github_actor_id, job.claim_token,
+                    job.github_thread_node_id, job.thread_resolved, job.github_actor_id,
+                    job.claim_token,
                     job.attempts",
             [
                 u64_to_i64(now_unix, "GitHub review import time")?.into(),
@@ -540,22 +547,26 @@ fn subject_columns(subject: &GitHubReviewImportSubject) -> Result<SubjectColumns
             subject: REVIEW,
             github_subject_id: *review_id,
             thread_node_id: None,
+            thread_resolved: None,
             github_actor_id: None,
         },
         GitHubReviewImportSubject::Reply { comment_id } => SubjectColumns {
             subject: REPLY,
             github_subject_id: *comment_id,
             thread_node_id: None,
+            thread_resolved: None,
             github_actor_id: None,
         },
         GitHubReviewImportSubject::Thread {
             root_comment_id,
             node_id,
+            resolved,
             github_account_id,
         } => SubjectColumns {
             subject: THREAD,
             github_subject_id: *root_comment_id,
             thread_node_id: Some(node_id.clone()),
+            thread_resolved: Some(*resolved),
             github_actor_id: Some(*github_account_id),
         },
     })
@@ -566,7 +577,7 @@ impl ImportJobRow {
         let github_subject_id = i64_to_u64(self.github_subject_id, "GitHub review import subject")?;
         let subject = match (
             self.subject.as_str(),
-            self.github_thread_node_id,
+            self.github_thread_node_id.zip(self.thread_resolved),
             optional_i64_to_u64(self.github_actor_id, "GitHub account id")?,
         ) {
             (REVIEW, None, None) => GitHubReviewImportSubject::Review {
@@ -575,11 +586,14 @@ impl ImportJobRow {
             (REPLY, None, None) => GitHubReviewImportSubject::Reply {
                 comment_id: github_subject_id,
             },
-            (THREAD, Some(node_id), Some(github_account_id)) => GitHubReviewImportSubject::Thread {
-                root_comment_id: github_subject_id,
-                node_id,
-                github_account_id,
-            },
+            (THREAD, Some((node_id, resolved)), Some(github_account_id)) => {
+                GitHubReviewImportSubject::Thread {
+                    root_comment_id: github_subject_id,
+                    node_id,
+                    resolved,
+                    github_account_id,
+                }
+            }
             (subject, _, _) => {
                 return Err(PostgresError::internal_message(format!(
                     "GitHub review import has an unreadable subject {subject}"

@@ -179,6 +179,20 @@ fn comment_bodies_are_trimmed_and_capped_on_a_character_boundary() {
 }
 
 #[test]
+fn a_thread_delivery_applies_only_when_github_still_agrees_with_it() {
+    assert_eq!(
+        github_thread_status(true, true),
+        Some(RequestDiscussionStatus::Resolved)
+    );
+    assert_eq!(
+        github_thread_status(false, false),
+        Some(RequestDiscussionStatus::Open)
+    );
+    assert_eq!(github_thread_status(true, false), None);
+    assert_eq!(github_thread_status(false, true), None);
+}
+
+#[test]
 fn only_open_full_view_requests_accept_github_reviews() {
     let (request, views) = full_view_request();
     assert!(accepts_github_reviews(&request, &views));

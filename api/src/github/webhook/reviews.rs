@@ -98,6 +98,7 @@ pub(super) fn parse(event: &str, body: &[u8]) -> Result<Option<GitHubReviewDeliv
             GitHubReviewImportSubject::Thread {
                 root_comment_id,
                 node_id,
+                resolved: action == "resolved",
                 github_account_id,
             }
         }
@@ -178,12 +179,13 @@ mod tests {
             ),
             delivery(GitHubReviewImportSubject::Reply { comment_id: 71 })
         );
-        for action in ["resolved", "unresolved"] {
+        for (action, resolved) in [("resolved", true), ("unresolved", false)] {
             assert_eq!(
                 parse("pull_request_review_thread", payload(action, 42, branch)),
                 delivery(GitHubReviewImportSubject::Thread {
                     root_comment_id: 69,
                     node_id: "PRRT_thread".to_string(),
+                    resolved,
                     github_account_id: 5,
                 })
             );

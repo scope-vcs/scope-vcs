@@ -15,6 +15,7 @@ use scope_domain::{
         GitHubReviewImportSubject, Request, RequestDiscussion, RequestDiscussionStatus,
         RequestRevision, github_comment_anchors, github_comment_body, github_retry_at,
         github_review_anchor, github_review_client_id, github_review_comment_client_id,
+        github_thread_status,
     },
 };
 use scope_postgres::db::{
@@ -173,6 +174,7 @@ async fn import_subject(
         GitHubReviewImportSubject::Thread {
             root_comment_id,
             ref node_id,
+            resolved,
             github_account_id,
         } => {
             let Some(thread) = state
@@ -185,17 +187,18 @@ async fn import_subject(
             if thread.root_comment_id != Some(root_comment_id) {
                 return Ok(());
             }
-            let (status, actor) = if thread.resolved {
-                (RequestDiscussionStatus::Resolved, thread.resolver)
-            } else {
-                (
-                    RequestDiscussionStatus::Open,
+            let Some(status) = github_thread_status(resolved, thread.resolved) else {
+                return Ok(());
+            };
+            let actor = match status {
+                RequestDiscussionStatus::Resolved => thread.resolver,
+                RequestDiscussionStatus::Open => {
                     state
                         .metadata
                         .requests()
                         .github_account(github_account_id)
-                        .await?,
-                )
+                        .await?
+                }
             };
             let Some(actor) = actor else {
                 return Ok(());

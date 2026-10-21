@@ -34,8 +34,20 @@ pub enum GitHubReviewImportSubject {
     Thread {
         root_comment_id: u64,
         node_id: String,
+        resolved: bool,
         github_account_id: u64,
     },
+}
+
+pub fn github_thread_status(
+    delivered_resolved: bool,
+    live_resolved: bool,
+) -> Option<RequestDiscussionStatus> {
+    (delivered_resolved == live_resolved).then_some(if live_resolved {
+        RequestDiscussionStatus::Resolved
+    } else {
+        RequestDiscussionStatus::Open
+    })
 }
 
 pub fn accepts_github_reviews(request: &Request, views: &Views) -> bool {

@@ -384,15 +384,32 @@ async fn a_late_resolution_delivery_follows_the_thread_state_on_github() {
         by_client_id(&threads, "github:review-comment:403")["status"].clone()
     };
 
+    owner
+        .fake
+        .report_permission("octo-reader", Some(("read", 503)));
+    let writer = user(502, "octo-writer", "User");
+    let reader = user(503, "octo-reader", "User");
+
     owner.fake.report_review_thread(403, None);
-    deliver_thread(&owner, "resolved", 403, user(502, "octo-writer", "User")).await;
+    deliver_thread(&owner, "resolved", 403, writer.clone()).await;
     assert_eq!(import_pass(&owner).await, 1);
     assert_eq!(status(threads(&owner).await), "Open");
 
     owner
         .fake
         .report_review_thread(403, Some(("octo-writer", 502)));
-    deliver_thread(&owner, "unresolved", 403, user(502, "octo-writer", "User")).await;
+    deliver_thread(&owner, "resolved", 403, writer.clone()).await;
     assert_eq!(import_pass(&owner).await, 1);
     assert_eq!(status(threads(&owner).await), "Resolved");
+
+    owner.fake.report_review_thread(403, None);
+    deliver_thread(&owner, "unresolved", 403, reader).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    deliver_thread(&owner, "resolved", 403, writer.clone()).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    assert_eq!(status(threads(&owner).await), "Resolved");
+
+    deliver_thread(&owner, "unresolved", 403, writer).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    assert_eq!(status(threads(&owner).await), "Open");
 }

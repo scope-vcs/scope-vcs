@@ -351,6 +351,7 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         job(GitHubReviewImportSubject::Thread {
             root_comment_id: 31,
             node_id: node_id.to_string(),
+            resolved: true,
             github_account_id: RESOLVER,
         })
     };
@@ -413,6 +414,7 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
         GitHubReviewImportSubject::Thread {
             root_comment_id: 31,
             node_id: "PRRT_second".to_string(),
+            resolved: true,
             github_account_id: RESOLVER,
         }
     );
@@ -428,6 +430,7 @@ fn thread_job(node_id: &str, github_account_id: u64) -> QueueGitHubReviewImport 
         subject: GitHubReviewImportSubject::Thread {
             root_comment_id: 31,
             node_id: node_id.to_string(),
+            resolved: true,
             github_account_id,
         },
     }

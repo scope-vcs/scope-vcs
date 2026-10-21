@@ -338,7 +338,10 @@ one after 30 seconds, 2, 10, and 30 minutes, then gives up.
   GraphQL (`node(id:)` on the thread's `node_id`, `isResolved` and
   `resolvedBy`, under Pull requests read) and resolves or reopens the
   discussion made from the thread's first comment to match, recording GitHub's
-  `resolvedBy` account as the resolver. A newer delivery for the same thread
+  `resolvedBy` account as the resolver. A delivery applies only while GitHub
+  still agrees with its action: a `resolved` delivery is credited to
+  `resolvedBy`, an `unresolved` one to its sender, and one GitHub has since
+  reversed is ignored, since the reversing delivery carries the newer state. A newer delivery for the same thread
   replaces the job's claim, so an older worker that is still reading GitHub
   commits nothing.
 
