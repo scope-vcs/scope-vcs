@@ -1,17 +1,28 @@
+use scope_domain::requests::attachments::RequestAttachmentProcessingLane;
 use scope_service_runtime::readiness::{ActivityGuard, ReadinessTracker};
 use std::time::Duration;
 
 #[derive(Clone, Copy, Debug)]
-enum MediaWorkerLoop {
-    Processing,
+pub enum MediaWorkerLoop {
+    PhotoProcessing,
+    GeneralProcessing,
     Cleanup,
+}
+
+impl From<RequestAttachmentProcessingLane> for MediaWorkerLoop {
+    fn from(lane: RequestAttachmentProcessingLane) -> Self {
+        match lane {
+            RequestAttachmentProcessingLane::Photo => Self::PhotoProcessing,
+            RequestAttachmentProcessingLane::General => Self::GeneralProcessing,
+        }
+    }
 }
 
 const CODECS_GATE: usize = 0;
 const DEPENDENCIES_GATE: usize = 1;
 
 #[derive(Clone)]
-pub struct WorkerHealth(ReadinessTracker<2, 2>);
+pub struct WorkerHealth(ReadinessTracker<2, 3>);
 
 impl WorkerHealth {
     pub fn new(poll_interval: Duration) -> Self {
@@ -30,22 +41,12 @@ impl WorkerHealth {
         self.0.close_gate(DEPENDENCIES_GATE);
     }
 
-    pub fn mark_processing_poll(&self, now_unix: u64) {
-        self.0
-            .mark_poll(MediaWorkerLoop::Processing as usize, now_unix);
+    pub fn mark_poll(&self, worker_loop: MediaWorkerLoop, now_unix: u64) {
+        self.0.mark_poll(worker_loop as usize, now_unix);
     }
 
-    pub fn mark_cleanup_poll(&self, now_unix: u64) {
-        self.0
-            .mark_poll(MediaWorkerLoop::Cleanup as usize, now_unix);
-    }
-
-    pub fn processing_activity(&self) -> ActivityGuard<'_> {
-        self.0.activity(MediaWorkerLoop::Processing as usize)
-    }
-
-    pub fn cleanup_activity(&self) -> ActivityGuard<'_> {
-        self.0.activity(MediaWorkerLoop::Cleanup as usize)
+    pub fn activity(&self, worker_loop: MediaWorkerLoop) -> ActivityGuard<'_> {
+        self.0.activity(worker_loop as usize)
     }
 
     pub async fn serve(self, port: u16) -> anyhow::Result<()> {
@@ -66,14 +67,21 @@ mod tests {
     const READY: StatusCode = StatusCode::OK;
     const STALE: StatusCode = StatusCode::SERVICE_UNAVAILABLE;
 
+    const LOOPS: [MediaWorkerLoop; 3] = [
+        MediaWorkerLoop::PhotoProcessing,
+        MediaWorkerLoop::GeneralProcessing,
+        MediaWorkerLoop::Cleanup,
+    ];
+
     #[test]
-    fn readiness_requires_codecs_dependencies_and_both_recent_loops() {
+    fn readiness_requires_codecs_dependencies_and_every_recent_loop() {
         let health = WorkerHealth::new(Duration::from_secs(1));
         health.mark_codecs_ready();
         health.mark_dependencies_ready();
-        health.mark_processing_poll(100);
-        assert_eq!(health.readyz_at(100), STALE);
-        health.mark_cleanup_poll(100);
+        for (index, worker_loop) in LOOPS.into_iter().enumerate() {
+            assert_eq!(health.readyz_at(100), STALE, "{index} loops polled");
+            health.mark_poll(worker_loop, 100);
+        }
         assert_eq!(health.readyz_at(115), READY);
         assert_eq!(health.readyz_at(116), STALE);
         health.mark_dependencies_waiting();
@@ -85,15 +93,17 @@ mod tests {
         let health = WorkerHealth::new(Duration::from_secs(1));
         health.mark_codecs_ready();
         health.mark_dependencies_ready();
-        let processing = health.processing_activity();
-        let cleanup = health.cleanup_activity();
+        let photo = health.activity(MediaWorkerLoop::PhotoProcessing);
+        let general = health.activity(MediaWorkerLoop::GeneralProcessing);
+        let cleanup = health.activity(MediaWorkerLoop::Cleanup);
         assert_eq!(health.readyz_at(10_000), READY);
 
-        drop(processing);
+        drop(general);
         assert_eq!(health.readyz_at(10_000), STALE);
-        health.mark_processing_poll(10_000);
+        health.mark_poll(MediaWorkerLoop::GeneralProcessing, 10_000);
         assert_eq!(health.readyz_at(10_000), READY);
 
+        drop(photo);
         drop(cleanup);
         assert_eq!(health.readyz_at(10_016), STALE);
     }

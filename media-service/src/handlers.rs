@@ -5,7 +5,7 @@ use crate::{
 };
 use axum::{
     Json,
-    body::{Body, to_bytes},
+    body::Body,
     extract::{Path, Query, State},
     http::{
         HeaderMap, HeaderValue, Method, StatusCode,
@@ -16,16 +16,20 @@ use axum::{
     },
     response::Response,
 };
-use bytes::Bytes;
 use scope_api_contract::{RequestAttachmentMediaTarget, RequestAttachmentPartReceiptResponse};
 use scope_domain::requests::attachments::RequestMediaObject;
-use scope_media_storage::{MAX_CHUNK_BYTES, WriteAttempt};
+use scope_media_storage::{MAX_CHUNK_BYTES, MEDIA_PUT_TIMEOUT, WriteAttempt};
 use scope_postgres::db::{RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult};
 use scope_service_runtime::{http::ServiceError, random_hex, unix_now};
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::OwnedSemaphorePermit;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_stream::StreamExt;
+
+const UPLOAD_ADMISSION_WAIT: Duration = Duration::from_secs(30);
+const READ_ADMISSION_WAIT: Duration = Duration::from_secs(10);
+const UPLOAD_BODY_STALL: Duration = Duration::from_secs(20);
+const UPLOAD_BODY_DEADLINE: Duration = Duration::from_secs(600);
 
 #[derive(Deserialize)]
 pub(crate) struct GrantQuery {
@@ -51,10 +55,9 @@ pub(crate) async fn put_upload_part(
     Path((upload_id, part_number)): Path<(String, u32)>,
     request: axum::extract::Request,
 ) -> Result<Json<RequestAttachmentPartReceiptResponse>, ServiceError> {
-    let now_unix = unix_now()?;
     let claims = state
         .verifier
-        .verify_upload(request.headers(), &upload_id, now_unix)?;
+        .verify_upload(request.headers(), &upload_id, unix_now()?)?;
     state
         .metadata
         .media()
@@ -71,15 +74,13 @@ pub(crate) async fn put_upload_part(
                 && authorized.uploader_user_id == claims.uploader_user_id
         })
         .ok_or_else(media_not_found)?;
-
-    let (_permit, bytes) = buffer_upload_body(
-        state.upload_slots.clone(),
-        request.into_body(),
-        Duration::from_secs(60),
+    let _permit = admit(
+        &state.upload_slots,
+        UPLOAD_ADMISSION_WAIT,
+        "media upload capacity is busy; retry the part",
     )
     .await?;
-    let part_bytes = bytes.to_vec();
-    drop(bytes);
+    let part_bytes = buffer_upload_body(request).await?;
     let attempt = WriteAttempt::new(&claims.attachment_id, "original", &claims.upload_id)
         .map_err(media_storage_error)?;
     let planned = state
@@ -91,7 +92,7 @@ pub(crate) async fn put_upload_part(
     })?;
     let write_started_at_unix = unix_now()?;
     let write_expires_at_unix = write_started_at_unix
-        .checked_add(60)
+        .checked_add(MEDIA_PUT_TIMEOUT.as_secs())
         .ok_or_else(|| ServiceError::internal("media part write expiry overflowed"))?;
     let reserved = match state
         .metadata
@@ -116,11 +117,26 @@ pub(crate) async fn put_upload_part(
             ));
         }
     };
-    state
-        .storage
-        .write_part(&reserved, part_bytes)
-        .await
-        .map_err(media_storage_error)?;
+    if let Err(error) = state.storage.write_part(&reserved, part_bytes).await {
+        let released = match unix_now() {
+            Ok(now_unix) => state
+                .metadata
+                .media()
+                .release_upload_part_write(
+                    &claims.attachment_id,
+                    part_number,
+                    &write_token,
+                    now_unix,
+                )
+                .await
+                .map_err(|error| error.to_string()),
+            Err(error) => Err(error.to_string()),
+        };
+        if let Err(release_error) = released {
+            tracing::warn!(%release_error, "releasing a failed media part write failed");
+        }
+        return Err(media_storage_error(error));
+    }
     let store_result = state
         .metadata
         .media()
@@ -152,19 +168,44 @@ pub(crate) async fn put_upload_part(
     Ok(Json(reserved.receipt.into()))
 }
 
-async fn buffer_upload_body(
-    slots: Arc<tokio::sync::Semaphore>,
-    body: Body,
-    timeout: Duration,
-) -> Result<(OwnedSemaphorePermit, Bytes), ServiceError> {
-    let permit = slots
-        .try_acquire_owned()
-        .map_err(|_| ServiceError::unavailable("media upload capacity is busy; retry the part"))?;
-    let bytes = tokio::time::timeout(timeout, to_bytes(body, MAX_CHUNK_BYTES))
+async fn admit(
+    slots: &Arc<Semaphore>,
+    wait: Duration,
+    busy: &'static str,
+) -> Result<OwnedSemaphorePermit, ServiceError> {
+    tokio::time::timeout(wait, slots.clone().acquire_owned())
         .await
-        .map_err(|_| ServiceError::request_timeout("media part body timed out"))?
-        .map_err(|_| ServiceError::payload_too_large("media part exceeds the 8 MiB limit"))?;
-    Ok((permit, bytes))
+        .map_err(|_| ServiceError::unavailable(busy))?
+        .map_err(|_| ServiceError::internal("media admission pool is closed"))
+}
+
+async fn buffer_upload_body(request: axum::extract::Request) -> Result<Vec<u8>, ServiceError> {
+    let declared = request
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok()?.parse::<usize>().ok())
+        .unwrap_or(0);
+    let mut stream = request.into_body().into_data_stream();
+    let mut bytes = Vec::with_capacity(declared.min(MAX_CHUNK_BYTES));
+    let timed_out = || ServiceError::request_timeout("media part body timed out");
+    tokio::time::timeout(UPLOAD_BODY_DEADLINE, async {
+        while let Some(frame) = tokio::time::timeout(UPLOAD_BODY_STALL, stream.next())
+            .await
+            .map_err(|_| timed_out())?
+        {
+            let frame =
+                frame.map_err(|_| ServiceError::bad_request("media part body was interrupted"))?;
+            if bytes.len() + frame.len() > MAX_CHUNK_BYTES {
+                return Err(ServiceError::payload_too_large(
+                    "media part exceeds the 8 MiB limit",
+                ));
+            }
+            bytes.extend_from_slice(&frame);
+        }
+        Ok(bytes)
+    })
+    .await
+    .map_err(|_| timed_out())?
 }
 
 pub(crate) async fn original(
@@ -234,11 +275,12 @@ async fn serve_media(
     let range = requested_range(&headers, object.plaintext_bytes)?;
     let permit = if method == Method::GET && object.plaintext_bytes > 0 {
         Some(
-            state
-                .read_slots
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| ServiceError::unavailable("media read capacity is busy; retry"))?,
+            admit(
+                &state.read_slots,
+                READ_ADMISSION_WAIT,
+                "media read capacity is busy; retry",
+            )
+            .await?,
         )
     } else {
         None
@@ -372,11 +414,11 @@ fn content_disposition(filename: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::to_bytes;
+    use bytes::Bytes;
     use scope_media_storage::WriteAttempt;
     use scope_storage::MemoryBackend;
     use sha2::{Digest, Sha256};
-    use std::sync::Arc;
-    use tokio::sync::Semaphore;
     use tokio_stream::wrappers::ReceiverStream;
 
     async fn fixture() -> (scope_media_storage::MediaStorage, RequestMediaObject) {
@@ -390,15 +432,13 @@ mod tests {
         let plaintext = b"0123456789".to_vec();
         let part = storage.plan_part(&attempt, 1, &plaintext).unwrap();
         storage.write_part(&part, plaintext.clone()).await.unwrap();
-        let object = storage
-            .seal_parts(
-                "video/mp4",
-                plaintext.len() as u64,
-                &hex::encode(Sha256::digest(&plaintext)),
-                vec![part],
-            )
-            .await
-            .unwrap();
+        let object = scope_media_storage::seal_parts(
+            "video/mp4",
+            plaintext.len() as u64,
+            &hex::encode(Sha256::digest(&plaintext)),
+            vec![part],
+        )
+        .unwrap();
         (storage, object)
     }
 
@@ -469,29 +509,59 @@ mod tests {
         assert!(to_bytes(response.into_body(), 1).await.unwrap().is_empty());
     }
 
-    #[tokio::test]
-    async fn upload_admission_rejects_excess_and_times_out_a_stalled_body() {
+    #[tokio::test(start_paused = true)]
+    async fn admission_waits_for_a_slot_before_reporting_busy() {
         let slots = Arc::new(Semaphore::new(1));
         let held = slots.clone().acquire_owned().await.unwrap();
-        let busy = buffer_upload_body(slots.clone(), Body::from("part"), Duration::from_millis(10))
+        let release = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            drop(held);
+        });
+        drop(admit(&slots, READ_ADMISSION_WAIT, "busy").await.unwrap());
+        release.await.unwrap();
+
+        let _held = slots.clone().acquire_owned().await.unwrap();
+        let busy = admit(&slots, READ_ADMISSION_WAIT, "busy")
             .await
             .unwrap_err();
         assert_eq!(busy.status(), StatusCode::SERVICE_UNAVAILABLE);
-        drop(held);
+    }
 
+    fn streamed_body(frames: Vec<(u64, &'static [u8])>) -> axum::extract::Request {
         let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(1);
-        let stalled = Body::from_stream(ReceiverStream::new(receiver));
-        let timeout = buffer_upload_body(slots, stalled, Duration::from_millis(10))
+        tokio::spawn(async move {
+            for (delay_secs, frame) in frames {
+                tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+                if sender.send(Ok(Bytes::from_static(frame))).await.is_err() {
+                    return;
+                }
+            }
+        });
+        axum::extract::Request::new(Body::from_stream(ReceiverStream::new(receiver)))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn upload_bodies_fail_on_stalls_not_on_slow_steady_progress() {
+        let slow = buffer_upload_body(streamed_body(vec![(15, b"part"); 6]))
+            .await
+            .unwrap();
+        assert_eq!(slow, b"part".repeat(6));
+
+        let stalled = buffer_upload_body(streamed_body(vec![(0, b"part"), (3600, b"late")]))
             .await
             .unwrap_err();
-        assert_eq!(timeout.status(), StatusCode::REQUEST_TIMEOUT);
-        drop(sender);
+        assert_eq!(stalled.status(), StatusCode::REQUEST_TIMEOUT);
 
-        let too_large = buffer_upload_body(
-            Arc::new(Semaphore::new(1)),
-            Body::from(vec![0_u8; MAX_CHUNK_BYTES + 1]),
-            Duration::from_secs(1),
-        )
+        let endless = buffer_upload_body(streamed_body(vec![(15, b"x"); 100]))
+            .await
+            .unwrap_err();
+        assert_eq!(endless.status(), StatusCode::REQUEST_TIMEOUT);
+
+        let too_large = buffer_upload_body(axum::extract::Request::new(Body::from(vec![
+            0_u8;
+            MAX_CHUNK_BYTES
+                + 1
+        ])))
         .await
         .unwrap_err();
         assert_eq!(too_large.status(), StatusCode::PAYLOAD_TOO_LARGE);

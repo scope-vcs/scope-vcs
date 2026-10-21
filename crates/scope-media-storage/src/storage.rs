@@ -9,24 +9,49 @@ use scope_domain::requests::attachments::{
     RequestMediaChunk, RequestMediaObject,
 };
 use scope_storage::{
-    EncryptedObjectStore, EncryptionKey, ObjectBackend, ObjectStore, read_bounded,
+    EncryptedObjectStore, EncryptionKey, OBJECT_FRAME_BYTES, ObjectBackend, ObjectStore,
+    ObjectStoreError,
 };
 use sha2::{Digest, Sha256};
-use std::{ops::RangeInclusive, pin::Pin, sync::Arc};
+use std::{
+    future::Future,
+    ops::{ControlFlow, RangeInclusive},
+    pin::Pin,
+    sync::Arc,
+};
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
     sync::{OwnedSemaphorePermit, Semaphore, mpsc},
+    time::Duration,
 };
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
 
 pub const MAX_CHUNK_BYTES: usize = REQUEST_MEDIA_CHUNK_BYTES as usize;
+pub const MEDIA_PUT_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) const MEDIA_KEY_ID: &str = "media";
+const DELETE_TIMEOUT: Duration = Duration::from_secs(30);
+const READINESS_TIMEOUT: Duration = Duration::from_secs(10);
+const FRAME_STALL_TIMEOUT: Duration = Duration::from_secs(30);
+const FRAMES_PER_CHUNK: usize = MAX_CHUNK_BYTES.div_ceil(OBJECT_FRAME_BYTES);
 
 pub type MediaByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, MediaStorageError>> + Send>>;
 
+type BudgetedFrame = Result<Bytes, MediaStorageError>;
+
+struct BudgetedBytes {
+    bytes: Bytes,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl AsRef<[u8]> for BudgetedBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 #[derive(Clone)]
 pub struct MediaStorage {
-    store: Arc<dyn ObjectStore>,
+    store: EncryptedObjectStore,
     operation_slots: Arc<Semaphore>,
 }
 
@@ -44,14 +69,18 @@ impl MediaStorage {
         let key = EncryptionKey::new(MEDIA_KEY_ID, encryption_key)
             .map_err(|error| MediaStorageError::invalid(error.to_string()))?;
         Ok(Self {
-            store: Arc::new(EncryptedObjectStore::new(backend, key)),
+            store: EncryptedObjectStore::new(backend, key),
             operation_slots: Arc::new(Semaphore::new(max_storage_operations)),
         })
     }
 
     pub async fn readiness_check(&self) -> Result<(), MediaStorageError> {
-        let _slot = self.operation_slot().await?;
-        Ok(self.store.readiness_check().await?)
+        self.bounded_operation(
+            READINESS_TIMEOUT,
+            "media storage readiness check",
+            self.store.readiness_check(),
+        )
+        .await
     }
 
     pub fn plan_part(
@@ -91,35 +120,12 @@ impl MediaStorage {
                 "media part bytes do not match the planned storage object",
             ));
         }
-        let _slot = self.operation_slot().await?;
-        Ok(self.store.put(&part.object_key, bytes).await?)
-    }
-
-    pub async fn seal_parts(
-        &self,
-        content_type: impl Into<String>,
-        expected_bytes: u64,
-        expected_sha256: &str,
-        parts: Vec<RequestAttachmentStagedPart>,
-    ) -> Result<RequestMediaObject, MediaStorageError> {
-        let object = RequestMediaObject::from_parts(content_type, expected_sha256, parts);
-        if object.plaintext_bytes != expected_bytes {
-            return Err(MediaStorageError::integrity(
-                "media manifest plaintext size does not match its chunks",
-            ));
-        }
-        validate_object(&object)?;
-        let mut whole_digest = Sha256::new();
-        for chunk in &object.chunks {
-            let bytes = self.read_verified_chunk(chunk).await?;
-            whole_digest.update(&bytes);
-        }
-        if hex::encode(whole_digest.finalize()) != object.sha256 {
-            return Err(MediaStorageError::integrity(
-                "media object digest does not match the completed parts",
-            ));
-        }
-        Ok(object)
+        self.bounded_operation(
+            MEDIA_PUT_TIMEOUT,
+            "media part write",
+            self.store.put(&part.object_key, bytes),
+        )
+        .await
     }
 
     pub async fn read_range(
@@ -128,40 +134,24 @@ impl MediaStorage {
         range: RangeInclusive<u64>,
     ) -> Result<MediaByteStream, MediaStorageError> {
         validate_object(object)?;
-        let start = *range.start();
-        let end = *range.end();
-        if start > end || end >= object.plaintext_bytes {
+        if range.start() > range.end() || *range.end() >= object.plaintext_bytes {
             return Err(MediaStorageError::invalid(
                 "media byte range is outside the object",
             ));
         }
         let storage = self.clone();
         let chunks = object.chunks.clone();
-        let (sender, receiver) = mpsc::channel(1);
+        let budget = Arc::new(Semaphore::new(MAX_CHUNK_BYTES));
+        let (sender, receiver) = mpsc::channel::<BudgetedFrame>(FRAMES_PER_CHUNK + 1);
         tokio::spawn(async move {
-            for chunk in chunks {
-                let chunk_end = chunk
-                    .plaintext_offset
-                    .saturating_add(chunk.plaintext_bytes)
-                    .saturating_sub(1);
-                if chunk_end < start || chunk.plaintext_offset > end {
-                    continue;
-                }
-                let bytes = match storage.read_verified_chunk(&chunk).await {
-                    Ok(bytes) => bytes,
+            for chunk in &chunks {
+                match storage.stream_chunk(chunk, &range, &budget, &sender).await {
+                    Ok(ControlFlow::Continue(())) => {}
+                    Ok(ControlFlow::Break(())) => return,
                     Err(error) => {
                         let _ = sender.send(Err(error)).await;
                         return;
                     }
-                };
-                let slice_start = start.saturating_sub(chunk.plaintext_offset) as usize;
-                let slice_end = (end.min(chunk_end) - chunk.plaintext_offset + 1) as usize;
-                if sender
-                    .send(Ok(Bytes::from(bytes).slice(slice_start..slice_end)))
-                    .await
-                    .is_err()
-                {
-                    return;
                 }
             }
         });
@@ -176,19 +166,26 @@ impl MediaStorage {
     where
         W: AsyncWrite + Unpin + Send,
     {
-        if object.plaintext_bytes == 0 {
-            return Ok(());
+        let mut digest = Sha256::new();
+        if object.plaintext_bytes > 0 {
+            let mut stream = self
+                .read_range(object, 0..=object.plaintext_bytes - 1)
+                .await?;
+            while let Some(bytes) = stream.next().await {
+                let bytes = bytes?;
+                digest.update(&bytes);
+                writer.write_all(&bytes).await.map_err(|error| {
+                    MediaStorageError::new(
+                        MediaStorageErrorKind::ServiceUnavailable,
+                        format!("writing media output failed: {error}"),
+                    )
+                })?;
+            }
         }
-        let mut stream = self
-            .read_range(object, 0..=object.plaintext_bytes - 1)
-            .await?;
-        while let Some(bytes) = stream.next().await {
-            writer.write_all(&bytes?).await.map_err(|error| {
-                MediaStorageError::new(
-                    MediaStorageErrorKind::ServiceUnavailable,
-                    format!("writing media output failed: {error}"),
-                )
-            })?;
+        if !hex::encode(digest.finalize()).eq_ignore_ascii_case(&object.sha256) {
+            return Err(MediaStorageError::integrity(
+                "media object does not match its manifest digest",
+            ));
         }
         writer.flush().await.map_err(|error| {
             MediaStorageError::new(
@@ -218,28 +215,102 @@ impl MediaStorage {
                 "media object key is outside the staged media namespace",
             ));
         }
-        let _slot = self.operation_slot().await?;
-        Ok(self.store.delete(object_key).await?)
+        self.bounded_operation(
+            DELETE_TIMEOUT,
+            "media object delete",
+            self.store.delete(object_key),
+        )
+        .await
     }
 
-    async fn read_verified_chunk(
+    async fn stream_chunk(
         &self,
         chunk: &RequestMediaChunk,
-    ) -> Result<Vec<u8>, MediaStorageError> {
-        let max_bytes = usize::try_from(chunk.plaintext_bytes)
-            .map_err(|_| MediaStorageError::integrity("media chunk size is invalid"))?;
-        let bytes = {
-            let _slot = self.operation_slot().await?;
-            read_bounded(self.store.as_ref(), &chunk.object_key, max_bytes).await?
-        };
-        if bytes.len() as u64 != chunk.plaintext_bytes
-            || hex::encode(Sha256::digest(&bytes)) != chunk.sha256
-        {
-            return Err(MediaStorageError::integrity(
-                "media chunk does not match its verified digest",
-            ));
+        range: &RangeInclusive<u64>,
+        budget: &Arc<Semaphore>,
+        sender: &mpsc::Sender<BudgetedFrame>,
+    ) -> Result<ControlFlow<()>, MediaStorageError> {
+        let chunk_start = chunk.plaintext_offset;
+        let chunk_end = chunk_start.saturating_add(chunk.plaintext_bytes);
+        let emit_start = (*range.start()).max(chunk_start);
+        let emit_end = range.end().saturating_add(1).min(chunk_end);
+        if emit_start >= emit_end {
+            return Ok(ControlFlow::Continue(()));
         }
-        Ok(bytes)
+        let mut reserved = budget
+            .clone()
+            .acquire_many_owned(
+                u32::try_from(emit_end - emit_start)
+                    .map_err(|_| MediaStorageError::integrity("media chunk size is invalid"))?,
+            )
+            .await
+            .map_err(|_| MediaStorageError::internal("media read buffer is closed"))?;
+        let mut frames = self
+            .backend_read(self.store.open_frames(&chunk.object_key))
+            .await?;
+        let mut digest = Sha256::new();
+        let mut offset = chunk_start;
+        while offset < emit_end {
+            let frame = self
+                .backend_read(frames.next_frame())
+                .await?
+                .ok_or_else(|| {
+                    MediaStorageError::integrity("media chunk ended before its recorded size")
+                })?;
+            let frame_start = offset;
+            offset = offset.saturating_add(frame.len() as u64);
+            if offset > chunk_end {
+                return Err(chunk_mismatch());
+            }
+            digest.update(&frame);
+            let from = emit_start.max(frame_start) - frame_start;
+            let to = emit_end.min(offset).saturating_sub(frame_start);
+            if from >= to {
+                continue;
+            }
+            let share = reserved
+                .split((to - from) as usize)
+                .ok_or_else(|| MediaStorageError::internal("media read buffer is exhausted"))?;
+            let bytes = Bytes::from(frame).slice(from as usize..to as usize);
+            if sender
+                .send(Ok(Bytes::from_owner(BudgetedBytes {
+                    bytes,
+                    _permit: share,
+                })))
+                .await
+                .is_err()
+            {
+                return Ok(ControlFlow::Break(()));
+            }
+        }
+        if emit_end == chunk_end
+            && (self.backend_read(frames.next_frame()).await?.is_some()
+                || hex::encode(digest.finalize()) != chunk.sha256)
+        {
+            return Err(chunk_mismatch());
+        }
+        Ok(ControlFlow::Continue(()))
+    }
+
+    async fn bounded_operation<T>(
+        &self,
+        limit: Duration,
+        operation: &str,
+        work: impl Future<Output = Result<T, ObjectStoreError>>,
+    ) -> Result<T, MediaStorageError> {
+        within(limit, operation, async {
+            let _slot = self.operation_slot().await?;
+            work.await.map_err(MediaStorageError::from)
+        })
+        .await
+    }
+
+    async fn backend_read<T>(
+        &self,
+        read: impl Future<Output = Result<T, ObjectStoreError>>,
+    ) -> Result<T, MediaStorageError> {
+        self.bounded_operation(FRAME_STALL_TIMEOUT, "media read", read)
+            .await
     }
 
     async fn operation_slot(&self) -> Result<OwnedSemaphorePermit, MediaStorageError> {
@@ -249,4 +320,27 @@ impl MediaStorage {
             .await
             .map_err(|_| MediaStorageError::internal("media storage operation pool is closed"))
     }
+}
+
+async fn within<T, E>(
+    limit: Duration,
+    operation: &str,
+    work: impl Future<Output = Result<T, E>>,
+) -> Result<T, MediaStorageError>
+where
+    MediaStorageError: From<E>,
+{
+    tokio::time::timeout(limit, work)
+        .await
+        .map_err(|_| {
+            MediaStorageError::new(
+                MediaStorageErrorKind::ServiceUnavailable,
+                format!("{operation} timed out"),
+            )
+        })?
+        .map_err(MediaStorageError::from)
+}
+
+fn chunk_mismatch() -> MediaStorageError {
+    MediaStorageError::integrity("media chunk does not match its verified digest")
 }

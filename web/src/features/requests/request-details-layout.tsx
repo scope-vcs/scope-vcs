@@ -25,23 +25,29 @@ export function DetailsValue({ label, value }: { label: string; value: ReactNode
   )
 }
 
-export function RequestDetailsSkeleton() {
+export function DetailsBody({ children, label }: { children: ReactNode; label?: string }) {
   return (
     <div className="@container min-w-0">
-      <section className="min-w-0 px-5 py-6 @md:px-6 @3xl:px-8">
-        <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">
-          <DetailsSection title="Lifecycle">
-            {['Author', 'Audience', 'Submitted'].map((label) => (
-              <DetailsValue key={label} label={label} value={<TextSkeleton className="ml-auto" length="short" size="meta" />} />
-            ))}
-          </DetailsSection>
-          <DetailsSection title="Git state">
-            {['Base', 'Head'].map((label) => (
-              <DetailsValue key={label} label={label} value={<TextSkeleton className="ml-auto" length="short" size="meta" />} />
-            ))}
-          </DetailsSection>
-        </div>
+      <section aria-label={label} className="request-details-body min-w-0 px-5 py-6 @md:px-6 @3xl:px-8">
+        <div className="grid min-w-0 gap-x-12 gap-y-8 @3xl:grid-cols-2">{children}</div>
       </section>
     </div>
+  )
+}
+
+export function RequestDetailsSkeleton() {
+  return (
+    <DetailsBody>
+      <DetailsSection title="Lifecycle">
+        {['Author', 'Audience', 'Submitted'].map((label) => (
+          <DetailsValue key={label} label={label} value={<TextSkeleton className="ml-auto" length="short" size="meta" />} />
+        ))}
+      </DetailsSection>
+      <DetailsSection title="Git state">
+        {['Base', 'Head'].map((label) => (
+          <DetailsValue key={label} label={label} value={<TextSkeleton className="ml-auto" length="short" size="meta" />} />
+        ))}
+      </DetailsSection>
+    </DetailsBody>
   )
 }

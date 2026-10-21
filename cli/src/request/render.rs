@@ -1,7 +1,7 @@
 use crate::api::{
     GitHubCheckConclusion, GitHubCheckStatus, LeaveRequestResponse, RepoSummaryResponse,
     RepositoryActor, RequestActivityPageResponse, RequestCheckEvaluationState,
-    RequestCheckResponse, RequestChecksResponse, RequestCloseResponse,
+    RequestCheckResponse, RequestChecksOutcome, RequestChecksResponse, RequestCloseResponse,
     RequestDiscussionMutationResponse, RequestDiscussionReplyMutationResponse, RequestEventPayload,
     RequestGitHubPushResponse, RequestGitHubPushState, RequestInviteeMutationResponse,
     RequestMergeabilityResponse, RequestMergeabilityStatus, RequestMutationResponse,
@@ -338,7 +338,7 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
             terminal_text(&checks.request_id),
             short_oid(checks.head_oid.as_str())
         ),
-        format!("CI: {}", evaluation_state_label(checks.state)),
+        format!("CI: {}", checks_outcome_label(checks)),
     ];
     if let Some(message) = &checks.message {
         lines.push(format!("  {}", terminal_text(message)));
@@ -401,13 +401,23 @@ fn github_push_line(push: &RequestGitHubPushResponse) -> String {
     }
 }
 
-fn evaluation_state_label(state: Option<RequestCheckEvaluationState>) -> &'static str {
-    match state {
-        None => "not evaluated for this commit yet",
-        Some(RequestCheckEvaluationState::NoChecks) => "not required",
-        Some(RequestCheckEvaluationState::AwaitingApproval) => "waiting for maintainer approval",
-        Some(RequestCheckEvaluationState::Started) => "started",
-        Some(RequestCheckEvaluationState::ConfigurationError) => "workflow configuration error",
+fn checks_outcome_label(checks: &RequestChecksResponse) -> &'static str {
+    match checks.outcome {
+        RequestChecksOutcome::NotEvaluated => "not evaluated for this commit yet",
+        RequestChecksOutcome::AwaitingApproval => "waiting for maintainer approval",
+        RequestChecksOutcome::ConfigurationError => "configuration error",
+        RequestChecksOutcome::Clear
+            if checks.state == Some(RequestCheckEvaluationState::NoChecks) =>
+        {
+            "not required"
+        }
+        RequestChecksOutcome::Clear => "passed",
+        RequestChecksOutcome::Failed => "failed",
+        RequestChecksOutcome::Pending => match checks.github_push.as_ref().map(|push| push.state) {
+            Some(RequestGitHubPushState::Failed) => "couldn't start",
+            Some(RequestGitHubPushState::Sending) => "starting",
+            _ => "running",
+        },
     }
 }
 

@@ -1,8 +1,14 @@
-use crate::health::WorkerHealth;
+use crate::health::{MediaWorkerLoop, WorkerHealth};
 use scope_media_storage::MediaStorage;
 use scope_postgres::db::MetadataStore;
 use scope_service_runtime::{unix_now, wait_or_shutdown};
-use std::{future::Future, time::Duration};
+use std::{
+    future::Future,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
+
+const DEPENDENCY_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum JobOutcome {
@@ -13,12 +19,11 @@ pub(crate) enum JobOutcome {
 }
 
 pub(crate) struct JobLoop<'a> {
-    pub(crate) kind: &'static str,
+    pub(crate) worker_loop: MediaWorkerLoop,
     pub(crate) metadata: &'a MetadataStore,
     pub(crate) storage: &'a MediaStorage,
     pub(crate) health: &'a WorkerHealth,
     pub(crate) poll_interval: Duration,
-    pub(crate) mark_poll: fn(&WorkerHealth, u64),
 }
 
 impl JobLoop<'_> {
@@ -27,16 +32,31 @@ impl JobLoop<'_> {
         F: FnMut() -> Fut,
         Fut: Future<Output = anyhow::Result<JobOutcome>>,
     {
-        let kind = self.kind;
+        let dependency_check = Cadence::new(DEPENDENCY_CHECK_INTERVAL);
         loop {
-            if dependencies_ready(self.metadata, self.storage, self.health).await {
+            let now = unix_now()?;
+            let ready = if dependency_check.due(now) {
+                let ready = dependencies_ready(self.metadata, self.storage, self.health).await;
+                if ready {
+                    dependency_check.completed(now);
+                }
+                ready
+            } else {
+                true
+            };
+            if ready {
                 let outcome = next_job().await;
                 match &outcome {
                     Ok(JobOutcome::NoJob) => {}
-                    Ok(outcome) => tracing::info!(?outcome, "media {kind} job finished"),
-                    Err(error) => tracing::error!(%error, "media {kind} poll failed"),
+                    Ok(outcome) => {
+                        tracing::info!(worker_loop = ?self.worker_loop, ?outcome, "media job finished")
+                    }
+                    Err(error) => {
+                        dependency_check.reset();
+                        tracing::error!(worker_loop = ?self.worker_loop, %error, "media poll failed");
+                    }
                 }
-                (self.mark_poll)(self.health, unix_now()?);
+                self.health.mark_poll(self.worker_loop, unix_now()?);
                 if !matches!(outcome, Ok(JobOutcome::NoJob) | Err(_)) {
                     continue;
                 }
@@ -45,6 +65,35 @@ impl JobLoop<'_> {
                 return Ok(());
             }
         }
+    }
+}
+
+pub(crate) struct Cadence {
+    interval: Duration,
+    next_due_unix: AtomicU64,
+}
+
+impl Cadence {
+    pub(crate) fn new(interval: Duration) -> Self {
+        Self {
+            interval,
+            next_due_unix: AtomicU64::new(0),
+        }
+    }
+
+    pub(crate) fn due(&self, now_unix: u64) -> bool {
+        now_unix >= self.next_due_unix.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn completed(&self, now_unix: u64) {
+        self.next_due_unix.store(
+            now_unix.saturating_add(self.interval.as_secs()),
+            Ordering::Release,
+        );
+    }
+
+    fn reset(&self) {
+        self.next_due_unix.store(0, Ordering::Release);
     }
 }
 

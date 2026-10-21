@@ -13,7 +13,6 @@ pub struct CodecProcessLimits {
     pub memory_bytes: u64,
     pub output_file_bytes: u64,
     pub captured_output_bytes: usize,
-    pub cpu_seconds: u64,
     pub open_files: u64,
     pub processes: u64,
 }
@@ -144,7 +143,6 @@ fn install_process_limits(command: &mut Command, limits: CodecProcessLimits) {
             set_limit(libc::RLIMIT_CORE, 0)?;
             set_limit(libc::RLIMIT_AS, limits.memory_bytes)?;
             set_limit(libc::RLIMIT_FSIZE, limits.output_file_bytes)?;
-            set_limit(libc::RLIMIT_CPU, limits.cpu_seconds)?;
             set_limit(libc::RLIMIT_NOFILE, limits.open_files)?;
             set_limit(libc::RLIMIT_NPROC, limits.processes)?;
             Ok(())
