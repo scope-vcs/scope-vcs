@@ -18,11 +18,11 @@ export function SettingsLayout({ children }: { children: ReactNode }) {
     <div className="grid gap-8 md:grid-cols-[180px_minmax(0,1fr)] md:gap-12">
       <nav aria-label="Settings sections" className="md:sticky md:top-10 md:self-start">
         <h1 className="text-xl font-semibold tracking-[-0.015em]">Settings</h1>
-        <ul className="mt-4 flex flex-wrap gap-1 text-sm md:flex-col md:flex-nowrap md:gap-0.5">
+        <ul className="scrollbar-none -mx-2 mt-4 flex overflow-x-auto text-sm md:mx-0 md:flex-col md:gap-0.5 md:overflow-visible">
           {SETTINGS_SECTIONS.map((section) => (
-            <li className={section.id === 'delete-account' ? 'md:mt-3' : undefined} key={section.id}>
+            <li className={section.id === 'delete-account' ? 'shrink-0 md:mt-3' : 'shrink-0'} key={section.id}>
               <Link
-                className="block rounded-md px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                className="block whitespace-nowrap rounded-md px-2 py-1.5 md:px-2.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                 hash={section.id}
                 to="/settings"
               >

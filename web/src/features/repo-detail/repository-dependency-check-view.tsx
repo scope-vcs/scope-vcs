@@ -1,33 +1,5 @@
-import { ChevronRight } from 'lucide-react'
 import type { RepoViews } from '../../api/repo-views'
-import type { DependencyCheckDetails, DependencyCheckPresentation } from './repository-dependency-model'
-
-export type DependencyCheckViewProps = {
-  onSelectFilePath: (path: string) => void
-  presentation: DependencyCheckPresentation
-  views: Pick<RepoViews, 'name'>
-}
-
-export function RepositoryDependencyLeak({ onSelectFilePath, presentation, views }: DependencyCheckViewProps) {
-  if (presentation.kind !== 'leak') return null
-  return (
-    <details aria-label="Repository dependency check" className="group/dependencies border-t border-border">
-      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-(--app-inset) py-2.5 text-xs text-warning-strong hover:underline focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
-        <ChevronRight
-          aria-hidden="true"
-          className="size-3.5 shrink-0 transition-transform group-open/dependencies:rotate-90"
-        />
-        <span>{presentation.label}</span>
-        <span className="ml-auto text-xs text-muted-foreground no-underline">
-          {presentation.meta}
-        </span>
-      </summary>
-      <div className="pr-(--app-inset) pb-4 pl-[calc(var(--app-inset)+1.625rem)] text-xs">
-        <DependencyCheckDetailsBody details={presentation.details} onSelectFilePath={onSelectFilePath} views={views} />
-      </div>
-    </details>
-  )
-}
+import type { DependencyCheckDetails } from './repository-dependency-model'
 
 export function DependencyCheckDetailsBody({
   details: { coverage, report },
@@ -41,7 +13,7 @@ export function DependencyCheckDetailsBody({
   return (
     <>
       {report.findings.length > 0 && (
-        <ul aria-label="Public files importing private files" className="max-h-72 max-w-4xl overflow-y-auto">
+        <ul aria-label="Public files importing private files" className="max-w-4xl">
           {report.findings.map((finding, index) => (
             <li
               className="grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1fr)] items-center gap-2 border-t border-border py-2.5 sm:gap-4"
@@ -67,7 +39,7 @@ export function DependencyCheckDetailsBody({
       {report.gaps.length > 0 && (
         <div className={report.findings.length > 0 ? 'mt-3' : undefined}>
           <p className="font-medium text-foreground">Coverage gaps</p>
-          <ul aria-label="Dependency check coverage gaps" className="mt-1 max-h-48 max-w-4xl overflow-y-auto">
+          <ul aria-label="Dependency check coverage gaps" className="mt-1 max-w-4xl">
             {report.gaps.map((gap, index) => (
               <li className="border-t border-border py-2 text-muted-foreground" key={`${gap.path}\0${index}`}>
                 {gap.path === '.' ? (

@@ -4,9 +4,15 @@ export const RUN_STEP_ROW_CLASS =
   'grid h-9 w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-4'
 
 export const RUN_ROW_CLASS = 'flex min-w-0 items-center gap-3 px-3 py-3'
-export const RUN_ROW_PRIMARY_CLASS = 'min-w-0 flex-1 items-baseline gap-2 truncate sm:flex'
 export const RUN_ROW_DURATION_CLASS = 'w-16 shrink-0'
 export const RUN_ROW_TIMESTAMP_CLASS = 'w-24 shrink-0'
+export const RUN_HISTORY_ROW_CLASS =
+  'grid grid-cols-[auto_minmax(0,max-content)_auto_minmax(0,1fr)] items-center gap-y-0.5 px-3 py-3 sm:grid-cols-[auto_minmax(0,1fr)_auto_auto] sm:gap-x-3'
+export const RUN_HISTORY_ROW_ICON_CLASS = 'col-start-1 row-span-2 row-start-1 mr-3 sm:row-span-1 sm:mr-0'
+export const RUN_HISTORY_ROW_PRIMARY_CLASS = 'contents sm:flex sm:min-w-0 sm:items-baseline sm:gap-2'
+export const RUN_HISTORY_ROW_FIGURE_CLASS =
+  "row-start-2 whitespace-nowrap max-sm:w-auto sm:row-start-1 text-xs tabular-nums text-muted-foreground before:px-1 before:text-muted-foreground/70 before:content-['·'] sm:text-right sm:before:content-none"
+export const RUN_ROW_WIDE_COLUMN_CLASS = 'hidden sm:block'
 
 export const RUN_LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:underline'
 
@@ -17,12 +23,12 @@ export function runLogPreClass(wrap: boolean) {
 }
 
 export const RUN_JOB_LIST_CLASS =
-  'flex min-w-0 flex-1 gap-1 overflow-x-auto p-2 lg:flex-col lg:gap-0 lg:overflow-x-visible lg:p-0'
+  'flex min-w-0 flex-1 flex-wrap gap-1 p-2 lg:flex-col lg:flex-nowrap lg:gap-0 lg:p-0'
 
-export const RUN_JOB_ITEM_CLASS = 'shrink-0'
+export const RUN_JOB_ITEM_CLASS = 'max-w-full shrink-0'
 
 export const RUN_JOB_ROW_CLASS =
-  'relative flex h-9 max-w-64 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm lg:w-full lg:max-w-none lg:rounded-none lg:px-4'
+  'relative flex h-9 max-w-[min(16rem,100%)] shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-sm lg:w-full lg:max-w-none lg:rounded-none lg:px-4'
 
 export function runJobButtonClass(selected: boolean) {
   return cn(

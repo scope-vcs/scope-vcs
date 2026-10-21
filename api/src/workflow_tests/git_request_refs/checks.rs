@@ -74,6 +74,7 @@ async fn a_maintainers_push_starts_the_request_workflows_at_its_head() {
     let checks = checks(&state, &request_id, &bearer_header()).await;
 
     assert_eq!(checks["state"], "started");
+    assert_eq!(checks["outcome"], "pending");
     assert_eq!(checks["can_approve"], false);
     assert_eq!(checks["message"], serde_json::Value::Null);
     assert_eq!(checks["checks"].as_array().unwrap().len(), 1);
@@ -206,6 +207,7 @@ async fn heads_without_admitted_request_workflows_owe_no_checks() {
         let checks = checks(&state, &request_id, &bearer_header()).await;
 
         assert_eq!(checks["state"], "no-checks", "{label}");
+        assert_eq!(checks["outcome"], "clear", "{label}");
         assert_eq!(checks["can_approve"], false);
         assert!(checks["checks"].as_array().unwrap().is_empty());
         assert_eq!(checks["mergeability"]["status"], "Ready");

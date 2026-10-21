@@ -31,7 +31,7 @@ function treeColumnsClassName(showVisibility: boolean) {
 const TREE_HEADER_CLASS =
   'hidden gap-3 px-3 pb-1.5 pt-1 text-xs font-medium text-muted-foreground sm:grid sm:items-center'
 const TREE_ROW_CLASS =
-  'grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm'
+  'grid min-h-9 items-center gap-2 rounded-md border border-transparent px-3 py-1.5 text-sm pointer-coarse:py-0'
 const PENDING_TREE_ROWS: TextSkeletonLength[] = ['medium', 'long', 'short', 'long', 'medium', 'long']
 
 export function FileSystemTreeSkeleton({
@@ -233,7 +233,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
           'relative transition-[background-color,border-color] hover:bg-accent/50',
           TREE_ROW_CLASS,
           selected &&
-            'border-[var(--border-strong)] bg-muted shadow-[inset_2px_0_0_0_var(--foreground)] hover:bg-muted',
+            'bg-muted shadow-[inset_2px_0_0_0_var(--foreground)] hover:bg-muted lg:border-[var(--border-strong)]',
           columnsClassName,
         )}
       >
@@ -284,7 +284,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
       <li
         className={cn(
           TREE_ROW_CLASS,
-          'transition-colors hover:bg-accent/50',
+          'relative transition-colors hover:bg-accent/50',
           columnsClassName,
         )}
       >
@@ -295,6 +295,7 @@ function FileSystemTreeNodeRow<TFile extends FileSystemTreeFileBase>({
           <Button
             aria-expanded={!isCollapsed}
             aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${node.name}`}
+            className="aria-expanded:bg-transparent pointer-coarse:after:absolute pointer-coarse:after:inset-0 pointer-coarse:after:content-['']"
             onClick={() => onToggleFolder(node.key)}
             size="icon-xs"
             type="button"

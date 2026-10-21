@@ -29,7 +29,8 @@ export function RequestDetailPagePending() {
   return (
     <PendingSurface label="Loading request">
       <div className="request-detail-pane w-full">
-        <header className="request-detail-header border-b border-border px-(--app-inset) pb-4 pt-6">
+        <header className="request-detail-header border-b border-border px-(--app-inset) pb-4 pt-3 min-[701px]:pt-6">
+          <TextSkeleton className="mb-3 py-1 min-[701px]:hidden" length="short" size="meta" />
           <TextSkeleton length="xlong" size="heading" />
           <div className="request-detail-header-secondary mt-4">
             <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs leading-5">
@@ -49,9 +50,6 @@ export function RequestDetailPagePending() {
             </div>
           </div>
         </header>
-        <div className="request-detail-actions px-(--app-inset) py-2.5 min-[701px]:hidden">
-          <BlockSkeleton className="size-8" />
-        </div>
         <RequestChecksPending />
         <div className="request-detail-layout">
           <div className="request-detail-document pt-4">
@@ -70,7 +68,7 @@ export function RequestDetailPagePending() {
           </aside>
         </div>
         {isSignedIn ? (
-          <div className="fixed inset-x-0 bottom-0 z-30 flex justify-end gap-2 border-t border-border bg-background px-3 py-3 min-[701px]:hidden">
+          <div className="fixed inset-x-0 bottom-0 z-30 flex justify-end gap-2 border-t border-border bg-background px-(--app-inset) py-3 min-[701px]:hidden">
             <BlockSkeleton className="h-8 w-20" />
           </div>
         ) : null}

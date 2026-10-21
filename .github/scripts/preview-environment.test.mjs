@@ -36,12 +36,17 @@ function stagingCopy() {
   return { services, variables };
 }
 
-function fakeRailway({ environments = [] } = {}) {
-  const state = { environments: [...environments], volumes: [], calls: [], deployments: [], bootstraps: [], copy: stagingCopy(), clock: 0 };
+const postgresMount = '/var/lib/postgresql/data';
+
+function fakeRailway({ environments = [], volumes = [] } = {}) {
+  const state = { environments: [...environments], volumes: [...volumes], calls: [], deployments: [], bootstraps: [], copy: stagingCopy(), clock: 0 };
   const railway = {
     state,
     now: () => state.clock,
-    pause: (milliseconds) => { state.clock += milliseconds; },
+    pause: (milliseconds) => {
+      state.clock += milliseconds;
+      for (const volume of state.volumes) volume.state = 'READY';
+    },
     query(query, variables) {
       if (query.startsWith('query Environments')) {
         assert.equal(variables.projectId, manifest.railway.projectId);
@@ -70,7 +75,7 @@ function fakeRailway({ environments = [] } = {}) {
         return { environmentCreate: { id: preview } };
       }
       if (query.startsWith('mutation PreviewVolume')) {
-        state.volumes.push({ serviceId: variables.input.serviceId, mountPath: variables.input.mountPath });
+        state.volumes.push({ serviceId: variables.input.serviceId, mountPath: variables.input.mountPath, state: null });
         return { volumeCreate: { id: 'volume' } };
       }
       if (query.startsWith('mutation PreviewRegistry')) return { serviceInstanceUpdate: true };
@@ -88,6 +93,9 @@ function fakeRailway({ environments = [] } = {}) {
         return { variableDelete: true };
       }
       if (query.startsWith('mutation PreviewDeploy')) {
+        if (variables.serviceId === ids.postgres) {
+          assert.ok(state.volumes.some((volume) => volume.serviceId === ids.postgres && volume.state === 'READY'));
+        }
         state.deployments.push(variables.serviceId);
         return { serviceInstanceDeployV2: `deployment-${state.deployments.length}` };
       }
@@ -189,7 +197,7 @@ test('creates, configures, and bootstraps a preview copy of staging once', () =>
   assert.deepEqual(bootstrap(railway), { bootstrapped: true });
   assert.equal(result.environmentId, preview);
   assert.equal(result.urls.web, 'https://scope-web-pr-7.up.railway.app');
-  assert.deepEqual(railway.state.volumes, [{ serviceId: ids.postgres, mountPath: '/var/lib/postgresql/data' }]);
+  assert.deepEqual(railway.state.volumes, [{ serviceId: ids.postgres, mountPath: postgresMount, state: 'READY' }]);
   assert.deepEqual(railway.state.deployments, [ids.postgres, ids.maintenance, ids.maintenance]);
   assert.equal(railway.state.bootstraps.length, 1);
   assert.equal(railway.state.bootstraps[0].environmentId, preview);
@@ -279,4 +287,18 @@ test('an existing preview missing a required service fails fast with recreate in
   delete railway.state.copy.services[ids['media-worker']];
   assert.throws(() => ensure(railway), /remove and re-add the preview label/);
   assert.equal(railway.state.clock, 0);
+});
+
+test('deploys preview postgres only after the forked volume is ready', () => {
+  const railway = fakeRailway({ volumes: [{ serviceId: ids.postgres, mountPath: postgresMount, state: 'MIGRATING' }] });
+  ensure(railway);
+  assert.ok(!railway.state.calls.some(([name]) => name === 'mutation PreviewVolume'));
+  assert.deepEqual(railway.state.deployments, [ids.postgres, ids.maintenance]);
+});
+
+test('stops before deploying when the preview postgres volume never becomes ready', () => {
+  const railway = fakeRailway({ volumes: [{ serviceId: ids.postgres, mountPath: postgresMount, state: 'MIGRATING' }] });
+  railway.pause = (milliseconds) => { railway.state.clock += milliseconds; };
+  assert.throws(() => ensure(railway), /Timed out waiting for preview postgres volume/);
+  assert.deepEqual(railway.state.deployments, []);
 });

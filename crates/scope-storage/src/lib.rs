@@ -21,10 +21,10 @@ pub use error::{BackendError, BackendErrorKind, GitStorageError};
 pub use file::FileBackend;
 pub use memory::MemoryBackend;
 pub use objects::{
-    ContentObjectKind, EncryptedObjectStore, ObjectStore, ObjectStoreError, ObjectStoreErrorKind,
-    content_object_for_bytes, delete_source_blobs, ensure_object_size, object_key,
-    object_too_large, put_content_object, put_source_blob, read_bounded, source_blob_bytes,
-    write_source_blob_to,
+    ContentObjectKind, EncryptedObjectStore, OBJECT_FRAME_BYTES, ObjectFrames, ObjectStore,
+    ObjectStoreError, ObjectStoreErrorKind, content_object_for_bytes, delete_source_blobs,
+    ensure_object_size, object_key, object_too_large, put_content_object, put_source_blob,
+    read_bounded, source_blob_bytes, write_source_blob_to,
 };
 pub use presign::{PresignedRequest, S3Presigner};
 pub use s3::{S3Backend, S3Settings};
