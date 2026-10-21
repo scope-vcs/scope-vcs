@@ -10,6 +10,7 @@ pub const REQUEST_ATTACHMENT_PHOTO_MEDIA_TYPES: &[&str] = &[
     "image/heif",
 ];
 pub const REQUEST_MEDIA_CHUNK_BYTES: u64 = 8 * 1024 * 1024;
+pub const REQUEST_MEDIA_LATE_WRITE_GRACE_SECONDS: u64 = 60;
 pub const REQUEST_ATTACHMENT_VIDEO_MEDIA_TYPES: &[&str] =
     &["video/mp4", "video/quicktime", "video/webm"];
 
@@ -253,6 +254,7 @@ pub struct RequestAttachmentSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestAttachmentProcessingLease {
     pub attachment_id: String,
+    pub kind: RequestAttachmentKind,
     pub lease_token: String,
     pub lease_generation: u64,
     pub attempt: u32,

@@ -6,6 +6,7 @@ import type {
   GitHubWorkflowRunResponse,
 } from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
+import { SeparatedMeta, SeparatedMetaItem } from '@/components/separated-meta'
 import { formatUnixDate, formatUnixDateUtc } from '@/lib/date-format'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { useHydrated } from '@/lib/use-hydrated'
@@ -36,8 +37,6 @@ import { RunDetailPageError } from './repository-run-detail-page'
 import { RunDetailPagePending } from './run-detail-pending'
 import {
   LiveUpdatesPaused,
-  RUN_HEADER_META_CLASS,
-  RunHeaderDot,
   RunHeaderStatus,
   RunHeaderTitle,
 } from './run-detail-header'
@@ -204,23 +203,24 @@ function GitHubWorkflowRunHeader({
   return (
     <header className="px-4 py-3">
       <RunHeaderTitle name={run.workflow_name} params={params} />
-      <p className={RUN_HEADER_META_CLASS}>
-        <RunHeaderStatus
-          state={result.state}
-          title={started === null ? undefined : `Started ${formatDate(started)}`}
-        >
-          {started === null ? (
-            <span className="first-letter:uppercase">{result.label}</span>
-          ) : (
-            <span>
-              {runDurationLead(result.state, result.label)}{' '}
-              <RunDuration end={run.status === 'completed' ? run.updated_at_unix : null} start={started} />
-            </span>
-          )}
-        </RunHeaderStatus>
+      <SeparatedMeta className="mt-0.5 text-xs text-muted-foreground">
+        <SeparatedMetaItem>
+          <RunHeaderStatus
+            state={result.state}
+            title={started === null ? undefined : `Started ${formatDate(started)}`}
+          >
+            {started === null ? (
+              <span className="first-letter:uppercase">{result.label}</span>
+            ) : (
+              <span>
+                {runDurationLead(result.state, result.label)}{' '}
+                <RunDuration end={run.status === 'completed' ? run.updated_at_unix : null} start={started} />
+              </span>
+            )}
+          </RunHeaderStatus>
+        </SeparatedMetaItem>
         {run.branch ? (
-          <span className="min-w-0 max-w-full truncate">
-            <RunHeaderDot />
+          <SeparatedMetaItem>
             {run.request_id ? (
               <Link
                 className={RUN_LINK_CLASS}
@@ -231,17 +231,13 @@ function GitHubWorkflowRunHeader({
                 {run.branch}
               </Link>
             ) : run.branch}
-          </span>
+          </SeparatedMetaItem>
         ) : null}
-        <span className="whitespace-nowrap">
-          <RunHeaderDot />
+        <SeparatedMetaItem>
           <code>{run.head_oid.slice(0, 7)}</code>
-        </span>
-        <span className="whitespace-nowrap">
-          <RunHeaderDot />
-          {run.event}
-        </span>
-      </p>
+        </SeparatedMetaItem>
+        <SeparatedMetaItem>{run.event}</SeparatedMetaItem>
+      </SeparatedMeta>
       <LiveUpdatesPaused error={error} onRetry={onRetry} />
     </header>
   )

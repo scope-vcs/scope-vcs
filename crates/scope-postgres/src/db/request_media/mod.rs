@@ -7,6 +7,7 @@ mod persistence;
 mod processing;
 mod processing_support;
 mod upload;
+mod upload_parts;
 
 use super::MediaStore;
 pub(in crate::db) use bindings::replace_bindings_for_markdown;

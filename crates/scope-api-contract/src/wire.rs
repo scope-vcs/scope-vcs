@@ -13,6 +13,7 @@ use scope_domain::{
         RequestAttentionReason as DomainRequestAttentionReason,
         RequestAttentionState as DomainRequestAttentionState,
         RequestCheckEvaluationState as DomainRequestCheckEvaluationState,
+        RequestChecksOutcome as DomainRequestChecksOutcome,
         RequestDiscussionStatus as DomainRequestDiscussionStatus,
         RequestEventKind as DomainRequestEventKind,
         RequestEventPayload as DomainRequestEventPayload,
@@ -226,6 +227,18 @@ wire_enum!(
         NoChecks,
         AwaitingApproval,
         Started,
+        ConfigurationError,
+    }
+);
+wire_enum!(
+    #[serde(rename_all = "kebab-case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
+    RequestChecksOutcome => DomainRequestChecksOutcome {
+        Clear,
+        NotEvaluated,
+        AwaitingApproval,
+        Pending,
+        Failed,
         ConfigurationError,
     }
 );

@@ -74,8 +74,8 @@ body {
 }
 
 @media (pointer: coarse) {
-  button,
-  input,
+  button:not([role="switch"]),
+  input:not([type="checkbox"], [type="radio"]),
   select,
   [role="button"] {
     min-height: 44px;
@@ -225,7 +225,8 @@ body {
   --app-topbar: 57px;
   --app-rail: 1280px;
   --app-inset: 20px;
-  --app-chrome: 113px;
+  --app-chrome-base: 113px;
+  --app-chrome: var(--app-chrome-base);
 
   --terminal-surface: #090b0e;
   --terminal-foreground: #eceae5;
@@ -236,6 +237,10 @@ body {
   .dark {
     --app-inset: 24px;
   }
+}
+
+:has(> [data-repo-activity]) {
+  --app-chrome: calc(var(--app-chrome-base) + 2.75rem);
 }
 
 @media (min-width: 64rem) {

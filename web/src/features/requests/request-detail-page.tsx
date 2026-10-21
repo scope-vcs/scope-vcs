@@ -247,7 +247,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               <RequestLifecycleActions
                 actions={requestActions}
                 autoMerge={autoMerge}
-                className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
+                className="fixed inset-x-0 bottom-0 z-30 justify-end border-t border-border bg-background px-(--app-inset) py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] min-[701px]:static min-[701px]:border-0 min-[701px]:bg-transparent min-[701px]:p-0"
                 ref={setLifecycleBar}
                 request={request}
                 viewerId={state.viewer?.id ?? 'anonymous'}
@@ -261,20 +261,18 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               />
             </>
           }
-          request={request}
-          viewName={requestViewName}
-        />
-        <div className="request-detail-actions px-(--app-inset) py-2.5 min-[701px]:hidden">
-          <Button asChild size="icon-sm" variant="secondary">
+          backLink={(
             <Link
-              aria-label="Back to requests"
+              className="flex w-fit items-center gap-1.5 rounded py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               params={params}
               to="/$owner/$repo/requests"
             >
-              <ArrowLeft />
+              <ArrowLeft aria-hidden="true" className="size-3.5" /> Requests
             </Link>
-          </Button>
-        </div>
+          )}
+          request={request}
+          viewName={requestViewName}
+        />
         {requestActions.error || autoMerge.error || stateError ? (
           <p
             className="border-b border-border px-(--app-inset) py-2 text-sm text-danger-strong"

@@ -1,5 +1,5 @@
 use crate::MediaStorageError;
-use scope_domain::requests::attachments::RequestMediaObject;
+use scope_domain::requests::attachments::{RequestAttachmentStagedPart, RequestMediaObject};
 
 pub(crate) const STAGED_KEY_PREFIX: &str = "media/v1/staged/";
 
@@ -24,6 +24,22 @@ impl WriteAttempt {
         crate::keys::validate_write_attempt(&attempt)?;
         Ok(attempt)
     }
+}
+
+pub fn seal_parts(
+    content_type: impl Into<String>,
+    expected_bytes: u64,
+    expected_sha256: &str,
+    parts: Vec<RequestAttachmentStagedPart>,
+) -> Result<RequestMediaObject, MediaStorageError> {
+    let object = RequestMediaObject::from_parts(content_type, expected_sha256, parts);
+    if object.plaintext_bytes != expected_bytes {
+        return Err(MediaStorageError::integrity(
+            "media manifest plaintext size does not match its chunks",
+        ));
+    }
+    validate_object(&object)?;
+    Ok(object)
 }
 
 pub(crate) fn validate_object(object: &RequestMediaObject) -> Result<(), MediaStorageError> {

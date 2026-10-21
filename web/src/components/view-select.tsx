@@ -3,7 +3,6 @@ import { Select } from './ui/select'
 
 export function ViewSelect({
   className,
-  compact,
   disabled,
   id,
   label,
@@ -12,7 +11,6 @@ export function ViewSelect({
   views,
 }: {
   className?: string
-  compact?: boolean
   disabled?: boolean
   id?: string
   label?: string
@@ -24,7 +22,6 @@ export function ViewSelect({
     <Select
       aria-label={label}
       className={className}
-      compact={compact}
       disabled={disabled}
       id={id}
       onChange={(event) => onChange(event.target.value)}

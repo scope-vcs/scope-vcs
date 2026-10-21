@@ -27,7 +27,7 @@ use scope_api_contract::routes::{
 use scope_media_storage::MediaStorage;
 use scope_postgres::db::MetadataStore;
 use scope_service_runtime::{init_telemetry, port_from_env, serve};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 use tower_http::cors::CorsLayer;
 
@@ -78,6 +78,7 @@ pub fn router(state: AppState, allowed_origin: &str) -> anyhow::Result<Router> {
             .allow_origin(origin)
             .allow_methods([Method::GET, Method::HEAD, Method::PUT])
             .allow_headers([AUTHORIZATION, CONTENT_TYPE, RANGE])
+            .max_age(Duration::from_secs(2 * 60 * 60))
             .expose_headers([
                 ACCEPT_RANGES,
                 CONTENT_DISPOSITION,

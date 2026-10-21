@@ -7,6 +7,7 @@ mod m0087_stack_auto_merge_stop_reasons;
 mod m0088_request_navigation_children_index;
 mod m0089_contribution_request_stacks;
 mod m0090_job_traceparents;
+mod m0091_media_reconcile_once;
 mod m0092_live_file_views;
 
 use sea_orm::{
@@ -81,6 +82,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0090_job_traceparents::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0091_media_reconcile_once::Migration),
             metadata_restore_safe: true,
         },
         RegisteredMigration {

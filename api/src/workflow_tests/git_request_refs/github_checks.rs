@@ -231,6 +231,7 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
     );
     assert_eq!(waiting["github_push"]["state"], "sending");
     assert_eq!(waiting["github_push"]["branch"], request.branch());
+    assert_eq!(waiting["outcome"], "pending");
     assert_eq!(waiting["mergeability"]["status"], "ChecksPending");
 
     assert_eq!(push_pass(state, unix_now()).await, 1);
@@ -252,10 +253,9 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
         vec![check_run(1, REQUIRED_CHECK, &head, Some("failure"))],
     );
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
-    assert_eq!(
-        request.checks().await["mergeability"]["status"],
-        "ChecksFailed"
-    );
+    let failed = request.checks().await;
+    assert_eq!(failed["outcome"], "failed");
+    assert_eq!(failed["mergeability"]["status"], "ChecksFailed");
     assert_eq!(
         expect_json(
             merge(state, &request.request_id).await,
@@ -273,7 +273,9 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
         ],
     );
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &head).await;
-    assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
+    let passed = request.checks().await;
+    assert_eq!(passed["outcome"], "clear");
+    assert_eq!(passed["mergeability"]["status"], "Ready");
     expect_json(merge(state, &request.request_id).await, StatusCode::OK).await;
 
     assert_eq!(push_pass(state, unix_now()).await, 1);

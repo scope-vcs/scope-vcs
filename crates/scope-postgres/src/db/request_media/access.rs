@@ -1,7 +1,7 @@
 use super::{
     MediaStore, RequestMediaObjectTarget,
     persistence::{
-        attachment_by_id, attachments_for_request, bindings_for_attachment, bindings_for_request,
+        attachments_for_request, bindings_for_request, live_attachment_with_bindings,
         manifest_by_id,
     },
 };
@@ -26,7 +26,11 @@ impl MediaStore {
         attachment_id: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RequestAttachment>, PostgresError> {
-        authorized_attachment(self.db.as_ref(), request_id, attachment_id, viewer_user_id).await
+        let tx = crate::db::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let attachment =
+            authorized_attachment(&tx, request_id, attachment_id, viewer_user_id).await?;
+        tx.commit().await?;
+        Ok(attachment)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "list_request_attachments_for_viewer"))]
@@ -70,9 +74,9 @@ impl MediaStore {
         viewer_user_id: Option<&str>,
         target: RequestMediaObjectTarget<'_>,
     ) -> Result<Option<(RequestAttachment, Option<RequestMediaObject>)>, PostgresError> {
+        let tx = crate::db::begin_metadata_read_snapshot(self.db.as_ref()).await?;
         let Some(attachment) =
-            authorized_attachment(self.db.as_ref(), request_id, attachment_id, viewer_user_id)
-                .await?
+            authorized_attachment(&tx, request_id, attachment_id, viewer_user_id).await?
         else {
             return Ok(None);
         };
@@ -93,9 +97,10 @@ impl MediaStore {
             _ => None,
         };
         let mut object = match manifest_id {
-            Some(manifest_id) => manifest_by_id(self.db.as_ref(), manifest_id).await?,
+            Some(manifest_id) => manifest_by_id(&tx, manifest_id).await?,
             None => None,
         };
+        tx.commit().await?;
         if matches!(target, RequestMediaObjectTarget::Original)
             && let Some(object) = object.as_mut()
             && let Some(detected_media_type) = &attachment.detected_media_type
@@ -141,10 +146,8 @@ async fn authorized_attachment<C>(
 where
     C: ConnectionTrait,
 {
-    if cleanup_tombstone_exists(conn, attachment_id).await? {
-        return Ok(None);
-    }
-    let Some(attachment) = attachment_by_id(conn, attachment_id).await? else {
+    let Some((attachment, bindings)) = live_attachment_with_bindings(conn, attachment_id).await?
+    else {
         return Ok(None);
     };
     if attachment.request_id != request_id {
@@ -154,7 +157,6 @@ where
     else {
         return Ok(None);
     };
-    let bindings = bindings_for_attachment(conn, attachment_id).await?;
     Ok((request.repo_id == attachment.repository_id
         && can_view_request_attachment(
             &attachment,

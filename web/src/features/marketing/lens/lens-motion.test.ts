@@ -11,10 +11,16 @@ test('reduced motion and dragging land on the target without turning the ring, a
   assert.ok(next.r > 0 && next.r < 150)
 })
 
-test('rests over the anchor while it is on screen, and floats in the viewport otherwise', () => {
+test('rests over the anchor until it scrolls above the viewport, then floats in the viewport', () => {
   const page = { left: 0, top: -200 }
   assert.deepEqual(restingPoint({ left: 300, top: 400, right: 700, bottom: 440 }, page, viewport, 0, false), { x: 396, y: 644 })
   assert.deepEqual(restingPoint({ left: 300, top: -100, right: 700, bottom: -60 }, page, viewport, 0, false), { x: 620, y: 640 })
+})
+
+test('waits below the fold with an anchor that has not scrolled into view yet', () => {
+  const page = { left: 0, top: 0 }
+  assert.deepEqual(restingPoint({ left: 20, top: 1100, right: 370, bottom: 1140 }, page, viewport, 0, false), { x: 116, y: 1144 })
+  assert.deepEqual(restingPoint({ left: 20, top: 780, right: 370, bottom: 820 }, page, viewport, 0, false), { x: 116, y: 824 })
 })
 
 test('covers a box only when it is on screen and near the center', () => {

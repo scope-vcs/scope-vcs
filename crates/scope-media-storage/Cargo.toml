@@ -22,4 +22,4 @@ tokio-stream = "0.1.17"
 async-trait.workspace = true
 serde_json.workspace = true
 scope_storage = { workspace = true, features = ["test-support"] }
-tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt-multi-thread", "test-util"] }

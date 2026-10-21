@@ -107,17 +107,16 @@ function DiscussionReply({
   return (
     <div
       className={cn(
-        'group/message relative grid scroll-mt-32 grid-cols-[2rem_minmax(0,1fr)] gap-x-3 rounded-md pr-10 hover:bg-muted/35 focus-within:bg-muted/35 lg:pr-16',
+        'group/message relative grid scroll-mt-32 grid-cols-[minmax(0,1fr)] gap-x-3 rounded-md hover:bg-muted/35 focus-within:bg-muted/35 min-[701px]:grid-cols-[2rem_minmax(0,1fr)] min-[701px]:pr-10 lg:pr-16',
         grouped ? 'py-0.5' : 'pt-3 pb-1',
+        grouped && hasActions && 'pr-10',
       )}
       id={`reply-${reply.id}`}
       tabIndex={-1}
     >
-      {grouped ? (
-        <span aria-hidden="true" />
-      ) : (
-        <RequestDiscussionActorAvatar handle={actorHandle(reply.author)} />
-      )}
+      <span aria-hidden="true" className="hidden min-[701px]:block">
+        {grouped ? null : <RequestDiscussionActorAvatar handle={actorHandle(reply.author)} />}
+      </span>
 
       <div className="min-w-0">
         {grouped ? (
@@ -126,17 +125,22 @@ function DiscussionReply({
           </span>
         ) : null}
         {!grouped ? (
-          <RequestDiscussionByline
-            author={reply.author}
-            createdAtUnix={reply.created_at_unix}
-          >
-            {reply.pending === 'sending' ? (
-              <span className="text-xs text-muted-foreground">Posting…</span>
-            ) : null}
-            {reply.pending === 'failed' ? (
-              <Badge variant="danger">Failed</Badge>
-            ) : null}
-          </RequestDiscussionByline>
+          <div className={cn('flex min-w-0 items-start gap-2', hasActions && 'pr-10 min-[701px]:pr-0')}>
+            <span className="min-[701px]:hidden">
+              <RequestDiscussionActorAvatar handle={actorHandle(reply.author)} small />
+            </span>
+            <RequestDiscussionByline
+              author={reply.author}
+              createdAtUnix={reply.created_at_unix}
+            >
+              {reply.pending === 'sending' ? (
+                <span className="text-xs text-muted-foreground">Posting…</span>
+              ) : null}
+              {reply.pending === 'failed' ? (
+                <Badge variant="danger">Failed</Badge>
+              ) : null}
+            </RequestDiscussionByline>
+          </div>
         ) : null}
         <ReplyReference reply={reply} />
         <RequestDiscussionMarkdown
