@@ -131,6 +131,7 @@ fn wait_labels_are_concise_and_saturating() {
 fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
     let checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "awaiting-approval",
+        "outcome": "awaiting-approval",
         "message": null, "can_approve": true, "github_push": null,
         "changes_github_workflows": false, "private_request_on_public_github": false,
         "checks": [
@@ -176,7 +177,7 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
 #[test]
 fn started_checks_report_each_provider_state_and_where_its_logs_are() {
     let checks: RequestChecksResponse = serde_json::from_value(json!({
-        "request_id": "req_one", "head_oid": oid('b'), "state": "started",
+        "request_id": "req_one", "head_oid": oid('b'), "state": "started", "outcome": "failed",
         "message": null, "can_approve": false, "github_push": null,
         "changes_github_workflows": false, "private_request_on_public_github": false,
         "checks": [
@@ -195,15 +196,15 @@ fn started_checks_report_each_provider_state_and_where_its_logs_are() {
                 "conclusion": null, "details_url": null}
         ],
         "mergeability": {
-            "status": "ChecksPending", "current_main_oid": oid('a'),
-            "request_head_oid": oid('b'), "reason": "CI has not finished"
+            "status": "ChecksFailed", "current_main_oid": oid('a'),
+            "request_head_oid": oid('b'), "reason": "a required result did not succeed"
         }
     }))
     .unwrap();
 
     let rendered = request_checks_lines(&checks).join("\n");
 
-    assert!(rendered.contains("CI: started"), "{rendered}");
+    assert!(rendered.contains("CI: failed"), "{rendered}");
     assert!(
         rendered.contains("checks · Scope · succeeded (run_a)"),
         "{rendered}"
@@ -229,7 +230,7 @@ fn started_checks_report_each_provider_state_and_where_its_logs_are() {
         "{rendered}"
     );
     assert!(
-        rendered.contains("Mergeability: CI has not finished"),
+        rendered.contains("Mergeability: a required result did not succeed"),
         "{rendered}"
     );
     assert!(!rendered.contains("--approve"), "{rendered}");
@@ -237,10 +238,39 @@ fn started_checks_report_each_provider_state_and_where_its_logs_are() {
 }
 
 #[test]
+fn started_checks_that_all_succeeded_report_ci_passed() {
+    let checks: RequestChecksResponse = serde_json::from_value(json!({
+        "request_id": "req_one", "head_oid": oid('b'), "state": "started", "outcome": "clear",
+        "message": null, "can_approve": false, "changes_github_workflows": false,
+        "private_request_on_public_github": false,
+        "github_push": {"state": "sent", "branch": "scope/requests/req_one", "error": null},
+        "checks": [{"provider": "github", "name": "Required PR checks", "status": "completed",
+            "conclusion": "success", "details_url": null}],
+        "mergeability": {
+            "status": "Ready", "current_main_oid": oid('a'),
+            "request_head_oid": oid('b'), "reason": null
+        }
+    }))
+    .unwrap();
+
+    assert_eq!(
+        request_checks_lines(&checks),
+        [
+            "Request req_one, head bbbbbbb",
+            "CI: passed",
+            "  Required PR checks · GitHub · succeeded",
+            "GitHub: sent to scope/requests/req_one",
+            "Mergeability: ready",
+        ]
+    );
+}
+
+#[test]
 fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workflows() {
     let checks = |state: &str, push: serde_json::Value, can_approve: bool| {
         serde_json::from_value::<RequestChecksResponse>(json!({
             "request_id": "req_one", "head_oid": oid('b'), "state": state,
+            "outcome": if state == "started" { "pending" } else { state },
             "message": null, "can_approve": can_approve, "github_push": push,
             "changes_github_workflows": can_approve, "private_request_on_public_github": false,
             "checks": [{"provider": "github", "name": "ci / test", "status": null,
@@ -279,22 +309,35 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
         "{awaiting}"
     );
 
-    for (state, error, line) in [
-        ("sending", None, "GitHub: sending to scope/requests/req_one"),
+    for (state, error, ci, line) in [
+        (
+            "sending",
+            None,
+            "CI: starting",
+            "GitHub: sending to scope/requests/req_one",
+        ),
         (
             "sending",
             Some("remote rejected\u{001b}[31m"),
+            "CI: starting",
             "GitHub: sending to scope/requests/req_one again; the last attempt failed: remote rejected [31m",
         ),
-        ("sent", None, "GitHub: sent to scope/requests/req_one"),
+        (
+            "sent",
+            None,
+            "CI: running",
+            "GitHub: sent to scope/requests/req_one",
+        ),
         (
             "failed",
             Some("remote rejected"),
+            "CI: couldn't start",
             "GitHub: sending to scope/requests/req_one failed: remote rejected",
         ),
     ] {
         let rendered =
             request_checks_lines(&checks("started", push(state, error), false)).join("\n");
+        assert!(rendered.contains(ci), "{rendered}");
         assert!(rendered.contains(line), "{rendered}");
         assert!(!rendered.contains("--approve"), "{rendered}");
         assert!(!rendered.contains('\u{1b}'), "{rendered:?}");
@@ -314,7 +357,7 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
 fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     let no_checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "no-checks",
-        "message": null, "can_approve": false, "github_push": null,
+        "outcome": "clear", "message": null, "can_approve": false, "github_push": null,
         "changes_github_workflows": false, "private_request_on_public_github": false, "checks": [],
         "mergeability": {
             "status": "Ready", "current_main_oid": oid('a'),
@@ -324,7 +367,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     .unwrap();
     let broken: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "configuration-error",
-        "message": "checks.yml: unknown key 'runs-on'", "can_approve": false, "github_push": null,
+        "outcome": "configuration-error", "message": "checks.yml: unknown key 'runs-on'", "can_approve": false, "github_push": null,
         "changes_github_workflows": false, "private_request_on_public_github": false, "checks": [],
         "mergeability": {
             "status": "ChecksConfigurationError", "current_main_oid": oid('a'),
@@ -340,10 +383,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     assert!(rendered.contains("Mergeability: ready"), "{rendered}");
 
     let rendered = request_checks_lines(&broken).join("\n");
-    assert!(
-        rendered.contains("workflow configuration error"),
-        "{rendered}"
-    );
+    assert!(rendered.contains("CI: configuration error"), "{rendered}");
     assert!(rendered.contains("unknown key 'runs-on'"), "{rendered}");
     assert!(
         rendered.contains("workflow configuration is invalid"),
@@ -355,7 +395,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
 fn an_unevaluated_head_reports_ci_as_not_evaluated() {
     let unevaluated: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": null,
-        "message": null, "can_approve": false, "github_push": null,
+        "outcome": "not-evaluated", "message": null, "can_approve": false, "github_push": null,
         "changes_github_workflows": false, "private_request_on_public_github": false, "checks": [],
         "mergeability": {
             "status": "ChecksNotEvaluated", "current_main_oid": oid('a'),

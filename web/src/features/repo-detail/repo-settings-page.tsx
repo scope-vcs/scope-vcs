@@ -48,6 +48,7 @@ export function RepoSettingsPage({
   sendInviteEmail,
   deleteMember,
   collaboration,
+  dependencyCheck,
   collaborationLoading,
   deleteRepo,
   confirmPublicGitHub,
@@ -71,6 +72,7 @@ export function RepoSettingsPage({
   sendInviteEmail: (input: RepoInviteInput) => Promise<RepositoryInviteResponse>
   deleteMember: (input: DeleteRepoMemberInput) => Promise<RepositoryMemberResponse>
   collaboration: RepositoryCollaborationResponse | null
+  dependencyCheck?: ReactNode
   collaborationLoading: boolean
   deleteRepo: (params: RepoParams) => Promise<DeleteRepoResponse>
   confirmPublicGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
@@ -175,6 +177,8 @@ export function RepoSettingsPage({
       )}
 
       {repo.access.actor !== 'Public' && <RepositoryViewsSection views={views} />}
+
+      {dependencyCheck}
 
       {readsFullView && visibilityLog}
 

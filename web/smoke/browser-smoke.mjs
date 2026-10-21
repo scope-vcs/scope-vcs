@@ -17,6 +17,7 @@ export const repoPath = `/${repo}`
 export const requestRepoPath = `/${owner}/update-demo`
 export const authEnabled = process.env.SCOPE_SMOKE_AUTH_ENABLED === '1'
 const serverFunctionLatencyMs = Number(process.env.SCOPE_SMOKE_LATENCY_MS ?? 0)
+const RESPONSE_EXCERPT_CHARS = 2_000
 
 export async function withBlankPage(run, pageOptions = {}) {
   const browser = await chromium.launch({ headless: true })
@@ -57,10 +58,21 @@ export async function withPage(path, run, { prepare, settle = true, ...pageOptio
       waitUntil: 'domcontentloaded',
     })
     assert(response, `navigation to ${path} did not produce a response`)
-    assert(response.status() < 400, `navigation to ${path} returned ${response.status()}`)
+    if (response.status() >= 400) {
+      const body = await response.text().catch((error) => `unreadable body: ${error.message}`)
+      assert.fail(`navigation to ${path} returned ${response.status()}: ${visibleText(body).slice(0, RESPONSE_EXCERPT_CHARS)}`)
+    }
     await settled?.()
     await run(page)
   }, pageOptions)
+}
+
+function visibleText(body) {
+  return body
+    .replace(/<head[\s\S]*?<\/head>|<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 const SERVER_FUNCTION_QUIET_MS = 200

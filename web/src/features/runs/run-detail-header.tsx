@@ -1,5 +1,6 @@
 import type { RunActionInput } from '@/api/types'
 import type { RepositoryRunDetailResponse } from '@/api/types.generated'
+import { SeparatedMeta, SeparatedMetaItem } from '@/components/separated-meta'
 import { Button } from '@/components/ui/button'
 import { formatUnixDate, formatUnixDateUtc } from '@/lib/date-format'
 import { useHydrated } from '@/lib/use-hydrated'
@@ -40,25 +41,23 @@ export function RunDetailHeader({
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <RunHeaderTitle name={run.workflow_name} params={params} />
-          <p className={RUN_HEADER_META_CLASS}>
-            <RunHeaderStatus
-              state={state}
-              title={`Started ${formatDate(run.created_at_unix)} · updated ${formatDate(run.updated_at_unix)}`}
-            >
-              <span>
-                {runDurationLead(state)}{' '}
-                <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
-              </span>
-            </RunHeaderStatus>
-            <span className="whitespace-nowrap">
-              <RunHeaderDot />
-              {runTriggerLabel(run.trigger)}
-            </span>
-            <span className="whitespace-nowrap">
-              <RunHeaderDot />
+          <SeparatedMeta className="mt-0.5 text-xs text-muted-foreground">
+            <SeparatedMetaItem>
+              <RunHeaderStatus
+                state={state}
+                title={`Started ${formatDate(run.created_at_unix)} · updated ${formatDate(run.updated_at_unix)}`}
+              >
+                <span>
+                  {runDurationLead(state)}{' '}
+                  <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
+                </span>
+              </RunHeaderStatus>
+            </SeparatedMetaItem>
+            <SeparatedMetaItem>{runTriggerLabel(run.trigger)}</SeparatedMetaItem>
+            <SeparatedMetaItem>
               <code>{run.git_oid.slice(0, 7)}</code>
-            </span>
-          </p>
+            </SeparatedMetaItem>
+          </SeparatedMeta>
         </div>
         {runCanChange(run.state) ? (
           <Button
@@ -87,9 +86,6 @@ export function RunDetailHeader({
   )
 }
 
-export const RUN_HEADER_META_CLASS =
-  'mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground'
-
 export function RunHeaderTitle({ name, params }: { name: string; params: RunActionInput }) {
   return (
     <h1 className="flex min-w-0 items-baseline gap-1.5 text-[15px] leading-[22px]">
@@ -117,7 +113,7 @@ export function RunHeaderStatus({
 }) {
   return (
     <span
-      className={cn('inline-flex items-center gap-1.5', RUN_TONE_TEXT_CLASS[runStatus(state).tone])}
+      className={cn('flex items-center gap-1.5', RUN_TONE_TEXT_CLASS[runStatus(state).tone])}
       suppressHydrationWarning
       title={title}
     >
@@ -125,10 +121,6 @@ export function RunHeaderStatus({
       {children}
     </span>
   )
-}
-
-export function RunHeaderDot() {
-  return <span aria-hidden="true" className="mr-1.5 opacity-50">·</span>
 }
 
 export function LiveUpdatesPaused({ error, onRetry }: { error: string | null; onRetry: () => void }) {

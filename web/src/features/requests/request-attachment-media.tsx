@@ -7,8 +7,16 @@ import { formatBytes } from '@/lib/format-bytes'
 import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
 import * as Dialog from '@radix-ui/react-dialog'
 import { CircleAlert, Download, Expand, LoaderCircle, RotateCcw, X } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import { useRequestAttachments } from './request-attachment-context'
+import {
+  initialMediaRecovery,
+  mediaGrantExpiring,
+  recoverFromMediaError,
+  recoverFromMediaStall,
+  retryMedia,
+  settledMediaRecovery,
+} from './request-attachment-media-recovery'
 import {
   requestAttachmentMediaGrantResource,
   requestAttachmentResource,
@@ -36,9 +44,10 @@ export function RequestAttachmentMedia({
   if (attachment.state !== 'Ready') {
     return <AttachmentNotReady attachment={attachment} />
   }
+  const mediaKey = `${environment.accessScope}\0${attachment.id}`
   return attachment.kind === 'Photo'
-    ? <PhotoAttachment attachment={attachment} label={label} />
-    : <VideoAttachment attachment={attachment} label={label} />
+    ? <PhotoAttachment attachment={attachment} key={mediaKey} label={label} />
+    : <VideoAttachment attachment={attachment} key={mediaKey} label={label} />
 }
 
 function PhotoAttachment({
@@ -53,9 +62,11 @@ function PhotoAttachment({
   const media = useAttachmentMediaGrant(attachment.id, derivative?.id)
   const alt = label || attachment.filename
   if (!derivative) return <MissingDerivative attachment={attachment} label="Photo preview" />
-  if (media.status !== 'loaded') {
+  if (media.unavailable || !media.value) {
     return <MediaLoadStatus filename={attachment.filename} media={media} />
   }
+  const source = media.value.media_url
+  const onError = media.mediaErrored(media.value, media.generation)
   return (
     <>
       <figure className="my-3 min-w-0">
@@ -69,8 +80,10 @@ function PhotoAttachment({
             alt={alt}
             className="max-h-[38rem] max-w-full object-contain"
             height={derivative.height ?? undefined}
+            key={media.generation}
             loading="lazy"
-            src={media.value.media_url}
+            onError={onError}
+            src={source}
             width={derivative.width ?? undefined}
           />
           <span className="absolute bottom-2 right-2 rounded bg-background/90 p-1.5 opacity-0 shadow transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Expand className="size-4" /></span>
@@ -87,7 +100,13 @@ function PhotoAttachment({
               <Dialog.Close asChild><Button aria-label="Close photo viewer" size="icon-sm" type="button" variant="ghost"><X /></Button></Dialog.Close>
             </div>
             <div className="grid min-h-0 place-items-center overflow-auto bg-black/5 p-3">
-              <img alt={alt} className="max-h-full max-w-full object-contain" src={media.value.media_url} />
+              <img
+                alt={alt}
+                className="max-h-full max-w-full object-contain"
+                key={media.generation}
+                onError={onError}
+                src={source}
+              />
             </div>
           </Dialog.Content>
         </Dialog.Portal>
@@ -111,6 +130,7 @@ function VideoAttachment({
   const positionRef = useRef(0)
   const playingRef = useRef(false)
   const source = media.value?.media_url
+  const generation = media.generation
 
   useEffect(() => {
     const video = videoRef.current
@@ -126,27 +146,32 @@ function VideoAttachment({
     video.addEventListener('loadedmetadata', restore, { once: true })
     video.load()
     return () => video.removeEventListener('loadedmetadata', restore)
-  }, [source])
+  }, [generation, source])
 
   if (!playback) return <MissingDerivative attachment={attachment} label="Video playback" />
-  if (media.status !== 'loaded') {
+  if (media.unavailable || !media.value) {
     return <MediaLoadStatus filename={attachment.filename} media={media} />
   }
+  const loadedSource = media.value.media_url
+  const onError = media.mediaErrored(media.value, generation)
+  const onStall = media.mediaStalled(media.value, generation)
   return (
     <figure className="my-3 min-w-0">
       <video
         aria-label={label || attachment.filename}
         className="max-h-[38rem] w-full rounded-md border border-border bg-black"
         controls
-        onError={media.retry}
+        onError={onError}
         onPause={() => { playingRef.current = false }}
         onPlay={() => { playingRef.current = true }}
+        onStalled={onStall}
         onTimeUpdate={(event) => { positionRef.current = event.currentTarget.currentTime }}
+        onWaiting={onStall}
         playsInline
-        poster={posterMedia.value?.media_url}
+        poster={posterMedia.unavailable ? undefined : posterMedia.value?.media_url}
         preload="metadata"
         ref={videoRef}
-        src={media.value.media_url}
+        src={loadedSource}
       />
       <AttachmentCaption attachment={attachment} />
     </figure>
@@ -301,13 +326,40 @@ function useAttachmentMediaGrant(
     load,
     resource: requestAttachmentMediaGrantResource,
   })
-  useEffect(() => {
-    if (!identity || !media.value) return
-    const delay = Math.max(1_000, media.value.expires_at_unix * 1_000 - Date.now() - 30_000)
-    const timeout = window.setTimeout(() => requestAttachmentMediaGrantResource.invalidate(identity), delay)
-    return () => window.clearTimeout(timeout)
-  }, [identity, media.value])
-  return media
+  const [mountedGrant] = useState(() => identity ? requestAttachmentMediaGrantResource.peek(identity) : null)
+  const [mountedAt] = useState(Date.now)
+  const expiredAtMount = mountedGrant !== null && media.value === mountedGrant && mediaGrantExpiring(mountedGrant, mountedAt)
+  useLayoutEffect(() => {
+    if (identity && expiredAtMount) requestAttachmentMediaGrantResource.invalidate(identity)
+  }, [expiredAtMount, identity])
+  const recoveryRef = useRef(initialMediaRecovery)
+  const [, rerender] = useReducer((count: number) => count + 1, 0)
+  const recovery = settledMediaRecovery(recoveryRef.current, media.value)
+  const renewalFailed = media.error !== null && (expiredAtMount || recovery.renewingFrom !== null)
+  const unavailable = media.status !== 'loaded' || expiredAtMount || recovery.failed || renewalFailed
+  const error = media.status !== 'loaded' || renewalFailed
+    ? media.error
+    : recovery.failed && !media.refreshing ? 'The media could not be loaded.' : null
+  const apply = (next: { recovery: typeof recovery; renew: boolean }) => {
+    recoveryRef.current = next.recovery
+    rerender()
+    if (next.renew) media.retry()
+  }
+  const handleMediaEvent = (transition: typeof recoverFromMediaError) =>
+    (grant: NonNullable<typeof media.value>, renderedGeneration: number) => () =>
+      apply(transition(recoveryRef.current, { generation: renderedGeneration, grant, now: Date.now() }))
+  return {
+    ...media,
+    error,
+    generation: recovery.generation,
+    unavailable,
+    mediaErrored: handleMediaEvent(recoverFromMediaError),
+    mediaStalled: handleMediaEvent(recoverFromMediaStall),
+    retry: () => {
+      const next = retryMedia(recoveryRef.current, media.value, Date.now())
+      apply({ ...next, renew: next.renew || media.error !== null })
+    },
+  }
 }
 
 function derivativeOf(

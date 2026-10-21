@@ -40,6 +40,10 @@ export function useRepoLayout() {
   return useRepoLayoutContext().live
 }
 
+export function useLoadedRepoLayout(): RepoLiveState | null {
+  return use(RepoLayoutContext)?.live ?? null
+}
+
 export function useRepoViews() {
   return useRepoLayoutContext().views
 }

@@ -3844,10 +3844,10 @@ MIT branch selected. Archive omits license files and VCS metadata. Its original 
 legal/upstream/rustls-rustls-platform-verifier-996b1c903491-LICENSE-MIT: text 6205904d553962d42fd62764787a5b635a1416d4b3794f4fc465ec36bfbf7ceb
 
 ==============================================================================
-rustls-webpki 0.103.15
+rustls-webpki 0.103.16
 Declared license: ISC
 Selected license: ISC
-Source: https://static.crates.io/crates/rustls-webpki/rustls-webpki-0.103.15.crate
+Source: https://static.crates.io/crates/rustls-webpki/rustls-webpki-0.103.16.crate
 
 Repository: "https://github.com/rustls/webpki"
 LICENSE: text 3ac27594ed56fd079c95a71f8beabc498c5b997ec31e91f4a18e59a5974adb2a
@@ -5345,19 +5345,19 @@ LICENSE-APACHE: text 82d2cc0ccece30bbaa33b475a66519ccf2b7c14c67cac44f785b56c25d0
 LICENSE-MIT: text 8e71c7516506e7513f4abd2db1f23d4be5643f0bf550fff76586f237bba8c71c
 
 ==============================================================================
-webpki-root-certs 1.0.9
+webpki-root-certs 1.0.10
 Declared license: CDLA-Permissive-2.0
 Selected license: CDLA-Permissive-2.0
-Source: https://static.crates.io/crates/webpki-root-certs/webpki-root-certs-1.0.9.crate
+Source: https://static.crates.io/crates/webpki-root-certs/webpki-root-certs-1.0.10.crate
 
 Repository: "https://github.com/rustls/webpki-roots"
 LICENSE: text d30183ec6610abca89d6095d5f1dc56ea50248a1001cbb4549fadc3a582f6f9a
 
 ==============================================================================
-webpki-roots 1.0.9
+webpki-roots 1.0.10
 Declared license: CDLA-Permissive-2.0
 Selected license: CDLA-Permissive-2.0
-Source: https://static.crates.io/crates/webpki-roots/webpki-roots-1.0.9.crate
+Source: https://static.crates.io/crates/webpki-roots/webpki-roots-1.0.10.crate
 
 Repository: "https://github.com/rustls/webpki-roots"
 LICENSE: text d30183ec6610abca89d6095d5f1dc56ea50248a1001cbb4549fadc3a582f6f9a

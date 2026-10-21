@@ -3,8 +3,8 @@ use scope_api_contract::attachments::{
     PrepareRequestAttachmentResponse, RequestAttachmentResponse,
 };
 use scope_domain::requests::attachments::{
-    RequestAttachmentImageMetadata, RequestAttachmentPartReceipt, RequestAttachmentSource,
-    RequestAttachmentStagedPart,
+    RequestAttachmentImageMetadata, RequestAttachmentPartReceipt, RequestAttachmentProcessingLane,
+    RequestAttachmentSource, RequestAttachmentStagedPart,
 };
 
 const ROOT: &str = "/v1/repos/owner/repo/requests/req_media/attachments";
@@ -110,7 +110,12 @@ async fn validate_source(state: &AppState, attachment_id: &str) {
     let now = crate::persistence::unix_now().unwrap();
     let media = state.metadata.media();
     let (lease, _) = media
-        .claim_processing_job("test-lease", now, now + 60)
+        .claim_processing_job(
+            RequestAttachmentProcessingLane::General,
+            "test-lease",
+            now,
+            now + 60,
+        )
         .await
         .unwrap()
         .unwrap();

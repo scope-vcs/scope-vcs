@@ -21,7 +21,7 @@ const REPLICAS = [
   workflowReplica(".github/workflows/scope-api-ci.yml"),
   workflowReplica(".github/workflows/ci.yml", 2),
   workflowReplica(".github/workflows/release.yml", 2),
-  workflowReplica(".github/workflows/scope-cli-build.yml", 2),
+  workflowReplica(".github/workflows/scope-cli-build.yml", 3),
   workflowReplica(".github/workflows/scope-integration-ci.yml", 2),
   workflowReplica(".github/workflows/prepare-smoke-tools.yml"),
   {

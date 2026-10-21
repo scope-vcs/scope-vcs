@@ -6,7 +6,7 @@
   },
   "inherited_reasons": {
     "web:oxlint@1.82.0": "Published native package declares MIT. Retain the exact-version parent project license text alongside any bundled dependency notices.",
-    "web:rolldown@1.2.9": "Published native package declares MIT. Retain the exact-version parent project license text alongside any bundled dependency notices.",
+    "web:rolldown@1.2.13": "Published native package declares MIT. Retain the exact-version parent project license text alongside any bundled dependency notices.",
     "web:tailwindcss@4.3.3": "Published native package declares MIT. Retain the exact-version parent project license text alongside any bundled dependency notices."
   },
   "packages": {
@@ -78,50 +78,50 @@
         }
       ]
     },
-    "web:@rolldown/binding-android-arm-eabi@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-android-arm-eabi@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-android-arm64@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-android-arm64@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-darwin-arm64@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-darwin-arm64@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-darwin-x64@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-darwin-x64@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-freebsd-x64@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-freebsd-x64@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-linux-arm-gnueabihf@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-linux-arm-gnueabihf@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-linux-arm64-gnu@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-linux-arm64-gnu@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-linux-arm64-musl@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-linux-arm64-musl@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-linux-ppc64-gnu@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-linux-ppc64-gnu@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-linux-s390x-gnu@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-linux-s390x-gnu@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-linux-x64-gnu@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-linux-x64-gnu@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-linux-x64-musl@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-linux-x64-musl@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-openharmony-arm64@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-openharmony-arm64@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-win32-arm64-msvc@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-win32-arm64-msvc@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
-    "web:@rolldown/binding-win32-x64-msvc@1.2.9": {
-      "from_package": "web:rolldown@1.2.9"
+    "web:@rolldown/binding-win32-x64-msvc@1.2.13": {
+      "from_package": "web:rolldown@1.2.13"
     },
     "web:@tailwindcss/oxide-wasm32-wasi@4.3.3": {
       "from_package": "web:tailwindcss@4.3.3"

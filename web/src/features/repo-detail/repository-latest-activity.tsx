@@ -15,6 +15,8 @@ import { HistoryMenu } from '@/features/history/history-menu'
 import { useViewingAs } from './use-viewing-as'
 import { viewingAsSearch } from './viewing-as'
 
+const STRIP = 'flex min-h-11 items-center border-t border-border bg-card px-(--app-inset) py-2 text-xs'
+
 export function RepositoryLatestActivity({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
   const { isLoaded, userId } = useAuth()
   const ready = repo.lifecycle_state === 'Ready'
@@ -39,7 +41,7 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
   }
   if (current.status === 'failed') {
     return (
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      <div className={cn(STRIP, 'gap-3 text-muted-foreground')} data-repo-activity>
         <output>Latest change unavailable.</output>
         <button className="rounded underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring" onClick={current.retry} type="button">
           Retry latest change
@@ -48,15 +50,22 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
     )
   }
   const { entry, head_oid: headOid } = current.value
-  if (!entry) return null
+  if (!entry) {
+    return (
+      <div className={cn(STRIP, 'text-muted-foreground')} data-repo-activity>
+        <p>No changes visible in this view.</p>
+      </div>
+    )
+  }
   const message = entry.message.split('\n', 1)[0] || 'Repository updated'
   return (
     <div
       aria-label="Latest repository change"
-      className={cn('flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs', !current.error && 'sm:flex-nowrap')}
+      data-repo-activity
+      className={cn(STRIP, 'flex-wrap gap-x-6 gap-y-0.5 sm:flex-nowrap')}
     >
       <Link
-        className="min-w-0 basis-full truncate rounded text-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:basis-auto"
+        className="min-w-0 basis-full truncate rounded text-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring sm:flex-1 sm:basis-auto"
         params={{ ...params, entryId: entry.source_id }}
         search={viewingAsSearch(selectedView, reader)}
         title={message}
@@ -64,34 +73,45 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
       >
         {message}
       </Link>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 text-muted-foreground">
-        {entry.author && <span className="max-w-40 truncate" title={entry.author}>{entry.author}</span>}
-        {entry.occurred_at_unix !== null && <RelativeTimestamp value={entry.occurred_at_unix} />}
+      {current.error && (
+        <button
+          className="order-last basis-full rounded text-left text-warning-strong underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring sm:order-none sm:basis-auto sm:shrink-0"
+          onClick={current.retry}
+          title="Could not refresh latest change."
+          type="button"
+        >
+          Refresh failed. Retry
+        </button>
+      )}
+      <div className="flex min-w-0 flex-1 items-center gap-x-3 whitespace-nowrap text-muted-foreground sm:flex-none sm:gap-x-4">
+        {entry.author && <span className="min-w-0 max-w-40 truncate" title={entry.author}>{entry.author}</span>}
+        {entry.occurred_at_unix !== null && <RelativeTimestamp className="shrink-0" value={entry.occurred_at_unix} />}
         {headOid && (
-          <span className="font-mono text-xs" title={`Current revision: ${headOid}`}>
+          <span className="shrink-0 font-mono text-xs" title={`Current revision: ${headOid}`}>
             <span className="sr-only">Current revision </span>{headOid.slice(0, 7)}
           </span>
         )}
+        <div className="ml-auto shrink-0 sm:ml-0">
+          <HistoryMenu params={params} />
+        </div>
       </div>
-      <div className="ml-auto sm:ml-0">
-        <HistoryMenu params={params} />
-      </div>
-      {current.error && <button className="basis-full text-left underline" onClick={current.retry} type="button">Could not refresh latest change. Retry</button>}
     </div>
   )
 }
 
 export function RepositoryLatestActivityPending({ onRetry }: { onRetry?: () => void }) {
   return (
-    <PendingSurface label="Loading latest repository change" onRetry={onRetry}>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
-        <span className="flex h-5 basis-full items-center sm:basis-auto">
-          <TextSkeleton length="long" size="meta" />
-        </span>
-        <span className="flex h-4 items-center">
-          <TextSkeleton length="short" size="meta" />
-        </span>
-      </div>
-    </PendingSurface>
+    <div className={STRIP} data-repo-activity>
+      <PendingSurface label="Loading latest repository change" onRetry={onRetry}>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-0.5 sm:flex-nowrap">
+          <span className="flex h-5 min-w-0 basis-full items-center sm:flex-1 sm:basis-auto">
+            <TextSkeleton length="long" size="meta" />
+          </span>
+          <span className="flex h-4 items-center">
+            <TextSkeleton length="medium" size="meta" />
+          </span>
+        </div>
+      </PendingSurface>
+    </div>
   )
 }
