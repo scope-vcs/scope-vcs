@@ -179,49 +179,49 @@ Repository: {"type": "git", "url": "https://github.com/babel/babel.git", "direct
 LICENSE: text 8f08c824b2bb54eda2b6ee6053d2eeed46877b3b7b2ef3f60fc2b9fa580f54b2
 
 ==============================================================================
-@clerk/backend 3.18.1
+@clerk/backend 3.23.2
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@clerk/backend/-/backend-3.18.1.tgz
+Source: https://registry.npmjs.org/@clerk/backend/-/backend-3.23.2.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/clerk/javascript.git", "directory": "packages/backend"}
 LICENSE: text 67ad6d13f0d5c1d8cea4143041a6498e24b9bb5a3a931dd4e4da830473935c72
 
 ==============================================================================
-@clerk/react 6.16.1
+@clerk/react 6.17.8
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@clerk/react/-/react-6.16.1.tgz
+Source: https://registry.npmjs.org/@clerk/react/-/react-6.17.8.tgz
 
 Published author metadata: "Clerk"
 Repository: {"type": "git", "url": "git+https://github.com/clerk/javascript.git", "directory": "packages/react"}
 LICENSE: text 67ad6d13f0d5c1d8cea4143041a6498e24b9bb5a3a931dd4e4da830473935c72
 
 ==============================================================================
-@clerk/shared 4.33.0
+@clerk/shared 4.40.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@clerk/shared/-/shared-4.33.0.tgz
+Source: https://registry.npmjs.org/@clerk/shared/-/shared-4.40.0.tgz
 
 Published author metadata: "Clerk"
 Repository: {"type": "git", "url": "git+https://github.com/clerk/javascript.git", "directory": "packages/shared"}
 LICENSE: text bb582cd9530e388e0c8ec87df05756e867197116a9fa2e3bb48db12785776092
 
 ==============================================================================
-@clerk/tanstack-react-start 1.5.15
+@clerk/tanstack-react-start 1.7.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@clerk/tanstack-react-start/-/tanstack-react-start-1.5.15.tgz
+Source: https://registry.npmjs.org/@clerk/tanstack-react-start/-/tanstack-react-start-1.7.1.tgz
 
 Published author metadata: "Clerk"
 Repository: {"type": "git", "url": "git+https://github.com/clerk/javascript.git", "directory": "packages/tanstack-react-start"}
 LICENSE: text 980a9657026db6567616515b6a9eb52ee6d360924359df43c1e56cacf0058a7d
 
 ==============================================================================
-@clerk/testing 2.2.36
+@clerk/testing 2.2.45
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@clerk/testing/-/testing-2.2.36.tgz
+Source: https://registry.npmjs.org/@clerk/testing/-/testing-2.2.45.tgz
 
 Published author metadata: "Clerk"
 Repository: {"type": "git", "url": "git+https://github.com/clerk/javascript.git", "directory": "packages/testing"}
@@ -529,26 +529,6 @@ Repository: "open-telemetry/opentelemetry-js"
 LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-@opentelemetry/sdk-trace-base 2.12.0
-Declared license: Apache-2.0
-Selected license: Apache-2.0
-Source: https://registry.npmjs.org/@opentelemetry/sdk-trace-base/-/sdk-trace-base-2.12.0.tgz
-
-Published author metadata: "OpenTelemetry Authors"
-Repository: "open-telemetry/opentelemetry-js"
-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
-
-==============================================================================
-@opentelemetry/sdk-trace-node 2.12.0
-Declared license: Apache-2.0
-Selected license: Apache-2.0
-Source: https://registry.npmjs.org/@opentelemetry/sdk-trace-node/-/sdk-trace-node-2.12.0.tgz
-
-Published author metadata: "OpenTelemetry Authors"
-Repository: "open-telemetry/opentelemetry-js"
-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
-
-==============================================================================
 @opentelemetry/semantic-conventions 1.43.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
@@ -569,10 +549,10 @@ Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc.git",
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-android-arm-eabi 1.82.0
+@oxlint/binding-android-arm-eabi 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-android-arm-eabi/-/binding-android-arm-eabi-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-android-arm-eabi/-/binding-android-arm-eabi-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -581,10 +561,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-android-arm64 1.82.0
+@oxlint/binding-android-arm64 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-android-arm64/-/binding-android-arm64-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-android-arm64/-/binding-android-arm64-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -593,10 +573,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-darwin-arm64 1.82.0
+@oxlint/binding-darwin-arm64 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-darwin-arm64/-/binding-darwin-arm64-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-darwin-arm64/-/binding-darwin-arm64-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -605,10 +585,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-darwin-x64 1.82.0
+@oxlint/binding-darwin-x64 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-darwin-x64/-/binding-darwin-x64-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-darwin-x64/-/binding-darwin-x64-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -617,10 +597,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-freebsd-x64 1.82.0
+@oxlint/binding-freebsd-x64 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-freebsd-x64/-/binding-freebsd-x64-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-freebsd-x64/-/binding-freebsd-x64-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -629,10 +609,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-arm-gnueabihf 1.82.0
+@oxlint/binding-linux-arm-gnueabihf 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-arm-gnueabihf/-/binding-linux-arm-gnueabihf-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -641,10 +621,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-arm-musleabihf 1.82.0
+@oxlint/binding-linux-arm-musleabihf 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-arm-musleabihf/-/binding-linux-arm-musleabihf-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-arm-musleabihf/-/binding-linux-arm-musleabihf-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -653,10 +633,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-arm64-gnu 1.82.0
+@oxlint/binding-linux-arm64-gnu 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-arm64-gnu/-/binding-linux-arm64-gnu-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -665,10 +645,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-arm64-musl 1.82.0
+@oxlint/binding-linux-arm64-musl 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-arm64-musl/-/binding-linux-arm64-musl-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-arm64-musl/-/binding-linux-arm64-musl-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -677,10 +657,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-ppc64-gnu 1.82.0
+@oxlint/binding-linux-ppc64-gnu 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-ppc64-gnu/-/binding-linux-ppc64-gnu-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -689,10 +669,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-riscv64-gnu 1.82.0
+@oxlint/binding-linux-riscv64-gnu 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-riscv64-gnu/-/binding-linux-riscv64-gnu-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-riscv64-gnu/-/binding-linux-riscv64-gnu-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -701,10 +681,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-riscv64-musl 1.82.0
+@oxlint/binding-linux-riscv64-musl 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-riscv64-musl/-/binding-linux-riscv64-musl-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-riscv64-musl/-/binding-linux-riscv64-musl-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -713,10 +693,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-s390x-gnu 1.82.0
+@oxlint/binding-linux-s390x-gnu 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-s390x-gnu/-/binding-linux-s390x-gnu-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -725,10 +705,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-x64-gnu 1.82.0
+@oxlint/binding-linux-x64-gnu 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-x64-gnu/-/binding-linux-x64-gnu-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-x64-gnu/-/binding-linux-x64-gnu-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -737,10 +717,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-linux-x64-musl 1.82.0
+@oxlint/binding-linux-x64-musl 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-linux-x64-musl/-/binding-linux-x64-musl-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-linux-x64-musl/-/binding-linux-x64-musl-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -749,10 +729,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-openharmony-arm64 1.82.0
+@oxlint/binding-openharmony-arm64 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-openharmony-arm64/-/binding-openharmony-arm64-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-openharmony-arm64/-/binding-openharmony-arm64-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -761,10 +741,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-win32-arm64-msvc 1.82.0
+@oxlint/binding-win32-arm64-msvc 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-win32-arm64-msvc/-/binding-win32-arm64-msvc-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -773,10 +753,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-win32-ia32-msvc 1.82.0
+@oxlint/binding-win32-ia32-msvc 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-win32-ia32-msvc/-/binding-win32-ia32-msvc-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-win32-ia32-msvc/-/binding-win32-ia32-msvc-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -785,10 +765,10 @@ Published native package declares MIT. Retain the exact-version parent project l
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
-@oxlint/binding-win32-x64-msvc 1.82.0
+@oxlint/binding-win32-x64-msvc 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@oxlint/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.82.0.tgz
+Source: https://registry.npmjs.org/@oxlint/binding-win32-x64-msvc/-/binding-win32-x64-msvc-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -837,37 +817,37 @@ License text recovered from the upstream repository at the published npm gitHead
 legal/upstream/PostHog-hogvm-dbd5fe59fc8c-LICENSE: text 55836a061e08c8fee2c2cf838149fb6247bc2c1542b8ace8f9a6c3e3294d2a6c
 
 ==============================================================================
-@radix-ui/primitive 1.1.7
+@radix-ui/primitive 1.2.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/primitive/-/primitive-1.1.7.tgz
+Source: https://registry.npmjs.org/@radix-ui/primitive/-/primitive-1.2.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/core/primitive"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-alert-dialog 1.1.23
+@radix-ui/react-alert-dialog 1.2.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-alert-dialog/-/react-alert-dialog-1.1.23.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-alert-dialog/-/react-alert-dialog-1.2.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/alert-dialog"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-arrow 1.1.15
+@radix-ui/react-arrow 1.1.17
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-arrow/-/react-arrow-1.1.15.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-arrow/-/react-arrow-1.1.17.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/arrow"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-collection 1.1.15
+@radix-ui/react-collection 1.2.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-collection/-/react-collection-1.1.15.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-collection/-/react-collection-1.2.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/collection"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
@@ -882,55 +862,55 @@ Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.g
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-context 1.2.2
+@radix-ui/react-context 1.3.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.2.2.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-context/-/react-context-1.3.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/context"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-dialog 1.1.23
+@radix-ui/react-dialog 1.3.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-dialog/-/react-dialog-1.1.23.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-dialog/-/react-dialog-1.3.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/dialog"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-direction 1.1.4
+@radix-ui/react-direction 1.2.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.1.4.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-direction/-/react-direction-1.2.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/direction"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-dismissable-layer 1.1.19
+@radix-ui/react-dismissable-layer 1.2.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-dismissable-layer/-/react-dismissable-layer-1.1.19.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-dismissable-layer/-/react-dismissable-layer-1.2.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/dismissable-layer"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-focus-guards 1.1.6
+@radix-ui/react-focus-guards 1.2.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-focus-guards/-/react-focus-guards-1.1.6.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-focus-guards/-/react-focus-guards-1.2.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/focus-guards"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-focus-scope 1.1.16
+@radix-ui/react-focus-scope 1.3.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-focus-scope/-/react-focus-scope-1.1.16.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-focus-scope/-/react-focus-scope-1.3.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/focus-scope"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
@@ -945,109 +925,109 @@ Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.g
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-popper 1.3.7
+@radix-ui/react-popper 1.4.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-popper/-/react-popper-1.3.7.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-popper/-/react-popper-1.4.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/popper"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-portal 1.1.17
+@radix-ui/react-portal 1.2.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-portal/-/react-portal-1.1.17.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-portal/-/react-portal-1.2.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/portal"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-presence 1.1.10
+@radix-ui/react-presence 1.1.11
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-presence/-/react-presence-1.1.10.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-presence/-/react-presence-1.1.11.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/presence"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-primitive 2.1.10
+@radix-ui/react-primitive 2.2.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-primitive/-/react-primitive-2.1.10.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-primitive/-/react-primitive-2.2.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/primitive"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-roving-focus 1.1.19
+@radix-ui/react-roving-focus 1.2.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-roving-focus/-/react-roving-focus-1.1.19.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-roving-focus/-/react-roving-focus-1.2.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/roving-focus"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-slot 1.3.3
+@radix-ui/react-slot 1.5.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-slot/-/react-slot-1.3.3.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-slot/-/react-slot-1.5.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/slot"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-switch 1.3.7
+@radix-ui/react-switch 1.4.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-switch/-/react-switch-1.3.7.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-switch/-/react-switch-1.4.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/switch"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-toggle 1.1.18
+@radix-ui/react-toggle 1.2.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-toggle/-/react-toggle-1.1.18.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-toggle/-/react-toggle-1.2.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/toggle"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-toggle-group 1.1.19
+@radix-ui/react-toggle-group 1.2.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-toggle-group/-/react-toggle-group-1.1.19.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-toggle-group/-/react-toggle-group-1.2.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/toggle-group"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-tooltip 1.2.16
+@radix-ui/react-tooltip 1.4.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-tooltip/-/react-tooltip-1.2.16.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-tooltip/-/react-tooltip-1.4.1.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/tooltip"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-use-callback-ref 1.1.4
+@radix-ui/react-use-callback-ref 1.1.5
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.4.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-use-callback-ref/-/react-use-callback-ref-1.1.5.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/use-callback-ref"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-use-controllable-state 1.2.6
+@radix-ui/react-use-controllable-state 1.3.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-use-controllable-state/-/react-use-controllable-state-1.2.6.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-use-controllable-state/-/react-use-controllable-state-1.3.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/use-controllable-state"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
@@ -1089,19 +1069,19 @@ Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.g
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-use-size 1.1.4
+@radix-ui/react-use-size 1.1.5
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.4.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-use-size/-/react-use-size-1.1.5.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/use-size"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
 
 ==============================================================================
-@radix-ui/react-visually-hidden 1.2.11
+@radix-ui/react-visually-hidden 1.2.13
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@radix-ui/react-visually-hidden/-/react-visually-hidden-1.2.11.tgz
+Source: https://registry.npmjs.org/@radix-ui/react-visually-hidden/-/react-visually-hidden-1.2.13.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/radix-ui/primitives.git", "directory": "packages/react/visually-hidden"}
 LICENSE: text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559
@@ -1531,20 +1511,20 @@ Repository: {"type": "git", "url": "https://github.com/tailwindlabs/tailwindcss.
 LICENSE: text fdd854c84f367147ac4376837dee5002b0d2db39e8effed810ebc48f9bb70318
 
 ==============================================================================
-@tanstack/charts 1.0.0
+@tanstack/charts 1.1.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/charts/-/charts-1.0.0.tgz
+Source: https://registry.npmjs.org/@tanstack/charts/-/charts-1.1.0.tgz
 
 Repository: {"type": "git", "url": "https://github.com/TanStack/charts.git", "directory": "packages/charts-core"}
 LICENSE: text 133c11d885e1601d8568ef0e7a48f6f0a146080d65da2595f7efdd7d27320fbb
 dist/angular/LICENSE: text 133c11d885e1601d8568ef0e7a48f6f0a146080d65da2595f7efdd7d27320fbb
 
 ==============================================================================
-@tanstack/history 1.162.4
+@tanstack/history 1.162.5
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/history/-/history-1.162.4.tgz
+Source: https://registry.npmjs.org/@tanstack/history/-/history-1.162.5.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/history"}
@@ -1561,50 +1541,50 @@ Repository: {"type": "git", "url": "git+https://github.com/TanStack/query.git", 
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-router 1.170.41
+@tanstack/react-router 1.170.44
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-router/-/react-router-1.170.41.tgz
+Source: https://registry.npmjs.org/@tanstack/react-router/-/react-router-1.170.44.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-router"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-start 1.168.60
+@tanstack/react-start 1.169.1
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-start/-/react-start-1.168.60.tgz
+Source: https://registry.npmjs.org/@tanstack/react-start/-/react-start-1.169.1.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-start"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-start-client 1.168.39
+@tanstack/react-start-client 1.168.42
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-start-client/-/react-start-client-1.168.39.tgz
+Source: https://registry.npmjs.org/@tanstack/react-start-client/-/react-start-client-1.168.42.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-start-client"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-start-rsc 0.1.59
+@tanstack/react-start-rsc 0.1.62
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-start-rsc/-/react-start-rsc-0.1.59.tgz
+Source: https://registry.npmjs.org/@tanstack/react-start-rsc/-/react-start-rsc-0.1.62.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-start-rsc"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/react-start-server 1.167.46
+@tanstack/react-start-server 1.167.49
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/react-start-server/-/react-start-server-1.167.46.tgz
+Source: https://registry.npmjs.org/@tanstack/react-start-server/-/react-start-server-1.167.49.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/react-start-server"}
@@ -1621,30 +1601,30 @@ Repository: {"type": "git", "url": "https://github.com/TanStack/store.git", "dir
 LICENSE: text d71ca6db0f8bd8b31d8426ec6e7410457eac2ed6832138e6f5ea8566b248ef28
 
 ==============================================================================
-@tanstack/router-core 1.171.34
+@tanstack/router-core 1.171.37
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/router-core/-/router-core-1.171.34.tgz
+Source: https://registry.npmjs.org/@tanstack/router-core/-/router-core-1.171.37.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/router-core"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/router-generator 1.167.40
+@tanstack/router-generator 1.167.43
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/router-generator/-/router-generator-1.167.40.tgz
+Source: https://registry.npmjs.org/@tanstack/router-generator/-/router-generator-1.167.43.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/router-generator"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/router-plugin 1.168.42
+@tanstack/router-plugin 1.168.45
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/router-plugin/-/router-plugin-1.168.42.tgz
+Source: https://registry.npmjs.org/@tanstack/router-plugin/-/router-plugin-1.168.45.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/router-plugin"}
@@ -1661,10 +1641,10 @@ Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git",
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/start-client-core 1.170.34
+@tanstack/start-client-core 1.170.37
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/start-client-core/-/start-client-core-1.170.34.tgz
+Source: https://registry.npmjs.org/@tanstack/start-client-core/-/start-client-core-1.170.37.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/start-client-core"}
@@ -1681,30 +1661,30 @@ Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git",
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/start-plugin-core 1.171.49
+@tanstack/start-plugin-core 1.171.52
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/start-plugin-core/-/start-plugin-core-1.171.49.tgz
+Source: https://registry.npmjs.org/@tanstack/start-plugin-core/-/start-plugin-core-1.171.52.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/start-plugin-core"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/start-server-core 1.169.39
+@tanstack/start-server-core 1.169.42
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/start-server-core/-/start-server-core-1.169.39.tgz
+Source: https://registry.npmjs.org/@tanstack/start-server-core/-/start-server-core-1.169.42.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/start-server-core"}
 LICENSE: text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee
 
 ==============================================================================
-@tanstack/start-storage-context 1.167.36
+@tanstack/start-storage-context 1.167.39
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@tanstack/start-storage-context/-/start-storage-context-1.167.36.tgz
+Source: https://registry.npmjs.org/@tanstack/start-storage-context/-/start-storage-context-1.167.39.tgz
 
 Published author metadata: "Tanner Linsley"
 Repository: {"type": "git", "url": "git+https://github.com/TanStack/router.git", "directory": "packages/start-storage-context"}
@@ -2168,10 +2148,10 @@ Repository: {"type": "git", "url": "git+https://github.com/ungap/structured-clon
 LICENSE: text 22fc2b0e60ba1aba633480a843b0cded65e5de44f4be0cc17b19e1449a00d465
 
 ==============================================================================
-@vitejs/plugin-react 6.1.1
+@vitejs/plugin-react 6.1.2
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-6.1.1.tgz
+Source: https://registry.npmjs.org/@vitejs/plugin-react/-/plugin-react-6.1.2.tgz
 
 Published author metadata: "Evan You"
 Repository: {"type": "git", "url": "git+https://github.com/vitejs/vite-plugin-react.git", "directory": "packages/plugin-react"}
@@ -2780,10 +2760,10 @@ Repository: {"type": "git", "url": "https://github.com/kpdecker/jsdiff.git"}
 LICENSE: text ef7eb99d9a97cb70eea06d108eb68f0448dac208ed55f1c56a147252cc4328fa
 
 ==============================================================================
-dompurify 3.4.15
+dompurify 3.4.17
 Declared license: (MPL-2.0 OR Apache-2.0)
 Selected license: Apache-2.0
-Source: https://registry.npmjs.org/dompurify/-/dompurify-3.4.15.tgz
+Source: https://registry.npmjs.org/dompurify/-/dompurify-3.4.17.tgz
 
 Published author metadata: "Dr.-Ing. Mario Heiderich, Cure53 <mario@cure53.de> (https://cure53.de/)"
 Repository: {"type": "git", "url": "git://github.com/cure53/DOMPurify.git"}
@@ -3007,15 +2987,6 @@ Source: https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz
 
 Repository: {"type": "git", "url": "https://github.com/isaacs/node-graceful-fs"}
 LICENSE: text 740bb4e91297defa503f6fb1055b164be677e5e7eeb1ae7d9535f8dc7934f50c
-
-==============================================================================
-h3 2.0.1-rc.20
-Declared license: MIT
-Selected license: MIT
-Source: https://registry.npmjs.org/h3/-/h3-2.0.1-rc.20.tgz
-
-Repository: "h3js/h3"
-LICENSE: text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94
 
 ==============================================================================
 h3 2.0.1-rc.32
@@ -3542,15 +3513,15 @@ The published archive includes its complete license and copyright notice in READ
 README.md (license section): text ceb032eaa83fdbaf28c782615c64d0fdff3b2f85a01372c96d379df676075641
 
 ==============================================================================
-lucide-react 1.46.0
+lucide-react 1.56.0
 Declared license: ISC
 Selected license: ISC
-Source: https://registry.npmjs.org/lucide-react/-/lucide-react-1.46.0.tgz
+Source: https://registry.npmjs.org/lucide-react/-/lucide-react-1.56.0.tgz
 
 Published author metadata: "Eric Fennis"
 Repository: {"type": "git", "url": "https://github.com/lucide-icons/lucide.git", "directory": "packages/lucide-react"}
 LICENSE: text ee35498e6684b30c9efaae009415884772f4450b3f6a3ae49103cd550a2c8ceb
-dist/esm/icons/copyright.mjs: text b902673534c9af402e90a05a9f59eba8c3636f012e6573cbcd0a8421c6021ba4
+dist/esm/icons/copyright.mjs: text 7d148e988aeec195bb0c63342bb7b3ca665a7d0c60683ba6678e28500c8aacb4
 
 ==============================================================================
 luxon 3.7.2
@@ -3593,10 +3564,10 @@ Repository: "syntax-tree/mdast-util-find-and-replace"
 license: text ea559213e0e927a249bd60f4f6a27d1a272fb5d38d2babbd723099c66a17c5af
 
 ==============================================================================
-mdast-util-from-markdown 2.0.3
+mdast-util-from-markdown 2.1.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/mdast-util-from-markdown/-/mdast-util-from-markdown-2.0.3.tgz
+Source: https://registry.npmjs.org/mdast-util-from-markdown/-/mdast-util-from-markdown-2.1.0.tgz
 
 Published author metadata: "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)"
 Repository: "syntax-tree/mdast-util-from-markdown"
@@ -4099,10 +4070,10 @@ Repository: {"type": "git", "url": "git+https://github.com/slevithan/oniguruma-t
 LICENSE: text 84a6a26e0f609d20e8b078c60a786b9ed18113336ff338303d86461675041309
 
 ==============================================================================
-oxlint 1.82.0
+oxlint 1.87.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/oxlint/-/oxlint-1.82.0.tgz
+Source: https://registry.npmjs.org/oxlint/-/oxlint-1.87.0.tgz
 
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
@@ -4148,10 +4119,10 @@ Repository: "micromatch/picomatch"
 LICENSE: text 9219a3ebed1d1e1bc469cc605ca626c8433997a1a3013aba1338e03e381bbe11
 
 ==============================================================================
-playwright 1.63.0
+playwright 1.64.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://registry.npmjs.org/playwright/-/playwright-1.63.0.tgz
+Source: https://registry.npmjs.org/playwright/-/playwright-1.64.0.tgz
 
 Published author metadata: {"name": "Microsoft Corporation"}
 Repository: {"type": "git", "url": "git+https://github.com/microsoft/playwright.git"}
@@ -4159,10 +4130,10 @@ LICENSE: text 5b475effab78d12623dfa54915387571ec075e7f7e026cc0a196cfce2d764049
 NOTICE: text 7b1444e03705067d36e59fc8cd3260daf245b8d06006cad06d462578fb92eab5
 
 ==============================================================================
-playwright-core 1.63.0
+playwright-core 1.64.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://registry.npmjs.org/playwright-core/-/playwright-core-1.63.0.tgz
+Source: https://registry.npmjs.org/playwright-core/-/playwright-core-1.64.0.tgz
 
 Published author metadata: {"name": "Microsoft Corporation"}
 Repository: {"type": "git", "url": "git+https://github.com/microsoft/playwright.git"}
@@ -4387,15 +4358,6 @@ Source: https://registry.npmjs.org/rolldown/-/rolldown-1.2.13.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/rolldown/rolldown.git", "directory": "packages/rolldown"}
 LICENSE: text 93a675c915fd5846a0d9956bfc10cea9b2deeacf59074abf398f0fdcce10a19b
-
-==============================================================================
-rou3 0.8.1
-Declared license: MIT
-Selected license: MIT
-Source: https://registry.npmjs.org/rou3/-/rou3-0.8.1.tgz
-
-Repository: "h3js/rou3"
-LICENSE: text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94
 
 ==============================================================================
 rou3 0.9.2
@@ -4830,10 +4792,10 @@ Repository: {"type": "git", "url": "git+https://github.com/svitejs/vitefu.git"}
 LICENSE: text bca9eeb35a863ceb7581123ac807ecb7ec18df45df51e360033278904e5bb15e
 
 ==============================================================================
-web-vitals 5.3.0
+web-vitals 6.2.3
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://registry.npmjs.org/web-vitals/-/web-vitals-5.3.0.tgz
+Source: https://registry.npmjs.org/web-vitals/-/web-vitals-6.2.3.tgz
 
 Published author metadata: {"name": "Philip Walton", "email": "philip@philipwalton.com", "url": "http://philipwalton.com"}
 Repository: {"type": "git", "url": "https://github.com/GoogleChrome/web-vitals.git"}
@@ -6974,6 +6936,30 @@ Copyright (c) Microsoft Corporation
 This software contains code derived from the Puppeteer project (https://github.com/puppeteer/puppeteer),
 available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/blob/master/LICENSE).
 
+--- text 7d148e988aeec195bb0c63342bb7b3ca665a7d0c60683ba6678e28500c8aacb4 ---
+/**
+ * @license lucide-react v1.56.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+
+import createLucideIcon from '../createLucideIcon.mjs';
+
+const __iconData = {
+  name: "copyright",
+  size: 24,
+  node: [
+    ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+    ["path", { d: "M14.83 14.83a4 4 0 1 1 0-5.66", key: "1i56pz" }]
+  ]
+};
+__iconData.node;
+const Copyright = createLucideIcon(__iconData);
+
+export { __iconData, Copyright as default };
+//# sourceMappingURL=copyright.mjs.map
+
 --- text 7e02e9c37c8849280e70bf5fd67d65e93d902c700104a997b11fb7175fdbf37e ---
 The MIT License (MIT)
 
@@ -7613,30 +7599,6 @@ Copyright (c) Espen Hovlandsdal
 Copyright 2019 Justin Ridgewell <jridgewell@google.com>
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text b902673534c9af402e90a05a9f59eba8c3636f012e6573cbcd0a8421c6021ba4 ---
-/**
- * @license lucide-react v1.46.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-
-import createLucideIcon from '../createLucideIcon.mjs';
-
-const __iconData = {
-  name: "copyright",
-  size: 24,
-  node: [
-    ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-    ["path", { d: "M14.83 14.83a4 4 0 1 1 0-5.66", key: "1i56pz" }]
-  ]
-};
-__iconData.node;
-const Copyright = createLucideIcon(__iconData);
-
-export { __iconData, Copyright as default };
-//# sourceMappingURL=copyright.mjs.map
 
 --- text b9528340f983b3df75f838ff8c5e5d2458359750a04dd142bbb16ddf8c203f7c ---
 Copyright © James Long and contributors
