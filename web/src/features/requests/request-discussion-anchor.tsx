@@ -35,6 +35,7 @@ export function RequestDiscussionAnchor({
       <span aria-hidden="true" className="text-xs">
         rev {anchor.revision_position}
         {anchor.lines ? ` · L${lineSpan(anchor.lines)}` : null}
+        {anchor.latest?.kind === 'mapped' ? ` → L${lineSpan(anchor.latest)}` : null}
         {anchor.latest?.kind === 'outdated' ? ' · outdated' : null}
       </span>
     </Link>
@@ -49,10 +50,14 @@ function requestDiscussionAnchorLabel(
     : ''
   const path = anchor.path ? ` for ${displayRouteFilePath(anchor.path)}` : ''
   const lines = anchor.lines ? ` ${lineRangeLabel(anchor.lines)}` : ''
-  const outdated = anchor.latest?.kind === 'outdated' ? ', outdated on the latest revision' : ''
-  return `View revision ${anchor.revision_position} changes${path}${lines}${commit}${outdated}`
+  const latest = anchor.latest?.kind === 'outdated'
+    ? ', outdated on the latest revision'
+    : anchor.latest?.kind === 'mapped' && anchor.lines
+      ? `, now ${lineRangeLabel({ ...anchor.lines, start_line: anchor.latest.start_line, end_line: anchor.latest.end_line })} on the latest revision`
+      : ''
+  return `View revision ${anchor.revision_position} changes${path}${lines}${commit}${latest}`
 }
 
-function lineSpan(lines: NonNullable<NonNullable<RequestDiscussion['anchor']>['lines']>) {
+function lineSpan(lines: { start_line: number; end_line: number }) {
   return lines.start_line === lines.end_line ? `${lines.start_line}` : `${lines.start_line}-${lines.end_line}`
 }

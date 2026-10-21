@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router'
 import type { RepoLiveState } from '@/api/types'
-import type { RequestDiscussionAnchor, RequestRevisionListResponse } from '@/api/types.generated'
+import type { RequestDiscussionAnchor as AnchorResponse, RequestRevisionListResponse } from '@/api/types.generated'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
 import { RequestAttachmentProvider } from '@/features/requests/request-attachment-context'
 import { RequestChangesWorkbench, type RequestChangesSearch } from '@/features/requests/request-changes-workbench'
+import { RequestDiscussionAnchor } from '@/features/requests/request-discussion-anchor'
 import type { CreateDiscussionInput } from '@/features/requests/request-discussion-api'
 import { discussion } from '@/features/requests/request-discussion-test-fixtures'
 import './styles.css'
@@ -30,7 +31,7 @@ const revisions = {
   has_earlier_revisions: false,
   comparison: { revision_id: 'revision-2', mode: 'request', base_oid: base, head_oid: head, inspection: 'Complete', files: [file] },
 } as RequestRevisionListResponse
-const anchor = (overrides: Partial<RequestDiscussionAnchor>): RequestDiscussionAnchor => ({
+const anchor = (overrides: Partial<AnchorResponse>): AnchorResponse => ({
   revision_id: 'revision-2', revision_position: 2, commit_oid: null, path, lines: null, latest: null, ...overrides,
 })
 const discussions = [
@@ -68,6 +69,11 @@ function Changes() {
   return (
     <RepoLayoutProvider live={live} subscribe={() => () => {}}>
       <RequestAttachmentProvider actions={attachmentActions as never} live={live} requestId="request" viewerId="adam">
+        <ul aria-label="Discussion page anchors" className="flex flex-wrap gap-2 border-b border-border px-3 py-2">
+          {discussions.filter(({ anchor }) => anchor?.lines && anchor.revision_id === 'revision-1').map(({ anchor, id }) => (
+            <li key={id}><RequestDiscussionAnchor anchor={anchor!} params={{ owner: 'adam', repo: 'demo', request_id: 'request' }} /></li>
+          ))}
+        </ul>
         <RequestChangesWorkbench
           accessScope="fixture:private:adam"
           canOpenDiscussion

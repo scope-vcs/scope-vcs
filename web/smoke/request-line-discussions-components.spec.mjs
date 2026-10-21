@@ -56,6 +56,12 @@ test('line discussions open from either side, post under their lines, and keep c
   ])
   const carried = diff.getByRole('list', { name: 'Discussions on new line 6' })
   assert.equal(await carried.getByRole('link', { name: /Carried forward review/ }).innerText(), 'Carried forward review\nlines 5-6 (new)\nOpen')
+  const anchors = page.getByRole('list', { name: 'Discussion page anchors' })
+  assert.deepEqual(await anchors.getByRole('link').allInnerTexts(), ['rev 1 · L4-5 → L5-6', 'rev 1 · L3 · outdated'])
+  assert.deepEqual(await anchors.getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('aria-label'))), [
+    'View revision 1 changes for src/lib.ts lines 4-5 (new), now lines 5-6 (new) on the latest revision',
+    'View revision 1 changes for src/lib.ts line 3 (new), outdated on the latest revision',
+  ])
   const related = page.locator('[aria-label="Related discussions"]')
   assert.equal(await related.getByRole('link', { name: /Overall revision review/ }).count(), 1)
   assert.match(await related.getByRole('link', { name: /Outdated naming question/ }).innerText(), /Outdated · Open/)
