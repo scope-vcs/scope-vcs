@@ -36,6 +36,16 @@ ffmpeg -hide_banner -loglevel error -y \
   -c:a aac -b:a 128k -shortest -movflags +faststart \
   "$output_dir/fixture-1080p.mp4"
 ffmpeg -hide_banner -loglevel error -y \
+  -f lavfi -i "testsrc2=size=1920x1080:rate=30:duration=2" \
+  -f lavfi -i "sine=frequency=500:sample_rate=48000:duration=2" \
+  -f lavfi -i "anullsrc=channel_layout=mono:sample_rate=48000:duration=120" \
+  -map 0:v -map 1:a -map 2:a \
+  -c:v libx264 -threads 2 -preset ultrafast \
+  -b:v 30M -minrate 30M -maxrate 30M -bufsize 60M \
+  -x264-params 'nal-hrd=cbr:force-cfr=1' \
+  -c:a aac -b:a 64k -movflags +faststart \
+  "$output_dir/fixture-unmapped-audio.mp4"
+ffmpeg -hide_banner -loglevel error -y \
   -i "$output_dir/fixture.mp4" -c copy "$output_dir/fixture.mov"
 ffmpeg -hide_banner -loglevel error -y \
   -f lavfi -i "testsrc2=size=320x180:rate=12:duration=1" \

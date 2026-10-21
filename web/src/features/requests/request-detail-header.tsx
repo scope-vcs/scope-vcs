@@ -11,10 +11,12 @@ import { actorHandle } from './request-actor'
 
 export function RequestDetailHeader({
   actions,
+  backLink,
   request,
   viewName,
 }: {
   actions?: ReactNode
+  backLink: ReactNode
   request: RequestSummaryResponse
   viewName: string
 }) {
@@ -22,7 +24,8 @@ export function RequestDetailHeader({
   const queueItem = workspace?.selected ?? null
 
   return (
-    <header className="request-detail-header px-(--app-inset) pb-2 pt-6">
+    <header className="request-detail-header px-(--app-inset) pb-2 pt-3 min-[701px]:pt-6">
+      <nav aria-label="Request navigation" className="mb-3 min-[701px]:hidden">{backLink}</nav>
       <h1 className="min-w-0 break-words text-[28px] font-semibold leading-[1.15] tracking-[-0.025em] sm:text-[30px]">
         {request.title}
       </h1>

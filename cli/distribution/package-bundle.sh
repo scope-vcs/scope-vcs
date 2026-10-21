@@ -19,7 +19,7 @@ trap 'rm -rf "$workspace"' EXIT
 
 node_archive="$workspace/$node_archive_name"
 mkdir "$workspace/node"
-curl --fail --silent --show-error --location \
+curl --fail --silent --show-error --location --retry 4 --retry-all-errors --retry-delay 3 \
   "https://nodejs.org/dist/v$SCOPE_NODE_VERSION/$node_archive_name" \
   --output "$node_archive"
 if command -v sha256sum >/dev/null 2>&1; then

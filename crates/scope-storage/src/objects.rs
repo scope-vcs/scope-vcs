@@ -8,7 +8,7 @@ pub use source_blobs::{
 };
 
 use crate::{
-    EncryptionKey, GitStorageError, ObjectBackend,
+    EncryptionKey, GitStorageError, ObjectBackend, RemoteReader,
     envelope::{DecryptedFrame, EnvelopeReader, EnvelopeScope, seal},
 };
 use async_trait::async_trait;
@@ -16,7 +16,7 @@ use bytes::Bytes;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-const OBJECT_FRAME_BYTES: usize = 1024 * 1024;
+pub const OBJECT_FRAME_BYTES: usize = 1024 * 1024;
 
 #[async_trait]
 pub trait ObjectStore: Send + Sync {
@@ -56,6 +56,42 @@ impl EncryptedObjectStore {
     pub fn new(backend: Arc<dyn ObjectBackend>, key: EncryptionKey) -> Self {
         Self { backend, key }
     }
+
+    pub async fn open_frames(&self, key: &str) -> Result<ObjectFrames, ObjectStoreError> {
+        let mut source = self.backend.read(key).await?;
+        let envelope =
+            EnvelopeReader::read_header(&mut source, &self.key, EnvelopeScope::object(key))
+                .await
+                .map_err(|error| envelope_error(key, error))?;
+        Ok(ObjectFrames {
+            key: key.to_owned(),
+            source,
+            envelope,
+        })
+    }
+}
+
+pub struct ObjectFrames {
+    key: String,
+    source: RemoteReader,
+    envelope: EnvelopeReader,
+}
+
+impl ObjectFrames {
+    pub async fn next_frame(&mut self) -> Result<Option<Vec<u8>>, ObjectStoreError> {
+        match self
+            .envelope
+            .next(&mut self.source)
+            .await
+            .map_err(|error| envelope_error(&self.key, error))?
+        {
+            DecryptedFrame::Data(frame) => Ok(Some(frame)),
+            DecryptedFrame::Final => {
+                ensure_stream_ended(&mut self.source, &self.key).await?;
+                Ok(None)
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -77,17 +113,9 @@ impl ObjectStore for EncryptedObjectStore {
         max_bytes: u64,
         output: &mut (dyn AsyncWrite + Send + Unpin),
     ) -> Result<u64, ObjectStoreError> {
-        let mut source = self.backend.read(key).await?;
-        let mut envelope =
-            EnvelopeReader::read_header(&mut source, &self.key, EnvelopeScope::object(key))
-                .await
-                .map_err(|error| envelope_error(key, error))?;
+        let mut frames = self.open_frames(key).await?;
         let mut total = 0_u64;
-        while let DecryptedFrame::Data(frame) = envelope
-            .next(&mut source)
-            .await
-            .map_err(|error| envelope_error(key, error))?
-        {
+        while let Some(frame) = frames.next_frame().await? {
             total = total.saturating_add(frame.len() as u64);
             if total > max_bytes {
                 return Err(object_too_large(
@@ -99,7 +127,6 @@ impl ObjectStore for EncryptedObjectStore {
             }
             output.write_all(&frame).await.map_err(output_error)?;
         }
-        ensure_stream_ended(&mut source, key).await?;
         output.flush().await.map_err(output_error)?;
         Ok(total)
     }

@@ -9,11 +9,12 @@ mod runtime;
 mod scratch;
 
 use anyhow::Context as _;
-use codec::{CodecOutput, CodecPipeline};
+use codec::{CodecOutput, CodecPipeline, PlaybackConversion};
 use config::{CodecLimits, CodecPrograms, WorkerSettings};
 use health::WorkerHealth;
 use scope_domain::requests::attachments::{
     RequestAttachmentDerivativeKind as DerivativeKind, RequestAttachmentKind as MediaKind,
+    RequestAttachmentProcessingLane as ProcessingLane,
 };
 use scope_postgres::db::MetadataStore;
 use scratch::ScratchSpace;
@@ -63,7 +64,7 @@ async fn run_service() -> anyhow::Result<()> {
     tracing::info!(capabilities = %serde_json::to_string(&capabilities)?, "media codecs ready");
 
     let storage = scope_media_storage::MediaStorageSettings::from_env()?
-        .connect(2)
+        .connect(4)
         .await
         .context("configuring encrypted media storage")?;
     let health = WorkerHealth::new(settings.poll_interval);
@@ -73,23 +74,30 @@ async fn run_service() -> anyhow::Result<()> {
         return Ok(());
     };
 
-    let mut processing_task = tokio::spawn(jobs::run_processing_loop(
-        metadata.clone(),
-        storage.clone(),
-        pipeline,
-        scratch,
-        settings.clone(),
-        health.clone(),
-    ));
+    let processing_task = |lane| {
+        tokio::spawn(jobs::run_processing_loop(
+            lane,
+            metadata.clone(),
+            storage.clone(),
+            pipeline.clone(),
+            scratch.clone(),
+            settings.clone(),
+            health.clone(),
+        ))
+    };
+    let mut photo_task = processing_task(ProcessingLane::Photo);
+    let mut general_task = processing_task(ProcessingLane::General);
     let mut cleanup_task = tokio::spawn(cleanup::run(metadata, storage, settings, health));
 
     let result = tokio::select! {
         result = &mut health_task => flatten_task("health server", result),
-        result = &mut processing_task => flatten_task("processing loop", result),
+        result = &mut photo_task => flatten_task("photo processing loop", result),
+        result = &mut general_task => flatten_task("processing loop", result),
         result = &mut cleanup_task => flatten_task("cleanup loop", result),
     };
     health_task.abort();
-    processing_task.abort();
+    photo_task.abort();
+    general_task.abort();
     cleanup_task.abort();
     result
 }
@@ -138,19 +146,27 @@ async fn codec_info() -> anyhow::Result<()> {
 }
 
 async fn codec_self_test(fixture_dir: &Path) -> anyhow::Result<()> {
+    let remux = Some(PlaybackConversion::Remux);
+    let transcode = Some(PlaybackConversion::Transcode);
     let cases = [
-        ("fixture.png", MediaKind::Photo, false),
-        ("fixture.jpg", MediaKind::Photo, false),
-        ("fixture.webp", MediaKind::Photo, false),
-        ("fixture.gif", MediaKind::Photo, false),
-        ("fixture.heic", MediaKind::Photo, false),
-        ("fixture-oriented.jpg", MediaKind::Photo, true),
-        ("fixture.mp4", MediaKind::Video, false),
-        ("fixture-1080p.mp4", MediaKind::Video, false),
-        ("fixture.mov", MediaKind::Video, false),
-        ("fixture.webm", MediaKind::Video, false),
-        ("fixture-rotated.mov", MediaKind::Video, true),
-        ("fixture-hdr.mp4", MediaKind::Video, false),
+        ("fixture.png", MediaKind::Photo, false, None),
+        ("fixture.jpg", MediaKind::Photo, false, None),
+        ("fixture.webp", MediaKind::Photo, false, None),
+        ("fixture.gif", MediaKind::Photo, false, None),
+        ("fixture.heic", MediaKind::Photo, false, None),
+        ("fixture-oriented.jpg", MediaKind::Photo, true, None),
+        ("fixture.mp4", MediaKind::Video, false, remux),
+        ("fixture-1080p.mp4", MediaKind::Video, false, transcode),
+        (
+            "fixture-unmapped-audio.mp4",
+            MediaKind::Video,
+            false,
+            transcode,
+        ),
+        ("fixture.mov", MediaKind::Video, false, remux),
+        ("fixture.webm", MediaKind::Video, false, transcode),
+        ("fixture-rotated.mov", MediaKind::Video, true, transcode),
+        ("fixture-hdr.mp4", MediaKind::Video, false, transcode),
     ];
     let output_root = fixture_dir.join("processed");
     if output_root.exists() {
@@ -160,39 +176,62 @@ async fn codec_self_test(fixture_dir: &Path) -> anyhow::Result<()> {
     let pipeline = CodecPipeline::new(CodecPrograms::from_env(), CodecLimits::default());
     let capabilities = pipeline.verify_capabilities(&output_root).await?;
 
-    for &(name, kind, rotated) in &cases {
+    for &(name, kind, rotated, playback) in &cases {
         let source = fixture_dir.join(name);
         let work = output_root.join(name);
         std::fs::create_dir(&work)?;
         let output = pipeline
-            .process(&source, &work)
+            .process(&source, &work, kind)
             .await
             .map_err(anyhow::Error::new)
             .with_context(|| format!("processing synthetic fixture {name}"))?;
         assert_fixture(name, &output, kind, rotated)?;
+        if output.playback != playback {
+            anyhow::bail!("{name} used {:?} instead of {playback:?}", output.playback);
+        }
     }
     for name in ["corrupt.jpg", "spoof.jpg"] {
         let source = fixture_dir.join(name);
         let work = output_root.join(name);
         std::fs::create_dir(&work)?;
-        if pipeline.process(&source, &work).await.is_ok() {
+        if pipeline
+            .process(&source, &work, MediaKind::Photo)
+            .await
+            .is_ok()
+        {
             anyhow::bail!("invalid synthetic fixture {name} was accepted");
         }
     }
-    let oversized = fixture_dir.join("fixture-oversize.png");
-    let oversized_work = output_root.join("fixture-oversize.png");
-    std::fs::create_dir(&oversized_work)?;
-    match pipeline.process(&oversized, &oversized_work).await {
-        Err(error) if error.kind == codec::CodecFailureKind::MediaLimitExceeded => {}
-        Ok(_) => anyhow::bail!("oversized synthetic fixture was accepted"),
-        Err(error) => anyhow::bail!("oversized synthetic fixture failed incorrectly: {error}"),
+    let rejections = [
+        (
+            "fixture-oversize.png",
+            MediaKind::Photo,
+            codec::CodecFailureKind::MediaLimitExceeded,
+        ),
+        (
+            "fixture.mp4",
+            MediaKind::Photo,
+            codec::CodecFailureKind::DeclaredKindMismatch,
+        ),
+    ];
+    for (name, declared_kind, expected) in rejections {
+        let work = output_root.join(format!("rejected-{name}"));
+        std::fs::create_dir(&work)?;
+        match pipeline
+            .process(&fixture_dir.join(name), &work, declared_kind)
+            .await
+        {
+            Err(error) if error.kind == expected => {}
+            Ok(_) => anyhow::bail!("{name} declared as {declared_kind:?} was accepted"),
+            Err(error) => anyhow::bail!("{name} failed incorrectly: {error}"),
+        }
     }
     println!(
         "{}",
         serde_json::json!({
             "capabilities": capabilities,
             "fixtures": cases.len(),
-            "invalid_fixtures": 3,
+            "invalid_fixtures": 4,
             "output": output_root,
         })
     );

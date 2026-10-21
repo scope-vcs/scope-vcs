@@ -104,7 +104,7 @@ function state(head = 'head'): RequestStateResponse {
   return {
     detail: { request: { id: 'request', head_oid: head, mergeability } },
     checks: {
-      request_id: 'request', head_oid: head, state: 'started', message: null,
+      request_id: 'request', head_oid: head, state: 'started', outcome: 'pending', message: null,
       checks: [{ provider: 'native', run_id: 'run', run_state: 'running', workflow_name: 'checks', workflow_path: '/.scope/runs/checks.yml' }],
       can_approve: false, changes_github_workflows: false, private_request_on_public_github: false, github_push: null, mergeability,
     },

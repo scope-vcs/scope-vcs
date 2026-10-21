@@ -7,8 +7,8 @@ import { useHydrated } from '@/lib/use-hydrated'
 import { useUnixClock } from '@/lib/use-unix-clock'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
-import { Check, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-react'
-import type { CSSProperties } from 'react'
+import { Check, ChevronDown, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-react'
+import { useRef, useState, type CSSProperties } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
 import { RequestDiscussionActorAvatar } from './request-discussion-byline'
 import { RequestRailMarker } from './request-workspace-rail-marker'
@@ -19,11 +19,23 @@ import {
   requestAttentionHeat,
   requestAttentionLabel,
   requestHasNewActivity,
+  requestStackParentLabel,
 } from './request-workspace-model'
 import { actorHandle } from './request-actor'
+import {
+  foldStackedRequestRows,
+  stackRequestRows,
+  type RequestStackPlacement,
+  type VisibleStackedRequestRow,
+} from './request-workspace-stack'
+import './request-workspace-stack.css'
+
+const REQUEST_STACK_FOLD_MS = 100
+
+export type QueueRow = { item: RequestQueueItemResponse; section: RequestQueueSection }
 
 export type RequestWorkspaceListProps = {
-  items: { item: RequestQueueItemResponse; section: RequestQueueSection }[]
+  items: QueueRow[]
   emptyLabel: string
   loading: boolean
   skeleton: boolean
@@ -36,6 +48,8 @@ export type RequestWorkspaceListProps = {
   pendingId: string | null
   selectedId?: string
   rail?: boolean
+  foldedStacks: ReadonlySet<string>
+  onFoldStack: (requestId: string, folded: boolean) => void
 }
 
 export function RequestWorkspaceList({
@@ -47,12 +61,65 @@ export function RequestWorkspaceList({
   hasMore,
   onRetry,
   onLoadMore,
+  foldedStacks,
+  onFoldStack,
   ...rowProps
 }: RequestWorkspaceListProps) {
+  const [folding, setFolding] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map())
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set())
+  const foldTimers = useRef(new Map<string, number>())
   if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
-  const rows = items.map(({ item, section }, index) => (
-    <RequestWorkspaceRow item={item} key={item.request.id} section={section} stacked={adjacentStackRows(items[index - 1], { item, section }) || adjacentStackRows({ item, section }, items[index + 1])} {...rowProps} />
-  ))
+
+  function cancelFold(parent: string) {
+    window.clearTimeout(foldTimers.current.get(parent))
+    foldTimers.current.delete(parent)
+    setFolding((current) => {
+      const next = new Map(current)
+      next.delete(parent)
+      return next
+    })
+  }
+
+  function toggleStack({ row, descendants }: VisibleStackedRequestRow<QueueRow>) {
+    const parent = row.item.request.id
+    const ids = new Set(descendants.map(({ item }) => item.request.id))
+    if (folding.has(parent)) {
+      cancelFold(parent)
+      return
+    }
+    if (foldedStacks.has(parent)) {
+      setRevealed(ids)
+      onFoldStack(parent, false)
+      return
+    }
+    setFolding((current) => new Map(current).set(parent, ids))
+    foldTimers.current.set(parent, window.setTimeout(() => {
+      onFoldStack(parent, true)
+      cancelFold(parent)
+    }, REQUEST_STACK_FOLD_MS))
+  }
+
+  const leavingIds = new Set([...folding.values()].flatMap((ids) => [...ids]))
+  let revealOrder = 0
+  const rows = foldStackedRequestRows(stackRequestRows(items), foldedStacks).map((entry) => {
+    const { item, section } = entry.row
+    const id = item.request.id
+    return (
+      <RequestWorkspaceRow
+        folded={entry.folded.map(({ item }) => item)}
+        item={item}
+        key={id}
+        leaving={leavingIds.has(id)}
+        onToggleStack={() => toggleStack(entry)}
+        placement={entry.placement}
+        revealOrder={revealed.has(id) ? revealOrder++ : undefined}
+        section={section}
+        stackOpen={!foldedStacks.has(id) && !folding.has(id)}
+        stackSize={entry.descendants.length}
+        {...rowProps}
+      />
+    )
+  })
   return (
     <div className="request-workspace-rows">
       {rows}
@@ -114,11 +181,23 @@ function RequestWorkspaceRow({
   pendingId,
   selectedId,
   rail,
-  stacked,
+  placement,
+  folded,
+  leaving,
+  onToggleStack,
+  revealOrder,
+  stackOpen,
+  stackSize,
 }: Pick<RequestWorkspaceListProps, 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
-  stacked: boolean
+  placement: RequestStackPlacement
+  folded: RequestQueueItemResponse[]
+  leaving: boolean
+  onToggleStack: () => void
+  revealOrder: number | undefined
+  stackOpen: boolean
+  stackSize: number
 }) {
   const hydrated = useHydrated()
   const { request, attention, author } = item
@@ -128,6 +207,7 @@ function RequestWorkspaceRow({
   const hot = attention.group === 'needs_you'
   const unread = requestHasNewActivity(item)
   const mergeStep = rail ? REQUEST_MERGE_STEP_LABELS[item.next_step] : undefined
+  const stackParent = requestStackParentLabel(item)
   const canSetAside = section === 'active' && attention.can_set_aside
   const actions = [
     { action: 'settle', label: 'Settle', icon: Check, visible: canSetAside },
@@ -146,17 +226,26 @@ function RequestWorkspaceRow({
     { action: 'release', label: 'Release', icon: UserRoundMinus, visible: attention.can_release },
   ] as const
   const actionCount = actions.filter(({ visible }) => visible).length + Number(canSetAside)
+  const foldedReady = folded.filter(({ next_step }) => next_step === 'merge').length
   return (
     <article
-      className={cn('request-workspace-row', selected && 'request-workspace-row--selected', stacked && 'request-workspace-row--stacked')}
+      className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
       data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
+      data-holds-selection={folded.some(({ request }) => request.id === selectedId) || undefined}
+      data-leaving={leaving || undefined}
       data-rail={rail ? '' : undefined}
       data-request-id={request.id}
-      style={{ '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px` } as CSSProperties}
+      data-revealed={revealOrder !== undefined || undefined}
+      data-stack-folded={(stackSize > 0 && !stackOpen) || undefined}
+      style={
+        {
+          '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px`,
+          '--stack-depth': placement.depth,
+          '--reveal-order': revealOrder,
+        } as CSSProperties
+      }
     >
-      {request.stack_parent ? <div className="request-workspace-row-parent text-[10px] text-muted-foreground">
-        {request.stack_parent.kind === 'available' ? <><span>Based on </span><Link className="underline-offset-4 hover:underline" params={{ ...params, requestId: request.stack_parent.request.id }} search={(current) => ({ view: current.view })} to="/$owner/$repo/requests/$requestId">{request.stack_parent.request.title}</Link></> : 'Unavailable dependency'}
-      </div> : null}
+      <RequestStackLines placement={{ ...placement, children: placement.children && stackOpen }} />
       <Link
         aria-current={selected ? 'page' : undefined}
         className="request-workspace-row-link"
@@ -166,6 +255,12 @@ function RequestWorkspaceRow({
         to="/$owner/$repo/requests/$requestId"
       >
         <span className="request-workspace-row-avatar">
+          {stackSize > 0 && (
+            <>
+              <span aria-hidden="true" className="request-workspace-row-ghost" />
+              <span aria-hidden="true" className="request-workspace-row-ghost" />
+            </>
+          )}
           {rail ? (
             <RequestRailMarker handle={actorHandle(author)} nextStep={item.next_step} unread={unread} />
           ) : (
@@ -188,6 +283,7 @@ function RequestWorkspaceRow({
               className={cn(
                 'flex min-w-0 items-center gap-1.5 truncate',
                 hot ? 'text-foreground' : 'text-muted-foreground',
+                attention.reason === 'authored' && 'request-workspace-row-hover-detail',
               )}
             >
               <span
@@ -200,6 +296,14 @@ function RequestWorkspaceRow({
               <span className="truncate" suppressHydrationWarning>
                 {requestAttentionLabel(item, hydrated)}
                 {mergeStep && <span className="sr-only">, {mergeStep}</span>}
+                {stackParent && <span className="sr-only">, {stackParent}</span>}
+                {folded.length > 0 && (
+                  <span className="request-workspace-row-hover-detail text-muted-foreground">
+                    {' '}
+                    · {folded.length} stacked
+                    {foldedReady > 0 && <span className="text-success">, {foldedReady} ready</span>}
+                  </span>
+                )}
               </span>
             </span>
             <time
@@ -212,6 +316,18 @@ function RequestWorkspaceRow({
           </span>
         </span>
       </Link>
+      {stackSize > 0 && (
+        <button
+          aria-expanded={stackOpen}
+          aria-label={`${stackOpen ? 'Collapse' : 'Expand'} ${stackSize} stacked requests`}
+          className="request-workspace-stack-toggle"
+          onClick={onToggleStack}
+          title={stackOpen ? 'Collapse stack' : 'Expand stack'}
+          type="button"
+        >
+          <ChevronDown aria-hidden="true" />
+        </button>
+      )}
       {actionCount > 0 && (
         <fieldset className="request-workspace-row-actions absolute right-2 flex gap-[3px] border-0 p-0">
           <legend className="sr-only">Request {request.id} actions</legend>
@@ -231,7 +347,7 @@ function RequestWorkspaceRow({
                   disabled={pending}
                   key={action}
                   onClick={() => onAction(item, { action })}
-                  title={`${label} request ${request.id}`}
+                  title={label}
                   type="button"
                 >
                   <Icon aria-hidden="true" />
@@ -244,11 +360,15 @@ function RequestWorkspaceRow({
   )
 }
 
-function adjacentStackRows(left: RequestWorkspaceListProps['items'][number] | undefined, right: RequestWorkspaceListProps['items'][number] | undefined) {
-  if (!left || !right || left.section !== right.section) return false
-  const leftParent = left.item.request.stack_parent
-  const rightParent = right.item.request.stack_parent
-  const leftId = leftParent?.kind === 'available' ? leftParent.request.id : null
-  const rightId = rightParent?.kind === 'available' ? rightParent.request.id : null
-  return leftId === right.item.request.id || rightId === left.item.request.id || Boolean(leftId && leftId === rightId)
+function RequestStackLines({ placement: { depth, guides, elbow, children } }: { placement: RequestStackPlacement }) {
+  if (!depth && !children) return null
+  return (
+    <span aria-hidden="true" className="request-workspace-stack">
+      {guides.map(({ column, dashed }) => (
+        <span data-dashed={dashed || undefined} data-line="pass" key={column} style={{ '--stack-column': column } as CSSProperties} />
+      ))}
+      {elbow && <span data-line={elbow} style={{ '--stack-column': elbow === 'chain' ? depth : depth - 1 } as CSSProperties} />}
+      {children && <span data-line="down" style={{ '--stack-column': depth } as CSSProperties} />}
+    </span>
+  )
 }
