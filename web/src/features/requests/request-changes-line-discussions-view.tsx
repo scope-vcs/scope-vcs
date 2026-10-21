@@ -177,16 +177,19 @@ function LineDiscussionLink({
   discussion: RequestDiscussion
   params: RequestParams
 }) {
+  const summary = compactDiscussionSummary(discussion.body_markdown)
   return (
     <Link
-      className="flex min-w-0 items-center gap-2 text-foreground underline-offset-4 hover:underline"
+      className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-foreground underline-offset-4 hover:underline"
       hash={`discussion-${discussion.id}`}
       params={{ owner: params.owner, repo: params.repo, requestId: params.request_id }}
       search={{ discussion: discussion.id }}
       to="/$owner/$repo/requests/$requestId"
     >
-      <MessageSquare aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="truncate">{compactDiscussionSummary(discussion.body_markdown)}</span>
+      <span className="flex min-w-32 flex-1 items-center gap-2">
+        <MessageSquare aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate" title={summary}>{summary}</span>
+      </span>
       <span className="ml-auto flex shrink-0 gap-2 text-muted-foreground">
         {children ? <span>{children}</span> : null}
         <span>{discussion.status === 'Resolved' ? 'Resolved' : 'Open'}</span>

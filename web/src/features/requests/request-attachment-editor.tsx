@@ -381,7 +381,7 @@ function EditorActions({
       >
         <Paperclip />
       </Button>
-      <p aria-live="polite" className="min-w-0 flex-1 text-xs text-muted-foreground">{status}</p>
+      <p aria-live="polite" className={cn('min-w-0 flex-1 text-xs text-muted-foreground', status && 'min-w-40')}>{status}</p>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         {onDiscardDraft ? (
           <Button
