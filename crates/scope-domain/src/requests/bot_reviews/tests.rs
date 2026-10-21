@@ -174,9 +174,7 @@ fn one_malformed_review_object_invalidates_the_whole_state_comment() {
         format!(
             "{{\"commit_sha\":\"{HEAD}\",\"has_any_findings\":false,\"has_unresolved_findings\":false}}"
         ),
-        format!(
-            "{{\"commit_sha\":7,\"has_any_findings\":false,\"has_unresolved_findings\":false,\"status\":\"completed\"}}"
-        ),
+        "{\"commit_sha\":7,\"has_any_findings\":false,\"has_unresolved_findings\":false,\"status\":\"completed\"}".to_string(),
         "null".to_string(),
         "\"completed\"".to_string(),
     ] {
