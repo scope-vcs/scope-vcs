@@ -25,14 +25,14 @@ changes. GET `/e/config` returns only public SDK configuration or `null`, with
 `Cache-Control: no-store`. This policy runs at request time, so the same built
 artifact can be promoted across environments.
 
-Browser initialization uses `api_host: '/e'` and
-`ui_host: 'https://us.posthog.com'`. The pinned SDK submits to POST `/e/e/`, which
-forwards to `https://us.i.posthog.com/e/`. The proxy has a fixed destination and
-bounded body size and timeouts. It removes application cookies, authorization,
-raw referrer and client-IP forwarding headers, preserves the capture encoding
-and SDK query, and does not cache submissions or log their bodies. Other paths
-under `/e` are rejected. New SDK endpoints require an explicit routing change and
-a browser test; replay and remote feature loading remain disabled.
+The browser sends one JSON event per POST `/e/e/`, which forwards to
+`https://us.i.posthog.com/e/`. The proxy has a fixed destination and bounded body
+size and timeouts. It reapplies the browser event allowlist, pins the project
+token and deployment context, removes application cookies, authorization and raw
+referrers, and does not cache submissions or log their bodies. Compressed
+requests, batches, unknown events and other paths under `/e` are rejected.
+Client query parameters cannot override ingestion behavior. Replay, broad
+autocapture and remote feature loading remain disabled.
 
 The API, worker and CLI download service accept `POSTHOG_HOST`, defaulting to PostHog US ingestion.
 They share the web project's token and region in production. They do not use the
@@ -68,7 +68,9 @@ include `environment`, `source`, and the available `release` for diagnosis.
 - Exclude names, email addresses, repository names, source code, file paths,
   request titles, discussion content, command arguments and raw error messages.
   Browser events pass through an allowlist that rejects unknown event types and
-  fields. GeoIP enrichment, replay, broad autocapture and person-property
+  fields. Browser events leave the client with GeoIP disabled. The web proxy
+  enables enrichment only after explicit server activation and a valid Railway
+  client address. Backend GeoIP, replay, broad autocapture and person-property
   mutations remain disabled.
 - Failures use stable operation and reason classifications. A transport failure
   does not invent a successful domain outcome. Idempotent/no-op transitions do
@@ -90,12 +92,76 @@ The event constructors and browser privacy module are the authoritative schema.
 The shared analytics crate owns backend context and transport; use cases own
 when an outcome has committed. No transactional analytics outbox is introduced.
 
+## Approximate location analytics
+
+Location collection defaults off. Set `SCOPE_ANALYTICS_GEOIP=enabled` on the web
+service only after the release prerequisites below are complete. The flag is
+server-only and does not change the browser configuration or storage contract.
+The proxy trusts only Railway's `X-Real-IP` when `RAILWAY_ENVIRONMENT_ID` is set.
+It validates a single IPv4 or IPv6 address and forwards it as `$ip` and a fresh
+`X-Forwarded-For`. Incoming forwarding chains, body IPs and location properties
+are discarded. Missing or invalid addresses, other hosts, an unset flag, GPC and
+DNT leave GeoIP disabled, so PostHog cannot substitute the web server's location.
+The proxy uses the canonical public HTTPS origin on Railway.
+
+`dev/analytics/geoip.hog` replaces the project's default GeoIP transformation.
+It stores only country name/code, the first region name/code and city name on
+events. It does not set person properties, retain raw IPs, coordinates, postal
+codes or other geographic fields, or print lookup inputs/results to logs.
+Enrichment is limited to explicitly enabled browser events; API, worker and CLI
+outcomes remain unenriched. Locations describe the connection and can be wrong
+for VPNs, mobile networks and shared gateways. Unknown locations remain visible
+in reports. Anonymous counts are pageviews, not distinct people.
+
+Preview the project configuration without making changes:
+
+```sh
+node --env-file=/absolute/path/to/private-posthog.env dev/analytics/configure-geoip.mjs --preview
+```
+
+Apply using the same private environment-file convention as report syncing:
+
+```sh
+node --env-file=/absolute/path/to/private-posthog.env dev/analytics/configure-geoip.mjs --apply
+```
+
+The operator key needs project read/write and Hog function read/write scopes.
+The command requires exactly one default GeoIP transformation, enables project
+IP discard before updating that owner, and verifies the live configuration.
+It never enables the application's collection switch. Use a separate test
+project and token for ingestion verification. The Scope test project is
+`678934` at `https://us.posthog.com/project/678934`.
+
+Before production activation:
+
+1. Verify `anonymize_ips=true`, the exact checked-in transformation is live and
+   enabled, and there are no later transformations adding geographic fields.
+2. Test a synthetic browser event through the proxy and inspect the ingested
+   event in the test project. Check country/region/city, absence of `$ip`,
+   coordinates, postal codes and person-property updates, disabled events,
+   forged forwarding headers, GPC and DNT.
+3. Verify Railway overwrites a forged `X-Real-IP` on the actual public web
+   service before trusting that ingress. Do not add a fallback to an arbitrary
+   incoming `X-Forwarded-For` chain.
+4. Assess and record the lawful basis for the expanded collection, including
+   whether applicable analytics rules require consent. Publish the planned
+   effective date and notify account holders in advance as promised in the
+   privacy policy. Publish the active wording when collection starts.
+5. Enable `SCOPE_ANALYTICS_GEOIP=enabled` on the web service through the normal
+   release process. Inspect a known journey after release, then sync reports.
+
+Rollback unsets the web switch. Keep IP discard enabled. Merges do not deploy
+or activate collection; future release verification must check these conditions.
+
 ## Reports
 
-`dev/analytics/reports.mjs` defines six reports on one **Scope product outcomes**
+`dev/analytics/reports.mjs` defines seven reports on one **Scope product outcomes**
 dashboard. The production dashboard is [Scope product outcomes](https://us.posthog.com/project/570304/dashboard/2096501).
 
 The reports cover:
+
+- Browser pageviews over 30 days by approximate country, region and city,
+  including unknown locations. This counts pageviews rather than unique people.
 
 1. Account creation to CLI authentication to first push, in order within seven
    days. The cohort includes accounts created 7 to 37 days ago so each account
