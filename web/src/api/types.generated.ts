@@ -688,6 +688,12 @@ github_pull_request: RequestGitHubPullRequestResponse | null,
  */
 review_bots: Array<RequestReviewBotResponse>,
 /**
+ * Whether required review bots hold the merge. They do only while the
+ * repository opens pull requests for review bots, since a bot can only
+ * review a request through that pull request.
+ */
+review_bots_enforced: boolean,
+/**
  * Whether approving would run workflow files this request changes. Only
  * worked out for a viewer who can approve GitHub checks.
  */

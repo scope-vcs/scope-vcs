@@ -117,6 +117,11 @@ export function RepoReviewBots({
       {bots.length ? (
         <div>
           <p className="leading-5 text-muted-foreground" id="github-review-bots-required">Required to merge</p>
+          {github.connection?.open_review_bot_pull_requests ? null : (
+            <p className="leading-5 text-muted-foreground">
+              Required bots hold merges only while Open pull requests for review bots is on.
+            </p>
+          )}
           <ul aria-labelledby="github-review-bots-required" className="divide-y divide-border">
             {bots.map((bot) => (
               <li key={bot.login}>

@@ -405,3 +405,24 @@ async fn the_newest_reactions_are_read_past_a_thousand_older_ones() {
     reconcile_now(&request).await;
     assert_eq!(bot_states(&request).await.0, states("not_started", "clear"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn required_bots_hold_the_merge_only_while_review_bot_pull_requests_are_on() {
+    let request = gated_request("review-bot-carriers-off").await;
+    let checks = request.checks().await;
+    assert_eq!(checks["review_bots_enforced"], true);
+    assert_eq!(checks["mergeability"]["status"], "ReviewsPending");
+
+    request
+        .state
+        .metadata
+        .repositories()
+        .set_github_review_bot_pull_requests(TEST_REPO_ID, &test_owner_id(), false, unix_now())
+        .await
+        .unwrap();
+    let checks = request.checks().await;
+    assert_eq!(checks["review_bots_enforced"], false);
+    assert_eq!(checks["review_bots"][0]["required"], true);
+    assert_eq!(checks["mergeability"]["status"], "Ready");
+    assert_eq!(listed_status(&request).await, "Ready");
+}

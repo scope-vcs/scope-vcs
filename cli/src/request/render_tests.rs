@@ -209,7 +209,7 @@ fn checks_awaiting_approval_name_each_workflow_and_how_to_start_them() {
         "request_id": "req_one", "head_oid": oid('b'), "state": "awaiting-approval",
         "outcome": "awaiting-approval",
         "message": null, "can_approve": true, "github_push": null,
-        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
         "checks": [
             {"provider": "native", "workflow_path": "/.scope/runs/checks.yml",
                 "workflow_name": "checks\u{001b}[31m", "run_id": null, "run_state": null},
@@ -255,7 +255,7 @@ fn started_checks_report_each_provider_state_and_where_its_logs_are() {
     let checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "started", "outcome": "failed",
         "message": null, "can_approve": false, "github_push": null,
-        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
         "checks": [
             {"provider": "native", "workflow_path": "/.scope/runs/checks.yml",
                 "workflow_name": "checks", "run_id": "run_a", "run_state": "succeeded"},
@@ -318,7 +318,7 @@ fn started_checks_that_all_succeeded_report_ci_passed() {
     let checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "started", "outcome": "clear",
         "message": null, "can_approve": false, "changes_github_workflows": false,
-        "private_request_on_public_github": false, "review_bots": [],
+        "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
         "github_push": {"state": "sent", "branch": "scope/requests/req_one", "error": null},
         "checks": [{"provider": "github", "name": "Required PR checks", "status": "completed",
             "conclusion": "success", "details_url": null}],
@@ -348,7 +348,7 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
             "request_id": "req_one", "head_oid": oid('b'), "state": state,
             "outcome": if state == "started" { "pending" } else { state },
             "message": null, "can_approve": can_approve, "github_push": push,
-            "changes_github_workflows": can_approve, "private_request_on_public_github": false, "review_bots": [],
+            "changes_github_workflows": can_approve, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
             "checks": [{"provider": "github", "name": "ci / test", "status": null,
                 "conclusion": null, "details_url": null}],
             "mergeability": {
@@ -434,7 +434,7 @@ fn a_carrier_pull_request_is_named_with_its_link_and_state() {
     let base = json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "no-checks",
         "outcome": "clear", "message": null, "can_approve": false, "github_push": null,
-        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false,
         "checks": [],
         "mergeability": {
             "status": "ChecksPending", "current_main_oid": oid('a'),
@@ -491,6 +491,7 @@ fn review_bots_show_how_far_each_got_and_why_they_hold_the_merge() {
             { "login": "greptile-apps[bot]", "required": false, "state": "clear" },
             { "login": "octo\u{001b}[31m[bot]", "required": false, "state": "commented" },
         ],
+        "review_bots_enforced": true,
         "checks": [],
         "mergeability": {
             "status": "ReviewsPending", "current_main_oid": oid('a'), "request_head_oid": oid('b'),
@@ -509,11 +510,38 @@ fn review_bots_show_how_far_each_got_and_why_they_hold_the_merge() {
         rendered.contains("Mergeability: a required review bot has not finished the latest commit"),
         "{rendered}"
     );
+    let mut codex_only = checks.clone();
+    codex_only.review_bots.truncate(1);
     assert_eq!(
-        review_bots_detail_line(&checks.review_bots[..1]),
-        Some("  review bots: chatgpt-codex-connector[bot] (required) is reviewing".to_string())
+        review_bots_detail_lines(&codex_only),
+        ["  review bots: chatgpt-codex-connector[bot] (required) is reviewing"]
     );
-    assert_eq!(review_bots_detail_line(&[]), None);
+    codex_only.review_bots.clear();
+    assert!(review_bots_detail_lines(&codex_only).is_empty());
+}
+
+#[test]
+fn required_review_bots_say_when_they_do_not_hold_the_merge() {
+    let mut checks: RequestChecksResponse = serde_json::from_value(json!({
+        "request_id": "req_one", "head_oid": oid('b'), "state": "no-checks",
+        "outcome": "clear", "message": null, "can_approve": false, "github_push": null,
+        "changes_github_workflows": false, "private_request_on_public_github": false,
+        "review_bots": [
+            { "login": "chatgpt-codex-connector[bot]", "required": true, "state": "not_started" },
+        ],
+        "review_bots_enforced": false,
+        "checks": [],
+        "mergeability": {
+            "status": "Ready", "current_main_oid": oid('a'), "request_head_oid": oid('b'),
+            "reason": null
+        }
+    }))
+    .unwrap();
+    let note = "  Required review bots do not hold the merge while the repository opens no pull requests for review bots.";
+    assert_eq!(review_bots_detail_lines(&checks)[1], note);
+    assert!(request_checks_lines(&checks).join("\n").contains(note));
+    checks.review_bots[0].required = false;
+    assert_eq!(review_bots_detail_lines(&checks).len(), 1);
 }
 
 #[test]
@@ -521,7 +549,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     let no_checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "no-checks",
         "outcome": "clear", "message": null, "can_approve": false, "github_push": null,
-        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "checks": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false, "checks": [],
         "mergeability": {
             "status": "Ready", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'), "reason": null
@@ -531,7 +559,7 @@ fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     let broken: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "configuration-error",
         "outcome": "configuration-error", "message": "checks.yml: unknown key 'runs-on'", "can_approve": false, "github_push": null,
-        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "checks": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false, "checks": [],
         "mergeability": {
             "status": "ChecksConfigurationError", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'),
@@ -559,7 +587,7 @@ fn an_unevaluated_head_reports_ci_as_not_evaluated() {
     let unevaluated: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": null,
         "outcome": "not-evaluated", "message": null, "can_approve": false, "github_push": null,
-        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "checks": [],
+        "changes_github_workflows": false, "private_request_on_public_github": false, "review_bots": [], "review_bots_enforced": false, "checks": [],
         "mergeability": {
             "status": "ChecksNotEvaluated", "current_main_oid": oid('a'),
             "request_head_oid": oid('b'),

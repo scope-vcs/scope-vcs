@@ -1,6 +1,7 @@
 use super::{
     RequestStore,
     entities::{decode_enum, encode_enum},
+    github_connections::repository_github_connection,
     github_review_bots::review_bots,
     integer_columns::{i64_to_u64, u64_to_i64},
 };
@@ -189,6 +190,9 @@ pub(super) async fn request_bot_reviews<C: ConnectionTrait>(
     if bots.is_empty() || request_ids.is_empty() {
         return Ok(HashMap::new());
     }
+    let pull_requests_open = repository_github_connection(conn, repo_id)
+        .await?
+        .is_some_and(|connection| connection.review_bots.open_pull_requests);
     let mut statuses = request_statuses(conn, request_ids).await?;
     let mut open_findings = HashMap::<String, Vec<String>>::new();
     for row in conn
@@ -220,6 +224,7 @@ pub(super) async fn request_bot_reviews<C: ConnectionTrait>(
                     bots: bots.clone(),
                     statuses: statuses.remove(request_id).unwrap_or_default(),
                     open_finding_authors: open_findings.remove(request_id).unwrap_or_default(),
+                    pull_requests_open,
                 },
             )
         })

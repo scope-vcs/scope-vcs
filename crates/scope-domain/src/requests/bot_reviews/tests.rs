@@ -370,6 +370,7 @@ fn reviews(
             })
             .collect(),
         open_finding_authors: Vec::new(),
+        pull_requests_open: true,
     }
 }
 
@@ -425,6 +426,31 @@ fn required_bots_gate_full_view_requests_on_the_current_head_and_open_findings()
         request_reviews_outcome(&agent(), HEAD, &views, &findings(GREPTILE)),
         RequestReviewsOutcome::Clear
     );
+}
+
+#[test]
+fn required_bots_hold_nothing_while_the_repository_opens_no_pull_requests_for_them() {
+    let views = views_with_agent();
+    let closed = RequestBotReviews {
+        pull_requests_open: false,
+        open_finding_authors: vec![CODEX.to_string()],
+        ..reviews(vec![bot(CODEX, true)], &[])
+    };
+    assert!(!closed.enforced());
+    assert_eq!(
+        request_reviews_outcome(views.full(), HEAD, &views, &closed),
+        RequestReviewsOutcome::Clear
+    );
+    let open = RequestBotReviews {
+        pull_requests_open: true,
+        ..closed
+    };
+    assert!(open.enforced());
+    assert_eq!(
+        request_reviews_outcome(views.full(), HEAD, &views, &open),
+        RequestReviewsOutcome::FindingsOpen
+    );
+    assert!(!reviews(vec![bot(CODEX, false)], &[]).enforced());
 }
 
 #[test]

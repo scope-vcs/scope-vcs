@@ -205,9 +205,14 @@ pub struct RequestBotReviews {
     pub bots: Vec<GitHubReviewBot>,
     pub statuses: Vec<GitHubReviewBotStatus>,
     pub open_finding_authors: Vec<String>,
+    pub pull_requests_open: bool,
 }
 
 impl RequestBotReviews {
+    pub fn enforced(&self) -> bool {
+        self.pull_requests_open && self.bots.iter().any(|bot| bot.required)
+    }
+
     pub fn state_of(&self, bot: &GitHubReviewBot, head_oid: &str) -> GitHubReviewBotState {
         self.statuses
             .iter()
@@ -228,8 +233,8 @@ pub fn request_reviews_outcome(
     views: &Views,
     reviews: &RequestBotReviews,
 ) -> RequestReviewsOutcome {
-    let mut required = reviews.bots.iter().filter(|bot| bot.required).peekable();
-    if view != views.full() || required.peek().is_none() {
+    let mut required = reviews.bots.iter().filter(|bot| bot.required);
+    if view != views.full() || !reviews.enforced() {
         RequestReviewsOutcome::Clear
     } else if reviews.has_open_findings() {
         RequestReviewsOutcome::FindingsOpen

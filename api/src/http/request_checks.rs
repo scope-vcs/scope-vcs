@@ -130,6 +130,7 @@ pub(crate) fn snapshot_response(
         .and_then(GitHubPullRequest::status)
         .map(|status| github_pull_request_response(status, &access));
     let review_bots = review_bot_responses(snapshot);
+    let review_bots_enforced = snapshot.bot_reviews.enforced();
     let Some(evaluation) = evaluation else {
         return Ok(RequestChecksResponse {
             request_id: request.id.clone(),
@@ -142,6 +143,7 @@ pub(crate) fn snapshot_response(
             github_push: None,
             github_pull_request,
             review_bots,
+            review_bots_enforced,
             changes_github_workflows: false,
             private_request_on_public_github,
             mergeability,
@@ -177,6 +179,7 @@ pub(crate) fn snapshot_response(
         github_push,
         github_pull_request,
         review_bots,
+        review_bots_enforced,
         changes_github_workflows,
         private_request_on_public_github,
         mergeability,

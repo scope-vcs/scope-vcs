@@ -19,7 +19,7 @@ const running: RequestChecksResponse = {
   changes_github_workflows: false, private_request_on_public_github: true,
   github_push: { state: 'sent', branch: 'scope/requests/req_1', error: null },
   github_pull_request: null,
-  review_bots: [],
+  review_bots: [], review_bots_enforced: true,
   checks: [
     github('Check operations', 'in_progress', null, ciRun('31')),
     github('Check repository policy', 'completed', 'success', ciRun('32')),

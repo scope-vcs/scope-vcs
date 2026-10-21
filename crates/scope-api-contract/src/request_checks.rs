@@ -173,6 +173,10 @@ pub struct RequestChecksResponse {
     /// The repository's review bots, in their listed order, for full-view
     /// requests; empty when none is listed or the request is narrower.
     pub review_bots: Vec<RequestReviewBotResponse>,
+    /// Whether required review bots hold the merge. They do only while the
+    /// repository opens pull requests for review bots, since a bot can only
+    /// review a request through that pull request.
+    pub review_bots_enforced: bool,
     /// Whether approving would run workflow files this request changes. Only
     /// worked out for a viewer who can approve GitHub checks.
     pub changes_github_workflows: bool,

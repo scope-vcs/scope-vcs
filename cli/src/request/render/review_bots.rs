@@ -1,24 +1,38 @@
 use crate::{
-    api::{RequestReviewBotResponse, RequestReviewBotState},
+    api::{RequestChecksResponse, RequestReviewBotResponse, RequestReviewBotState},
     display::terminal_text,
 };
 
-pub(in crate::request) fn detail_line(bots: &[RequestReviewBotResponse]) -> Option<String> {
-    (!bots.is_empty()).then(|| {
-        format!(
-            "  review bots: {}",
-            bots.iter().map(bot_label).collect::<Vec<_>>().join(", ")
-        )
-    })
+const UNENFORCED: &str = "Required review bots do not hold the merge while the repository \
+    opens no pull requests for review bots.";
+
+pub(in crate::request) fn detail_lines(checks: &RequestChecksResponse) -> Vec<String> {
+    let bots = &checks.review_bots;
+    if bots.is_empty() {
+        return Vec::new();
+    }
+    std::iter::once(format!(
+        "  review bots: {}",
+        bots.iter().map(bot_label).collect::<Vec<_>>().join(", ")
+    ))
+    .chain(unenforced(checks).map(|note| format!("  {note}")))
+    .collect()
 }
 
-pub(in crate::request) fn checks_lines(bots: &[RequestReviewBotResponse]) -> Vec<String> {
+pub(in crate::request) fn checks_lines(checks: &RequestChecksResponse) -> Vec<String> {
+    let bots = &checks.review_bots;
     if bots.is_empty() {
         return Vec::new();
     }
     std::iter::once("Review bots:".to_string())
         .chain(bots.iter().map(|bot| format!("  {}", bot_label(bot))))
+        .chain(unenforced(checks).map(|note| format!("  {note}")))
         .collect()
+}
+
+fn unenforced(checks: &RequestChecksResponse) -> Option<&'static str> {
+    (!checks.review_bots_enforced && checks.review_bots.iter().any(|bot| bot.required))
+        .then_some(UNENFORCED)
 }
 
 fn bot_label(bot: &RequestReviewBotResponse) -> String {

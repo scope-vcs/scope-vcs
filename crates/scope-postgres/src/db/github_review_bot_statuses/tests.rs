@@ -192,6 +192,18 @@ async fn bot_reviews_carry_the_required_flag_and_the_bot_discussions_left_open()
         ]
     );
     assert!(reviews.open_finding_authors.is_empty());
+    assert!(reviews.pull_requests_open);
+    store
+        .repositories()
+        .set_github_review_bot_pull_requests(REPO, OWNER, false, 12)
+        .await
+        .unwrap();
+    assert!(!bot_reviews(&store).await.pull_requests_open);
+    store
+        .repositories()
+        .set_github_review_bot_pull_requests(REPO, OWNER, true, 12)
+        .await
+        .unwrap();
 
     let requests = store.requests();
     let imported = requests

@@ -23,7 +23,7 @@ pub(super) use auto_merge::{
     receipt_lines as auto_merge_receipt_lines, status_lines as auto_merge_status_lines,
 };
 pub(super) use navigation::parent_label;
-pub(super) use review_bots::detail_line as review_bots_detail_line;
+pub(super) use review_bots::detail_lines as review_bots_detail_lines;
 
 pub(super) fn repo_access_lines(repo: &RepoSummaryResponse) -> Vec<String> {
     vec![
@@ -419,7 +419,7 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     if let Some(pull_request) = &checks.github_pull_request {
         lines.push(github_pull_request_line(pull_request));
     }
-    lines.extend(review_bots::checks_lines(&checks.review_bots));
+    lines.extend(review_bots::checks_lines(checks));
     if checks.private_request_on_public_github {
         lines.push(
             "GitHub: CI runs in a public GitHub repository, so this request is public there."

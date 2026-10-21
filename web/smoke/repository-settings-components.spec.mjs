@@ -167,6 +167,8 @@ test('repository components retain drafts, previews and pending actions across r
   }
   await page.setViewportSize({ width: 1280, height: 900 })
   const requiredBots = checks.getByRole('list', { name: 'Required to merge', exact: true })
+  const requiredOnlyWithPullRequests = checks.getByText('Required bots hold merges only while Open pull requests for review bots is on.', { exact: true })
+  await requiredOnlyWithPullRequests.waitFor()
   const greptileRequired = requiredBots.getByRole('checkbox', { name: 'greptile-apps[bot]', exact: false })
   assert.equal(await greptileRequired.isChecked(), false)
   await greptileRequired.click()
@@ -256,6 +258,7 @@ test('repository components retain drafts, previews and pending actions across r
   await page.evaluate(() => window.finishAction('review-bot-pull-requests'))
   await page.waitForFunction(() => window.fixtureGitHub().connection.open_review_bot_pull_requests === true)
   assert.equal(await reviewBots.isChecked(), true)
+  assert.equal(await requiredOnlyWithPullRequests.count(), 0)
   assert.equal(await reviewBots.isDisabled(), false)
   const reviewComment = checks.getByRole('textbox', { name: 'Review request comment' })
   const saveComment = checks.getByRole('button', { name: 'Save comment', exact: true })
