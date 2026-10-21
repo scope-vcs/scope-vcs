@@ -50,7 +50,11 @@ pub(crate) async fn connect(store: &MetadataStore, open_pull_requests: bool) {
     connect_to(store, 42, open_pull_requests).await;
 }
 
-async fn connect_to(store: &MetadataStore, github_repository_id: u64, open_pull_requests: bool) {
+pub(crate) async fn connect_to(
+    store: &MetadataStore,
+    github_repository_id: u64,
+    open_pull_requests: bool,
+) {
     let repositories = store.repositories();
     repositories
         .connect_github_repository(

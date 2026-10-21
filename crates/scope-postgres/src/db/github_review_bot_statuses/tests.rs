@@ -3,7 +3,7 @@ use crate::db::{
     DiscussionTransition, GitHubImportedComment, GitHubJobOutcome, ImportGitHubReviewCommand,
     MetadataStore, TransitionRequestDiscussionCommand,
     github_pull_requests::tests::{
-        OWNER, REPO, claim, connect, oid, push_succeeds, submitted_full_view_request,
+        OWNER, REPO, claim, connect, connect_to, oid, push_succeeds, submitted_full_view_request,
     },
     requests::tests::postgres_store,
 };
@@ -130,13 +130,13 @@ async fn open_carriers_of_repositories_with_bots_are_reconciled_until_the_next_d
     let working = [status("greptile-apps[bot]", GitHubReviewBotState::Working)];
     assert!(
         requests
-            .finish_github_review_bot_reconcile("req_1", Some(&working), 300, 21)
+            .finish_github_review_bot_reconcile(&claimed[0], Some(&working), 300, 21)
             .await
             .unwrap()
     );
     assert!(
         !requests
-            .finish_github_review_bot_reconcile("req_1", Some(&working), 300, 22)
+            .finish_github_review_bot_reconcile(&claimed[0], Some(&working), 300, 22)
             .await
             .unwrap()
     );
@@ -158,7 +158,7 @@ async fn open_carriers_of_repositories_with_bots_are_reconciled_until_the_next_d
     assert_eq!(due(&store, 23).await, ["req_1"]);
     assert!(
         !requests
-            .finish_github_review_bot_reconcile("req_1", None, 500, 24)
+            .finish_github_review_bot_reconcile(&claimed[0], None, 500, 24)
             .await
             .unwrap()
     );
@@ -289,4 +289,36 @@ async fn a_head_counts_as_delivered_only_once_its_github_push_succeeded() {
             .unwrap(),
         None
     );
+}
+
+#[tokio::test]
+async fn statuses_belong_to_the_carrier_pull_request_they_were_read_from() {
+    let store = postgres_store();
+    connect(&store, true).await;
+    submitted_full_view_request(&store, "req_1").await;
+    open_carrier(&store, "req_1", 5).await;
+    list_bots(&store, &[("greptile-apps[bot]", true)]).await;
+    let reconcile = store
+        .requests()
+        .claim_due_github_review_bot_reconciles(20, 120, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    let clear = [status("greptile-apps[bot]", GitHubReviewBotState::Clear)];
+    store
+        .requests()
+        .finish_github_review_bot_reconcile(&reconcile, Some(&clear), 300, 21)
+        .await
+        .unwrap();
+    assert_eq!(bot_reviews(&store).await.statuses, clear);
+
+    store
+        .repositories()
+        .disconnect_github_repository(REPO, OWNER)
+        .await
+        .unwrap();
+    connect_to(&store, 43, true).await;
+    list_bots(&store, &[("greptile-apps[bot]", true)]).await;
+    push_succeeds(&store, "req_1", 'a', 22).await;
+    assert!(bot_reviews(&store).await.statuses.is_empty());
 }

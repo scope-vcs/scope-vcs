@@ -47,7 +47,7 @@ pub(crate) async fn reconcile_due_review_bot_statuses(
         };
         if requests
             .finish_github_review_bot_reconcile(
-                &reconcile.request_id,
+                &reconcile,
                 statuses.as_deref(),
                 next_at_unix,
                 unix_now()?,

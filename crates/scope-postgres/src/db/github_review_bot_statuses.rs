@@ -85,11 +85,12 @@ impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_review_bot_reconcile"))]
     pub async fn finish_github_review_bot_reconcile(
         &self,
-        request_id: &str,
+        reconcile: &GitHubReviewBotReconcile,
         statuses: Option<&[GitHubReviewBotStatus]>,
         next_at_unix: u64,
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
+        let request_id = reconcile.request_id.as_str();
         let tx = self.db.begin().await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -125,14 +126,17 @@ impl RequestStore {
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_github_review_bot_statuses
-                    (request_id, login, head_oid, state, updated_at_unix)
-                 VALUES ($1, $2, $3, $4, $5)",
+                    (request_id, login, head_oid, state, updated_at_unix,
+                     github_repository_id, pull_number)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)",
                 [
                     request_id.into(),
                     status.login.clone().into(),
                     status.head_oid.clone().into(),
                     encode_enum(status.state)?.into(),
                     u64_to_i64(now_unix, "review bot status time")?.into(),
+                    u64_to_i64(reconcile.github_repository_id, "GitHub repository id")?.into(),
+                    u64_to_i64(reconcile.number, "GitHub pull request number")?.into(),
                 ],
             ))
             .await?;
@@ -256,8 +260,14 @@ async fn request_statuses<C: ConnectionTrait>(
     for row in conn
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "SELECT request_id, login, head_oid, state FROM scope_github_review_bot_statuses
-              WHERE request_id = ANY($1) ORDER BY request_id, login",
+            "SELECT status.request_id, status.login, status.head_oid, status.state
+               FROM scope_github_review_bot_statuses status
+               JOIN scope_github_pull_requests pull_request
+                 ON pull_request.request_id = status.request_id
+                AND pull_request.github_repository_id = status.github_repository_id
+                AND pull_request.number = status.pull_number
+              WHERE status.request_id = ANY($1)
+              ORDER BY status.request_id, status.login",
             [request_ids.to_vec().into()],
         ))
         .await?
