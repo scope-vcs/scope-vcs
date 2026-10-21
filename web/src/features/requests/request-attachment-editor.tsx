@@ -109,6 +109,10 @@ export function RequestAttachmentEditor({
   )
   const read = useCallback(() => readRequestAttachmentDraft(draftKey), [draftKey])
   const draft = useSyncExternalStore(subscribe, read, read)
+
+  useEffect(() => {
+    if (autoFocus) textareaRef.current?.focus()
+  }, [autoFocus])
   const editsDescription = target === 'description'
   const staleDescription = editsDescription && draft.initialized && draft.baseText !== initialText
   const limits = environment.limits
@@ -300,7 +304,6 @@ export function RequestAttachmentEditor({
         onDrop={handleDrop}
       >
         <textarea
-          autoFocus={autoFocus}
           className={cn(
             'block w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground disabled:cursor-wait disabled:opacity-70',
             editsDescription ? 'text-base leading-[26px]' : 'min-h-28 px-3 py-2 text-sm leading-6',
