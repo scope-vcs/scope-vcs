@@ -17,42 +17,6 @@ import {
 
 const requestPath = `${requestRepoPath}/requests/req_demo_ready`
 
-test('discussion and reply chronology preserves quote targets', async () => {
-  await withPage(requestPath, async (page) => {
-    const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
-    const resolvedThread = page.locator('#discussion-discussion_demo_resolved_docs')
-    await resolvedThread.getByRole('button', { name: 'Show 1 reply' }).waitFor()
-    await resolvedThread.getByText('The helper accepts milliseconds', { exact: false }).waitFor()
-    await waitForClientHydration(retryThread.getByRole('button', { name: 'Hide 3 replies' }))
-    assert.deepEqual(
-      await page.locator('.request-discussion-thread').evaluateAll((elements) =>
-        elements.map(({ id }) => id),
-      ),
-      [
-        'discussion-discussion_demo_retry_cap',
-        'discussion-discussion_demo_jitter',
-        'discussion-discussion_demo_resolved_docs',
-        'discussion-discussion_demo_revision_jitter',
-        'discussion-discussion_demo_revision_tests',
-        'discussion-discussion_demo_revision_final',
-      ],
-    )
-    assert.equal(await page.getByRole('textbox').count(), 0)
-
-    const maintainerReply = retryThread.locator('#reply-discussion_reply_demo_retry_cap_maintainer')
-    const contributorReply = retryThread.locator('#reply-discussion_reply_demo_retry_cap_quote')
-    const nestedReply = retryThread.locator('#reply-discussion_reply_demo_retry_cap_nested')
-    await nestedReply.waitFor()
-    await assertBefore(maintainerReply, contributorReply)
-    await assertBefore(contributorReply, nestedReply)
-    for (const [reply, target] of [[contributorReply, maintainerReply], [nestedReply, contributorReply]]) {
-      const quote = reply.locator('a[href^="#discussion="]')
-      await quote.click()
-      await page.waitForFunction((id) => document.activeElement?.id === id, await target.getAttribute('id'))
-    }
-  })
-})
-
 test('reply disclosure preserves scroll and remains reversible', async () => {
   await withPage(requestPath, async (page) => {
     await page.locator('.request-workspace-sidebar a[href$="/req_demo_ready"]').waitFor()
@@ -236,12 +200,6 @@ test('file and revision selection reload only the selected changes payload', asy
   })
 })
 
-async function assertBefore(first, second) {
-  const next = await second.elementHandle()
-  assert(next)
-  assert(await first.evaluate((element, next) => Boolean(element.compareDocumentPosition(next) & Node.DOCUMENT_POSITION_FOLLOWING), next))
-}
-
 async function assertReplyRegion(page, region, expanded) {
   const id = await region.getAttribute('id')
   assert(id, 'reply region must have an id')
@@ -286,9 +244,14 @@ test('Details opens a drawer that reuses request data and preserves discussion s
     await thread.getByRole('button', { name: 'Show 3 replies' }).waitFor()
     assert.deepEqual(requestLoads, [])
     await thread.getByRole('button', { name: 'Show 3 replies' }).click()
-    const quote = page.locator('#reply-discussion_reply_demo_retry_cap_quote a[href^="#discussion="]')
-    await quote.click()
-    await page.waitForFunction(() => document.activeElement?.id === 'reply-discussion_reply_demo_retry_cap_maintainer')
+    assert.equal(await page.getByRole('textbox').count(), 0)
+    for (const [reply, target] of [
+      ['reply-discussion_reply_demo_retry_cap_quote', 'reply-discussion_reply_demo_retry_cap_maintainer'],
+      ['reply-discussion_reply_demo_retry_cap_nested', 'reply-discussion_reply_demo_retry_cap_quote'],
+    ]) {
+      await page.locator(`#${reply} a[href^="#discussion="]`).click()
+      await page.waitForFunction((id) => document.activeElement?.id === id, target)
+    }
   })
 })
 

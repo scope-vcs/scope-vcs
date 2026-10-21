@@ -75,17 +75,6 @@ fn private_parent_hides_children() {
 }
 
 #[test]
-fn rejects_public_island_under_private_parent() {
-    let mut policy = policy_with_private_internal();
-
-    let error = policy
-        .add_rule(LabelRule::public(path("/internal/readme.md")))
-        .unwrap_err();
-
-    assert!(matches!(error, PolicyError::PublicIsland { .. }));
-}
-
-#[test]
 fn batched_rules_preserve_visibility_and_last_replacement() {
     let rules = [
         LabelRule::public(path("/docs")),

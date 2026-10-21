@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { assertDeploymentImage } from './railway-artifact.mjs';
 import { readRailway } from './railway-read.mjs';
-import { RAILWAY_MUTATION_TIMEOUT_MS } from './railway-retry.mjs';
+import { mutateRailway } from './railway-client.mjs';
 
 const runtimeImage = /^ghcr\.io\/scope-vcs\/scope-vcs\/railway-private-maintenance@sha256:[a-f0-9]{64}$/;
 const apiImage = /^ghcr\.io\/scope-vcs\/scope-vcs\/railway-private-api@sha256:[a-f0-9]{64}$/;
@@ -101,9 +101,9 @@ export function railwayClient(env, execute = execFileSync) {
     const run = (command, args, options) => execute(command, args, { ...options, env: isolated });
     if (query.startsWith('query ')) return readRailway(['api', query, '--variables', '@-'], { input, execute: run });
     try {
-      return JSON.parse(run('railway', ['api', query, '--variables', '@-', '--compact'], { input, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: RAILWAY_MUTATION_TIMEOUT_MS, killSignal: 'SIGKILL' }));
-    } catch {
-      throw new Error('Railway maintenance runtime mutation failed; its outcome may be unknown.');
+      return mutateRailway(query, variables, { execute: run });
+    } catch (error) {
+      throw new Error(`Railway maintenance runtime mutation failed; its outcome may be unknown (${error.detail}).`);
     }
   };
 }

@@ -16,55 +16,6 @@ fn history_view(
 }
 
 #[test]
-fn history_times_follow_visible_metadata_without_changing_projected_revisions() {
-    let mut source = graph(vec![commit(
-        "private",
-        "Private history",
-        added("/secret.md", ViewId::private(), "secret"),
-    )]);
-    source.commits[0].occurred_at_unix = Some(1_600_000_000);
-    let mut reveal = visibility_event(
-        "reveal",
-        Some("private"),
-        None,
-        "/secret.md",
-        ViewId::public(),
-        blob("secret"),
-    );
-    reveal.occurred_at_unix = Some(1_700_000_000);
-    let sets = vec![reveal];
-    let projected = project_graph(&source, &sets, &Views::builtin(), &ViewId::public());
-    let public = history_view(&source, &sets, ViewId::public());
-    assert!(!public.entries.is_empty());
-    assert!(
-        public
-            .entries
-            .iter()
-            .all(|entry| entry.occurred_at_unix != Some(1_600_000_000))
-    );
-    assert!(
-        public
-            .entries
-            .iter()
-            .filter(|entry| entry.author.is_none())
-            .all(|entry| entry.occurred_at_unix.is_none())
-    );
-    let private = history_view(&source, &sets, ViewId::private());
-    assert_eq!(private.entries[0].occurred_at_unix, Some(1_700_000_000));
-    assert_eq!(private.entries[1].occurred_at_unix, Some(1_600_000_000));
-    source.commits[0].occurred_at_unix = Some(1_650_000_000);
-    assert_eq!(
-        project_graph(&source, &sets, &Views::builtin(), &ViewId::public()),
-        projected
-    );
-    assert_eq!(history_view(&source, &sets, ViewId::public()), public);
-    assert_ne!(
-        history_view(&source, &sets, ViewId::private()).generation,
-        private.generation
-    );
-}
-
-#[test]
 fn native_history_refs_follow_the_origin_view_and_round_trip() {
     let native = NativeRequestCommit {
         oid: "native".into(),

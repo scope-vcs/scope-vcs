@@ -10,9 +10,9 @@ Supported local-development entrypoint.
 commands:
   doctor  validate required tools, local environment, and Clerk development keys
   up      migrate and seed Postgres, then start API, workers, media, and web
-  down    stop processes started by this script
+  down    stop processes started by this script and release an isolated stack
   status  show owned process and HTTP readiness state (default)
-  reset   stop owned processes and remove .scope/dev and .tmp/local-dev
+  reset   run down, then remove .scope/dev and .tmp/local-dev
   bench   run the short deployed-system benchmark against the running local API
   help    show this help
 
@@ -23,13 +23,20 @@ options for up and doctor:
   --no-media   skip the media gateway and media worker, and the ffmpeg and
                HEIF tools they need
 
+options for up:
+  --isolated   run beside other stacks on this host: claim a free isolated
+               slot, offset every port by 10 per slot, and recreate a
+               dedicated database named after DATABASE_URL's with a _stack<slot>
+               suffix. down drops that database and releases the slot, and the
+               stack runs down by itself one hour after up.
+
 required configuration:
   .env.local       DATABASE_URL, SCOPE_DEV_USER_EMAIL, optional SCOPE_DEV_USER_HANDLE
   web/.env.local   VITE_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY using matching
                    Clerk development keys
 
-optional configuration in .env.local, for reaching the stack from another
-device through a proxy such as `tailscale serve`:
+optional configuration in .env.local, for reaching the primary stack from
+another device through a proxy such as `tailscale serve`:
   SCOPE_DEV_TAILNET_WEB_ORIGIN    origin that proxies to http://localhost:3000
   SCOPE_DEV_TAILNET_API_ORIGIN    origin that proxies to http://localhost:8080
   SCOPE_DEV_TAILNET_MEDIA_ORIGIN  origin that proxies to http://localhost:8083
@@ -47,11 +54,14 @@ since GitHub must reach it:
   tailscale funnel --bg --https=8443 --set-path=/v1/github/webhooks \
     http://127.0.0.1:8080/v1/github/webhooks
 
-local services:
+local services of the primary stack; isolated slot N adds 10*N to each port:
   web  http://localhost:3000
   API  http://localhost:8080
+  worker health  http://localhost:8081
   media gateway  http://localhost:8083
   media worker health  http://localhost:8084
+Isolated stacks ignore the tailnet origins, and GitHub setup callbacks and
+webhooks reach only the primary stack.
 
 The local API uses filesystem object storage under .scope/dev. Startup strips
 inherited Railway and bucket variables and rejects production-looking Clerk or
@@ -67,10 +77,12 @@ COMMAND="${1:-status}"
 shift || true
 SIGNED_IN=0
 WITH_MEDIA=1
+ISOLATED=0
 for option in "$@"; do
   case "$option" in
     --signed-in) SIGNED_IN=1 ;;
     --no-media) WITH_MEDIA=0 ;;
+    --isolated) ISOLATED=1 ;;
     *)
       usage >&2
       exit 2
@@ -78,6 +90,10 @@ for option in "$@"; do
   esac
 done
 if (( $# > 0 )) && [[ "$COMMAND" != "up" && "$COMMAND" != "doctor" ]]; then
+  usage >&2
+  exit 2
+fi
+if (( ISOLATED )) && [[ "$COMMAND" != "up" ]]; then
   usage >&2
   exit 2
 fi
@@ -114,8 +130,17 @@ MEDIA_ERR_LOG="$STATE_DIR/media.err.log"
 MEDIA_WORKER_OUT_LOG="$STATE_DIR/media-worker.out.log"
 MEDIA_WORKER_ERR_LOG="$STATE_DIR/media-worker.err.log"
 LOCAL_CARGO_TARGET_DIR=""
-LOCAL_WEB_ORIGIN="http://localhost:3000"
-LOCAL_API_ORIGIN="http://localhost:8080"
+SERVICES=(media-worker media worker api web expiry)
+source "$ROOT/dev/local-stack.sh"
+
+case "$COMMAND" in
+  up|down|reset)
+    exec {CHECKOUT_LOCK}<"$ROOT/dev/scope-dev"
+    flock "$CHECKOUT_LOCK"
+    ;;
+esac
+use_slot "$(recorded_slot)"
+CLAIM_TOKEN="$(cat "$CLAIM_FILE" 2>/dev/null || true)"
 
 if [[ -d "$HOME/.local/share/scope-vcs-tools/node-24/bin" ]]; then
   export PATH="$HOME/.local/share/scope-vcs-tools/node-24/bin:$PATH"
@@ -183,6 +208,9 @@ local_database_url() {
 
 get_tailnet_origin() {
   local name="$1" value
+  if (( SLOT != 0 )); then
+    return
+  fi
   value="$(read_dotenv_value "$ROOT/.env.local" "$name")"
   value="${value%/}"
   if [[ -n "$value" && ! "$value" =~ ^https://[^/]+$ ]]; then
@@ -240,9 +268,18 @@ assert_port_free() {
 
 stop_owned_processes() {
   local service
-  for service in media-worker media worker api web; do
+  for service in "${SERVICES[@]}"; do
     python3 "$ROOT/dev/local-process.py" stop "$STATE_DIR/$service.pid"
   done
+}
+
+down() {
+  if [[ -n "${SCOPE_DEV_EXPIRING_CLAIM:-}" && "$SCOPE_DEV_EXPIRING_CLAIM" != "$CLAIM_TOKEN" ]]; then
+    echo "the expiring isolated stack was already replaced"
+    return
+  fi
+  stop_owned_processes
+  release_isolated_stack
 }
 
 write_runner_preamble() {
@@ -266,7 +303,7 @@ write_api_runner() {
   local dev_handle="$3"
   local object_key="$4"
   local database_url tailnet_web_origin tailnet_media_origin
-  database_url="$(local_database_url)"
+  database_url="$(stack_database_url)"
   tailnet_web_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_WEB_ORIGIN)"
   tailnet_media_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_MEDIA_ORIGIN)"
   local runner="$STATE_DIR/api.sh"
@@ -284,11 +321,11 @@ export SCOPE_OBJECT_STORE="filesystem"
 export SCOPE_DATA_DIR="$DATA_DIR"
 export SCOPE_OBJECT_STORE_DIR="$OBJECT_DIR"
 export SCOPE_OBJECT_ENCRYPTION_KEY="$object_key"
-export PORT="8080"
+export PORT="$API_PORT"
 export SCOPE_APP_ORIGIN="$LOCAL_WEB_ORIGIN"
 export SCOPE_API_PUBLIC_URL="$LOCAL_API_ORIGIN"
 export SCOPE_GIT_PUBLIC_URL="$LOCAL_API_ORIGIN"
-export SCOPE_MEDIA_PUBLIC_URL="${tailnet_media_origin:-http://localhost:8083}"
+export SCOPE_MEDIA_PUBLIC_URL="${tailnet_media_origin:-http://localhost:$MEDIA_PORT}"
 export SCOPE_MEDIA_GRANT_PRIVATE_KEY="\$(cat "$MEDIA_PRIVATE_KEY_FILE")"
 export CLERK_ISSUER="$issuer"
 export CLERK_JWKS_URL="$issuer/.well-known/jwks.json"
@@ -321,14 +358,14 @@ EOF
 
 write_media_runner() {
   local database_url runner tailnet_web_origin
-  database_url="$(local_database_url)"
+  database_url="$(stack_database_url)"
   tailnet_web_origin="$(get_tailnet_origin SCOPE_DEV_TAILNET_WEB_ORIGIN)"
   runner="$STATE_DIR/media.sh"
   [[ -n "$database_url" ]] || { echo "DATABASE_URL is required for the media gateway" >&2; exit 1; }
 
   write_runner_preamble "$runner" "$ROOT"
   cat >> "$runner" <<EOF
-export PORT="8083"
+export PORT="$MEDIA_PORT"
 export SCOPE_MEDIA_OBJECT_STORE="filesystem"
 export SCOPE_MEDIA_OBJECT_STORE_DIR="$MEDIA_OBJECT_DIR"
 export SCOPE_MEDIA_ENCRYPTION_KEY="\$(tr -d '\\r\\n' < "$MEDIA_KEY_FILE")"
@@ -342,13 +379,13 @@ EOF
 
 write_media_worker_runner() {
   local database_url runner
-  database_url="$(local_database_url)"
+  database_url="$(stack_database_url)"
   runner="$STATE_DIR/media-worker.sh"
   [[ -n "$database_url" ]] || { echo "DATABASE_URL is required for the media worker" >&2; exit 1; }
 
   write_runner_preamble "$runner" "$ROOT"
   cat >> "$runner" <<EOF
-export PORT="8084"
+export PORT="$MEDIA_WORKER_PORT"
 export SCOPE_MEDIA_OBJECT_STORE="filesystem"
 export SCOPE_MEDIA_OBJECT_STORE_DIR="$MEDIA_OBJECT_DIR"
 export SCOPE_MEDIA_ENCRYPTION_KEY="\$(tr -d '\\r\\n' < "$MEDIA_KEY_FILE")"
@@ -360,7 +397,7 @@ EOF
 
 write_worker_runner() {
   local database_url object_key runner
-  database_url="$(local_database_url)"
+  database_url="$(stack_database_url)"
   object_key="$(get_object_key)"
   runner="$STATE_DIR/worker.sh"
   if [[ -z "$database_url" ]]; then
@@ -371,6 +408,7 @@ write_worker_runner() {
   write_runner_preamble "$runner" "$ROOT"
   cat >> "$runner" <<EOF
 export SCOPE_WORKER_ID="local-dev-worker"
+export PORT="$WORKER_PORT"
 export SCOPE_OBJECT_STORE="filesystem"
 export SCOPE_DATA_DIR="$DATA_DIR"
 export SCOPE_OBJECT_STORE_DIR="$OBJECT_DIR"
@@ -391,18 +429,18 @@ write_web_runner() {
 
   write_runner_preamble "$runner" "$ROOT/web"
   cat >> "$runner" <<EOF
-export SCOPE_API_INTERNAL_URL="http://localhost:8080"
+export SCOPE_API_INTERNAL_URL="$LOCAL_API_ORIGIN"
 export SCOPE_API_PUBLIC_URL="${tailnet_api_origin:-$LOCAL_API_ORIGIN}"
 export VITE_SCOPE_WEB_FORCE_SIGNED_OUT="$((1 - SIGNED_IN))"
 ${tailnet_web_host:+export SCOPE_WEB_ALLOWED_HOST="$tailnet_web_host"}
-exec pnpm dev --host 0.0.0.0
+exec pnpm dev --host 0.0.0.0 --port $WEB_PORT --strictPort
 EOF
   chmod +x "$runner"
 }
 
 start_service() {
   local service="$1" readiness="${2:-}" timeout="${3:-}"
-  setsid "$STATE_DIR/$service.sh" > "$STATE_DIR/$service.out.log" 2> "$STATE_DIR/$service.err.log" &
+  setsid "$STATE_DIR/$service.sh" > "$STATE_DIR/$service.out.log" 2> "$STATE_DIR/$service.err.log" {CHECKOUT_LOCK}<&- &
   python3 "$ROOT/dev/local-process.py" record "$STATE_DIR/$service.pid" "$!"
   if [[ -n "$readiness" ]] && ! wait_http "$readiness" "$timeout"; then
     echo "${service//-/ } did not become ready; see $STATE_DIR/$service.err.log" >&2
@@ -462,7 +500,7 @@ wait_http() {
 
 doctor() {
   local tool
-  for tool in cargo curl git node npm openssl pnpm python3 setsid ss; do
+  for tool in cargo curl flock git node npm openssl pnpm python3 setsid ss; do
     assert_command "$tool"
   done
   if (( WITH_MEDIA )); then
@@ -546,13 +584,20 @@ bench() {
 up() {
   doctor >/dev/null
   stop_owned_processes
-  assert_port_free 8080 "api"
+  release_isolated_stack
+  if (( ISOLATED )); then
+    assert_command psql
+    claim_isolated_slot
+    trap down EXIT
+  fi
+  assert_port_free "$API_PORT" "api"
+  assert_port_free "$WORKER_PORT" "worker health"
   if (( WITH_MEDIA )); then
-    assert_port_free 8083 "media gateway"
-    assert_port_free 8084 "media worker health"
+    assert_port_free "$MEDIA_PORT" "media gateway"
+    assert_port_free "$MEDIA_WORKER_PORT" "media worker health"
   fi
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
-    assert_port_free 3000 "web"
+    assert_port_free "$WEB_PORT" "web"
   fi
   mkdir -p "$STATE_DIR" "$DATA_DIR" "$MEDIA_OBJECT_DIR"
   ensure_media_keys
@@ -561,19 +606,26 @@ up() {
   rm -f "$MEDIA_OUT_LOG" "$MEDIA_ERR_LOG" "$MEDIA_WORKER_OUT_LOG" "$MEDIA_WORKER_ERR_LOG"
   install_dependency_analyzer
   build_local_services
+  if (( SLOT != 0 )); then
+    with_stacks_lock recreate_owned_database
+  fi
   prepare_local_schema
-  start_service api "http://localhost:8080/readyz" 45
+  start_service api "$LOCAL_API_ORIGIN/readyz" 45
   write_worker_runner
   start_service worker
   if (( WITH_MEDIA )); then
     write_media_runner
-    start_service media "http://localhost:8083/healthz" 90
+    start_service media "http://localhost:$MEDIA_PORT/healthz" 90
     write_media_worker_runner
-    start_service media-worker "http://localhost:8084/readyz" 90
+    start_service media-worker "http://localhost:$MEDIA_WORKER_PORT/readyz" 90
   fi
   if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
     write_web_runner
-    start_service web "http://localhost:3000" 180
+    start_service web "$LOCAL_WEB_ORIGIN" 180
+  fi
+  if (( SLOT != 0 )); then
+    trap - EXIT
+    echo "isolated stack $SLOT runs down at $(date -d "+$ISOLATED_LIFETIME_SECONDS seconds" +%H:%M); run ./dev/scope-dev down when finished"
   fi
   status
   if (( SIGNED_IN )); then
@@ -583,13 +635,18 @@ up() {
 
 status() {
   local service
-  for service in api worker media media-worker web; do
+  if (( SLOT == 0 )); then
+    echo "stack: primary"
+  else
+    echo "stack: isolated slot $SLOT, database $(isolated_database name)"
+  fi
+  for service in api worker media media-worker web expiry; do
     echo "${service//-/ } process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/$service.pid")"
   done
-  probe "api readyz" "http://localhost:8080/readyz"
-  probe "media healthz" "http://localhost:8083/healthz"
-  probe "media worker readyz" "http://localhost:8084/readyz"
-  probe "web" "http://localhost:3000" status
+  probe "api readyz $LOCAL_API_ORIGIN" "$LOCAL_API_ORIGIN/readyz"
+  probe "media healthz" "http://localhost:$MEDIA_PORT/healthz"
+  probe "media worker readyz" "http://localhost:$MEDIA_WORKER_PORT/readyz"
+  probe "web $LOCAL_WEB_ORIGIN" "$LOCAL_WEB_ORIGIN" status
 }
 
 probe() {
@@ -619,7 +676,7 @@ reset() {
       exit 1
     fi
   done
-  stop_owned_processes
+  down
   rm -rf -- "$DATA_DIR" "$STATE_DIR"
   echo "local dev state reset"
 }
@@ -628,7 +685,7 @@ case "$COMMAND" in
   bench) bench ;;
   doctor) doctor ;;
   up) up ;;
-  down) stop_owned_processes; echo "local dev stopped" ;;
+  down) down; echo "local dev stopped" ;;
   status) status ;;
   reset) reset ;;
 esac

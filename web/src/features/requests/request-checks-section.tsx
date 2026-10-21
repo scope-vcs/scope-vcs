@@ -1,9 +1,9 @@
 import type { RepoParams } from '@/api/types'
 import type { RequestChecksResponse } from '@/api/types.generated'
 import { cn } from '@/lib/utils'
-import { ChevronDown, Globe } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useId, useState } from 'react'
-import { RunStatusIcon } from '../runs/run-status-icon'
+import { RUN_TONE_TEXT_CLASS } from '../runs/run-status-icon'
 import { requestChecksSummary } from './request-check-rows'
 import { RequestCheckWorkflows } from './request-check-workflows'
 import {
@@ -17,12 +17,10 @@ export function RequestChecksSection({
   checks,
   error,
   params,
-  requestViewName,
 }: {
   checks: RequestChecksResponse
   error: string | null
   params: RepoParams
-  requestViewName: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
@@ -30,7 +28,7 @@ export function RequestChecksSection({
 
   const note = requestCheckEvaluationNote(checks)
   const warning = requestChecksWorkflowWarning(checks)
-  const publicNote = requestPublicChecksNote(checks, requestViewName)
+  const publicNote = requestPublicChecksNote(checks)
   const summary = requestChecksSummary(checks)
   const folded = summary.all.length - summary.attention.length
 
@@ -39,7 +37,15 @@ export function RequestChecksSection({
       aria-label="CI"
       className={CHECKS_SECTION_CLASS}
     >
-      <h2 className="section-label">CI</h2>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <h2 className="section-label">CI</h2>
+        {summary.status ? (
+          <span className={cn('text-xs font-medium', RUN_TONE_TEXT_CLASS[summary.status.tone])}>{summary.status.text}</span>
+        ) : null}
+        {summary.counts ? (
+          <span className="text-xs text-muted-foreground">{summary.status ? `· ${summary.counts}` : summary.counts}</span>
+        ) : null}
+      </div>
       {error ? (
         <p className="mt-2 text-[13px] text-danger-strong" role="alert">
           {error}
@@ -51,17 +57,6 @@ export function RequestChecksSection({
           {warning}
         </p>
       ) : null}
-      {summary.lead ? (
-        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
-          <span className="inline-flex items-center gap-1.5 font-medium">
-            <RunStatusIcon state={summary.lead.state} />
-            {summary.lead.text}
-          </span>
-          {summary.counts ? (
-            <span className="text-xs text-muted-foreground">· {summary.counts}</span>
-          ) : null}
-        </p>
-      ) : null}
       {summary.startError ? (
         <p
           className={cn(
@@ -70,12 +65,6 @@ export function RequestChecksSection({
           )}
         >
           {summary.startError.text}
-        </p>
-      ) : null}
-      {publicNote ? (
-        <p className="mt-1.5 flex items-start gap-1.5 text-xs text-warning-strong">
-          <Globe aria-hidden="true" className="mt-px size-3.5 shrink-0" />
-          {publicNote}
         </p>
       ) : null}
       <RequestCheckWorkflows id={listId} params={params} rows={expanded ? summary.all : summary.attention} />
@@ -91,6 +80,7 @@ export function RequestChecksSection({
           <ChevronDown aria-hidden="true" className={cn('size-3 transition-transform', expanded && 'rotate-180')} />
         </button>
       ) : null}
+      {publicNote ? <p className="mt-2 text-xs text-muted-foreground">{publicNote}</p> : null}
     </section>
   )
 }

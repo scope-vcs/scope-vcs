@@ -6,10 +6,8 @@ const PUSH_COLUMNS: &str = "INSERT INTO scope_github_pushes (id,repo_id,request_
 
 #[tokio::test]
 async fn github_pushes_name_their_branch_and_only_running_pushes_hold_a_lease() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
+    let store = migrated_store();
+    let db = Arc::clone(&store.db);
     db.execute_unprepared(&format!(
         r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);

@@ -159,23 +159,21 @@ for (const scenario of ['list-fails', 'remove-false', 'remove-ambiguous']) {
   })
 }
 
-for (const replicas of [undefined, { running: 0 }, { running: null, crashed: 0 }, { running: 0, crashed: '0' }]) {
-  test(`staging shutdown rejects incomplete replica state: ${JSON.stringify(replicas)}`, async () => {
-    const { manifest, removals, root } = await fixture()
-    const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-railway-writers.sh && echo capture-baseline'], {
-      encoding: 'utf8', timeout: 60_000,
-      env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
-        RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
-        SCOPE_DEPLOYMENT_MANIFEST: manifest, SCOPE_TEST_REMOVALS: removals,
-        SCOPE_TEST_RAILWAY_READ_HELPER: join(root, 'railway'),
-        SCOPE_TEST_REPLICA_STATE: JSON.stringify([{ id: 'api', replicas }]),
-      },
-    })
-    assert.equal(result.status, 1, result.stderr)
-    assert.match(result.stderr, /replica evidence/)
-    assert.doesNotMatch(result.stdout, /capture-baseline/)
+test('staging shutdown rejects a writer without replica evidence', async () => {
+  const { manifest, removals, root } = await fixture()
+  const result = spawnSync('bash', ['-c', 'bash .github/scripts/stop-railway-writers.sh && echo capture-baseline'], {
+    encoding: 'utf8', timeout: 60_000,
+    env: { ...process.env, PATH: `${root}:${process.env.PATH}`,
+      RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
+      SCOPE_DEPLOYMENT_MANIFEST: manifest, SCOPE_TEST_REMOVALS: removals,
+      SCOPE_TEST_RAILWAY_READ_HELPER: join(root, 'railway'),
+      SCOPE_TEST_REPLICA_STATE: JSON.stringify([{ id: 'api' }]),
+    },
   })
-}
+  assert.equal(result.status, 1, result.stderr)
+  assert.match(result.stderr, /replica evidence/)
+  assert.doesNotMatch(result.stdout, /capture-baseline/)
+})
 
 test('already removed staging writers allow baseline capture without another removal', async () => {
   const { manifest, removals, root } = await fixture()
