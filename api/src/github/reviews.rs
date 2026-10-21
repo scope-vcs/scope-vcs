@@ -68,7 +68,7 @@ struct ReviewComment {
 const REVIEW_THREAD_QUERY: &str = "query($id: ID!) { node(id: $id) { \
     ... on PullRequestReviewThread { isResolved \
     resolvedBy { login databaseId avatarUrl } \
-    comments(first: 1) { nodes { databaseId } } } } }";
+    comments(first: 1) { nodes { fullDatabaseId } } } } }";
 
 #[derive(Deserialize)]
 struct GraphQlAnswer {
@@ -111,7 +111,7 @@ struct ThreadComments {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadComment {
-    database_id: Option<u64>,
+    full_database_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -307,7 +307,8 @@ impl GitHubApp {
             root_comment_id: node
                 .comments
                 .and_then(|comments| comments.nodes.into_iter().next())
-                .and_then(|comment| comment.database_id),
+                .and_then(|comment| comment.full_database_id)
+                .and_then(|id| id.parse().ok()),
         }))
     }
 

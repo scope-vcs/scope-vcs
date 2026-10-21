@@ -21,7 +21,7 @@ impl FakeGitHub {
                 "resolvedBy": resolved_by.map(|(login, id)| serde_json::json!({
                     "login": login, "databaseId": id, "avatarUrl": null,
                 })),
-                "comments": { "nodes": [{ "databaseId": root_comment_id }] },
+                "comments": { "nodes": [{ "fullDatabaseId": root_comment_id.to_string() }] },
             }),
         );
     }

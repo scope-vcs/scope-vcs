@@ -413,3 +413,31 @@ async fn a_late_resolution_delivery_follows_the_thread_state_on_github() {
     assert_eq!(import_pass(&owner).await, 1);
     assert_eq!(status(threads(&owner).await), "Open");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_thread_whose_first_comment_id_needs_64_bits_still_resolves() {
+    let owner = owner_request("review-import-wide-thread", &[]).await;
+    list_review_bots(&owner, &["greptile-apps[bot]"]).await;
+    let head = owner.head();
+    let root = 4_332_780_858;
+    assert!(root > u64::from(u32::MAX));
+    owner
+        .fake
+        .report_permission("octo-writer", Some(("write", 502)));
+    owner.fake.report_pull_review(
+        review(REVIEW_ID, bot(), &head),
+        vec![line_comment(root, &head, "request.txt", None, 1)],
+    );
+    deliver_review(&owner, GITHUB_REPOSITORY_ID).await;
+    assert_eq!(import_pass(&owner).await, 1);
+
+    owner
+        .fake
+        .report_review_thread(root, Some(("octo-writer", 502)));
+    deliver_thread(&owner, "resolved", root, user(502, "octo-writer", "User")).await;
+    assert_eq!(import_pass(&owner).await, 1);
+    let threads = threads(&owner).await;
+    let resolved = by_client_id(&threads, &format!("github:review-comment:{root}"));
+    assert_eq!(resolved["status"], "Resolved");
+    assert_eq!(resolved["resolved_by"]["account"]["login"], "octo-writer");
+}
