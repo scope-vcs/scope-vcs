@@ -275,7 +275,32 @@ fn a_bot_with_a_state_comment_is_done_only_when_the_comment_says_so() {
     let malformed = commented("<!-- codex-review-state:v1 nope -->".to_string());
     assert_eq!(
         state(&[malformed, thumbs_up], CODEX),
-        GitHubReviewBotState::Clear
+        GitHubReviewBotState::NotStarted
+    );
+}
+
+#[test]
+fn codex_without_a_valid_state_comment_never_finishes() {
+    let review = reviewed(CODEX, IMPORTED_REVIEW, HEAD);
+    let thumbs_up = reacted(CODEX, GitHubBotReaction::ThumbsUp, PUSHED_AT + 1);
+    assert_eq!(
+        state(&[review.clone(), thumbs_up.clone()], CODEX),
+        GitHubReviewBotState::NotStarted
+    );
+    assert_eq!(
+        state(
+            &[
+                review,
+                thumbs_up,
+                reacted(CODEX, GitHubBotReaction::Eyes, PUSHED_AT + 1)
+            ],
+            CODEX
+        ),
+        GitHubReviewBotState::Working
+    );
+    assert_eq!(
+        state(&[reviewed(GREPTILE, IMPORTED_REVIEW, HEAD)], GREPTILE),
+        GitHubReviewBotState::Commented
     );
 }
 

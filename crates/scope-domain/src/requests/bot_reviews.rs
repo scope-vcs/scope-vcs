@@ -5,7 +5,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 mod codex_state;
-pub use codex_state::CodexReviewState;
+pub use codex_state::{CODEX_REVIEW_BOT_LOGIN, CodexReviewState};
 
 #[cfg(test)]
 mod tests;
@@ -83,6 +83,7 @@ pub fn github_review_bot_statuses(
                 login: bot.login.as_str().to_string(),
                 head_oid: head_oid.to_string(),
                 state: bot_state(
+                    bot.login.names(CODEX_REVIEW_BOT_LOGIN),
                     &signals,
                     head_oid,
                     head_delivered_at_unix,
@@ -118,6 +119,7 @@ pub fn github_reviews_awaiting_import(
 }
 
 fn bot_state(
+    reports_state: bool,
     signals: &[&GitHubReviewBotSignal],
     head_oid: &str,
     head_delivered_at_unix: Option<u64>,
@@ -159,7 +161,7 @@ fn bot_state(
     let unimported_review = head_reviews
         .iter()
         .any(|review_id| !imported_review_ids.contains(review_id));
-    if !reported.is_empty() {
+    if reports_state || !reported.is_empty() {
         let states = reported
             .iter()
             .filter_map(|state| state.state_for(head_oid))

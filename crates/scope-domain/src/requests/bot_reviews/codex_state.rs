@@ -2,6 +2,7 @@ use super::GitHubReviewBotState;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
+pub const CODEX_REVIEW_BOT_LOGIN: &str = "chatgpt-codex-connector[bot]";
 const MARKER: &str = "<!-- codex-review-state:v1 ";
 const MARKER_END: &str = "-->";
 const SHORTEST_ABBREVIATED_OID: usize = 7;
