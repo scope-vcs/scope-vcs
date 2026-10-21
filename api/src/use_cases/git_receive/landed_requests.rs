@@ -43,13 +43,14 @@ pub(super) async fn landed_request_candidates(
     if landed.is_empty() {
         return Ok(landed);
     }
-    let mut proposed_repo = state
+    let committed = state
         .metadata
         .repositories()
         .repository(owner, repo_name)
         .await?
         .ok_or_else(|| ApiError::not_found("repo not found"))?;
-    let incarnation = proposed_repo.incarnation();
+    let incarnation = committed.incarnation();
+    let mut proposed_repo = committed.clone();
     let mut proposed_update = update.clone();
     proposed_update.previous_config = Some(proposed_repo.repo_config.clone());
     apply_receive_pack_update(&mut proposed_repo, proposed_update)?;
@@ -75,12 +76,8 @@ pub(super) async fn landed_request_candidates(
                 proposed_repo.repo_config.views(),
                 &parent.view,
             );
-            let state = state.clone();
-            let staging = staging_repo.to_path_buf();
-            let head = crate::git::blocking::run(move || {
-                verify_and_restore_projection(&state, &projection, &staging)
-            })
-            .await?;
+            let head =
+                verify_and_restore_projection(state, &committed, projection, staging_repo).await?;
             view_heads.insert(parent.view.clone(), head);
         }
         candidate.stack_children = crate::use_cases::request_stack_landing::prepare_stack_landing(

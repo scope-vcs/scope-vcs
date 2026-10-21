@@ -125,15 +125,19 @@ pub(crate) async fn merge_request_inner(
     );
     let merged_event_id = crate::persistence_ids::generate_prefixed_id("event_request_merged")
         .map_err(RequestMergeFailure::Other)?;
+    let turn_requested = std::time::Instant::now();
     let merge_turn = state
         .metadata
         .repositories()
         .acquire_merge_turn(&context.record.id)
         .await
         .map_err(ApiError::from)?;
+    let turn_wait = turn_requested.elapsed();
     let mut attempt = 1;
     let (repo, mutation) = loop {
+        let loading = std::time::Instant::now();
         let repo = current_repository(state, command, &context.incarnation()).await?;
+        let load = loading.elapsed();
         let prepared = match prepare_request_merge_for_execution(
             state,
             &command.owner,
@@ -174,10 +178,21 @@ pub(crate) async fn merge_request_inner(
                 return Err(RequestMergeFailure::Other(error));
             }
         };
+        let persisting = std::time::Instant::now();
         match persist_prepared_merge(state, command, merged_event_id.clone(), now_unix, prepared)
             .await
         {
-            Ok(mutation) => break (repo, mutation),
+            Ok(mutation) => {
+                tracing::info!(
+                    request_id = %request.id,
+                    attempt,
+                    turn_wait_ms = turn_wait.as_millis(),
+                    load_ms = load.as_millis(),
+                    persist_ms = persisting.elapsed().as_millis(),
+                    "request merge persisted"
+                );
+                break (repo, mutation);
+            }
             Err(error)
                 if error.kind == PostgresErrorKind::RepositoryMoved && attempt < MERGE_ATTEMPTS =>
             {
@@ -355,6 +370,7 @@ async fn prepare_request_merge_for_execution(
     let current = repo.git_head.as_ref().ok_or_else(|| {
         RequestMergeFailure::Other(ApiError::conflict("repo has no accepted Git head"))
     })?;
+    let mut phases = MergePhases::start();
     let base_repo = state
         .repository_engine
         .materialize_repository(state, &repo.incarnation(), current)
@@ -368,6 +384,7 @@ async fn prepare_request_merge_for_execution(
         })
         .await?
     };
+    phases.mark("staging");
     let request_incarnation = repo.incarnation();
     let prepared = async {
         let attach = attach_request_refs_from_pool(
@@ -386,6 +403,7 @@ async fn prepare_request_merge_for_execution(
                 RequestMergeFailure::from(error)
             }
         })?;
+        phases.mark("attach");
         let request_ref = canonical_request_ref(&request.name);
         let views = repo.repo_config.views();
         let (origin, merge_base_oid) = if &request.view == views.full() {
@@ -432,6 +450,7 @@ async fn prepare_request_merge_for_execution(
             MergeMainFailure::Other(error) => RequestMergeFailure::from(error),
         })?;
         let main_ref = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
+        phases.mark("merge_tree");
         run_git(
             Some(&staging_repo),
             &["update-ref", &main_ref, &merged_main_oid],
@@ -457,7 +476,8 @@ async fn prepare_request_merge_for_execution(
         )
         .await
         .map_err(RequestMergeFailure::from)?;
-        let preflight_projections = (|| -> Result<_, ApiError> {
+        phases.mark("update");
+        let preflight = async {
             let mut proposed_repo = repo.clone();
             apply_request_merge_to_repo(
                 &mut proposed_repo,
@@ -467,37 +487,21 @@ async fn prepare_request_merge_for_execution(
             .map_err(reviewed_update_domain_error)
             .map_err(ApiError::from)?;
             let proposed_views = proposed_repo.repo_config.views();
-            Ok(merge_preflight_views(proposed_views, &request.view)
-                .into_iter()
-                .map(|view| {
-                    project_graph(
-                        &proposed_repo.graph,
-                        &proposed_repo.visibility_change_sets,
-                        proposed_views,
-                        view,
-                    )
-                })
-                .collect::<Vec<_>>())
-        })();
-        let preflight = match preflight_projections {
-            Ok(projections) => {
-                let state = state.clone();
-                let staging_repo = staging_repo.clone();
-                crate::git::blocking::run(move || {
-                    projections
-                        .iter()
-                        .map(|projection| {
-                            Ok((
-                                projection.view_key.clone(),
-                                verify_and_restore_projection(&state, projection, &staging_repo)?,
-                            ))
-                        })
-                        .collect::<Result<std::collections::BTreeMap<_, _>, ApiError>>()
-                })
-                .await
+            let mut heads = std::collections::BTreeMap::new();
+            for view in merge_preflight_views(proposed_views, &request.view) {
+                let projection = project_graph(
+                    &proposed_repo.graph,
+                    &proposed_repo.visibility_change_sets,
+                    proposed_views,
+                    view,
+                );
+                let head =
+                    verify_and_restore_projection(state, repo, projection, &staging_repo).await?;
+                heads.insert(view.clone(), head);
             }
-            Err(error) => Err(error),
-        };
+            Ok::<_, ApiError>(heads)
+        }
+        .await;
         let view_heads = match preflight {
             Ok(heads) => heads,
             Err(error) => {
@@ -505,6 +509,7 @@ async fn prepare_request_merge_for_execution(
                 return Err(RequestMergeFailure::from(error));
             }
         };
+        phases.mark("preflight");
         let stack_children = match super::request_stack_landing::prepare_stack_landing(
             state,
             &repo.incarnation(),
@@ -524,6 +529,8 @@ async fn prepare_request_merge_for_execution(
                 return Err(RequestMergeFailure::from(error));
             }
         };
+        phases.mark("stack");
+        tracing::info!(request_id = %request.id, phases = %phases, "request merge prepared");
         Ok(PreparedRequestMerge {
             stack_children,
             repository_id: repo.record.id.clone(),
@@ -577,6 +584,39 @@ async fn prepare_request_merge_for_execution(
                 .await;
             Err(error.into())
         }
+    }
+}
+
+struct MergePhases {
+    last: std::time::Instant,
+    elapsed: Vec<(&'static str, u128)>,
+}
+
+impl MergePhases {
+    fn start() -> Self {
+        Self {
+            last: std::time::Instant::now(),
+            elapsed: Vec::new(),
+        }
+    }
+
+    fn mark(&mut self, phase: &'static str) {
+        let now = std::time::Instant::now();
+        self.elapsed
+            .push((phase, now.duration_since(self.last).as_millis()));
+        self.last = now;
+    }
+}
+
+impl std::fmt::Display for MergePhases {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (phase, millis)) in self.elapsed.iter().enumerate() {
+            if index > 0 {
+                formatter.write_str(" ")?;
+            }
+            write!(formatter, "{phase}={millis}ms")?;
+        }
+        Ok(())
     }
 }
 
