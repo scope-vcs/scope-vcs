@@ -124,15 +124,16 @@ function sameLineRange(left: RequestDiscussionLineRange, right: RequestDiscussio
   return left.side === right.side && left.start_line === right.start_line && left.end_line === right.end_line
 }
 
-export function lineDiscussionDraftTarget(anchor: RequestDiscussionAnchorInput): RequestAttachmentDraftTarget {
+export function lineDiscussionDraftTarget(comparison: LineDiscussionComparison): RequestAttachmentDraftTarget {
   return `line-discussion:${JSON.stringify([
-    anchor.revision_id,
-    anchor.commit_oid,
-    anchor.path,
-    anchor.lines?.side,
-    anchor.lines?.start_line,
-    anchor.lines?.end_line,
+    comparison.revisionId,
+    comparison.mode === 'commit' ? comparison.commitOid : null,
+    comparison.path,
   ])}`
+}
+
+export function lineDiscussionSubject(lines: RequestDiscussionLineRange) {
+  return JSON.stringify([lines.side, lines.start_line, lines.end_line])
 }
 
 export function lineRangeLabel(lines: RequestDiscussionLineRange) {

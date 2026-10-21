@@ -5,11 +5,13 @@ import {
   beginRequestAttachmentSubmission,
   finishRequestAttachmentSubmission,
   requestAttachmentDraftKey,
+  requestAttachmentSubmissionPayload,
 } from './request-attachment-drafts'
 import {
   extendLineSelection,
   lineDiscussionAnchor,
   lineDiscussionDraftTarget,
+  lineDiscussionSubject,
   settleLineDiscussionDraft,
   lineDiscussionsForFile,
   type LineDiscussionComparison,
@@ -100,28 +102,34 @@ function anchor(overrides: Partial<RequestDiscussionAnchor>): RequestDiscussionA
   }
 }
 
-test('each line range keeps its own draft, so a retried submission id never moves to another line', () => {
-  const draftKey = (lines: { side: 'old' | 'new'; start_line: number; end_line: number }) => requestAttachmentDraftKey({
+test('a line composer keeps one draft per file while each submitted range gets its own id', () => {
+  const draftKey = (comparison: LineDiscussionComparison) => requestAttachmentDraftKey({
     accessScope: 'scope',
     repoId: 'repo',
     requestId: 'request',
-    target: lineDiscussionDraftTarget(lineDiscussionAnchor(requestLayer, lines)),
+    target: lineDiscussionDraftTarget(comparison),
     viewerId: 'viewer',
   })
-  const first = draftKey({ side: 'new', start_line: 3, end_line: 3 })
-  const firstId = beginRequestAttachmentSubmission(first, 'Same body')
-  assert.ok(firstId)
-  finishRequestAttachmentSubmission(firstId, false)
-  assert.equal(beginRequestAttachmentSubmission(first, 'Same body'), firstId)
-  finishRequestAttachmentSubmission(firstId, false)
+  const key = draftKey(requestLayer)
+  assert.equal(key, draftKey({ ...requestLayer }))
+  assert.notEqual(key, draftKey({ ...requestLayer, path: '/src/other.rs' }))
+  assert.notEqual(key, draftKey({ ...requestLayer, revisionId: 'revision-1' }))
+  const submit = (lines: { side: 'old' | 'new'; start_line: number; end_line: number }) => {
+    const id = beginRequestAttachmentSubmission(key, requestAttachmentSubmissionPayload({
+      action: 'primary', baseText: null, markdown: 'Same body', quoteId: null, subject: lineDiscussionSubject(lines),
+    }))
+    assert.ok(id)
+    finishRequestAttachmentSubmission(id, false)
+    return id
+  }
+  const firstId = submit({ side: 'new', start_line: 3, end_line: 3 })
+  assert.equal(submit({ side: 'new', start_line: 3, end_line: 3 }), firstId)
   for (const lines of [
     { side: 'new', start_line: 4, end_line: 4 },
     { side: 'old', start_line: 3, end_line: 3 },
     { side: 'new', start_line: 2, end_line: 3 },
   ] as const) {
-    const other = beginRequestAttachmentSubmission(draftKey(lines), 'Same body')
-    assert.ok(other)
-    assert.notEqual(other, firstId)
+    assert.notEqual(submit(lines), firstId)
   }
 })
 

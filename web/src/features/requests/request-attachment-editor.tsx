@@ -21,6 +21,7 @@ import {
 import {
   addRequestAttachmentDraftFiles,
   beginRequestAttachmentSubmission,
+  requestAttachmentSubmissionPayload,
   clearRequestAttachmentDraft,
   finishRequestAttachmentSubmission,
   inferredMediaType,
@@ -61,6 +62,7 @@ export function RequestAttachmentEditor({
   placeholder,
   quote,
   secondarySubmit,
+  submissionSubject,
   submitIcon,
   submitLabel,
   target,
@@ -81,6 +83,7 @@ export function RequestAttachmentEditor({
     label: string
     onSubmit: (markdown: string, baseText: string | null, submissionId: string) => Promise<boolean>
   }
+  submissionSubject?: string
   submitIcon: ReactNode
   submitLabel: string
   target: RequestAttachmentDraftTarget
@@ -161,7 +164,13 @@ export function RequestAttachmentEditor({
     const markdown = markdownWithAttachments(draft.text, readyAttachments)
     const submissionId = beginRequestAttachmentSubmission(
       draftKey,
-      JSON.stringify([action, markdown, draft.baseText, quote?.id ?? null]),
+      requestAttachmentSubmissionPayload({
+        action,
+        baseText: draft.baseText,
+        markdown,
+        quoteId: quote?.id ?? null,
+        subject: submissionSubject ?? null,
+      }),
     )
     if (!submissionId) return
     setPendingAction(action)

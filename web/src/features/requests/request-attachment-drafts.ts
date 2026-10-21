@@ -450,6 +450,22 @@ function restoredSubmission(value: unknown): RequestAttachmentDraft['submission'
     ? { id: value.id, payload: value.payload } : null
 }
 
+export function requestAttachmentSubmissionPayload({
+  action,
+  baseText,
+  markdown,
+  quoteId,
+  subject,
+}: {
+  action: 'primary' | 'secondary'
+  baseText: string | null
+  markdown: string
+  quoteId: string | null
+  subject: string | null
+}) {
+  return JSON.stringify([action, markdown, baseText, quoteId, subject])
+}
+
 export function beginRequestAttachmentSubmission(key: string, payload: string) {
   const draft = entryFor(key).draft
   if (draft.pending) return null

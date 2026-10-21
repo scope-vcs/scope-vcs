@@ -52,12 +52,14 @@ export function RequestLineDiscussionComposer({
   label,
   onCancel,
   onSubmit,
+  subject,
   target,
 }: {
   error: string | null
   label: string
   onCancel: () => void
   onSubmit: (body: string, submissionId: string) => Promise<boolean>
+  subject: string
   target: RequestAttachmentDraftTarget
 }) {
   return (
@@ -70,6 +72,7 @@ export function RequestLineDiscussionComposer({
       placeholder={`Discuss ${label}…`}
       submitIcon={<MessageSquarePlus className="size-3.5" />}
       submitLabel="Start discussion"
+      submissionSubject={subject}
       target={target}
     />
   )

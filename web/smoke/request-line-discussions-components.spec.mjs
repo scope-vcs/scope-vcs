@@ -78,15 +78,20 @@ test('line discussions open from either side, post under their lines, and keep c
   await assertFits(page, 'composer', [composer, diff.getByRole('button', { name: 'Start discussion' })])
 
   await composer.fill('Check the tail lines')
+  await gutter('change-addition', 9).click({ modifiers: ['Shift'] })
+  const extended = diff.getByRole('textbox', { name: 'Start a discussion on lines 7-9 (new)' })
+  await extended.waitFor()
+  assert.equal(await extended.inputValue(), 'Check the tail lines')
+  assert.equal(await diff.getByRole('button', { name: 'Start discussion' }).isEnabled(), true)
   await diff.getByRole('button', { name: 'Start discussion' }).click()
-  const posted = diff.getByRole('list', { name: 'Discussions on new line 8' })
+  const posted = diff.getByRole('list', { name: 'Discussions on new line 9' })
   await posted.getByRole('link', { name: /Check the tail lines/ }).waitFor()
-  assert.equal(await composer.count(), 0)
+  assert.equal(await extended.count(), 0)
   const [created] = await page.evaluate(() => window.createCalls)
   assert.deepEqual(created.anchor, {
-    commit_oid: null, lines: { side: 'new', start_line: 7, end_line: 8 }, path: '/src/lib.ts', revision_id: 'revision-2',
+    commit_oid: null, lines: { side: 'new', start_line: 7, end_line: 9 }, path: '/src/lib.ts', revision_id: 'revision-2',
   })
-  assert.equal(await posted.innerText(), 'Check the tail lines\nlines 7-8 (new)\nOpen')
+  assert.equal(await posted.innerText(), 'Check the tail lines\nlines 7-9 (new)\nOpen')
   await assertFits(page, 'posted', [posted, carried, fileNotes])
   assert.deepEqual(errors, [])
 })
