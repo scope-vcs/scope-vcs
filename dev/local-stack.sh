@@ -74,12 +74,17 @@ recreate_owned_database() {
 }
 
 with_stacks_lock() {
+  if [[ -n "${STACKS_LOCK:-}" ]]; then
+    "$@"
+    return
+  fi
   mkdir -p "$STACKS_DIR"
   chmod 700 "$STACKS_DIR"
   exec {STACKS_LOCK}>"$STACKS_DIR/lock"
   flock "$STACKS_LOCK"
   "$@"
   exec {STACKS_LOCK}>&-
+  unset STACKS_LOCK
 }
 
 slot_owner() {
@@ -90,8 +95,9 @@ slot_owner() {
 
 claim_is_live() {
   local slot="$1" owner="$2"
-  [[ "$(cat "$owner/.tmp/local-dev/slot" 2>/dev/null || true)" == "$slot" ]] &&
-    [[ "$(python3 "$ROOT/dev/local-process.py" status "$owner/.tmp/local-dev/expiry.pid")" == running* ]]
+  [[ "$(cat "$owner/.tmp/local-dev/slot" 2>/dev/null || true)" == "$slot" ]] || return 1
+  [[ "$(python3 "$ROOT/dev/local-process.py" status "$owner/.tmp/local-dev/expiry.pid")" == running* ]] ||
+    { [[ -f "$owner/dev/scope-dev" ]] && ! flock -n "$owner/dev/scope-dev" true; }
 }
 
 slot_ports_free() {

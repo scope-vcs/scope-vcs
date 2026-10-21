@@ -1,3 +1,4 @@
+import fcntl
 import os
 from pathlib import Path
 import shutil
@@ -26,6 +27,7 @@ local_database_url() {
   echo "${TEST_DATABASE_URL:-postgres://scope@127.0.0.1/scope_dev}"
 }
 run_on_configured_database() {
+  [[ -z "${DATABASE_FAILS:-}" ]] || return 1
   echo "$ROOT: $1" >> "$DATABASE_LOG"
 }
 use_slot "$(recorded_slot)"
@@ -35,6 +37,10 @@ case "$ACTION" in
     echo "$SLOT $WEB_PORT $API_PORT"
     ;;
   recreate) with_stacks_lock recreate_owned_database ;;
+  failing-startup)
+    trap release_isolated_stack EXIT
+    with_stacks_lock recreate_owned_database
+    ;;
   slot) echo "$SLOT" ;;
   database) isolated_database url ;;
   release) release_isolated_stack ;;
@@ -166,6 +172,30 @@ class LocalStackClaimTests(unittest.TestCase):
         self.assertIn("expired before startup finished", result.stderr)
         self.assertEqual(self.database_commands(), [])
 
+    def test_a_failed_startup_releases_its_claim_without_deadlocking_the_slot_lock(self):
+        root = self.worktree("failing")
+        self.claimed(root)
+
+        result = self.run_stack("failing-startup", root, DATABASE_FAILS="1")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("could not drop", result.stderr)
+        self.assertFalse((self.runtime / "scope-dev-stacks/slot-1").exists())
+        subprocess.run(["flock", "-n", str(self.runtime / "scope-dev-stacks/lock"), "true"], check=True, timeout=5)
+
+    def test_a_claim_stays_live_while_its_checkout_holds_its_lock(self):
+        busy, other = self.worktree("busy"), self.worktree("other")
+        (busy / "dev/scope-dev").write_text("")
+        self.claimed(busy)
+        self.stop_expiry(busy)
+        with open(busy / "dev/scope-dev") as checkout_lock:
+            fcntl.flock(checkout_lock, fcntl.LOCK_EX)
+
+            self.assertEqual(self.claimed(other), "2 3020 8100")
+
+        third = self.worktree("third")
+        self.assertEqual(self.claimed(third), "1 3010 8090")
+
     def test_expiry_runs_down_for_its_own_claim(self):
         root = self.worktree("expiring")
         down_marker = root / "down-claim"
@@ -177,7 +207,7 @@ class LocalStackClaimTests(unittest.TestCase):
 
         subprocess.run(["bash", "-c", expiry], check=True, timeout=30)
 
-        self.wait_for(down_marker.exists)
+        self.wait_for(lambda: down_marker.exists() and down_marker.read_text().strip())
         claim = (root / ".tmp/local-dev/claim").read_text().strip()
         self.assertEqual(down_marker.read_text().split(), [claim, "down"])
 
