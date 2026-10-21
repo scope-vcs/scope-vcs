@@ -3,7 +3,9 @@ use super::{
     MediaLeaseMutation, MediaStore, ValidateRequestAttachmentSourceCommand,
     access::cleanup_tombstone_exists,
     locks::{lock_attachment, lock_processing_job},
-    persistence::{as_i32, as_i64, attachment_by_id, bindings_for_attachment, manifest_by_id},
+    persistence::{
+        as_i32, as_i64, attachment_by_id, bindings_for_attachment, enum_string, manifest_by_id,
+    },
     processing_support::{
         BudgetLock, adopt_manifest_keys, complete_job, derivative_object, ensure_derivative_budget,
         ensure_manifest_keys_reserved, insert_derivative, lock_lease_attachment, save_attachment,
@@ -19,8 +21,9 @@ use crate::{
     job_trace::QueuedTrace,
 };
 use scope_domain::requests::attachments::{
-    RequestAttachment, RequestAttachmentProcessingLease, RequestAttachmentState,
-    RequestMediaObject, can_view_request_attachment, mark_processing_source_validated,
+    RequestAttachment, RequestAttachmentProcessingLane, RequestAttachmentProcessingLease,
+    RequestAttachmentState, RequestMediaObject, can_view_request_attachment,
+    fail_interrupted_processing, mark_processing_source_validated, processing_attempts_exhausted,
     retry_attachment_processing, transition_attachment, validate_lease_grant,
     validate_processing_completion, validate_processing_failure,
 };
@@ -31,6 +34,7 @@ const CLAIMABLE_JOBS: &str = "FROM scope_request_media_processing_jobs job
      JOIN scope_request_media_attachments attachment ON attachment.id = job.attachment_id
      JOIN scope_repositories repository ON repository.id = attachment.repository_id
      WHERE ($2::text IS NULL OR job.attachment_id = $2)
+       AND ($3::text IS NULL OR attachment.kind = $3)
        AND ((job.state = 'Queued' AND job.available_at_unix <= $1)
             OR (job.state = 'Leased' AND job.lease_expires_at_unix <= $1))
        AND attachment.state IN ('Uploaded', 'Processing', 'Failed')
@@ -39,49 +43,83 @@ const CLAIMABLE_JOBS: &str = "FROM scope_request_media_processing_jobs job
             WHERE cleanup.attachment_id = attachment.id
        )";
 
+enum ProcessingClaim {
+    Claimed(RequestAttachmentProcessingLease, QueuedTrace),
+    Retry,
+    Empty,
+}
+
 impl MediaStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_processing_job"))]
     pub async fn claim_processing_job(
         &self,
+        lane: RequestAttachmentProcessingLane,
         lease_token: &str,
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<Option<(RequestAttachmentProcessingLease, QueuedTrace)>, PostgresError> {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
-        let tx = self.db.begin().await?;
+        loop {
+            match self
+                .try_claim_processing_job(lane, lease_token, now_unix, lease_expires_at_unix)
+                .await?
+            {
+                ProcessingClaim::Claimed(lease, trace) => return Ok(Some((lease, trace))),
+                ProcessingClaim::Empty => return Ok(None),
+                ProcessingClaim::Retry => {}
+            }
+        }
+    }
+
+    async fn try_claim_processing_job(
+        &self,
+        lane: RequestAttachmentProcessingLane,
+        lease_token: &str,
+        now_unix: u64,
+        lease_expires_at_unix: u64,
+    ) -> Result<ProcessingClaim, PostgresError> {
         let now = as_i64(now_unix, "processing claim time")?;
-        let Some(candidate) = tx
+        let admitted_kind = lane.admitted_kind().map(enum_string).transpose()?;
+        let Some(candidate) = self
+            .db
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!(
                     "SELECT job.attachment_id, attachment.repository_id {CLAIMABLE_JOBS}
-                     ORDER BY job.available_at_unix, job.created_at_unix, job.attachment_id
-                     LIMIT 1"
+                     ORDER BY attachment.kind = 'Photo' DESC, job.available_at_unix,
+                              job.created_at_unix, job.attachment_id
+                     LIMIT 1 FOR UPDATE OF job SKIP LOCKED"
                 ),
-                [now.into(), None::<String>.into()],
+                [now.into(), None::<String>.into(), admitted_kind.into()],
             ))
             .await?
         else {
-            tx.commit().await?;
-            return Ok(None);
+            return Ok(ProcessingClaim::Empty);
         };
         let attachment_id = candidate.try_get::<String>("", "attachment_id")?;
         let repository_id = candidate.try_get::<String>("", "repository_id")?;
+        let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, &repository_id).await?;
         let Some(job) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!("SELECT job.* {CLAIMABLE_JOBS} FOR UPDATE OF job SKIP LOCKED"),
-                [now.into(), attachment_id.clone().into()],
+                [
+                    now.into(),
+                    attachment_id.clone().into(),
+                    None::<String>.into(),
+                ],
             ))
             .await?
         else {
             tx.commit().await?;
-            return Ok(None);
+            return Ok(ProcessingClaim::Retry);
         };
         let old_generation = u64::try_from(job.try_get::<i64>("", "lease_generation")?)
             .map_err(PostgresError::internal)?;
         let old_state = job.try_get::<String>("", "state")?;
+        let previous_attempt =
+            u32::try_from(job.try_get::<i32>("", "attempt")?).map_err(PostgresError::internal)?;
         let mut attachment = lock_attachment(&tx, &attachment_id).await?;
         if old_state == "Leased" {
             tx.execute_raw(Statement::from_sql_and_values(
@@ -96,6 +134,19 @@ impl MediaStore {
                 ],
             ))
             .await?;
+            if processing_attempts_exhausted(previous_attempt) {
+                let failed = fail_interrupted_processing(&attachment, now_unix)?;
+                save_attachment(&tx, &failed, None).await?;
+                complete_job(&tx, &attachment_id, now_unix).await?;
+                notify_attachment_change(&tx, &failed).await?;
+                tx.commit().await?;
+                tracing::warn!(
+                    %attachment_id,
+                    attempt = previous_attempt,
+                    "media processing lease expired on its final attempt"
+                );
+                return Ok(ProcessingClaim::Retry);
+            }
         }
         if attachment.state == RequestAttachmentState::Uploaded {
             attachment = transition_attachment(
@@ -112,8 +163,7 @@ impl MediaStore {
         let generation = old_generation.checked_add(1).ok_or_else(|| {
             PostgresError::internal_message("processing lease generation overflow")
         })?;
-        let attempt = u32::try_from(job.try_get::<i32>("", "attempt")?)
-            .map_err(PostgresError::internal)?
+        let attempt = previous_attempt
             .checked_add(1)
             .ok_or_else(|| PostgresError::internal_message("processing attempt overflow"))?;
         tx.execute_raw(Statement::from_sql_and_values(
@@ -134,15 +184,16 @@ impl MediaStore {
         .await?;
         notify_attachment_change(&tx, &attachment).await?;
         tx.commit().await?;
-        Ok(Some((
+        Ok(ProcessingClaim::Claimed(
             RequestAttachmentProcessingLease {
                 attachment_id,
+                kind: attachment.kind,
                 lease_token: lease_token.to_string(),
                 lease_generation: generation,
                 attempt,
             },
             QueuedTrace::from_column(job.try_get("", "traceparent")?),
-        )))
+        ))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_processing_lease"))]
@@ -523,7 +574,7 @@ impl MediaStore {
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_processing_jobs
              SET state = 'Queued', available_at_unix = $2, lease_token = NULL,
-                 lease_expires_at_unix = NULL, updated_at_unix = $2,
+                 lease_expires_at_unix = NULL, attempt = 0, updated_at_unix = $2,
                  traceparent = COALESCE($3, traceparent)
              WHERE attachment_id = $1",
             [

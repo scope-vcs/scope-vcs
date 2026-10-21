@@ -17,17 +17,27 @@ pub(super) struct Probe {
 
 impl Probe {
     pub(super) fn display_dimensions(&self, stream: &ProbeStream) -> (u32, u32) {
-        let rotation = stream.rotation().or_else(|| {
-            self.frames
-                .iter()
-                .find(|frame| frame.width > 0 && frame.height > 0)
-                .and_then(ProbeFrame::rotation)
-        });
+        let rotation = stream
+            .rotation()
+            .filter(|rotation| rotation.rem_euclid(360) != 0)
+            .or_else(|| {
+                self.frames
+                    .iter()
+                    .find(|frame| frame.width > 0 && frame.height > 0)
+                    .and_then(ProbeFrame::rotation)
+            });
         if rotation.is_some_and(|rotation| matches!(rotation.rem_euclid(360), 90 | 270)) {
             (stream.height, stream.width)
         } else {
             (stream.width, stream.height)
         }
+    }
+
+    pub(super) fn has_rotated_frame(&self) -> bool {
+        self.frames
+            .iter()
+            .filter_map(ProbeFrame::rotation)
+            .any(|rotation| rotation.rem_euclid(360) != 0)
     }
 }
 
@@ -40,6 +50,10 @@ pub(super) struct ProbeStream {
     #[serde(default)]
     pub(super) height: u32,
     pub(super) duration: Option<String>,
+    pub(super) profile: Option<String>,
+    pub(super) level: Option<i32>,
+    pub(super) pix_fmt: Option<String>,
+    pub(super) color_range: Option<String>,
     color_transfer: Option<String>,
     color_primaries: Option<String>,
     color_space: Option<String>,
@@ -56,6 +70,11 @@ impl ProbeStream {
             Some("smpte2084" | "arib-std-b67")
         ) || self.color_primaries.as_deref() == Some("bt2020")
             || self.color_space.as_deref() == Some("bt2020nc")
+    }
+
+    pub(super) fn is_rotated(&self) -> bool {
+        self.rotation()
+            .is_some_and(|rotation| rotation.rem_euclid(360) != 0)
     }
 
     fn rotation(&self) -> Option<i32> {
@@ -231,7 +250,7 @@ pub(super) fn duration_millis(probe: &Probe, stream: &ProbeStream) -> Result<u64
     Ok(duration)
 }
 
-fn parse_duration_millis(value: &str) -> Result<u64, CodecFailure> {
+pub(super) fn parse_duration_millis(value: &str) -> Result<u64, CodecFailure> {
     let seconds = value.parse::<f64>().map_err(|_| {
         CodecFailure::new(CodecFailureKind::InvalidMedia, "media duration is invalid")
     })?;

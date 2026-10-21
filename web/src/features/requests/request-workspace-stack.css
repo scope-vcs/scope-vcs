@@ -1,0 +1,182 @@
+.request-workspace-row {
+  --request-stack-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.request-workspace-stack {
+  display: contents;
+}
+
+.request-workspace-stack > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--stack-origin) + var(--stack-column) * var(--stack-indent) + var(--stack-avatar) / 2 - 0.5px);
+  width: 1px;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+
+.request-workspace-stack > [data-line="down"] {
+  top: calc(var(--stack-pad) + var(--stack-avatar) + 3px);
+}
+
+.request-workspace-stack > [data-line="parent"],
+.request-workspace-stack > [data-line="elsewhere"] {
+  bottom: auto;
+  width: calc(var(--stack-indent) - var(--stack-avatar) / 2 - 3px);
+  height: calc(var(--stack-pad) + var(--stack-avatar) / 2 + 0.5px);
+  border-bottom: 1px solid var(--border-strong);
+  border-left: 1px solid var(--border-strong);
+  border-bottom-left-radius: 6px;
+  background: none;
+}
+
+.request-workspace-stack > [data-line="elsewhere"] {
+  border-style: dashed;
+}
+
+.request-workspace-stack > [data-line="pass"][data-dashed] {
+  border-left: 1px dashed var(--border-strong);
+  background: none;
+}
+
+.request-workspace-stack > [data-line="chain"] {
+  bottom: auto;
+  height: calc(var(--stack-pad) - 3px);
+}
+
+.request-workspace-row-avatar:has(.request-workspace-row-ghost) {
+  isolation: isolate;
+}
+
+.request-workspace-row-ghost {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border: 1.5px solid color-mix(in srgb, var(--foreground) 55%, transparent);
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 140ms var(--request-stack-ease), transform 140ms var(--request-stack-ease);
+}
+
+.request-workspace-row[data-stack-folded] .request-workspace-row-ghost {
+  opacity: 0.8;
+  transform: translateY(calc(var(--stack-avatar) * 0.17)) scale(0.92);
+}
+
+.request-workspace-row[data-stack-folded] .request-workspace-row-ghost + .request-workspace-row-ghost {
+  opacity: 0.45;
+  transform: translateY(calc(var(--stack-avatar) * 0.3)) scale(0.82);
+}
+
+.request-workspace-row[data-holds-selection] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-strong) 60%, transparent);
+}
+
+.request-workspace-row[data-holds-selection] .request-workspace-row-ghost {
+  border-color: var(--foreground);
+}
+
+.request-workspace-row[data-stack-folded]:is(:hover, :has(:focus-visible)) .request-workspace-row-ghost {
+  opacity: 0;
+  transform: translateY(2px) scale(0.9);
+}
+
+.request-workspace-stack-toggle {
+  position: absolute;
+  z-index: 1;
+  top: calc(var(--stack-pad) + var(--stack-avatar) + 2px);
+  left: calc(var(--stack-origin) + var(--stack-depth, 0) * var(--stack-indent) + var(--stack-avatar) / 2 - 7px);
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--foreground);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px) scale(0.6);
+  transition: opacity 120ms var(--request-stack-ease), transform 120ms var(--request-stack-ease), background-color 120ms ease;
+}
+
+.request-workspace-stack-toggle:hover {
+  background: color-mix(in srgb, var(--foreground) 12%, var(--background));
+}
+
+.request-workspace-stack-toggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.request-workspace-row:is(:hover, :has(:focus-visible)) .request-workspace-stack-toggle {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.request-workspace-stack-toggle svg {
+  width: 9px;
+  height: 9px;
+  stroke-width: 2.5;
+  transition: transform 140ms var(--request-stack-ease);
+}
+
+.request-workspace-stack-toggle[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
+.request-workspace-row-hover-detail {
+  opacity: 0;
+  transition: opacity 120ms var(--request-stack-ease);
+}
+
+.request-workspace-row:is(:hover, :has(:focus-visible)) .request-workspace-row-hover-detail {
+  opacity: 1;
+}
+
+.request-workspace-row[data-revealed] {
+  animation: request-stack-reveal 150ms var(--request-stack-ease) both;
+  animation-delay: calc(var(--reveal-order, 0) * 12ms);
+}
+
+.request-workspace-row[data-leaving] {
+  animation: request-stack-fold 100ms ease-in both;
+}
+
+@keyframes request-stack-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes request-stack-fold {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .request-workspace-stack-toggle {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .request-workspace-row[data-revealed],
+  .request-workspace-row[data-leaving] {
+    animation: none;
+  }
+
+  .request-workspace-row-ghost,
+  .request-workspace-stack-toggle,
+  .request-workspace-stack-toggle svg,
+  .request-workspace-row-hover-detail {
+    transition: none;
+  }
+}

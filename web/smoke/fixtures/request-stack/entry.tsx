@@ -30,17 +30,24 @@ function Stack() {
   const [opaque, setOpaque] = useState(false)
   const [childrenError, setChildrenError] = useState<string | null>(null)
   const [stackStatus, setStackStatus] = useState<RequestStackStatus>('waiting_for_parent')
+  const [title, setTitle] = useState('Child UI')
   const [search, setSearch] = useState<RequestChangesSearch>({ revision: revision.id })
-  Object.assign(window, { setStackStatus, setOpaque, setChildrenError, calls, referenceCalls })
+  Object.assign(window, { setStackStatus, setTitle, setOpaque, setChildrenError, calls, referenceCalls })
   const requestBase = revision.base
+  const REASONS: Record<RequestStackStatus, string | null> = {
+    main: null, waiting_for_parent: 'parent request must land first', parent_extended: 'parent request must land first',
+    parent_rewritten: 'parent no longer contains the pinned revision', parent_closed: 'parent request is closed',
+    ancestor_blocked: 'an ancestor request is blocked', integration_conflict: 'request integration conflicts with main',
+    needs_main_update: 'request must contain the latest view main',
+  }
   const status = stackStatus === 'main' ? 'Ready' : stackStatus === 'parent_rewritten' ? 'ParentRewritten'
     : stackStatus === 'parent_closed' ? 'ParentClosed'
     : stackStatus === 'ancestor_blocked' ? 'AncestorBlocked'
     : stackStatus === 'integration_conflict' ? 'IntegrationConflict' : 'WaitingForParent'
   const request = {
-    id: 'child', title: 'Child UI', author_role: 'Member', head_oid: head, view, stack_status: stackStatus, stack_depth: 2, base_version: 1,
+    id: 'child', title, author_role: 'Member', head_oid: head, view, stack_status: stackStatus, stack_depth: 2, base_version: 1,
     base: requestBase,
-    permissions: { can_merge: true, can_submit: false }, mergeability: { status, reason: status },
+    permissions: { can_merge: true, can_submit: false }, mergeability: { status, reason: REASONS[stackStatus] },
   } as RequestSummaryResponse
   const parent = { id: 'parent', name: 'parent', title: 'Parent foundation', state: 'Open', stack_status: 'main', stack_depth: 1, current_revision_id: 'current-parent-revision', head_oid: 'c'.repeat(40) }
   const child = { ...parent, id: 'grandchild', name: 'grandchild', title: 'Follow-up child', stack_depth: 3 }

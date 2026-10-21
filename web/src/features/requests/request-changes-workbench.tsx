@@ -6,6 +6,7 @@ import type {
 } from '@/api/types.generated'
 import type { LoadRequestRevisionDiffInput } from '@/api/requests'
 import { PendingSurface } from '@/components/pending-surface'
+import { SeparatedMeta, SeparatedMetaItem } from '@/components/separated-meta'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import {
@@ -381,19 +382,17 @@ function RequestRevisionHeader({ revision }: { revision: RequestRevisionListResp
   return (
     <header className="border-b border-border px-(--app-inset) py-4">
       <h1 className="text-lg font-semibold leading-6 tracking-[-0.01em]">Revision {revision.position}</h1>
-      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-        <span>{actorHandle(revision.actor)} pushed {commitCount(revision)}</span>
-        <span aria-hidden="true">·</span>
-        <AbsoluteTimestamp value={revision.created_at_unix} />
+      <SeparatedMeta className="mt-1.5 text-xs text-muted-foreground">
+        <SeparatedMetaItem>{actorHandle(revision.actor)} pushed {commitCount(revision)}</SeparatedMetaItem>
+        <SeparatedMetaItem>
+          <AbsoluteTimestamp value={revision.created_at_unix} />
+        </SeparatedMetaItem>
         {revision.old_head_oid && revision.new_head_oid ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="font-mono text-xs">
-              {shortOid(revision.old_head_oid)} → {shortOid(revision.new_head_oid)}
-            </span>
-          </>
+          <SeparatedMetaItem className="font-mono">
+            {shortOid(revision.old_head_oid)} → {shortOid(revision.new_head_oid)}
+          </SeparatedMetaItem>
         ) : null}
-      </p>
+      </SeparatedMeta>
     </header>
   )
 }

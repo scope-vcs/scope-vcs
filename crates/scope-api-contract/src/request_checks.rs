@@ -1,5 +1,6 @@
 use crate::{
-    GitOid, RequestCheckEvaluationState, RequestMergeabilityResponse, RunState, wire::wire_enum,
+    GitOid, RequestCheckEvaluationState, RequestChecksOutcome, RequestMergeabilityResponse,
+    RunState, wire::wire_enum,
 };
 use scope_domain::requests::{
     GitHubCheckConclusion as DomainGitHubCheckConclusion,
@@ -113,6 +114,10 @@ pub struct RequestChecksResponse {
     pub head_oid: GitOid,
     /// `None` while the head has no evaluation: nothing is known about its checks yet.
     pub state: Option<RequestCheckEvaluationState>,
+    /// What the head's required checks add up to, the answer mergeability
+    /// gates on: `clear` once every one passed or none is required,
+    /// `pending` while any is unfinished, `failed` once one did not succeed.
+    pub outcome: RequestChecksOutcome,
     pub message: Option<String>,
     pub checks: Vec<RequestCheckResponse>,
     /// Whether the viewer can start checks that wait for a maintainer.

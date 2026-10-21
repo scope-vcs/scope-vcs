@@ -52,9 +52,9 @@ export function restingPoint(
   time: number,
   drift: boolean,
 ): { x: number; y: number } {
-  const onScreen = anchor.top > 0 && anchor.bottom < viewport.height
-  const x = onScreen ? anchor.left - page.left + 96 : viewport.width * .62 - page.left
-  const y = onScreen ? anchor.top - page.top + 44 : viewport.height * .55 - page.top
+  const anchorScrolledAbove = anchor.top <= 0
+  const x = anchorScrolledAbove ? viewport.width * .62 - page.left : anchor.left - page.left + 96
+  const y = anchorScrolledAbove ? viewport.height * .55 - page.top : anchor.top - page.top + 44
   if (!drift) return { x, y }
   return { x: x + Math.sin(time * PACE / 1900) * 26, y: y + Math.cos(time * PACE / 2600) * 18 }
 }
