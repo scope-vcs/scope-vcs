@@ -15,9 +15,6 @@ mod m0095_github_review_imports;
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
 
-#[cfg(test)]
-pub(crate) use baseline::schema_inventory;
-
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
 };
