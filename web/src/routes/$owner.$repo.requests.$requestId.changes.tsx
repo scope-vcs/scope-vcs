@@ -2,6 +2,7 @@ import {
   parseLoadRequestRevisionsInput,
   parseLoadRequestRevisionDiffInput,
   parseLoadDiscussionsInput,
+  parseCreateDiscussionInput,
 } from '@/api/request-inputs'
 import {
   type LoadRequestRevisionDiffInput,
@@ -11,9 +12,13 @@ import {
 import { EmptyState } from '@/components/empty-state'
 import { Button } from '@/components/ui/button'
 import {
+  type CreateDiscussionInput,
   type LoadDiscussionsInput,
+  createRequestDiscussionForRequest,
   loadRequestDiscussionsForRequest,
 } from '@/features/requests/request-discussion-api'
+import { RequestAttachmentProvider } from '@/features/requests/request-attachment-context'
+import { requestAttachmentActions } from '@/routes/-request-attachment-actions'
 import { loadDiscussionReferencePage, selectedDiscussionReferenceQuery } from '@/features/requests/request-changes-discussion-references'
 import { requestChangesSelectionIdentity, requestChangesQuery, retainPinnedRequestChanges } from '@/features/requests/request-changes-resource'
 import { useRequestChangesResource } from '@/features/requests/use-request-changes-resource'
@@ -78,6 +83,13 @@ const loadRevisions = createServerFn({ method: 'GET' })
 const loadDiscussions = createServerFn({ method: 'GET' })
   .validator(parseLoadDiscussionsInput)
   .handler(({ data }) => loadDiscussionReferencePage(data, loadRequestDiscussionsForRequest))
+
+const createDiscussion = createServerFn({ method: 'POST' })
+  .validator(parseCreateDiscussionInput)
+  .handler(({ data }) => createRequestDiscussionForRequest(data))
+
+const createDiscussionForView = (data: CreateDiscussionInput) =>
+  createDiscussion({ data })
 
 const loadDiffForView = (
   data: LoadRequestRevisionDiffInput,
@@ -177,26 +189,35 @@ function RequestChangesRoute() {
     >
       {revisions
         ? (
-            <RequestChangesWorkbench
-              accessScope={scope}
-              view={live.repo.access.view}
-              initialDiscussionReferences={initial?.discussionReferences ?? { referenceKey: null, page: null }}
-              loadDiff={loadDiffForView}
-              loadDiscussions={loadDiscussionsForView}
-              onSearchChange={(nextSearch) => {
-                void navigate({
-                  params,
-                  replace: true,
-                  resetScroll: false,
-                  search: nextSearch,
-                  to: '/$owner/$repo/requests/$requestId/changes',
-                })
-              }}
-              params={requestParams}
-              repoId={live.repo.id}
-              revisions={revisions}
-              search={search}
-            />
+            <RequestAttachmentProvider
+              actions={requestAttachmentActions}
+              live={live}
+              requestId={requestId}
+              viewerId={page.viewerId ?? 'anonymous'}
+            >
+              <RequestChangesWorkbench
+                accessScope={scope}
+                canOpenDiscussion={page.state.detail.request.permissions.can_open_discussion}
+                createDiscussion={createDiscussionForView}
+                view={live.repo.access.view}
+                initialDiscussionReferences={initial?.discussionReferences ?? { referenceKey: null, page: null }}
+                loadDiff={loadDiffForView}
+                loadDiscussions={loadDiscussionsForView}
+                onSearchChange={(nextSearch) => {
+                  void navigate({
+                    params,
+                    replace: true,
+                    resetScroll: false,
+                    search: nextSearch,
+                    to: '/$owner/$repo/requests/$requestId/changes',
+                  })
+                }}
+                params={requestParams}
+                repoId={live.repo.id}
+                revisions={revisions}
+                search={search}
+              />
+            </RequestAttachmentProvider>
           )
         : !isLoaded || resource.refreshing
           ? <RequestChangesBodyPending />

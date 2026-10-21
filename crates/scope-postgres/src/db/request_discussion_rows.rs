@@ -31,6 +31,7 @@ pub struct DiscussionPageFilter<'a> {
     pub revision_id: Option<&'a str>,
     pub commit_oid: Option<&'a str>,
     pub include_revision_anchor: bool,
+    pub include_carried_line_anchors: bool,
 }
 
 pub async fn discussion_by_id<C>(
@@ -96,7 +97,16 @@ where
         query = query.filter(entities::request_discussion::Column::Id.eq(discussion_id));
     }
     if let Some(revision_id) = filter.revision_id {
-        query = query.filter(entities::request_discussion::Column::RevisionId.eq(revision_id));
+        let mut revision_filter =
+            Condition::any().add(entities::request_discussion::Column::RevisionId.eq(revision_id));
+        if filter.include_carried_line_anchors {
+            revision_filter = revision_filter.add(
+                Condition::all()
+                    .add(entities::request_discussion::Column::RevisionId.ne(revision_id))
+                    .add(entities::request_discussion::Column::LineSide.is_not_null()),
+            );
+        }
+        query = query.filter(revision_filter);
     }
     if let Some(commit_oid) = filter.commit_oid {
         let commit_filter = if filter.include_revision_anchor {

@@ -668,9 +668,31 @@ export type RequestDiscussionSummaryResponse = { id: string, request_id: string,
  */
 author: RequestActorSummaryResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null, resolved_by: RequestActorSummaryResponse | null, };
 
-export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null, path: string | null, };
+export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null,
+/**
+ * The changed path; with a commit it is in that commit's diff, otherwise in the revision's whole-request diff.
+ */
+path: string | null, lines: RequestDiscussionLineRange | null,
+/**
+ * Where the lines sit on the request's latest revision; null unless the anchor has lines and a newer revision exists.
+ */
+latest: RequestDiscussionLatestPosition | null, };
 
-export type RequestDiscussionAnchorInput = { revision_id: string, commit_oid: string | null, path: string | null, };
+export type RequestDiscussionAnchorInput = { revision_id: string, commit_oid: string | null,
+/**
+ * A changed path; without a commit it must be changed by the revision's whole-request diff.
+ */
+path: string | null,
+/**
+ * Lines on one side of the path's diff; requires a path.
+ */
+lines: RequestDiscussionLineRange | null, };
+
+export type RequestDiffSide = "old" | "new";
+
+export type RequestDiscussionLineRange = { side: RequestDiffSide, start_line: number, end_line: number, };
+
+export type RequestDiscussionLatestPosition = { "kind": "mapped", revision_id: string, start_line: number, end_line: number, } | { "kind": "outdated", revision_id: string, };
 
 export type RequestRevisionCommitResponse = { oid: string, parent_oids: Array<string>, author: string | null, authored_at_unix: number, message: string, change_count: number, files: Array<CommitFileResponse>, files_truncated: boolean, };
 

@@ -273,3 +273,60 @@ fn requests_start_in_any_view_their_author_can_read() {
             .contains("public contributors can only create requests in the Public view")
     );
 }
+
+#[test]
+fn discussion_start_anchors_whole_request_line_ranges() {
+    use super::{RequestDiscussionStartArgs, discussion_start_anchor};
+    use clap::Parser;
+    let parse = |args: &[&str]| {
+        RequestDiscussionStartArgs::try_parse_from(
+            ["start", "--body", "Looks off"].iter().chain(args),
+        )
+    };
+
+    let anchor = discussion_start_anchor(
+        &parse(&["--revision", "rev_1", "--path", "src/lib.rs", "--line", "9"]).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(anchor.commit_oid, None);
+    assert_eq!(anchor.path.as_deref(), Some("src/lib.rs"));
+    assert_eq!(
+        anchor.lines,
+        Some(crate::api::RequestDiscussionLineRange {
+            side: scope_api_contract::RequestDiffSide::New,
+            start_line: 9,
+            end_line: 9,
+        })
+    );
+
+    let range = discussion_start_anchor(
+        &parse(&[
+            "--revision",
+            "rev_1",
+            "--path",
+            "src/lib.rs",
+            "--side",
+            "old",
+            "--start-line",
+            "7",
+            "--line",
+            "9",
+        ])
+        .unwrap(),
+    )
+    .unwrap()
+    .lines
+    .unwrap();
+    assert_eq!(
+        (range.side, range.start_line, range.end_line),
+        (scope_api_contract::RequestDiffSide::Old, 7, 9)
+    );
+
+    for invalid in [
+        &["--revision", "rev_1", "--line", "9"][..],
+        &["--revision", "rev_1", "--path", "a", "--line", "0"],
+        &["--revision", "rev_1", "--path", "a", "--start-line", "2"],
+    ] {
+        assert!(parse(invalid).is_err(), "{invalid:?}");
+    }
+}
