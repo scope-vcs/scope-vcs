@@ -22,7 +22,15 @@ pub(super) async fn acquire_shared_repository_lock<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
 ) -> Result<(), PostgresError> {
-    acquire_aggregate_lock_with_mode(conn, "repository", repo_id, LockType::Share).await
+    acquire_shared_aggregate_lock(conn, "repository", repo_id).await
+}
+
+pub(super) async fn acquire_shared_aggregate_lock<C: ConnectionTrait>(
+    conn: &C,
+    namespace: &str,
+    id: &str,
+) -> Result<(), PostgresError> {
+    acquire_aggregate_lock_with_mode(conn, namespace, id, LockType::Share).await
 }
 
 async fn acquire_aggregate_lock_with_mode<C: ConnectionTrait>(
