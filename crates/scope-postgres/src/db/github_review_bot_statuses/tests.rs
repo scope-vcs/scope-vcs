@@ -247,3 +247,33 @@ async fn bot_reviews_carry_the_required_flag_and_the_bot_discussions_left_open()
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn a_head_counts_as_delivered_only_once_its_github_push_succeeded() {
+    let store = postgres_store();
+    connect(&store, true).await;
+    submitted_full_view_request(&store, "req_1").await;
+    let requests = store.requests();
+    assert_eq!(
+        requests
+            .github_head_delivered_at("req_1", &oid('a'))
+            .await
+            .unwrap(),
+        None
+    );
+    push_succeeds(&store, "req_1", 'a', 10).await;
+    assert_eq!(
+        requests
+            .github_head_delivered_at("req_1", &oid('a'))
+            .await
+            .unwrap(),
+        Some(10)
+    );
+    assert_eq!(
+        requests
+            .github_head_delivered_at("req_1", &oid('b'))
+            .await
+            .unwrap(),
+        None
+    );
+}

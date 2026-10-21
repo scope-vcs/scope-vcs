@@ -83,13 +83,12 @@ async fn read_statuses(
         .github_review_bots(&reconcile.repo_id)
         .await
         .map_err(ApiError::from)?;
-    let head_pushed_at_unix = state
+    let head_delivered_at_unix = state
         .metadata
         .requests()
-        .request_revision_with_head(&request.id, &request.head_oid)
+        .github_head_delivered_at(&request.id, &request.head_oid)
         .await
-        .map_err(ApiError::from)?
-        .map(|revision| revision.created_at_unix);
+        .map_err(ApiError::from)?;
     let signals = app
         .review_bot_signals(
             reconcile.installation_id,
@@ -101,7 +100,7 @@ async fn read_statuses(
         &bots,
         &signals,
         &request.head_oid,
-        head_pushed_at_unix,
+        head_delivered_at_unix,
     )))
 }
 

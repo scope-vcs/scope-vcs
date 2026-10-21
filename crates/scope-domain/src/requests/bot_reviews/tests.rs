@@ -321,3 +321,39 @@ fn required_bots_gate_full_view_requests_on_the_current_head_and_open_findings()
         RequestReviewsOutcome::Clear
     );
 }
+
+#[test]
+fn only_a_succeeded_push_of_the_head_says_when_it_reached_github() {
+    use crate::requests::{GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState};
+    let push = |state, target_oid: &str| GitHubPush {
+        id: "github_push_1".into(),
+        repo_id: "owner/repo".into(),
+        branch: GitHubBranch::Request("req_1".into()),
+        target_oid: Some(target_oid.into()),
+        destination: GitHubPushDestination {
+            installation_id: 1,
+            github_repository_id: 2,
+            github_full_name: "octo/repo".into(),
+        },
+        state,
+        attempts: 1,
+        last_error: None,
+        updated_at_unix: PUSHED_AT,
+    };
+    assert_eq!(
+        push(GitHubPushState::Succeeded, HEAD).delivered_at(HEAD),
+        Some(PUSHED_AT)
+    );
+    for (state, target_oid) in [
+        (GitHubPushState::Queued, HEAD),
+        (GitHubPushState::Running, HEAD),
+        (GitHubPushState::Failed, HEAD),
+        (GitHubPushState::Succeeded, OLD),
+    ] {
+        assert_eq!(
+            push(state, target_oid).delivered_at(HEAD),
+            None,
+            "{state:?}"
+        );
+    }
+}

@@ -285,3 +285,49 @@ async fn an_unresolved_bot_discussion_blocks_the_merge_until_it_is_resolved() {
     assert_eq!(resolved.status(), StatusCode::OK);
     assert_eq!(bot_states(&request).await.1, "Ready".to_string());
 }
+
+fn github_time(unix: u64) -> String {
+    time::OffsetDateTime::from_unix_timestamp(i64::try_from(unix).unwrap())
+        .unwrap()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap()
+}
+
+async fn reconcile_now(request: &OwnerRequest) {
+    request
+        .state
+        .metadata
+        .requests()
+        .requeue_github_review_bot_reconcile(GITHUB_REPOSITORY_ID, 1)
+        .await
+        .unwrap();
+    assert_eq!(reconcile(request, unix_now()).await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_thumbs_up_counts_only_after_the_head_reached_github() {
+    let request = gated_request("review-bot-delivery").await;
+    push_change(
+        &request.source,
+        &request.remote,
+        "refs/heads/checks",
+        "request.txt",
+        "revised work\n",
+        "revise request",
+    )
+    .unwrap();
+    request
+        .fake
+        .pulls
+        .react_as(1, GREPTILE, "+1", &github_time(unix_now()));
+    reconcile_now(&request).await;
+    assert_eq!(
+        bot_states(&request).await.0,
+        states("not_started", "not_started")
+    );
+
+    push_pass(&request.state, unix_now()).await;
+    request.fake.pulls.react_as(1, GREPTILE, "+1", AFTER_PUSH);
+    reconcile_now(&request).await;
+    assert_eq!(bot_states(&request).await.0, states("not_started", "clear"));
+}

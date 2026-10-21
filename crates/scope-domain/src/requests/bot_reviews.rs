@@ -69,7 +69,7 @@ pub fn github_review_bot_statuses(
     bots: &[GitHubReviewBot],
     signals: &[GitHubReviewBotSignal],
     head_oid: &str,
-    head_pushed_at_unix: Option<u64>,
+    head_delivered_at_unix: Option<u64>,
 ) -> Vec<GitHubReviewBotStatus> {
     bots.iter()
         .map(|bot| {
@@ -80,7 +80,7 @@ pub fn github_review_bot_statuses(
             GitHubReviewBotStatus {
                 login: bot.login.as_str().to_string(),
                 head_oid: head_oid.to_string(),
-                state: bot_state(&signals, head_oid, head_pushed_at_unix),
+                state: bot_state(&signals, head_oid, head_delivered_at_unix),
             }
         })
         .collect()
@@ -89,14 +89,14 @@ pub fn github_review_bot_statuses(
 fn bot_state(
     signals: &[&GitHubReviewBotSignal],
     head_oid: &str,
-    head_pushed_at_unix: Option<u64>,
+    head_delivered_at_unix: Option<u64>,
 ) -> GitHubReviewBotState {
     let reacted = |wanted: GitHubBotReaction| {
         signals.iter().any(|signal| {
             matches!(signal, GitHubReviewBotSignal::Reacted { reaction, at_unix, .. }
                 if *reaction == wanted
                     && (wanted == GitHubBotReaction::Eyes
-                        || head_pushed_at_unix.is_some_and(|pushed| *at_unix >= pushed)))
+                        || head_delivered_at_unix.is_some_and(|delivered| *at_unix >= delivered)))
         })
     };
     let working = || {

@@ -173,6 +173,17 @@ impl RequestStore {
         Ok(claimed)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_head_delivered_at"))]
+    pub async fn github_head_delivered_at(
+        &self,
+        request_id: &str,
+        head_oid: &str,
+    ) -> Result<Option<u64>, PostgresError> {
+        Ok(latest_github_push(self.db.as_ref(), request_id)
+            .await?
+            .and_then(|push| push.delivered_at(head_oid)))
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_push"))]
     pub async fn finish_github_push(
         &self,
