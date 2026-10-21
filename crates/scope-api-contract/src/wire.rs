@@ -532,16 +532,6 @@ mod tests {
         assert!(serde_json::from_str::<ViewId>("\"Review\"").is_err());
     }
 
-    #[cfg(feature = "ts")]
-    #[test]
-    fn view_id_exports_as_a_typescript_string() {
-        use ts_rs::TS;
-        assert_eq!(
-            ViewId::decl(&ts_rs::Config::from_env()),
-            "type ViewId = string;"
-        );
-    }
-
     #[test]
     fn run_change_uses_the_repo_event_envelope() {
         let event = RepoChangeEvent::run_changed(

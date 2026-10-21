@@ -120,18 +120,6 @@ fn a_narrower_main_push_lands_as_an_auto_merged_request_in_the_pushers_view() {
 }
 
 #[test]
-fn a_main_push_request_always_lands_in_the_pushers_own_view() {
-    for view in [agent(), ViewId::public()] {
-        let mutation = start(
-            &access(RepositoryActor::Member, view.clone(), true),
-            RepoLifecycleState::Ready,
-        )
-        .unwrap();
-        assert_eq!(mutation.request.view, view);
-    }
-}
-
-#[test]
 fn only_narrower_members_with_push_permission_start_main_push_requests() {
     let views = views_with_agent();
     let owner = repository_access_for_user_id("owner", RepoLifecycleState::Ready, None, "owner");

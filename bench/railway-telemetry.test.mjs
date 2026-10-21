@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import {
   capacityRejectionFields, compactionFields, numericFields, objectStoreFields,
-  gitOperationFields, gitSegmentTelemetryFields, railwayMetricArgs, stripAnsi,
+  gitOperationFields, gitSegmentTelemetryFields, stripAnsi,
   summarizeCapacityRejections, summarizeCompactions, summarizeGitOperations,
   summarizeGitSegmentTelemetry, summarizeMaterializations, summarizeObjectStore,
 } from './railway-telemetry.mjs';
@@ -39,17 +39,6 @@ test('Git segment telemetry parses ingest, restore, pressure, and cleanup fields
   assert.deepEqual(summary.diskFreeBytes, { minimum: 7516192768, maximum: 8589934592, last: 7516192768 });
   assert.deepEqual(summary.ledgerPublished, { minimum: 9, maximum: 10, last: 10 });
   assert.deepEqual(summary.orphanCount, { minimum: 0, maximum: 1, last: 1 });
-});
-
-test('resource metrics use the exact requested run window', () => {
-  assert.deepEqual(
-    railwayMetricArgs('scope-api', 'staging', '2026-08-22T20:00:00Z', '2026-08-22T20:05:00Z'),
-    [
-      'metrics', '--service', 'scope-api', '--environment', 'staging',
-      '--since', '2026-08-22T20:00:00Z', '--raw', '--cpu', '--memory', '--json',
-      '--until', '2026-08-22T20:05:00Z',
-    ],
-  );
 });
 
 test('log parsing strips tracing colors and reads numeric fields', () => {

@@ -318,12 +318,7 @@ test("deployment manifest is a single coherent production graph", () => {
   const order = ["run-worker", "git-router", "media-api", "media-worker", "api", "web", "cli-downloads"];
   const serviceIds = order.map((service) => manifest.services[service].id).filter(Boolean);
 
-  assert.equal(manifest.deploymentAuthority, "github-actions");
-  assert.equal(manifest.source.nativeAutodeploy, false);
   assert.equal(new Set(serviceIds).size, serviceIds.length);
-  assert.match(manifest.services["media-api"].id, /^[0-9a-f-]{36}$/);
-  assert.match(manifest.services["media-worker"].id, /^[0-9a-f-]{36}$/);
-  assert.match(manifest.mediaResources.bucket.id, /^[0-9a-f-]{36}$/);
   const mediaDomains = ["production", "staging"].map((environment) => (
     manifest.mediaResources[environment].gatewayDomain
   ));

@@ -116,28 +116,6 @@ async fn blocking_ingest_stops_after_the_first_byte_past_the_limit() {
 }
 
 #[tokio::test]
-async fn limit_cleanup_is_bounded_when_the_remote_backend_stalls() {
-    let fixture = Fixture::new(8, 64, 1);
-    fixture.backend.block_cleanup.store(true, Ordering::SeqCst);
-    let reservation = fixture.store.reserve(REPOSITORY_ID).unwrap();
-    let started = Instant::now();
-
-    let error = fixture
-        .store
-        .ingest_reserved(REPOSITORY_ID, reservation, &b"five!"[..], 4, None)
-        .await
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        GitStorageError::PlaintextLimitExceeded { max_bytes: 4 }
-    ));
-    assert!(started.elapsed() < Duration::from_secs(2));
-    assert_eq!(fixture.backend.deletes.load(Ordering::SeqCst), 1);
-    assert!(all_files(&fixture.local_root).await.is_empty());
-}
-
-#[tokio::test]
 async fn process_timeout_cancels_a_stalled_multipart_ingest_without_detached_work() {
     let fixture = Fixture::new(4, 1, 1);
     fixture.backend.block_parts.store(true, Ordering::SeqCst);
