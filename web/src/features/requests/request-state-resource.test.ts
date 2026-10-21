@@ -106,7 +106,7 @@ function state(head = 'head'): RequestStateResponse {
     checks: {
       request_id: 'request', head_oid: head, state: 'started', outcome: 'pending', message: null,
       checks: [{ provider: 'native', run_id: 'run', run_state: 'running', workflow_name: 'checks', workflow_path: '/.scope/runs/checks.yml' }],
-      can_approve: false, changes_github_workflows: false, private_request_on_public_github: false, github_push: null, github_pull_request: null, mergeability,
+      can_approve: false, changes_github_workflows: false, private_request_on_public_github: false, github_push: null, github_pull_request: null, review_bots: [] as RequestStateResponse['checks']['review_bots'], mergeability,
     },
     auto_merge: { request_id: 'request', revision_id: 'revision', head_oid: head, intent: { id: 'intent', actor: { id: 'user', handle: 'adam' }, revision_id: 'revision', head_oid: head, status: 'Active', reason: null, created_at_unix: 1, updated_at_unix: 1 }, waiting_reason: 'Checks are running.', can_enable: false, can_cancel: true },
   } as RequestStateResponse

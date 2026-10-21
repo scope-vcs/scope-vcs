@@ -2,10 +2,15 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   reviewBotLogins,
+  reviewBotsFromText,
   reviewBotsProblem,
   reviewBotsText,
   sameReviewBots,
+  withReviewBotRequired,
 } from './repo-review-bots-model'
+
+const greptile = { login: 'greptile-apps[bot]', required: true }
+const codex = { login: 'chatgpt-codex-connector[bot]', required: false }
 
 test('review bot logins are separated by commas, spaces, or lines', () => {
   assert.deepEqual(
@@ -16,7 +21,7 @@ test('review bot logins are separated by commas, spaces, or lines', () => {
 })
 
 test('the saved list shows one login per line and only real edits are unsaved', () => {
-  const bots = [{ login: 'greptile-apps[bot]' }, { login: 'chatgpt-codex-connector[bot]' }]
+  const bots = [greptile, codex]
   const text = reviewBotsText(bots)
   assert.equal(text, 'greptile-apps[bot]\nchatgpt-codex-connector[bot]')
   assert.equal(sameReviewBots(reviewBotLogins(text), bots), true)
@@ -47,4 +52,27 @@ test('the field names the entry the server would refuse', () => {
     reviewBotsProblem(Array.from({ length: 21 }, (_, index) => `bot-${index}[bot]`)),
     'A repository can list at most 20 review bots.',
   )
+})
+
+test('saving the field keeps each retained bot required, matching logins case-insensitively', () => {
+  assert.deepEqual(
+    reviewBotsFromText('chatgpt-codex-connector[bot], Greptile-Apps[bot], octo-reviewer[bot]', [greptile, codex]),
+    [
+      { login: 'chatgpt-codex-connector[bot]', required: false },
+      { login: 'Greptile-Apps[bot]', required: true },
+      { login: 'octo-reviewer[bot]', required: false },
+    ],
+  )
+  assert.deepEqual(reviewBotsFromText('', [greptile]), [])
+})
+
+test('requiring a bot changes only that bot and keeps the listed order', () => {
+  assert.deepEqual(withReviewBotRequired([greptile, codex], codex.login, true), [
+    greptile,
+    { ...codex, required: true },
+  ])
+  assert.deepEqual(withReviewBotRequired([greptile, codex], greptile.login, false), [
+    { ...greptile, required: false },
+    codex,
+  ])
 })

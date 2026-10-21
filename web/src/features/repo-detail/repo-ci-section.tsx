@@ -1,4 +1,4 @@
-import type { GitHubConnectionResponse, GitHubAuthorizeResponse } from '@/api/types.generated'
+import type { GitHubAuthorizeResponse, GitHubConnectionResponse, GitHubReviewBotRequest } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
@@ -34,7 +34,7 @@ export function RepoCiSection({
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
-  setReviewBots: (logins: string[]) => Promise<GitHubConnectionResponse>
+  setReviewBots: (bots: GitHubReviewBotRequest[]) => Promise<GitHubConnectionResponse>
   setReviewBotPullRequests: (enabled: boolean) => Promise<GitHubConnectionResponse>
   setReviewRequestComment: (comment: string) => Promise<GitHubConnectionResponse>
   setRunImportCount: (count: number) => Promise<GitHubConnectionResponse>
