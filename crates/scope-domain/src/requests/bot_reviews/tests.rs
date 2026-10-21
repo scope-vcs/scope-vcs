@@ -30,8 +30,33 @@ fn part(commit_sha: &str, status: &str, findings: &str) -> String {
     )
 }
 
+const IMPORTED_REVIEW: u64 = 7;
+
 fn state(signals: &[GitHubReviewBotSignal], login: &str) -> GitHubReviewBotState {
-    github_review_bot_statuses(&[bot(login, true)], signals, HEAD, Some(PUSHED_AT))[0].state
+    state_after_imports(signals, login, &[IMPORTED_REVIEW])
+}
+
+fn state_after_imports(
+    signals: &[GitHubReviewBotSignal],
+    login: &str,
+    imported_review_ids: &[u64],
+) -> GitHubReviewBotState {
+    github_review_bot_statuses(
+        &[bot(login, true)],
+        signals,
+        HEAD,
+        Some(PUSHED_AT),
+        imported_review_ids,
+    )[0]
+    .state
+}
+
+fn reviewed(login: &str, review_id: u64, commit_oid: &str) -> GitHubReviewBotSignal {
+    GitHubReviewBotSignal::Reviewed {
+        login: login.to_string(),
+        review_id,
+        commit_oid: commit_oid.to_string(),
+    }
 }
 
 fn reacted(login: &str, reaction: GitHubBotReaction, at_unix: u64) -> GitHubReviewBotSignal {
@@ -151,10 +176,7 @@ fn malformed_codex_state_comments_report_nothing() {
 
 #[test]
 fn a_bot_is_done_after_reviewing_the_head_or_approving_after_it_was_pushed() {
-    let reviewed = |commit_oid: &str| GitHubReviewBotSignal::Reviewed {
-        login: "Greptile-Apps[bot]".to_string(),
-        commit_oid: commit_oid.to_string(),
-    };
+    let reviewed = |commit_oid: &str| reviewed("Greptile-Apps[bot]", IMPORTED_REVIEW, commit_oid);
     assert_eq!(state(&[], GREPTILE), GitHubReviewBotState::NotStarted);
     assert_eq!(
         state(&[reacted(GREPTILE, GitHubBotReaction::Eyes, 1)], GREPTILE),
@@ -197,7 +219,8 @@ fn a_bot_is_done_after_reviewing_the_head_or_approving_after_it_was_pushed() {
             &[bot(GREPTILE, true)],
             &[reacted(GREPTILE, GitHubBotReaction::ThumbsUp, PUSHED_AT)],
             HEAD,
-            None
+            None,
+            &[]
         )[0]
         .state,
         GitHubReviewBotState::NotStarted
@@ -319,6 +342,71 @@ fn required_bots_gate_full_view_requests_on_the_current_head_and_open_findings()
     assert_eq!(
         request_reviews_outcome(&agent(), HEAD, &views, &findings(GREPTILE)),
         RequestReviewsOutcome::Clear
+    );
+}
+
+#[test]
+fn a_finished_review_counts_only_once_scope_imported_it() {
+    let review = reviewed(GREPTILE, 21, HEAD);
+    assert_eq!(
+        state_after_imports(std::slice::from_ref(&review), GREPTILE, &[]),
+        GitHubReviewBotState::Working
+    );
+    assert_eq!(
+        state_after_imports(
+            &[
+                review.clone(),
+                reacted(GREPTILE, GitHubBotReaction::ThumbsUp, PUSHED_AT)
+            ],
+            GREPTILE,
+            &[]
+        ),
+        GitHubReviewBotState::Working
+    );
+    assert_eq!(
+        state_after_imports(
+            &[review.clone(), reviewed(GREPTILE, 22, HEAD)],
+            GREPTILE,
+            &[21]
+        ),
+        GitHubReviewBotState::Working
+    );
+    assert_eq!(
+        state_after_imports(&[review, reviewed(GREPTILE, 23, OLD)], GREPTILE, &[21]),
+        GitHubReviewBotState::Commented
+    );
+}
+
+#[test]
+fn codex_unresolved_findings_wait_for_their_review_to_be_imported() {
+    let unresolved = commented(codex_comment(
+        &part(HEAD, "completed", "true"),
+        &part(HEAD, "completed", "false"),
+    ));
+    assert_eq!(
+        state_after_imports(std::slice::from_ref(&unresolved), CODEX, &[]),
+        GitHubReviewBotState::Working
+    );
+    let review = reviewed(CODEX, 31, HEAD);
+    assert_eq!(
+        state_after_imports(&[unresolved.clone(), review.clone()], CODEX, &[]),
+        GitHubReviewBotState::Working
+    );
+    assert_eq!(
+        state_after_imports(&[unresolved, review.clone()], CODEX, &[31]),
+        GitHubReviewBotState::Commented
+    );
+    let clean = commented(codex_comment(
+        &part(HEAD, "completed", "false"),
+        &part(HEAD, "completed", "false"),
+    ));
+    assert_eq!(
+        state_after_imports(std::slice::from_ref(&clean), CODEX, &[]),
+        GitHubReviewBotState::Clear
+    );
+    assert_eq!(
+        state_after_imports(&[clean, review], CODEX, &[]),
+        GitHubReviewBotState::Working
     );
 }
 

@@ -17,6 +17,7 @@ struct CodexReviewPart {
     commit_sha: String,
     status: String,
     has_any_findings: Option<bool>,
+    has_unresolved_findings: Option<bool>,
 }
 
 impl CodexReviewState {
@@ -35,6 +36,12 @@ impl CodexReviewState {
         .filter_map(|part| serde_json::from_value::<CodexReviewPart>(part).ok())
         .collect::<Vec<_>>();
         (!parts.is_empty()).then_some(Self { parts })
+    }
+
+    pub fn reports_unresolved_findings_for(&self, head_oid: &str) -> bool {
+        self.parts.iter().any(|part| {
+            names_commit(&part.commit_sha, head_oid) && part.has_unresolved_findings == Some(true)
+        })
     }
 
     pub fn state_for(&self, head_oid: &str) -> Option<GitHubReviewBotState> {

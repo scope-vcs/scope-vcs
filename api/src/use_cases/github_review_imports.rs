@@ -4,7 +4,10 @@ use crate::{
     github::{GitHubPullReview, GitHubPullReviewComment, webhook::GitHubReviewDelivery},
     persistence::unix_now,
     state::AppState,
-    use_cases::request_discussion_mutation::first_valid_anchor,
+    use_cases::{
+        github_review_bot_statuses::note_review_bot_activity,
+        request_discussion_mutation::first_valid_anchor,
+    },
 };
 use authors::ImportAuthors;
 use scope_domain::{
@@ -155,7 +158,15 @@ async fn import_subject(
                 )
                 .await?
                 .unwrap_or_default();
-            import_comments(state, connection, job, authors, Some(review), comments).await
+            if import_comments(state, connection, job, authors, Some(review), comments).await? {
+                state
+                    .metadata
+                    .requests()
+                    .record_github_review_imported(&job.request_id, review_id)
+                    .await?;
+                note_review_bot_activity(state, job.github_repository_id, job.pull_number).await?;
+            }
+            Ok(())
         }
         GitHubReviewImportSubject::Reply { comment_id } => {
             let Some(comment) = state
@@ -169,7 +180,9 @@ async fn import_subject(
             else {
                 return Ok(());
             };
-            import_comments(state, connection, job, authors, None, vec![comment]).await
+            import_comments(state, connection, job, authors, None, vec![comment])
+                .await
+                .map(drop)
         }
         GitHubReviewImportSubject::Thread {
             root_comment_id,
@@ -242,14 +255,14 @@ async fn import_comments(
     authors: &mut ImportAuthors<'_>,
     review: Option<GitHubPullReview>,
     fetched: Vec<GitHubPullReviewComment>,
-) -> Result<(), ApiError> {
+) -> Result<bool, ApiError> {
     let requests = state.metadata.requests();
     let Some(request) = requests
         .request_by_id(&job.request_id)
         .await?
         .filter(|request| request.repo_id == job.repo_id)
     else {
-        return Ok(());
+        return Ok(false);
     };
     let review = match review {
         Some(review) if authors.admits(&review.author).await? => Some(review),
@@ -351,7 +364,7 @@ async fn import_comments(
         });
     }
     if imported.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
     let Some(import) = requests
         .import_github_review(ImportGitHubReviewCommand {
@@ -363,10 +376,10 @@ async fn import_comments(
         })
         .await?
     else {
-        return Ok(());
+        return Ok(false);
     };
     publish(state, &import.request, &import.discussions).await;
-    Ok(())
+    Ok(true)
 }
 
 async fn revisions_for_commits<'a>(

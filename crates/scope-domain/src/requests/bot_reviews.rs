@@ -35,6 +35,7 @@ pub enum GitHubBotReaction {
 pub enum GitHubReviewBotSignal {
     Reviewed {
         login: String,
+        review_id: u64,
         commit_oid: String,
     },
     Reacted {
@@ -70,6 +71,7 @@ pub fn github_review_bot_statuses(
     signals: &[GitHubReviewBotSignal],
     head_oid: &str,
     head_delivered_at_unix: Option<u64>,
+    imported_review_ids: &[u64],
 ) -> Vec<GitHubReviewBotStatus> {
     bots.iter()
         .map(|bot| {
@@ -80,8 +82,37 @@ pub fn github_review_bot_statuses(
             GitHubReviewBotStatus {
                 login: bot.login.as_str().to_string(),
                 head_oid: head_oid.to_string(),
-                state: bot_state(&signals, head_oid, head_delivered_at_unix),
+                state: bot_state(
+                    &signals,
+                    head_oid,
+                    head_delivered_at_unix,
+                    imported_review_ids,
+                ),
             }
+        })
+        .collect()
+}
+
+pub fn github_reviews_awaiting_import(
+    bots: &[GitHubReviewBot],
+    signals: &[GitHubReviewBotSignal],
+    head_oid: &str,
+    imported_review_ids: &[u64],
+) -> Vec<u64> {
+    signals
+        .iter()
+        .filter_map(|signal| match signal {
+            GitHubReviewBotSignal::Reviewed {
+                login,
+                review_id,
+                commit_oid,
+            } if commit_oid == head_oid
+                && !imported_review_ids.contains(review_id)
+                && bots.iter().any(|bot| bot.login.names(login)) =>
+            {
+                Some(*review_id)
+            }
+            _ => None,
         })
         .collect()
 }
@@ -90,6 +121,7 @@ fn bot_state(
     signals: &[&GitHubReviewBotSignal],
     head_oid: &str,
     head_delivered_at_unix: Option<u64>,
+    imported_review_ids: &[u64],
 ) -> GitHubReviewBotState {
     let reacted = |wanted: GitHubBotReaction| {
         signals.iter().any(|signal| {
@@ -113,22 +145,44 @@ fn bot_state(
             _ => None,
         })
         .collect::<Vec<_>>();
+    let head_reviews = signals
+        .iter()
+        .filter_map(|signal| match signal {
+            GitHubReviewBotSignal::Reviewed {
+                review_id,
+                commit_oid,
+                ..
+            } if commit_oid == head_oid => Some(*review_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let unimported_review = head_reviews
+        .iter()
+        .any(|review_id| !imported_review_ids.contains(review_id));
     if !reported.is_empty() {
         let states = reported
             .iter()
             .filter_map(|state| state.state_for(head_oid))
             .collect::<Vec<_>>();
-        return states
+        let state = states
             .iter()
             .copied()
             .find(|state| state.is_done())
             .or_else(|| states.first().copied())
             .unwrap_or_else(working);
+        let findings_unseen = reported
+            .iter()
+            .any(|state| state.reports_unresolved_findings_for(head_oid))
+            && head_reviews.is_empty();
+        return if state.is_done() && (unimported_review || findings_unseen) {
+            GitHubReviewBotState::Working
+        } else {
+            state
+        };
     }
-    let reviewed_head = signals.iter().any(|signal| {
-        matches!(signal, GitHubReviewBotSignal::Reviewed { commit_oid, .. } if commit_oid == head_oid)
-    });
-    if reviewed_head {
+    if unimported_review {
+        GitHubReviewBotState::Working
+    } else if !head_reviews.is_empty() {
         GitHubReviewBotState::Commented
     } else if reacted(GitHubBotReaction::ThumbsUp) {
         GitHubReviewBotState::Clear

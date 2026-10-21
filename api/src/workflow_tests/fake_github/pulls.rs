@@ -89,10 +89,16 @@ impl FakePulls {
         ));
     }
 
-    pub(in crate::workflow_tests) fn review_as(&self, number: u64, login: &str, commit: &str) {
+    pub(in crate::workflow_tests) fn review_as(
+        &self,
+        number: u64,
+        review_id: u64,
+        login: &str,
+        commit: &str,
+    ) {
         self.reviews.lock().unwrap().push((
             number,
-            serde_json::json!({ "user": { "login": login }, "commit_id": commit }),
+            serde_json::json!({ "id": review_id, "user": { "login": login }, "commit_id": commit }),
         ));
     }
 

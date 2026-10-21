@@ -23,6 +23,7 @@ pub struct GitHubReviewBotReconcile {
     pub request_id: String,
     pub repo_id: String,
     pub installation_id: u64,
+    pub github_repository_id: u64,
     pub github_full_name: String,
     pub number: u64,
 }
@@ -49,7 +50,8 @@ impl RequestStore {
                           FOR UPDATE SKIP LOCKED) due
                   WHERE pull_request.request_id = due.request_id
               RETURNING pull_request.request_id, pull_request.repo_id,
-                        pull_request.installation_id, pull_request.github_full_name,
+                        pull_request.installation_id, pull_request.github_repository_id,
+                        pull_request.github_full_name,
                         pull_request.number",
                 [
                     u64_to_i64(now_unix, "review bot reconcile time")?.into(),
@@ -67,6 +69,10 @@ impl RequestStore {
                     installation_id: i64_to_u64(
                         column("installation_id")?,
                         "GitHub installation id",
+                    )?,
+                    github_repository_id: i64_to_u64(
+                        column("github_repository_id")?,
+                        "GitHub repository id",
                     )?,
                     github_full_name: row.try_get("", "github_full_name")?,
                     number: i64_to_u64(column("number")?, "GitHub pull request number")?,

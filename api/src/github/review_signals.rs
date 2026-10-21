@@ -13,6 +13,7 @@ struct Author {
 
 #[derive(Deserialize)]
 struct Review {
+    id: u64,
     user: Option<Author>,
     commit_id: Option<String>,
 }
@@ -48,6 +49,7 @@ impl GitHubApp {
             .filter_map(|review| {
                 Some(GitHubReviewBotSignal::Reviewed {
                     login: review.user?.login,
+                    review_id: review.id,
                     commit_oid: review.commit_id?,
                 })
             });

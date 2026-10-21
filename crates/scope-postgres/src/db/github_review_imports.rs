@@ -19,8 +19,9 @@ use scope_domain::{
     requests::{
         GitHubReviewImportSubject, ImportGitHubDiscussionInput, ImportGitHubReplyInput, Request,
         RequestDiscussion, RequestDiscussionAnchor, RequestDiscussionStatus,
-        accepts_github_reviews, github_review_comment_client_id, import_github_discussion,
-        import_github_reply, transition_github_discussion,
+        accepts_github_reviews, github_review_client_id, github_review_comment_client_id,
+        github_review_id_from_client_id, import_github_discussion, import_github_reply,
+        transition_github_discussion,
     },
     views::Views,
 };
@@ -272,6 +273,49 @@ impl RequestStore {
             ))
             .await?;
         Ok(())
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "record_github_review_imported"))]
+    pub async fn record_github_review_imported(
+        &self,
+        request_id: &str,
+        review_id: u64,
+    ) -> Result<(), PostgresError> {
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "INSERT INTO scope_github_imported_comments (request_id, client_id)
+                 SELECT id, $2 FROM scope_requests WHERE id = $1
+                 ON CONFLICT DO NOTHING",
+                [request_id.into(), github_review_client_id(review_id).into()],
+            ))
+            .await?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "imported_github_review_ids"))]
+    pub async fn imported_github_review_ids(
+        &self,
+        request_id: &str,
+    ) -> Result<Vec<u64>, PostgresError> {
+        self.db
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT client_id FROM scope_github_imported_comments WHERE request_id = $1",
+                [request_id.into()],
+            ))
+            .await?
+            .into_iter()
+            .map(|row| row.try_get::<String>("", "client_id"))
+            .filter_map(|client_id| match client_id {
+                Ok(client_id) => github_review_id_from_client_id(&client_id).map(Ok),
+                Err(error) => Some(Err(error.into())),
+            })
+            .collect::<Result<Vec<_>, PostgresError>>()
+            .map(|mut ids| {
+                ids.sort_unstable();
+                ids
+            })
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_account"))]

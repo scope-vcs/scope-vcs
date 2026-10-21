@@ -784,3 +784,53 @@ async fn an_older_thread_worker_cannot_apply_after_a_newer_delivery() {
         RequestDiscussionStatus::Resolved
     );
 }
+
+#[tokio::test]
+async fn a_finished_review_is_recorded_in_the_imported_comment_ledger() {
+    let store = postgres_store();
+    let request = open_full_view_request(&store).await;
+    let requests = store.requests();
+    assert!(
+        requests
+            .imported_github_review_ids(&request.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    store
+        .db
+        .execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "INSERT INTO scope_github_imported_comments (request_id, client_id) VALUES ($1, $2)",
+            [
+                request.id.clone().into(),
+                github_review_comment_client_id(17).into(),
+            ],
+        ))
+        .await
+        .unwrap();
+    for review_id in [17, 4, 17] {
+        requests
+            .record_github_review_imported(&request.id, review_id)
+            .await
+            .unwrap();
+    }
+    requests
+        .record_github_review_imported("req_missing", 5)
+        .await
+        .unwrap();
+    assert_eq!(
+        requests
+            .imported_github_review_ids(&request.id)
+            .await
+            .unwrap(),
+        [4, 17]
+    );
+    assert!(
+        requests
+            .imported_github_review_ids("req_missing")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}

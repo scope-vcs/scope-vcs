@@ -5,12 +5,12 @@ use crate::{
 };
 use scope_domain::{
     requests::{
-        GitHubReviewBotStatus, RequestReviewsOutcome, github_review_bot_statuses,
-        request_reviews_outcome,
+        GitHubReviewBotStatus, GitHubReviewImportSubject, RequestReviewsOutcome,
+        github_review_bot_statuses, github_reviews_awaiting_import, request_reviews_outcome,
     },
     views::Views,
 };
-use scope_postgres::db::{GitHubReviewBotReconcile, RequestListRow};
+use scope_postgres::db::{GitHubReviewBotReconcile, QueueGitHubReviewImport, RequestListRow};
 use std::{collections::HashMap, time::Duration};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
@@ -89,6 +89,12 @@ async fn read_statuses(
         .github_head_delivered_at(&request.id, &request.head_oid)
         .await
         .map_err(ApiError::from)?;
+    let imported_review_ids = state
+        .metadata
+        .requests()
+        .imported_github_review_ids(&request.id)
+        .await
+        .map_err(ApiError::from)?;
     let signals = app
         .review_bot_signals(
             reconcile.installation_id,
@@ -96,12 +102,42 @@ async fn read_statuses(
             reconcile.number,
         )
         .await?;
+    for review_id in
+        github_reviews_awaiting_import(&bots, &signals, &request.head_oid, &imported_review_ids)
+    {
+        queue_review_import(state, reconcile, review_id).await?;
+    }
     Ok(Some(github_review_bot_statuses(
         &bots,
         &signals,
         &request.head_oid,
         head_delivered_at_unix,
+        &imported_review_ids,
     )))
+}
+
+async fn queue_review_import(
+    state: &AppState,
+    reconcile: &GitHubReviewBotReconcile,
+    review_id: u64,
+) -> Result<(), ApiError> {
+    state
+        .metadata
+        .requests()
+        .queue_github_review_import(
+            &QueueGitHubReviewImport {
+                request_id: reconcile.request_id.clone(),
+                repo_id: reconcile.repo_id.clone(),
+                github_repository_id: reconcile.github_repository_id,
+                pull_number: reconcile.number,
+                subject: GitHubReviewImportSubject::Review { review_id },
+            },
+            &[],
+            unix_now()?,
+        )
+        .await?;
+    state.wakeups.github_review_imports.notify_one();
+    Ok(())
 }
 
 async fn publish_change(state: &AppState, reconcile: &GitHubReviewBotReconcile) {

@@ -193,7 +193,7 @@ async fn a_required_bot_holds_the_merge_until_it_finishes_the_latest_head() {
     );
     assert_eq!(listed_status(&request).await, "Ready");
 
-    fake.pulls.review_as(1, GREPTILE, &head);
+    fake.pulls.review_as(1, 201, GREPTILE, &head);
     fake.pulls.rate_limited_once.store(true, Ordering::SeqCst);
     assert_eq!(reconcile(&request, now + 1_000).await, 1);
     assert_eq!(reconcile(&request, now + 2_000).await, 0);
@@ -211,7 +211,7 @@ async fn a_required_bot_holds_the_merge_until_it_finishes_the_latest_head() {
     assert_eq!(reconcile(&request, now + 2_000).await, 1);
     assert_eq!(
         bot_states(&request).await,
-        (states("clear", "commented"), "Ready".into())
+        (states("clear", "working"), "Ready".into())
     );
 }
 
@@ -222,13 +222,13 @@ async fn an_unresolved_bot_discussion_blocks_the_merge_until_it_is_resolved() {
     codex_comments(
         &request,
         "created",
-        &codex_state(&head, "completed", "completed", "true"),
+        &codex_state(&head, "completed", "completed", "false"),
     )
     .await;
     reconcile(&request, unix_now()).await;
     assert_eq!(
         bot_states(&request).await,
-        (states("commented", "not_started"), "Ready".into())
+        (states("clear", "not_started"), "Ready".into())
     );
 
     request.fake.report_pull_review(
@@ -330,4 +330,48 @@ async fn a_thumbs_up_counts_only_after_the_head_reached_github() {
     request.fake.pulls.react_as(1, GREPTILE, "+1", AFTER_PUSH);
     reconcile_now(&request).await;
     assert_eq!(bot_states(&request).await.0, states("not_started", "clear"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn codex_findings_hold_the_merge_until_their_review_is_imported() {
+    let request = gated_request("review-bot-import").await;
+    let head = request.head();
+    request.fake.report_pull_review(
+        serde_json::json!({
+            "id": 301,
+            "user": { "id": 88, "login": CODEX, "type": "Bot", "avatar_url": null },
+            "body": "Guard the empty list.",
+            "html_url": format!("https://github.com/{GITHUB_FULL_NAME}/pull/1#pullrequestreview-301"),
+            "commit_id": head,
+            "submitted_at": "2026-10-20T12:00:00Z",
+        }),
+        Vec::new(),
+    );
+    request.fake.pulls.review_as(1, 301, CODEX, &head);
+    codex_comments(
+        &request,
+        "edited",
+        &codex_state(&head, "completed", "completed", "true"),
+    )
+    .await;
+    reconcile_now(&request).await;
+    assert_eq!(
+        bot_states(&request).await,
+        (states("working", "not_started"), "ReviewsPending".into())
+    );
+
+    assert_eq!(
+        import_due_github_reviews(&request.state, unix_now())
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(reconcile(&request, unix_now()).await, 1);
+    assert_eq!(
+        bot_states(&request).await,
+        (
+            states("commented", "not_started"),
+            "ReviewFindingsOpen".into()
+        )
+    );
 }

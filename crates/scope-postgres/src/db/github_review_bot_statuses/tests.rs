@@ -119,6 +119,7 @@ async fn open_carriers_of_repositories_with_bots_are_reconciled_until_the_next_d
             request_id: "req_1".into(),
             repo_id: REPO.into(),
             installation_id: 7,
+            github_repository_id: 42,
             github_full_name: "octo/checks-42".into(),
             number: 5,
         }]
