@@ -36,10 +36,7 @@ const SCENARIOS = [
   ] : [],
 ]
 
-const KNOWN_FAILURES = new Set([
-  'mobile update from code: dividers',
-  'mobile update from profile: dividers',
-])
+const KNOWN_FAILURES = new Set()
 
 for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {
   for (const scenario of SCENARIOS) {
