@@ -19,7 +19,7 @@ use scope_domain::{
 };
 use scope_postgres::db::{
     GitHubImportedComment, GitHubReviewImportFinish, GitHubReviewImportJob, GitHubThreadTransition,
-    ImportGitHubReviewCommand, TransitionGitHubDiscussionCommand,
+    ImportGitHubReviewCommand, QueueGitHubReviewImport, TransitionGitHubDiscussionCommand,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -49,13 +49,12 @@ pub(crate) async fn queue_github_review_delivery(
         .metadata
         .requests()
         .queue_github_review_import(
-            &GitHubReviewImportJob {
+            &QueueGitHubReviewImport {
                 request_id: delivery.request_id,
                 repo_id: connection.repository_id,
                 github_repository_id: delivery.github_repository_id,
                 pull_number: delivery.pull_number,
                 subject: delivery.subject,
-                attempts: 0,
             },
             &delivery.accounts,
             now_unix,
@@ -192,6 +191,7 @@ async fn import_subject(
                 .requests()
                 .transition_github_discussion(TransitionGitHubDiscussionCommand {
                     request_id: job.request_id.clone(),
+                    github_link_id: job.github_link_id.clone(),
                     client_discussion_id: github_review_comment_client_id(root_comment_id),
                     github_account_id,
                     status,
@@ -333,6 +333,7 @@ async fn import_comments(
     let Some(import) = requests
         .import_github_review(ImportGitHubReviewCommand {
             request_id: request.id.clone(),
+            github_link_id: job.github_link_id.clone(),
             accounts: accounts.into_values().collect(),
             comments: imported,
             now_unix,

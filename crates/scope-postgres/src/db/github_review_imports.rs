@@ -45,10 +45,19 @@ const REVIEW_IMPORTS: GitHubReadQueue = GitHubReadQueue {
     joined: "",
     joined_on: "",
     returning: "read.request_id, read.subject, read.github_subject_id, read.repo_id, \
-        read.github_repository_id, read.pull_number, read.thread_status, read.github_actor_id, \
-        read.attempts",
+        read.github_repository_id, read.pull_number, read.github_link_id, read.thread_status, \
+        read.github_actor_id, read.attempts",
     label: "GitHub review import",
 };
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QueueGitHubReviewImport {
+    pub request_id: String,
+    pub repo_id: String,
+    pub github_repository_id: u64,
+    pub pull_number: u64,
+    pub subject: GitHubReviewImportSubject,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubReviewImportJob {
@@ -56,6 +65,7 @@ pub struct GitHubReviewImportJob {
     pub repo_id: String,
     pub github_repository_id: u64,
     pub pull_number: u64,
+    pub github_link_id: String,
     pub subject: GitHubReviewImportSubject,
     pub attempts: u32,
 }
@@ -68,6 +78,7 @@ struct ImportJobRow {
     repo_id: String,
     github_repository_id: i64,
     pull_number: i64,
+    github_link_id: String,
     thread_status: Option<String>,
     github_actor_id: Option<i64>,
     attempts: i32,
@@ -103,6 +114,7 @@ pub struct GitHubImportedComment {
 #[derive(Clone, Debug)]
 pub struct ImportGitHubReviewCommand {
     pub request_id: String,
+    pub github_link_id: String,
     pub accounts: Vec<GitHubAccount>,
     pub comments: Vec<GitHubImportedComment>,
     pub now_unix: u64,
@@ -117,6 +129,7 @@ pub struct GitHubReviewImport {
 #[derive(Clone, Debug)]
 pub struct TransitionGitHubDiscussionCommand {
     pub request_id: String,
+    pub github_link_id: String,
     pub client_discussion_id: String,
     pub github_account_id: u64,
     pub status: RequestDiscussionStatus,
@@ -135,7 +148,7 @@ impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_github_review_import"))]
     pub async fn queue_github_review_import(
         &self,
-        job: &GitHubReviewImportJob,
+        job: &QueueGitHubReviewImport,
         accounts: &[GitHubAccount],
         now_unix: u64,
     ) -> Result<(), PostgresError> {
@@ -145,18 +158,24 @@ impl RequestStore {
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_github_review_imports (request_id, subject, github_subject_id,
-                repo_id, github_repository_id, pull_number, thread_status, github_actor_id,
-                attempts, next_attempt_at_unix)
-             SELECT request.id, $2, $3, request.repo_id, $5, $6, $7, $8, 0, $9
+                repo_id, github_repository_id, pull_number, github_link_id, thread_status,
+                github_actor_id, attempts, next_attempt_at_unix)
+             SELECT request.id, $2, $3, request.repo_id, $5, $6, connection.link_id, $7, $8, 0, $9
                FROM scope_requests request
+               JOIN scope_github_connections connection
+                 ON connection.repo_id = request.repo_id
+                AND connection.status = 'Connected'
+                AND connection.github_repository_id = $5
               WHERE request.id = $1 AND request.repo_id = $4
              ON CONFLICT (request_id, subject, github_subject_id) DO UPDATE
-                SET thread_status = EXCLUDED.thread_status,
+                SET github_link_id = EXCLUDED.github_link_id,
+                    thread_status = EXCLUDED.thread_status,
                     github_actor_id = EXCLUDED.github_actor_id,
                     attempts = 0,
                     next_attempt_at_unix = EXCLUDED.next_attempt_at_unix,
                     last_error = NULL
               WHERE scope_github_review_imports.next_attempt_at_unix IS NULL
+                 OR scope_github_review_imports.github_link_id <> EXCLUDED.github_link_id
                  OR (scope_github_review_imports.thread_status,
                      scope_github_review_imports.github_actor_id)
                     IS DISTINCT FROM (EXCLUDED.thread_status, EXCLUDED.github_actor_id)",
@@ -268,7 +287,8 @@ impl RequestStore {
         command: ImportGitHubReviewCommand,
     ) -> Result<Option<GitHubReviewImport>, PostgresError> {
         let tx = self.db.begin().await?;
-        let Some((mut request, views)) = lock_importing_request(&tx, &command.request_id).await?
+        let Some((mut request, views)) =
+            lock_importing_request(&tx, &command.request_id, &command.github_link_id).await?
         else {
             tx.commit().await?;
             return Ok(None);
@@ -332,7 +352,8 @@ impl RequestStore {
         command: TransitionGitHubDiscussionCommand,
     ) -> Result<GitHubThreadTransition, PostgresError> {
         let tx = self.db.begin().await?;
-        let Some((mut request, views)) = lock_importing_request(&tx, &command.request_id).await?
+        let Some((mut request, views)) =
+            lock_importing_request(&tx, &command.request_id, &command.github_link_id).await?
         else {
             tx.commit().await?;
             return Ok(GitHubThreadTransition::Ignored);
@@ -423,9 +444,23 @@ async fn import_reply(
     Ok(true)
 }
 
+pub(super) async fn delete_review_imports<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<(), PostgresError> {
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "DELETE FROM scope_github_review_imports WHERE repo_id = $1",
+        [repo_id.into()],
+    ))
+    .await?;
+    Ok(())
+}
+
 async fn lock_importing_request<C: ConnectionTrait>(
     conn: &C,
     request_id: &str,
+    github_link_id: &str,
 ) -> Result<Option<(Request, Views)>, PostgresError> {
     let Some(observed) = request_by_id(conn, request_id).await? else {
         return Ok(None);
@@ -438,6 +473,19 @@ async fn lock_importing_request<C: ConnectionTrait>(
     else {
         return Ok(None);
     };
+    acquire_aggregate_lock(conn, "github-connection", &request.repo_id).await?;
+    let live_link = conn
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT 1 AS live FROM scope_github_connections
+              WHERE repo_id = $1 AND status = 'Connected' AND link_id = $2
+              FOR SHARE",
+            [request.repo_id.clone().into(), github_link_id.into()],
+        ))
+        .await?;
+    if live_link.is_none() {
+        return Ok(None);
+    }
     let views = repository_views(conn, &request.repo_id).await?;
     Ok(accepts_github_reviews(&request, &views).then_some((request, views)))
 }
@@ -499,6 +547,7 @@ impl ImportJobRow {
             repo_id: self.repo_id,
             github_repository_id: i64_to_u64(self.github_repository_id, "GitHub repository id")?,
             pull_number: i64_to_u64(self.pull_number, "GitHub pull request number")?,
+            github_link_id: self.github_link_id,
             subject,
             attempts: i32_to_u32(self.attempts, "GitHub review import attempts")?,
         })

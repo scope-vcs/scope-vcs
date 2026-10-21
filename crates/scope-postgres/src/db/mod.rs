@@ -152,7 +152,8 @@ pub use github_pushes::GitHubPushStanding;
 pub use github_read_queue::GitHubJobOutcome;
 pub use github_review_imports::{
     GitHubImportedComment, GitHubReviewImport, GitHubReviewImportFinish, GitHubReviewImportJob,
-    GitHubThreadTransition, ImportGitHubReviewCommand, TransitionGitHubDiscussionCommand,
+    GitHubThreadTransition, ImportGitHubReviewCommand, QueueGitHubReviewImport,
+    TransitionGitHubDiscussionCommand,
 };
 pub use github_setup_checks::GitHubSetupCheckRead;
 pub use github_workflow_job_log_reads::GitHubJobLogReadJob;

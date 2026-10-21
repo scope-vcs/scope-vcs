@@ -85,6 +85,7 @@ impl MigrationTrait for Migration {
                     repo_id character varying NOT NULL,
                     github_repository_id bigint NOT NULL,
                     pull_number bigint NOT NULL,
+                    github_link_id character varying NOT NULL,
                     thread_status character varying,
                     github_actor_id bigint,
                     attempts integer NOT NULL,
@@ -117,6 +118,10 @@ impl MigrationTrait for Migration {
 
                 CREATE INDEX idx_scope_github_review_imports_due
                     ON scope_github_review_imports (next_attempt_at_unix);
+
+                ALTER TABLE scope_github_connections
+                    ADD COLUMN link_id character varying NOT NULL DEFAULT gen_random_uuid()::text;
+                ALTER TABLE scope_github_connections ALTER COLUMN link_id DROP DEFAULT;
 
                 CREATE TABLE scope_github_review_bots (
                     repo_id character varying NOT NULL,
