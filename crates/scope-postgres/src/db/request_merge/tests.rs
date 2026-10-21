@@ -19,7 +19,8 @@ use scope_domain::{
         updates::RequestMergeOrigin,
     },
     requests::{
-        RecordRequestRevisionInput, RequestCheckEvaluation, RequestRevisionGitFacts, RequestState,
+        GITHUB_CHECK_MERGE_FRESHNESS_SECS, RecordRequestRevisionInput, RequestCheckEvaluation,
+        RequestRevisionGitFacts, RequestState,
     },
     reviewed_updates::content::{
         ReviewedContentChange, ReviewedUpdateInput, apply_reviewed_update_to_repo,
@@ -31,6 +32,7 @@ const BASE_HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const REQUEST_HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const CHECK_HEAD: &str = "dddddddddddddddddddddddddddddddddddddddd";
 const MERGED_HEAD: &str = "cccccccccccccccccccccccccccccccccccccccc";
+const GITHUB_READ_AT: u64 = 5;
 
 #[tokio::test]
 async fn locked_merge_derives_maintainer_authorization_before_content_persistence() {
@@ -525,7 +527,7 @@ async fn apply_github_result(store: &super::super::MetadataStore, passed: bool) 
         .apply_github_check_read(
             &commit,
             read,
-            5,
+            GITHUB_READ_AT,
             &[GitHubCheckRun {
                 commit_oid: CHECK_HEAD.into(),
                 name: "test".into(),
@@ -602,7 +604,10 @@ async fn final_merge_fences_check_reads_and_rejects_expiry_while_publication_wai
         let store = merge_store_with_github(true).await;
         apply_github_result(&store, true).await;
         let prepared = merge_preparation(&store).await;
-        let command = merge_command(&store, "user_owner", prepared).await;
+        let mut command = merge_command(&store, "user_owner", prepared).await;
+        if expires {
+            command.now_unix = GITHUB_READ_AT + GITHUB_CHECK_MERGE_FRESHNESS_SECS - 3;
+        }
         let held = store.db.begin().await.unwrap();
         let holder_pid: i32 = held
             .query_one_raw(Statement::from_string(
@@ -635,10 +640,7 @@ async fn final_merge_fences_check_reads_and_rejects_expiry_while_publication_wai
         super::super::locks::wait_for_transaction_waiter(&store, merge_pid).await;
         assert!(!read.is_finished());
         if expires {
-            tokio::time::sleep(std::time::Duration::from_secs(
-                scope_domain::requests::GITHUB_CHECK_MERGE_FRESHNESS_SECS + 1,
-            ))
-            .await;
+            tokio::time::sleep(std::time::Duration::from_secs(4)).await;
         }
         held.commit().await.unwrap();
         let result = merge.await.unwrap();

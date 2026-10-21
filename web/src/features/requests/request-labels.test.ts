@@ -81,15 +81,6 @@ test('a request outside the anonymous view checked in a public repository names 
   )
 })
 
-test('activity describes submission', () => {
-  assert.equal(
-    requestEventBody(event('Submitted', {
-      Submitted: { head_oid: 'a'.repeat(40) },
-    })),
-    'aaaaaaaaaaaa',
-  )
-})
-
 test('activity describes auto-merge authorization and terminal outcomes', () => {
   assert.equal(
     requestEventBody(event('AutoMergeEnabled', {

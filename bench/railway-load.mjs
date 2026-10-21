@@ -243,7 +243,7 @@ function operationFor(name, context) {
   throw new Error(`unsupported workload: ${name}`);
 }
 
-export function rotating(items) {
+function rotating(items) {
   let index = 0;
   return () => items[index++ % items.length];
 }
@@ -632,7 +632,7 @@ async function apiRead(config, path, started = performance.now(), fixture = null
   }
 }
 
-export function abortTimeoutMs(value) {
+function abortTimeoutMs(value) {
   return Math.max(1, Math.ceil(value));
 }
 
