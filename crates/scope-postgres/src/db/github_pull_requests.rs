@@ -157,6 +157,32 @@ impl RequestStore {
         Ok(finished.rows_affected() > 0)
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_pull_request_claim_holds"))]
+    pub async fn github_pull_request_claim_holds(
+        &self,
+        request_id: &str,
+        claim_token: &str,
+        intent_sequence: u64,
+    ) -> Result<bool, PostgresError> {
+        let row = self
+            .db
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT EXISTS (SELECT 1 FROM scope_github_pull_requests
+                    WHERE request_id = $1 AND claim_token = $2 AND job_state = 'running'
+                      AND intent_sequence = $3
+                      AND lease_until_unix > extract(epoch FROM now())::bigint) AS holds",
+                [
+                    request_id.into(),
+                    claim_token.into(),
+                    u64_to_i64(intent_sequence, "GitHub pull request intent")?.into(),
+                ],
+            ))
+            .await?
+            .ok_or_else(|| PostgresError::internal_message("claim check returned no row"))?;
+        Ok(row.try_get::<bool>("", "holds")?)
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requeue_github_pull_request"))]
     pub async fn requeue_github_pull_request(
         &self,
@@ -366,6 +392,20 @@ pub(super) async fn requeue_carrier<C: ConnectionTrait>(
             request_id.into(),
             u64_to_i64(now_unix, "GitHub pull request time")?.into(),
         ],
+    ))
+    .await?;
+    Ok(())
+}
+
+pub(super) async fn fence_running_carriers<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<(), PostgresError> {
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_github_pull_requests SET intent_sequence = intent_sequence + 1
+          WHERE repo_id = $1 AND intent = 'open' AND job_state = 'running'",
+        [repo_id.into()],
     ))
     .await?;
     Ok(())

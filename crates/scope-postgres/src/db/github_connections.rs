@@ -309,6 +309,8 @@ impl RepositoryStore {
         if enabled {
             super::github_pull_requests::queue_carriers_for_repository(&tx, repo_id, now_unix)
                 .await?;
+        } else {
+            super::github_pull_requests::fence_running_carriers(&tx, repo_id).await?;
         }
         tx.commit().await?;
         Ok(context.incarnation())

@@ -300,7 +300,10 @@ so a repository that turned public before its webhook arrived is caught.
 Turning the setting on queues a carrier for every open request whose latest
 push reached GitHub. Turning it off stops opening, retargeting and
 commenting at once, queued work included; carriers that already exist still
-close with their requests.
+close with their requests. Turning it off also fences runs already in flight:
+the same transaction advances their intent, and a run confirms its claim is
+still current right before each GitHub write, so it stops instead of opening
+or commenting after the change.
 
 After each successful push of a request head, Scope looks for an open pull
 request from that branch in the same repository and adopts it, or creates

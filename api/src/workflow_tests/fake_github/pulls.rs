@@ -8,6 +8,8 @@ use axum::{
 };
 use std::{
     collections::HashMap,
+    future::Future,
+    pin::Pin,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -16,6 +18,8 @@ use std::{
 
 const APP_LOGIN: &str = "scope-checks[bot]";
 
+type LookupHook = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send>;
+
 #[derive(Default)]
 pub(in crate::workflow_tests) struct FakePulls {
     pub(in crate::workflow_tests) pulls: Mutex<Vec<serde_json::Value>>,
@@ -23,6 +27,7 @@ pub(in crate::workflow_tests) struct FakePulls {
     pub(in crate::workflow_tests) forbidden: AtomicBool,
     pub(in crate::workflow_tests) rate_limited_once: AtomicBool,
     pub(in crate::workflow_tests) writes_unreachable: AtomicBool,
+    pub(in crate::workflow_tests) before_lookup: Mutex<Option<LookupHook>>,
 }
 
 impl FakePulls {
@@ -99,6 +104,10 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
             get(
                 |AxumState(fake): AxumState<Arc<FakeGitHub>>,
                  AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
+                    let hook = fake.pulls.before_lookup.lock().unwrap().take();
+                    if let Some(hook) = hook {
+                        hook().await;
+                    }
                     if let Some(refused) = fake.pulls.refused() {
                         return refused;
                     }

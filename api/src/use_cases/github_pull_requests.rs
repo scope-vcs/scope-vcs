@@ -66,7 +66,7 @@ async fn run_claimed(
     claim_token: &str,
     now_unix: u64,
 ) {
-    let result = advance(state, &mut carrier).await;
+    let result = advance(state, &mut carrier, claim_token).await;
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
     let Some(outcome) = job_outcome(result, github_retry_at(carrier.attempts, now_unix)) else {
         return;
@@ -95,7 +95,17 @@ async fn run_claimed(
     }
 }
 
-async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<(), JobFailure> {
+async fn advance(
+    state: &AppState,
+    carrier: &mut GitHubPullRequest,
+    claim_token: &str,
+) -> Result<(), JobFailure> {
+    let claim = Claim {
+        state,
+        request_id: carrier.request_id.clone(),
+        claim_token,
+        intent_sequence: carrier.intent_sequence,
+    };
     let app = state.github.clone().ok_or_else(|| {
         JobFailure::GiveUp("GitHub is not configured on this server.".to_string())
     })?;
@@ -135,7 +145,8 @@ async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<()
             ensure_may_carry(state, carrier, connection).await?;
             checked_visibility = true;
         }
-        if take_step(&app, carrier, step, &review_bots, text.as_ref()).await? == Flow::Stop {
+        if take_step(&app, &claim, carrier, step, &review_bots, text.as_ref()).await? == Flow::Stop
+        {
             return Ok(());
         }
     }
@@ -146,6 +157,28 @@ async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<()
 enum Flow {
     Continue,
     Stop,
+}
+
+struct Claim<'a> {
+    state: &'a AppState,
+    request_id: String,
+    claim_token: &'a str,
+    intent_sequence: u64,
+}
+
+impl Claim<'_> {
+    async fn holds(&self) -> Result<bool, JobFailure> {
+        Ok(self
+            .state
+            .metadata
+            .requests()
+            .github_pull_request_claim_holds(
+                &self.request_id,
+                self.claim_token,
+                self.intent_sequence,
+            )
+            .await?)
+    }
 }
 
 async fn refresh_from_github(
@@ -203,6 +236,7 @@ async fn ensure_may_carry(
 
 async fn take_step(
     app: &GitHubApp,
+    claim: &Claim<'_>,
     carrier: &mut GitHubPullRequest,
     step: GitHubPullRequestStep,
     review_bots: &GitHubReviewBotSettings,
@@ -231,6 +265,9 @@ async fn take_step(
                 }
                 None => {
                     let text = text()?;
+                    if !claim.holds().await? {
+                        return Ok(Flow::Stop);
+                    }
                     let GitHubPullRequestRecord { number, url, base } = app
                         .create_pull_request(
                             installation_id,
@@ -251,6 +288,9 @@ async fn take_step(
             text: digest,
         } => {
             let text = text()?;
+            if !claim.holds().await? {
+                return Ok(Flow::Stop);
+            }
             app.update_pull_request(
                 installation_id,
                 &full_name,
@@ -262,6 +302,9 @@ async fn take_step(
             carrier.record_text_written(digest);
         }
         GitHubPullRequestStep::Retarget { number, base } => {
+            if !claim.holds().await? {
+                return Ok(Flow::Stop);
+            }
             let updated = app
                 .update_pull_request(
                     installation_id,
@@ -285,6 +328,9 @@ async fn take_step(
                     .await
                     .map_err(call_failure)?;
                 if !posted {
+                    if !claim.holds().await? {
+                        return Ok(Flow::Stop);
+                    }
                     app.comment_on_pull_request(
                         installation_id,
                         &full_name,

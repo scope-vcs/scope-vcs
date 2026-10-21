@@ -414,3 +414,35 @@ async fn closing_a_request_closes_a_carrier_whose_number_was_never_recorded() {
     );
     assert_eq!(pull_request_pass(state).await, 0);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn turning_the_setting_off_fences_a_run_already_in_flight() {
+    let request = opted_in_request("carrier-fenced").await;
+    let (state, fake) = (&request.state, &request.fake);
+    push_pass(state, unix_now()).await;
+    let disabling = state.clone();
+    *fake.pulls.before_lookup.lock().unwrap() = Some(Box::new(move || {
+        Box::pin(async move {
+            disabling
+                .metadata
+                .repositories()
+                .set_github_review_bot_pull_requests(
+                    TEST_REPO_ID,
+                    &test_owner_id(),
+                    false,
+                    unix_now(),
+                )
+                .await
+                .unwrap();
+        })
+    }));
+
+    assert_eq!(pull_request_pass(state).await, 2);
+    assert!(fake.pulls.pulls.lock().unwrap().is_empty());
+    assert!(comments(fake).is_empty());
+    assert_eq!(pull_request_pass(state).await, 0);
+    assert_eq!(
+        request.checks().await["github_pull_request"],
+        serde_json::Value::Null
+    );
+}
