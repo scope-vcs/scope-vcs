@@ -3,6 +3,7 @@ import { readRailway } from './railway-read.mjs';
 import { RAILWAY_MUTATION_TIMEOUT_MS, RailwayRequestError } from './railway-retry.mjs';
 
 const MESSAGE_LIMIT = 300;
+const ECHO_WINDOW = 8;
 
 function stringLeaves(value) {
   if (typeof value === 'string') return [value];
@@ -10,11 +11,21 @@ function stringLeaves(value) {
   return [];
 }
 
+function echoesSentValue(text, sent) {
+  return sent.some(value => {
+    for (let start = 0; start + ECHO_WINDOW <= value.length; start += 1) {
+      if (text.includes(value.slice(start, start + ECHO_WINDOW))) return true;
+    }
+    return false;
+  });
+}
+
 function redact(message, variables) {
   const sent = stringLeaves(variables).filter(Boolean)
     .flatMap(value => [value, JSON.stringify(value).slice(1, -1)])
     .sort((left, right) => right.length - left.length);
   const redacted = sent.reduce((text, value) => text.split(value).join('[redacted]'), String(message ?? ''));
+  if (echoesSentValue(redacted, sent)) return 'message withheld because it echoes request values';
   return redacted.replace(/\s+/g, ' ').trim().slice(0, MESSAGE_LIMIT) || 'no message';
 }
 

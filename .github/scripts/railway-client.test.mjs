@@ -24,6 +24,12 @@ test('a GraphQL error from a failed CLI names its code and message without echoi
   });
 });
 
+test('a message that echoes part of a sent value is withheld', () => {
+  const stdout = JSON.stringify({ errors: [{ message: 'Invalid password registry"sec...', extensions: { code: 'BAD_USER_INPUT' } }] });
+  assert.throws(() => mutateRailway(query, variables, { execute: () => stdout }),
+    { detail: 'BAD_USER_INPUT: message withheld because it echoes request values' });
+});
+
 test('a CLI that produces no GraphQL response reports how the process ended', () => {
   for (const [fields, detail] of [
     [{ code: 'ETIMEDOUT', signal: 'SIGKILL' }, 'timed out after 120000 ms'],
