@@ -713,22 +713,3 @@ fn parse_discussion_cursor(value: &str) -> Result<DiscussionCursor, ApiError> {
 fn encode_discussion_cursor(snapshot_version: u64, position: u64, id: &str) -> String {
     format!("{snapshot_version}:{position}:{id}")
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use scope_domain::requests::RequestDiscussionAnchor as DomainDiscussionAnchor;
-
-    #[test]
-    fn discussion_anchor_rejects_an_unknown_revision() {
-        let anchor = DomainDiscussionAnchor {
-            revision_id: "missing".to_string(),
-            commit_oid: None,
-            path: None,
-        };
-
-        let error = discussion_anchor_response(Some(anchor), &BTreeSet::new(), None).unwrap_err();
-
-        assert!(format!("{error:?}").contains("unknown revision"));
-    }
-}

@@ -1,6 +1,6 @@
 import { SpanStatusCode } from '@opentelemetry/api'
 import type { ExportResult } from '@opentelemetry/core'
-import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-node'
+import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace'
 
 const EXPORTED_ATTRIBUTES = new Set([
   'http.request.method',

@@ -1,6 +1,6 @@
-use super::isolated_database;
-use crate::migrations;
+use super::migrated_store;
 use sea_orm::ConnectionTrait;
+use std::sync::Arc;
 
 const FIXTURE_SQL: &str = r#"
     INSERT INTO scope_users (id, handle, email, email_verified)
@@ -52,10 +52,8 @@ fn dispatching_attempt_sql(attempt_id: &str, number: u32, token: char) -> String
 
 #[tokio::test]
 async fn one_job_rejects_a_second_active_attempt() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
+    let store = migrated_store();
+    let db = Arc::clone(&store.db);
     db.execute_unprepared(FIXTURE_SQL).await.unwrap();
     db.execute_unprepared(&dispatching_attempt_sql("attempt-1", 1, 'a'))
         .await

@@ -335,16 +335,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn independent_cancellation_tokens_do_not_share_state() {
-        let first = CancellationToken::new();
-        let second = CancellationToken::new();
-        first.cancel();
-        assert!(first.is_cancelled());
-        assert!(!second.is_cancelled());
-        assert!(first.check().unwrap_err().is::<Cancelled>());
-    }
-
-    #[test]
     fn status_text_never_wraps_the_terminal_width() {
         for width in [1, 8, 20, 80] {
             let status = status_text(

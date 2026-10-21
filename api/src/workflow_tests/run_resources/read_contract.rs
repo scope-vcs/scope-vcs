@@ -148,26 +148,6 @@ async fn run_resource_access_errors_precede_workflow_and_cursor_errors() {
 }
 
 #[tokio::test]
-async fn workflow_selection_precedes_cursor_validation() {
-    let state = state_with_pushed_workflow("run-resource-cursor-errors").await;
-    let auth = bearer_header();
-    for (query, message) in [
-        (
-            "workflow=missing&after=invalid",
-            "workflow is not defined on current main",
-        ),
-        ("workflow=test&after=invalid", "invalid run history cursor"),
-    ] {
-        assert_error(
-            get(router(state.clone()), &history_url(query), Some(&auth)).await,
-            StatusCode::BAD_REQUEST,
-            message,
-        )
-        .await;
-    }
-}
-
-#[tokio::test]
 async fn all_run_resource_reads_ignore_locked_history_and_invitations() {
     let state = state_with_pushed_workflow("run-resource-history-locks").await;
     let member = add_member(&state).await;

@@ -13,6 +13,9 @@ mod m0093_request_object_pool;
 mod m0094_head_only_run_sources;
 mod m0095_main_pool_packs;
 
+#[cfg(test)]
+pub(crate) use baseline::schema_inventory;
+
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
 };

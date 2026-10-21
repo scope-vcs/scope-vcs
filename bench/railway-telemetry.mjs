@@ -115,7 +115,7 @@ async function railwayLogs(service, environment, since, until, lines, filter = n
   return parseJsonLines(await railway(args));
 }
 
-export function railwayMetricArgs(service, environment, since, until = null) {
+function railwayMetricArgs(service, environment, since, until = null) {
   const args = [
     'metrics',
     '--service', service,
