@@ -244,7 +244,7 @@
       "declared_metadata": true,
       "reason": "The checksum-verified objc2-system-configuration 0.3.2 archive (SHA-256 7216bd11cbda54ccabcab84d523dc93b858ec75ecfb3a7d89513fa22464da396) identifies objc2 revision 7b1abfd750a2cacaea71d6a56ecfb83cb7de560b and framework-crates/objc2-system-configuration in .cargo_vcs_info.json. Its published manifest declares Zlib OR Apache-2.0 OR MIT; Cargo.toml.orig inherits the workspace license. The pinned workspace license declaration and contributor attribution, together with the MIT permission terms, supply the selected MIT license text omitted from the crate archive."
     },
-    "rust:objc2@0.6.4": {
+    "rust:objc2@0.6.5": {
       "reason_key": "apple-mit-with-authors",
       "documents": [
         {
@@ -263,7 +263,7 @@
       ],
       "declared_metadata": true
     },
-    "rust:opentelemetry-appender-tracing@0.33.0": {
+    "rust:opentelemetry-appender-tracing@0.33.1": {
       "reason_key": "published-vcs-license",
       "documents": [
         {
@@ -273,7 +273,7 @@
         }
       ]
     },
-    "rust:opentelemetry-http@0.33.0": {
+    "rust:opentelemetry-http@0.33.1": {
       "reason_key": "published-vcs-license",
       "documents": [
         {
@@ -283,7 +283,7 @@
         }
       ]
     },
-    "rust:opentelemetry-otlp@0.33.0": {
+    "rust:opentelemetry-otlp@0.33.1": {
       "reason_key": "published-vcs-license",
       "documents": [
         {
@@ -293,7 +293,7 @@
         }
       ]
     },
-    "rust:opentelemetry-proto@0.33.0": {
+    "rust:opentelemetry-proto@0.33.1": {
       "reason_key": "published-vcs-license",
       "documents": [
         {
@@ -303,7 +303,7 @@
         }
       ]
     },
-    "rust:opentelemetry-semantic-conventions@0.33.0": {
+    "rust:opentelemetry-semantic-conventions@0.33.1": {
       "reason_key": "published-vcs-license",
       "documents": [
         {
@@ -313,7 +313,7 @@
         }
       ]
     },
-    "rust:opentelemetry@0.33.0": {
+    "rust:opentelemetry@0.33.1": {
       "reason_key": "published-vcs-license",
       "documents": [
         {
@@ -323,7 +323,7 @@
         }
       ]
     },
-    "rust:opentelemetry_sdk@0.33.0": {
+    "rust:opentelemetry_sdk@0.33.1": {
       "reason_key": "published-vcs-license",
       "documents": [
         {
@@ -353,7 +353,7 @@
         }
       ]
     },
-    "rust:rustls-platform-verifier-android@0.1.1": {
+    "rust:rustls-platform-verifier-android@0.2.0": {
       "reason": "MIT branch selected. Archive omits license files and VCS metadata. Its original package manifest and Rust source exactly match android-release-support version 0.1.1 in upstream release commit 996b1c903491641b17b3c9afb65d1352f6fc6b76. Its Maven payload is generated during releases and covered by the package MIT OR Apache-2.0 declaration. Preserve the shared repository MIT license.",
       "documents": [
         {
@@ -377,7 +377,7 @@
       ],
       "declared_metadata": true
     },
-    "rust:sea-orm-arrow@2.0.0-rc.4": {
+    "rust:sea-orm-arrow@2.0.0-rc.5": {
       "reason_key": "published-vcs-mit",
       "documents": [
         {
@@ -392,7 +392,7 @@
         }
       ]
     },
-    "rust:sea-orm-cli@2.0.3": {
+    "rust:sea-orm-cli@2.0.4": {
       "reason_key": "published-vcs-mit",
       "documents": [
         {
@@ -407,7 +407,7 @@
         }
       ]
     },
-    "rust:sea-orm-macros@2.0.3": {
+    "rust:sea-orm-macros@2.0.4": {
       "reason_key": "published-vcs-mit",
       "documents": [
         {
@@ -422,7 +422,7 @@
         }
       ]
     },
-    "rust:sea-orm-migration@2.0.3": {
+    "rust:sea-orm-migration@2.0.4": {
       "reason_key": "published-vcs-mit",
       "documents": [
         {
