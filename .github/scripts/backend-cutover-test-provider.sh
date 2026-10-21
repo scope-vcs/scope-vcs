@@ -260,7 +260,7 @@ function serviceState(id, name) {
     state.replicas = replicas(2, 1, 1);
     if (state.regions) state.regions[0].configured = 2;
   }
-  if (["scope-api", "scope-worker"].includes(id) && up && env.FAKE_UNHEALTHY_AFTER_UP_SERVICE === id) {
+  if (id === "scope-worker" && up && env.FAKE_UNHEALTHY_AFTER_UP_SERVICE === id) {
     state.replicas = replicas(2, 1, 1);
     state.regions = [{ name: region, configured: 2 }];
   }

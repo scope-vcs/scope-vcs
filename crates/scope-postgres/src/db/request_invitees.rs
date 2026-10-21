@@ -470,20 +470,21 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn active_invitee_cap_is_serialized_under_repository_and_request_locks() {
-        let store = postgres_store(31).await;
+        let store = postgres_store(0).await;
         start_public_request(&store, "request_cap").await;
-        for index in 0..29 {
-            store
-                .requests()
-                .add_request_invitee(AddRequestInviteeCommand {
-                    request_id: "request_cap".to_string(),
-                    actor_user_id: "user_author".to_string(),
-                    target_handle: format!("target-{index}"),
-                    now_unix: 10 + index as u64,
-                })
-                .await
-                .unwrap();
-        }
+        store
+            .admin()
+            .execute_for_tests(
+                "INSERT INTO scope_users (id, handle, email, email_verified)
+                 SELECT 'user_target_' || n, 'target-' || n, 'target-' || n || '@example.com', TRUE
+                 FROM generate_series(0, 30) n;
+                 INSERT INTO scope_request_invitees
+                     (request_id, user_id, invited_by_user_id, created_at_unix)
+                 SELECT 'request_cap', 'user_target_' || n, 'user_author', 10 + n
+                 FROM generate_series(0, 28) n",
+            )
+            .await
+            .unwrap();
 
         let barrier = Arc::new(Barrier::new(2));
         let mut tasks = Vec::new();

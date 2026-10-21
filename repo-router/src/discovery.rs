@@ -472,7 +472,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn initial_resolver_timeout_is_unavailable_and_rate_limited() {
         let resolver =
             Arc::new(move |_authority: Arc<str>| Box::pin(std::future::pending()) as ResolveFuture);

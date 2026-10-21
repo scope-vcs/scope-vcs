@@ -77,7 +77,7 @@ async fn set_search_path<C: ConnectionTrait>(db: &C, search_path: &str) -> Resul
     Ok(())
 }
 
-pub(super) async fn schema_inventory<C: ConnectionTrait>(db: &C) -> Result<Value, DbErr> {
+pub(crate) async fn schema_inventory<C: ConnectionTrait>(db: &C) -> Result<Value, DbErr> {
     let schema = db
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,

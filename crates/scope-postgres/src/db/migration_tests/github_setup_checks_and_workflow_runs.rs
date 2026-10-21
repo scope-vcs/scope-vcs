@@ -6,10 +6,8 @@ const PUSH_COLUMNS: &str = "id,repo_id,request_id,ref,sequence,installation_id,\
 
 #[tokio::test]
 async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
+    let store = migrated_store();
+    let db = Arc::clone(&store.db);
     db.execute_unprepared(&format!(
         r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);

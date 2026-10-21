@@ -1,6 +1,6 @@
 {
   "lockfiles": {
-    "Cargo.lock": "c283f11f07d69a894ceeb2114c0e887b5244f76cb69d3106e45ae9db88c7ac0c",
+    "Cargo.lock": "4aad3f82a2aad121f047d97a93b7ab52abcaa0904deea013efe2fe0571bb56a2",
     "cli/Cargo.lock": "636f53c93d52916ac04454913ad98b180f65805648c2f422e920e00b193c898c",
     "web/pnpm-lock.yaml": "e4d9b78680905aa51ba1b2274521f4d60c090b0f90dceae77af03c00a967d015",
     "dependency-analyzer/package-lock.json": "c4376d39618232d12efce2cd942800a994e6bfdbe94e368c09e515b439057e92"

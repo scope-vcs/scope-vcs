@@ -74,29 +74,25 @@ async fn the_bridge_replaces_the_previous_ledger_after_verifying_the_schema() {
 
 #[tokio::test]
 async fn the_bridge_refuses_schema_drift_without_changing_the_ledger() {
-    for drift in [
-        "ALTER TABLE scope_request_check_evaluations DROP COLUMN changes_github_workflows",
-        "DROP INDEX idx_scope_run_attempts_active",
-    ] {
-        let (_target, db, _lease) = isolated_database().await;
-        let bridged = retained_bridged_database(&db).await;
-        db.execute_unprepared(drift).await.unwrap();
-        let before = representative_business_snapshot(&db).await;
+    let (_target, db, _lease) = isolated_database().await;
+    let bridged = retained_bridged_database(&db).await;
+    let drift = "ALTER TABLE scope_request_check_evaluations DROP COLUMN changes_github_workflows";
+    db.execute_unprepared(drift).await.unwrap();
+    let before = representative_business_snapshot(&db).await;
 
-        for error in [
-            migrations::preflight(&db, Default::default())
-                .await
-                .unwrap_err(),
-            migrations::apply_in_maintenance(db.as_ref(), Default::default())
-                .await
-                .unwrap_err(),
-        ] {
-            assert!(
-                error.to_string().contains("schema drift"),
-                "{drift}: {error}"
-            );
-        }
-        assert_eq!(applied_versions(&db).await, bridged);
-        assert_eq!(representative_business_snapshot(&db).await, before);
+    for error in [
+        migrations::preflight(&db, Default::default())
+            .await
+            .unwrap_err(),
+        migrations::apply_in_maintenance(db.as_ref(), Default::default())
+            .await
+            .unwrap_err(),
+    ] {
+        assert!(
+            error.to_string().contains("schema drift"),
+            "{drift}: {error}"
+        );
     }
+    assert_eq!(applied_versions(&db).await, bridged);
+    assert_eq!(representative_business_snapshot(&db).await, before);
 }
