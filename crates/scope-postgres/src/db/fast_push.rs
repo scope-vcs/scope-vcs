@@ -80,7 +80,7 @@ impl RepositoryStore {
             .ok_or_else(|| PostgresError::conflict("repo has no accepted Git head"))?
             .try_into_domain()?;
         if head.frontier() != expected_git_frontier {
-            return Err(PostgresError::conflict(
+            return Err(PostgresError::repository_moved(
                 "repo changed since push was reviewed; rerun scope push --main",
             ));
         }

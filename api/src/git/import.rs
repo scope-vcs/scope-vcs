@@ -5,8 +5,9 @@ mod segment_upload;
 mod staging;
 
 pub(crate) use self::artifacts::{
-    PreparedReceivePackUpdate, ReadWorkflowFiles, ReviewedUpdateMode,
-    read_repository_workflow_files, reviewed_merge_under_lease, reviewed_update_from_staging_repo,
+    PreparedReceivePackUpdate, ReadWorkflowFiles, ReviewTarget, ReviewedUpdateMode,
+    STALE_MAIN_PUSH_ERROR, read_repository_workflow_files, reviewed_merge_update,
+    reviewed_update_from_staging_repo,
 };
 #[cfg(test)]
 pub(crate) use self::pushed_tree::validate_pushed_file_path;

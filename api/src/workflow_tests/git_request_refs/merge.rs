@@ -1,10 +1,9 @@
-use super::super::main_pool::main_pool_packs;
+use super::super::main_pool::assert_pool_pack_discarded;
 use super::*;
 use crate::use_cases::request_merge::{
     PreparedRequestMerge, persist_prepared_merge_for_tests, prepare_request_merge,
 };
 use scope_domain::views::ViewId;
-use std::time::Duration;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn merge_route_persists_git_content_once() {
@@ -559,7 +558,7 @@ async fn locked_merge_rejects_stale_inputs_without_persisting_content() {
             stored_request(&state, REQUEST_ID).await.state(),
             RequestState::Open
         );
-        assert_pack_rollback_and_write_lease_released(&state, &staged_pack).await;
+        assert_pool_pack_discarded(&state, &staged_pack).await;
     }
 }
 
@@ -594,36 +593,4 @@ async fn prepared_merge(
     )
     .await
     .unwrap()
-}
-
-async fn assert_pack_rollback_and_write_lease_released(
-    state: &AppState,
-    staged_pack: &scope_domain::repository::git::GitPoolPack,
-) {
-    assert!(
-        main_pool_packs(state)
-            .await
-            .iter()
-            .all(|listed| listed.id != staged_pack.id)
-    );
-    if let Some(segment) = staged_pack.storage.segment() {
-        assert!(
-            state
-                .git_segment_store
-                .restore_to(TEST_REPO_ID, segment, tokio::io::sink())
-                .await
-                .is_err()
-        );
-    }
-    let lease = tokio::time::timeout(
-        Duration::from_secs(2),
-        state
-            .metadata
-            .repositories()
-            .acquire_git_write_lease(TEST_REPO_ID),
-    )
-    .await
-    .expect("failed merge must release its Git write lease")
-    .unwrap();
-    lease.release().await;
 }

@@ -2,7 +2,9 @@ use crate::{
     error::ApiError,
     git::{
         command::run_git,
-        import::{PreparedReceivePackUpdate, ReceivePackUpdate, reviewed_merge_under_lease},
+        import::{
+            PreparedReceivePackUpdate, ReceivePackUpdate, ReviewTarget, reviewed_merge_update,
+        },
         pool_pack::StagedPoolPack,
         projection_repo::verify_and_restore_projection,
         repository_git::RepositoryGit,
@@ -27,9 +29,9 @@ use scope_domain::{
     runs::catalog::RepositoryWorkflowCatalog,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_postgres::db::{
-    ExpectedRequestAutoMerge, ExpectedRequestMergeEvidence, MergeRequestContentCommand,
-    RepositoryGitWriteLease,
+use scope_postgres::{
+    db::{ExpectedRequestAutoMerge, ExpectedRequestMergeEvidence, MergeRequestContentCommand},
+    error::{PostgresError, PostgresErrorKind},
 };
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
 
@@ -76,8 +78,9 @@ pub(crate) struct PreparedRequestMerge {
     pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
     pub(crate) update: ReceivePackUpdate,
     pub(crate) staged_pack: StagedPoolPack,
-    pub(crate) write_lease: RepositoryGitWriteLease,
 }
+
+const MERGE_ATTEMPTS: usize = 5;
 
 #[tracing::instrument(skip_all, name = "use_case.request.merge")]
 pub(crate) async fn merge_request(
@@ -107,25 +110,6 @@ pub(crate) async fn merge_request_inner(
     crate::use_cases::github_check_results::confirm_recent_github_checks(state, &checked.request)
         .await?;
     ensure_checks_cleared(state, command, &checked).await?;
-    let write_lease = state
-        .metadata
-        .repositories()
-        .acquire_git_write_lease(&checked.context.record.id)
-        .await
-        .map_err(ApiError::from)?;
-    let rechecked = async {
-        let checked = authorize_merge(state, command).await?;
-        ensure_checks_cleared(state, command, &checked).await?;
-        Ok::<_, RequestMergeFailure>(checked)
-    }
-    .await;
-    let checked = match rechecked {
-        Ok(checked) => checked,
-        Err(error) => {
-            write_lease.release().await;
-            return Err(error);
-        }
-    };
     let CheckedMerge {
         context,
         access,
@@ -139,58 +123,44 @@ pub(crate) async fn merge_request_inner(
         request.view.clone(),
         request_actor_role(access.clone()),
     );
-    let repo = match state
-        .metadata
-        .repositories()
-        .repository(&command.owner, &command.repo_name)
-        .await
-    {
-        Ok(Some(repo))
-            if repo.incarnation() == context.incarnation()
-                && repo.record.change_version == context.record.change_version =>
-        {
-            repo
-        }
-        Ok(_) => {
-            write_lease.release().await;
-            return Err(ApiError::conflict(
-                "repository changed while the merge was checked; retry",
-            )
-            .into());
-        }
-        Err(error) => {
-            write_lease.release().await;
-            return Err(ApiError::from(error).into());
-        }
-    };
-    let prepared = prepare_request_merge_for_execution(
-        state,
-        &command.owner,
-        &command.repo_name,
-        &command.actor_user_id,
-        &repo,
-        &request,
-        write_lease,
-    )
-    .await?;
-    let merged_event_id = match crate::persistence_ids::generate_prefixed_id("event_request_merged")
-    {
-        Ok(event_id) => event_id,
-        Err(error) => {
-            cleanup_prepared_merge(state, prepared).await;
-            return Err(RequestMergeFailure::Other(error));
-        }
-    };
-    let now_unix = match unix_now() {
-        Ok(now_unix) => now_unix,
-        Err(error) => {
-            cleanup_prepared_merge(state, prepared).await;
-            return Err(RequestMergeFailure::Other(error));
-        }
-    };
-    let mutation = persist_prepared_merge(state, command, merged_event_id, now_unix, prepared)
-        .await
+    let merged_event_id = crate::persistence_ids::generate_prefixed_id("event_request_merged")
         .map_err(RequestMergeFailure::Other)?;
+    let mut attempt = 1;
+    let (repo, mutation) = loop {
+        let repo = current_repository(state, command, &context.incarnation()).await?;
+        let prepared = prepare_request_merge_for_execution(
+            state,
+            &command.owner,
+            &command.repo_name,
+            &command.actor_user_id,
+            &repo,
+            &request,
+        )
+        .await?;
+        let now_unix = match unix_now() {
+            Ok(now_unix) => now_unix,
+            Err(error) => {
+                cleanup_prepared_merge(state, prepared).await;
+                return Err(RequestMergeFailure::Other(error));
+            }
+        };
+        match persist_prepared_merge(state, command, merged_event_id.clone(), now_unix, prepared)
+            .await
+        {
+            Ok(mutation) => break (repo, mutation),
+            Err(error)
+                if error.kind == PostgresErrorKind::RepositoryMoved && attempt < MERGE_ATTEMPTS =>
+            {
+                tracing::info!(
+                    attempt,
+                    request_id = %request.id,
+                    "main moved while the merge was prepared; preparing it again"
+                );
+                attempt += 1;
+            }
+            Err(error) => return Err(ApiError::from(error).into()),
+        }
+    };
     state.wakeups.auto_merge.notify_one();
 
     state.product_analytics.capture(analytics_event);
@@ -227,16 +197,33 @@ pub(crate) async fn merge_request_inner(
     })
 }
 
+async fn current_repository(
+    state: &AppState,
+    command: &MergeRequestCommand,
+    incarnation: &RepositoryIncarnation,
+) -> Result<Repository, RequestMergeFailure> {
+    match state
+        .metadata
+        .repositories()
+        .repository(&command.owner, &command.repo_name)
+        .await?
+    {
+        Some(repo) if &repo.incarnation() == incarnation => Ok(repo),
+        _ => {
+            Err(ApiError::conflict("repository changed while the merge was checked; retry").into())
+        }
+    }
+}
+
 async fn persist_prepared_merge(
     state: &AppState,
     command: &MergeRequestCommand,
     merged_event_id: String,
     now_unix: u64,
     prepared: PreparedRequestMerge,
-) -> Result<PersistedRequestMerge, ApiError> {
+) -> Result<PersistedRequestMerge, PostgresError> {
     let repository_incarnation = prepared.repository_incarnation;
     let staged_pack = prepared.staged_pack;
-    let write_lease = prepared.write_lease;
     let repository_id = scope_domain::repository::repo_id(&command.owner, &command.repo_name);
     let mutation = state
         .metadata
@@ -273,7 +260,6 @@ async fn persist_prepared_merge(
             )
             .await;
             staged_pack.finish(state).await;
-            write_lease.release().await;
             Ok(PersistedRequestMerge {
                 request: mutation.request.request,
                 repo_change_version: mutation.git_head.change_version,
@@ -282,8 +268,7 @@ async fn persist_prepared_merge(
         }
         Err(error) => {
             staged_pack.discard(state, &repository_id).await;
-            write_lease.release().await;
-            Err(error.into())
+            Err(error)
         }
     }
 }
@@ -297,22 +282,9 @@ pub(crate) async fn prepare_request_merge(
     repo: &Repository,
     request: &Request,
 ) -> Result<PreparedRequestMerge, ApiError> {
-    let write_lease = state
-        .metadata
-        .repositories()
-        .acquire_git_write_lease(&repo.record.id)
-        .await?;
-    prepare_request_merge_for_execution(
-        state,
-        owner,
-        repo_name,
-        actor_user_id,
-        repo,
-        request,
-        write_lease,
-    )
-    .await
-    .map_err(RequestMergeFailure::into_api_error)
+    prepare_request_merge_for_execution(state, owner, repo_name, actor_user_id, repo, request)
+        .await
+        .map_err(RequestMergeFailure::into_api_error)
 }
 
 async fn prepare_request_merge_for_execution(
@@ -322,7 +294,6 @@ async fn prepare_request_merge_for_execution(
     actor_user_id: &str,
     repo: &Repository,
     request: &Request,
-    write_lease: RepositoryGitWriteLease,
 ) -> Result<PreparedRequestMerge, RequestMergeFailure> {
     let expected_merge_evidence = state
         .metadata
@@ -427,15 +398,15 @@ async fn prepare_request_merge_for_execution(
         let PreparedReceivePackUpdate {
             update,
             staged_pack,
-            write_lease,
-        } = reviewed_merge_under_lease(
+        } = reviewed_merge_update(
             state,
-            owner,
-            repo_name,
-            &staging_repo,
-            actor_user_id,
-            repo.repo_config.clone(),
-            write_lease,
+            ReviewTarget {
+                owner,
+                repo_name,
+                staging_repo: &staging_repo,
+                author_id: actor_user_id,
+            },
+            repo,
         )
         .await
         .map_err(RequestMergeFailure::from)?;
@@ -484,7 +455,6 @@ async fn prepare_request_merge_for_execution(
             Ok(heads) => heads,
             Err(error) => {
                 staged_pack.discard(state, &repo.record.id).await;
-                write_lease.release().await;
                 return Err(RequestMergeFailure::from(error));
             }
         };
@@ -504,7 +474,6 @@ async fn prepare_request_merge_for_execution(
             Ok(children) => children,
             Err(error) => {
                 staged_pack.discard(state, &repo.record.id).await;
-                write_lease.release().await;
                 return Err(RequestMergeFailure::from(error));
             }
         };
@@ -521,7 +490,6 @@ async fn prepare_request_merge_for_execution(
             workflow_catalog: update.workflow_catalog.clone(),
             update,
             staged_pack,
-            write_lease,
         })
     }
     .await;
@@ -560,7 +528,6 @@ async fn prepare_request_merge_for_execution(
                 .staged_pack
                 .discard(state, &scope_domain::repository::repo_id(owner, repo_name))
                 .await;
-            value.write_lease.release().await;
             Err(error.into())
         }
     }
@@ -582,7 +549,6 @@ async fn cleanup_prepared_merge(state: &AppState, prepared: PreparedRequestMerge
         .staged_pack
         .discard(state, &prepared.repository_id)
         .await;
-    prepared.write_lease.release().await;
 }
 
 #[cfg(test)]
@@ -611,6 +577,7 @@ pub(crate) async fn persist_prepared_merge_for_tests(
     )
     .await
     .map(|mutation| mutation.request)
+    .map_err(ApiError::from)
 }
 
 #[cfg(test)]

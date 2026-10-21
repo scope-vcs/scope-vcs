@@ -158,9 +158,9 @@ impl IntoResponse for ServiceError {
 pub fn postgres_error_kind(kind: scope_postgres::error::PostgresErrorKind) -> ErrorKind {
     use scope_postgres::error::PostgresErrorKind;
     match kind {
-        PostgresErrorKind::AttachmentUploadExpired | PostgresErrorKind::Conflict => {
-            ErrorKind::Conflict
-        }
+        PostgresErrorKind::AttachmentUploadExpired
+        | PostgresErrorKind::Conflict
+        | PostgresErrorKind::RepositoryMoved => ErrorKind::Conflict,
         PostgresErrorKind::InvalidInput => ErrorKind::BadRequest,
         PostgresErrorKind::PermissionDenied => ErrorKind::Forbidden,
         PostgresErrorKind::Internal => ErrorKind::Internal,

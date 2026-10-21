@@ -95,7 +95,6 @@ impl Default for RuntimeBudgetConfig {
 
 pub(crate) struct RuntimeBudgets {
     receive_pack: Arc<Semaphore>,
-    receive_pack_concurrency: usize,
     upload_pack: Arc<Semaphore>,
     git_materialization: Arc<Semaphore>,
     git_segment_ingest: Arc<Semaphore>,
@@ -113,7 +112,6 @@ impl RuntimeBudgets {
     pub(crate) fn from_config(config: RuntimeBudgetConfig) -> Self {
         Self {
             receive_pack: Arc::new(Semaphore::new(config.receive_pack_concurrency)),
-            receive_pack_concurrency: config.receive_pack_concurrency,
             upload_pack: Arc::new(Semaphore::new(config.upload_pack_concurrency)),
             git_materialization: Arc::new(Semaphore::new(config.git_materialization_concurrency)),
             git_segment_ingest: Arc::new(Semaphore::new(config.git_segment_ingest_concurrency)),
@@ -122,10 +120,6 @@ impl RuntimeBudgets {
             git_admission_wait: config.git_admission_wait,
             git_storage_limits: config.git_storage_limits,
         }
-    }
-
-    pub(crate) fn receive_pack_concurrency(&self) -> usize {
-        self.receive_pack_concurrency
     }
 
     pub(crate) async fn admit_receive_pack(&self) -> Result<RuntimePermit, ApiError> {

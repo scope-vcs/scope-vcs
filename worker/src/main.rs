@@ -133,9 +133,9 @@ async fn connect_worker_or_wait(
     health: &WorkerHealth,
 ) -> Option<MetadataStore> {
     loop {
-        match MetadataStore::connect_with_pool_limits(
+        match MetadataStore::connect_with_max_connections(
             settings.database_url.clone(),
-            settings.metadata_pool_limits(),
+            settings.metadata_max_connections(),
         )
         .await
         {

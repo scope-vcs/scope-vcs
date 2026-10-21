@@ -15,7 +15,7 @@ pub(in crate::db) enum AdvanceGitHeadError {
 impl From<AdvanceGitHeadError> for PostgresError {
     fn from(error: AdvanceGitHeadError) -> Self {
         match error {
-            AdvanceGitHeadError::Moved => PostgresError::conflict(MAIN_MOVED),
+            AdvanceGitHeadError::Moved => PostgresError::repository_moved(MAIN_MOVED),
             AdvanceGitHeadError::Persistence(error) => error,
         }
     }

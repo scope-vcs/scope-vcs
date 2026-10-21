@@ -56,5 +56,5 @@ async fn advancing_from_a_stale_head_conflicts_and_keeps_the_current_head() {
     assert_eq!(stored_head(&store).await, Some(second));
 
     let error = PostgresError::from(AdvanceGitHeadError::Moved);
-    assert_eq!(error.kind, crate::error::PostgresErrorKind::Conflict);
+    assert_eq!(error.kind, crate::error::PostgresErrorKind::RepositoryMoved);
 }

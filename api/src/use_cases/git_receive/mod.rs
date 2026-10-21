@@ -388,13 +388,10 @@ async fn complete_main_push(
         {
             Ok(candidates) => candidates,
             Err(error) => {
-                main_push::cleanup_failed_persist(
-                    state,
-                    incarnation.repository_id(),
-                    prepared.staged_pack,
-                    prepared.write_lease,
-                )
-                .await;
+                prepared
+                    .staged_pack
+                    .discard(state, incarnation.repository_id())
+                    .await;
                 return Err(error);
             }
         }
@@ -473,7 +470,6 @@ async fn complete_main_push(
     )
     .await;
     persisted.staged_pack.finish(state).await;
-    persisted.write_lease.release().await;
     Ok(())
 }
 

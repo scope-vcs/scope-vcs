@@ -22,7 +22,7 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
 
     let api_error = match connect_postgres_store(
         target.schema_database_url(),
-        crate::db::connection::MetadataPoolLimits::default(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
     )
     .await
     {
@@ -92,7 +92,7 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
 
     let worker_store = connect_postgres_store(
         target.schema_database_url(),
-        crate::db::connection::MetadataPoolLimits::default(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
     )
     .await
     .unwrap();

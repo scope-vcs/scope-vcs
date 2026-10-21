@@ -13,6 +13,27 @@ pub(super) async fn main_pool_packs(
         .unwrap()
 }
 
+pub(super) async fn assert_pool_pack_discarded(
+    state: &AppState,
+    pack: &scope_domain::repository::git::GitPoolPack,
+) {
+    assert!(
+        main_pool_packs(state)
+            .await
+            .iter()
+            .all(|listed| listed.id != pack.id)
+    );
+    if let Some(segment) = pack.storage.segment() {
+        assert!(
+            state
+                .git_segment_store
+                .restore_to(TEST_REPO_ID, segment, tokio::io::sink())
+                .await
+                .is_err()
+        );
+    }
+}
+
 pub(super) async fn forget_main_pool_packs(state: &AppState) {
     state
         .metadata
@@ -147,4 +168,67 @@ async fn a_fresh_replica_restores_and_catches_up_main_from_the_pool() {
         .unwrap(),
         "second\n"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_prepared_main_push_does_not_block_another_push_and_then_fails_as_stale() {
+    let (state, source, _first_head) = published_git_fixture("main-pool-held-push").await;
+    let base = accepted_head(&state).await;
+    let held_checkout = clone_test_repo(&source, "main-pool-held-push-checkout", false);
+    commit_file(&held_checkout, "held.txt", "held\n");
+    let held_staging = clone_test_repo(&held_checkout, "main-pool-held-push-staging", true);
+    let mut held = reviewed_update_from_staging_repo(
+        &state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &held_staging,
+        &test_owner_id(),
+        repo_config(ViewId::public()),
+        ReviewedUpdateMode::ReadyPush,
+    )
+    .await
+    .unwrap();
+    held.base_git_frontier = Some(Some(base.frontier()));
+    let held_pack = held.staged_pack.pack.clone();
+    let crate::git::pool_pack::LocalPoolPack::Files(held_files) = &held.staged_pack.local else {
+        panic!("a small main push stages an inline pool pack");
+    };
+    let held_local_pack = held_files.pack.clone();
+    assert!(held_local_pack.exists());
+
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    configure_bearer_header(&source, &remote, &bearer_header());
+    commit_file(&source, "other.txt", "other\n");
+    configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
+    let pushing = source.to_path_buf();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        tokio::task::spawn_blocking(move || {
+            run_git(
+                Some(&pushing),
+                &["push", &remote, &format!("HEAD:{DEFAULT_GIT_BRANCH}")],
+                "push a disjoint main update while another push is prepared",
+            )
+        }),
+    )
+    .await
+    .expect("a prepared main push must not block another push")
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        live_file_content(&state, "/other.txt").await.as_deref(),
+        Some("other\n")
+    );
+
+    let error = persist_test_update(&state, held).await.unwrap_err();
+    assert_eq!(error.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        error.into_public_message(),
+        crate::git::import::STALE_MAIN_PUSH_ERROR
+    );
+    assert_pool_pack_discarded(&state, &held_pack).await;
+    assert!(!held_local_pack.exists());
+    assert_eq!(live_file_content(&state, "/held.txt").await, None);
+    assert_eq!(main_pool_packs(&state).await.len(), 2);
 }

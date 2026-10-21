@@ -219,6 +219,5 @@ async fn landed_request_is_complete_when_main_push_persistence_returns() {
         assert_eq!(persisted.completed_landed_requests, 1);
         assert_eq!(request.state(), RequestState::Merged);
         assert_eq!(request.merged_main_oid.as_deref(), Some(main_oid.as_str()));
-        persisted.write_lease.release().await;
     }
 }

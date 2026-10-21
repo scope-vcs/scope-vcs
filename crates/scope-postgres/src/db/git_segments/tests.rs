@@ -4,7 +4,6 @@ use scope_domain::repository::git::{
     GitPoolPack, GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef, GitSegmentUploadState,
 };
 use sea_orm::ConnectionTrait;
-use std::time::Duration;
 
 async fn store_with_repository(repo_id: &str) -> MetadataStore {
     let store =
@@ -137,86 +136,6 @@ async fn upload_ledger_enforces_publication_and_recovery_states() {
             .unwrap()
             .is_empty()
     );
-}
-
-#[tokio::test]
-async fn repository_git_write_lease_is_session_scoped() {
-    let store = store_with_repository("segment-user/repo").await;
-    let repositories = store.repositories();
-    let first = repositories
-        .acquire_git_write_lease("segment-user/repo")
-        .await
-        .unwrap();
-    let waiting_store = repositories.clone();
-    let waiting = tokio::spawn(async move {
-        waiting_store
-            .acquire_git_write_lease("segment-user/repo")
-            .await
-            .unwrap()
-    });
-    crate::db::locks::wait_for_advisory_waiter(&store, "git-write", "segment-user/repo").await;
-    assert!(
-        !waiting.is_finished(),
-        "waiter must not acquire a held lease"
-    );
-    first.release().await;
-    let second = tokio::time::timeout(Duration::from_secs(60), waiting)
-        .await
-        .unwrap()
-        .unwrap();
-    second.release().await;
-}
-
-#[tokio::test]
-async fn a_cancelled_release_closes_the_session_instead_of_pooling_the_held_lock() {
-    let store = store_with_repository("segment-user/repo").await;
-    let schema = content_fences::current_schema(store.db.as_ref())
-        .await
-        .unwrap();
-    let key = sea_orm::sqlx::postgres::PgAdvisoryLock::new(format!(
-        "scope:git-write:{schema}:segment-user/repo"
-    ))
-    .key()
-    .as_bigint()
-    .unwrap();
-    let mut cancelled = false;
-    for _ in 0..50 {
-        let lease = store
-            .repositories()
-            .acquire_git_write_lease("segment-user/repo")
-            .await
-            .unwrap();
-        tokio::select! {
-            biased;
-            () = lease.release() => {}
-            () = std::future::ready(()) => {
-                cancelled = true;
-                break;
-            }
-        }
-    }
-    assert!(cancelled, "release always finished within its first poll");
-    for _ in 0..100 {
-        let held = store
-            .db
-            .query_one_raw(sea_orm::Statement::from_sql_and_values(
-                sea_orm::DatabaseBackend::Postgres,
-                "SELECT count(*) AS held FROM pg_locks
-                 WHERE locktype = 'advisory' AND objsubid = 1
-                   AND ((classid::bigint << 32) | objid::bigint) = $1",
-                [key.into()],
-            ))
-            .await
-            .unwrap()
-            .unwrap()
-            .try_get::<i64>("", "held")
-            .unwrap();
-        if held == 0 {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    panic!("a cancelled release left the repository Git write lease held");
 }
 
 #[tokio::test]

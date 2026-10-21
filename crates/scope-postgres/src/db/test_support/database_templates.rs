@@ -37,10 +37,6 @@ pub(super) async fn connect_store(target: &TestDatabaseTarget) -> anyhow::Result
         db: Arc::clone(&lease.database),
         postgres_database_url: Some(Arc::from(lease.database_url.clone())),
         repo_change_notifier: Default::default(),
-        git_write_lease_sessions: super::super::git_segments::GitWriteLeaseSessions::lazy(
-            &lease.database_url,
-            super::super::connection::DEFAULT_GIT_WRITE_LEASE_SESSIONS,
-        )?,
         _test_schema: Some(lease),
     })
 }

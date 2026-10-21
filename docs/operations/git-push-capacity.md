@@ -6,7 +6,7 @@ Push throughput scales by adding API replicas. Each replica admits a fixed numbe
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `SCOPE_GIT_RECEIVE_PACK_CONCURRENCY` | 4 | Concurrent pushes per replica. Also caps the replica's repository write-lease sessions. |
+| `SCOPE_GIT_RECEIVE_PACK_CONCURRENCY` | 4 | Concurrent pushes per replica. |
 | `SCOPE_GIT_SEGMENT_INGEST_CONCURRENCY` | 4 | Concurrent pack uploads to object storage per replica. Keep it equal to receive-pack concurrency when pushes are small. |
 | `SCOPE_DATABASE_MAX_CONNECTIONS` | 10 | Size of the replica's main Postgres pool. |
 | `SCOPE_GIT_ADMISSION_WAIT_MS` | 2000 | How long a push or fetch waits for a free slot before the API returns 429. |
@@ -28,19 +28,19 @@ Compaction merges two segments per job. Under sustained pushes to the same repos
 | `SCOPE_REPO_ROUTER_READ_REPLICAS` | 1 | API replicas a repository's fetches rotate across. |
 | `SCOPE_REPO_ROUTER_WRITE_REPLICAS` | 1 | API replicas a repository's pushes rotate across. |
 
-The router ranks API replicas per repository. With the default of 1, every push for a repository goes to its top-ranked replica, so one busy repository is limited to one replica's CPU. Raising `SCOPE_REPO_ROUTER_WRITE_REPLICAS` spreads its pushes across that many replicas. Request revisions commit by compare-and-swap in Postgres and main pushes take the database write lease, so the replica a push lands on does not affect correctness. Replicas share request branch objects through the request object pool: before preparing a push, a replica installs the packs other replicas registered since its last sync. A replica that has not synced yet restores a request from its snapshot instead.
+The router ranks API replicas per repository. With the default of 1, every push for a repository goes to its top-ranked replica, so one busy repository is limited to one replica's CPU. Raising `SCOPE_REPO_ROUTER_WRITE_REPLICAS` spreads its pushes across that many replicas. Request revisions, main pushes, and request merges prepare their packs without a repository lock and commit by compare-and-swap on the repository head in Postgres, so the replica a push lands on does not affect correctness. A main push whose base moved during preparation is rejected so the client fetches and pushes again; a request merge prepares again on the new main, up to five attempts. Replicas share request branch objects through the request object pool: before preparing a push, a replica installs the packs other replicas registered since its last sync. A replica that has not synced yet restores a request from its snapshot instead.
 
 ## Connection budget
 
 Worst-case Postgres connections:
 
 ```
-api_replicas × (SCOPE_DATABASE_MAX_CONNECTIONS + SCOPE_GIT_RECEIVE_PACK_CONCURRENCY + 1)
+api_replicas × (SCOPE_DATABASE_MAX_CONNECTIONS + 1)
   + worker_replicas × (10 + SCOPE_GIT_COMPACTION_CONCURRENCY)
   + media services, maintenance, and superuser_reserved_connections
 ```
 
-Keep that total below Postgres `max_connections`. Write-lease sessions open lazily and close after 60 seconds idle, so steady-state use is lower than the bound. The bound applies when every slot is busy at once.
+Keep that total below Postgres `max_connections`. The bound applies when every pool is full at once.
 
 On Railway, the Postgres container allows about 1,000 processes. Each connection is a process, so `max_connections` above roughly 900 fails with fork errors under load rather than with a clean connection refusal.
 

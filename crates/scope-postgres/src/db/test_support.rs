@@ -222,6 +222,28 @@ impl AdminStore {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub async fn lock_aggregates_for_tests(
+        &self,
+    ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
+        self.lock_tables_for_tests(&["scope_metadata_locks"]).await
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn lock_waiters_for_tests(&self) -> Result<i64, PostgresError> {
+        Ok(self
+            .db
+            .query_one_raw(Statement::from_string(
+                sea_orm::DatabaseBackend::Postgres,
+                "SELECT count(*) AS waiting FROM pg_locks
+                 WHERE NOT granted
+                   AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
+            ))
+            .await?
+            .ok_or_else(|| PostgresError::internal_message("lock waiter count missing"))?
+            .try_get::<i64>("", "waiting")?)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     async fn lock_tables_for_tests(
         &self,
         tables: &[&str],

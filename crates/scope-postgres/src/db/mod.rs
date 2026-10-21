@@ -131,7 +131,7 @@ pub use cli_auth_results::{
 };
 use connection::begin_metadata_read_snapshot;
 pub use connection::{
-    DEFAULT_METADATA_POOL_MAX_CONNECTIONS, ExclusiveWriterFence, MetadataPoolLimits,
+    DEFAULT_METADATA_POOL_MAX_CONNECTIONS, ExclusiveWriterFence,
     terminate_metadata_writer_sessions, verify_writer_fence_available,
 };
 #[cfg(test)]
@@ -144,7 +144,7 @@ pub use fast_push::ApplyContentOnlyPushCommand;
 use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::{GitPushCredentials, GitPushState};
-pub use git_segments::{ListedMainPoolPack, PooledRequestPack, RepositoryGitWriteLease};
+pub use git_segments::{ListedMainPoolPack, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;

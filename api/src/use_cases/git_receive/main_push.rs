@@ -3,7 +3,7 @@ use crate::{
     git::{
         import::{
             PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
-            apply_receive_pack_update, reviewed_update_from_staging_repo,
+            STALE_MAIN_PUSH_ERROR, apply_receive_pack_update, reviewed_update_from_staging_repo,
         },
         pool_pack::StagedPoolPack,
     },
@@ -16,8 +16,12 @@ use scope_domain::{
     reviewed_updates::content::{ReviewedUpdateAuthorization, authorize_reviewed_update},
     runs::trigger::PushTriggerInput,
 };
-use scope_postgres::db::{
-    LandedRequestCandidate, LandedRequestCompletion, RepositoryGitWriteLease, RepositoryMutation,
+use scope_postgres::{
+    db::{
+        LandedRequestCandidate, LandedRequestCompletion, RepositoryMutation,
+        RepositoryMutationError,
+    },
+    error::PostgresErrorKind,
 };
 use std::{path::Path, time::Instant};
 
@@ -28,7 +32,6 @@ pub(crate) struct PersistedGitPush {
     pub(crate) head: GitHead,
     pub(crate) completed_landed_requests: usize,
     pub(crate) staged_pack: StagedPoolPack,
-    pub(crate) write_lease: RepositoryGitWriteLease,
 }
 
 impl std::fmt::Debug for PersistedGitPush {
@@ -94,12 +97,7 @@ pub(super) async fn prepare_main_push(
             Ok(base) => base,
             Err(error) => {
                 let repository_id = scope_domain::repository::repo_id(owner, repo_name);
-                let PreparedReceivePackUpdate {
-                    staged_pack,
-                    write_lease,
-                    ..
-                } = prepared;
-                cleanup_failed_persist(state, &repository_id, staged_pack, write_lease).await;
+                prepared.staged_pack.discard(state, &repository_id).await;
                 return Err(error);
             }
         },
@@ -121,13 +119,12 @@ pub(crate) async fn persist_main_push(
     let PreparedReceivePackUpdate {
         update,
         staged_pack,
-        write_lease,
     } = prepared;
     let repository_id = scope_domain::repository::repo_id(owner, repo_name);
     let now_unix = match crate::persistence::unix_now() {
         Ok(now) => now,
         Err(error) => {
-            cleanup_failed_persist(state, &repository_id, staged_pack, write_lease).await;
+            staged_pack.discard(state, &repository_id).await;
             return Err(error);
         }
     };
@@ -162,8 +159,8 @@ pub(crate) async fn persist_main_push(
         {
             Ok(result) => result,
             Err(error) => {
-                cleanup_failed_persist(state, &repository_id, staged_pack, write_lease).await;
-                return Err(error.into());
+                staged_pack.discard(state, &repository_id).await;
+                return Err(main_push_commit_error(error.into()));
             }
         }
     {
@@ -173,7 +170,6 @@ pub(crate) async fn persist_main_push(
             head: git_head.result,
             completed_landed_requests: git_head.completed_landed_requests,
             staged_pack,
-            write_lease,
         });
     }
 
@@ -259,8 +255,8 @@ pub(crate) async fn persist_main_push(
     let git_head = match git_head {
         Ok(git_head) => git_head,
         Err(error) => {
-            cleanup_failed_persist(state, &repository_id, staged_pack, write_lease).await;
-            return Err(error.into());
+            staged_pack.discard(state, &repository_id).await;
+            return Err(main_push_commit_error(error));
         }
     };
     tracing::info!(
@@ -272,18 +268,18 @@ pub(crate) async fn persist_main_push(
         head: git_head.result,
         completed_landed_requests: git_head.completed_landed_requests,
         staged_pack,
-        write_lease,
     })
 }
 
-pub(crate) async fn cleanup_failed_persist(
-    state: &AppState,
-    repository_id: &str,
-    staged_pack: StagedPoolPack,
-    write_lease: RepositoryGitWriteLease,
-) {
-    staged_pack.discard(state, repository_id).await;
-    write_lease.release().await;
+fn main_push_commit_error(error: RepositoryMutationError) -> ApiError {
+    match error {
+        RepositoryMutationError::Persistence(error)
+            if error.kind == PostgresErrorKind::RepositoryMoved =>
+        {
+            ApiError::conflict(STALE_MAIN_PUSH_ERROR)
+        }
+        error => error.into(),
+    }
 }
 
 fn ensure_receive_pack_config_base_matches(
@@ -315,8 +311,6 @@ fn ensure_receive_pack_base_matches(
     if actual_base_ref.as_ref() == expected_base_ref.as_ref() {
         Ok(())
     } else {
-        Err(DomainError::conflict(
-            "repo changed since push was reviewed; rerun scope push --main",
-        ))
+        Err(DomainError::conflict(STALE_MAIN_PUSH_ERROR))
     }
 }

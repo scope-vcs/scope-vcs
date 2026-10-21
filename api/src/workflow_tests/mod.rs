@@ -540,11 +540,6 @@ async fn persist_and_promote_test_update(
                     crate::persistence::unix_now()?,
                 )
                 .await?;
-            let write_lease = state
-                .metadata
-                .repositories()
-                .acquire_git_write_lease(TEST_REPO_ID)
-                .await?;
             let _upload_heartbeat = crate::git::import::GitSegmentUploadHeartbeat::start(
                 state,
                 staged_segment.segment.segment_id.clone(),
@@ -568,7 +563,6 @@ async fn persist_and_promote_test_update(
             PreparedReceivePackUpdate {
                 update,
                 staged_pack,
-                write_lease,
             }
         }
     };
@@ -588,7 +582,6 @@ async fn persist_and_promote_test_update(
         .retain_local(state, &persisted.incarnation)
         .await;
     persisted.staged_pack.finish(state).await;
-    persisted.write_lease.release().await;
     Ok(head)
 }
 

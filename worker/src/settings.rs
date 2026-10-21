@@ -1,5 +1,5 @@
 use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
-use scope_postgres::db::MetadataPoolLimits;
+use scope_postgres::db::DEFAULT_METADATA_POOL_MAX_CONNECTIONS;
 use scope_storage::{
     GitSegmentStoreConfig,
     config::{nonempty_env, required_env},
@@ -43,14 +43,9 @@ pub(crate) struct CloudExecutionSettings {
 }
 
 impl WorkerSettings {
-    pub(crate) fn metadata_pool_limits(&self) -> MetadataPoolLimits {
-        let defaults = MetadataPoolLimits::default();
-        MetadataPoolLimits {
-            connections: defaults
-                .connections
-                .saturating_add(u32::try_from(self.git_compaction_concurrency).unwrap_or(u32::MAX)),
-            ..defaults
-        }
+    pub(crate) fn metadata_max_connections(&self) -> u32 {
+        DEFAULT_METADATA_POOL_MAX_CONNECTIONS
+            .saturating_add(u32::try_from(self.git_compaction_concurrency).unwrap_or(u32::MAX))
     }
 
     pub(crate) fn from_env() -> anyhow::Result<Self> {

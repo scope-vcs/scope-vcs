@@ -1,12 +1,9 @@
 #[cfg(feature = "local-dev")]
 use super::connection::connect_postgres_store_with_options;
-use super::connection::{MetadataPoolLimits, connect_postgres_store};
+use super::connection::{DEFAULT_METADATA_POOL_MAX_CONNECTIONS, connect_postgres_store};
 #[cfg(any(test, feature = "test-support"))]
 use super::test_support::{self, TestDatabaseTarget};
-use super::{
-    ContentRefFence, content_fences, git_segments::GitWriteLeaseSessions,
-    repo_change_notifications::RepoChangeNotifier,
-};
+use super::{ContentRefFence, content_fences, repo_change_notifications::RepoChangeNotifier};
 use crate::error::PostgresError;
 use scope_domain::content_ref::ContentRef;
 use sea_orm::DatabaseConnection;
@@ -17,7 +14,6 @@ pub struct MetadataStore {
     pub(super) db: Arc<DatabaseConnection>,
     pub(super) postgres_database_url: Option<Arc<str>>,
     pub(super) repo_change_notifier: RepoChangeNotifier,
-    pub(super) git_write_lease_sessions: GitWriteLeaseSessions,
     #[cfg(any(test, feature = "test-support"))]
     pub(super) _test_schema: Option<Arc<test_support::TestSchemaLease>>,
 }
@@ -52,7 +48,6 @@ pub struct RepositoryStore {
     pub(super) db: Arc<DatabaseConnection>,
     pub(super) postgres_database_url: Option<Arc<str>>,
     pub(super) repo_change_notifier: RepoChangeNotifier,
-    pub(super) git_write_lease_sessions: GitWriteLeaseSessions,
 }
 
 #[derive(Clone)]
@@ -118,7 +113,6 @@ impl MetadataStore {
             db: Arc::clone(&self.db),
             postgres_database_url: self.postgres_database_url.clone(),
             repo_change_notifier: self.repo_change_notifier.clone(),
-            git_write_lease_sessions: self.git_write_lease_sessions.clone(),
         }
     }
 
@@ -154,15 +148,15 @@ impl MetadataStore {
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "connect"))]
     pub async fn connect(database_url: String) -> anyhow::Result<Self> {
-        connect_postgres_store(database_url, MetadataPoolLimits::default()).await
+        connect_postgres_store(database_url, DEFAULT_METADATA_POOL_MAX_CONNECTIONS).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "connect"))]
-    pub async fn connect_with_pool_limits(
+    pub async fn connect_with_max_connections(
         database_url: String,
-        limits: MetadataPoolLimits,
+        max_connections: u32,
     ) -> anyhow::Result<Self> {
-        connect_postgres_store(database_url, limits).await
+        connect_postgres_store(database_url, max_connections).await
     }
 
     #[cfg(feature = "local-dev")]
@@ -173,7 +167,7 @@ impl MetadataStore {
         connect_postgres_store_with_options(
             target.url,
             target.options,
-            MetadataPoolLimits::default(),
+            DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
         )
         .await
     }
