@@ -9,6 +9,7 @@ import {
   githubWithheldRequestsText,
 } from './repo-github-connection-model'
 import { useRepoViews } from './repo-layout-context'
+import { RepoGitHubMainPublication } from './repo-github-main-publication'
 import { RepoGitHubReviewBots } from './repo-github-review-bots'
 import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
@@ -20,6 +21,7 @@ export function RepoCiSection({
   confirmPublic,
   disconnect,
   github,
+  setMainPublication,
   setRequiredChecks,
   setReviewBotPullRequests,
   setReviewRequestComment,
@@ -31,6 +33,7 @@ export function RepoCiSection({
   confirmPublic: () => Promise<GitHubConnectionResponse>
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
+  setMainPublication: (enabled: boolean) => Promise<GitHubConnectionResponse>
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
   setReviewBotPullRequests: (enabled: boolean) => Promise<GitHubConnectionResponse>
   setReviewRequestComment: (comment: string) => Promise<GitHubConnectionResponse>
@@ -144,6 +147,10 @@ export function RepoCiSection({
             github={github}
             startTest={startSetupCheck}
           />
+        )}
+
+        {view.kind === 'connected' && (
+          <RepoGitHubMainPublication github={github} setEnabled={setMainPublication} />
         )}
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (

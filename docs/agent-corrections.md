@@ -14,6 +14,7 @@ not an exhaustive count of every bug. A review and its repair count once.
 | Comments reintroduced after removal | 3 | Merged [PR #525](https://github.com/scope-vcs/scope-vcs/pull/525) adds the shared policy check. |
 | Setup failure text normalized inconsistently | 2 | Make validated text a domain type. |
 | Host-dependent test concurrency exhausts PostgreSQL | 2 | Bound concurrency in the shared backend runner. |
+| Slow and low-signal tests | 1 | Reject long real-clock waits in the policy gate; review signal with the `scope-tests` skill. |
 
 ## Frontend data ownership
 
@@ -137,6 +138,29 @@ same assertion against the historical gate from `b97bc731` observes 128 for
 all three test commands and fails; the repaired gate observes four and passes.
 The repaired gate's full API suite passes all 492 tests without connection
 exhaustion. The regression runs in the shared policy gate locally and in CI.
+
+## Slow and low-signal tests
+
+Evidence: [PR #726](https://github.com/scope-vcs/scope-vcs/pull/726) deleted
+about 75 tests that a stronger test already covered and cut local Rust test
+time from 355s to 174s. Most of the time came from a few tests: a merge-fence
+test slept `GITHUB_CHECK_MERGE_FRESHNESS_SECS + 1` real seconds, schema-drift
+cases rebuilt the baseline per case, and a DNS timeout ran on the real clock.
+
+Level: lint for waits, skill for judgment. `check-test-waits.mjs` rejects
+real-clock sleeps of 5 s or more, and sleeps of a computed number of seconds,
+in Rust, script, Python, and shell test sources. Paused tokio clocks are
+exempt. Fake servers that simulate a stall now await `std::future::pending()`.
+Whether a test duplicates another, restates source, or builds costly setup per
+case cannot be decided from source text, so the `scope-tests` skill carries
+those rules and `ab-implement` applies it to every test change.
+
+Proof: the check rejects the merge-fence test from `bd5b7f92`, before #726, at
+its multi-line sleep. Its regression tests fail when paused-clock handling,
+inline test module detection, or computed-second detection is removed.
+Remaining waits of 1 s to 5 s are below the limit: the merge-fence expiry
+margin, a GitHub check push that waits for the next Unix second, and a release
+availability poll.
 
 ## Existing prevention and scope
 

@@ -121,6 +121,43 @@ fn activity_renders_every_wire_event_in_order_and_escapes_free_text() {
 }
 
 #[test]
+fn discussion_receipts_show_line_ranges_and_their_latest_position() {
+    let receipt = |anchor: serde_json::Value| {
+        let response: RequestDiscussionMutationResponse = serde_json::from_value(json!({
+            "discussion": {
+                "id": "dsc_one", "request_id": "req_one", "client_discussion_id": "client",
+                "opened_position": 1, "last_activity_position": 1, "author": null,
+                "body_markdown": "Looks off", "anchor": anchor, "status": "Open",
+                "reply_count": 0, "read_through_position": 1, "unread_count": 0,
+                "latest_replies": [], "created_at_unix": 1, "resolved_at_unix": null,
+                "resolved_by": null
+            }
+        }))
+        .unwrap();
+        discussion_started_receipt("req_one", &response)[1].clone()
+    };
+    let anchor = |lines: serde_json::Value, latest: serde_json::Value| {
+        json!({"revision_id": "rev_1", "revision_position": 1, "commit_oid": null,
+            "path": "/src/lib.rs", "lines": lines, "latest": latest})
+    };
+
+    assert_eq!(
+        receipt(anchor(
+            json!({"side": "new", "start_line": 7, "end_line": 9}),
+            json!({"kind": "mapped", "revision_id": "rev_2", "start_line": 10, "end_line": 12})
+        )),
+        "Revision rev_1 · /src/lib.rs:7-9 (new) · latest revision rev_2: 10-12"
+    );
+    assert_eq!(
+        receipt(anchor(
+            json!({"side": "old", "start_line": 4, "end_line": 4}),
+            json!({"kind": "outdated", "revision_id": "rev_2"})
+        )),
+        "Revision rev_1 · /src/lib.rs:4 (old) · outdated on latest revision rev_2"
+    );
+}
+
+#[test]
 fn wait_labels_are_concise_and_saturating() {
     assert_eq!(wait_label(3_590, 3_600), "<1m");
     assert_eq!(wait_label(0, 3_600), "1h");

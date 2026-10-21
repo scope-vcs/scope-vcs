@@ -1,6 +1,9 @@
 use crate::{
-    error::ApiError, persistence::unix_now, repo_access::find_read_access, state::AppState,
-    use_cases::request_anchor_visibility,
+    error::ApiError,
+    persistence::unix_now,
+    repo_access::find_read_access,
+    state::AppState,
+    use_cases::request_anchor_projection::{self, AnchorProjections},
 };
 use scope_domain::{
     account::UserAccount,
@@ -17,7 +20,7 @@ use scope_postgres::db::{
     RequestDiscussionReplyReadModel, TransitionRequestDiscussionCommand,
 };
 use scope_product_analytics::ProductEvent;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 mod anchor;
 #[cfg(test)]
@@ -27,6 +30,7 @@ pub(crate) struct DiscussionAnchorInput {
     pub(crate) revision_id: String,
     pub(crate) commit_oid: Option<String>,
     pub(crate) path: Option<String>,
+    pub(crate) lines: Option<scope_api_contract::RequestDiscussionLineRange>,
 }
 
 pub(crate) struct CreateDiscussionCommand {
@@ -84,7 +88,7 @@ pub(crate) struct MarkDiscussionReadCommand {
 pub(crate) struct DiscussionMutationResult {
     pub(crate) discussion: RequestDiscussionReadModel,
     pub(crate) users: BTreeMap<String, UserAccount>,
-    pub(crate) visible_anchor_commits: BTreeSet<(String, String)>,
+    pub(crate) anchor_projections: AnchorProjections,
 }
 
 pub(crate) struct ReplyMutationResult {
@@ -409,17 +413,18 @@ async fn load_discussion_result(
         .request_discussion(&context.request.id, discussion_id, Some(viewer_user_id))
         .await?
         .ok_or_else(|| ApiError::not_found("request discussion not found"))?;
-    let visible_anchor_commits = request_anchor_visibility::visible_commits(
+    let anchor_projections = request_anchor_projection::project_anchors(
         state,
         &context.repo,
         &context.request,
-        discussion.discussion.anchor.as_ref(),
+        context.request.activity_version,
+        [&discussion.discussion],
     )
     .await;
     Ok(DiscussionMutationResult {
         discussion,
         users,
-        visible_anchor_commits,
+        anchor_projections,
     })
 }
 

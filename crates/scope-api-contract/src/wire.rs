@@ -14,6 +14,7 @@ use scope_domain::{
         RequestAttentionState as DomainRequestAttentionState,
         RequestCheckEvaluationState as DomainRequestCheckEvaluationState,
         RequestChecksOutcome as DomainRequestChecksOutcome,
+        RequestDiffSide as DomainRequestDiffSide,
         RequestDiscussionStatus as DomainRequestDiscussionStatus,
         RequestEventKind as DomainRequestEventKind,
         RequestEventPayload as DomainRequestEventPayload,
@@ -273,6 +274,11 @@ wire_enum!(
     }
 );
 wire_enum!(RequestDiscussionStatus => DomainRequestDiscussionStatus { Open, Resolved });
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestDiffSide => DomainRequestDiffSide { Old, New }
+);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]

@@ -1,23 +1,17 @@
+use super::discussion_anchor::RequestDiscussionAnchor;
 use super::{
     REQUEST_DISCUSSION_BODY_MAX_BYTES, REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES, Request,
     RequestEvent, RequestEventKind, RequestEventPayload, advance_request_activity,
     ensure_request_matches, next_request_activity_position, validate_body_size, validate_required,
 };
+use crate::error::DomainError;
 use crate::views::ViewId;
-use crate::{error::DomainError, policy::ScopePath};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RequestDiscussionStatus {
     Open,
     Resolved,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RequestDiscussionAnchor {
-    pub revision_id: String,
-    pub commit_oid: Option<String>,
-    pub path: Option<ScopePath>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,7 +147,11 @@ pub fn create_request_discussion(
         &input.client_discussion_id,
         &input.body_markdown,
     )?;
-    validate_anchor(input.anchor.as_ref())?;
+    input
+        .anchor
+        .as_ref()
+        .map(RequestDiscussionAnchor::validate)
+        .transpose()?;
     if !input.actor_can_participate {
         return Err(DomainError::forbidden("request discussion access required"));
     }
@@ -492,22 +490,6 @@ fn validate_common(
     validate_body_size("discussion body", body, REQUEST_DISCUSSION_BODY_MAX_BYTES)
 }
 
-fn validate_anchor(anchor: Option<&RequestDiscussionAnchor>) -> Result<(), DomainError> {
-    let Some(anchor) = anchor else {
-        return Ok(());
-    };
-    validate_required("revision id", &anchor.revision_id)?;
-    if let Some(commit_oid) = anchor.commit_oid.as_deref() {
-        validate_required("commit oid", commit_oid)?;
-    }
-    if anchor.path.is_some() && anchor.commit_oid.is_none() {
-        return Err(DomainError::invalid_input(
-            "discussion path anchor requires a commit",
-        ));
-    }
-    Ok(())
-}
-
 fn validate_reply_input(
     request_id: &str,
     discussion_id: &str,
@@ -587,17 +569,6 @@ fn read_state(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn path_anchor_requires_a_commit() {
-        let error = validate_anchor(Some(&RequestDiscussionAnchor {
-            revision_id: "revision".to_string(),
-            commit_oid: None,
-            path: Some(ScopePath::parse("/src/lib.rs").unwrap()),
-        }))
-        .unwrap_err();
-        assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
-    }
 
     #[test]
     fn reply_target_must_be_in_the_same_discussion_and_earlier() {
