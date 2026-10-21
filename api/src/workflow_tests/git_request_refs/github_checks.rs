@@ -15,6 +15,7 @@ mod carrier_pull_requests;
 mod native_runs_list;
 mod public;
 mod public_repositories;
+mod review_bot_gate;
 mod review_imports;
 mod run_page;
 

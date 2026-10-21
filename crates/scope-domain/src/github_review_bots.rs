@@ -52,11 +52,13 @@ impl GitHubBotLogin {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubReviewBot {
     pub login: GitHubBotLogin,
+    pub required: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubReviewBotInput {
     pub login: String,
+    pub required: bool,
 }
 
 pub fn set_github_review_bots(
@@ -84,7 +86,10 @@ pub fn set_github_review_bots(
                 login.as_str()
             )));
         }
-        bots.push(GitHubReviewBot { login });
+        bots.push(GitHubReviewBot {
+            login,
+            required: input.required,
+        });
     }
     Ok(bots)
 }

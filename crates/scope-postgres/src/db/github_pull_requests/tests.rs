@@ -9,14 +9,14 @@ use scope_domain::{
     views::ViewId,
 };
 
-const REPO: &str = "owner/repo";
-const OWNER: &str = "user_owner";
+pub(crate) const REPO: &str = "owner/repo";
+pub(crate) const OWNER: &str = "user_owner";
 
-fn oid(digit: char) -> String {
+pub(crate) fn oid(digit: char) -> String {
     digit.to_string().repeat(40)
 }
 
-async fn submitted_full_view_request(store: &MetadataStore, id: &str) -> Request {
+pub(crate) async fn submitted_full_view_request(store: &MetadataStore, id: &str) -> Request {
     let mut request = store
         .requests()
         .start_request(StartRequestInput {
@@ -46,7 +46,7 @@ async fn submitted_full_view_request(store: &MetadataStore, id: &str) -> Request
     request
 }
 
-async fn connect(store: &MetadataStore, open_pull_requests: bool) {
+pub(crate) async fn connect(store: &MetadataStore, open_pull_requests: bool) {
     connect_to(store, 42, open_pull_requests).await;
 }
 
@@ -75,7 +75,7 @@ async fn connect_to(store: &MetadataStore, github_repository_id: u64, open_pull_
         .unwrap();
 }
 
-async fn push_succeeds(store: &MetadataStore, request_id: &str, head: char, at: u64) {
+pub(crate) async fn push_succeeds(store: &MetadataStore, request_id: &str, head: char, at: u64) {
     let connection = store
         .repositories()
         .github_connection(REPO)
@@ -111,7 +111,7 @@ async fn carrier(store: &MetadataStore, request_id: &str) -> Option<GitHubPullRe
         .unwrap()
 }
 
-async fn claim(store: &MetadataStore, token: &str, at: u64) -> Vec<GitHubPullRequest> {
+pub(crate) async fn claim(store: &MetadataStore, token: &str, at: u64) -> Vec<GitHubPullRequest> {
     store
         .requests()
         .claim_due_github_pull_requests(token, at, at + 100, 10)

@@ -205,6 +205,8 @@ pub(crate) struct SetGitHubRunImportCountRequest {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubReviewBotResponse {
     pub(crate) login: String,
+    /// Whether requests wait for this bot to finish their latest commit before they can merge.
+    pub(crate) required: bool,
 }
 
 /// The whole list of review bots, replacing the stored one; at most 20 distinct GitHub logins such as `greptile-apps[bot]`.
@@ -219,6 +221,8 @@ pub(crate) struct SetGitHubReviewBotsRequest {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubReviewBotRequest {
     pub(crate) login: String,
+    /// Whether requests wait for this bot to finish their latest commit before they can merge.
+    pub(crate) required: bool,
 }
 
 /// Turns review bot pull requests on or off for the repository.
@@ -456,6 +460,7 @@ pub(crate) fn github_connection_response(
             .into_iter()
             .map(|bot| GitHubReviewBotResponse {
                 login: bot.login.as_str().to_string(),
+                required: bot.required,
             })
             .collect(),
         can_confirm_public: parts.can_confirm_public,

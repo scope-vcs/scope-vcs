@@ -15,6 +15,7 @@ use scope_api_contract::{
     ApproveRequestChecksRequest, RequestCheckResponse, RequestCheckRunResponse,
     RequestChecksResponse, RequestGitHubPullRequestResponse, RequestGitHubPullRequestState,
     RequestGitHubPushResponse, RequestGitHubPushState, RequestMergeabilityResponse,
+    RequestReviewBotResponse,
 };
 use scope_domain::{
     github_connection::GitHubRepositoryVisibility,
@@ -108,6 +109,7 @@ pub(crate) fn snapshot_response(
         &viewer,
         views,
         outcome,
+        snapshot.reviews_outcome(),
         snapshot.repository.record.lifecycle_state,
     );
     let mergeability = RequestMergeabilityResponse {
@@ -127,6 +129,7 @@ pub(crate) fn snapshot_response(
         .as_ref()
         .and_then(GitHubPullRequest::status)
         .map(|status| github_pull_request_response(status, &access));
+    let review_bots = review_bot_responses(snapshot);
     let Some(evaluation) = evaluation else {
         return Ok(RequestChecksResponse {
             request_id: request.id.clone(),
@@ -138,6 +141,7 @@ pub(crate) fn snapshot_response(
             can_approve: false,
             github_push: None,
             github_pull_request,
+            review_bots,
             changes_github_workflows: false,
             private_request_on_public_github,
             mergeability,
@@ -172,10 +176,30 @@ pub(crate) fn snapshot_response(
         can_approve,
         github_push,
         github_pull_request,
+        review_bots,
         changes_github_workflows,
         private_request_on_public_github,
         mergeability,
     })
+}
+
+fn review_bot_responses(
+    snapshot: &scope_postgres::db::RequestStateSnapshot,
+) -> Vec<RequestReviewBotResponse> {
+    let request = &snapshot.request;
+    if &request.view != snapshot.repository.views.full() {
+        return Vec::new();
+    }
+    snapshot
+        .bot_reviews
+        .bots
+        .iter()
+        .map(|bot| RequestReviewBotResponse {
+            login: bot.login.as_str().to_string(),
+            required: bot.required,
+            state: snapshot.bot_reviews.state_of(bot, &request.head_oid).into(),
+        })
+        .collect()
 }
 
 fn github_pull_request_response(

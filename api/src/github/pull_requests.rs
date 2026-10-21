@@ -271,7 +271,7 @@ impl GitHubApp {
         Ok(false)
     }
 
-    async fn pull_request_call<T: DeserializeOwned>(
+    pub(super) async fn pull_request_call<T: DeserializeOwned>(
         &self,
         installation_id: u64,
         method: Method,

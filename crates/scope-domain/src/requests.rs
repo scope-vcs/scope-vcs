@@ -17,6 +17,12 @@ pub(crate) mod fixtures;
 mod view_paths;
 pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 
+mod bot_reviews;
+pub use bot_reviews::{
+    CodexReviewState, GitHubBotReaction, GitHubReviewBotSignal, GitHubReviewBotState,
+    GitHubReviewBotStatus, RequestBotReviews, RequestReviewsOutcome, github_review_bot_statuses,
+    request_reviews_outcome,
+};
 pub mod merge_gate;
 pub use merge_gate::{
     GITHUB_CHECK_MERGE_FRESHNESS_SECS, MergeGateAuthority, MergeGateDecision, MergeGateInput,

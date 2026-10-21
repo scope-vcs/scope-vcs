@@ -325,11 +325,19 @@ run_import_count: number, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
 
-export type GitHubReviewBotResponse = { login: string, };
+export type GitHubReviewBotResponse = { login: string,
+/**
+ * Whether requests wait for this bot to finish their latest commit before they can merge.
+ */
+required: boolean, };
 
 export type SetGitHubReviewBotsRequest = { bots: Array<GitHubReviewBotRequest>, };
 
-export type GitHubReviewBotRequest = { login: string, };
+export type GitHubReviewBotRequest = { login: string,
+/**
+ * Whether requests wait for this bot to finish their latest commit before they can merge.
+ */
+required: boolean, };
 
 export type SetGitHubReviewBotPullRequestsRequest = { enabled: boolean, };
 
@@ -588,7 +596,7 @@ export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
 export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
-export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "NeedsMainUpdate" | "Ready" | "RepositoryNotReady" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError";
+export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "NeedsMainUpdate" | "Ready" | "RepositoryNotReady" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError" | "ReviewsPending" | "ReviewFindingsOpen";
 
 export type RequestMergeabilityResponse = { status: RequestMergeabilityStatus, current_main_oid: GitOid | null, request_head_oid: GitOid, reason: string | null, };
 
@@ -632,6 +640,14 @@ number: number | null, url: string | null,
  */
 error: string | null, };
 
+export type RequestReviewBotState = "not_started" | "working" | "commented" | "clear";
+
+export type RequestReviewBotResponse = { login: string,
+/**
+ * Whether the request waits for this bot to finish its head before it can merge.
+ */
+required: boolean, state: RequestReviewBotState, };
+
 export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null,
 /**
  * The workflow run and job on Scope's run page that answer the
@@ -666,6 +682,11 @@ github_push: RequestGitHubPushResponse | null,
  * request has one, or Scope is opening one.
  */
 github_pull_request: RequestGitHubPullRequestResponse | null,
+/**
+ * The repository's review bots, in their listed order, for full-view
+ * requests; empty when none is listed or the request is narrower.
+ */
+review_bots: Array<RequestReviewBotResponse>,
 /**
  * Whether approving would run workflow files this request changes. Only
  * worked out for a viewer who can approve GitHub checks.

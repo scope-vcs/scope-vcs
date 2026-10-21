@@ -3,6 +3,7 @@ pub(crate) mod config;
 mod jobs;
 pub(crate) mod pull_requests;
 pub(crate) mod push;
+mod review_signals;
 mod reviews;
 pub(crate) mod setup_tokens;
 pub(crate) mod webhook;

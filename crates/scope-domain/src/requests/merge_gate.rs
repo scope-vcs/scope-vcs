@@ -1,7 +1,7 @@
 pub const GITHUB_CHECK_MERGE_FRESHNESS_SECS: u64 = 60;
 
 use super::access::request_merger;
-use super::{Request, RequestChecksOutcome, RequestState, RequestViewer};
+use super::{Request, RequestChecksOutcome, RequestReviewsOutcome, RequestState, RequestViewer};
 use crate::error::DomainError;
 use crate::repository::{
     RepoLifecycleState,
@@ -24,6 +24,8 @@ pub enum RequestMergeabilityStatus {
     ChecksPending,
     ChecksFailed,
     ChecksConfigurationError,
+    ReviewsPending,
+    ReviewFindingsOpen,
     WaitingForParent,
     ParentRewritten,
     ParentClosed,
@@ -51,6 +53,7 @@ pub enum MergeGateInput<'a> {
         viewer: &'a RequestViewer<'a>,
         views: &'a Views,
         checks: RequestChecksOutcome,
+        reviews: RequestReviewsOutcome,
     },
     AuthorizedMainPush {
         repository_lifecycle: RepoLifecycleState,
@@ -101,12 +104,14 @@ pub fn evaluate_merge_gate(input: MergeGateInput<'_>) -> MergeGateDecision {
             viewer,
             views,
             checks,
+            reviews,
         } => MergeGateDecision::RequestMerge(evaluate_request_merge(
             repository_lifecycle,
             subject,
             viewer,
             views,
             checks,
+            reviews,
         )),
         MergeGateInput::AuthorizedMainPush {
             repository_lifecycle,
@@ -146,8 +151,9 @@ pub(super) fn evaluate_request_merge(
     viewer: &RequestViewer<'_>,
     views: &Views,
     checks: RequestChecksOutcome,
+    reviews: RequestReviewsOutcome,
 ) -> RequestMergeability {
-    let readiness = evaluate_request_readiness(repository_lifecycle, subject, checks);
+    let readiness = evaluate_request_readiness(repository_lifecycle, subject, checks, reviews);
     if subject.state != RequestState::Open
         || readiness.status == RequestMergeabilityStatus::RepositoryNotReady
     {
@@ -172,6 +178,7 @@ pub(super) fn evaluate_request_readiness(
     repository_lifecycle: RepoLifecycleState,
     subject: RequestMergeSubject<'_>,
     checks: RequestChecksOutcome,
+    reviews: RequestReviewsOutcome,
 ) -> RequestMergeability {
     if repository_lifecycle != RepoLifecycleState::Ready {
         return RequestMergeability {
@@ -198,32 +205,43 @@ pub(super) fn evaluate_request_readiness(
                 && !matches!(
                     checks,
                     RequestChecksOutcome::Failed | RequestChecksOutcome::ConfigurationError
-                ) =>
+                )
+                && reviews != RequestReviewsOutcome::FindingsOpen =>
         {
             return request_stack_mergeability(subject.stack_status).unwrap();
         }
-        RequestState::Open => match checks {
-            RequestChecksOutcome::Clear => (RequestMergeabilityStatus::Ready, None),
-            RequestChecksOutcome::NotEvaluated => (
-                RequestMergeabilityStatus::ChecksNotEvaluated,
-                Some("CI has not been evaluated for this commit yet"),
-            ),
-            RequestChecksOutcome::AwaitingApproval => (
-                RequestMergeabilityStatus::ChecksAwaitingApproval,
-                Some("CI is waiting for a maintainer to start it"),
-            ),
-            RequestChecksOutcome::Pending => (
-                RequestMergeabilityStatus::ChecksPending,
-                Some("CI has not finished"),
-            ),
-            RequestChecksOutcome::Failed => (
+        RequestState::Open => match (checks, reviews) {
+            (RequestChecksOutcome::Failed, _) => (
                 RequestMergeabilityStatus::ChecksFailed,
                 Some("a required result did not succeed"),
             ),
-            RequestChecksOutcome::ConfigurationError => (
+            (RequestChecksOutcome::ConfigurationError, _) => (
                 RequestMergeabilityStatus::ChecksConfigurationError,
                 Some("the request head's CI cannot run as configured"),
             ),
+            (_, RequestReviewsOutcome::FindingsOpen) => (
+                RequestMergeabilityStatus::ReviewFindingsOpen,
+                Some("a review bot's discussion is unresolved"),
+            ),
+            (RequestChecksOutcome::NotEvaluated, _) => (
+                RequestMergeabilityStatus::ChecksNotEvaluated,
+                Some("CI has not been evaluated for this commit yet"),
+            ),
+            (RequestChecksOutcome::AwaitingApproval, _) => (
+                RequestMergeabilityStatus::ChecksAwaitingApproval,
+                Some("CI is waiting for a maintainer to start it"),
+            ),
+            (RequestChecksOutcome::Pending, _) => (
+                RequestMergeabilityStatus::ChecksPending,
+                Some("CI has not finished"),
+            ),
+            (RequestChecksOutcome::Clear, RequestReviewsOutcome::Pending) => (
+                RequestMergeabilityStatus::ReviewsPending,
+                Some("a required review bot has not finished the latest commit"),
+            ),
+            (RequestChecksOutcome::Clear, RequestReviewsOutcome::Clear) => {
+                (RequestMergeabilityStatus::Ready, None)
+            }
         },
     };
     RequestMergeability { status, reason }

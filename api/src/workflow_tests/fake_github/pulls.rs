@@ -24,6 +24,9 @@ type LookupHook = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> +
 pub(in crate::workflow_tests) struct FakePulls {
     pub(in crate::workflow_tests) pulls: Mutex<Vec<serde_json::Value>>,
     pub(in crate::workflow_tests) comments: Mutex<Vec<(u64, String)>>,
+    bot_comments: Mutex<HashMap<(u64, String), String>>,
+    reactions: Mutex<Vec<(u64, serde_json::Value)>>,
+    reviews: Mutex<Vec<(u64, serde_json::Value)>>,
     pub(in crate::workflow_tests) forbidden: AtomicBool,
     pub(in crate::workflow_tests) rate_limited_once: AtomicBool,
     pub(in crate::workflow_tests) writes_unreachable: AtomicBool,
@@ -60,6 +63,54 @@ impl FakePulls {
             .lock()
             .unwrap()
             .push((number, body.to_string()));
+    }
+
+    pub(in crate::workflow_tests) fn comment_as(&self, number: u64, login: &str, body: &str) {
+        self.bot_comments
+            .lock()
+            .unwrap()
+            .insert((number, login.to_string()), body.to_string());
+    }
+
+    pub(in crate::workflow_tests) fn react_as(
+        &self,
+        number: u64,
+        login: &str,
+        content: &str,
+        created_at: &str,
+    ) {
+        self.reactions.lock().unwrap().push((
+            number,
+            serde_json::json!({
+                "user": { "login": login },
+                "content": content,
+                "created_at": created_at,
+            }),
+        ));
+    }
+
+    pub(in crate::workflow_tests) fn review_as(&self, number: u64, login: &str, commit: &str) {
+        self.reviews.lock().unwrap().push((
+            number,
+            serde_json::json!({ "user": { "login": login }, "commit_id": commit }),
+        ));
+    }
+
+    fn listed(
+        items: &Mutex<Vec<(u64, serde_json::Value)>>,
+        number: u64,
+        query: &HashMap<String, String>,
+    ) -> Vec<serde_json::Value> {
+        if query.get("page").map(String::as_str) != Some("1") {
+            return Vec::new();
+        }
+        items
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(on, _)| *on == number)
+            .map(|(_, item)| item.clone())
+            .collect()
     }
 
     pub(in crate::workflow_tests) fn pull(&self, number: u64) -> serde_json::Value {
@@ -99,6 +150,32 @@ impl FakePulls {
 
 pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
     Router::new()
+        .route(
+            "/repos/{owner}/{name}/pulls/{number}/reviews",
+            get(
+                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                 AxumPath((_, _, number)): AxumPath<(String, String, u64)>,
+                 AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
+                    if let Some(refused) = fake.pulls.refused() {
+                        return refused;
+                    }
+                    Json(FakePulls::listed(&fake.pulls.reviews, number, &query)).into_response()
+                },
+            ),
+        )
+        .route(
+            "/repos/{owner}/{name}/issues/{number}/reactions",
+            get(
+                |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                 AxumPath((_, _, number)): AxumPath<(String, String, u64)>,
+                 AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
+                    if let Some(refused) = fake.pulls.refused() {
+                        return refused;
+                    }
+                    Json(FakePulls::listed(&fake.pulls.reactions, number, &query)).into_response()
+                },
+            ),
+        )
         .route(
             "/repos/{owner}/{name}/pulls",
             get(
@@ -218,6 +295,17 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                             .map(|(_, body)| {
                                 serde_json::json!({ "body": body, "user": { "login": APP_LOGIN } })
                             })
+                            .chain(
+                                fake.pulls
+                                    .bot_comments
+                                    .lock()
+                                    .unwrap()
+                                    .iter()
+                                    .filter(|((on, _), _)| *on == number)
+                                    .map(|((_, login), body)| {
+                                        serde_json::json!({ "body": body, "user": { "login": login } })
+                                    }),
+                            )
                             .collect::<Vec<_>>()
                     } else {
                         Vec::new()
