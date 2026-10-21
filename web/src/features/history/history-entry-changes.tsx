@@ -140,6 +140,7 @@ export function HistoryEntryChanges({
           paths={shown}
           query={query}
           selectedPath={selected?.path ?? null}
+          view={detail.view}
         />
       )}
       toolbar={paths.length > 0 && (

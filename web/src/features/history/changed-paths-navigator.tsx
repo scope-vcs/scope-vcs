@@ -6,6 +6,8 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { VisibilityBadge } from '@/components/visibility-badge'
 import { cn } from '@/lib/utils'
 import { ChevronRight } from 'lucide-react'
+import type { ViewId } from '@/api/types.generated'
+import { VisibilityTransitions } from './changed-path-context'
 import type { ReactNode } from 'react'
 import {
   canOpenChangedPath,
@@ -99,6 +101,7 @@ export function ChangedPathsList({
   paths,
   query,
   selectedPath,
+  view,
 }: {
   countVisibility: boolean
   onSelect: (path: ChangedPath) => void
@@ -107,6 +110,7 @@ export function ChangedPathsList({
   paths: ChangedPath[]
   query: string
   selectedPath: string | null
+  view: ViewId
 }) {
   const needle = query.trim().toLowerCase()
   const { root, groups } = groupChangedPaths(paths)
@@ -123,6 +127,7 @@ export function ChangedPathsList({
         onSelect={onSelect}
         path={path}
         selected={path.path === selectedPath}
+        view={view}
       />
     </li>
   ))
@@ -199,15 +204,18 @@ function ChangedPathRow({
   onSelect,
   path,
   selected,
+  view,
 }: {
   needle: string
   nested: boolean
   onSelect: (path: ChangedPath) => void
   path: ChangedPath
   selected: boolean
+  view: ViewId
 }) {
   const kind = path.file?.kind
-  const latest = path.visibility.at(-1)
+  const openable = canOpenChangedPath(path)
+  const latest = openable ? path.visibility.at(-1) : undefined
   const content: ReactNode = (
     <>
       <span
@@ -226,8 +234,13 @@ function ChangedPathRow({
     'flex min-h-7 w-full items-center gap-2 rounded-md py-1 pr-2 text-left text-xs',
     nested ? 'pl-8' : 'pl-2',
   )
-  if (!canOpenChangedPath(path)) {
-    return <div className={cn(rowClass, 'text-muted-foreground')} title={`${path.path} · Visibility only`}>{content}</div>
+  if (!openable) {
+    return (
+      <div className={cn(rowClass, 'flex-wrap text-muted-foreground')} title={`${path.path} · Visibility only`}>
+        {content}
+        <VisibilityTransitions changes={path.visibility} className="basis-full pl-5" view={view} />
+      </div>
+    )
   }
   return (
     <button

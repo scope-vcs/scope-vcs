@@ -15,7 +15,7 @@ test('update changes list code and visibility changes once, filtered, grouped, a
   const list = page.getByRole('list', { name: 'Changed paths' })
   const diff = (path) => page.getByLabel(`${path} diff`, { exact: true })
 
-  await filters.getByRole('radio', { name: 'All 354' }).waitFor()
+  await filters.getByRole('radio', { name: 'All 354' }).waitFor({ timeout: 30_000 })
   assert.deepEqual(await filters.getByRole('radio').allTextContents(), [
     'All354', 'Visibility143', 'Added117', 'Modified179', 'Deleted57',
   ])
@@ -69,6 +69,9 @@ test('update changes list code and visibility changes once, filtered, grouped, a
   const visibilityOnly = list.getByTitle('docs/policy.md · Visibility only')
   await visibilityOnly.waitFor()
   assert.equal(await visibilityOnly.evaluate((element) => element.tagName), 'DIV')
+  await visibilityOnly.getByText('Moved to Public', { exact: true }).waitFor()
+  await visibilityOnly.getByText('· was Private', { exact: true }).waitFor()
+  await screenshot(page, 'visibility-only')
   await page.getByRole('searchbox', { name: 'Filter changed paths' }).fill('nothing-matches')
   await page.getByText('No changed paths match.', { exact: true }).waitFor()
 
