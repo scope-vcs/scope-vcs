@@ -428,24 +428,6 @@ where
         .transpose()
 }
 
-pub async fn github_reply_by_client_id<C>(
-    conn: &C,
-    discussion_id: &str,
-    client_reply_id: &str,
-) -> Result<Option<RequestDiscussionReply>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    entities::request_discussion_reply::Entity::find()
-        .filter(entities::request_discussion_reply::Column::DiscussionId.eq(discussion_id))
-        .filter(entities::request_discussion_reply::Column::AuthorGithubUserId.is_not_null())
-        .filter(entities::request_discussion_reply::Column::ClientReplyId.eq(client_reply_id))
-        .one(conn)
-        .await?
-        .map(entities::request_discussion_reply::Model::try_into_domain)
-        .transpose()
-}
-
 pub async fn read_states_for_user<C>(
     conn: &C,
     discussion_ids: &[String],

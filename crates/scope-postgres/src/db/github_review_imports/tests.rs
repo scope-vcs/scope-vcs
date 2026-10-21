@@ -636,3 +636,53 @@ async fn an_import_that_loses_the_race_with_a_disconnect_commits_nothing() {
     );
     assert!(discussions(&store).await.discussions.is_empty());
 }
+
+#[tokio::test]
+async fn a_comment_imported_on_its_own_is_never_imported_again_as_a_reply() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let link = live_link(&store).await;
+    store
+        .requests()
+        .import_github_review(review(&link, vec![comment(21, Some(20))], 10))
+        .await
+        .unwrap();
+    let redelivered = store
+        .requests()
+        .import_github_review(review(
+            &link,
+            vec![comment(20, None), comment(21, Some(20))],
+            11,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        redelivered
+            .discussions
+            .iter()
+            .map(|discussion| discussion.client_discussion_id.as_str())
+            .collect::<Vec<_>>(),
+        ["github:review-comment:20"]
+    );
+
+    let batch = discussions(&store).await;
+    let mut imported = batch
+        .discussions
+        .iter()
+        .map(|model| {
+            (
+                model.discussion.client_discussion_id.as_str(),
+                model.reply_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    imported.sort();
+    assert_eq!(
+        imported,
+        [
+            ("github:review-comment:20", 0),
+            ("github:review-comment:21", 0)
+        ]
+    );
+}

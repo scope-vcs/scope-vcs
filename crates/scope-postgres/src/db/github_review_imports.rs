@@ -11,8 +11,7 @@ use super::{
     request_attention::reactivate_author_attention_for_github_activity,
     request_discussion_actors::{github_accounts_by_ids, save_github_accounts},
     request_discussion_rows::{
-        github_discussion_by_client_id, github_reply_by_client_id, insert_discussion, insert_reply,
-        save_discussion,
+        github_discussion_by_client_id, insert_discussion, insert_reply, save_discussion,
     },
     request_rows::{request_by_id, save_request_row},
 };
@@ -296,6 +295,9 @@ impl RequestStore {
         save_github_accounts(&tx, &command.accounts, command.now_unix).await?;
         let mut touched = Vec::<RequestDiscussion>::new();
         for comment in command.comments {
+            if !claim_github_comment(&tx, &request.id, &comment.client_id).await? {
+                continue;
+            }
             if import_reply(
                 &tx,
                 &mut request,
@@ -305,12 +307,6 @@ impl RequestStore {
                 command.now_unix,
             )
             .await?
-            {
-                continue;
-            }
-            if github_discussion_by_client_id(&tx, &request.id, &comment.client_id)
-                .await?
-                .is_some()
             {
                 continue;
             }
@@ -408,16 +404,6 @@ async fn import_reply(
             None => return Ok(false),
         },
     };
-    let root_id = match &loaded {
-        Ok(root) => &root.id,
-        Err(index) => &touched[*index].id,
-    };
-    if github_reply_by_client_id(tx, root_id, &comment.client_id)
-        .await?
-        .is_some()
-    {
-        return Ok(true);
-    }
     let index = match loaded {
         Ok(root) => {
             touched.push(root);
@@ -442,6 +428,23 @@ async fn import_reply(
     )?;
     insert_reply(tx, &reply).await?;
     Ok(true)
+}
+
+async fn claim_github_comment<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+    client_id: &str,
+) -> Result<bool, PostgresError> {
+    let claimed = conn
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_github_imported_comments (request_id, client_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING",
+            [request_id.into(), client_id.into()],
+        ))
+        .await?;
+    Ok(claimed.rows_affected() == 1)
 }
 
 pub(super) async fn delete_review_imports<C: ConnectionTrait>(

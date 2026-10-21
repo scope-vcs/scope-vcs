@@ -78,6 +78,18 @@ impl MigrationTrait for Migration {
                     ON scope_request_discussion_replies (discussion_id, client_reply_id)
                     WHERE author_github_user_id IS NOT NULL;
 
+                CREATE TABLE scope_github_imported_comments (
+                    request_id character varying NOT NULL,
+                    client_id character varying NOT NULL,
+                    CONSTRAINT scope_github_imported_comments_pkey
+                        PRIMARY KEY (request_id, client_id),
+                    CONSTRAINT fk_scope_github_imported_comments_request
+                        FOREIGN KEY (request_id) REFERENCES scope_requests(id) ON DELETE CASCADE,
+                    CONSTRAINT scope_github_imported_comment_values CHECK (
+                        length(btrim(client_id)) > 0
+                    )
+                );
+
                 CREATE TABLE scope_github_review_imports (
                     request_id character varying NOT NULL,
                     subject character varying NOT NULL,
