@@ -327,6 +327,24 @@ async fn a_thumbs_up_counts_only_after_the_head_reached_github() {
     );
 
     push_pass(&request.state, unix_now()).await;
+    let delivered_at = request
+        .state
+        .metadata
+        .requests()
+        .github_head_delivered_at(&request.request_id, &request.head())
+        .await
+        .unwrap()
+        .unwrap();
+    request
+        .fake
+        .pulls
+        .react_as(1, GREPTILE, "+1", &github_time(delivered_at));
+    reconcile_now(&request).await;
+    assert_eq!(
+        bot_states(&request).await.0,
+        states("not_started", "not_started")
+    );
+
     request.fake.pulls.react_as(1, GREPTILE, "+1", AFTER_PUSH);
     reconcile_now(&request).await;
     assert_eq!(bot_states(&request).await.0, states("not_started", "clear"));

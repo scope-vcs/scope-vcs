@@ -198,22 +198,28 @@ fn a_bot_is_done_after_reviewing_the_head_or_approving_after_it_was_pushed() {
     );
     assert_eq!(
         state(
-            &[reacted(GREPTILE, GitHubBotReaction::ThumbsUp, PUSHED_AT)],
+            &[reacted(
+                GREPTILE,
+                GitHubBotReaction::ThumbsUp,
+                PUSHED_AT + 1
+            )],
             GREPTILE
         ),
         GitHubReviewBotState::Clear
     );
-    assert_eq!(
-        state(
-            &[reacted(
-                GREPTILE,
-                GitHubBotReaction::ThumbsUp,
-                PUSHED_AT - 1
-            )],
-            GREPTILE
-        ),
-        GitHubReviewBotState::NotStarted
-    );
+    for same_second_or_earlier in [PUSHED_AT, PUSHED_AT - 1] {
+        assert_eq!(
+            state(
+                &[reacted(
+                    GREPTILE,
+                    GitHubBotReaction::ThumbsUp,
+                    same_second_or_earlier
+                )],
+                GREPTILE
+            ),
+            GitHubReviewBotState::NotStarted
+        );
+    }
     assert_eq!(
         github_review_bot_statuses(
             &[bot(GREPTILE, true)],
