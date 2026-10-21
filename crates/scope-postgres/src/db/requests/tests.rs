@@ -544,6 +544,7 @@ async fn close_draft_request_deletes_request_and_events() {
                 revision_id: "event_revision".to_string(),
                 commit_oid: None,
                 path: None,
+                lines: None,
             }),
             now_unix: 5,
         })

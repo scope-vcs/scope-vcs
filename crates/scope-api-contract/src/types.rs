@@ -1,4 +1,6 @@
+mod request_discussion_anchors;
 mod request_stacks;
+pub use request_discussion_anchors::*;
 pub use request_stacks::*;
 
 use crate::{
@@ -454,23 +456,6 @@ pub struct RequestDiscussionSummaryResponse {
     pub created_at_unix: u64,
     pub resolved_at_unix: Option<u64>,
     pub resolved_by: Option<RequestActorSummaryResponse>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub struct RequestDiscussionAnchor {
-    pub revision_id: String,
-    pub revision_position: u64,
-    pub commit_oid: Option<String>,
-    pub path: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub struct RequestDiscussionAnchorInput {
-    pub revision_id: String,
-    pub commit_oid: Option<String>,
-    pub path: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

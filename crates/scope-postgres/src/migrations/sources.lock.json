@@ -9,5 +9,6 @@
   "m0089_contribution_request_stacks.rs": "a8185ebde19d4e200685a4f4d31c543a8908e2c4e922870b4511a7c4182090f5",
   "m0090_job_traceparents.rs": "9cffcf57835e07b8b9b137cd8e944546b464eed058e65bee5656ad91c8be63c7",
   "m0091_media_reconcile_once.rs": "1c224b97a65c01509665baeea150cbee32ce1bbc04fda1cfa5b8068fe3ad5582",
+  "m0092_request_discussion_line_anchors.rs": "f59a749d8de0ac832a4cecd33afae01ec8f836a19ef19ea52457bfc1eb30b628",
   "m0093_github_main_publication.rs": "7d8bdac99d1b4a41022c65cdc7e9912e0e9f31845973e30fce6cd4dfea561a5e"
 }
