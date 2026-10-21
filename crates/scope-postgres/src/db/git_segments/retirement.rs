@@ -14,16 +14,10 @@ where
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_git_segment_uploads uploads
-             SET state = CASE
-                     WHEN EXISTS (
-                         SELECT 1 FROM scope_git_segment_references refs
-                         WHERE refs.segment_id = uploads.segment_id
-                     ) THEN 'retained'
-                     ELSE 'deleting'
-                 END,
+             SET state = 'deleting',
                  updated_at_unix = GREATEST(updated_at_unix, $2)
              WHERE uploads.segment_id = $1
-               AND uploads.state IN ('ready', 'published', 'retained')
+               AND uploads.state IN ('ready', 'published')
                AND NOT EXISTS (
                    SELECT 1 FROM scope_git_segments spans
                    WHERE spans.segment_id = uploads.segment_id

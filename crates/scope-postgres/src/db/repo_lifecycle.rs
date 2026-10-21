@@ -212,17 +212,9 @@ pub(super) async fn delete_locked_repository(
         .await?;
     tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "DELETE FROM scope_git_segment_references refs
-         USING scope_git_segment_uploads uploads
-         WHERE refs.segment_id = uploads.segment_id AND uploads.repo_id = $1",
-        [repo_id.clone().into()],
-    ))
-    .await?;
-    tx.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
         "UPDATE scope_git_segment_uploads
          SET state = 'deleting', updated_at_unix = GREATEST(updated_at_unix, $2)
-         WHERE repo_id = $1 AND state IN ('uploading', 'ready', 'published', 'retained')",
+         WHERE repo_id = $1 AND state IN ('uploading', 'ready', 'published')",
         [
             repo_id.clone().into(),
             i64::try_from(now_unix)

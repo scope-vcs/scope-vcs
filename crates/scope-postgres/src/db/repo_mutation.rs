@@ -176,15 +176,7 @@ where
         let head = repo.git_head.as_ref().ok_or_else(|| {
             PostgresError::internal_message("push trigger evaluation requires an accepted Git head")
         })?;
-        enqueue_push_main_trigger_evaluation(
-            &tx,
-            &repo.record.id,
-            head,
-            &repo.git_pack_spans,
-            &input,
-            now_unix,
-        )
-        .await?;
+        enqueue_push_main_trigger_evaluation(&tx, &repo.record.id, head, &input, now_unix).await?;
     }
     let completed_landed_requests = if let Some(completion) = mutation.landed_requests {
         let head = repo.git_head.as_ref().ok_or_else(|| {

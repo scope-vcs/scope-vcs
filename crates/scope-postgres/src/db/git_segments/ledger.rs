@@ -244,7 +244,7 @@ pub(super) fn require_one_transition(
     }
 }
 
-pub(super) fn require_text(value: &str, field: &str) -> Result<(), PostgresError> {
+fn require_text(value: &str, field: &str) -> Result<(), PostgresError> {
     if value.trim().is_empty() {
         Err(PostgresError::internal_message(format!(
             "{field} is required"

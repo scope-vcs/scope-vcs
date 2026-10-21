@@ -86,8 +86,7 @@ impl RunStore {
                 .map_err(PostgresError::invalid_input)?
                 .into_revision(request.repository_id())
                 .map_err(PostgresError::invalid_input)?;
-        let source =
-            RunSource::accepted_git_head(request.repository_id(), head, context.git_pack_spans)?;
+        let source = RunSource::accepted_git_head(request.repository_id(), head)?;
         let run = request.create_run(&revision, source, now_unix)?;
         let enqueued = enqueue_run_in_transaction(&tx, run, revision).await?;
         tx.commit().await?;

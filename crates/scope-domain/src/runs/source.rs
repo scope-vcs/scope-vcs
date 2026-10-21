@@ -1,9 +1,6 @@
 use super::validation::{validate_git_oid, validate_sha256_hash};
 use crate::{
-    content::SourceBlob,
-    content_ref::ContentRef,
-    error::DomainError,
-    repository::git::{GitHead, GitPackSpan, GitSegmentRef, validate_git_pack_layout},
+    content::SourceBlob, content_ref::ContentRef, error::DomainError, repository::git::GitHead,
 };
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +25,6 @@ pub enum RunSource {
     AcceptedGitHead {
         repository_id: String,
         head: GitHead,
-        pack_spans: Vec<GitPackSpan>,
     },
 }
 
@@ -57,7 +53,6 @@ impl RunSource {
     pub fn accepted_git_head(
         repository_id: impl Into<String>,
         head: GitHead,
-        pack_spans: Vec<GitPackSpan>,
     ) -> Result<Self, DomainError> {
         let repository_id = repository_id.into();
         if repository_id.trim().is_empty() {
@@ -72,23 +67,9 @@ impl RunSource {
         }
         validate_git_oid("accepted run source head", &head.head_oid)?;
         validate_sha256_hash("accepted run source frontier", head.frontier.digest())?;
-        if pack_spans.is_empty() {
-            return Err(DomainError::invalid_input(
-                "accepted run source must pin at least one Git pack span",
-            ));
-        }
-        validate_git_pack_layout(&pack_spans)
-            .map_err(|error| DomainError::invalid_input(error.to_string()))?;
-        let final_span = pack_spans.last().expect("empty pack spans were rejected");
-        if final_span.last_sequence != head.push_sequence || final_span.head_oid != head.head_oid {
-            return Err(DomainError::invalid_input(
-                "accepted run source packs do not reach the accepted head",
-            ));
-        }
         Ok(Self::AcceptedGitHead {
             repository_id,
             head,
-            pack_spans,
         })
     }
 
@@ -115,15 +96,6 @@ impl RunSource {
         }
     }
 
-    pub fn retained_git_segments(&self) -> Vec<&GitSegmentRef> {
-        match self {
-            Self::EphemeralGitBundle { .. } | Self::RequestGitSnapshot { .. } => Vec::new(),
-            Self::AcceptedGitHead { pack_spans, .. } => {
-                pack_spans.iter().map(|span| &span.segment).collect()
-            }
-        }
-    }
-
     pub fn source_identity(&self) -> &str {
         match self {
             Self::EphemeralGitBundle { object } | Self::RequestGitSnapshot { object, .. } => {
@@ -142,14 +114,12 @@ impl RunSource {
         }
     }
 
-    pub fn logical_git_head(&self) -> Option<(&str, &GitHead, &[GitPackSpan])> {
+    pub fn logical_git_head(&self) -> Option<(&str, &GitHead)> {
         match self {
             Self::AcceptedGitHead {
                 repository_id,
                 head,
-                pack_spans,
-                ..
-            } => Some((repository_id, head, pack_spans)),
+            } => Some((repository_id, head)),
             Self::EphemeralGitBundle { .. } | Self::RequestGitSnapshot { .. } => None,
         }
     }
@@ -170,22 +140,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepted_git_head_pins_the_exact_pack_layout() {
+    fn accepted_git_head_pins_only_the_head() {
         let head_oid = "a".repeat(40);
-        let pack = GitPackSpan {
-            first_sequence: 1,
-            last_sequence: 1,
-            geometric_tier: 0,
-            base_oid: None,
-            head_oid: head_oid.clone(),
-            segment: git_segment('c'),
-        };
-        let source = RunSource::accepted_git_head(
-            "owner/repo",
-            GitHead::new(head_oid.clone(), 1, 7),
-            vec![pack.clone()],
-        )
-        .unwrap();
+        let source =
+            RunSource::accepted_git_head("owner/repo", GitHead::new(head_oid.clone(), 1, 7))
+                .unwrap();
 
         assert_eq!(source.git_oid(), head_oid);
         assert_eq!(
@@ -193,34 +152,25 @@ mod tests {
             "189efc3e1b3dd4adb49c858cdb3be61d3a0ebafe1d39fa3e9b8a1a9c7461e6e9"
         );
         assert!(source.retained_objects().is_empty());
-        assert_eq!(source.retained_git_segments(), vec![&pack.segment]);
+        assert_eq!(
+            serde_json::to_value(&source).unwrap(),
+            serde_json::json!({
+                "kind": "accepted-git-head",
+                "repository_id": "owner/repo",
+                "head": {
+                    "head_oid": head_oid,
+                    "push_sequence": 1,
+                    "change_version": 7,
+                    "frontier": "189efc3e1b3dd4adb49c858cdb3be61d3a0ebafe1d39fa3e9b8a1a9c7461e6e9",
+                },
+            })
+        );
     }
 
     #[test]
-    fn accepted_git_head_rejects_spans_that_do_not_reach_its_sequence() {
-        let head_oid = "a".repeat(40);
-        let source = RunSource::accepted_git_head(
-            "owner/repo",
-            GitHead::new(head_oid.clone(), 2, 7),
-            vec![GitPackSpan {
-                first_sequence: 1,
-                last_sequence: 1,
-                geometric_tier: 0,
-                base_oid: None,
-                head_oid: head_oid.clone(),
-                segment: git_segment('c'),
-            }],
-        );
+    fn accepted_git_head_rejects_an_unsequenced_head() {
+        let source = RunSource::accepted_git_head("owner/repo", GitHead::new("a".repeat(40), 0, 7));
 
-        assert!(source.unwrap_err().message.contains("do not reach"));
-    }
-
-    fn git_segment(character: char) -> GitSegmentRef {
-        GitSegmentRef {
-            segment_id: format!("segment-{character}"),
-            sha256: character.to_string().repeat(64),
-            plaintext_bytes: 1,
-            encoding_version: 2,
-        }
+        assert!(source.unwrap_err().message.contains("must be positive"));
     }
 }

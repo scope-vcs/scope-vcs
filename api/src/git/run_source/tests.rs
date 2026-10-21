@@ -4,7 +4,10 @@ use crate::git::{
     import::git_push_from_repo,
 };
 use scope_domain::{
-    account::UserAccount, repository::git::GitHead, runs::source::RunSource, views::ViewId,
+    account::UserAccount,
+    repository::git::{GitHead, GitPackSpan},
+    runs::source::RunSource,
+    views::ViewId,
 };
 use std::time::Instant;
 
@@ -72,7 +75,6 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
             change_version: 1,
             ..pushed.stored.head.clone()
         },
-        vec![pushed.stored.pack_span.clone()],
     )
     .unwrap();
 
@@ -180,17 +182,22 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     )
     .await
     .unwrap();
+    let newer_spans = vec![
+        pushed.stored.pack_span.clone(),
+        newer.stored.pack_span.clone(),
+    ];
+    record_accepted_main(
+        &state,
+        GitHead {
+            change_version: 2,
+            ..newer.stored.head.clone()
+        },
+        newer_spans.clone(),
+    )
+    .await;
     state
         .repository_engine
-        .materialize_repository(
-            &state,
-            &incarnation,
-            &newer.stored.head,
-            &[
-                pushed.stored.pack_span.clone(),
-                newer.stored.pack_span.clone(),
-            ],
-        )
+        .materialize_repository(&state, &incarnation, &newer.stored.head, &newer_spans)
         .await
         .unwrap();
     state
@@ -295,7 +302,21 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     );
 }
 
+mod compaction;
 mod request;
+
+async fn record_accepted_main(state: &AppState, head: GitHead, spans: Vec<GitPackSpan>) {
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests("owner/repo", move |repo| {
+            repo.bump_content_version();
+            repo.git_head = Some(head);
+            repo.git_pack_spans = spans;
+        })
+        .await
+        .unwrap();
+}
 
 async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirectory) {
     let owner = UserAccount {
@@ -351,15 +372,12 @@ async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirect
     let pushed = git_push_from_repo(state, "owner/repo", repository.path(), None)
         .await
         .unwrap();
-    let source = RunSource::accepted_git_head(
-        "owner/repo",
-        GitHead {
-            change_version: 1,
-            ..pushed.stored.head.clone()
-        },
-        vec![pushed.stored.pack_span.clone()],
-    )
-    .unwrap();
+    let head = GitHead {
+        change_version: 1,
+        ..pushed.stored.head.clone()
+    };
+    let source = RunSource::accepted_git_head("owner/repo", head.clone()).unwrap();
+    record_accepted_main(state, head, vec![pushed.stored.pack_span.clone()]).await;
 
     state
         .git_segment_store
@@ -389,10 +407,16 @@ async fn cancelled_revision_and_bundle_requests_keep_repository_and_capacity_unt
                 .unwrap()
                 .unwrap()
                 .incarnation;
-            let (_, head, spans) = source.logical_git_head().unwrap();
+            let (_, head) = source.logical_git_head().unwrap();
+            let (_, spans) = state
+                .metadata
+                .repositories()
+                .repository_content_source(&incarnation)
+                .await
+                .unwrap();
             let revision = state
                 .repository_engine
-                .materialize_revision(&state, &incarnation, head, spans)
+                .materialize_revision(&state, &incarnation, head, &spans)
                 .await
                 .unwrap();
             let _other_permit = state.runtime_budgets.try_git_materialization().unwrap();

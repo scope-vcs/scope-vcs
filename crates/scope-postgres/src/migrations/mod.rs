@@ -9,6 +9,7 @@ mod m0089_contribution_request_stacks;
 mod m0090_job_traceparents;
 mod m0092_live_file_views;
 mod m0093_request_object_pool;
+mod m0094_head_only_run_sources;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -90,6 +91,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0093_request_object_pool::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0094_head_only_run_sources::Migration),
             metadata_restore_safe: true,
         },
     ]

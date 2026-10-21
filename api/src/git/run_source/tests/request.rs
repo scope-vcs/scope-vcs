@@ -6,9 +6,8 @@ use scope_domain::views::ViewId;
 async fn private_request_run_source_supplies_its_old_main_base_before_runner_checkout() {
     let state = AppState::test_state();
     let (main_source, repository) = git_head_fixture(&state).await;
-    let (_, pinned_main, _) = main_source.logical_git_head().unwrap();
+    let (_, pinned_main) = main_source.logical_git_head().unwrap();
     let base_oid = pinned_main.head_oid.clone();
-    let first_span = main_source.logical_git_head().unwrap().2[0].clone();
     let incarnation = state
         .metadata
         .repositories()
@@ -17,6 +16,14 @@ async fn private_request_run_source_supplies_its_old_main_base_before_runner_che
         .unwrap()
         .unwrap()
         .incarnation;
+    let first_span = state
+        .metadata
+        .repositories()
+        .repository_content_source(&incarnation)
+        .await
+        .unwrap()
+        .1[0]
+        .clone();
 
     run_git(
         Some(repository.path()),
@@ -69,21 +76,15 @@ async fn private_request_run_source_supplies_its_old_main_base_before_runner_che
     let advanced = git_push_from_repo(&state, "owner/repo", repository.path(), Some(pinned_main))
         .await
         .unwrap();
-    let advanced_head = GitHead {
-        change_version: 2,
-        ..advanced.stored.head
-    };
-    state
-        .metadata
-        .repositories()
-        .mutate_repository_for_tests("owner/repo", move |repo| {
-            repo.record.change_version = 2;
-            repo.record.content_version = 2;
-            repo.git_head = Some(advanced_head);
-            repo.git_pack_spans = vec![first_span, advanced.stored.pack_span];
-        })
-        .await
-        .unwrap();
+    record_accepted_main(
+        &state,
+        GitHead {
+            change_version: 2,
+            ..advanced.stored.head
+        },
+        vec![first_span, advanced.stored.pack_span],
+    )
+    .await;
 
     let materialized =
         materialize_request_git_bundle(&state, &incarnation, &snapshot, &base_oid, 4 * 1024 * 1024)

@@ -2,7 +2,7 @@ use super::{
     dependency_analysis::enqueue_dependency_analysis_target,
     entities,
     git_compaction::schedule_git_compaction,
-    git_segments::{load_git_pack_spans, publish_git_segment},
+    git_segments::publish_git_segment,
     history_rows::{
         LiveFileRow, LiveFiles, file_rules, insert_commits, load_live_files_at, save_live_files,
     },
@@ -221,20 +221,7 @@ async fn accept_and_persist_content_update(
     apply_repository_workflow_catalog(tx, &workflow_catalog).await?;
     fold_live_projection_read_models(tx, &repo_id, content_version).await?;
     if let Some(input) = push_trigger_input {
-        let pinned_pack_spans = if input.requires_evaluation() {
-            load_git_pack_spans(tx, &repo_id).await?
-        } else {
-            Vec::new()
-        };
-        enqueue_push_main_trigger_evaluation(
-            tx,
-            &repo_id,
-            &git_head,
-            &pinned_pack_spans,
-            &input,
-            now_unix,
-        )
-        .await?;
+        enqueue_push_main_trigger_evaluation(tx, &repo_id, &git_head, &input, now_unix).await?;
     }
     Ok(git_head)
 }

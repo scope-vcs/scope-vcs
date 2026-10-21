@@ -1,14 +1,11 @@
 use super::{
-    GeneratedIdKind, RunStore, entities,
-    generated_ids::generate_id,
-    git_segments::{insert_git_segment_references, release_git_segment_references},
-    native_runs::lock_native_runs_availability,
-    outbox::ClaimedOutboxJob,
+    GeneratedIdKind, RunStore, entities, generated_ids::generate_id,
+    native_runs::lock_native_runs_availability, outbox::ClaimedOutboxJob,
     runs::enqueue_run_in_transaction,
 };
 use crate::error::PostgresError;
 use scope_domain::{
-    repository::git::{GitHead, GitPackSpan},
+    repository::git::GitHead,
     runs::{
         run::Run,
         source::{RunSource, RunTrigger},
@@ -31,7 +28,6 @@ pub(super) const JOB_KIND: &str = "push_main_trigger_evaluation";
 struct PushMainTriggerJobPayload {
     workflow_schema_version: u8,
     head: GitHead,
-    pack_spans: Vec<GitPackSpan>,
     input: PushTriggerInput,
 }
 
@@ -39,7 +35,6 @@ pub async fn enqueue_push_main_trigger_evaluation<C>(
     conn: &C,
     repo_id: &str,
     head: &GitHead,
-    pack_spans: &[GitPackSpan],
     input: &PushTriggerInput,
     now_unix: u64,
 ) -> Result<(), PostgresError>
@@ -60,28 +55,18 @@ where
     if evaluation.state != PushTriggerEvaluationState::Pending {
         return Ok(());
     }
-    let pinned_source = RunSource::accepted_git_head(repo_id, head.clone(), pack_spans.to_vec())
-        .map_err(PostgresError::from)?;
+    RunSource::accepted_git_head(repo_id, head.clone()).map_err(PostgresError::from)?;
     let job = entities::outbox_job::Model::push_main_trigger_evaluation(
         generate_id(GeneratedIdKind::OutboxJob)?,
         JOB_KIND,
         repo_id,
         head,
-        pack_spans,
         input,
         now_unix,
     )?;
     entities::outbox_job::Entity::insert(job.into_active_model())
         .exec(conn)
         .await?;
-    let reference_id = format!("{repo_id}:{}", head.change_version);
-    insert_git_segment_references(
-        conn,
-        "push_trigger_source",
-        &reference_id,
-        pinned_source.retained_git_segments(),
-    )
-    .await?;
     Ok(())
 }
 
@@ -105,13 +90,11 @@ where
     .one(&tx)
     .await?
     else {
-        release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
         tx.commit().await?;
         return Ok(Vec::new());
     };
     let mut evaluation = model.try_into_domain()?;
     if evaluation.state != PushTriggerEvaluationState::Pending {
-        release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
         tx.commit().await?;
         return Ok(Vec::new());
     }
@@ -164,7 +147,6 @@ where
             .map_err(PostgresError::from)?;
     }
     save_evaluation(&tx, &evaluation).await?;
-    release_push_trigger_sources(&tx, &job.repo_id, change_version, now_unix).await?;
     tx.commit().await?;
     Ok(created_run_ids)
 }
@@ -198,8 +180,6 @@ pub(super) async fn mark_terminal_failure(
     error: String,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    let change_version = u64::try_from(job.repo_version)
-        .map_err(|_| PostgresError::internal_message("push trigger change version is negative"))?;
     let Some(model) = entities::push_trigger_evaluation::Entity::find_by_id((
         job.repo_id.clone(),
         job.repo_version,
@@ -208,7 +188,6 @@ pub(super) async fn mark_terminal_failure(
     .one(tx)
     .await?
     else {
-        release_push_trigger_sources(tx, &job.repo_id, change_version, now_unix).await?;
         return Ok(());
     };
     let mut evaluation = model.try_into_domain()?;
@@ -218,21 +197,7 @@ pub(super) async fn mark_terminal_failure(
             .map_err(PostgresError::from)?;
         save_evaluation(tx, &evaluation).await?;
     }
-    release_push_trigger_sources(tx, &job.repo_id, change_version, now_unix).await?;
     Ok(())
-}
-
-async fn release_push_trigger_sources<C>(
-    conn: &C,
-    repo_id: &str,
-    change_version: u64,
-    now_unix: u64,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let reference_id = format!("{repo_id}:{change_version}");
-    release_git_segment_references(conn, "push_trigger_source", &reference_id, now_unix).await
 }
 
 async fn save_evaluation(
@@ -262,8 +227,7 @@ fn push_main_run(
         revision.workflow().path().as_str()
     );
     let digest = Sha256::digest(format!("{repo_id}\0{idempotency_key}").as_bytes());
-    let source =
-        RunSource::accepted_git_head(repo_id, payload.head.clone(), payload.pack_spans.clone())?;
+    let source = RunSource::accepted_git_head(repo_id, payload.head.clone())?;
     Ok(Run::new(
         format!("run_push_{}", hex::encode(digest)),
         idempotency_key,
@@ -365,18 +329,6 @@ mod tests {
             .unwrap();
         assert_eq!(later.state, PushTriggerEvaluationState::Succeeded);
         assert!(later.checks.is_empty());
-        assert_eq!(
-            segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:1")).await,
-            0
-        );
-        assert_eq!(
-            segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:3")).await,
-            0
-        );
-        assert_eq!(
-            segment_reference_count(&store, "run_source", &run.id).await,
-            1
-        );
 
         let replay = store
             .jobs()
@@ -474,10 +426,6 @@ mod tests {
                 .contains("workflow YAML is invalid")
         );
         assert!(evaluation.checks.is_empty());
-        assert_eq!(
-            segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:2")).await,
-            0
-        );
         let protected = entities::source_blob_cleanup_job::Entity::find()
             .all(store.db.as_ref())
             .await
@@ -494,7 +442,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_payload_terminal_failure_releases_pins_and_stops_retries() {
+    async fn malformed_payload_terminal_failure_stops_retries() {
         let target = crate::db::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let repo_id = seed_repo(&store).await;
@@ -542,10 +490,6 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(evaluation.state, PushTriggerEvaluationState::Failed);
-        assert_eq!(
-            segment_reference_count(&store, "push_trigger_source", &format!("{repo_id}:5")).await,
-            0
-        );
     }
 
     #[tokio::test]
@@ -603,7 +547,6 @@ mod tests {
             store.db.as_ref(),
             repo_id,
             &trigger_head(head_oid, change_version),
-            &trigger_pack_spans(head_oid, change_version),
             &PushTriggerInput::new(head_oid, workflows, None).unwrap(),
             now(),
         )
@@ -623,69 +566,14 @@ mod tests {
             .create_repository(&owner, "repo", ViewId::private())
             .unwrap()
             .clone();
-        catalog.git_segment_uploads = (1..=10)
-            .map(|sequence| scope_domain::repository::git::GitSegmentUpload {
-                segment_id: format!("segment-{sequence}"),
-                repository_id: repo.record.id.clone(),
-                object_key: format!("git/segments/v2/{}/segment-{sequence}", repo.record.id),
-                state: scope_domain::repository::git::GitSegmentUploadState::Published,
-                sha256: Some(format!("{sequence:064x}")),
-                plaintext_bytes: Some(1),
-                encrypted_bytes: Some(2),
-                encoding_version: 2,
-                created_at_unix: 1,
-                updated_at_unix: 1,
-            })
-            .collect();
         catalog.native_runs_accounts.insert(owner.id.clone());
         catalog.users.insert(owner.id.clone(), owner);
         store.admin().seed_catalog_for_tests(catalog).unwrap();
         repo.record.id
     }
 
-    async fn segment_reference_count(store: &MetadataStore, ref_kind: &str, ref_id: &str) -> usize {
-        store.db.query_all_raw(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            "SELECT segment_id FROM scope_git_segment_references WHERE ref_kind = $1 AND ref_id = $2",
-            [ref_kind.into(), ref_id.into()])).await.unwrap().len()
-    }
-
     fn trigger_head(head_oid: &str, change_version: u64) -> GitHead {
         GitHead::new(head_oid.to_string(), change_version, change_version)
-    }
-
-    fn trigger_pack_spans(head_oid: &str, push_sequence: u64) -> Vec<GitPackSpan> {
-        let mut spans = Vec::new();
-        let mut first_sequence = 1;
-        let mut remaining = push_sequence;
-        let mut previous_head = None;
-        while remaining > 0 {
-            let width = 1_u64 << remaining.ilog2();
-            let last_sequence = first_sequence + width - 1;
-            let span_head = if last_sequence == push_sequence {
-                head_oid.to_string()
-            } else {
-                format!("{last_sequence:040x}")
-            };
-            let digest = format!("{first_sequence:064x}");
-            spans.push(GitPackSpan {
-                first_sequence,
-                last_sequence,
-                geometric_tier: width.ilog2(),
-                base_oid: previous_head.clone(),
-                head_oid: span_head.clone(),
-                segment: scope_domain::repository::git::GitSegmentRef {
-                    segment_id: format!("segment-{first_sequence}"),
-                    sha256: digest,
-                    plaintext_bytes: 1,
-                    encoding_version: 2,
-                },
-            });
-            previous_head = Some(span_head);
-            first_sequence = last_sequence + 1;
-            remaining -= width;
-        }
-        spans
     }
 
     fn now() -> u64 {

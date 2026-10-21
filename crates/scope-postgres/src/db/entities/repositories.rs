@@ -477,9 +477,7 @@ pub mod git_segment_upload {
             let state = decode_enum::<GitSegmentUploadState>(self.state.clone())?;
             if !matches!(
                 state,
-                GitSegmentUploadState::Ready
-                    | GitSegmentUploadState::Published
-                    | GitSegmentUploadState::Retained
+                GitSegmentUploadState::Ready | GitSegmentUploadState::Published
             ) {
                 return Err(PostgresError::internal_message(format!(
                     "Git segment {} is not ready for repository publication",
