@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 pub const CODEX_REVIEW_BOT_LOGIN: &str = "chatgpt-codex-connector[bot]";
 const MARKER: &str = "<!-- codex-review-state:v1 ";
 const MARKER_END: &str = "-->";
-const SHORTEST_ABBREVIATED_OID: usize = 7;
+const FULL_OID_LENGTH: usize = 40;
 const COMPLETED: &str = "completed";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,9 +70,9 @@ impl CodexReviewState {
 }
 
 fn names_commit(named: &str, head_oid: &str) -> bool {
-    named.len() >= SHORTEST_ABBREVIATED_OID
-        && named.bytes().all(|byte| byte.is_ascii_hexdigit())
-        && head_oid
-            .get(..named.len())
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(named))
+    named.len() == FULL_OID_LENGTH
+        && named
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        && named == head_oid
 }

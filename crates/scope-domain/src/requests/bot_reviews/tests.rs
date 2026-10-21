@@ -124,16 +124,6 @@ fn codex_state_comment_is_done_only_when_every_review_completed_the_head() {
         CodexReviewState::parse(&mixed).unwrap().state_for(HEAD),
         Some(GitHubReviewBotState::Working)
     );
-    let abbreviated = codex_comment(
-        &part("1196D9CA", "completed", "false"),
-        &part("1196d9ca", "completed", "false"),
-    );
-    assert_eq!(
-        CodexReviewState::parse(&abbreviated)
-            .unwrap()
-            .state_for(HEAD),
-        Some(GitHubReviewBotState::Clear)
-    );
     let code_only = "<!-- codex-review-state:v1 {\"code_review\":".to_string()
         + &part(HEAD, "completed", "false")
         + "} -->";
@@ -171,6 +161,35 @@ fn malformed_codex_state_comments_report_nothing() {
     assert_eq!(
         CodexReviewState::parse(&short).unwrap().state_for(HEAD),
         None
+    );
+}
+
+#[test]
+fn a_state_comment_names_the_head_only_by_its_full_sha() {
+    let same_prefix = "1196d9ca00000000000000000000000000000000";
+    for named in [
+        "1196d9ca",
+        "1196d9ca5d1e0e7b8b1f6f0d6c2d3a4b5c6d7e8",
+        same_prefix,
+        &HEAD.to_ascii_uppercase(),
+    ] {
+        let comment = codex_comment(
+            &part(named, "completed", "false"),
+            &part(named, "completed", "false"),
+        );
+        assert_eq!(
+            CodexReviewState::parse(&comment).unwrap().state_for(HEAD),
+            None,
+            "{named}"
+        );
+    }
+    let exact = codex_comment(
+        &part(HEAD, "completed", "false"),
+        &part(HEAD, "completed", "false"),
+    );
+    assert_eq!(
+        CodexReviewState::parse(&exact).unwrap().state_for(HEAD),
+        Some(GitHubReviewBotState::Clear)
     );
 }
 
