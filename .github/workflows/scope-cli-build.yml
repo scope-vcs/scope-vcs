@@ -87,8 +87,41 @@ jobs:
       - name: Check CLI
         run: ./dev/checks/cli
 
+  bundle:
+    name: Check scope-cli host bundle
+    if: ${{ !inputs.validate_targets }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install reviewed Git on Linux
+        run: |
+          version="$(jq -er '.git.version' dev/tool-versions.json)"
+          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
+          echo /opt/git/bin >> "$GITHUB_PATH"
+
+      - name: Verify host Git version
+        run: node dev/check-git-version.mjs
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-bin: false
+          shared-key: cli-checks
+          save-if: false
+          workspaces: |
+            cli -> target
+            . -> target
+
       - name: Check host bundle and installer
-        if: ${{ !inputs.validate_targets }}
         run: ./dev/checks/cli-bundle
 
   build:

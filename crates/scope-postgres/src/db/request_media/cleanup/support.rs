@@ -1,7 +1,8 @@
 use crate::error::PostgresError;
+use scope_domain::requests::attachments::REQUEST_MEDIA_LATE_WRITE_GRACE_SECONDS;
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement};
 
-use super::{LATE_WRITE_GRACE_SECONDS, TOMBSTONE_RECONCILIATION_SECONDS};
+use super::TOMBSTONE_RECONCILIATION_SECONDS;
 use crate::db::request_media::persistence::as_i64;
 
 const RECONCILIATION_BATCH_SIZE: i64 = 256;
@@ -91,25 +92,33 @@ where
 pub(super) async fn mark_orphan_inventory_deleted<C>(
     conn: &C,
     attachment_id: &str,
+    deleted_keys: &[String],
     now_unix: u64,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
     let now = as_i64(now_unix, "orphan deletion time")?;
+    let deleted_keys = serde_json::to_value(deleted_keys).map_err(PostgresError::internal)?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_abandoned_objects SET deleted_at_unix = $2
-         WHERE attachment_id = $1 AND deleted_at_unix IS NULL",
-        [attachment_id.into(), now.into()],
+         WHERE attachment_id = $1 AND deleted_at_unix IS NULL
+           AND object_key IN (SELECT jsonb_array_elements_text($3::jsonb))",
+        [
+            attachment_id.into(),
+            now.into(),
+            deleted_keys.clone().into(),
+        ],
     ))
     .await?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_request_media_processing_objects
          SET state = 'Deleted', updated_at_unix = $2
-         WHERE attachment_id = $1 AND state = 'Orphaned'",
-        [attachment_id.into(), now.into()],
+         WHERE attachment_id = $1 AND state = 'Orphaned'
+           AND object_key IN (SELECT jsonb_array_elements_text($3::jsonb))",
+        [attachment_id.into(), now.into(), deleted_keys.into()],
     ))
     .await?;
     Ok(())
@@ -130,12 +139,13 @@ where
         "WITH due AS (
             SELECT attachment_id FROM scope_request_media_cleanup_jobs
             WHERE state = 'Completed' AND completed_at_unix <= $2
+              AND reconciled_at_unix IS NULL
             ORDER BY completed_at_unix, attachment_id
             FOR UPDATE SKIP LOCKED LIMIT $3
          )
          UPDATE scope_request_media_cleanup_jobs cleanup
          SET state = 'Queued', available_at_unix = $1, completed_at_unix = NULL,
-             updated_at_unix = $1
+             reconciled_at_unix = $1, updated_at_unix = $1
          FROM due WHERE cleanup.attachment_id = due.attachment_id",
         [now.into(), cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))
@@ -146,18 +156,19 @@ where
             SELECT abandoned.object_key
             FROM scope_request_media_abandoned_objects abandoned
             WHERE abandoned.deleted_at_unix IS NOT NULL
-              AND abandoned.deleted_at_unix <= $1
+              AND abandoned.deleted_at_unix <= $2
+              AND abandoned.reconciled_at_unix IS NULL
               AND NOT EXISTS (
                     SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
                     WHERE cleanup.attachment_id = abandoned.attachment_id
             )
             ORDER BY abandoned.deleted_at_unix, abandoned.object_key
-            FOR UPDATE OF abandoned SKIP LOCKED LIMIT $2
+            FOR UPDATE OF abandoned SKIP LOCKED LIMIT $3
          )
          UPDATE scope_request_media_abandoned_objects abandoned
-         SET deleted_at_unix = NULL
+         SET deleted_at_unix = NULL, reconciled_at_unix = $1
          FROM due WHERE abandoned.object_key = due.object_key",
-        [cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
+        [now.into(), cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))
     .await?;
     conn.execute_raw(Statement::from_sql_and_values(
@@ -167,6 +178,7 @@ where
             FROM scope_request_media_processing_objects object
             WHERE object.state = 'Deleted' AND object.updated_at_unix <= $2
               AND object.manifest_id IS NULL
+              AND object.reconciled_at_unix IS NULL
               AND NOT EXISTS (
                     SELECT 1 FROM scope_request_media_cleanup_jobs cleanup
                     WHERE cleanup.attachment_id = object.attachment_id
@@ -175,7 +187,7 @@ where
             FOR UPDATE OF object SKIP LOCKED LIMIT $3
          )
          UPDATE scope_request_media_processing_objects object
-         SET state = 'Orphaned', updated_at_unix = $1
+         SET state = 'Orphaned', reconciled_at_unix = $1, updated_at_unix = $1
          FROM due WHERE object.object_key = due.object_key",
         [now.into(), cutoff.into(), RECONCILIATION_BATCH_SIZE.into()],
     ))
@@ -213,7 +225,7 @@ where
         .transpose()
         .map_err(PostgresError::internal)?;
     Ok(max_expiry
-        .and_then(|expiry| expiry.checked_add(LATE_WRITE_GRACE_SECONDS))
+        .and_then(|expiry| expiry.checked_add(REQUEST_MEDIA_LATE_WRITE_GRACE_SECONDS))
         .map_or(now_unix, |expiry| expiry.max(now_unix)))
 }
 

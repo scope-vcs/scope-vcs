@@ -11,6 +11,7 @@ import {
   within,
   withPage,
 } from './browser-smoke.mjs'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 
 test('repository shell renders before the initial file is ready', async () => {
   for (const scenario of [
@@ -29,6 +30,21 @@ test('repository shell renders before the initial file is ready', async () => {
   ]) {
     await assertShellBeforeFileReady(scenario)
   }
+})
+
+test('opening a repository shows the code skeleton while the repository loads', async () => {
+  await withPage('/licenses', async (page) => {
+    const held = []
+    await page.route('**/_serverFn/**', (route) => {
+      if (serverFunctionName(route.request()) === 'loadRepoLiveState_createServerFn_handler') held.push(route)
+      else void route.continue()
+    })
+    await page.evaluate((href) => { void globalThis.__TSR_ROUTER__.navigate({ href }) }, repoPath)
+    await page.getByText('Loading repository files', { exact: true }).waitFor({ state: 'attached' })
+    assert(held.length > 0)
+    await Promise.all(held.map((route) => route.continue()))
+    await assertCurrentRepoSection(page, 'Code')
+  })
 })
 
 test('unknown repository-shaped paths return not found', async () => {
