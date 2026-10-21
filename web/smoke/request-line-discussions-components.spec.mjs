@@ -68,8 +68,21 @@ test('line discussions open from either side, post under their lines, and keep c
   await assertFits(page, 'references', [fileNotes, carried])
 
   const gutter = (type, line) => diff.locator(`[data-gutter] [data-line-type="${type}"][data-column-number="${line}"]`)
-  await gutter('change-addition', 3).hover()
-  assert.equal(await gutter('change-addition', 3).evaluate((cell) => getComputedStyle(cell).cursor), 'pointer')
+  const paint = (cell) => cell.evaluate((node) => {
+    const style = getComputedStyle(node)
+    return { background: style.backgroundColor, color: style.color, cursor: style.cursor }
+  })
+  await page.mouse.move(0, 0)
+  const resting = await paint(gutter('context', 5))
+  await gutter('context', 5).hover()
+  const hovered = await paint(gutter('context', 5))
+  assert.equal(hovered.cursor, 'pointer')
+  assert.notEqual(hovered.background, resting.background)
+  assert.notEqual(hovered.color, resting.color)
+  if (screenshot) {
+    const box = await gutter('context', 5).boundingBox()
+    await page.screenshot({ path: `${screenshot}.hover.desktop.png`, clip: { x: box.x - 8, y: box.y - 60, width: 360, height: 140 } })
+  }
   const focusedComposer = () => page.waitForFunction(() => document.activeElement?.tagName === 'TEXTAREA', null, { timeout: 2_000 })
     .then(() => page.evaluate(() => document.activeElement?.getAttribute('id')))
   await gutter('change-addition', 3).click()

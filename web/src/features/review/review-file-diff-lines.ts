@@ -23,6 +23,19 @@ export function renderedDiffLines(html: string): ReviewDiffRenderedLines {
   return lines
 }
 
+const LINE_NUMBER_HOVER_STYLE = `@media (hover: hover) {
+  [data-interactive-line-numbers] [data-column-number]:hover {
+    background-color: var(--muted);
+    color: var(--foreground);
+  }
+}`
+
+export function installLineNumberHoverStyle(root: ShadowRoot) {
+  const style = document.createElement('style')
+  style.textContent = LINE_NUMBER_HOVER_STYLE
+  root.append(style)
+}
+
 export function reviewDiffSlotName({ side, line }: ReviewDiffLine) {
   return `scope-line-${side}-${line}`
 }

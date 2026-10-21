@@ -21,6 +21,7 @@ import {
 } from './review-file-diff-presentation'
 import {
   diffLineAt,
+  installLineNumberHoverStyle,
   markSelectedDiffLines,
   reviewDiffSlotName,
   syncDiffAnnotationRows,
@@ -196,6 +197,7 @@ function PrerenderedDiff({
     const nextHost = document.createElement('diffs-container')
     const root = nextHost.attachShadow({ mode: 'open' })
     root.replaceChildren(fragment)
+    installLineNumberHoverStyle(root)
     root.addEventListener('click', (event) => {
       if (!(event instanceof MouseEvent)) return
       const line = diffLineAt(event.target)
