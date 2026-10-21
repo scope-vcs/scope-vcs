@@ -14,7 +14,8 @@ use super::{
     request_rows::request_by_id,
 };
 use sea_orm::{
-    ColumnTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
+    TransactionTrait,
 };
 use {
     crate::error::PostgresError,
@@ -104,30 +105,51 @@ impl RequestStore {
             ));
         }
         let started = std::time::Instant::now();
+        let commit_unix = first.now_unix;
         let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let mut landed = Vec::with_capacity(commands.len());
+        let mut landed_checks = Vec::with_capacity(commands.len());
         let mut rejected = None;
         let mut keeps_writes = false;
-        for command in commands {
-            let item = tx.begin().await?;
-            match merge_one_request(&item, &repo_id, command, started).await {
-                Ok(mutation) => {
-                    item.commit().await?;
+        for (index, command) in commands.into_iter().enumerate() {
+            tx.execute_unprepared(&format!("SAVEPOINT merge_{index}"))
+                .await?;
+            match merge_one_request(&tx, &repo_id, command, started).await {
+                Ok((mutation, checks)) => {
                     landed.push(mutation);
+                    landed_checks.push(checks);
                     keeps_writes = true;
                 }
                 Err(rejection) => {
                     if rejection.keeps_auto_merge_stop {
-                        item.commit().await?;
                         keeps_writes = true;
                     } else {
-                        item.rollback().await?;
+                        tx.execute_unprepared(&format!("ROLLBACK TO SAVEPOINT merge_{index}"))
+                            .await?;
                     }
                     rejected = Some(rejection.error);
                     break;
                 }
             }
+        }
+        let committed_at = commit_unix.saturating_add(started.elapsed().as_secs());
+        if let Some((expired, error)) =
+            landed_checks
+                .iter()
+                .enumerate()
+                .find_map(|(index, checks)| {
+                    checks
+                        .ensure_fresh(committed_at)
+                        .err()
+                        .map(|error| (index, error))
+                })
+        {
+            tx.execute_unprepared(&format!("ROLLBACK TO SAVEPOINT merge_{expired}"))
+                .await?;
+            landed.truncate(expired);
+            rejected = Some(error);
+            keeps_writes = expired > 0;
         }
         if keeps_writes {
             tx.commit().await?;
@@ -143,7 +165,7 @@ async fn merge_one_request(
     repo_id: &str,
     command: MergeRequestContentCommand,
     started: std::time::Instant,
-) -> Result<MergeRequestContentMutation, RejectedMerge> {
+) -> Result<(MergeRequestContentMutation, evidence::LockedMergeChecks), RejectedMerge> {
     let MergeRequestContentCommand {
         stack_children,
         owner,
@@ -390,10 +412,13 @@ async fn merge_one_request(
     )
     .await?;
     checks.ensure_fresh(now_unix.saturating_add(started.elapsed().as_secs()))?;
-    Ok(MergeRequestContentMutation {
-        request: request_mutation,
-        git_head,
-    })
+    Ok((
+        MergeRequestContentMutation {
+            request: request_mutation,
+            git_head,
+        },
+        checks,
+    ))
 }
 
 mod evidence;

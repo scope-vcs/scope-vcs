@@ -790,7 +790,7 @@ async fn create_test_reply(
         .unwrap();
 }
 
-fn public_start_input() -> StartRequestInput {
+pub(crate) fn public_start_input() -> StartRequestInput {
     StartRequestInput {
         id: "req_1".to_string(),
         repo_id: "owner/repo".to_string(),
