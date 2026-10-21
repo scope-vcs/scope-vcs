@@ -48,6 +48,7 @@ mod locks;
 mod main_push_requests;
 mod maintenance;
 mod manual_runs;
+mod merge_turns;
 #[cfg(test)]
 mod migration_tests;
 mod native_runs;
@@ -167,6 +168,7 @@ pub use maintenance::{
     apply_maintenance_migrations, migration_plan, migration_preflight,
     repository_workflow_catalogs_for_maintenance, verify_schema,
 };
+pub use merge_turns::RepositoryMergeTurn;
 pub use native_runs::{NativeRunsAccountListing, NativeRunsAddition, NativeRunsWithdrawal};
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{

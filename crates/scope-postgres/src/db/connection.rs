@@ -31,6 +31,7 @@ pub(super) async fn connect_postgres_store_with_options(
     }
     Ok(MetadataStore {
         db: Arc::new(db),
+        merge_turn_sessions: super::merge_turns::MergeTurnSessions::new(Arc::clone(&database_url)),
         postgres_database_url: Some(database_url),
         repo_change_notifier: Default::default(),
         #[cfg(any(test, feature = "test-support"))]

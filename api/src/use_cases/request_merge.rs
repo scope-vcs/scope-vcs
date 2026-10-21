@@ -125,6 +125,12 @@ pub(crate) async fn merge_request_inner(
     );
     let merged_event_id = crate::persistence_ids::generate_prefixed_id("event_request_merged")
         .map_err(RequestMergeFailure::Other)?;
+    let merge_turn = state
+        .metadata
+        .repositories()
+        .acquire_merge_turn(&context.record.id)
+        .await
+        .map_err(ApiError::from)?;
     let mut attempt = 1;
     let (repo, mutation) = loop {
         let repo = current_repository(state, command, &context.incarnation()).await?;
@@ -185,6 +191,7 @@ pub(crate) async fn merge_request_inner(
             Err(error) => return Err(ApiError::from(error).into()),
         }
     };
+    merge_turn.release().await;
     state.wakeups.auto_merge.notify_one();
 
     state.product_analytics.capture(analytics_event);

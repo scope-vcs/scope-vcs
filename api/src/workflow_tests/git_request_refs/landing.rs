@@ -116,7 +116,7 @@ async fn concurrent_merges_of_disjoint_requests_all_land() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn merges_prepared_on_the_same_main_land_by_preparing_again() {
+async fn a_merge_waits_for_the_earlier_merge_to_commit_and_then_lands() {
     let names = ["left", "right"];
     let landing = DisjointRequests::open("same-main-landing", &names).await;
     let admin = landing.state.metadata.admin();
@@ -133,7 +133,7 @@ async fn merges_prepared_on_the_same_main_land_by_preparing_again() {
         }
     })
     .await
-    .expect("both merges must prepare and wait to commit");
+    .expect("one merge must wait to commit while the other waits for its turn");
     held.rollback().await.unwrap();
 
     let mut merged = Vec::new();
