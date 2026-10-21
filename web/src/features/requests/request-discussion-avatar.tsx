@@ -3,6 +3,7 @@ import { cn } from '../../lib/utils'
 import {
   discussionAuthorAvatarUrl,
   discussionAuthorName,
+  discussionAuthorSourceLabel,
   discussionAuthorSourceUrl,
   type DiscussionAuthor,
 } from './request-discussion-author'
@@ -27,6 +28,7 @@ export function RequestDiscussionAuthorSource({ author }: { author: DiscussionAu
   if (!sourceUrl) return null
   return (
     <a
+      aria-label={discussionAuthorSourceLabel(author) ?? undefined}
       className="whitespace-nowrap text-[13px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
       href={sourceUrl}
       rel="noreferrer"

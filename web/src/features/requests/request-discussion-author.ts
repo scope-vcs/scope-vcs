@@ -19,6 +19,18 @@ export function discussionAuthorSourceUrl(author: DiscussionAuthor) {
   return author?.kind === 'github' ? author.source_url : null
 }
 
+export function discussionAuthorSourceLabel(author: DiscussionAuthor) {
+  if (author?.kind !== 'github') return null
+  const comment = /#discussion_r(\d+)$/.exec(author.source_url)
+  const review = /#pullrequestreview-(\d+)$/.exec(author.source_url)
+  const target = comment
+    ? `comment ${comment[1]}`
+    : review
+      ? `review ${review[1]}`
+      : 'comment'
+  return `via GitHub: ${author.account.login}'s ${target}`
+}
+
 export function discussionAuthorUserId(author: DiscussionAuthor) {
   return author?.kind === 'user' ? author.id : null
 }

@@ -1,10 +1,19 @@
-import type { GitHubConnectionResponse } from '@/api/types.generated'
+import type { GitHubConnectionResponse, GitHubReviewBotResponse } from '@/api/types.generated'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
+import { cn } from '@/lib/utils'
 import { useEffect, useState } from 'react'
-import { reviewBotLogins, reviewBotsText, sameReviewBots } from './repo-review-bots-model'
+import {
+  reviewBotLogins,
+  reviewBotsProblem,
+  reviewBotsText,
+  sameReviewBots,
+} from './repo-review-bots-model'
+
+function sameSaved(saved: GitHubReviewBotResponse[] | null, bots: GitHubReviewBotResponse[]) {
+  return saved !== null && sameReviewBots(saved.map((bot) => bot.login), bots)
+}
 
 export function RepoReviewBots({
   github,
@@ -17,24 +26,29 @@ export function RepoReviewBots({
   const [draft, setDraft] = useState(() => reviewBotsText(bots))
   const [source, setSource] = useState(bots)
   const [pending, setPending] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [saved, setSaved] = useState<GitHubReviewBotResponse[] | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const dirty = !sameReviewBots(draft, bots)
+  const logins = reviewBotLogins(draft)
+  const dirty = !sameReviewBots(logins, bots)
 
   useEffect(() => {
     if (bots === source) return
-    if (sameReviewBots(draft, source)) setDraft(reviewBotsText(bots))
+    if (sameReviewBots(reviewBotLogins(draft), source)) setDraft(reviewBotsText(bots))
     setSource(bots)
   }, [bots, draft, source])
 
   async function update() {
+    const found = reviewBotsProblem(logins)
+    setProblem(found)
+    if (found) return
     setError(null)
     setPending(true)
     try {
-      const result = await save(reviewBotLogins(draft))
+      const result = await save(logins)
       setDraft(reviewBotsText(result.review_bots))
       setSource(result.review_bots)
-      setSaved(true)
+      setSaved(result.review_bots)
     } catch (cause) {
       setError(resourceErrorMessage(cause, 'Try again.'))
     } finally {
@@ -51,32 +65,46 @@ export function RepoReviewBots({
         </p>
       </div>
       <form
-        className="flex flex-wrap gap-2"
+        className="space-y-2"
         onSubmit={(event) => {
           event.preventDefault()
           if (dirty && !pending) void update()
         }}
       >
-        <Input
-          aria-describedby="github-review-bots-description"
-          className="h-8 min-w-0 flex-1 font-mono text-[13px]"
+        <textarea
+          aria-describedby={problem ? 'github-review-bots-problem' : 'github-review-bots-description'}
+          aria-invalid={problem ? true : undefined}
+          className={cn(
+            'block min-h-20 w-full resize-y rounded-lg border border-input bg-secondary px-3 py-2 font-mono text-[13px] leading-5 shadow-[var(--shadow-card)]',
+            'placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+            'disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-50 aria-invalid:border-destructive',
+          )}
           disabled={pending}
           id="github-review-bots"
           onChange={(event) => {
             setDraft(event.target.value)
-            setSaved(false)
+            setProblem(null)
             setError(null)
           }}
-          placeholder="greptile-apps[bot], chatgpt-codex-connector[bot]"
+          placeholder={'greptile-apps[bot]\nchatgpt-codex-connector[bot]'}
+          rows={Math.min(Math.max(logins.length + 1, 3), 8)}
+          spellCheck={false}
           value={draft}
         />
-        <Button disabled={!dirty || pending} size="sm" type="submit">
-          {pending ? 'Saving…' : 'Save review bots'}
-        </Button>
+        {problem ? (
+          <p className="leading-5 text-destructive" id="github-review-bots-problem" role="alert">
+            {problem}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p aria-live="polite" className="leading-5 text-muted-foreground">
+            {sameSaved(saved, bots) && !dirty ? 'Review bots saved.' : null}
+          </p>
+          <Button disabled={!dirty || pending} size="sm" type="submit">
+            {pending ? 'Saving…' : 'Save review bots'}
+          </Button>
+        </div>
       </form>
-      {saved && !dirty ? (
-        <p aria-live="polite" className="leading-5 text-muted-foreground">Review bots saved.</p>
-      ) : null}
       {error && (
         <PageErrorAlert className="mt-0" title="Review bots were not saved">
           {error}

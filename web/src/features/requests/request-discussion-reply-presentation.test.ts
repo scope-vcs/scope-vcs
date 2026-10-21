@@ -71,3 +71,14 @@ function reply(createdAtUnix: number): RequestDiscussionReplyView {
     discussion_id: 'discussion',
   })
 }
+
+test('imported GitHub replies keep their own byline and source link', () => {
+  const bot = {
+    kind: 'github' as const,
+    account: { account_type: 'bot' as const, avatar_url: null, github_user_id: 9, login: 'greptile-apps[bot]' },
+    source_url: 'https://github.com/octo/repo/pull/1#discussion_r201',
+  }
+  const previous = { ...reply(100), author: bot }
+  const current = { ...reply(110), author: { ...bot, source_url: 'https://github.com/octo/repo/pull/1#discussion_r202' } }
+  assert.equal(shouldGroupReplies(previous, current, noBoundary), false)
+})

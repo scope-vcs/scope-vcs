@@ -134,20 +134,50 @@ test('repository components retain drafts, previews and pending actions across r
   await checks.getByText('Scope imports GitHub reviews from these bots and from GitHub users who can write to the repository.', { exact: true }).waitFor()
   const saveReviewBots = checks.getByRole('button', { name: 'Save review bots', exact: true })
   assert.equal(await saveReviewBots.isDisabled(), true)
+  await reviewBots.fill('greptile-apps[bot], octocat')
+  await saveReviewBots.click()
+  await checks.getByRole('alert').filter({ hasText: '"octocat" is not a bot.' }).waitFor()
+  assert.equal(await reviewBots.getAttribute('aria-invalid'), 'true')
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [])
   await reviewBots.fill(' greptile-apps[bot],\nchatgpt-codex-connector[bot] ')
+  assert.equal(await checks.getByRole('alert').filter({ hasText: 'is not a bot' }).count(), 0)
   await saveReviewBots.click()
   await page.evaluate(() => window.finishAction('review-bots'))
   await checks.getByText('Review bots saved.', { exact: true }).waitFor()
-  assert.equal(await reviewBots.inputValue(), 'greptile-apps[bot], chatgpt-codex-connector[bot]')
+  assert.equal(await reviewBots.inputValue(), 'greptile-apps[bot]\nchatgpt-codex-connector[bot]')
   assert.equal(await saveReviewBots.isDisabled(), true)
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { setGitHubReviewBots: [{ login: 'greptile-apps[bot]' }, { login: 'chatgpt-codex-connector[bot]' }] },
   ])
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 })
+    const fit = await reviewBots.evaluate((field) => ({
+      scrollWidth: field.scrollWidth,
+      clientWidth: field.clientWidth,
+      scrollHeight: field.scrollHeight,
+      clientHeight: field.clientHeight,
+    }))
+    assert(fit.scrollWidth <= fit.clientWidth, `review bots fit across at ${width}: ${JSON.stringify(fit)}`)
+    assert(fit.scrollHeight <= fit.clientHeight, `review bots fit down at ${width}: ${JSON.stringify(fit)}`)
+    const bounds = await reviewBots.boundingBox()
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `review bots field fits at ${width}`)
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await reviewBots.locator('xpath=../..').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.review-bots-${width}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.evaluate(() => {
+    const github = window.fixtureGitHub()
+    window.setFixtureGitHub({ ...github, review_bots: [] })
+  })
+  await page.waitForFunction(() => document.getElementById('github-review-bots').value === '')
+  assert.equal(await checks.getByText('Review bots saved.', { exact: true }).count(), 0)
   await page.evaluate(() => {
     const github = window.fixtureGitHub()
     window.setFixtureGitHub({ ...github, review_bots: [{ login: 'octo-reviewer[bot]' }] })
   })
-  await checks.getByRole('textbox', { name: 'Review bots', exact: true }).and(page.locator('[value="octo-reviewer[bot]"]')).waitFor()
+  await page.waitForFunction(() => document.getElementById('github-review-bots').value === 'octo-reviewer[bot]')
+  assert.equal(await checks.getByText('Review bots saved.', { exact: true }).count(), 0)
   for (const [width, name] of [[1280, 'desktop'], [320, 'narrow-phone'], [390, 'phone'], [768, 'tablet']]) {
     await page.setViewportSize({ width, height: 900 })
     const bounds = await checks.last().boundingBox()

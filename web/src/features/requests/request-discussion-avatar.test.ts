@@ -31,6 +31,11 @@ test('a GitHub author shows its avatar and a link to the original comment', () =
     /<a [^>]*href="https:\/\/github.com\/octo\/repo\/pull\/1#discussion_r201"[^>]*>via GitHub<\/a>/,
   )
   assert.match(source, /rel="noreferrer"/)
+  assert.match(source, /aria-label="via GitHub: greptile-apps\[bot\]&#x27;s comment 201"/)
+  const reviewSource = renderToStaticMarkup(createElement(RequestDiscussionAuthorSource, {
+    author: { ...bot, source_url: 'https://github.com/octo/repo/pull/1#pullrequestreview-101' },
+  }))
+  assert.match(reviewSource, /aria-label="via GitHub: greptile-apps\[bot\]&#x27;s review 101"/)
   const avatar = renderToStaticMarkup(createElement(RequestDiscussionAuthorAvatar, { author: bot }))
   assert.match(avatar, /<img [^>]*src="https:\/\/avatars.githubusercontent.com\/in\/867647"/)
 })
