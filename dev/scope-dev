@@ -133,7 +133,14 @@ LOCAL_CARGO_TARGET_DIR=""
 SERVICES=(media-worker media worker api web expiry)
 source "$ROOT/dev/local-stack.sh"
 
+case "$COMMAND" in
+  up|down|reset)
+    exec {CHECKOUT_LOCK}<"$ROOT/dev/scope-dev"
+    flock "$CHECKOUT_LOCK"
+    ;;
+esac
 use_slot "$(recorded_slot)"
+CLAIM_TOKEN="$(cat "$CLAIM_FILE" 2>/dev/null || true)"
 
 if [[ -d "$HOME/.local/share/scope-vcs-tools/node-24/bin" ]]; then
   export PATH="$HOME/.local/share/scope-vcs-tools/node-24/bin:$PATH"
@@ -267,6 +274,10 @@ stop_owned_processes() {
 }
 
 down() {
+  if [[ -n "${SCOPE_DEV_EXPIRING_CLAIM:-}" && "$SCOPE_DEV_EXPIRING_CLAIM" != "$CLAIM_TOKEN" ]]; then
+    echo "the expiring isolated stack was already replaced"
+    return
+  fi
   stop_owned_processes
   release_isolated_stack
 }
@@ -429,7 +440,7 @@ EOF
 
 start_service() {
   local service="$1" readiness="${2:-}" timeout="${3:-}"
-  setsid "$STATE_DIR/$service.sh" > "$STATE_DIR/$service.out.log" 2> "$STATE_DIR/$service.err.log" &
+  setsid "$STATE_DIR/$service.sh" > "$STATE_DIR/$service.out.log" 2> "$STATE_DIR/$service.err.log" {CHECKOUT_LOCK}<&- &
   python3 "$ROOT/dev/local-process.py" record "$STATE_DIR/$service.pid" "$!"
   if [[ -n "$readiness" ]] && ! wait_http "$readiness" "$timeout"; then
     echo "${service//-/ } did not become ready; see $STATE_DIR/$service.err.log" >&2
@@ -489,7 +500,7 @@ wait_http() {
 
 doctor() {
   local tool
-  for tool in cargo curl git node npm openssl pnpm python3 setsid ss; do
+  for tool in cargo curl flock git node npm openssl pnpm python3 setsid ss; do
     assert_command "$tool"
   done
   if (( WITH_MEDIA )); then
@@ -576,7 +587,6 @@ up() {
   release_isolated_stack
   if (( ISOLATED )); then
     assert_command psql
-    assert_command flock
     claim_isolated_slot
     trap down EXIT
   fi

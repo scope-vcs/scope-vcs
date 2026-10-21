@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 SLOT_FILE="$STATE_DIR/slot"
+CLAIM_FILE="$STATE_DIR/claim"
 STACKS_DIR="${XDG_RUNTIME_DIR:-/tmp}/scope-dev-stacks"
 ISOLATED_SLOTS=(1 2)
 ISOLATED_LIFETIME_SECONDS=3600
@@ -18,26 +19,31 @@ use_slot() {
 }
 
 recorded_slot() {
-  if [[ -f "$SLOT_FILE" ]]; then
-    cat "$SLOT_FILE"
-  else
-    echo 0
+  local slot
+  slot="$(cat "$SLOT_FILE" 2>/dev/null || echo 0)"
+  if [[ "$slot" != 0 && "$(slot_owner "$slot")" != "$ROOT" ]]; then
+    slot=0
   fi
+  echo "$slot"
 }
 
 isolated_database() {
   python3 - "$(local_database_url)" "$SLOT" "$1" <<'EOF'
 import re
 import sys
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 url, slot, part = sys.argv[1:]
 parts = urlsplit(url)
-if parts.hostname not in ("localhost", "127.0.0.1", "::1"):
-    sys.exit("DATABASE_URL must target localhost to derive an isolated database")
+if parts.scheme not in ("postgres", "postgresql") or parts.hostname not in ("localhost", "127.0.0.1", "::1"):
+    sys.exit("DATABASE_URL must be a PostgreSQL URL on localhost to derive an isolated database")
+target_neutral = {"port", "user", "password", "sslmode", "sslrootcert", "sslcert", "sslkey", "application_name"}
+overrides = sorted({key for key, _ in parse_qsl(parts.query, keep_blank_values=True)} - target_neutral)
+if overrides:
+    sys.exit(f"DATABASE_URL parameters cannot choose the isolated database's host or name: {', '.join(overrides)}")
 name = f"{parts.path.lstrip('/')}_stack{slot}"
-if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*_stack[0-9]+", name):
-    sys.exit(f"cannot derive an isolated database name from DATABASE_URL: {name}")
+if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*_stack[0-9]+", name) or len(name.encode()) > 63:
+    sys.exit(f"cannot derive an isolated database name of at most 63 bytes from DATABASE_URL: {name}")
 print(name if part == "name" else urlunsplit(parts._replace(path=f"/{name}")))
 EOF
 }
@@ -51,7 +57,7 @@ stack_database_url() {
 }
 
 run_on_configured_database() {
-  psql "$(local_database_url)" -XAtq -v ON_ERROR_STOP=1 -c "$1"
+  env -u PGHOSTADDR -u PGSERVICE psql "$(local_database_url)" -XAtq -v ON_ERROR_STOP=1 -c "$1"
 }
 
 drop_isolated_database() {
@@ -89,8 +95,14 @@ claim_is_live() {
 }
 
 slot_ports_free() {
-  local port
-  for port in "$WEB_PORT" "$API_PORT" "$WORKER_PORT" "$MEDIA_PORT" "$MEDIA_WORKER_PORT"; do
+  local port ports=("$API_PORT" "$WORKER_PORT")
+  if (( WITH_MEDIA )); then
+    ports+=("$MEDIA_PORT" "$MEDIA_WORKER_PORT")
+  fi
+  if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
+    ports+=("$WEB_PORT")
+  fi
+  for port in "${ports[@]}"; do
     [[ -z "$(port_owner "$port")" ]] || return 1
   done
 }
@@ -106,6 +118,8 @@ claim_free_slot() {
     slot_ports_free || continue
     mkdir -p "$STATE_DIR"
     printf '%s\n' "$slot" > "$SLOT_FILE"
+    CLAIM_TOKEN="$(cat /proc/sys/kernel/random/uuid)"
+    printf '%s\n' "$CLAIM_TOKEN" > "$CLAIM_FILE"
     write_expiry_runner
     start_service expiry {STACKS_LOCK}>&-
     printf '%s\n' "$ROOT" > "$STACKS_DIR/slot-$slot"
@@ -133,16 +147,12 @@ claim_isolated_slot() {
 }
 
 release_isolated_stack() {
-  if (( SLOT == 0 )); then
-    return
+  if (( SLOT != 0 )); then
+    with_stacks_lock release_owned_slot
   fi
-  with_stacks_lock release_owned_slot
-  rm -f -- "$SLOT_FILE"
+  rm -f -- "$SLOT_FILE" "$CLAIM_FILE"
+  CLAIM_TOKEN=""
   use_slot 0
-}
-
-process_start_time() {
-  sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f20
 }
 
 write_expiry_runner() {
@@ -150,14 +160,8 @@ write_expiry_runner() {
   cat > "$runner" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-startup_running() {
-  [[ "\$(sed 's/.*) //' /proc/$$/stat 2>/dev/null | cut -d' ' -f20)" == "$(process_start_time $$)" ]]
-}
 sleep $ISOLATED_LIFETIME_SECONDS
-while startup_running; do
-  sleep 10
-done
-exec setsid -f $(printf '%q' "$ROOT/dev/scope-dev") down
+SCOPE_DEV_EXPIRING_CLAIM=$CLAIM_TOKEN exec setsid -f $(printf '%q' "$ROOT/dev/scope-dev") down
 EOF
   chmod +x "$runner"
 }
