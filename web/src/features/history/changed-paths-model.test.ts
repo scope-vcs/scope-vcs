@@ -98,4 +98,8 @@ test('small changes open every folder and large ones open only the selected fold
   const large = changedPaths(Array.from({ length: 21 }, (_, index) => file(`/${index % 3}/f${index}.ts`)))
   assert.deepEqual([...initiallyOpenGroups(large, null)], [])
   assert.deepEqual([...initiallyOpenGroups(large, '/1/f4.ts')], ['1'])
+
+  const singleGroup = changedPaths(Array.from({ length: 21 }, (_, index) => file(`/web/f${index}.ts`)))
+  assert.deepEqual([...initiallyOpenGroups(singleGroup, null)], [])
+  assert.deepEqual([...initiallyOpenGroups(singleGroup, '/web/f4.ts')], ['web'])
 })

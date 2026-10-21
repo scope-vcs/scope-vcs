@@ -36,8 +36,6 @@ const SCENARIOS = [
   ] : [],
 ]
 
-const KNOWN_FAILURES = new Set()
-
 for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {
   for (const scenario of SCENARIOS) {
     const id = `${viewportName} ${scenario.name}`
@@ -46,9 +44,7 @@ for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {
         const steps = await captureNavigation(page, scenario.to)
         assert(steps.pending.length > 0, `${id} never showed a skeleton`)
         const problems = Object.entries(compareSteps(steps)).flatMap(([check, failure]) => {
-          const key = `${id}: ${check}`
-          if (KNOWN_FAILURES.has(key)) return failure ? [] : [`${key} passes now; remove it from KNOWN_FAILURES`]
-          return failure ? [`${key}: ${failure}`] : []
+          return failure ? [`${id}: ${check}: ${failure}`] : []
         })
         assert.deepEqual(problems, [])
       }, { viewport, ...scenario.signedIn ? { storageState } : {} })

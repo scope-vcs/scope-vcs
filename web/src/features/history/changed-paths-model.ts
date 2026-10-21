@@ -80,7 +80,7 @@ export function groupChangedPaths(paths: readonly ChangedPath[]) {
 
 export function initiallyOpenGroups(paths: readonly ChangedPath[], selectedPath: string | null) {
   const { groups } = groupChangedPaths(paths)
-  if (paths.length <= SMALL_CHANGE_LIMIT || groups.length <= 1) {
+  if (paths.length <= SMALL_CHANGE_LIMIT) {
     return new Set(groups.map((group) => group.name))
   }
   const selected = selectedPath === null ? undefined : findChangedPath(paths, selectedPath)
