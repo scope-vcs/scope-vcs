@@ -22,6 +22,7 @@ mod entities;
 mod fast_push;
 mod generated_ids;
 mod git_compaction;
+mod git_heads;
 mod git_push_reads;
 mod git_segments;
 mod git_transport_reads;
@@ -142,8 +143,8 @@ pub use dependency_analysis::{
 pub use fast_push::ApplyContentOnlyPushCommand;
 use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
-pub use git_push_reads::{GitPushContext, GitPushCredentials, GitPushState};
-pub use git_segments::{PooledRequestPack, RepositoryGitWriteLease};
+pub use git_push_reads::{GitPushCredentials, GitPushState};
+pub use git_segments::{ListedMainPoolPack, PooledRequestPack, RepositoryGitWriteLease};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;

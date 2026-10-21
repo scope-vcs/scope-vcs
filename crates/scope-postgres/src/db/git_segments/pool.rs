@@ -2,7 +2,7 @@ use super::publish_git_segment;
 use crate::db::integer_columns::{i32_to_u32, i64_to_u64, u32_to_i32, u64_to_i64};
 use crate::error::PostgresError;
 use scope_domain::{
-    repository::git::{GitPoolPack, GitPoolPackStorage, GitSegmentRef},
+    repository::git::{GitPoolPack, GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef},
     views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, Value};
@@ -16,6 +16,30 @@ pub struct PooledRequestPack {
     pub request_view: ViewId,
     pub request_author_id: Option<String>,
     pub request_submitted: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ListedMainPoolPack {
+    pub id: String,
+    pub first_sequence: u64,
+    pub last_sequence: u64,
+    pub head_oid: String,
+    pub prerequisites: Vec<String>,
+}
+
+impl ListedMainPoolPack {
+    pub fn with_storage(self, storage: GitPoolPackStorage) -> GitPoolPack {
+        GitPoolPack {
+            id: self.id,
+            owner: GitPoolPackOwner::Main {
+                first_sequence: self.first_sequence,
+                last_sequence: self.last_sequence,
+            },
+            head_oid: self.head_oid,
+            prerequisites: self.prerequisites,
+            storage,
+        }
+    }
 }
 
 pub(in crate::db) async fn register_git_pool_pack<C>(
@@ -56,16 +80,32 @@ where
             )
         }
     };
+    let (request_id, first_sequence, last_sequence): (Value, Value, Value) = match &pack.owner {
+        GitPoolPackOwner::Request { request_id } => (
+            Some(request_id.clone()).into(),
+            Option::<i64>::None.into(),
+            Option::<i64>::None.into(),
+        ),
+        GitPoolPackOwner::Main {
+            first_sequence,
+            last_sequence,
+        } => (
+            Option::<String>::None.into(),
+            Some(u64_to_i64(*first_sequence, "Git main pack first sequence")?).into(),
+            Some(u64_to_i64(*last_sequence, "Git main pack last sequence")?).into(),
+        ),
+    };
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_git_pool_packs (
              id, repo_id, request_id, head_oid, prerequisites, sealed_pack, segment_id,
-             segment_sha256, segment_plaintext_bytes, segment_encoding_version, created_at_unix
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+             segment_sha256, segment_plaintext_bytes, segment_encoding_version, created_at_unix,
+             first_sequence, last_sequence
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
         [
             pack.id.clone().into(),
             repo_id.into(),
-            pack.request_id.clone().into(),
+            request_id,
             pack.head_oid.clone().into(),
             pack.prerequisites.clone().into(),
             sealed,
@@ -74,6 +114,8 @@ where
             plaintext_bytes,
             encoding_version,
             u64_to_i64(now_unix, "Git pool pack registration time")?.into(),
+            first_sequence,
+            last_sequence,
         ],
     ))
     .await?;
@@ -119,6 +161,66 @@ where
         })
     })
     .collect()
+}
+
+async fn main_pool_pack_listing<C>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<Vec<ListedMainPoolPack>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    conn.query_all_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT id, first_sequence, last_sequence, head_oid, prerequisites
+         FROM scope_git_pool_packs
+         WHERE repo_id = $1 AND request_id IS NULL
+         ORDER BY first_sequence",
+        [repo_id.into()],
+    ))
+    .await?
+    .iter()
+    .map(listed_main_pool_pack)
+    .collect()
+}
+
+pub(in crate::db) async fn load_main_pool_packs<C>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<Vec<GitPoolPack>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    conn.query_all_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT id, first_sequence, last_sequence, head_oid, prerequisites, sealed_pack,
+                segment_id, segment_sha256, segment_plaintext_bytes, segment_encoding_version
+         FROM scope_git_pool_packs
+         WHERE repo_id = $1 AND request_id IS NULL
+         ORDER BY first_sequence",
+        [repo_id.into()],
+    ))
+    .await?
+    .iter()
+    .map(|row| Ok(listed_main_pool_pack(row)?.with_storage(pool_pack_storage(row)?)))
+    .collect()
+}
+
+fn listed_main_pool_pack(row: &QueryResult) -> Result<ListedMainPoolPack, PostgresError> {
+    let read = PostgresError::internal;
+    Ok(ListedMainPoolPack {
+        id: row.try_get("", "id").map_err(read)?,
+        first_sequence: i64_to_u64(
+            row.try_get("", "first_sequence").map_err(read)?,
+            "Git main pack first sequence",
+        )?,
+        last_sequence: i64_to_u64(
+            row.try_get("", "last_sequence").map_err(read)?,
+            "Git main pack last sequence",
+        )?,
+        head_oid: row.try_get("", "head_oid").map_err(read)?,
+        prerequisites: row.try_get("", "prerequisites").map_err(read)?,
+    })
 }
 
 async fn git_pool_pack_storage<C>(
@@ -181,6 +283,14 @@ impl crate::db::RepositoryStore {
         request_ids: &[String],
     ) -> Result<Vec<PooledRequestPack>, PostgresError> {
         git_pool_packs_for_requests(self.db.as_ref(), repo_id, request_ids).await
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "main_pool_packs"))]
+    pub async fn main_pool_packs(
+        &self,
+        repo_id: &str,
+    ) -> Result<Vec<ListedMainPoolPack>, PostgresError> {
+        main_pool_pack_listing(self.db.as_ref(), repo_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_pool_pack_storage"))]

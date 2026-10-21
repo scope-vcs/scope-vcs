@@ -1,9 +1,7 @@
 use crate::{error::ApiError, git::command::run_git_output_bounded, state::AppState};
 use scope_domain::{
-    content::SourceBlob,
-    content_ref::ContentRef,
-    repository::RepositoryIncarnation,
-    repository::git::{GitHead, GitPackSpan},
+    content::SourceBlob, content_ref::ContentRef, repository::RepositoryIncarnation,
+    repository::git::GitHead,
 };
 use scope_storage::source_blob_bytes;
 use std::{path::Path, time::Instant};
@@ -11,17 +9,17 @@ use std::{path::Path, time::Instant};
 pub(crate) async fn source_content_bytes(
     state: &AppState,
     blob: &SourceBlob,
-    git_source: Option<(RepositoryIncarnation, &GitHead, &[GitPackSpan])>,
+    git_source: Option<(RepositoryIncarnation, &GitHead)>,
 ) -> Result<Vec<u8>, ApiError> {
     if !matches!(blob.content_ref, ContentRef::GitBlob { .. }) {
         return Ok(stored_content_bytes(state, blob).await?);
     }
-    let (repository_id, head, pack_spans) = git_source.ok_or_else(|| {
-        ApiError::internal_message("Git blob content requires a current pack layout")
+    let (repository_id, head) = git_source.ok_or_else(|| {
+        ApiError::internal_message("Git blob content requires an accepted main head")
     })?;
     let repo = state
         .repository_engine
-        .materialize_repository(state, &repository_id, head, pack_spans)
+        .materialize_repository(state, &repository_id, head)
         .await?;
     let state = state.clone();
     let blob = blob.clone();

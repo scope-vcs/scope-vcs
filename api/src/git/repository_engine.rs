@@ -12,17 +12,15 @@ use crate::{
             RepositoryGitCache, sanitize_repository_git_cache_repo,
         },
         command::run_git,
+        pool_install::{install_main_head, present_commits},
         restore::{
-            advance_head_and_verify, hydrate_git_pack_spans, install_verified_git_pack,
-            restore_git_pack_spans, run_timed_git_restore_phase,
+            advance_head_and_verify, install_verified_git_pack, restore_main_head,
+            run_timed_git_restore_phase,
         },
     },
     state::AppState,
 };
-use scope_domain::repository::{
-    RepositoryIncarnation,
-    git::{GitHead, GitPackSpan, validate_git_pack_layout},
-};
+use scope_domain::repository::{RepositoryIncarnation, git::GitHead};
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{
     fs,
@@ -39,6 +37,17 @@ static REPOSITORY_MATERIALIZATION_ATTEMPT: AtomicU64 = AtomicU64::new(1);
 const MATERIALIZATION_PATH_HIT: u8 = 0;
 const MATERIALIZATION_PATH_CATCH_UP: u8 = 1;
 const MATERIALIZATION_PATH_RESTORE: u8 = 2;
+
+pub(crate) struct PushedPack<'a> {
+    pub(crate) path: &'a Path,
+    pub(crate) prerequisites: &'a [String],
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum PushedPackLink {
+    Linked,
+    MissingPrerequisites,
+}
 
 pub(crate) struct RepositoryEngine {
     cache: Arc<RepositoryGitCache>,
@@ -164,7 +173,6 @@ impl RepositoryEngine {
         state: &AppState,
         incarnation: &RepositoryIncarnation,
         head: &GitHead,
-        pack_spans: &[GitPackSpan],
     ) -> Result<GitRepoHandle, ApiError> {
         let repository_id = incarnation.repository_id();
         let repo = self.cache.lease(incarnation)?;
@@ -189,7 +197,6 @@ impl RepositoryEngine {
         let state_for_build = state.clone();
         let incarnation_for_build = incarnation.clone();
         let head_for_build = head.clone();
-        let pack_spans_for_build = pack_spans.to_vec();
         let repo_path_for_build = repo_path.clone();
         let cache_root_for_build = cache_root.to_path_buf();
         let built_for_build = built.clone();
@@ -214,8 +221,6 @@ impl RepositoryEngine {
                             &state_for_build,
                             &incarnation_for_build,
                             &head_for_build,
-                            &pack_spans_for_build,
-                            applied,
                             &repo_path_for_build,
                         )
                         .await?;
@@ -240,11 +245,10 @@ impl RepositoryEngine {
                         std::process::id(),
                         attempt
                     ));
-                    if let Err(error) = restore_git_pack_spans(
+                    if let Err(error) = restore_main_head(
                         &state_for_build,
                         &incarnation_for_build,
                         &head_for_build,
-                        &pack_spans_for_build,
                         &temp_path,
                     )
                     .await
@@ -298,11 +302,6 @@ impl RepositoryEngine {
             requested_sequence = head.push_sequence,
             applied_sequence_before = applied_before,
             applied_sequence_after = self.cache.applied_sequence(incarnation, &repo_path),
-            pack_span_count = pack_spans.len(),
-            total_pack_bytes = pack_spans
-                .iter()
-                .map(|span| span.segment.plaintext_bytes)
-                .sum::<u64>(),
             success = result.is_ok(),
             "repository Git replica materialization completed"
         );
@@ -320,14 +319,43 @@ impl RepositoryEngine {
         Ok(repo)
     }
 
-    pub(crate) fn sync_after_push(
+    pub(crate) async fn sync_after_push(
+        self: &Arc<Self>,
+        state: &AppState,
+        incarnation: &RepositoryIncarnation,
+        pushed: PushedPack<'_>,
+        head: &GitHead,
+    ) -> Result<(), ApiError> {
+        let link = {
+            let engine = self.clone();
+            let incarnation = incarnation.clone();
+            let pack = pushed.path.to_path_buf();
+            let prerequisites = pushed.prerequisites.to_vec();
+            let head = head.clone();
+            crate::git::blocking::run(move || {
+                engine.link_pushed_pack(&incarnation, &pack, &prerequisites, &head)
+            })
+            .await?
+        };
+        match link {
+            PushedPackLink::Linked => Ok(()),
+            PushedPackLink::MissingPrerequisites => self
+                .materialize_repository(state, incarnation, head)
+                .await
+                .map(drop),
+        }
+    }
+
+    fn link_pushed_pack(
         &self,
         incarnation: &RepositoryIncarnation,
         local_pack: &Path,
-        expected_head: &str,
-        push_sequence: u64,
-    ) -> Result<(), ApiError> {
+        prerequisites: &[String],
+        head: &GitHead,
+    ) -> Result<PushedPackLink, ApiError> {
         let repository_id = incarnation.repository_id();
+        let expected_head = head.head_oid.as_str();
+        let push_sequence = head.push_sequence;
         let repo = self.cache.lease(incarnation)?;
         let target = repo.as_ref().to_path_buf();
         let is_ready = || {
@@ -339,8 +367,14 @@ impl RepositoryEngine {
         let started_at = Instant::now();
         let cache_hit = is_ready();
         let built = AtomicBool::new(false);
+        let missing_prerequisites = AtomicBool::new(false);
         let result = self.coordinate_repository_blocking(incarnation, is_ready, || {
             built.store(true, Ordering::Relaxed);
+            let present = present_commits(&target, prerequisites.iter().map(String::as_str))?;
+            if !prerequisites.iter().all(|oid| present.contains(oid)) {
+                missing_prerequisites.store(true, Ordering::Relaxed);
+                return Ok(());
+            }
             if target.is_dir() {
                 install_verified_git_pack(
                     &target,
@@ -356,63 +390,66 @@ impl RepositoryEngine {
                         &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
                         expected_head,
                     ],
-                    "advancing repository Git cache from accepted segment",
+                    "advancing repository Git cache from the accepted pack",
                 )?;
-            } else if push_sequence > 1 {
-                return Err(ApiError::internal_message(
-                    "incremental Git segment cannot seed a missing repository cache",
-                ));
-            } else {
-                let attempt = REPOSITORY_MATERIALIZATION_ATTEMPT.fetch_add(1, Ordering::Relaxed);
-                let temp = self.cache_root().join(format!(
-                    "repo-promoting.{}.{}.tmp",
-                    std::process::id(),
-                    attempt
-                ));
-                run_git(
-                    None,
-                    &["--bare", "init", temp.to_string_lossy().as_ref()],
-                    "seeding repository Git cache from accepted push",
-                )?;
-                let build = (|| {
-                    install_verified_git_pack(
-                        &temp,
-                        local_pack,
-                        crate::runtime_budgets::RuntimeBudgets::default_git_command_timeout(),
-                    )?;
-                    run_timed_git_restore_phase(
-                        repository_id,
-                        "promote_update_ref",
-                        Some(&temp),
-                        &[
-                            "update-ref",
-                            &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
-                            expected_head,
-                        ],
-                        "seeding repository Git cache head",
-                    )?;
-                    sanitize_repository_git_cache_repo(&temp, expected_head)?;
-                    self.cache.note_applied(incarnation, &temp, push_sequence)?;
-                    fs::rename(&temp, &target).map_err(ApiError::internal)
-                })();
-                if build.is_err() {
-                    let _ = fs::remove_dir_all(&temp);
-                }
-                return build;
+                sanitize_repository_git_cache_repo(&target, expected_head)?;
+                return self.cache.note_applied(incarnation, &target, push_sequence);
             }
-            sanitize_repository_git_cache_repo(&target, expected_head)?;
-            self.cache.note_applied(incarnation, &target, push_sequence)
+            let attempt = REPOSITORY_MATERIALIZATION_ATTEMPT.fetch_add(1, Ordering::Relaxed);
+            let temp = self.cache_root().join(format!(
+                "repo-promoting.{}.{}.tmp",
+                std::process::id(),
+                attempt
+            ));
+            run_git(
+                None,
+                &["--bare", "init", temp.to_string_lossy().as_ref()],
+                "seeding repository Git cache from accepted push",
+            )?;
+            let build = (|| {
+                install_verified_git_pack(
+                    &temp,
+                    local_pack,
+                    crate::runtime_budgets::RuntimeBudgets::default_git_command_timeout(),
+                )?;
+                run_timed_git_restore_phase(
+                    repository_id,
+                    "promote_update_ref",
+                    Some(&temp),
+                    &[
+                        "update-ref",
+                        &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
+                        expected_head,
+                    ],
+                    "seeding repository Git cache head",
+                )?;
+                sanitize_repository_git_cache_repo(&temp, expected_head)?;
+                self.cache.note_applied(incarnation, &temp, push_sequence)?;
+                fs::rename(&temp, &target).map_err(ApiError::internal)
+            })();
+            if build.is_err() {
+                let _ = fs::remove_dir_all(&temp);
+            }
+            build
         });
+        let missing_prerequisites = missing_prerequisites.load(Ordering::Relaxed);
         tracing::info!(
             repository_id,
             cache_outcome = materialization_outcome(cache_hit, built.load(Ordering::Relaxed)),
             elapsed_us = started_at.elapsed().as_micros(),
             requested_sequence = push_sequence,
             applied_sequence = self.cache.applied_sequence(incarnation, &target),
+            missing_prerequisites,
             success = result.is_ok(),
             "repository Git replica post-push synchronization completed"
         );
-        result
+        result.map(|()| {
+            if missing_prerequisites {
+                PushedPackLink::MissingPrerequisites
+            } else {
+                PushedPackLink::Linked
+            }
+        })
     }
 
     async fn coordinate_repository<IsReady, Operation, OperationFuture>(
@@ -455,35 +492,11 @@ impl RepositoryEngine {
         state: &AppState,
         incarnation: &RepositoryIncarnation,
         head: &GitHead,
-        pack_spans: &[GitPackSpan],
-        applied_sequence: u64,
         repo_root: &Path,
     ) -> Result<(), ApiError> {
-        let repository_id = incarnation.repository_id();
-        validate_git_pack_layout(pack_spans)
-            .map_err(|error| ApiError::internal_message(error.to_string()))?;
-        if applied_sequence >= head.push_sequence {
-            return Err(ApiError::internal_message(
-                "repository Git cache sequence cannot catch up to an older head",
-            ));
-        }
-        let next_sequence = applied_sequence.saturating_add(1);
-        let missing = pack_spans
-            .iter()
-            .skip_while(|span| span.last_sequence < next_sequence)
-            .cloned()
-            .collect::<Vec<_>>();
-        let first = missing.first().ok_or_else(|| {
-            ApiError::internal_message("repository Git cache has no pack span for its missing tail")
-        })?;
-        if first.first_sequence > next_sequence {
-            return Err(ApiError::internal_message(
-                "repository Git cache missing tail starts after the required sequence",
-            ));
-        }
-        hydrate_git_pack_spans(state, repo_root, incarnation, &missing).await?;
+        install_main_head(state, incarnation, repo_root, head).await?;
         advance_head_and_verify(
-            repository_id,
+            incarnation.repository_id(),
             repo_root,
             &head.head_oid,
             "advancing repository Git cache head",

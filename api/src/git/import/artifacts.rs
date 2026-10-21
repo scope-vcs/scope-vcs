@@ -4,11 +4,13 @@ use super::pushed_tree::{
 use super::repo_io::{
     PushedCommit, StagedGitPush, describe_refs, git_push_from_repo, git_refs, pushed_commit,
 };
-use super::segment_upload::GitSegmentUploadHeartbeat;
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
 use crate::{
     error::ApiError,
-    git::command::{git_process_output, run_git_output, run_git_output_bounded},
+    git::{
+        command::{git_process_output, run_git_output, run_git_output_bounded},
+        pool_pack::StagedPoolPack,
+    },
     runtime_budgets::RuntimeBudgets,
     state::AppState,
 };
@@ -29,7 +31,6 @@ use scope_domain::runs::{
 use scope_git::git_blob_reference;
 use scope_git_process::ProcessLimits;
 use scope_postgres::db::RepositoryGitWriteLease;
-use scope_storage::StagedGitSegment;
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -41,9 +42,8 @@ pub(crate) enum ReviewedUpdateMode {
 
 pub(crate) struct PreparedReceivePackUpdate {
     pub(crate) update: ReceivePackUpdate,
-    pub(crate) staged_segment: StagedGitSegment,
+    pub(crate) staged_pack: StagedPoolPack,
     pub(crate) write_lease: RepositoryGitWriteLease,
-    pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
 }
 
 impl std::fmt::Debug for PreparedReceivePackUpdate {
@@ -220,13 +220,12 @@ async fn reviewed_update_under_lease(
     } = inspected;
     let pack_started = Instant::now();
     let StagedGitPush {
-        stored: mut created_push,
-        staged_segment,
-        upload_heartbeat,
+        head: mut git_head,
+        pack: staged_pack,
     } = git_push_from_repo(state, &repo.repo_id, staging_repo, repo.git_head.as_ref()).await?;
-    created_push.head.change_version = repo.change_version.saturating_add(1);
+    git_head.change_version = repo.change_version.saturating_add(1);
     let pack_put_ms = pack_started.elapsed().as_millis();
-    let pack_bytes = created_push.pack_span.segment.plaintext_bytes;
+    let pack_bytes = staged_pack.pack.storage.stored_bytes();
     tracing::info!(
         owner,
         repo = repo_name,
@@ -246,8 +245,8 @@ async fn reviewed_update_under_lease(
             base_git_frontier: None,
             author_id: author_id.to_string(),
             message,
-            git_head: created_push.head,
-            git_pack_span: created_push.pack_span,
+            git_head,
+            main_pack: staged_pack.pack.clone(),
             workflow_catalog,
             landing_file_mutation,
             changes,
@@ -256,8 +255,7 @@ async fn reviewed_update_under_lease(
             config,
             open_requests_by_view: Default::default(),
         },
-        staged_segment,
-        upload_heartbeat,
+        staged_pack,
         write_lease,
     })
 }

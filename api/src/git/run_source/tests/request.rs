@@ -16,15 +16,6 @@ async fn private_request_run_source_supplies_its_old_main_base_before_runner_che
         .unwrap()
         .unwrap()
         .incarnation;
-    let first_span = state
-        .metadata
-        .repositories()
-        .repository_content_source(&incarnation)
-        .await
-        .unwrap()
-        .1[0]
-        .clone();
-
     run_git(
         Some(repository.path()),
         &["checkout", "-b", "request"],
@@ -80,9 +71,9 @@ async fn private_request_run_source_supplies_its_old_main_base_before_runner_che
         &state,
         GitHead {
             change_version: 2,
-            ..advanced.stored.head
+            ..advanced.head
         },
-        vec![first_span, advanced.stored.pack_span],
+        &advanced.pack.pack,
     )
     .await;
 
@@ -163,7 +154,6 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
                 .repository_content_source(&incarnation)
                 .await
                 .unwrap()
-                .0
                 .is_none()
         );
 
@@ -265,7 +255,7 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
                 .unwrap();
             let head = GitHead {
                 change_version: 2,
-                ..accepted.stored.head
+                ..accepted.head
             };
             state
                 .metadata
@@ -273,7 +263,6 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
                 .mutate_repository_for_tests("owner/repo", move |repo| {
                     repo.bump_content_version();
                     repo.git_head = Some(head);
-                    repo.git_pack_spans = Vec::new();
                 })
                 .await
                 .unwrap();

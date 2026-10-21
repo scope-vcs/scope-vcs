@@ -346,7 +346,7 @@ async fn current_main_revision(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
 ) -> Result<Option<GitRevision>, ApiError> {
-    let (head, spans) = state
+    let head = state
         .metadata
         .repositories()
         .repository_content_source(incarnation)
@@ -356,7 +356,7 @@ async fn current_main_revision(
     };
     state
         .repository_engine
-        .materialize_revision(state, incarnation, &head, &spans)
+        .materialize_revision(state, incarnation, &head)
         .await
         .map(Some)
 }

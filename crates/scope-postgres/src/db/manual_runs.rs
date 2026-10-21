@@ -1,6 +1,6 @@
 use super::{
     EnqueueRunResult, RunStore, acquire_aggregate_lock, entities,
-    git_push_reads::git_push_context_for_id, repository_access::repository_access,
+    git_push_reads::git_push_state_for_id, repository_access::repository_access,
     runs::enqueue_run_in_transaction, workflow_catalogs::repository_workflow_catalog,
 };
 use crate::error::PostgresError;
@@ -46,7 +46,7 @@ impl RunStore {
     ) -> Result<Option<EnqueueRunResult>, PostgresError> {
         let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", request.repository_id()).await?;
-        let context = git_push_context_for_id(&tx, request.repository_id(), request.user_id())
+        let context = git_push_state_for_id(&tx, request.repository_id(), request.user_id())
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
         request.require_access(&context.access, context.repo_config.views())?;
@@ -63,7 +63,6 @@ impl RunStore {
             }));
         }
         let Some(head) = context
-            .state
             .git_head
             .filter(|head| head.head_oid == request.git_oid())
         else {

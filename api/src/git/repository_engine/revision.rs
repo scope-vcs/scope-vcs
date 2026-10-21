@@ -7,10 +7,7 @@ use crate::{
     },
     state::AppState,
 };
-use scope_domain::repository::{
-    RepositoryIncarnation,
-    git::{GitHead, GitPackSpan},
-};
+use scope_domain::repository::{RepositoryIncarnation, git::GitHead};
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{fs, path::Path, sync::Arc};
 
@@ -25,11 +22,10 @@ impl RepositoryEngine {
         state: &AppState,
         incarnation: &RepositoryIncarnation,
         head: &GitHead,
-        pack_spans: &[GitPackSpan],
     ) -> Result<GitRevision, ApiError> {
         Ok(GitRevision {
             repository: self
-                .materialize_repository(state, incarnation, head, pack_spans)
+                .materialize_repository(state, incarnation, head)
                 .await?,
             head_oid: head.head_oid.clone(),
         })

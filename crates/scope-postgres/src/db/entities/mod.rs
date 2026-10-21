@@ -34,9 +34,7 @@ use scope_domain::{
         RepositoryCollaboration, RepositoryInvite, RepositoryMember, RepositoryMemberPermissions,
     },
     repository::credentials::{FirstPushToken, GitPushToken},
-    repository::git::{
-        GitHead, GitPackSpan, GitSegmentRef, GitSegmentUpload, GitSegmentUploadState,
-    },
+    repository::git::{GitHead, GitSegmentUpload},
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
 use scope_domain::{
@@ -66,7 +64,6 @@ pub struct RepositoryFacts {
     pub first_push_token: Option<FirstPushToken>,
     pub git_push_token: Option<GitPushToken>,
     pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
 }
 
 mod auth;
@@ -96,7 +93,7 @@ pub use jobs::{
 };
 pub use read_models::{projection_file, projection_read_model};
 pub use repositories::{
-    git_head, git_pack_span, git_segment_upload, repository, repository_first_push_token,
+    git_head, git_segment_upload, repository, repository_first_push_token,
     repository_git_push_token, repository_landing_file, repository_workflow_catalog,
     repository_workflow_file,
 };

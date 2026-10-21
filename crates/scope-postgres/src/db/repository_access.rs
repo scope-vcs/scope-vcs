@@ -161,15 +161,8 @@ impl RepositoryStore {
     pub async fn repository_content_source(
         &self,
         incarnation: &scope_domain::repository::RepositoryIncarnation,
-    ) -> Result<
-        (
-            Option<scope_domain::repository::git::GitHead>,
-            Vec<scope_domain::repository::git::GitPackSpan>,
-        ),
-        PostgresError,
-    > {
-        let state = self.repository_git_state(incarnation).await?;
-        Ok((state.git_head, state.git_pack_spans))
+    ) -> Result<Option<scope_domain::repository::git::GitHead>, PostgresError> {
+        Ok(self.repository_git_state(incarnation).await?.git_head)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_policy"))]

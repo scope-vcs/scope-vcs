@@ -3,6 +3,7 @@ use crate::{
     git::{
         command::run_git,
         import::{PreparedReceivePackUpdate, ReceivePackUpdate, reviewed_merge_under_lease},
+        pool_pack::StagedPoolPack,
         projection_repo::verify_and_restore_projection,
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, validate_view_request_merge_range},
@@ -31,7 +32,6 @@ use scope_postgres::db::{
     RepositoryGitWriteLease,
 };
 use scope_product_analytics::{EventSource, ProductEvent, ProductOperation};
-use scope_storage::StagedGitSegment;
 
 mod failures;
 mod gate;
@@ -75,7 +75,7 @@ pub(crate) struct PreparedRequestMerge {
     pub(crate) landing_file_mutation: RepositoryLandingFileMutation,
     pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
     pub(crate) update: ReceivePackUpdate,
-    pub(crate) staged_segment: StagedGitSegment,
+    pub(crate) staged_pack: StagedPoolPack,
     pub(crate) write_lease: RepositoryGitWriteLease,
 }
 
@@ -235,7 +235,7 @@ async fn persist_prepared_merge(
     prepared: PreparedRequestMerge,
 ) -> Result<PersistedRequestMerge, ApiError> {
     let repository_incarnation = prepared.repository_incarnation;
-    let staged_segment = prepared.staged_segment;
+    let staged_pack = prepared.staged_pack;
     let write_lease = prepared.write_lease;
     let repository_id = scope_domain::repository::repo_id(&command.owner, &command.repo_name);
     let mutation = state
@@ -268,18 +268,11 @@ async fn persist_prepared_merge(
                 &command.repo_name,
                 &command.actor_user_id,
                 &repository_incarnation,
-                &staged_segment,
+                &staged_pack,
                 &mutation.git_head,
             )
             .await;
-            if let Err(error) = state.git_segment_store.delete_local(&staged_segment).await {
-                tracing::warn!(
-                    repository_id,
-                    segment_id = staged_segment.segment.segment_id,
-                    error = %error,
-                    "merged Git segment local staging cleanup failed"
-                );
-            }
+            staged_pack.finish(state).await;
             write_lease.release().await;
             Ok(PersistedRequestMerge {
                 request: mutation.request.request,
@@ -288,12 +281,7 @@ async fn persist_prepared_merge(
             })
         }
         Err(error) => {
-            crate::git::import::best_effort_delete_staged_git_segment(
-                state,
-                &repository_id,
-                &staged_segment,
-            )
-            .await;
+            staged_pack.discard(state, &repository_id).await;
             write_lease.release().await;
             Err(error.into())
         }
@@ -351,7 +339,7 @@ async fn prepare_request_merge_for_execution(
     })?;
     let base_repo = state
         .repository_engine
-        .materialize_repository(state, &repo.incarnation(), current, &repo.git_pack_spans)
+        .materialize_repository(state, &repo.incarnation(), current)
         .await?;
     let staging_repo = {
         let state = state.clone();
@@ -438,9 +426,8 @@ async fn prepare_request_merge_for_execution(
         )?;
         let PreparedReceivePackUpdate {
             update,
-            staged_segment,
+            staged_pack,
             write_lease,
-            upload_heartbeat: _upload_heartbeat,
         } = reviewed_merge_under_lease(
             state,
             owner,
@@ -496,12 +483,7 @@ async fn prepare_request_merge_for_execution(
         let view_heads = match preflight {
             Ok(heads) => heads,
             Err(error) => {
-                crate::git::import::best_effort_delete_staged_git_segment(
-                    state,
-                    &repo.record.id,
-                    &staged_segment,
-                )
-                .await;
+                staged_pack.discard(state, &repo.record.id).await;
                 write_lease.release().await;
                 return Err(RequestMergeFailure::from(error));
             }
@@ -521,12 +503,7 @@ async fn prepare_request_merge_for_execution(
         {
             Ok(children) => children,
             Err(error) => {
-                crate::git::import::best_effort_delete_staged_git_segment(
-                    state,
-                    &repo.record.id,
-                    &staged_segment,
-                )
-                .await;
+                staged_pack.discard(state, &repo.record.id).await;
                 write_lease.release().await;
                 return Err(RequestMergeFailure::from(error));
             }
@@ -543,7 +520,7 @@ async fn prepare_request_merge_for_execution(
             landing_file_mutation: update.landing_file_mutation.clone(),
             workflow_catalog: update.workflow_catalog.clone(),
             update,
-            staged_segment,
+            staged_pack,
             write_lease,
         })
     }
@@ -579,12 +556,10 @@ async fn prepare_request_merge_for_execution(
         (Ok(value), Ok(())) => Ok(value),
         (Err(error), _) => Err(error),
         (Ok(value), Err(error)) => {
-            crate::git::import::best_effort_delete_staged_git_segment(
-                state,
-                &scope_domain::repository::repo_id(owner, repo_name),
-                &value.staged_segment,
-            )
-            .await;
+            value
+                .staged_pack
+                .discard(state, &scope_domain::repository::repo_id(owner, repo_name))
+                .await;
             value.write_lease.release().await;
             Err(error.into())
         }
@@ -603,12 +578,10 @@ fn merge_preflight_views<'a>(
 }
 
 async fn cleanup_prepared_merge(state: &AppState, prepared: PreparedRequestMerge) {
-    crate::git::import::best_effort_delete_staged_git_segment(
-        state,
-        &prepared.repository_id,
-        &prepared.staged_segment,
-    )
-    .await;
+    prepared
+        .staged_pack
+        .discard(state, &prepared.repository_id)
+        .await;
     prepared.write_lease.release().await;
 }
 

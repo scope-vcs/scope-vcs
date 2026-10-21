@@ -14,7 +14,7 @@ use scope_domain::{
     repository::{RepoLifecycleState, access::MainPushMode},
     views::ViewId,
 };
-use scope_postgres::db::{GitPushContext, GitPushCredentials};
+use scope_postgres::db::{GitPushCredentials, GitPushState};
 
 pub(crate) async fn authorize(
     state: &AppState,
@@ -49,7 +49,7 @@ pub(crate) async fn authorize(
                 && let Some(context) = state
                     .metadata
                     .repositories()
-                    .git_push_context(owner, repo_name, &user.id)
+                    .git_push_state(owner, repo_name, &user.id)
                     .await?
                 && let Some(access) = main_push_access(&context, view, &user.id, &push_intent)?
             {
@@ -92,7 +92,7 @@ async fn authorize_scope_token(
                 let context = state
                     .metadata
                     .repositories()
-                    .git_push_context(owner, repo_name, &author_id)
+                    .git_push_state(owner, repo_name, &author_id)
                     .await?
                     .filter(|context| context.incarnation == repo.record.incarnation())
                     .ok_or_else(invalid_git_credentials)?;
@@ -108,7 +108,7 @@ async fn authorize_scope_token(
 }
 
 fn main_push_access(
-    context: &GitPushContext,
+    context: &GitPushState,
     view: &ViewId,
     author_id: &str,
     push_intent: &ValidatedPushIntent,

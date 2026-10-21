@@ -355,11 +355,11 @@ async fn a_full_view_push_reaches_every_advertised_request_head() {
     let context = state
         .metadata
         .repositories()
-        .git_push_context(TEST_REPO_OWNER, TEST_REPO_NAME, &owner)
+        .git_push_state(TEST_REPO_OWNER, TEST_REPO_NAME, &owner)
         .await
         .unwrap()
         .unwrap();
-    let git = crate::git::repository_git::RepositoryGit::of_push_context(&context);
+    let git = crate::git::repository_git::RepositoryGit::of_push_state(&context);
     let full_repo = git
         .view_repo(&state, context.repo_config.views(), &ViewId::private())
         .await

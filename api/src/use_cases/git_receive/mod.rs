@@ -9,6 +9,8 @@ use crate::{
     git::{
         cache::GitRepoHandle,
         import::PreparedReceivePackUpdate,
+        pool_pack::StagedPoolPack,
+        repository_engine::PushedPack,
         request_refs::{
             DeferredRequestObjects, non_request_refs_changed, receive_pack_refs,
             request_ref_update_from_refs,
@@ -25,7 +27,7 @@ pub(crate) use authorization::authorize;
 pub(crate) use request_ref::RequestRefSeeding;
 use request_ref::{RequestStagingKind, SeededRequestRefs};
 use scope_domain::{repository::RepositoryIncarnation, views::ViewId};
-use scope_postgres::db::GitPushContext;
+use scope_postgres::db::GitPushState;
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -41,7 +43,7 @@ pub(crate) enum ReceivePackAccess {
     ReadyMember {
         author_id: String,
         push_intent: ValidatedPushIntent,
-        context: Box<GitPushContext>,
+        context: Box<GitPushState>,
     },
     ViewMainPusher {
         author_id: String,
@@ -389,7 +391,7 @@ async fn complete_main_push(
                 main_push::cleanup_failed_persist(
                     state,
                     incarnation.repository_id(),
-                    &prepared.staged_segment,
+                    prepared.staged_pack,
                     prepared.write_lease,
                 )
                 .await;
@@ -466,23 +468,11 @@ async fn complete_main_push(
         repo_name,
         &author_id,
         &committed_incarnation,
-        &persisted.staged_segment,
+        &persisted.staged_pack,
         &committed_git_head,
     )
     .await;
-    if let Err(error) = state
-        .git_segment_store
-        .delete_local(&persisted.staged_segment)
-        .await
-    {
-        tracing::warn!(
-            owner,
-            repo = repo_name,
-            segment_id = persisted.staged_segment.segment.segment_id,
-            error = %error,
-            "published Git segment local staging cleanup failed"
-        );
-    }
+    persisted.staged_pack.finish(state).await;
     persisted.write_lease.release().await;
     Ok(())
 }
@@ -493,24 +483,10 @@ pub(crate) async fn best_effort_sync_cache(
     repo_name: &str,
     author_id: &str,
     committed_incarnation: &RepositoryIncarnation,
-    staged_segment: &scope_storage::StagedGitSegment,
+    staged_pack: &StagedPoolPack,
     committed_git_head: &scope_domain::repository::git::GitHead,
 ) {
-    let retained_pack = match state
-        .git_segment_store
-        .promote_verified_pack(committed_incarnation, staged_segment)
-        .await
-    {
-        Ok(pack) => Some(pack),
-        Err(error) => {
-            tracing::warn!(error = %error, "push committed but verified pack retention failed");
-            None
-        }
-    };
-    let local_pack = retained_pack
-        .as_ref()
-        .map_or_else(|| staged_segment.local_pack_path(), |pack| pack.path())
-        .to_path_buf();
+    let local_pack = staged_pack.retain_local(state, committed_incarnation).await;
     match state
         .metadata
         .repositories()
@@ -524,22 +500,18 @@ pub(crate) async fn best_effort_sync_cache(
                     .as_ref()
                     .is_some_and(|head| head.frontier() == committed_git_head.frontier());
             let sync_result = if is_still_current {
-                let engine = state.repository_engine.clone();
-                let incarnation = committed_incarnation.clone();
-                let local_pack = local_pack.to_path_buf();
-                let head_oid = committed_git_head.head_oid.clone();
-                let push_sequence = committed_git_head.push_sequence;
-                tokio::task::spawn_blocking(move || {
-                    let _retained_pack = retained_pack;
-                    engine.sync_after_push(&incarnation, &local_pack, &head_oid, push_sequence)
-                })
-                .await
-                .map_err(|error| {
-                    ApiError::internal_message(format!(
-                        "repository Git cache synchronization task failed: {error}"
-                    ))
-                })
-                .and_then(|result| result)
+                state
+                    .repository_engine
+                    .sync_after_push(
+                        state,
+                        committed_incarnation,
+                        PushedPack {
+                            path: local_pack.path(),
+                            prerequisites: &staged_pack.pack.prerequisites,
+                        },
+                        committed_git_head,
+                    )
+                    .await
             } else {
                 Ok(())
             };

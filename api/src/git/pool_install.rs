@@ -6,11 +6,97 @@ use crate::{
 use futures_util::{StreamExt as _, stream};
 use scope_domain::repository::{
     RepositoryIncarnation,
-    git::{GitPoolPack, GitPoolPackStorage},
+    git::{GitHead, GitPoolPack, GitPoolPackStorage},
 };
-use std::{collections::BTreeSet, path::Path as FsPath, process::Command};
+use scope_postgres::db::ListedMainPoolPack;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path as FsPath,
+    process::Command,
+    time::Instant,
+};
 
 const CONCURRENT_POOL_FETCHES: usize = 4;
+const MAX_MAIN_POOL_LISTINGS: usize = 3;
+
+pub(crate) async fn install_main_head(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    objects_repo: &FsPath,
+    head: &GitHead,
+) -> Result<(), ApiError> {
+    let repository_id = incarnation.repository_id();
+    let started = Instant::now();
+    let mut installed = 0;
+    for listing in 1..=MAX_MAIN_POOL_LISTINGS {
+        let listed = state
+            .metadata
+            .repositories()
+            .main_pool_packs(repository_id)
+            .await?;
+        let missing = {
+            let objects_repo = objects_repo.to_path_buf();
+            crate::git::blocking::run(move || missing_main_packs(&objects_repo, listed)).await?
+        };
+        let pack_ids = missing
+            .iter()
+            .map(|listed| listed.id.clone())
+            .collect::<Vec<_>>();
+        let mut storage = state
+            .metadata
+            .repositories()
+            .git_pool_pack_storage(repository_id, &pack_ids)
+            .await?
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        let packs = missing
+            .into_iter()
+            .filter_map(|listed| {
+                let storage = storage.remove(&listed.id)?;
+                Some(listed.with_storage(storage))
+            })
+            .collect::<Vec<_>>();
+        installed += install_chain(state, incarnation, objects_repo, packs).await?;
+        let present = {
+            let objects_repo = objects_repo.to_path_buf();
+            let head_oid = head.head_oid.clone();
+            crate::git::blocking::run(move || {
+                present_commits(&objects_repo, std::iter::once(head_oid.as_str()))
+                    .map(|present| present.contains(&head_oid))
+            })
+            .await?
+        };
+        if present {
+            tracing::info!(
+                repository_id,
+                head_sequence = head.push_sequence,
+                installed,
+                listings = listing,
+                duration_ms = started.elapsed().as_millis(),
+                "main pool packs installed"
+            );
+            return Ok(());
+        }
+    }
+    Err(ApiError::infrastructure_unavailable(format!(
+        "main head {} could not be installed from the repository's main pool packs",
+        head.head_oid
+    )))
+}
+
+fn missing_main_packs(
+    objects_repo: &FsPath,
+    listed: Vec<ListedMainPoolPack>,
+) -> Result<Vec<ListedMainPoolPack>, ApiError> {
+    let present = present_commits(
+        objects_repo,
+        listed.iter().map(|listed| listed.head_oid.as_str()),
+    )?;
+    Ok(listed
+        .into_iter()
+        .filter(|listed| !present.contains(&listed.head_oid))
+        .collect())
+}
 
 pub(crate) async fn install_chain(
     state: &AppState,
@@ -47,7 +133,7 @@ pub(crate) async fn install_chain(
                     pack_id = pack.id,
                     step,
                     error = %error.operator_diagnostic(),
-                    "skipping an unusable request pool pack"
+                    "skipping an unusable pool pack"
                 ),
             }
         }

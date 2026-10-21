@@ -11,6 +11,34 @@ use scope_domain::{
 };
 use sea_orm::TransactionTrait;
 
+fn advance_main(
+    repo: &mut scope_domain::repository::Repository,
+    head_oid: &str,
+) -> scope_domain::repository::git::GitPoolPack {
+    use scope_domain::repository::git::{
+        GitHead, GitPoolPack, GitPoolPackOwner, GitPoolPackStorage,
+    };
+    let previous = repo.git_head.take();
+    let sequence = previous.as_ref().map_or(1, |head| head.push_sequence + 1);
+    repo.git_head = Some(GitHead::new(
+        head_oid.to_string(),
+        sequence,
+        repo.record.change_version,
+    ));
+    GitPoolPack {
+        id: format!("main-pack-{head_oid}"),
+        owner: GitPoolPackOwner::Main {
+            first_sequence: sequence,
+            last_sequence: sequence,
+        },
+        head_oid: head_oid.to_string(),
+        prerequisites: previous.map(|head| head.head_oid).into_iter().collect(),
+        storage: GitPoolPackStorage::Inline {
+            sealed: head_oid.as_bytes().to_vec(),
+        },
+    }
+}
+
 async fn load(store: &MetadataStore, id: &str) -> Request {
     store.requests().request_by_id(id).await.unwrap().unwrap()
 }

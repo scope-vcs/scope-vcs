@@ -128,7 +128,6 @@ async fn start_request_for_author(
         repo.repo_config.views(),
         &projection,
         repo.git_head.as_ref(),
-        &repo.git_pack_spans,
     )
     .await
     .unwrap();

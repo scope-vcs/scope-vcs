@@ -206,10 +206,12 @@ pub(super) async fn delete_locked_repository(
         .filter(entities::repository_member::Column::RepoId.eq(repo_id.clone()))
         .exec(tx)
         .await?;
-    entities::git_pack_span::Entity::delete_many()
-        .filter(entities::git_pack_span::Column::RepoId.eq(repo_id.clone()))
-        .exec(tx)
-        .await?;
+    tx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "DELETE FROM scope_git_pool_packs WHERE repo_id = $1",
+        [repo_id.clone().into()],
+    ))
+    .await?;
     tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "UPDATE scope_git_segment_uploads

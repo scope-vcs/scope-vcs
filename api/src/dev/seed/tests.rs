@@ -4,7 +4,7 @@ use super::request_discussions::{
 use super::*;
 use crate::AppState;
 use crate::git::command::git_stdout_text;
-use crate::git::restore::restore_git_pack_spans;
+use crate::git::restore::restore_main_head;
 use scope_domain::views::ViewId;
 use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend, source_blob_bytes};
 use std::sync::Arc;
@@ -231,11 +231,10 @@ async fn assert_repository_file(
     expected: &str,
 ) {
     let repo_root = state.data_dir.join(format!("{label}.git"));
-    restore_git_pack_spans(
+    restore_main_head(
         state,
         &repo.incarnation(),
         repo.git_head.as_ref().unwrap(),
-        &repo.git_pack_spans,
         &repo_root,
     )
     .await
@@ -257,11 +256,10 @@ async fn assert_repository_manifest(
     files: &[dependency_repositories::SeedFile],
 ) {
     let repo_root = state.data_dir.join(format!("{label}.git"));
-    restore_git_pack_spans(
+    restore_main_head(
         state,
         &repo.incarnation(),
         repo.git_head.as_ref().unwrap(),
-        &repo.git_pack_spans,
         &repo_root,
     )
     .await

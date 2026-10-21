@@ -13,12 +13,6 @@ async fn run_pinned_to_an_earlier_main_head_materializes_after_main_moves_and_co
         .unwrap()
         .unwrap()
         .incarnation;
-    let (_, first_spans) = state
-        .metadata
-        .repositories()
-        .repository_content_source(&incarnation)
-        .await
-        .unwrap();
     fs::write(repository.path().join("README.md"), "newer main").unwrap();
     run_git(
         Some(repository.path()),
@@ -31,45 +25,33 @@ async fn run_pinned_to_an_earlier_main_head_materializes_after_main_moves_and_co
         .unwrap();
     let advanced_head = GitHead {
         change_version: 2,
-        ..advanced.stored.head.clone()
+        ..advanced.head.clone()
     };
-    record_accepted_main(
-        &state,
-        advanced_head.clone(),
-        [first_spans.clone(), vec![advanced.stored.pack_span.clone()]].concat(),
-    )
-    .await;
+    record_accepted_main(&state, advanced_head.clone(), &advanced.pack.pack).await;
     let compacted = git_push_from_repo(&state, "owner/repo", repository.path(), None)
         .await
         .unwrap();
-    record_accepted_main(
-        &state,
-        advanced_head.clone(),
-        vec![GitPackSpan {
-            first_sequence: 1,
-            last_sequence: 2,
-            geometric_tier: 1,
-            base_oid: None,
-            head_oid: advanced_head.head_oid.clone(),
-            segment: compacted.stored.pack_span.segment.clone(),
-        }],
-    )
-    .await;
-    for span in first_spans.iter().chain([&advanced.stored.pack_span]) {
-        state
-            .git_segment_store
-            .cleanup_local("owner/repo", &span.segment.segment_id)
-            .await
-            .unwrap();
-        state
-            .git_segment_store
-            .delete_remote(&scope_storage::segment_object_key(
-                "owner/repo",
-                &span.segment.segment_id,
-            ))
-            .await
-            .unwrap();
-    }
+    state
+        .metadata
+        .admin()
+        .execute_for_tests("DELETE FROM scope_git_pool_packs WHERE request_id IS NULL")
+        .await
+        .unwrap();
+    state
+        .metadata
+        .repositories()
+        .register_main_pool_pack_for_tests(
+            "owner/repo",
+            &GitPoolPack {
+                owner: scope_domain::repository::git::GitPoolPackOwner::Main {
+                    first_sequence: 1,
+                    last_sequence: 2,
+                },
+                ..compacted.pack.pack.clone()
+            },
+        )
+        .await
+        .unwrap();
     state
         .repository_engine
         .delete_repository_cache(&incarnation)

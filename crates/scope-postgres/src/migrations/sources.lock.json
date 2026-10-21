@@ -10,5 +10,6 @@
   "m0090_job_traceparents.rs": "9cffcf57835e07b8b9b137cd8e944546b464eed058e65bee5656ad91c8be63c7",
   "m0092_live_file_views.rs": "2ab55d87d1bee4a894e3b63838d739a0ba94a6fcf1c278fef9dea960b4a6a7ce",
   "m0093_request_object_pool.rs": "39e6b1165004fddb15e39360f0767195d2e3420fdcc55f89e444a0d34775899f",
-  "m0094_head_only_run_sources.rs": "b2ef0cd1baeb02e01596fa93c13f9dd48b1e65f778d633655d0d21922df53572"
+  "m0094_head_only_run_sources.rs": "b2ef0cd1baeb02e01596fa93c13f9dd48b1e65f778d633655d0d21922df53572",
+  "m0095_main_pool_packs.rs": "c45dfe57fa1cc5a9879f982ff7db35dee11e8f163e36ac43bb7605403c0a24ce"
 }

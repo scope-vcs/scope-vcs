@@ -4,6 +4,7 @@ use crate::{
     git::{
         command::{git_ref_listing, run_git, run_git_output},
         import::{git_snapshot_from_ref, validate_pushed_commit_range},
+        pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
         staging::write_receive_pack_hook,
@@ -14,7 +15,7 @@ use crate::{
 use scope_domain::{
     content::SourceBlob,
     repo_config::RepoConfig,
-    repository::RepositoryIncarnation,
+    repository::{RepositoryIncarnation, git::GitPoolPackOwner},
     requests::{
         Request, RequestRevisionGitFacts, canonical_request_ref,
         request_main_ancestor_after_revision,
@@ -30,7 +31,6 @@ use std::{
 mod ancestry;
 mod pack_consolidation;
 mod pool;
-mod pool_pack;
 mod revision;
 mod seeding;
 mod snapshot;
@@ -42,8 +42,6 @@ use ancestry::{
 pub(crate) use pool::retain_staged_pool_pack;
 #[cfg(test)]
 pub(crate) use pool::{RequestObjectRepos, request_object_repos};
-pub(crate) use pool_pack::StagedPoolPack;
-use pool_pack::{PoolPackRevision, stage_pool_pack};
 pub(crate) use revision::with_request_revision_store_repo;
 pub(crate) use seeding::{DeferredRequestObjects, attach_request_refs_from_pool};
 #[cfg(test)]
@@ -366,8 +364,10 @@ pub(crate) async fn persist_request_ref(
                 git.incarnation.repository_id(),
                 staging_repo,
                 PoolPackRevision {
-                    request_id: &request.id,
-                    head_oid: &update.new_head_oid,
+                    owner: GitPoolPackOwner::Request {
+                        request_id: request.id.clone(),
+                    },
+                    head_oid: update.new_head_oid.clone(),
                     prerequisites: pool_prerequisites,
                 },
             )

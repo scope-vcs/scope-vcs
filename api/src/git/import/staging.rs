@@ -8,7 +8,7 @@ use scope_domain::views::ViewId;
 use scope_domain::{
     content::SourceBlob,
     repository::Repository,
-    repository::git::{GitHead, GitPackSpan},
+    repository::git::{GitHead, GitPoolPack},
 };
 use scope_domain::{
     error::DomainError, policy::ScopePath, repo_actions::reviewed_update_domain_error,
@@ -45,7 +45,7 @@ pub(crate) struct ReceivePackUpdate {
     pub(crate) author_id: String,
     pub(crate) message: String,
     pub(crate) git_head: GitHead,
-    pub(crate) git_pack_span: GitPackSpan,
+    pub(crate) main_pack: GitPoolPack,
     pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
     pub(crate) landing_file_mutation: RepositoryLandingFileMutation,
     pub(crate) changes: Vec<ReceivePackFileChange>,
@@ -58,7 +58,7 @@ pub(crate) struct ReceivePackUpdate {
 pub(crate) fn apply_receive_pack_update(
     repo: &mut Repository,
     update: ReceivePackUpdate,
-) -> Result<(), DomainError> {
+) -> Result<GitPoolPack, DomainError> {
     ensure_default_branch(&update.branch)?;
     apply_reviewed_update_to_repo(repo, update.into_reviewed_update())
         .map_err(reviewed_update_domain_error)
@@ -72,7 +72,7 @@ impl ReceivePackUpdate {
             author_id: self.author_id,
             message: self.message,
             git_head: self.git_head,
-            git_pack_span: self.git_pack_span,
+            main_pack: self.main_pack,
             changes: self
                 .changes
                 .into_iter()

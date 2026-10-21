@@ -42,7 +42,7 @@ async fn request_base_repo(
     if !view.is_private() {
         return Ok(None);
     }
-    let (Some(head), spans) = state
+    let Some(head) = state
         .metadata
         .repositories()
         .repository_content_source(&incarnation)
@@ -52,7 +52,7 @@ async fn request_base_repo(
     };
     state
         .repository_engine
-        .materialize_repository(&state, &incarnation, &head, &spans)
+        .materialize_repository(&state, &incarnation, &head)
         .await
         .map(Some)
 }

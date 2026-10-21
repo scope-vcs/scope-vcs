@@ -1,13 +1,11 @@
-use super::{
-    pack_consolidation::consolidate_pool_repos,
-    pool_pack::{LocalPoolPack, StagedPoolPack},
-};
+use super::pack_consolidation::consolidate_pool_repos;
 use crate::{
     error::ApiError,
     git::{
         pool_install::{
             FetchedPack, install_chain, install_fetched, installable_packs, present_commits,
         },
+        pool_pack::{LocalPoolPack, StagedPoolPack},
         staging::add_receive_pack_alternate,
         storage::request_objects_root,
     },
@@ -15,7 +13,10 @@ use crate::{
 };
 use scope_domain::{
     repo_config::RepoConfig,
-    repository::{RepositoryIncarnation, git::GitPoolPack},
+    repository::{
+        RepositoryIncarnation,
+        git::{GitPoolPack, GitPoolPackOwner},
+    },
     requests::{Request, request_visible_to_every_maintainer},
 };
 use scope_postgres::db::PooledRequestPack;
@@ -141,7 +142,9 @@ async fn install_missing_request_packs(
             .filter_map(|listed| {
                 storage.remove(&listed.id).map(|storage| GitPoolPack {
                     id: listed.id,
-                    request_id: listed.request_id,
+                    owner: GitPoolPackOwner::Request {
+                        request_id: listed.request_id,
+                    },
                     head_oid: listed.head_oid,
                     prerequisites: listed.prerequisites,
                     storage,
@@ -215,19 +218,7 @@ pub(crate) async fn retain_staged_pool_pack(
             "request revision committed but its pool pack was not installed locally"
         );
     }
-    if let LocalPoolPack::Segment(staged) = &pool_pack.local
-        && let Err(error) = state
-            .git_segment_store
-            .delete_local(&staged.staged_segment)
-            .await
-    {
-        tracing::warn!(
-            repository_id = incarnation.repository_id(),
-            pack_id = pool_pack.pack.id,
-            error = %error,
-            "failed to delete local request pool pack"
-        );
-    }
+    pool_pack.finish(state).await;
 }
 
 async fn install_staged_pool_pack(

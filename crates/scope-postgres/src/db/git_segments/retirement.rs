@@ -19,8 +19,8 @@ where
              WHERE uploads.segment_id = $1
                AND uploads.state IN ('ready', 'published')
                AND NOT EXISTS (
-                   SELECT 1 FROM scope_git_segments spans
-                   WHERE spans.segment_id = uploads.segment_id
+                   SELECT 1 FROM scope_git_pool_packs packs
+                   WHERE packs.segment_id = uploads.segment_id AND packs.request_id IS NULL
                )",
             [
                 segment_id.into(),

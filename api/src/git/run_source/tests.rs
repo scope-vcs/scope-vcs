@@ -5,7 +5,7 @@ use crate::git::{
 };
 use scope_domain::{
     account::UserAccount,
-    repository::git::{GitHead, GitPackSpan},
+    repository::git::{GitHead, GitPoolPack, GitSegmentRef},
     runs::source::RunSource,
     views::ViewId,
 };
@@ -69,20 +69,14 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     let pushed = git_push_from_repo(&state, "owner/repo", repository.path(), None)
         .await
         .unwrap();
-    let source = RunSource::accepted_git_head(
-        "owner/repo",
-        GitHead {
-            change_version: 1,
-            ..pushed.stored.head.clone()
-        },
-    )
-    .unwrap();
-
-    state
-        .git_segment_store
-        .cleanup_local("owner/repo", &pushed.stored.pack_span.segment.segment_id)
-        .await
-        .unwrap();
+    let first_head = GitHead {
+        change_version: 1,
+        ..pushed.head.clone()
+    };
+    let source = RunSource::accepted_git_head("owner/repo", first_head.clone()).unwrap();
+    let first_segment = segment_of(&pushed.pack.pack).clone();
+    record_accepted_main(&state, first_head, &pushed.pack.pack).await;
+    pushed.pack.finish(&state).await;
     let incarnation = state
         .metadata
         .repositories()
@@ -119,12 +113,11 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         git_file_mode: "100644".into(),
         size_bytes: content.len() as u64,
     };
-    let spans = vec![pushed.stored.pack_span.clone()];
     for result in futures_util::future::join_all((0..8).map(|_| {
         crate::git::content::source_content_bytes(
             &state,
             &blob,
-            Some((incarnation.clone(), &pushed.stored.head, &spans)),
+            Some((incarnation.clone(), &pushed.head)),
         )
     }))
     .await
@@ -133,7 +126,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     }
     let retained = state
         .git_segment_store
-        .get_verified_pack(&incarnation, &pushed.stored.pack_span.segment)
+        .get_verified_pack(&incarnation, &first_segment)
         .await
         .unwrap();
     let index_path = retained.path().with_extension("idx");
@@ -142,7 +135,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         .git_segment_store
         .delete_remote(&scope_storage::segment_object_key(
             "owner/repo",
-            &pushed.stored.pack_span.segment.segment_id,
+            &first_segment.segment_id,
         ))
         .await
         .unwrap();
@@ -156,7 +149,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         crate::git::content::source_content_bytes(
             &state,
             &blob,
-            Some((incarnation.clone(), &pushed.stored.head, &spans))
+            Some((incarnation.clone(), &pushed.head))
         )
         .await
         .unwrap(),
@@ -174,37 +167,28 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         "advance source",
     )
     .unwrap();
-    let newer = git_push_from_repo(
-        &state,
-        "owner/repo",
-        repository.path(),
-        Some(&pushed.stored.head),
-    )
-    .await
-    .unwrap();
-    let newer_spans = vec![
-        pushed.stored.pack_span.clone(),
-        newer.stored.pack_span.clone(),
-    ];
+    let newer = git_push_from_repo(&state, "owner/repo", repository.path(), Some(&pushed.head))
+        .await
+        .unwrap();
     record_accepted_main(
         &state,
         GitHead {
             change_version: 2,
-            ..newer.stored.head.clone()
+            ..newer.head.clone()
         },
-        newer_spans.clone(),
+        &newer.pack.pack,
     )
     .await;
     state
         .repository_engine
-        .materialize_repository(&state, &incarnation, &newer.stored.head, &newer_spans)
+        .materialize_repository(&state, &incarnation, &newer.head)
         .await
         .unwrap();
     state
         .git_segment_store
         .delete_remote(&scope_storage::segment_object_key(
             "owner/repo",
-            &pushed.stored.pack_span.segment.segment_id,
+            &first_segment.segment_id,
         ))
         .await
         .unwrap();
@@ -231,14 +215,14 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
 
     state
         .git_segment_store
-        .cleanup_local("owner/repo", &pushed.stored.pack_span.segment.segment_id)
+        .cleanup_local("owner/repo", &first_segment.segment_id)
         .await
         .unwrap();
     state
         .git_segment_store
         .delete_remote(&scope_storage::segment_object_key(
             "owner/repo",
-            &pushed.stored.pack_span.segment.segment_id,
+            &first_segment.segment_id,
         ))
         .await
         .unwrap();
@@ -276,8 +260,8 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains(&pushed.stored.head.head_oid));
-    assert!(!String::from_utf8_lossy(&output.stdout).contains(&newer.stored.head.head_oid));
+    assert!(String::from_utf8_lossy(&output.stdout).contains(&pushed.head.head_oid));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains(&newer.head.head_oid));
     let restored = repository.path().join("pinned.git");
     run_git(
         None,
@@ -305,17 +289,28 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
 mod compaction;
 mod request;
 
-async fn record_accepted_main(state: &AppState, head: GitHead, spans: Vec<GitPackSpan>) {
+async fn record_accepted_main(state: &AppState, head: GitHead, pack: &GitPoolPack) {
     state
         .metadata
         .repositories()
         .mutate_repository_for_tests("owner/repo", move |repo| {
             repo.bump_content_version();
             repo.git_head = Some(head);
-            repo.git_pack_spans = spans;
         })
         .await
         .unwrap();
+    state
+        .metadata
+        .repositories()
+        .register_main_pool_pack_for_tests("owner/repo", pack)
+        .await
+        .unwrap();
+}
+
+fn segment_of(pack: &GitPoolPack) -> &GitSegmentRef {
+    pack.storage
+        .segment()
+        .expect("a pack over the inline limit is stored as a segment")
 }
 
 async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirectory) {
@@ -374,16 +369,11 @@ async fn git_head_fixture(state: &AppState) -> (RunSource, TemporarySourceDirect
         .unwrap();
     let head = GitHead {
         change_version: 1,
-        ..pushed.stored.head.clone()
+        ..pushed.head.clone()
     };
     let source = RunSource::accepted_git_head("owner/repo", head.clone()).unwrap();
-    record_accepted_main(state, head, vec![pushed.stored.pack_span.clone()]).await;
-
-    state
-        .git_segment_store
-        .cleanup_local("owner/repo", &pushed.stored.pack_span.segment.segment_id)
-        .await
-        .unwrap();
+    record_accepted_main(state, head, &pushed.pack.pack).await;
+    pushed.pack.finish(state).await;
     (source, repository)
 }
 
@@ -408,15 +398,9 @@ async fn cancelled_revision_and_bundle_requests_keep_repository_and_capacity_unt
                 .unwrap()
                 .incarnation;
             let (_, head) = source.logical_git_head().unwrap();
-            let (_, spans) = state
-                .metadata
-                .repositories()
-                .repository_content_source(&incarnation)
-                .await
-                .unwrap();
             let revision = state
                 .repository_engine
-                .materialize_revision(&state, &incarnation, head, &spans)
+                .materialize_revision(&state, &incarnation, head)
                 .await
                 .unwrap();
             let _other_permit = state.runtime_budgets.try_git_materialization().unwrap();

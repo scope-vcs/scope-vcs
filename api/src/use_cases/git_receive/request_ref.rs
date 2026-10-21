@@ -25,7 +25,7 @@ use scope_domain::{
     views::{ViewId, Views},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_postgres::db::{GitPushContext, PushedRevisionObjects};
+use scope_postgres::db::{GitPushState, PushedRevisionObjects};
 use scope_product_analytics::ProductEvent;
 use std::{
     collections::BTreeSet,
@@ -143,13 +143,13 @@ pub(crate) async fn prepare_request_staging_repo(
         )));
     }
 
-    let git = RepositoryGit::of_push_context(&context);
+    let git = RepositoryGit::of_push_state(&context);
     let seeds_canonical_main = address_view == views.full() && access.reads_full_view(views);
     let seed_repo = match (seeds_canonical_main, git.git_head.as_ref()) {
         (true, Some(head)) => {
             state
                 .repository_engine
-                .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
+                .materialize_repository(state, &git.incarnation, head)
                 .await?
         }
         _ => git.view_repo(state, views, address_view).await?,
@@ -203,7 +203,7 @@ pub(crate) async fn prepare_request_staging_repo(
 
 pub(super) async fn seed_editable_request_refs(
     state: &AppState,
-    context: &GitPushContext,
+    context: &GitPushState,
     actor_user_id: &str,
     staging_repo: &Path,
     seeding: RequestRefSeeding<'_>,
@@ -227,7 +227,7 @@ pub(super) async fn seed_editable_request_refs(
 
 async fn seed_editable_request_refs_for_repo(
     state: &AppState,
-    context: &GitPushContext,
+    context: &GitPushState,
     actor_user_id: &str,
     address_view: &ViewId,
     staging_repo: &Path,
@@ -276,7 +276,7 @@ async fn seed_editable_request_refs_for_repo(
                 .partition(|request| !attached.contains(&request.id))
         }
     };
-    let git = RepositoryGit::of_push_context(context);
+    let git = RepositoryGit::of_push_state(context);
     let view_bases = request_view_bases(state, &git, views, &refs_for, address_view).await?;
     let attached = if reads_every_request {
         attach_request_refs_from_pool(
@@ -340,11 +340,11 @@ pub(super) async fn git_push_context(
     owner: &str,
     repo_name: &str,
     actor_user_id: &str,
-) -> Result<GitPushContext, ApiError> {
+) -> Result<GitPushState, ApiError> {
     state
         .metadata
         .repositories()
-        .git_push_context(owner, repo_name, actor_user_id)
+        .git_push_state(owner, repo_name, actor_user_id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))
 }
@@ -382,7 +382,7 @@ pub(super) async fn persist_request_ref_revision(
         &update.request_name,
     )
     .await?;
-    let git = RepositoryGit::of_push_context(&context);
+    let git = RepositoryGit::of_push_state(&context);
     let incarnation = git.incarnation.clone();
     if &incarnation != expected_incarnation {
         return Err(ApiError::conflict(
@@ -535,7 +535,7 @@ async fn ensure_request_ref_update_allowed(
     actor_user_id: &str,
     address_view: Option<&ViewId>,
     request_name: &str,
-) -> Result<(GitPushContext, Request), ApiError> {
+) -> Result<(GitPushState, Request), ApiError> {
     let context = git_push_context(state, owner, repo_name, actor_user_id).await?;
     let access = context.access.clone();
     let views = context.repo_config.views();

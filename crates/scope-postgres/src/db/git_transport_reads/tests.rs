@@ -193,7 +193,7 @@ async fn git_read_source_reads_no_history() {
 }
 
 #[tokio::test]
-async fn git_push_credentials_read_no_history_or_pack_spans() {
+async fn git_push_credentials_read_no_history_or_main_packs() {
     let store = fixture().await;
     let held = lock(&store, HISTORY_TABLES).await;
 
@@ -277,7 +277,7 @@ async fn path_history_reads_only_the_requested_paths() {
     let version = content_version(&store).await;
     let held = lock(
         &store,
-        "scope_logical_commits, scope_visibility_change_sets, scope_git_segments",
+        "scope_logical_commits, scope_visibility_change_sets, scope_git_pool_packs",
     )
     .await;
 
@@ -318,7 +318,7 @@ async fn path_history_reads_only_the_requested_paths() {
 }
 
 #[tokio::test]
-async fn git_push_context_reads_no_history() {
+async fn git_push_state_reads_no_history() {
     let store = fixture().await;
     let held = lock(
         &store,
@@ -329,7 +329,7 @@ async fn git_push_context_reads_no_history() {
     let context = within_lock(
         store
             .repositories()
-            .git_push_context("owner", "repo", "member"),
+            .git_push_state("owner", "repo", "member"),
     )
     .await
     .unwrap()

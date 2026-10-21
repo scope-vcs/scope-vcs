@@ -1,3 +1,4 @@
+use super::super::main_pool::main_pool_packs;
 use super::*;
 use crate::use_cases::request_merge::{
     PreparedRequestMerge, persist_prepared_merge_for_tests, prepare_request_merge,
@@ -258,7 +259,6 @@ async fn merge_route_persists_git_content_once() {
         repo.repo_config.views(),
         &public_projection,
         repo.git_head.as_ref(),
-        &repo.git_pack_spans,
     )
     .await
     .unwrap();
@@ -513,7 +513,7 @@ async fn locked_merge_rejects_stale_inputs_without_persisting_content() {
         let (state, _source) = test_state_with_mergeable_request(&format!("{label}-state")).await;
         insert_member_user(&state).await;
         let prepared = prepared_merge(&state, label, &member_user_id()).await;
-        let staged_segment = prepared.staged_segment.clone();
+        let staged_pack = prepared.staged_pack.pack.clone();
         match stale {
             StaleMergeInput::RequestHead => state
                 .metadata
@@ -559,7 +559,7 @@ async fn locked_merge_rejects_stale_inputs_without_persisting_content() {
             stored_request(&state, REQUEST_ID).await.state(),
             RequestState::Open
         );
-        assert_segment_rollback_and_write_lease_released(&state, &staged_segment).await;
+        assert_pack_rollback_and_write_lease_released(&state, &staged_pack).await;
     }
 }
 
@@ -596,18 +596,25 @@ async fn prepared_merge(
     .unwrap()
 }
 
-async fn assert_segment_rollback_and_write_lease_released(
+async fn assert_pack_rollback_and_write_lease_released(
     state: &AppState,
-    staged_segment: &scope_storage::StagedGitSegment,
+    staged_pack: &scope_domain::repository::git::GitPoolPack,
 ) {
-    assert!(!staged_segment.local_pack_path().exists());
     assert!(
-        state
-            .git_segment_store
-            .restore_to(TEST_REPO_ID, &staged_segment.segment, tokio::io::sink(),)
+        main_pool_packs(state)
             .await
-            .is_err()
+            .iter()
+            .all(|listed| listed.id != staged_pack.id)
     );
+    if let Some(segment) = staged_pack.storage.segment() {
+        assert!(
+            state
+                .git_segment_store
+                .restore_to(TEST_REPO_ID, segment, tokio::io::sink())
+                .await
+                .is_err()
+        );
+    }
     let lease = tokio::time::timeout(
         Duration::from_secs(2),
         state

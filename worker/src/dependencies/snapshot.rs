@@ -1,7 +1,7 @@
 use scope_domain::{
     content::{SourceBlob, is_supported_git_file_mode},
     content_ref::ContentRef,
-    repository::git::GitPackSpan,
+    repository::git::{GitPoolPack, GitPoolPackStorage},
 };
 use scope_git_process::{ProcessCancellation, ProcessLimits, run_cancellable};
 use scope_postgres::db::{DependencyAnalysisClaim, DependencySnapshotFile};
@@ -20,7 +20,7 @@ use tempfile::TempDir;
 const MAX_FILES: usize = 20_000;
 const MAX_SOURCE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
-const MAX_GIT_PACK_SPANS: usize = 128;
+const MAX_GIT_MAIN_PACKS: usize = 128;
 const MAX_GIT_PACK_BYTES: u64 = 256 * 1024 * 1024;
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -53,7 +53,7 @@ pub(super) async fn materialize(
     fs::create_dir(&source)?;
     let snapshot = Snapshot { directory, source };
     let bare = snapshot.directory.path().join("git");
-    if validate_git_restore(&claim.files, &claim.git_pack_spans)? {
+    if validate_git_restore(&claim.files, &claim.main_packs)? {
         let deadline = Instant::now() + GIT_TIMEOUT;
         git(
             None,
@@ -63,15 +63,15 @@ pub(super) async fn materialize(
             remaining_git_time(deadline)?,
             &cancellation,
         )?;
-        for span in &claim.git_pack_spans {
+        for pack in &claim.main_packs {
             check_cancellation(&cancellation)?;
-            crate::git_repo::index_git_segment(
+            index_main_pack(
                 segments.as_ref(),
                 claim.incarnation.repository_id(),
-                &span.segment,
+                pack,
                 &bare,
                 remaining_git_time(deadline)?,
-                Some(&cancellation),
+                &cancellation,
             )
             .await?;
         }
@@ -114,9 +114,43 @@ fn check_cancellation(cancellation: &ProcessCancellation) -> anyhow::Result<()> 
     Ok(())
 }
 
+async fn index_main_pack(
+    segments: &GitSegmentStore,
+    repository_id: &str,
+    pack: &GitPoolPack,
+    bare: &Path,
+    timeout: Duration,
+    cancellation: &ProcessCancellation,
+) -> anyhow::Result<()> {
+    match &pack.storage {
+        GitPoolPackStorage::Segment(segment) => {
+            crate::git_repo::index_git_segment(
+                segments,
+                repository_id,
+                segment,
+                bare,
+                timeout,
+                Some(cancellation),
+            )
+            .await?;
+        }
+        GitPoolPackStorage::Inline { sealed } => {
+            let bytes = segments
+                .open_inline_pack(repository_id, &pack.id, sealed)
+                .await?;
+            let bare = bare.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                crate::git_repo::index_pack_bytes(&bare, bytes, timeout, 64 * 1024)
+            })
+            .await??;
+        }
+    }
+    Ok(())
+}
+
 fn validate_git_restore(
     files: &[DependencySnapshotFile],
-    spans: &[GitPackSpan],
+    packs: &[GitPoolPack],
 ) -> anyhow::Result<bool> {
     let required = files.iter().any(|file| {
         needs_content(file.path.as_str())
@@ -125,11 +159,11 @@ fn validate_git_restore(
     if !required {
         return Ok(false);
     }
-    if spans.len() > MAX_GIT_PACK_SPANS {
-        anyhow::bail!("dependency snapshot exceeds {MAX_GIT_PACK_SPANS} Git pack spans");
+    if packs.len() > MAX_GIT_MAIN_PACKS {
+        anyhow::bail!("dependency snapshot exceeds {MAX_GIT_MAIN_PACKS} Git main packs");
     }
-    let bytes = spans.iter().try_fold(0_u64, |total, span| {
-        total.checked_add(span.segment.plaintext_bytes)
+    let bytes = packs.iter().try_fold(0_u64, |total, pack| {
+        total.checked_add(pack.storage.stored_bytes())
     });
     if bytes.is_none_or(|bytes| bytes > MAX_GIT_PACK_BYTES) {
         anyhow::bail!("dependency snapshot exceeds {MAX_GIT_PACK_BYTES} Git pack bytes");
@@ -354,7 +388,11 @@ fn set_tree_writable(path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scope_domain::{content::SourceBlob, policy::ScopePath, repository::git::GitSegmentRef};
+    use scope_domain::{
+        content::SourceBlob,
+        policy::ScopePath,
+        repository::git::{GitPoolPackOwner, GitSegmentRef},
+    };
     use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend, put_source_blob};
 
     fn snapshot_file(path: &str, size_bytes: u64, git_file_mode: &str) -> DependencySnapshotFile {
@@ -376,19 +414,21 @@ mod tests {
         file
     }
 
-    fn git_span(plaintext_bytes: u64) -> GitPackSpan {
-        GitPackSpan {
-            first_sequence: 1,
-            last_sequence: 1,
-            geometric_tier: 0,
-            base_oid: None,
+    fn main_pack(plaintext_bytes: u64) -> GitPoolPack {
+        GitPoolPack {
+            id: "segment".to_string(),
+            owner: GitPoolPackOwner::Main {
+                first_sequence: 1,
+                last_sequence: 1,
+            },
             head_oid: "b".repeat(40),
-            segment: GitSegmentRef {
+            prerequisites: Vec::new(),
+            storage: GitPoolPackStorage::Segment(GitSegmentRef {
                 segment_id: "segment".to_string(),
                 sha256: "c".repeat(64),
                 plaintext_bytes,
                 encoding_version: 2,
-            },
+            }),
         }
     }
 
@@ -444,22 +484,22 @@ mod tests {
 
     #[test]
     fn git_restore_is_bounded_only_when_an_analyzer_input_needs_a_git_blob() {
-        let exact_count = vec![git_span(1); MAX_GIT_PACK_SPANS];
+        let exact_count = vec![main_pack(1); MAX_GIT_MAIN_PACKS];
         assert!(validate_git_restore(&[git_snapshot_file("src/main.ts")], &exact_count).unwrap());
-        let over_count = vec![git_span(1); MAX_GIT_PACK_SPANS + 1];
+        let over_count = vec![main_pack(1); MAX_GIT_MAIN_PACKS + 1];
         assert!(validate_git_restore(&[git_snapshot_file("src/main.ts")], &over_count).is_err());
 
         assert!(
             validate_git_restore(
                 &[git_snapshot_file("src/main.ts")],
-                &[git_span(MAX_GIT_PACK_BYTES)]
+                &[main_pack(MAX_GIT_PACK_BYTES)]
             )
             .unwrap()
         );
         assert!(
             validate_git_restore(
                 &[git_snapshot_file("src/main.ts")],
-                &[git_span(MAX_GIT_PACK_BYTES + 1)]
+                &[main_pack(MAX_GIT_PACK_BYTES + 1)]
             )
             .is_err()
         );

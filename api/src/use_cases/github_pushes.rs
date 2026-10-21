@@ -275,7 +275,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         })
     };
     let Some((request, evaluation)) = tested else {
-        let (Some(head), spans) = state
+        let Some(head) = state
             .metadata
             .repositories()
             .repository_content_source(&incarnation)
@@ -285,7 +285,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         };
         let repo = state
             .repository_engine
-            .materialize_repository(state, &incarnation, &head, &spans)
+            .materialize_repository(state, &incarnation, &head)
             .await?;
         record_setup_check_baseline(state, &app, push).await?;
         return crate::git::blocking::run(move || Ok(push_when_current(repo.as_ref()))).await?;

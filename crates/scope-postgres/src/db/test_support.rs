@@ -4,6 +4,7 @@ use super::{
         save_pending_repo_storage_deletions, save_pending_source_blob_deletions,
     },
     entities,
+    git_segments::register_git_pool_pack,
     landing_files::apply_repository_landing_file_mutation,
     repository_rows::insert_repository,
     request_discussion_rows::{insert_discussion, insert_reply, save_read_state},
@@ -355,7 +356,7 @@ impl RepositoryStore {
                     )
                     .await?;
                 }
-                save_repository_rows(&tx, &before, &repo, CATALOG_SEED_NOW_UNIX).await?;
+                save_repository_rows(&tx, &before, &repo).await?;
                 refresh_content_read_models(&tx, &repo, CATALOG_SEED_NOW_UNIX).await?;
             }
             None => insert_repository(&tx, &repo, CATALOG_SEED_NOW_UNIX).await?,
@@ -393,6 +394,14 @@ impl RepositoryStore {
         op(&mut repo);
         save_repository_delta(&tx, &before, &repo, CATALOG_SEED_NOW_UNIX).await?;
         tx.commit().await.map_err(PostgresError::internal)
+    }
+
+    pub async fn register_main_pool_pack_for_tests(
+        &self,
+        repo_id: &str,
+        pack: &scope_domain::repository::git::GitPoolPack,
+    ) -> Result<(), PostgresError> {
+        register_git_pool_pack(self.db.as_ref(), repo_id, pack, CATALOG_SEED_NOW_UNIX).await
     }
 
     pub async fn repository_for_tests(
@@ -619,6 +628,13 @@ async fn seed_catalog_rows(
     }
     for repo in catalog.repositories.values() {
         insert_repository(tx, repo, CATALOG_SEED_NOW_UNIX).await?;
+        for pack in catalog
+            .main_pool_packs
+            .remove(&repo.record.id)
+            .unwrap_or_default()
+        {
+            register_git_pool_pack(tx, &repo.record.id, &pack, CATALOG_SEED_NOW_UNIX).await?;
+        }
         if let Some(landing) = catalog.repository_landing_files.remove(&repo.record.id) {
             let path = scope_domain::policy::ScopePath::parse(
                 scope_domain::landing_file::REPOSITORY_LANDING_FILE_PATH,

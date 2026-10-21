@@ -1,9 +1,9 @@
 use super::*;
-use crate::db::{MetadataStore, TestDatabaseTarget, entities};
+use crate::db::{MetadataStore, TestDatabaseTarget};
 use scope_domain::repository::git::{
-    GitPackSpan, GitPoolPack, GitPoolPackStorage, GitSegmentRef, GitSegmentUploadState,
+    GitPoolPack, GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef, GitSegmentUploadState,
 };
-use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, IntoActiveModel};
+use sea_orm::ConnectionTrait;
 use std::time::Duration;
 
 async fn store_with_repository(repo_id: &str) -> MetadataStore {
@@ -27,6 +27,19 @@ async fn store_with_repository(repo_id: &str) -> MetadataStore {
         .await
         .unwrap();
     store
+}
+
+fn first_main_pack(segment: &GitSegmentRef) -> GitPoolPack {
+    GitPoolPack {
+        id: segment.segment_id.clone(),
+        owner: GitPoolPackOwner::Main {
+            first_sequence: 1,
+            last_sequence: 1,
+        },
+        head_oid: "a".repeat(40),
+        prerequisites: Vec::new(),
+        storage: GitPoolPackStorage::Segment(segment.clone()),
+    }
 }
 
 fn segment() -> GitSegmentRef {
@@ -83,23 +96,14 @@ async fn upload_ledger_enforces_publication_and_recovery_states() {
     assert_eq!(stale.len(), 1);
     assert_eq!(stale[0].state, GitSegmentUploadState::Ready);
 
-    let span = GitPackSpan {
-        first_sequence: 1,
-        last_sequence: 1,
-        geometric_tier: 0,
-        base_oid: None,
-        head_oid: "a".repeat(40),
-        segment: segment.clone(),
-    };
-    entities::git_pack_span::Model::from_domain("segment-user/repo", &span)
-        .unwrap()
-        .into_active_model()
-        .insert(store.db.as_ref())
-        .await
-        .unwrap();
-    publish_git_segment(store.db.as_ref(), "segment-user/repo", &segment, 12)
-        .await
-        .unwrap();
+    register_git_pool_pack(
+        store.db.as_ref(),
+        "segment-user/repo",
+        &first_main_pack(&segment),
+        12,
+    )
+    .await
+    .unwrap();
     assert!(
         !repositories
             .abandon_git_segment_upload(&segment.segment_id, 13)
@@ -112,8 +116,9 @@ async fn upload_ledger_enforces_publication_and_recovery_states() {
             .unwrap()
     );
 
-    entities::git_pack_span::Entity::delete_many()
-        .exec(store.db.as_ref())
+    store
+        .db
+        .execute_unprepared("DELETE FROM scope_git_pool_packs")
         .await
         .unwrap();
     assert!(
@@ -233,25 +238,14 @@ async fn repository_deletion_keeps_segment_ledger_for_physical_cleanup() {
         .mark_git_segment_upload_ready(&segment, 1_100, 11)
         .await
         .unwrap();
-    entities::git_pack_span::Model::from_domain(
+    register_git_pool_pack(
+        store.db.as_ref(),
         "segment-user/repo",
-        &GitPackSpan {
-            first_sequence: 1,
-            last_sequence: 1,
-            geometric_tier: 0,
-            base_oid: None,
-            head_oid: "a".repeat(40),
-            segment: segment.clone(),
-        },
+        &first_main_pack(&segment),
+        12,
     )
-    .unwrap()
-    .into_active_model()
-    .insert(store.db.as_ref())
     .await
     .unwrap();
-    publish_git_segment(store.db.as_ref(), "segment-user/repo", &segment, 12)
-        .await
-        .unwrap();
     let incarnation = repositories
         .repository("segment-user", "repo")
         .await
@@ -293,7 +287,7 @@ async fn ready_segment(store: &MetadataStore, segment_id: &str, digest: char) ->
 }
 
 #[tokio::test]
-async fn pool_packs_are_listed_only_for_the_requested_requests() {
+async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
     let store = store_with_repository("segment-user/repo").await;
     store
         .db
@@ -312,7 +306,9 @@ async fn pool_packs_are_listed_only_for_the_requested_requests() {
         .unwrap();
     let inline = GitPoolPack {
         id: "pool-inline".to_string(),
-        request_id: "req_wanted".to_string(),
+        owner: GitPoolPackOwner::Request {
+            request_id: "req_wanted".to_string(),
+        },
         head_oid: "a".repeat(40),
         prerequisites: vec!["c".repeat(40)],
         storage: GitPoolPackStorage::Inline {
@@ -321,19 +317,33 @@ async fn pool_packs_are_listed_only_for_the_requested_requests() {
     };
     let segment = GitPoolPack {
         id: "pool-segment".to_string(),
-        request_id: "req_wanted".to_string(),
+        owner: GitPoolPackOwner::Request {
+            request_id: "req_wanted".to_string(),
+        },
         head_oid: "b".repeat(40),
         prerequisites: vec!["a".repeat(40)],
         storage: GitPoolPackStorage::Segment(ready_segment(&store, "segment-pool", 'e').await),
     };
     let other = GitPoolPack {
         id: "pool-other".to_string(),
-        request_id: "req_other".to_string(),
+        owner: GitPoolPackOwner::Request {
+            request_id: "req_other".to_string(),
+        },
         head_oid: "f".repeat(40),
         prerequisites: Vec::new(),
         storage: GitPoolPackStorage::Inline { sealed: vec![4, 5] },
     };
-    for (pack, now) in [(&inline, 12), (&segment, 13), (&other, 14)] {
+    let main = GitPoolPack {
+        id: "pool-main".to_string(),
+        owner: GitPoolPackOwner::Main {
+            first_sequence: 1,
+            last_sequence: 1,
+        },
+        head_oid: "c".repeat(40),
+        prerequisites: Vec::new(),
+        storage: GitPoolPackStorage::Inline { sealed: vec![6] },
+    };
+    for (pack, now) in [(&inline, 12), (&segment, 13), (&other, 14), (&main, 15)] {
         register_git_pool_pack(store.db.as_ref(), "segment-user/repo", pack, now)
             .await
             .unwrap();
@@ -363,7 +373,9 @@ async fn pool_packs_are_listed_only_for_the_requested_requests() {
             .iter()
             .map(|listed| GitPoolPack {
                 id: listed.id.clone(),
-                request_id: listed.request_id.clone(),
+                owner: GitPoolPackOwner::Request {
+                    request_id: listed.request_id.clone(),
+                },
                 head_oid: listed.head_oid.clone(),
                 prerequisites: listed.prerequisites.clone(),
                 storage: stored[&listed.id].clone(),
@@ -372,4 +384,27 @@ async fn pool_packs_are_listed_only_for_the_requested_requests() {
         [inline, segment]
     );
     assert!(listed.iter().all(|listed| !listed.request_submitted));
+
+    let main_listing = store
+        .repositories()
+        .main_pool_packs("segment-user/repo")
+        .await
+        .unwrap();
+    assert_eq!(
+        main_listing
+            .into_iter()
+            .map(|listed| listed.with_storage(GitPoolPackStorage::Inline { sealed: vec![6] }))
+            .collect::<Vec<_>>(),
+        std::slice::from_ref(&main)
+    );
+
+    retire_request_pool_packs(store.db.as_ref(), "req_wanted", 16)
+        .await
+        .unwrap();
+    assert_eq!(
+        load_main_pool_packs(store.db.as_ref(), "segment-user/repo")
+            .await
+            .unwrap(),
+        [main]
+    );
 }

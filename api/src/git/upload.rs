@@ -121,7 +121,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
         Some(head) if private_view => {
             state
                 .repository_engine
-                .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
+                .materialize_repository(state, &git.incarnation, head)
                 .await?
         }
         _ => git.view_repo(state, &views, view).await?,

@@ -590,7 +590,7 @@ pub(crate) async fn get_file_content(
             &projected.projected.blob,
             git.git_head
                 .as_ref()
-                .map(|head| (git.incarnation.clone(), head, git.git_pack_spans.as_slice())),
+                .map(|head| (git.incarnation.clone(), head)),
         )
         .instrument(span)
         .await?

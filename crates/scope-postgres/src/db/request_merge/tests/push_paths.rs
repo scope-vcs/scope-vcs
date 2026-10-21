@@ -50,7 +50,7 @@ pub(super) async fn push(
             .repositories()
             .mutate_repository("owner", "repo", 8, |repo| {
                 let head = prepared.update.git_head.clone();
-                apply_reviewed_update_to_repo(repo, prepared.update)
+                let main_pack = apply_reviewed_update_to_repo(repo, prepared.update)
                     .map_err(scope_domain::repo_actions::reviewed_update_domain_error)?;
                 let mut mutation = RepositoryMutation::with_push_trigger_input(
                     head,
@@ -62,6 +62,7 @@ pub(super) async fn push(
                     actor_user_id: "user_owner".into(),
                     candidates,
                 });
+                mutation.main_pack = Some(main_pack);
                 Ok(mutation)
             })
             .await

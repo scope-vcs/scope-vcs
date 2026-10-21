@@ -1,8 +1,11 @@
 use crate::{
     error::ApiError,
-    git::import::{
-        PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
-        apply_receive_pack_update, reviewed_update_from_staging_repo,
+    git::{
+        import::{
+            PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
+            apply_receive_pack_update, reviewed_update_from_staging_repo,
+        },
+        pool_pack::StagedPoolPack,
     },
     state::AppState,
 };
@@ -16,7 +19,6 @@ use scope_domain::{
 use scope_postgres::db::{
     LandedRequestCandidate, LandedRequestCompletion, RepositoryGitWriteLease, RepositoryMutation,
 };
-use scope_storage::StagedGitSegment;
 use std::{path::Path, time::Instant};
 
 use super::ReceivePackAccess;
@@ -25,7 +27,7 @@ pub(crate) struct PersistedGitPush {
     pub(crate) incarnation: RepositoryIncarnation,
     pub(crate) head: GitHead,
     pub(crate) completed_landed_requests: usize,
-    pub(crate) staged_segment: StagedGitSegment,
+    pub(crate) staged_pack: StagedPoolPack,
     pub(crate) write_lease: RepositoryGitWriteLease,
 }
 
@@ -34,7 +36,7 @@ impl std::fmt::Debug for PersistedGitPush {
         formatter
             .debug_struct("PersistedGitPush")
             .field("head", &self.head)
-            .field("segment", &self.staged_segment.segment)
+            .field("pack_id", &self.staged_pack.pack.id)
             .finish_non_exhaustive()
     }
 }
@@ -92,13 +94,12 @@ pub(super) async fn prepare_main_push(
             Ok(base) => base,
             Err(error) => {
                 let repository_id = scope_domain::repository::repo_id(owner, repo_name);
-                crate::git::import::best_effort_delete_staged_git_segment(
-                    state,
-                    &repository_id,
-                    &prepared.staged_segment,
-                )
-                .await;
-                prepared.write_lease.release().await;
+                let PreparedReceivePackUpdate {
+                    staged_pack,
+                    write_lease,
+                    ..
+                } = prepared;
+                cleanup_failed_persist(state, &repository_id, staged_pack, write_lease).await;
                 return Err(error);
             }
         },
@@ -119,15 +120,14 @@ pub(crate) async fn persist_main_push(
 ) -> Result<PersistedGitPush, ApiError> {
     let PreparedReceivePackUpdate {
         update,
-        staged_segment,
+        staged_pack,
         write_lease,
-        upload_heartbeat: _upload_heartbeat,
     } = prepared;
     let repository_id = scope_domain::repository::repo_id(owner, repo_name);
     let now_unix = match crate::persistence::unix_now() {
         Ok(now) => now,
         Err(error) => {
-            cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
+            cleanup_failed_persist(state, &repository_id, staged_pack, write_lease).await;
             return Err(error);
         }
     };
@@ -162,7 +162,7 @@ pub(crate) async fn persist_main_push(
         {
             Ok(result) => result,
             Err(error) => {
-                cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
+                cleanup_failed_persist(state, &repository_id, staged_pack, write_lease).await;
                 return Err(error.into());
             }
         }
@@ -172,7 +172,7 @@ pub(crate) async fn persist_main_push(
             incarnation: incarnation.clone(),
             head: git_head.result,
             completed_landed_requests: git_head.completed_landed_requests,
-            staged_segment,
+            staged_pack,
             write_lease,
         });
     }
@@ -229,7 +229,7 @@ pub(crate) async fn persist_main_push(
                 update.open_requests_by_view = open_requests_by_view;
                 ensure_receive_pack_base_matches(repo, &update)?;
                 let landing_file_mutation = update.landing_file_mutation.clone();
-                apply_receive_pack_update(repo, update)?;
+                let main_pack = apply_receive_pack_update(repo, update)?;
                 tracing::info!(
                     domain_apply_ms = domain_started.elapsed().as_millis(),
                     "applied reviewed push domain transition"
@@ -251,6 +251,7 @@ pub(crate) async fn persist_main_push(
                     actor_user_id: author_id,
                     candidates: landed_request_candidates,
                 });
+                mutation.main_pack = Some(main_pack);
                 Ok(mutation)
             },
         )
@@ -258,7 +259,7 @@ pub(crate) async fn persist_main_push(
     let git_head = match git_head {
         Ok(git_head) => git_head,
         Err(error) => {
-            cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
+            cleanup_failed_persist(state, &repository_id, staged_pack, write_lease).await;
             return Err(error.into());
         }
     };
@@ -270,19 +271,18 @@ pub(crate) async fn persist_main_push(
         incarnation: incarnation.clone(),
         head: git_head.result,
         completed_landed_requests: git_head.completed_landed_requests,
-        staged_segment,
+        staged_pack,
         write_lease,
     })
 }
 
-pub(super) async fn cleanup_failed_persist(
+pub(crate) async fn cleanup_failed_persist(
     state: &AppState,
     repository_id: &str,
-    staged_segment: &StagedGitSegment,
+    staged_pack: StagedPoolPack,
     write_lease: RepositoryGitWriteLease,
 ) {
-    crate::git::import::best_effort_delete_staged_git_segment(state, repository_id, staged_segment)
-        .await;
+    staged_pack.discard(state, repository_id).await;
     write_lease.release().await;
 }
 

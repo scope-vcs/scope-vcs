@@ -23,7 +23,7 @@ use sea_orm::{
 use std::{future::Future, time::Duration};
 
 pub(in crate::db) const HISTORY_TABLES: &str = "scope_logical_commits, scope_file_changes, scope_live_files, \
-    scope_visibility_change_sets, scope_visibility_changes, scope_git_segments, \
+    scope_visibility_change_sets, scope_visibility_changes, scope_git_pool_packs, \
     scope_git_segment_uploads";
 
 fn user(id: &str) -> UserAccount {
@@ -81,7 +81,7 @@ async fn fixture_with_views(views: Views) -> MetadataStore {
 }
 
 #[tokio::test]
-async fn collaboration_reads_no_history_or_pack_spans() {
+async fn collaboration_reads_no_history_or_main_packs() {
     let store = fixture().await;
     let held = lock_history(&store).await;
 
@@ -355,7 +355,7 @@ async fn email_row(store: &MetadataStore, id: &str) -> entities::repository_invi
 }
 
 #[tokio::test]
-async fn collaboration_mutations_touch_no_history_or_pack_spans() {
+async fn collaboration_mutations_touch_no_history_or_main_packs() {
     let store = fixture().await;
     let repositories = store.repositories();
     let owner = user("owner");

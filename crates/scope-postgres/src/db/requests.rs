@@ -23,6 +23,7 @@ use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
+    scope_domain::repository::git::GitPoolPackOwner,
     scope_domain::requests::{
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
         RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request,
@@ -322,8 +323,11 @@ impl RequestStore {
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
         if let Some(pack) = pushed.as_ref().and_then(|pushed| pushed.pool_pack.as_ref()) {
-            if pack.request_id != mutation.request.id || pack.head_oid != mutation.request.head_oid
-            {
+            let owned_by_request = matches!(
+                &pack.owner,
+                GitPoolPackOwner::Request { request_id } if *request_id == mutation.request.id
+            );
+            if !owned_by_request || pack.head_oid != mutation.request.head_oid {
                 return Err(PostgresError::internal_message(
                     "Git pool pack does not belong to the recorded revision",
                 ));
