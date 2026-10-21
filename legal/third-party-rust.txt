@@ -3564,9 +3564,9 @@ Selected license: MIT
 Source: https://static.crates.io/crates/rustls-platform-verifier-android/rustls-platform-verifier-android-0.2.0.crate
 
 Repository: "https://github.com/rustls/rustls-platform-verifier"
-MIT branch selected. Archive omits license files and VCS metadata. Its original package manifest and Rust source exactly match android-release-support version 0.1.1 in upstream release commit 996b1c903491641b17b3c9afb65d1352f6fc6b76. Its Maven payload is generated during releases and covered by the package MIT OR Apache-2.0 declaration. Preserve the shared repository MIT license.
+MIT branch selected. Archive omits license files; its VCS metadata records upstream commit 252e25161a91af476cbea620e29d277592d27ec7 at path android-release-support (release 0.7.1). Its original package manifest and Rust source exactly match that commit. The component's LICENSE-MIT there is a link to the shared repository MIT license, preserved here. Since release 0.7.1 the Maven payload is distributed from the upstream maven-archive branch and is absent from the published archive, which is covered by the package MIT OR Apache-2.0 declaration.
 
-legal/upstream/rustls-rustls-platform-verifier-996b1c903491-LICENSE-MIT: text 6205904d553962d42fd62764787a5b635a1416d4b3794f4fc465ec36bfbf7ceb
+legal/upstream/rustls-rustls-platform-verifier-252e25161a91-LICENSE-MIT: text 6205904d553962d42fd62764787a5b635a1416d4b3794f4fc465ec36bfbf7ceb
 
 ==============================================================================
 rustls-webpki 0.103.16
