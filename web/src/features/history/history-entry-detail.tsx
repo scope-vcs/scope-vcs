@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button'
 import { PendingSurface } from '@/components/pending-surface'
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import type { CachedResource } from '@/lib/use-cached-resource'
-import { ChangedFilesWorkbench, useChangedFileNavigation, type ChangedFilesProps } from './changed-files-workbench'
+import { useChangedFileNavigation, type ChangedFilesProps } from './changed-files-workbench'
+import { HistoryEntryChanges } from './history-entry-changes'
 import { UpdateDetailSkeleton } from './update-detail-skeleton'
 import {
   compactHistorySourceId,
@@ -11,7 +12,8 @@ import {
   historyEntryCountLabel,
   historyEntryKindLabel,
 } from './history-row-labels'
-import { ViewsChanges, VisibilityChanges, type HistoryVisibilityChange } from './history-visibility-changes'
+import type { HistoryVisibilityChange } from './changed-paths-model'
+import { ViewsChanges } from './views-changes'
 import { NativeCommits } from './history-native-commits'
 import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import type { HistoryEntryDetailResponse } from '@/api/types.generated'
@@ -24,7 +26,7 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   onSelectVisibility: (change: HistoryVisibilityChange) => void
   selectedVisibilityId: string | null
 }) {
-  const { resource, onCloseDiff, onRetryDetail, onSelectVisibility, selectedFilePath, selectedVisibilityId } = props
+  const { resource, onCloseDiff, onRetryDetail, selectedFilePath } = props
   const navigation = useChangedFileNavigation(onCloseDiff, selectedFilePath === null)
   const views = useRepoViews()
   if (resource.status === 'loading') {
@@ -60,20 +62,8 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
         </p>
       </header>
       <ViewsChanges transition={detail.views} />
-      <VisibilityChanges
-        changes={detail.visibility_changes}
-        onSelect={onSelectVisibility}
-        selectedId={selectedVisibilityId}
-        view={detail.view}
-      />
       <NativeCommits detail={detail} />
-      <ChangedFilesWorkbench
-        {...props}
-        expandFolders
-        files={detail.files}
-        navigation={navigation}
-        navigationLabel="Update file navigator"
-      />
+      <HistoryEntryChanges {...props} detail={detail} navigation={navigation} />
     </div>
   )
 }

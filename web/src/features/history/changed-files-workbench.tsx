@@ -1,8 +1,6 @@
 import { EmptyState, PanelState } from '@/components/empty-state'
-import { FileSystemTree } from '@/components/file-system-tree'
 import { FileWorkbench } from '@/components/file-workbench'
-import { Badge } from '@/components/ui/badge'
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { ReviewFileDiffDrawer } from '../review/review-file-diff-drawer'
 import type { CommitFileDiffState } from './history-state'
 import type { CommitFileResponse } from '@/api/types.generated'
@@ -33,22 +31,25 @@ const DIFF_PANE_CLASS = 'h-[70vh] min-h-[340px] max-h-[720px] min-w-0 overflow-h
 
 export function ChangedFilesWorkbench({
   diffIdentity, diffScrollTop, fileDiffState, onDiffScroll, onRetryDiff,
-  onSelectFile, selectedFilePath, files, navigation, navigationLabel,
-  selectedVisibilityId, emptyFilesMessage, emptyPreviewMessage, expandFolders = false,
-}: Omit<ChangedFilesProps, 'onCloseDiff'> & {
-  files: CommitFileResponse[]
+  selectedFilePath, navigation, navigationLabel, navigator, toolbar, diffActions, diffContext,
+  emptyFilesMessage, emptyPreviewMessage,
+}: Omit<ChangedFilesProps, 'onCloseDiff' | 'onSelectFile'> & {
   navigation: ReturnType<typeof useChangedFileNavigation>
   navigationLabel: string
-  selectedVisibilityId?: string | null
+  navigator: ReactNode
+  toolbar?: ReactNode
+  diffActions?: ReactNode
+  diffContext?: ReactNode
   emptyFilesMessage?: string
   emptyPreviewMessage?: string
-  expandFolders?: boolean
 }) {
   const placeholder = <PanelState><span>{emptyPreviewMessage ?? 'Select a changed file'}</span></PanelState>
   const diff = selectedFilePath ? (
     <div className={DIFF_PANE_CLASS}>
       <ReviewFileDiffDrawer
+        actions={diffActions}
         cacheKey={diffIdentity}
+        context={diffContext}
         diff={fileDiffState.diff}
         error={fileDiffState.error}
         loading={fileDiffState.status === 'loading'}
@@ -60,38 +61,28 @@ export function ChangedFilesWorkbench({
       />
     </div>
   ) : null
-  if (!files.length && emptyFilesMessage === undefined) return diff
+  if (!navigator && emptyFilesMessage === undefined) return diff
   const desktopPlaceholder = emptyFilesMessage === undefined
     ? placeholder
     : <div className={DIFF_PANE_CLASS}>{placeholder}</div>
   return (
-    <FileWorkbench
-      navigationOpen={navigation.open}
-      onNavigationOpenChange={navigation.setOpen}
-      selectedPath={selectedFilePath}
-    >
-      <div
-        aria-label={navigationLabel}
-        className="min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        ref={navigation.ref}
-        tabIndex={-1}
+    <>
+      {toolbar}
+      <FileWorkbench
+        navigationOpen={navigation.open}
+        onNavigationOpenChange={navigation.setOpen}
+        selectedPath={selectedFilePath}
       >
-        {files.length ? (
-          <FileSystemTree
-            expandFolders={expandFolders}
-            files={files}
-            getFileMeta={(file) => <Badge variant="neutral">{file.kind}</Badge>}
-            metaColumnLabel="Change"
-            showVisibility
-            onSelectFile={(file) => {
-              onSelectFile(file)
-              navigation.setOpen(false)
-            }}
-            selectedFilePath={selectedVisibilityId ? null : selectedFilePath}
-          />
-        ) : <EmptyState inline className="py-8" title={emptyFilesMessage ?? ''} />}
-      </div>
-      {diff ?? <div className="hidden lg:contents">{desktopPlaceholder}</div>}
-    </FileWorkbench>
+        <div
+          aria-label={navigationLabel}
+          className="min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          ref={navigation.ref}
+          tabIndex={-1}
+        >
+          {navigator || <EmptyState inline className="py-8" title={emptyFilesMessage ?? ''} />}
+        </div>
+        {diff ?? <div className="hidden lg:contents">{desktopPlaceholder}</div>}
+      </FileWorkbench>
+    </>
   )
 }
