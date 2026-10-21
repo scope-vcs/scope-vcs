@@ -8,39 +8,73 @@ const execFileAsync = promisify(execFile)
 
 export const maxFixedWaitMs = 5_000
 
-const number = String.raw`([\d_]+(?:\.[\d_]+)?)`
-const toNumber = (text) => Number(text.replaceAll('_', ''))
-
-const rustDuration = new RegExp(String.raw`^(?:std::time::|tokio::time::)?Duration::from_(secs|millis|secs_f32|secs_f64)\(\s*${number}\s*\)$`)
-const scriptWaits = [
-  new RegExp(String.raw`waitForTimeout\(\s*${number}\s*\)`, 'g'),
-  new RegExp(String.raw`setTimeout\(\s*(?:resolve|res|r|done)\s*,\s*${number}\s*\)`, 'g'),
-  new RegExp(String.raw`\b(?:delay|sleep|setTimeout)\(\s*${number}\s*[,)]`, 'g'),
-]
-const pythonWait = new RegExp(String.raw`\bsleep\(\s*${number}\s*\)`, 'g')
-const shellWait = new RegExp(String.raw`(?:^|[\s;&|(])(?:/bin/)?sleep\s+${number}\b`, 'g')
-
 const scriptExtensions = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx'])
+const testTokens = new Set(['test', 'tests', 'spec'])
+const testSegments = new Set(['tests', 'test_support', 'smoke'])
+const guardCallback = /\b(reject|throw|abort|kill)\b/
+const rustDurationScale = {
+  from_nanos: 1e-6,
+  from_micros: 1e-3,
+  from_millis: 1,
+  from_secs: 1_000,
+  from_secs_f32: 1_000,
+  from_secs_f64: 1_000,
+  from_mins: 60_000,
+  from_hours: 3_600_000,
+}
+const shellSuffixScale = { '': 1_000, s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 }
+
+function isTestPath(normalized) {
+  const segments = normalized.split('/')
+  const basename = segments.pop()
+  const tokens = basename.split(/[-_.]/)
+  return tokens.some((token) => testTokens.has(token))
+    || segments.some((segment) => testSegments.has(segment) || segment.endsWith('_tests'))
+}
 
 export function testLanguage(file) {
   const normalized = file.replaceAll('\\', '/')
-  const basename = path.posix.basename(normalized)
-  const extension = path.posix.extname(basename)
-  const segments = normalized.split('/')
-  if (extension === '.rs') {
-    const testPath = segments.some((segment) =>
-      segment === 'tests' || segment === 'test_support' || segment.endsWith('_tests'))
-    return testPath || basename === 'tests.rs' || basename.endsWith('_tests.rs') ? 'rust' : 'rust-inline'
-  }
-  if (scriptExtensions.has(extension)) {
-    const testPath = /\.(test|spec)\.[cm]?[jt]sx?$/.test(basename) || normalized.startsWith('web/smoke/')
-    return testPath ? 'script' : null
-  }
-  if (extension === '.py') return /^test_.*\.py$/.test(basename) ? 'python' : null
-  if (extension === '.sh' || extension === '.bash') {
-    return /(^|[-_])test([-_.]|$)/.test(basename.replace(/\.(sh|bash)$/, '')) ? 'shell' : null
-  }
+  const extension = path.posix.extname(normalized)
+  const testPath = isTestPath(normalized)
+  if (extension === '.rs') return testPath ? 'rust' : 'rust-inline'
+  if (!testPath) return null
+  if (scriptExtensions.has(extension)) return 'script'
+  if (extension === '.py') return 'python'
+  if (extension === '.sh' || extension === '.bash') return 'shell'
   return null
+}
+
+function literalNumber(text) {
+  const trimmed = text.trim()
+  return /^\d[\d_]*(\.[\d_]+)?$/.test(trimmed) ? Number(trimmed.replaceAll('_', '')) : null
+}
+
+function callArguments(contents, start) {
+  const args = []
+  let depth = 1
+  let current = ''
+  let index = start
+  for (; index < contents.length && depth > 0; index += 1) {
+    const character = contents[index]
+    if (character === '(' || character === '[' || character === '{') depth += 1
+    if (character === ')' || character === ']' || character === '}') depth -= 1
+    if (depth === 0) break
+    if (character === ',' && depth === 1) {
+      args.push(current)
+      current = ''
+    } else {
+      current += character
+    }
+  }
+  args.push(current)
+  return args.map((arg) => arg.replace(/\s+/g, ' ').trim())
+}
+
+function* calls(contents, pattern) {
+  for (const match of contents.matchAll(pattern)) {
+    const line = contents.slice(0, match.index).split('\n').length
+    yield { name: match[1], line, args: callArguments(contents, match.index + match[0].length) }
+  }
 }
 
 function realClockLines(lines, inlineOnly) {
@@ -51,63 +85,64 @@ function realClockLines(lines, inlineOnly) {
     if (inlineOnly && trimmed === '#[cfg(test)]' && /^\s*mod \w+ \{/.test(lines[index + 1] ?? '')) inTest = true
     if (/^#\[(tokio::)?test\b/.test(trimmed)) paused = /start_paused\s*=\s*true/.test(trimmed)
     if (/\btime::pause\(\)/.test(trimmed)) paused = true
+    if (/\btime::resume\(\)/.test(trimmed)) paused = false
     return inTest && !paused
   })
 }
 
-function sleepArgument(contents, start) {
-  let depth = 1
-  let end = start
-  while (end < contents.length && depth > 0) {
-    if (contents[end] === '(') depth += 1
-    else if (contents[end] === ')') depth -= 1
-    end += 1
-  }
-  return contents.slice(start, end - 1).replace(/\s+/g, ' ').trim()
-}
-
 function rustWaitMs(argument) {
-  const literal = argument.match(rustDuration)
-  if (literal) return (literal[1] === 'millis' ? 1 : 1_000) * toNumber(literal[2])
-  return /^(?:std::time::|tokio::time::)?Duration::from_secs\(/.test(argument) ? Infinity : 0
+  const constructor = argument.match(/^(?:std::time::|tokio::time::)?Duration::(\w+)\((.*)\)$/)
+  if (!constructor) return 0
+  const [, name, inner] = constructor
+  const value = literalNumber(name === 'new' ? inner.split(',')[0] : inner)
+  if (name === 'new') return value === null ? 0 : value * 1_000
+  const scale = rustDurationScale[name]
+  if (!scale) return 0
+  if (value !== null) return value * scale
+  return scale >= 1_000 ? Infinity : 0
 }
 
-function rustWaits(file, contents, inlineOnly) {
-  const lines = contents.split('\n')
-  const realClock = realClockLines(lines, inlineOnly)
-  const found = []
-  for (const match of contents.matchAll(/\bsleep\(/g)) {
-    const index = contents.slice(0, match.index).split('\n').length - 1
-    if (!realClock[index]) continue
-    const argument = sleepArgument(contents, match.index + match[0].length)
-    const waitMs = rustWaitMs(argument)
-    if (waitMs >= maxFixedWaitMs) found.push({ file, line: index + 1, waitMs, text: `sleep(${argument})` })
+function rustWaits(contents, inlineOnly) {
+  const realClock = realClockLines(contents.split('\n'), inlineOnly)
+  return [...calls(contents, /\b(sleep)\(/g)]
+    .filter(({ line }) => realClock[line - 1])
+    .map(({ line, args }) => ({ line, waitMs: rustWaitMs(args.join(', ')), text: `sleep(${args.join(', ')})` }))
+}
+
+function scriptWaitMs({ name, args }) {
+  if (name === 'setTimeout' && args.length >= 2) {
+    return guardCallback.test(args[0]) ? 0 : literalNumber(args[1]) ?? 0
   }
-  return found
+  return literalNumber(args[0]) ?? 0
 }
 
-function patternWaits(file, lines, patterns, scale) {
-  const found = []
-  lines.forEach((line, index) => {
-    for (const pattern of patterns) {
-      for (const match of line.matchAll(pattern)) {
-        const waitMs = toNumber(match[1]) * scale
-        if (waitMs >= maxFixedWaitMs) found.push({ file, line: index + 1, waitMs, text: line.trim() })
-      }
-    }
-  })
-  return found
+function scriptWaits(contents) {
+  return [...calls(contents, /\b(waitForTimeout|setTimeout|delay|sleep)\(/g)]
+    .map((call) => ({ line: call.line, waitMs: scriptWaitMs(call), text: `${call.name}(${call.args.join(', ')})` }))
+}
+
+function pythonWaits(contents) {
+  return [...calls(contents, /\b(sleep)\(/g)]
+    .map(({ line, args }) => ({ line, waitMs: (literalNumber(args[0]) ?? 0) * 1_000, text: `sleep(${args.join(', ')})` }))
+}
+
+function shellWaits(contents) {
+  return contents.split('\n').flatMap((text, index) =>
+    [...text.matchAll(/(?:^|[\s;&|(])(?:\/bin\/)?sleep\s+(\d+(?:\.\d+)?)([smhd]?)(?=$|[\s;&|)])/g)]
+      .map((match) => ({ line: index + 1, waitMs: Number(match[1]) * shellSuffixScale[match[2]], text: text.trim() })))
 }
 
 export function findLongWaits(file, contents) {
   const language = testLanguage(file)
-  if (!language) return []
-  if (language === 'rust') return rustWaits(file, contents, false)
-  if (language === 'rust-inline') return rustWaits(file, contents, true)
-  const lines = contents.split('\n')
-  if (language === 'script') return patternWaits(file, lines, scriptWaits, 1)
-  if (language === 'python') return patternWaits(file, lines, [pythonWait], 1_000)
-  return patternWaits(file, lines, [shellWait], 1_000)
+  const waits = language === 'rust' ? rustWaits(contents, false)
+    : language === 'rust-inline' ? rustWaits(contents, true)
+      : language === 'script' ? scriptWaits(contents)
+        : language === 'python' ? pythonWaits(contents)
+          : language === 'shell' ? shellWaits(contents)
+            : []
+  return waits
+    .filter(({ waitMs }) => waitMs >= maxFixedWaitMs)
+    .map(({ line, waitMs, text }) => ({ file, line, waitMs, text }))
 }
 
 async function repositoryFiles(root) {

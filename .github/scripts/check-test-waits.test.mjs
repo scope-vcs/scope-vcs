@@ -19,6 +19,10 @@ test('classifies test sources by path', () => {
   assert.equal(testLanguage('.github/scripts/test-deploy-backend-railway.sh'), 'shell')
   assert.equal(testLanguage('.github/scripts/backend-cutover-test-provider.sh'), 'shell')
   assert.equal(testLanguage('.github/scripts/deploy-railway.sh'), null)
+  assert.equal(testLanguage('deploy/aws/recovery/storage.test.py'), 'python')
+  assert.equal(testLanguage('deploy/aws/recovery/tests/test_recovery.py'), 'python')
+  assert.equal(testLanguage('media-worker/tests/assert-codec-output.sh'), 'shell')
+  assert.equal(testLanguage('web/src/lib/latest.ts'), null)
 })
 
 test('rejects long real-clock sleeps in Rust tests', () => {
@@ -29,9 +33,13 @@ test('rejects long real-clock sleeps in Rust tests', () => {
     '    tokio::time::sleep(Duration::from_millis(5_000)).await;',
     '    std::thread::sleep(Duration::from_millis(4_999));',
     '    sleep(Duration::from_secs_f64(0.5)).await;',
+    '    sleep(Duration::from_micros(5_000_000)).await;',
+    '    sleep(Duration::from_nanos(5_000_000_000)).await;',
+    '    sleep(Duration::new(5, 0)).await;',
+    '    sleep(Duration::from_mins(1)).await;',
     '}',
   ].join('\n')
-  assert.deepEqual(lines(findLongWaits('api/src/merge/tests.rs', source)), [3, 4])
+  assert.deepEqual(lines(findLongWaits('api/src/merge/tests.rs', source)), [3, 4, 7, 8, 9, 10])
 })
 
 test('rejects computed second-scale sleeps split across lines', () => {
@@ -61,11 +69,17 @@ test('allows long sleeps on a paused tokio clock', () => {
     '    tokio::time::sleep(Duration::from_secs(30)).await;',
     '}',
     '#[tokio::test]',
+    'async fn resumed() {',
+    '    tokio::time::pause();',
+    '    tokio::time::resume();',
+    '    tokio::time::sleep(Duration::from_secs(30)).await;',
+    '}',
+    '#[tokio::test]',
     'async fn real() {',
     '    tokio::time::sleep(Duration::from_secs(30)).await;',
     '}',
   ].join('\n')
-  assert.deepEqual(lines(findLongWaits('crates/x/tests/clock.rs', source)), [12])
+  assert.deepEqual(lines(findLongWaits('crates/x/tests/clock.rs', source)), [14, 18])
 })
 
 test('checks only inline test modules in production Rust files', () => {
@@ -93,13 +107,17 @@ test('rejects long fixed waits in script tests but not timeout guards', () => {
     call('setTimeout', '5000'),
     call('setTimeout', '() => reject(new Error("stuck")), 30_000'),
     call('page.waitForTimeout', '700'),
+    call('new Promise((finish) => setTimeout', '() => finish(), 10_000)'),
+    call('page.waitForTimeout', '\n  5_000\n'),
+    call('setTimeout', '() => controller.abort(), 30_000'),
   ].join('\n')
-  assert.deepEqual(lines(findLongWaits('web/smoke/layout.spec.mjs', source)), [1, 2, 3, 4])
+  assert.deepEqual(lines(findLongWaits('web/smoke/layout.spec.mjs', source)), [1, 2, 3, 4, 7, 8])
   assert.deepEqual(findLongWaits('web/src/lib/delay.ts', call('delay', '10_000')), [])
 })
 
 test('rejects long sleeps in Python and shell test harnesses', () => {
-  assert.deepEqual(lines(findLongWaits('dev/test_stack.py', 'time.sleep(5)\ntime.sleep(0.5)')), [1])
-  const shell = 'sleep 0.05\nretry || sleep 5\n/bin/sleep 12\n'
-  assert.deepEqual(lines(findLongWaits('.github/scripts/test-deploy.sh', shell)), [2, 3])
+  const python = 'time.sleep(5)\ntime.sleep(0.5)\nawait asyncio.sleep(\n    6\n)'
+  assert.deepEqual(lines(findLongWaits('dev/test_stack.py', python)), [1, 3])
+  const shell = 'sleep 0.05\nretry || sleep 5\n/bin/sleep 12\nsleep 5s\nsleep 0.1m\nsleep 2s\n'
+  assert.deepEqual(lines(findLongWaits('.github/scripts/test-deploy.sh', shell)), [2, 3, 4, 5])
 })
