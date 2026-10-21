@@ -77,6 +77,11 @@ test('update changes list code and visibility changes once, filtered, grouped, a
 
   await page.getByRole('button', { name: 'Clear path filter' }).click()
   await page.setViewportSize({ width: 390, height: 844 })
+  await list.getByRole('button', { name: 'file_02.rs Public visibility', exact: true }).first().click()
+  assert.equal(await list.isVisible(), false)
+  await page.getByRole('searchbox', { name: 'Filter changed paths' }).fill('policy')
+  await visibilityOnly.waitFor()
+  await page.getByRole('button', { name: 'Clear path filter' }).click()
   await page.getByRole('button', { name: 'Expand all' }).click()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await screenshot(page, 'mobile')

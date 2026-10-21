@@ -153,7 +153,10 @@ export function HistoryEntryChanges({
             navigation.setOpen(true)
           }}
           onOpenNavigation={() => navigation.setOpen(true)}
-          onQueryChange={setQuery}
+          onQueryChange={(next) => {
+            setQuery(next)
+            navigation.setOpen(true)
+          }}
           onToggleAll={() => setOpenGroups((open) => {
             const next = new Set(open)
             for (const group of shownGroups) {
