@@ -2,8 +2,10 @@ use super::responses::{
     ConnectGitHubRepositoryRequest, GitHubAuthorizeRequest, GitHubAuthorizeResponse,
     GitHubConnectionParts, GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
     GitHubWorkflowNamesResponse, GitHubWorkflowRunListResponse, GitHubWorkflowRunsResponse,
-    SetGitHubRequiredChecksRequest, SetGitHubReviewBotsRequest, SetGitHubRunImportCountRequest,
-    github_connection_response, github_repository_response, github_workflow_run_response,
+    SetGitHubRequiredChecksRequest, SetGitHubReviewBotPullRequestsRequest,
+    SetGitHubReviewBotsRequest, SetGitHubReviewRequestCommentRequest,
+    SetGitHubRunImportCountRequest, github_connection_response, github_repository_response,
+    github_workflow_run_response,
 };
 use crate::{
     auth::scope::require_scope_user,
@@ -22,8 +24,8 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
-        github_check_results, github_pushes, github_review_imports, github_workflow_jobs,
-        github_workflow_runs, run_inspection::require_full_view_member,
+        github_check_results, github_pull_requests, github_pushes, github_review_imports,
+        github_workflow_jobs, github_workflow_runs, run_inspection::require_full_view_member,
     },
 };
 use axum::{
@@ -239,6 +241,42 @@ pub(crate) async fn set_github_review_bots(
                 .map(|bot| GitHubReviewBotInput { login: bot.login })
                 .collect(),
         )
+        .await?;
+    changed(&state, &context, &incarnation).await
+}
+
+pub(crate) async fn set_github_review_bot_pull_requests(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<SetGitHubReviewBotPullRequestsRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    let incarnation = state
+        .metadata
+        .repositories()
+        .set_github_review_bot_pull_requests(
+            &context.record.id,
+            &user_id,
+            input.enabled,
+            unix_now()?,
+        )
+        .await?;
+    state.wakeups.github_pull_requests.notify_one();
+    changed(&state, &context, &incarnation).await
+}
+
+pub(crate) async fn set_github_review_request_comment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<SetGitHubReviewRequestCommentRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    let incarnation = state
+        .metadata
+        .repositories()
+        .set_github_review_request_comment(&context.record.id, &user_id, &input.comment)
         .await?;
     changed(&state, &context, &incarnation).await
 }
@@ -491,6 +529,17 @@ pub(crate) async fn receive_github_webhook(
         GitHubWebhookEvent::ReviewActivity(delivery) => {
             github_review_imports::queue_github_review_delivery(&state, delivery, unix_now()?)
                 .await?;
+        }
+        GitHubWebhookEvent::PullRequestChanged {
+            github_repository_id,
+            request_id,
+        } => {
+            github_pull_requests::note_github_pull_request_delivery(
+                &state,
+                github_repository_id,
+                &request_id,
+            )
+            .await?;
         }
         GitHubWebhookEvent::Ignored => {}
     }

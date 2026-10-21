@@ -152,6 +152,14 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(http::github::set_github_review_bots),
         )
         .route(
+            routes::REPO_GITHUB_REVIEW_BOT_PULL_REQUESTS,
+            axum::routing::put(http::github::set_github_review_bot_pull_requests),
+        )
+        .route(
+            routes::REPO_GITHUB_REVIEW_REQUEST_COMMENT,
+            axum::routing::put(http::github::set_github_review_request_comment),
+        )
+        .route(
             routes::REPO_GITHUB_PUBLIC_CONFIRMATION,
             post(http::github::confirm_public_github_repository),
         )

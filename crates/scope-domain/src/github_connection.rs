@@ -15,7 +15,16 @@ pub struct GitHubConnection {
     pub connected_at_unix: u64,
     pub status: GitHubConnectionStatus,
     pub visibility: GitHubRepositoryVisibility,
+    pub review_bots: GitHubReviewBotSettings,
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GitHubReviewBotSettings {
+    pub open_pull_requests: bool,
+    pub review_request_comment: Option<String>,
+}
+
+pub const REVIEW_REQUEST_COMMENT_MAX_CHARS: usize = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitHubRepositoryVisibility {
@@ -117,6 +126,7 @@ impl GitHubConnection {
             reason,
             at_unix: now_unix.max(self.connected_at_unix),
         };
+        self.review_bots = GitHubReviewBotSettings::default();
         true
     }
 }
@@ -175,6 +185,7 @@ pub fn connect_github_repository(
         connected_at_unix: command.now_unix,
         status: GitHubConnectionStatus::Connected,
         visibility,
+        review_bots: GitHubReviewBotSettings::default(),
     })
 }
 
@@ -225,6 +236,43 @@ pub fn disconnect_github_repository(
         ));
     }
     Ok(())
+}
+
+pub fn set_review_bot_pull_requests(
+    access: RepositoryAccess,
+    current: Option<&GitHubConnection>,
+    enabled: bool,
+) -> Result<GitHubConnection, DomainError> {
+    let mut connection = linked_connection(access, current)?;
+    connection.review_bots.open_pull_requests = enabled;
+    Ok(connection)
+}
+
+pub fn set_review_request_comment(
+    access: RepositoryAccess,
+    current: Option<&GitHubConnection>,
+    comment: &str,
+) -> Result<GitHubConnection, DomainError> {
+    let mut connection = linked_connection(access, current)?;
+    let comment = comment.trim();
+    if comment.chars().count() > REVIEW_REQUEST_COMMENT_MAX_CHARS {
+        return Err(DomainError::invalid_input(format!(
+            "The review request comment can be at most {REVIEW_REQUEST_COMMENT_MAX_CHARS} characters."
+        )));
+    }
+    connection.review_bots.review_request_comment =
+        (!comment.is_empty()).then(|| comment.to_string());
+    Ok(connection)
+}
+
+fn linked_connection(
+    access: RepositoryAccess,
+    current: Option<&GitHubConnection>,
+) -> Result<GitHubConnection, DomainError> {
+    ensure_maintainer(access)?;
+    current
+        .cloned()
+        .ok_or_else(|| DomainError::not_found("this repository is not connected to GitHub"))
 }
 
 pub const GITHUB_REQUIRED_CHECKS_LIMIT: usize = 50;

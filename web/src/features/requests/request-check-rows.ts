@@ -1,4 +1,8 @@
-import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
+import type {
+  RequestCheckResponse,
+  RequestChecksResponse,
+  RequestGitHubPullRequestResponse,
+} from '@/api/types.generated'
 import { githubRunResult } from '../runs/github-run-status'
 import { runJobPanelId } from '../runs/run-job-ids'
 import { type RunTone, runStatus } from '../runs/run-status'
@@ -91,6 +95,41 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
     : null
 
   return { status, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
+}
+
+export type RequestPullRequestView = {
+  text: string
+  url: string | null
+  note: { text: string; failed: boolean } | null
+}
+
+export function requestPullRequestView(
+  pullRequest: RequestGitHubPullRequestResponse | null,
+): RequestPullRequestView | null {
+  if (!pullRequest) return null
+  const named = pullRequest.number === null ? null : `Pull request #${pullRequest.number} on GitHub`
+  const url = named ? pullRequest.url : null
+  const error = pullRequest.error
+  switch (pullRequest.state) {
+    case 'opening':
+      return {
+        text: 'Opening a pull request on GitHub',
+        url: null,
+        note: error ? { text: `The last attempt failed: ${error}`, failed: false } : null,
+      }
+    case 'open':
+      return { text: named ?? 'Pull request on GitHub', url, note: null }
+    case 'closed':
+      return { text: `${named ?? 'Pull request on GitHub'} · closed`, url, note: null }
+    case 'closed_on_github':
+      return { text: `${named ?? 'Pull request on GitHub'} · closed on GitHub`, url, note: null }
+    case 'failed':
+      return {
+        text: named ? `${named} is out of step` : 'Scope couldn’t open a pull request on GitHub',
+        url,
+        note: error ? { text: error, failed: true } : null,
+      }
+  }
 }
 
 type RequestCheckGroup =

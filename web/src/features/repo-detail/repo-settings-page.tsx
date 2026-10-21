@@ -5,6 +5,8 @@ import type {
   RepoParams,
   SetRepoGitHubRequiredChecksInput,
   SetRepoGitHubReviewBotsInput,
+  SetRepoGitHubReviewBotPullRequestsInput,
+  SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
@@ -58,6 +60,8 @@ export function RepoSettingsPage({
   params,
   setGitHubRequiredChecks,
   setGitHubReviewBots,
+  setGitHubReviewBotPullRequests,
+  setGitHubReviewRequestComment,
   setGitHubRunImportCount,
   startGitHubAuthorization,
   startGitHubRunImport,
@@ -86,6 +90,12 @@ export function RepoSettingsPage({
   ) => Promise<GitHubConnectionResponse>
   setGitHubReviewBots: (
     input: SetRepoGitHubReviewBotsInput,
+  ) => Promise<GitHubConnectionResponse>
+  setGitHubReviewBotPullRequests: (
+    input: SetRepoGitHubReviewBotPullRequestsInput,
+  ) => Promise<GitHubConnectionResponse>
+  setGitHubReviewRequestComment: (
+    input: SetRepoGitHubReviewRequestCommentInput,
   ) => Promise<GitHubConnectionResponse>
   setGitHubRunImportCount: (
     input: SetRepoGitHubRunImportCountInput,
@@ -197,6 +207,8 @@ export function RepoSettingsPage({
             ...params,
             bots: logins.map((login) => ({ login })),
           })}
+          setReviewBotPullRequests={(enabled) => setGitHubReviewBotPullRequests({ ...params, enabled })}
+          setReviewRequestComment={(comment) => setGitHubReviewRequestComment({ ...params, comment })}
           setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}
           startAuthorization={() => startGitHubAuthorization(params)}
           startRunImport={() => startGitHubRunImport(params)}

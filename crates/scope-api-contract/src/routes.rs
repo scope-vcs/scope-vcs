@@ -46,6 +46,10 @@ routes! {
             => "repoGitHubRequiredChecks";
         REPO_GITHUB_REVIEW_BOTS = "/v1/repos/{owner}/{repo}/github/review-bots"
             => "repoGitHubReviewBots";
+        REPO_GITHUB_REVIEW_BOT_PULL_REQUESTS = "/v1/repos/{owner}/{repo}/github/review-bot-pull-requests"
+            => "repoGitHubReviewBotPullRequests";
+        REPO_GITHUB_REVIEW_REQUEST_COMMENT = "/v1/repos/{owner}/{repo}/github/review-request-comment"
+            => "repoGitHubReviewRequestComment";
         REPO_GITHUB_PUBLIC_CONFIRMATION = "/v1/repos/{owner}/{repo}/github/public-confirmation"
             => "repoGitHubPublicConfirmation";
         REPO_GITHUB_SETUP_CHECK = "/v1/repos/{owner}/{repo}/github/setup-check"
