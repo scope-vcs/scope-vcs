@@ -323,7 +323,10 @@ whose answer was lost is not posted twice.
 Closing or merging the request closes its carrier. The decision lives in
 `closes_carrier_pull_request` in `scope-domain`. A close counts only when
 GitHub confirms it or reports the pull request already closed or merged; a
-pull request Scope cannot reach is an error that retries. When someone other
+pull request Scope cannot reach is an error that retries. A request that ends
+before Scope recorded its carrier's number, for example because GitHub's
+answer to the create was lost, gets its open pull request looked up by
+branch, adopted and closed. When someone other
 than the app closes a carrier while its request is open, Scope records it as
 closed on GitHub and leaves it closed until someone reopens it there. A
 carrier GitHub closed because the app deleted its base branch is replaced by

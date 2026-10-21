@@ -122,7 +122,11 @@ async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<()
         let Some(step) = carrier.next_step(&review_bots, digest) else {
             return Ok(());
         };
-        if !checked_visibility && !matches!(step, GitHubPullRequestStep::Close { .. }) {
+        let closing = matches!(
+            step,
+            GitHubPullRequestStep::Close { .. } | GitHubPullRequestStep::AdoptToClose
+        );
+        if !checked_visibility && !closing {
             let connection = connection.as_ref().ok_or_else(|| {
                 JobFailure::GiveUp(
                     "This repository is no longer connected to that GitHub repository.".to_string(),
@@ -131,9 +135,17 @@ async fn advance(state: &AppState, carrier: &mut GitHubPullRequest) -> Result<()
             ensure_may_carry(state, carrier, connection).await?;
             checked_visibility = true;
         }
-        take_step(&app, carrier, step, &review_bots, text.as_ref()).await?;
+        if take_step(&app, carrier, step, &review_bots, text.as_ref()).await? == Flow::Stop {
+            return Ok(());
+        }
     }
     Ok(())
+}
+
+#[derive(PartialEq, Eq)]
+enum Flow {
+    Continue,
+    Stop,
 }
 
 async fn refresh_from_github(
@@ -195,7 +207,7 @@ async fn take_step(
     step: GitHubPullRequestStep,
     review_bots: &GitHubReviewBotSettings,
     text: Option<&CarrierText>,
-) -> Result<(), JobFailure> {
+) -> Result<Flow, JobFailure> {
     let text = || {
         text.ok_or_else(|| {
             JobFailure::GiveUp("Scope could not prepare the pull request text.".to_string())
@@ -285,6 +297,17 @@ async fn take_step(
             }
             carrier.record_commented(head_oid);
         }
+        GitHubPullRequestStep::AdoptToClose => {
+            let head = carrier.branch().name();
+            let Some(GitHubPullRequestRecord { number, url, base }) = app
+                .open_pull_request_for_head(installation_id, &full_name, &head)
+                .await
+                .map_err(call_failure)?
+            else {
+                return Ok(Flow::Stop);
+            };
+            carrier.record_opened(number, url, base, None);
+        }
         GitHubPullRequestStep::Close { number } => {
             match app
                 .update_pull_request(
@@ -310,7 +333,7 @@ async fn take_step(
             }
         }
     }
-    Ok(())
+    Ok(Flow::Continue)
 }
 
 struct CarrierText {

@@ -397,3 +397,20 @@ async fn a_close_delivered_before_the_first_run_saved_the_pull_request_still_win
     assert!(comments(fake).is_empty());
     assert_eq!(fake.pulls.pulls.lock().unwrap().len(), 1);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn closing_a_request_closes_a_carrier_whose_number_was_never_recorded() {
+    let request = opted_in_request("carrier-unrecorded-close").await;
+    let (state, fake) = (&request.state, &request.fake);
+    push_pass(state, unix_now()).await;
+    let lost = fake.pulls.open(&request.branch(), "main");
+
+    close_request(&request).await;
+    assert_eq!(pull_request_pass(state).await, 1);
+    assert_eq!(fake.pulls.pull(lost)["state"], "closed");
+    assert_eq!(
+        request.checks().await["github_pull_request"]["state"],
+        "closed"
+    );
+    assert_eq!(pull_request_pass(state).await, 0);
+}

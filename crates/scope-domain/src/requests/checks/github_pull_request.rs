@@ -62,6 +62,7 @@ pub enum GitHubPullRequestStep {
     Retarget { number: u64, base: String },
     UpdateText { number: u64, text: String },
     Comment { number: u64, head_oid: String },
+    AdoptToClose,
     Close { number: u64 },
 }
 
@@ -195,11 +196,14 @@ impl GitHubPullRequest {
                 }
                 _ => Some(GitHubPullRequestStep::OpenOrAdopt { base: base.clone() }),
             },
-            GitHubPullRequestIntent::Close => opened
-                .filter(|opened| opened.state == GitHubPullRequestState::Open)
-                .map(|opened| GitHubPullRequestStep::Close {
-                    number: opened.number,
-                }),
+            GitHubPullRequestIntent::Close => match opened {
+                None => Some(GitHubPullRequestStep::AdoptToClose),
+                Some(opened) => (opened.state == GitHubPullRequestState::Open).then_some(
+                    GitHubPullRequestStep::Close {
+                        number: opened.number,
+                    },
+                ),
+            },
         }
     }
 

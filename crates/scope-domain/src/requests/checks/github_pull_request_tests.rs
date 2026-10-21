@@ -209,10 +209,14 @@ fn an_open_intent_opens_retargets_then_comments_once_per_head() {
 }
 
 #[test]
-fn a_close_intent_closes_only_an_open_carrier_even_with_the_setting_off() {
+fn a_close_intent_finds_an_unrecorded_carrier_and_closes_only_an_open_one_even_with_the_setting_off()
+ {
     let off = &settings(false, None);
     let mut carrier = carrier(GitHubPullRequestIntent::Close);
-    assert_eq!(carrier.next_step(off, None), None);
+    assert_eq!(
+        carrier.next_step(off, None),
+        Some(GitHubPullRequestStep::AdoptToClose)
+    );
     assert_eq!(carrier.status(), None);
     carrier.record_opened(5, "url".into(), "main".into(), None);
     assert_eq!(
