@@ -1,8 +1,10 @@
-import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { posthogRequest } from './sync-reports.mjs'
 
 export async function configureGeoip(request, hog, { apply = false } = {}) {
+  hog = hog.trim()
   const project = await request('')
   const matches = []
   const visited = new Set()
@@ -56,14 +58,26 @@ export async function configureGeoip(request, hog, { apply = false } = {}) {
 
 async function main() {
   const args = process.argv.slice(2)
-  if (args.length !== 1 || !['--preview', '--apply'].includes(args[0])) {
-    throw new Error('Usage: node dev/analytics/configure-geoip.mjs --preview|--apply')
+  if (args.length !== 1 || !['--preview', '--apply', '--export-bytecode'].includes(args[0])) {
+    throw new Error('Usage: node dev/analytics/configure-geoip.mjs --preview|--apply|--export-bytecode')
   }
   const hog = await readFile(new URL('./geoip.hog', import.meta.url), 'utf8')
-  const result = await configureGeoip(posthogRequest({
+  const request = posthogRequest({
     apiKey: process.env.POSTHOG_PERSONAL_API_KEY, projectId: process.env.POSTHOG_PROJECT_ID,
     host: process.env.POSTHOG_APP_HOST,
-  }), hog, { apply: args[0] === '--apply' })
+  })
+  const result = await configureGeoip(request, hog, { apply: args[0] === '--apply' })
+  if (args[0] === '--export-bytecode') {
+    const compiled = await request(`hog_functions/${encodeURIComponent(result.functionId)}/`)
+    if (compiled.hog !== hog.trim() || !Array.isArray(compiled.bytecode) || compiled.draft != null) {
+      throw new Error('Configure the test project with this exact source before exporting bytecode')
+    }
+    await writeFile(new URL('./geoip.bytecode.json', import.meta.url), JSON.stringify({
+      sourceSha256: createHash('sha256').update(hog).digest('hex'),
+      bytecode: compiled.bytecode,
+    }, null, 2) + '\n')
+    result.status = 'bytecode-exported'
+  }
   console.log(JSON.stringify(result, null, 2))
 }
 

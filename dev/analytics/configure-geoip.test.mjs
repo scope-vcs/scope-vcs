@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 import { configureGeoip } from './configure-geoip.mjs'
 
-const hog = await readFile(new URL('./geoip.hog', import.meta.url), 'utf8')
+const hog = (await readFile(new URL('./geoip.hog', import.meta.url), 'utf8')).trim()
 const current = {
   id: 'geoip-1', template: { id: 'template-geoip' }, name: 'Scope approximate location',
   hog, enabled: true, updated_at: '2026-10-21T12:00:00Z', execution_order: 2,
@@ -79,7 +79,7 @@ test('preview reports changes without mutation and applying twice does not repea
   assert.equal(calls.every(({ method }) => method === 'GET'), true)
   await configureGeoip(request, hog, { apply: true })
   calls.length = 0
-  assert.equal((await configureGeoip(request, hog, { apply: true })).status, 'verified')
+  assert.equal((await configureGeoip(request, `\n${hog}\n`, { apply: true })).status, 'verified')
   assert.equal(calls.length, 5)
   assert.equal(calls.every(({ method }) => method === 'GET'), true)
 })

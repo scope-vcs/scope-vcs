@@ -159,6 +159,16 @@
           "sha256": "5ec8c7b26b64d881a6706617bed25c049f97f2f35de034c756de8546fd6dbe27"
         }
       ]
+    },
+    "web:@posthog/hogvm@1.0.71": {
+      "reason_key": "published-githead-license",
+      "documents": [
+        {
+          "path": "legal/upstream/PostHog-hogvm-dbd5fe59fc8c-LICENSE",
+          "url": "https://raw.githubusercontent.com/PostHog/posthog/dbd5fe59fc8c8700fc62d34d46ac3f11aae8c066/LICENSE",
+          "sha256": "6d82d67dba42eb94ba10f1e986d2eec338c22fb7c5216c2c0ebdecd83d53a029"
+        }
+      ]
     }
   }
 }
