@@ -137,7 +137,6 @@ impl MigrationTrait for Migration {
 
                 ALTER TABLE scope_github_connections
                     ADD COLUMN link_id character varying NOT NULL DEFAULT gen_random_uuid()::text;
-                ALTER TABLE scope_github_connections ALTER COLUMN link_id DROP DEFAULT;
 
                 CREATE TABLE scope_github_review_bots (
                     repo_id character varying NOT NULL,
