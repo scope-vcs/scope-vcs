@@ -70,6 +70,7 @@ export function RequestMoreMenu({
         trigger={({ onClick, ref, ...props }) => (
           <Button
             aria-label="More request actions"
+            className="-mr-2"
             onClick={(event) => {
               const { right } = event.currentTarget.getBoundingClientRect()
               setAlign(right < MENU_CLEARANCE_PX ? 'start' : 'end')
