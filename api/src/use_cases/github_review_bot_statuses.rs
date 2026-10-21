@@ -100,6 +100,7 @@ async fn read_statuses(
             reconcile.installation_id,
             &reconcile.github_full_name,
             reconcile.number,
+            head_delivered_at_unix,
         )
         .await?;
     for review_id in

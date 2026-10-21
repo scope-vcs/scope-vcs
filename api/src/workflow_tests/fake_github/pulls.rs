@@ -102,21 +102,48 @@ impl FakePulls {
         ));
     }
 
+    pub(in crate::workflow_tests) fn react_many_as(
+        &self,
+        number: u64,
+        login: &str,
+        count: usize,
+        created_at: &str,
+    ) {
+        for _ in 0..count {
+            self.react_as(number, login, "eyes", created_at);
+        }
+    }
+
     fn listed(
         items: &Mutex<Vec<(u64, serde_json::Value)>>,
         number: u64,
         query: &HashMap<String, String>,
-    ) -> Vec<serde_json::Value> {
-        if query.get("page").map(String::as_str) != Some("1") {
-            return Vec::new();
-        }
-        items
+    ) -> axum::response::Response {
+        let per_page = query
+            .get("per_page")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(30);
+        let page = query
+            .get("page")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(1);
+        let items = items
             .lock()
             .unwrap()
             .iter()
             .filter(|(on, _)| *on == number)
             .map(|(_, item)| item.clone())
-            .collect()
+            .collect::<Vec<_>>();
+        let last = items.len().div_ceil(per_page).max(1);
+        let link = format!(
+            "<https://api.github.com/repositories/1/items?per_page={per_page}&page={last}>; rel=\"last\""
+        );
+        let page_items = items
+            .into_iter()
+            .skip((page - 1) * per_page)
+            .take(per_page)
+            .collect::<Vec<_>>();
+        ([("link", link)], Json(page_items)).into_response()
     }
 
     pub(in crate::workflow_tests) fn pull(&self, number: u64) -> serde_json::Value {
@@ -165,7 +192,7 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                     if let Some(refused) = fake.pulls.refused() {
                         return refused;
                     }
-                    Json(FakePulls::listed(&fake.pulls.reviews, number, &query)).into_response()
+                    FakePulls::listed(&fake.pulls.reviews, number, &query)
                 },
             ),
         )
@@ -178,7 +205,7 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                     if let Some(refused) = fake.pulls.refused() {
                         return refused;
                     }
-                    Json(FakePulls::listed(&fake.pulls.reactions, number, &query)).into_response()
+                    FakePulls::listed(&fake.pulls.reactions, number, &query)
                 },
             ),
         )

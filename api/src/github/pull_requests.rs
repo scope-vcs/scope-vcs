@@ -279,6 +279,19 @@ impl GitHubApp {
         route: &'static str,
         body: Option<serde_json::Value>,
     ) -> Result<T, PullRequestCallError> {
+        self.pull_request_response(installation_id, method, path, route, body)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    pub(super) async fn pull_request_response<T: DeserializeOwned>(
+        &self,
+        installation_id: u64,
+        method: Method,
+        path: &str,
+        route: &'static str,
+        body: Option<serde_json::Value>,
+    ) -> Result<(T, HeaderMap), PullRequestCallError> {
         let Some(token) = self.installation_token(installation_id).await? else {
             return Err(PullRequestCallError::Unreachable);
         };
@@ -292,12 +305,16 @@ impl GitHubApp {
                 unavailable(format!("GitHub was unreachable: {}", error.without_url()))
             })?;
         let status = response.status();
-        if status.is_success() {
-            return response.json().await.map_err(|error| {
-                unavailable(format!("GitHub answered unreadably: {error}")).into()
-            });
-        }
         let headers = response.headers().clone();
+        if status.is_success() {
+            return response
+                .json()
+                .await
+                .map(|value| (value, headers))
+                .map_err(|error| {
+                    unavailable(format!("GitHub answered unreadably: {error}")).into()
+                });
+        }
         let detail = response
             .text()
             .await

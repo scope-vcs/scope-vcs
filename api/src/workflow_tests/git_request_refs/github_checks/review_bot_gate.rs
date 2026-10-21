@@ -393,3 +393,15 @@ async fn codex_findings_hold_the_merge_until_their_review_is_imported() {
         )
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_newest_reactions_are_read_past_a_thousand_older_ones() {
+    let request = gated_request("review-bot-newest").await;
+    request
+        .fake
+        .pulls
+        .react_many_as(1, "octocat", 1_150, BEFORE_PUSH);
+    request.fake.pulls.react_as(1, GREPTILE, "+1", AFTER_PUSH);
+    reconcile_now(&request).await;
+    assert_eq!(bot_states(&request).await.0, states("not_started", "clear"));
+}
