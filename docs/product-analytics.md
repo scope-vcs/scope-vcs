@@ -181,21 +181,20 @@ dashboard. The production dashboard is [Scope product outcomes](https://us.posth
 
 The reports cover:
 
-- Browser pageviews over 30 days by approximate country, region and city,
-  including unknown locations. This counts pageviews rather than unique people.
-
-1. Account creation to CLI authentication to first push, in order within seven
+1. Browser pageviews over 30 days by approximate country, region and city,
+   including unknown locations. This counts pageviews rather than unique people.
+2. Account creation to CLI authentication to first push, in order within seven
    days. The cohort includes accounts created 7 to 37 days ago so each account
    has a full observation window.
-2. Request completion and mean time to discussion/merge, joined by request ID
+3. Request completion and mean time to discussion/merge, joined by request ID
    across actors. Open requests remain in the completion denominator.
-3. Weekly active repository incarnations and the share also active the preceding
+4. Weekly active repository incarnations and the share also active the preceding
    week. Activity means pushes, submitted/revised/merged requests and discussion
    work. The current incomplete week is excluded.
-4. Weekly active and returning contributors, using internal actor IDs and earlier
+5. Weekly active and returning contributors, using internal actor IDs and earlier
    observed activity.
-5. Workflow attempt outcomes and duration, deduplicated by attempt ID.
-6. Completed workflow run outcomes and duration, deduplicated by run ID and gated
+6. Workflow attempt outcomes and duration, deduplicated by attempt ID.
+7. Completed workflow run outcomes and duration, deduplicated by run ID and gated
    on terminal `run_result`.
 
 All reports select `environment='production'`. Internal activity exclusions are

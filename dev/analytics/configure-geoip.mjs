@@ -1,21 +1,13 @@
 import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import { posthogRequest } from './sync-reports.mjs'
+import { listAll, posthogRequest } from './sync-reports.mjs'
 
 export async function configureGeoip(request, hog, { apply = false } = {}) {
   hog = hog.trim()
   const project = await request('')
-  const matches = []
-  const visited = new Set()
-  let next = 'hog_functions/?type=transformation&limit=1000'
-  while (next) {
-    if (visited.has(next)) throw new Error('PostHog returned a pagination cycle')
-    visited.add(next)
-    const page = await request(next)
-    matches.push(...page.results.filter((item) => item.template?.id === 'template-geoip'))
-    next = page.next
-  }
+  const matches = (await listAll(request, 'hog_functions/?type=transformation&limit=1000'))
+    .filter((item) => item.template?.id === 'template-geoip')
   if (matches.length !== 1 || matches[0].deleted) {
     throw new Error('Expected exactly one existing default GeoIP transformation; no settings were changed')
   }
