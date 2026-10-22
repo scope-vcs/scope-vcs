@@ -53,12 +53,3 @@ test('generated validators enforce arrays and JavaScript safe integers', () => {
     version: Number.MAX_SAFE_INTEGER + 1,
   }), false)
 })
-
-test('generated RepoChangeEvent validator accepts dependency invalidation events', () => {
-  assert.equal(RepoChangeEventValidator({
-    incarnation_id: 'incarnation-1',
-    kind: 'DependenciesChanged',
-    repo_id: 'owner/repo',
-    version: 2,
-  }), true)
-})

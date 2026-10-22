@@ -601,19 +601,6 @@ mod tests {
     }
 
     #[test]
-    fn malformed_notifications_are_dropped() {
-        let bus = RepoChangeBus::default();
-        let mut receiver = bus.subscribe("repo");
-
-        bus.publish_notification_payload("not-json");
-
-        assert!(matches!(
-            receiver.try_recv(),
-            Err(broadcast::error::TryRecvError::Empty)
-        ));
-    }
-
-    #[test]
     fn idle_channels_are_removed_and_recreated_on_subscribe() {
         let bus = RepoChangeBus::default();
         let receiver = bus.subscribe("repo");

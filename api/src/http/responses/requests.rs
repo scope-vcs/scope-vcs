@@ -70,12 +70,18 @@ pub(crate) fn request_list_row_subject(request: &RequestListRow) -> RequestMerge
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct RequestGateOutcomes {
+    pub(crate) checks: RequestChecksOutcome,
+    pub(crate) reviews: scope_domain::requests::RequestReviewsOutcome,
+}
+
 pub(crate) fn request_list_item_response(
     request: RequestListRow,
     viewer: &RequestViewer<'_>,
     views: &Views,
     current_main_oid: Option<String>,
-    checks: RequestChecksOutcome,
+    outcomes: RequestGateOutcomes,
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
     parent: Option<scope_domain::requests::RequestStackParent>,
 ) -> Result<RequestListItemResponse, crate::error::ApiError> {
@@ -83,7 +89,8 @@ pub(crate) fn request_list_item_response(
         request_list_row_subject(&request),
         viewer,
         views,
-        checks,
+        outcomes.checks,
+        outcomes.reviews,
         repository_lifecycle,
     );
     let request_head_oid = super::git_oid_response(request.head_oid)?;
@@ -146,7 +153,7 @@ pub(crate) fn request_response(
     views: &Views,
     current_main_oid: Option<String>,
     invitees: Vec<RequestInviteeResponse>,
-    checks: scope_domain::requests::RequestChecksOutcome,
+    outcomes: RequestGateOutcomes,
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
 ) -> Result<RequestSummaryResponse, ApiError> {
     let policy = request_policy(&request, viewer.clone(), views);
@@ -166,7 +173,14 @@ pub(crate) fn request_response(
         can_close: decision.can_close,
         can_merge: decision.can_merge,
     };
-    let decision = request_mergeability(&request, &viewer, views, checks, repository_lifecycle);
+    let decision = request_mergeability(
+        &request,
+        &viewer,
+        views,
+        outcomes.checks,
+        outcomes.reviews,
+        repository_lifecycle,
+    );
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
         current_main_oid: current_main_oid.map(git_oid_response).transpose()?,

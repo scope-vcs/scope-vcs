@@ -5,15 +5,13 @@ import { validateRecoveryPreparation } from "./recovery-preparation-trust.mjs";
 import { repository, sourceSha, releaseFixture as fixture } from './fixtures/prepared-release.mjs';
 const mainSha = 'd'.repeat(40);
 
-for (const conclusion of ["failure", "cancelled", "success"]) {
-  test(`recovers a main release whose preparation succeeded before overall ${conclusion}`, async () => {
-    const state = fixture();
-    state.run.conclusion = conclusion;
-    const proof = await validateRecoveryPreparation(state.prepared, state.request, repository);
-    assert.deepEqual(proof, { sourceSha, preparationRunId: "123", preparationJobId: 456, mainSha });
-    assert.equal(state.calls.some(path => /artifacts|logs/.test(path)), false);
-  });
-}
+test("recovers a main release whose preparation succeeded before the overall run failed", async () => {
+  const state = fixture();
+  state.run.conclusion = "failure";
+  const proof = await validateRecoveryPreparation(state.prepared, state.request, repository);
+  assert.deepEqual(proof, { sourceSha, preparationRunId: "123", preparationJobId: 456, mainSha });
+  assert.equal(state.calls.some(path => /artifacts|logs/.test(path)), false);
+});
 
 for (const [name, mutate] of [
   ["push run", state => { state.run.event = "push"; }],

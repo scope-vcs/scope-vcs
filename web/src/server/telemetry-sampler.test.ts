@@ -1,5 +1,5 @@
 import { context, ROOT_CONTEXT, SpanKind, TraceFlags, trace } from '@opentelemetry/api'
-import { SamplingDecision } from '@opentelemetry/sdk-trace-node'
+import { SamplingDecision } from '@opentelemetry/sdk-trace'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { requestTraceSampler } from './telemetry-sampler'

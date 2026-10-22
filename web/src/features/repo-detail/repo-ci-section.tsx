@@ -1,4 +1,4 @@
-import type { GitHubConnectionResponse, GitHubAuthorizeResponse } from '@/api/types.generated'
+import type { GitHubAuthorizeResponse, GitHubConnectionResponse, GitHubReviewBotRequest } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { LoaderCircle, Plug, Unplug } from 'lucide-react'
@@ -9,9 +9,12 @@ import {
   githubWithheldRequestsText,
 } from './repo-github-connection-model'
 import { useRepoViews } from './repo-layout-context'
+import { RepoGitHubMainPublication } from './repo-github-main-publication'
+import { RepoGitHubReviewBots } from './repo-github-review-bots'
 import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
+import { RepoReviewBots } from './repo-review-bots'
 import { CiSection } from './repo-settings-sections'
 import { useSettingsAction } from './use-settings-action'
 
@@ -19,7 +22,11 @@ export function RepoCiSection({
   confirmPublic,
   disconnect,
   github,
+  setMainPublication,
   setRequiredChecks,
+  setReviewBots,
+  setReviewBotPullRequests,
+  setReviewRequestComment,
   setRunImportCount,
   startAuthorization,
   startRunImport,
@@ -28,7 +35,11 @@ export function RepoCiSection({
   confirmPublic: () => Promise<GitHubConnectionResponse>
   disconnect: () => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
+  setMainPublication: (enabled: boolean) => Promise<GitHubConnectionResponse>
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
+  setReviewBots: (bots: GitHubReviewBotRequest[]) => Promise<GitHubConnectionResponse>
+  setReviewBotPullRequests: (enabled: boolean) => Promise<GitHubConnectionResponse>
+  setReviewRequestComment: (comment: string) => Promise<GitHubConnectionResponse>
   setRunImportCount: (count: number) => Promise<GitHubConnectionResponse>
   startAuthorization: () => Promise<GitHubAuthorizeResponse>
   startRunImport: () => Promise<GitHubConnectionResponse>
@@ -141,8 +152,23 @@ export function RepoCiSection({
           />
         )}
 
+        {view.kind === 'connected' && (
+          <RepoGitHubMainPublication github={github} setEnabled={setMainPublication} />
+        )}
+
         {(view.kind === 'connected' || view.kind === 'disconnected') && (
           <RepoRequiredChecks github={github} save={setRequiredChecks} />
+        )}
+
+        {view.kind === 'connected' && <RepoReviewBots github={github} save={setReviewBots} />}
+
+        {view.kind === 'connected' && github.connection && (
+          <RepoGitHubReviewBots
+            connection={github.connection}
+            key={github.connection.review_request_comment ?? ''}
+            saveComment={setReviewRequestComment}
+            setEnabled={setReviewBotPullRequests}
+          />
         )}
 
         {(view.kind === 'connected' || view.kind === 'disconnected') && (

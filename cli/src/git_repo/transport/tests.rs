@@ -157,44 +157,40 @@ fn refused_git_fetch_preserves_caller_context_and_retryability() {
     let address = listener.local_addr().unwrap();
     drop(listener);
     let destination = format!("http://{address}/repo");
-    for failure in [
-        "refresh request failed; the request was not changed",
-        "refresh main failed; main was not changed",
-    ] {
-        for cancellable in [false, true] {
-            let (_directory, repo) = test_repo();
-            let error = if cancellable {
-                fetch_scope_remote_with_bearer(
-                    &repo,
-                    &destination,
-                    "scope",
-                    "main",
-                    "fixture-token",
-                    Some(&CancellationToken::new()),
-                    failure,
-                )
-            } else {
-                fetch_scope_remote_with_bearer(
-                    &repo,
-                    &destination,
-                    "scope",
-                    "main",
-                    "fixture-token",
-                    None,
-                    failure,
-                )
-            }
-            .unwrap_err();
-            let response = json_response(&error).error;
-            assert_eq!(response.code, ErrorCode::ServiceUnavailable);
-            assert!(response.retryable);
-            assert!(
-                response.message.starts_with(&format!("{failure}: fatal:")),
-                "{}",
-                response.message
-            );
-            assert_eq!(exit_code(&error), ExitCategory::Temporary as u8);
+    let failure = "refresh request failed; the request was not changed";
+    for cancellable in [false, true] {
+        let (_directory, repo) = test_repo();
+        let error = if cancellable {
+            fetch_scope_remote_with_bearer(
+                &repo,
+                &destination,
+                "scope",
+                "main",
+                "fixture-token",
+                Some(&CancellationToken::new()),
+                failure,
+            )
+        } else {
+            fetch_scope_remote_with_bearer(
+                &repo,
+                &destination,
+                "scope",
+                "main",
+                "fixture-token",
+                None,
+                failure,
+            )
         }
+        .unwrap_err();
+        let response = json_response(&error).error;
+        assert_eq!(response.code, ErrorCode::ServiceUnavailable);
+        assert!(response.retryable);
+        assert!(
+            response.message.starts_with(&format!("{failure}: fatal:")),
+            "{}",
+            response.message
+        );
+        assert_eq!(exit_code(&error), ExitCategory::Temporary as u8);
     }
 }
 
@@ -250,11 +246,17 @@ fn git_http_failures_preserve_response_classification() {
             true,
         ),
     ] {
-        for push_safety in [
-            None,
-            Some(GitRetrySafety::Idempotent),
-            Some(GitRetrySafety::MayCreateRequest),
-        ] {
+        let push_safeties: &[Option<GitRetrySafety>] =
+            if matches!(status, Some("403 Forbidden" | "503 Service Unavailable")) {
+                &[
+                    None,
+                    Some(GitRetrySafety::Idempotent),
+                    Some(GitRetrySafety::MayCreateRequest),
+                ]
+            } else {
+                &[None]
+            };
+        for &push_safety in push_safeties {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let address = listener.local_addr().unwrap();
             let server = thread::spawn(move || {

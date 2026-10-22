@@ -8,7 +8,16 @@ mod m0088_request_navigation_children_index;
 mod m0089_contribution_request_stacks;
 mod m0090_job_traceparents;
 mod m0091_media_reconcile_once;
-mod m0092_live_file_views;
+mod m0092_request_discussion_line_anchors;
+mod m0093_github_main_publication;
+mod m0094_github_carrier_pull_requests;
+mod m0095_github_review_imports;
+mod m0096_github_review_bot_gate;
+mod m0097_review_bot_status_carriers;
+mod m0098_live_file_views;
+
+#[cfg(test)]
+pub(crate) use baseline::schema_inventory;
 
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
@@ -89,7 +98,31 @@ fn migration_registry() -> Vec<RegisteredMigration> {
             metadata_restore_safe: true,
         },
         RegisteredMigration {
-            migration: Box::new(m0092_live_file_views::Migration),
+            migration: Box::new(m0092_request_discussion_line_anchors::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0093_github_main_publication::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0094_github_carrier_pull_requests::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0095_github_review_imports::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0096_github_review_bot_gate::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0097_review_bot_status_carriers::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0098_live_file_views::Migration),
             metadata_restore_safe: true,
         },
     ]

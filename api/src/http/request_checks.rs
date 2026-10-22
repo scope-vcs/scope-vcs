@@ -13,16 +13,18 @@ use axum::{
 };
 use scope_api_contract::{
     ApproveRequestChecksRequest, RequestCheckResponse, RequestCheckRunResponse,
-    RequestChecksResponse, RequestGitHubPushResponse, RequestGitHubPushState,
-    RequestMergeabilityResponse,
+    RequestChecksResponse, RequestGitHubPullRequestResponse, RequestGitHubPullRequestState,
+    RequestGitHubPushResponse, RequestGitHubPushState, RequestMergeabilityResponse,
+    RequestReviewBotResponse,
 };
 use scope_domain::{
     github_connection::GitHubRepositoryVisibility,
     github_workflow_jobs::github_run_visible,
     repository::access::RepositoryAccess,
     requests::{
-        GitHubBranch, GitHubPushStatus, RequestCheck, RequestCheckResults, RequestCheckReviewer,
-        RequestViewer, request_checks_message, request_mergeability,
+        GitHubBranch, GitHubPullRequest, GitHubPullRequestStatus, GitHubPullRequestStatusState,
+        GitHubPushStatus, RequestCheck, RequestCheckResults, RequestCheckReviewer, RequestViewer,
+        request_checks_message, request_mergeability,
     },
 };
 use scope_postgres::db::{ApproveRequestChecksCommand, GitHubWorkflowRunReference};
@@ -107,6 +109,7 @@ pub(crate) fn snapshot_response(
         &viewer,
         views,
         outcome,
+        snapshot.reviews_outcome(),
         snapshot.repository.record.lifecycle_state,
     );
     let mergeability = RequestMergeabilityResponse {
@@ -121,6 +124,13 @@ pub(crate) fn snapshot_response(
             connection.is_connected()
                 && connection.visibility != GitHubRepositoryVisibility::Private
         });
+    let github_pull_request = snapshot
+        .github_pull_request
+        .as_ref()
+        .and_then(GitHubPullRequest::status)
+        .map(|status| github_pull_request_response(status, &access));
+    let review_bots = review_bot_responses(snapshot);
+    let review_bots_enforced = snapshot.bot_reviews.enforced();
     let Some(evaluation) = evaluation else {
         return Ok(RequestChecksResponse {
             request_id: request.id.clone(),
@@ -131,6 +141,9 @@ pub(crate) fn snapshot_response(
             checks: Vec::new(),
             can_approve: false,
             github_push: None,
+            github_pull_request,
+            review_bots,
+            review_bots_enforced,
             changes_github_workflows: false,
             private_request_on_public_github,
             mergeability,
@@ -164,10 +177,52 @@ pub(crate) fn snapshot_response(
             .collect(),
         can_approve,
         github_push,
+        github_pull_request,
+        review_bots,
+        review_bots_enforced,
         changes_github_workflows,
         private_request_on_public_github,
         mergeability,
     })
+}
+
+fn review_bot_responses(
+    snapshot: &scope_postgres::db::RequestStateSnapshot,
+) -> Vec<RequestReviewBotResponse> {
+    let request = &snapshot.request;
+    if &request.view != snapshot.repository.views.full() {
+        return Vec::new();
+    }
+    snapshot
+        .bot_reviews
+        .bots
+        .iter()
+        .map(|bot| RequestReviewBotResponse {
+            login: bot.login.as_str().to_string(),
+            required: bot.required,
+            state: snapshot.bot_reviews.state_of(bot, &request.head_oid).into(),
+        })
+        .collect()
+}
+
+fn github_pull_request_response(
+    status: GitHubPullRequestStatus,
+    access: &RepositoryAccess,
+) -> RequestGitHubPullRequestResponse {
+    RequestGitHubPullRequestResponse {
+        state: match status.state {
+            GitHubPullRequestStatusState::Opening => RequestGitHubPullRequestState::Opening,
+            GitHubPullRequestStatusState::Open => RequestGitHubPullRequestState::Open,
+            GitHubPullRequestStatusState::Closed => RequestGitHubPullRequestState::Closed,
+            GitHubPullRequestStatusState::ClosedOnGitHub => {
+                RequestGitHubPullRequestState::ClosedOnGitHub
+            }
+            GitHubPullRequestStatusState::Failed => RequestGitHubPullRequestState::Failed,
+        },
+        number: status.number,
+        url: status.url,
+        error: status.error.filter(|_| access.is_maintainer()),
+    }
 }
 
 fn github_push_response(

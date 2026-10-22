@@ -1,6 +1,8 @@
 import { PanelState } from '@/components/empty-state'
 import { historyCommitTitle } from '@/features/history/history-row-labels'
 import type { CommitDetailState } from '@/features/history/history-state'
+import { FileSystemTree } from '@/components/file-system-tree'
+import { Badge } from '@/components/ui/badge'
 import { GitCommit, TriangleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { ChangedFilesWorkbench, useChangedFileNavigation, type ChangedFilesProps } from './changed-files-workbench'
@@ -11,7 +13,7 @@ type CommitDetailPanelProps = ChangedFilesProps & {
 }
 
 export function CommitDetailPanel(props: CommitDetailPanelProps) {
-  const { commitContext, commitState, onCloseDiff, selectedFilePath } = props
+  const { commitContext, commitState, onCloseDiff, onSelectFile, selectedFilePath } = props
   const navigation = useChangedFileNavigation(onCloseDiff, selectedFilePath === null)
 
   if (commitState.status === 'failed') {
@@ -54,10 +56,22 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
 
       <ChangedFilesWorkbench
         {...props}
-        expandFolders
-        files={commit.files}
         navigation={navigation}
         navigationLabel="Commit file navigator"
+        navigator={commit.files.length > 0 && (
+          <FileSystemTree
+            expandFolders
+            files={commit.files}
+            getFileMeta={(file) => <Badge variant="neutral">{file.kind}</Badge>}
+            metaColumnLabel="Change"
+            showVisibility
+            onSelectFile={(file) => {
+              onSelectFile(file)
+              navigation.setOpen(false)
+            }}
+            selectedFilePath={selectedFilePath}
+          />
+        )}
         emptyFilesMessage={filesTruncated
           ? `${commit.change_count} changed files are outside the bounded file list.`
           : 'No file changes in this commit.'}

@@ -11,6 +11,7 @@ mod baseline_bridge;
 mod cache_schema;
 mod current_schema_baseline;
 mod github_connections;
+mod github_discussion_authors;
 mod github_request_checks;
 mod github_run_imports;
 mod github_setup_checks_and_workflow_runs;
@@ -36,6 +37,10 @@ pub(super) async fn isolated_database() -> (
     let target = TestDatabaseTarget::required().unwrap();
     let (db, lease) = connect_isolated_test_database(&target).await.unwrap();
     (target, db, lease)
+}
+
+pub(super) fn migrated_store() -> super::MetadataStore {
+    super::MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap()
 }
 
 pub(super) async fn relation_exists(db: &DatabaseConnection, relation: &str) -> bool {

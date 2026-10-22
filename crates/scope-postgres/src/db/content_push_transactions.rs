@@ -3,6 +3,7 @@ use super::{
     entities,
     git_compaction::schedule_git_compaction,
     git_segments::{load_git_pack_spans, publish_git_segment},
+    github_pushes::queue_main_publication,
     history_rows::{
         LiveFileRow, LiveFiles, file_rules, insert_commits, load_live_files_at, save_live_files,
     },
@@ -42,7 +43,7 @@ pub(super) async fn accept_and_persist_content_push(
     snapshots: RepositoryContentSnapshots,
     push_trigger_input: PushTriggerInput,
     now_unix: u64,
-) -> Result<GitHead, PostgresError> {
+) -> Result<PersistedMainChange, PostgresError> {
     accept_and_persist_content_update(
         tx,
         repo_row,
@@ -61,7 +62,7 @@ pub(super) async fn accept_and_persist_request_merge(
     snapshots: RepositoryContentSnapshots,
     origin: RequestMergeOrigin,
     now_unix: u64,
-) -> Result<GitHead, PostgresError> {
+) -> Result<PersistedMainChange, PostgresError> {
     accept_and_persist_content_update(
         tx,
         repo_row,
@@ -71,6 +72,11 @@ pub(super) async fn accept_and_persist_request_merge(
         now_unix,
     )
     .await
+}
+
+pub(super) struct PersistedMainChange {
+    pub(super) git_head: GitHead,
+    pub(super) queued_main_publication: bool,
 }
 
 enum ContentUpdateKind {
@@ -91,7 +97,7 @@ async fn accept_and_persist_content_update(
     snapshots: RepositoryContentSnapshots,
     kind: ContentUpdateKind,
     now_unix: u64,
-) -> Result<GitHead, PostgresError> {
+) -> Result<PersistedMainChange, PostgresError> {
     let RepositoryContentSnapshots {
         landing_file_mutation,
         workflow_catalog,
@@ -236,5 +242,10 @@ async fn accept_and_persist_content_update(
         )
         .await?;
     }
-    Ok(git_head)
+    let queued_main_publication =
+        queue_main_publication(tx, &repo_id, &git_head.head_oid, now_unix).await?;
+    Ok(PersistedMainChange {
+        git_head,
+        queued_main_publication,
+    })
 }

@@ -683,7 +683,7 @@ async fn create_discussion(
             "id":"dsc_one","request_id":"req_one",
             "client_discussion_id":body["client_discussion_id"],
             "opened_position":1,"last_activity_position":1,
-            "author":{"id":"usr_test","handle":"owner"},
+            "author":{"kind":"user","id":"usr_test","handle":"owner"},
             "body_markdown":body["body_markdown"],"anchor":null,"status":"Open",
             "reply_count":0,"read_through_position":1,"unread_count":0,"latest_replies":[],
             "created_at_unix":1,"resolved_at_unix":null,"resolved_by":null
@@ -712,14 +712,14 @@ fn reply_response(state: Arc<Mutex<FixtureState>>, operation: &str, body: Value)
     block_cleanup(&mut state);
     let reply = json!({
         "id":"rpl_one","discussion_id":"dsc_one","position":2,
-        "author":{"id":"usr_test","handle":"owner"},
+        "author":{"kind":"user","id":"usr_test","handle":"owner"},
         "body_markdown":body["body_markdown"],"reply_to":null,"created_at_unix":2
     });
     Json(json!({
         "discussion":{
             "id":"dsc_one","request_id":"req_one","client_discussion_id":"original",
             "opened_position":1,"last_activity_position":2,
-            "author":{"id":"usr_test","handle":"owner"},"body_markdown":"Original",
+            "author":{"kind":"user","id":"usr_test","handle":"owner"},"body_markdown":"Original",
             "anchor":null,"status":"Open","reply_count":1,"read_through_position":2,
             "unread_count":0,"latest_replies":[reply.clone()],"created_at_unix":1,
             "resolved_at_unix":null,"resolved_by":null

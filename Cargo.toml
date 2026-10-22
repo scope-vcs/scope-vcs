@@ -57,7 +57,7 @@ getrandom = "0.3.4"
 hex = "0.4.3"
 hmac = "0.13.0"
 http = "1.4.2"
-jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
+jsonwebtoken = { version = "10.4.0", features = ["aws_lc_rs"] }
 libc = "0.2.177"
 opentelemetry = "0.33"
 opentelemetry-appender-tracing = "0.33"
