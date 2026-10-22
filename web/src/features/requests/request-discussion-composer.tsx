@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import { Clock3, MessageSquarePlus, Reply, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
+import type { RequestAttachmentDraftTarget } from './request-attachment-drafts'
 import { RequestAttachmentEditor } from './request-attachment-editor'
 
 export function RequestDiscussionComposer({
@@ -42,6 +43,37 @@ export function RequestDiscussionComposer({
       submitIcon={<MessageSquarePlus className="size-3.5" />}
       submitLabel="Start discussion"
       target="discussion"
+    />
+  )
+}
+
+export function RequestLineDiscussionComposer({
+  error,
+  label,
+  onCancel,
+  onSubmit,
+  subject,
+  target,
+}: {
+  error: string | null
+  label: string
+  onCancel: () => void
+  onSubmit: (body: string, submissionId: string) => Promise<boolean>
+  subject: string
+  target: RequestAttachmentDraftTarget
+}) {
+  return (
+    <RequestAttachmentEditor
+      autoFocus
+      error={error}
+      label={`Start a discussion on ${label}`}
+      onCancel={onCancel}
+      onSubmit={(body, _base, submissionId) => onSubmit(body, submissionId)}
+      placeholder={`Discuss ${label}…`}
+      submitIcon={<MessageSquarePlus className="size-3.5" />}
+      submitLabel="Start discussion"
+      submissionSubject={subject}
+      target={target}
     />
   )
 }

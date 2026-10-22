@@ -6,16 +6,10 @@ import { RequestConfirmDialog } from './request-confirm-dialog'
 import { requestChecksWorkflowWarning, requestPublicChecksNote } from './request-labels'
 import type { RequestChecksController } from './use-request-checks'
 
-export function RequestCiApproval({
-  controller,
-  requestViewName,
-}: {
-  controller: RequestChecksController
-  requestViewName: string
-}) {
+export function RequestCiApproval({ controller }: { controller: RequestChecksController }) {
   const [reviewed, setReviewed] = useState<RequestChecksResponse | null>(null)
   const warning = reviewed && requestChecksWorkflowWarning(reviewed)
-  const publicNote = reviewed && requestPublicChecksNote(reviewed, requestViewName)
+  const publicNote = reviewed && requestPublicChecksNote(reviewed)
 
   return (
     <>

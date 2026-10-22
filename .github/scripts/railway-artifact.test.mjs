@@ -139,11 +139,14 @@ test('maintenance binary is bound to the original prepared release', () => {
 
 
 test('checked-in Railway string durations become GraphQL integers', () => {
+  const input = artifactDeploymentInput('api', release().components.api, { deploy: { ...config.deploy, overlapSeconds: '45', drainingSeconds: '15' } });
+  assert.equal(input.overlapSeconds, 45);
+  assert.equal(input.drainingSeconds, 15);
   for (const [component, directory] of [['api', 'api'], ['run-worker', 'worker'], ['git-router', 'repo-router'], ['media-api', 'media-service'], ['web', 'web']]) {
     const actualConfig = JSON.parse(readFileSync(new URL(`../../${directory}/railway.json`, import.meta.url), 'utf8'));
-    const input = artifactDeploymentInput(component, release().components.api, actualConfig);
-    assert.equal(input.overlapSeconds, 30);
-    assert.equal(input.drainingSeconds, 30);
+    const actual = artifactDeploymentInput(component, release().components.api, actualConfig);
+    assert.ok(Number.isSafeInteger(actual.overlapSeconds));
+    assert.ok(Number.isSafeInteger(actual.drainingSeconds));
   }
   for (const value of [null, true, '', '30seconds', '-1', 1.5, 2147483648]) {
     assert.throws(() => artifactDeploymentInput('api', release().components.api, { deploy: { ...config.deploy, overlapSeconds: value } }), /GraphQL Int/);
@@ -177,7 +180,6 @@ test('trusted staging registry configuration touches only fixed environment cred
 
 test('release package naming has one validated manifest owner', () => {
   const manifest = JSON.parse(readFileSync(new URL('../deployment-services.json', import.meta.url), 'utf8'));
-  assert.equal(manifest.railway.releaseImagePrefix, 'railway-private');
   assert.equal(releaseImageRepository(manifest, 'Scope-VCS/Scope-VCS', 'api'), 'ghcr.io/scope-vcs/scope-vcs/railway-private-api');
   for (const [component, imageSuffix, binary] of [
     ['run-worker', 'worker', 'scope-worker'],

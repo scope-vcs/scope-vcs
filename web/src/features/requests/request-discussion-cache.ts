@@ -12,10 +12,15 @@ type DiscussionSession = {
   scrollTop: number
   sync: ReturnType<typeof createRequestDiscussionSync>
   refresh: (page: RequestDiscussionPage) => Promise<void>
+  syncProjections: (requestHead: string, load: LoadProjectionPage) => Promise<void>
   updateCollection: (update: (current: DiscussionCollection) => DiscussionCollection, dataChanged?: boolean) => void
   setError: (error: string | null) => void
   setLoadingMore: (loadingMore: boolean) => void
 }
+
+const DISCUSSION_PAGE_MAX = 100
+
+type LoadProjectionPage = (input: { cursor?: string; limit: number }) => Promise<RequestDiscussionPage>
 
 export const requestDiscussionResource = createCachedResource<DiscussionSession>({
   maxEntries: 8,
@@ -76,6 +81,8 @@ function createDiscussionSession(
     }),
     setCollection: (collection) => updateCollection(() => collection),
   })
+  let projectedHead: string | null = null
+  let requestedHead: string | null = null
   const session: DiscussionSession = {
     collection: collectionFromPage(page),
     dataGeneration: 0,
@@ -91,6 +98,37 @@ function createDiscussionSession(
         updateCollection((current) => mergeRefreshedDiscussionPage(current, incoming, false))
       }
       await sync.catchUp()
+    },
+    syncProjections: async (requestHead, load) => {
+      if (requestHead === projectedHead || requestHead === requestedHead) return
+      const retained = read().collection
+      if (projectedHead === null || !retained.order.some((id) => retained.byId.get(id)?.anchor?.lines)) {
+        projectedHead = requestHead
+        return
+      }
+      requestedHead = requestHead
+      const current = () => requestedHead === requestHead && requestDiscussionResource.peek(key)?.sync === sync
+      try {
+        const pages: RequestDiscussionPage[] = []
+        let cursor: string | undefined
+        let covered = 0
+        do {
+          const page = await load({ cursor, limit: DISCUSSION_PAGE_MAX })
+          if (!current()) return
+          pages.push(page)
+          covered += page.discussions.length
+          cursor = page.next_cursor ?? undefined
+        } while (cursor && covered < retained.order.length)
+        updateCollection((collection) => pages.reduce(
+          (next, page) => mergeRefreshedDiscussionPage(next, page, false),
+          collection,
+        ))
+        projectedHead = requestHead
+      } catch (error) {
+        if (current()) update({ error: resourceErrorMessage(error, 'Discussion positions could not be refreshed.') })
+      } finally {
+        if (requestedHead === requestHead) requestedHead = null
+      }
     },
     setError: (error) => update({ error }),
     setLoadingMore: (loadingMore) => update({ loadingMore }),

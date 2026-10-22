@@ -11,6 +11,7 @@ import {
   requestChangesPresentation,
 } from './request-changes-model'
 import type { RequestRevisionListResponse } from '@/api/types.generated'
+import type { RequestDiscussion } from './request-discussion-types'
 
 const revisions: RequestRevisionListResponse['revisions'] = [
   revision('revision-1', 1, ['commit-a', 'commit-b']),
@@ -127,20 +128,46 @@ test('keeps repeated commit OIDs distinct across revisions', () => {
 
 test('orders matching commit and revision discussions chronologically', () => {
   const discussions = [
-    discussion('later', 8, { anchor: { revision_id: 'revision-1', revision_position: 1, commit_oid: 'commit-b', path: null } }),
-    discussion('revision', 5, { anchor: { revision_id: 'revision-1', revision_position: 1, commit_oid: null, path: null } }),
-    discussion('other', 6, { anchor: { revision_id: 'revision-1', revision_position: 1, commit_oid: 'commit-a', path: null } }),
+    discussion('later', 8, { anchor: anchor({ commit_oid: 'commit-b' }) }),
+    discussion('revision', 5, { anchor: anchor({}) }),
+    discussion('other', 6, { anchor: anchor({ commit_oid: 'commit-a' }) }),
   ]
   assert.deepEqual(
-    discussionsForRequestComparison(discussions, revisions[0], 'commit-b')
+    discussionsForRequestComparison(discussions, revisions[0], 'commit', 'commit-b')
       .map(({ id }) => id),
     ['revision', 'later'],
   )
   assert.deepEqual(
-    discussionsForRequestComparison(discussions, revisions[0], null).map(({ id }) => id),
+    discussionsForRequestComparison(discussions, revisions[0], 'request', null).map(({ id }) => id),
     ['revision'],
   )
 })
+
+test('the latest request layer includes line discussions carried forward from older revisions', () => {
+  const lines = { side: 'new' as const, start_line: 3, end_line: 4 }
+  const discussions = [
+    discussion('mapped', 2, { anchor: anchor({ path: '/a.txt', lines, latest: { kind: 'mapped', revision_id: 'revision-2', start_line: 5, end_line: 6 } }) }),
+    discussion('outdated', 3, { anchor: anchor({ path: '/a.txt', lines, latest: { kind: 'outdated', revision_id: 'revision-2' } }) }),
+    discussion('older-only', 4, { anchor: anchor({ path: '/a.txt', lines }) }),
+  ]
+  assert.deepEqual(
+    discussionsForRequestComparison(discussions, revisions[1], 'request', null).map(({ id }) => id),
+    ['mapped', 'outdated'],
+  )
+  assert.deepEqual(discussionsForRequestComparison(discussions, revisions[1], 'push', null), [])
+})
+
+function anchor(overrides: Partial<NonNullable<RequestDiscussion['anchor']>>): NonNullable<RequestDiscussion['anchor']> {
+  return {
+    commit_oid: null,
+    latest: null,
+    lines: null,
+    path: null,
+    revision_id: 'revision-1',
+    revision_position: 1,
+    ...overrides,
+  }
+}
 
 for (const view of ['public', 'restricted']) {
   test(`${view} request and push comparisons show only the selected child layer at its parent pin`, () => {

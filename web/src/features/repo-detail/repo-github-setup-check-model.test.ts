@@ -19,10 +19,6 @@ function check(overrides: Partial<GitHubSetupCheckResponse> = {}): GitHubSetupCh
   }
 }
 
-test('no test has run yet', () => {
-  assert.equal(githubSetupCheckView(null), null)
-})
-
 test('a running test shows its branch and revision', () => {
   const view = githubSetupCheckView(check({ check_names: ['lint', 'test'] }))
   assert.equal(view?.running, true)

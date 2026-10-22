@@ -405,6 +405,12 @@ impl RequestStore {
         )?;
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
+        super::github_pull_requests::requeue_carrier(
+            &tx,
+            &mutation.request.id,
+            mutation.request.updated_at_unix,
+        )
+        .await?;
         if let Some((request_id, actor_user_id, markdown, now_unix)) = attachment_binding {
             replace_bindings_for_markdown(
                 &tx,

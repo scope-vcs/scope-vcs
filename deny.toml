@@ -3,6 +3,4 @@ yanked = "deny"
 unmaintained = "workspace"
 unsound = "all"
 unused-ignored-advisory = "deny"
-ignore = [
-  { id = "RUSTSEC-2023-0071", reason = "rsa is only used for public-key RS256 verification; Scope holds no private RSA key" },
-]
+ignore = []

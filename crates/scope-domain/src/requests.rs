@@ -17,6 +17,12 @@ pub(crate) mod fixtures;
 mod view_paths;
 pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 
+mod bot_reviews;
+pub use bot_reviews::{
+    CodexReviewState, GitHubBotReaction, GitHubReviewBotSignal, GitHubReviewBotState,
+    GitHubReviewBotStatus, RequestBotReviews, RequestReviewsOutcome, github_review_bot_statuses,
+    github_reviews_awaiting_import, request_reviews_outcome,
+};
 pub mod merge_gate;
 pub use merge_gate::{
     GITHUB_CHECK_MERGE_FRESHNESS_SECS, MergeGateAuthority, MergeGateDecision, MergeGateInput,
@@ -41,30 +47,51 @@ pub use auto_merge::{
 pub mod attachments;
 mod checks;
 pub use checks::{
-    CheckCommitBase, GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubBranch, GitHubCheckConclusion,
-    GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, GitHubCheckTarget, GitHubPush,
-    GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubRequestChecks,
-    GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck,
+    CheckCommitBase, GITHUB_MAIN_DIVERGED_MESSAGE, GITHUB_WORKFLOWS_START_WITHIN_SECS,
+    GitHubBranch, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus,
+    GitHubCheckTarget, GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestJobState,
+    GitHubPullRequestObservation, GitHubPullRequestState, GitHubPullRequestStatus,
+    GitHubPullRequestStatusState, GitHubPullRequestStep, GitHubPush, GitHubPushDestination,
+    GitHubPushState, GitHubPushStatus, GitHubRequestChecks, GitHubTestedCommit,
+    NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, OpenedGitHubPullRequest,
     PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
     RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
-    RequestCheckReviewer, RequestChecksOutcome, changes_github_workflows, check_commit_message,
-    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, request_checks_message,
-    request_checks_outcome, request_head_awaits_evaluation,
+    RequestCheckReviewer, RequestChecksOutcome, carrier_may_change, carrier_pull_request_intent,
+    carrier_text_digest, carries_private_request, changes_github_workflows, check_commit_message,
+    closes_carrier_pull_request, ensure_approving_reviewed_head, github_push_retry_at,
+    github_retry_at, may_carry_on_github, request_checks_message, request_checks_outcome,
+    request_head_awaits_evaluation, review_request_comment_body, review_request_marker,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};
 mod identity;
 pub use identity::{EditRequestIdentityInput, edit_request_identity, request_identity_audit_fact};
+mod discussion_anchor;
+pub use discussion_anchor::{
+    RequestDiffSide, RequestDiscussionAnchor, RequestDiscussionLines, RequestLinePosition,
+    RequestLineRange, RequestLineTarget, carry_forward_line_range,
+};
+mod discussion_authors;
+pub use discussion_authors::{RequestDiscussionAuthor, RequestDiscussionResolver};
+mod github_review_import;
+pub use github_review_import::{
+    GitHubCommentPosition, GitHubCommentSubject, GitHubReviewImportSubject,
+    ImportGitHubDiscussionInput, ImportGitHubReplyInput, accepts_github_reviews,
+    github_comment_anchors, github_comment_body, github_review_anchor, github_review_client_id,
+    github_review_comment_client_id, github_review_id_from_client_id, github_thread_status,
+    import_github_discussion, import_github_reply, reactivate_author_attention_for_github_review,
+    transition_github_discussion,
+};
 mod discussions;
 pub use discussions::{
     CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
     CreateRequestDiscussionReplyInput, CreateRequestDiscussionReplyMutation,
     MarkRequestDiscussionReadInput, ReopenAndReplyToRequestDiscussionInput, RequestDiscussion,
-    RequestDiscussionAnchor, RequestDiscussionMutation, RequestDiscussionReadState,
-    RequestDiscussionReply, RequestDiscussionStatus, RequestDiscussionTransitionInput,
-    create_request_discussion, create_request_discussion_reply,
-    ensure_request_discussion_transition_allowed, mark_request_discussion_read,
-    reopen_and_reply_to_request_discussion, reopen_request_discussion, resolve_request_discussion,
+    RequestDiscussionMutation, RequestDiscussionReadState, RequestDiscussionReply,
+    RequestDiscussionStatus, RequestDiscussionTransitionInput, create_request_discussion,
+    create_request_discussion_reply, ensure_request_discussion_transition_allowed,
+    mark_request_discussion_read, reopen_and_reply_to_request_discussion,
+    reopen_request_discussion, resolve_request_discussion,
 };
 mod lifecycle;
 pub use lifecycle::{

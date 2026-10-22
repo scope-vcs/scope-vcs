@@ -100,6 +100,7 @@ pub(crate) fn snapshot_response(
                         snapshot.evaluation.as_ref(),
                         &snapshot.results,
                     ),
+                    reviews: snapshot.reviews_outcome(),
                 },
             ),
         )

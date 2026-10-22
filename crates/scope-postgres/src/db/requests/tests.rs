@@ -589,6 +589,7 @@ async fn close_draft_request_deletes_request_and_events() {
                 revision_id: "event_revision".to_string(),
                 commit_oid: None,
                 path: None,
+                lines: None,
             }),
             now_unix: 5,
         })
@@ -788,7 +789,7 @@ async fn create_test_reply(
         .unwrap();
 }
 
-fn public_start_input() -> StartRequestInput {
+pub(crate) fn public_start_input() -> StartRequestInput {
     StartRequestInput {
         id: "req_1".to_string(),
         repo_id: "owner/repo".to_string(),
@@ -807,7 +808,7 @@ fn public_start_input() -> StartRequestInput {
     }
 }
 
-fn public_upload_input() -> RecordWorkingRequestUploadInput {
+pub(crate) fn public_upload_input() -> RecordWorkingRequestUploadInput {
     RecordWorkingRequestUploadInput {
         request_id: "req_1".to_string(),
         actor_user_id: "user_public".to_string(),

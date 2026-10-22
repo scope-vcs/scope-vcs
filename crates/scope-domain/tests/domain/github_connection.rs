@@ -4,13 +4,17 @@ use scope_domain::{
     github_connection::{
         ConnectGitHubRepository, GITHUB_REQUIRED_CHECKS_LIMIT, GitHubConnection,
         GitHubConnectionStatus, GitHubDisconnectReason, GitHubInstallationChange,
-        GitHubRepositoryVisibility, acknowledge_public_github_repository,
-        connect_github_repository, disconnect_github_repository, set_github_required_checks,
+        GitHubRepositoryVisibility, MAIN_PUBLICATION_OFF_MESSAGE, MAIN_WITHHELD_MESSAGE,
+        acknowledge_public_github_repository, connect_github_repository,
+        disconnect_github_repository, set_github_main_publication, set_github_required_checks,
     },
     repository::{
-        RepoLifecycleState, access::repository_access_for_user_id,
+        RepoLifecycleState,
+        access::{RepositoryAccess, repository_access_for_user_id},
         collaboration::RepositoryMemberPermissions,
     },
+    requests::GitHubPushDestination,
+    views::{ViewId, Views},
 };
 use std::collections::BTreeSet;
 
@@ -204,7 +208,7 @@ fn maintainers_name_required_checks_once_each_in_their_order() {
     }
 }
 
-fn publisher() -> scope_domain::repository::access::RepositoryAccess {
+fn publisher() -> RepositoryAccess {
     repository_access_for_user_id(
         OWNER,
         RepoLifecycleState::Ready,
@@ -284,4 +288,98 @@ fn a_repository_that_becomes_public_receives_no_private_request_until_confirmed(
             .kind,
         DomainErrorKind::Conflict
     );
+}
+
+#[test]
+fn only_a_full_view_maintainer_who_may_publish_turns_on_main_publication() {
+    let views = Views::builtin();
+    let link = connected("owner/repo", 42);
+    assert!(!link.publishes_main);
+    let public_view_publisher = RepositoryAccess {
+        view: ViewId::public(),
+        ..publisher()
+    };
+    for (access, kind) in [
+        (outsider(), DomainErrorKind::Forbidden),
+        (member(), DomainErrorKind::Forbidden),
+        (public_view_publisher, DomainErrorKind::Forbidden),
+    ] {
+        assert_eq!(
+            set_github_main_publication(&access, &views, Some(&link), true)
+                .unwrap_err()
+                .kind,
+            kind
+        );
+    }
+    for access in [owner(), publisher()] {
+        let enabled = set_github_main_publication(&access, &views, Some(&link), true).unwrap();
+        assert!(enabled.publishes_main);
+        assert_eq!(enabled.main_publication_refusal(), None);
+    }
+    let enabled = set_github_main_publication(&owner(), &views, Some(&link), true).unwrap();
+    let disabled = set_github_main_publication(&member(), &views, Some(&enabled), false).unwrap();
+    assert!(!disabled.publishes_main);
+    assert_eq!(
+        disabled.main_publication_refusal(),
+        Some(MAIN_PUBLICATION_OFF_MESSAGE)
+    );
+    assert_eq!(
+        set_github_main_publication(&owner(), &views, None, true)
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::NotFound
+    );
+}
+
+#[test]
+fn main_is_published_only_to_a_private_or_confirmed_public_github_repository() {
+    let views = Views::builtin();
+    let mut link = connected("owner/repo", 42);
+    assert!(link.apply_visibility(false));
+    let refused = set_github_main_publication(&owner(), &views, Some(&link), true).unwrap_err();
+    assert_eq!(refused.kind, DomainErrorKind::Conflict);
+    assert_eq!(refused.message, MAIN_WITHHELD_MESSAGE);
+
+    let confirmed = acknowledge_public_github_repository(owner(), Some(&link)).unwrap();
+    let mut enabled =
+        set_github_main_publication(&owner(), &views, Some(&confirmed), true).unwrap();
+    assert_eq!(enabled.main_publication_refusal(), None);
+    assert!(enabled.apply_visibility(true));
+    assert!(enabled.publishes_main);
+    assert!(enabled.apply_visibility(false));
+    assert!(!enabled.publishes_main);
+    assert_eq!(
+        enabled.main_publication_refusal(),
+        Some(MAIN_WITHHELD_MESSAGE)
+    );
+    let reconfirmed = acknowledge_public_github_repository(publisher(), Some(&enabled)).unwrap();
+    assert_eq!(
+        reconfirmed.main_publication_refusal(),
+        Some(MAIN_PUBLICATION_OFF_MESSAGE)
+    );
+}
+
+#[test]
+fn main_publication_follows_the_connection_and_ends_when_it_does() {
+    let views = Views::builtin();
+    let link = connected("owner/repo", 42);
+    assert_eq!(GitHubPushDestination::for_main_publication(&link), None);
+    let mut enabled = set_github_main_publication(&owner(), &views, Some(&link), true).unwrap();
+    assert_eq!(
+        GitHubPushDestination::for_main_publication(&enabled),
+        Some(GitHubPushDestination::of(&enabled))
+    );
+    assert!(enabled.apply_installation_change(7, &GitHubInstallationChange::Suspended, NOW));
+    assert!(!enabled.publishes_main);
+    assert_eq!(GitHubPushDestination::for_main_publication(&enabled), None);
+    assert_eq!(
+        set_github_main_publication(&owner(), &views, Some(&enabled), true)
+            .unwrap_err()
+            .kind,
+        DomainErrorKind::NotFound
+    );
+    let reconnected =
+        connect_github_repository(owner(), Some(&enabled), None, command("owner/repo", 42))
+            .unwrap();
+    assert!(!reconnected.publishes_main);
 }

@@ -14,7 +14,7 @@ test('browser analytics transport uses the bounded proxy while analytics domains
         try {
           const { analyticsEndpointResponse } = await vite.ssrLoadModule('@/server/analytics-endpoint-handler.ts')
           const request = new Request(new URL(incoming.url, runtime.SCOPE_ANALYTICS_ORIGIN), {
-            method: incoming.method, headers: incoming.headers,
+            method: incoming.method, headers: { ...incoming.headers, 'x-real-ip': '89.160.20.129' },
             ...(incoming.method === 'POST' ? { body: Readable.toWeb(incoming), duplex: 'half' } : {}),
           })
           const response = await analyticsEndpointResponse(request, { runtime, fetchUpstream: async (url, options) => {
@@ -95,30 +95,39 @@ test('browser analytics transport uses the bounded proxy while analytics domains
   assert.equal(diagnostics.find(
     event => event.properties.error_origin === 'route',
   ).properties.distinct_id, 'scope_usr_two')
-  const beforeDnt = deliveries.length
-  const dntContext = await browser.newContext(browserOptions)
-  await dntContext.addInitScript(normalVisitor)
-  await dntContext.addInitScript(() => Object.defineProperty(navigator, 'doNotTrack', { get: () => '1' }))
-  const dnt = await dntContext.newPage()
-  await dnt.goto(origin, { waitUntil: 'domcontentloaded' })
-  await dnt.waitForFunction(() => window.analyticsReady)
-  await dnt.waitForTimeout(3500)
-  assert.equal(deliveries.length, beforeDnt, 'DNT must suppress capture')
-  const gpcContext = await browser.newContext(browserOptions)
-  await gpcContext.addInitScript(normalVisitor)
-  await gpcContext.addInitScript(() => Object.defineProperty(navigator, 'globalPrivacyControl', { get: () => true }))
-  const gpc = await gpcContext.newPage()
-  await gpc.goto(origin, { waitUntil: 'domcontentloaded' })
-  await gpc.waitForFunction(() => window.analyticsReady)
-  await gpc.waitForTimeout(3500)
-  assert.equal(deliveries.length, beforeDnt, 'GPC must suppress capture')
-
+  runtime = { ...runtime, SCOPE_ANALYTICS_GEOIP: 'enabled', RAILWAY_ENVIRONMENT_ID: 'fixture',
+    SCOPE_ANALYTICS_ORIGIN: origin.replace('http:', 'https:') }
+  const beforeGeoip = deliveries.length
+  const located = await browser.newPage()
+  await located.goto(origin, { waitUntil: 'domcontentloaded' })
+  await located.waitForFunction(() => window.analyticsReady)
+  await waitFor(() => deliveries.length >= beforeGeoip + 7)
+  for (const delivery of deliveries.slice(beforeGeoip)) {
+    assert.equal(delivery.headers['x-forwarded-for'], '89.160.20.129')
+    for (const event of decodeCapture(delivery)) {
+      assert.equal(event.properties.$geoip_disable, false)
+      assert.equal(event.properties.$ip, '89.160.20.129')
+    }
+  }
+  for (const preference of ['globalPrivacyControl', 'doNotTrack']) {
+    const privateContext = await browser.newContext(browserOptions)
+    await privateContext.addInitScript(({ preference }) => {
+      Object.defineProperty(navigator, preference, { get: () => preference === 'globalPrivacyControl' ? true : '1' })
+    }, { preference })
+    const privatePage = await privateContext.newPage()
+    const beforePrivate = deliveries.length
+    await privatePage.goto(origin, { waitUntil: 'domcontentloaded' })
+    await privatePage.waitForFunction(() => window.analyticsReady)
+    assert.equal(deliveries.length, beforePrivate)
+    await privateContext.close()
+  }
+  const beforeStaging = deliveries.length
   runtime = { ...runtime, SCOPE_ANALYTICS_ENVIRONMENT: 'production', RAILWAY_ENVIRONMENT_NAME: 'staging' }
   const staging = await browser.newPage()
   await staging.goto(origin, { waitUntil: 'domcontentloaded' })
   await staging.waitForFunction(() => window.analyticsReady)
   assert.equal(await staging.evaluate(() => window.analyticsEnabled), false)
-  assert.equal(deliveries.length, beforeDnt, 'Staging cannot use production analytics')
+  assert.equal(deliveries.length, beforeStaging, 'Staging cannot use production analytics')
 })
 
 function decodeCapture(delivery) {

@@ -57,6 +57,7 @@ export function RequestDiscussionWorkbench({
     initialPage,
     params,
     repoId,
+    requestHead: request.head_oid,
     viewerId,
   })
   const [activeComposer, setActiveComposer] = useState<string | null>(null)

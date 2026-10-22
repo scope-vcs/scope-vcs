@@ -3,6 +3,7 @@ use crate::{
     git::content::source_content_bytes,
     http::responses::{ReviewFileContentResponse, ReviewFileDiffResponse},
     state::AppState,
+    use_cases::request_diff_file::MAX_RENDERED_TEXT_BYTES,
 };
 use scope_domain::history::FileChangeKind;
 use scope_domain::{
@@ -10,8 +11,6 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     repository::git::{GitHead, GitPackSpan},
 };
-
-pub(crate) const MAX_RENDERED_TEXT_BYTES: usize = 1024 * 1024;
 
 pub(crate) async fn review_file_diff_response_for_blobs(
     state: &AppState,
