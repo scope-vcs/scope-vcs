@@ -367,8 +367,13 @@ such as a bot's review command goes. Each comment ends with an invisible
 looks for the app's comment with that marker, so a comment GitHub accepted
 whose answer was lost is not posted twice.
 
-Closing or merging the request closes its carrier. The decision lives in
-`closes_carrier_pull_request` in `scope-domain`. A close counts only when
+Closing the request closes its carrier. Merging it closes the carrier only
+while the repository does not publish main to GitHub; when it does, Scope
+leaves the pull request alone, and GitHub marks it merged once main with the
+request's commits arrives. The decision lives in
+`closes_carrier_pull_request` in `scope-domain` and reads the connection when
+the request ends. Once a request has ended, Scope no longer opens, retargets,
+rewrites or comments on its carrier. A close counts only when
 GitHub confirms it or reports the pull request already closed or merged; a
 pull request Scope cannot reach is an error that retries. A request that ends
 before Scope recorded its carrier's number, for example because GitHub's

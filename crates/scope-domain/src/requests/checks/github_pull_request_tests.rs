@@ -119,15 +119,39 @@ fn a_stacked_request_targets_its_parent_branch_only_while_the_parent_is_open() {
 }
 
 #[test]
-fn closing_or_merging_a_request_closes_its_carrier() {
+fn closing_always_closes_the_carrier_and_merging_closes_it_unless_main_is_published() {
+    let publishing = GitHubConnection {
+        publishes_main: true,
+        ..connection()
+    };
+    let disconnected_publishing = GitHubConnection {
+        status: GitHubConnectionStatus::Disconnected {
+            reason: GitHubDisconnectReason::AppUninstalled,
+            at_unix: 2,
+        },
+        ..publishing.clone()
+    };
     let open = full_view_request();
-    assert!(!closes_carrier_pull_request(&open));
     let mut closed = open.clone();
     closed.closed_at_unix = Some(30);
-    assert!(closes_carrier_pull_request(&closed));
-    let mut merged = open;
+    let mut merged = open.clone();
     merged.merged_at_unix = Some(30);
-    assert!(closes_carrier_pull_request(&merged));
+
+    for connection in [None, Some(&publishing)] {
+        assert!(!closes_carrier_pull_request(&open, connection));
+        assert!(closes_carrier_pull_request(&closed, connection));
+    }
+    assert!(closes_carrier_pull_request(&merged, None));
+    assert!(closes_carrier_pull_request(&merged, Some(&connection())));
+    assert!(!closes_carrier_pull_request(&merged, Some(&publishing)));
+    assert!(closes_carrier_pull_request(
+        &merged,
+        Some(&disconnected_publishing)
+    ));
+
+    assert!(carrier_may_change(&open));
+    assert!(!carrier_may_change(&closed));
+    assert!(!carrier_may_change(&merged));
 }
 
 fn settings(open_pull_requests: bool, comment: Option<&str>) -> GitHubReviewBotSettings {

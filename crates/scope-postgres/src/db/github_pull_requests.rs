@@ -415,7 +415,8 @@ pub(super) async fn queue_carrier_close<C: ConnectionTrait>(
     conn: &C,
     request: &Request,
 ) -> Result<(), PostgresError> {
-    if !closes_carrier_pull_request(request) {
+    let connection = repository_github_connection(conn, &request.repo_id).await?;
+    if !closes_carrier_pull_request(request, connection.as_ref()) {
         return Ok(());
     }
     conn.execute_raw(Statement::from_sql_and_values(
