@@ -7,6 +7,7 @@ use scope_domain::{
     github_run_import::{GitHubRunImport, GitHubRunImportState},
     github_setup_check::{GitHubSetupCheck, GitHubSetupCheckState},
     github_workflow_jobs::GitHubWorkflowJob,
+    requests::{GitHubPush, GitHubPushState},
 };
 use scope_postgres::db::{GitHubConnectionRead, GitHubSetupCheckRead, GitHubWorkflowRunRead};
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,9 @@ response_enum!(GitHubRunImportStateResponse => GitHubRunImportState {
 response_enum!(GitHubSetupCheckStateResponse => GitHubSetupCheckState {
     Pushing, Waiting, Finished, Failed,
 });
+response_enum!(GitHubMainPushStateResponse => GitHubPushState {
+    Queued, Running, Succeeded, Failed,
+});
 response_enum!(GitHubDisconnectReasonResponse => GitHubDisconnectReason {
     AppUninstalled, InstallationSuspended, RepositoryRemoved,
 });
@@ -55,6 +59,9 @@ pub(crate) struct GitHubConnectionResponse {
     /// Whether the viewer may confirm that a public GitHub repository
     /// receives what Scope pushes, private requests included.
     pub(crate) can_confirm_public: bool,
+    /// Whether the viewer may turn on publishing main: a maintainer who reads
+    /// the full view and can change file visibility.
+    pub(crate) can_publish_main: bool,
     /// The latest connection test, while the repository has a link.
     pub(crate) setup_check: Option<GitHubSetupCheckResponse>,
     /// How many of GitHub's most recent workflow runs connecting imports.
@@ -267,6 +274,34 @@ pub(crate) struct GitHubConnectionDetailsResponse {
     /// Posted on that pull request when Scope opens it and after each new
     /// head Scope pushes there.
     pub(crate) review_request_comment: Option<String>,
+    pub(crate) main_publication: GitHubMainPublicationResponse,
+}
+
+/// Publishing Scope's main to the linked GitHub repository's main.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubMainPublicationResponse {
+    /// Whether every change to Scope main is pushed to GitHub main, never forced.
+    pub(crate) enabled: bool,
+    /// The latest push of main to this GitHub repository.
+    pub(crate) latest: Option<GitHubMainPushResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubMainPushResponse {
+    pub(crate) state: GitHubMainPushStateResponse,
+    pub(crate) commit_oid: String,
+    /// Why the latest attempt failed. A queued push with an error tries again.
+    pub(crate) error: Option<String>,
+    pub(crate) updated_at_unix: u64,
+}
+
+/// Turns publishing Scope main to GitHub on or off.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubMainPublicationRequest {
+    pub(crate) enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -401,6 +436,8 @@ pub(crate) struct GitHubConnectionParts {
     pub(crate) required_checks: Vec<String>,
     pub(crate) review_bots: Vec<scope_domain::github_review_bots::GitHubReviewBot>,
     pub(crate) can_confirm_public: bool,
+    pub(crate) can_publish_main: bool,
+    pub(crate) main_push: Option<GitHubPush>,
     pub(crate) setup_check: Option<GitHubSetupCheckRead>,
     pub(crate) run_import_count: u32,
     pub(crate) run_import: Option<GitHubRunImport>,
@@ -421,6 +458,9 @@ pub(crate) fn github_connection_response(
     let run_import = parts
         .run_import
         .filter(|import| linked(import.github_repository_id));
+    let main_push = parts
+        .main_push
+        .filter(|push| linked(push.destination.github_repository_id));
     let connection = read.map(|read| {
         let connection = read.connection;
         let (public_on_github, public_confirmed) = match connection.visibility {
@@ -430,6 +470,10 @@ pub(crate) fn github_connection_response(
         GitHubConnectionDetailsResponse {
             public_on_github,
             public_confirmed,
+            main_publication: GitHubMainPublicationResponse {
+                enabled: connection.publishes_main,
+                latest: main_push.map(github_main_push_response),
+            },
             github_url: format!("https://github.com/{}", connection.github_full_name),
             github_full_name: connection.github_full_name,
             open_review_bot_pull_requests: connection.review_bots.open_pull_requests,
@@ -464,8 +508,18 @@ pub(crate) fn github_connection_response(
             })
             .collect(),
         can_confirm_public: parts.can_confirm_public,
+        can_publish_main: parts.can_publish_main,
         run_import_count: parts.run_import_count,
         run_import: run_import.map(github_run_import_response),
+    }
+}
+
+fn github_main_push_response(push: GitHubPush) -> GitHubMainPushResponse {
+    GitHubMainPushResponse {
+        state: push.state.into(),
+        commit_oid: push.target_oid.unwrap_or_default(),
+        error: push.last_error,
+        updated_at_unix: push.updated_at_unix,
     }
 }
 

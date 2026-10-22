@@ -372,3 +372,56 @@ async fn a_delivery_during_a_running_claim_runs_the_job_again_after_it() {
     assert_eq!(rereading.commented_head_oid, Some(oid('b')));
     assert_eq!(rereading.pull_request.unwrap().number, 5);
 }
+
+#[tokio::test]
+async fn merging_leaves_the_carrier_to_github_when_main_is_published_and_closes_it_otherwise() {
+    for publishes_main in [true, false] {
+        let store = postgres_store();
+        connect(&store, true).await;
+        if publishes_main {
+            store
+                .repositories()
+                .set_github_main_publication(REPO, OWNER, true, 1)
+                .await
+                .unwrap();
+        }
+        let mut request = submitted_full_view_request(&store, "req_1").await;
+        push_succeeds(&store, "req_1", 'a', 10).await;
+        let mut opened = claim(&store, "claim_1", 10).await.remove(0);
+        opened.record_opened(
+            5,
+            "https://github.com/octo/checks-42/pull/5".into(),
+            "main".into(),
+            None,
+        );
+        store
+            .requests()
+            .finish_github_pull_request(&opened, "claim_1", GitHubJobOutcome::Succeeded(()), 11)
+            .await
+            .unwrap();
+
+        request.merged_at_unix = Some(20);
+        request.merged_by_user_id = Some(OWNER.into());
+        request.merged_head_oid = Some(request.head_oid.clone());
+        request.merged_main_oid = Some(oid('m'));
+        request.updated_at_unix = 20;
+        let tx = sea_orm::TransactionTrait::begin(store.db.as_ref())
+            .await
+            .unwrap();
+        crate::db::request_lifecycle_effects::persist_lifecycle_mutation(&tx, &request, &[])
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let carrier = carrier(&store, "req_1").await.unwrap();
+        if publishes_main {
+            assert!(
+                matches!(carrier.intent, GitHubPullRequestIntent::Open { .. }),
+                "{carrier:?}"
+            );
+            assert!(claim(&store, "claim_2", 20).await.is_empty());
+        } else {
+            assert_eq!(carrier.intent, GitHubPullRequestIntent::Close);
+        }
+    }
+}

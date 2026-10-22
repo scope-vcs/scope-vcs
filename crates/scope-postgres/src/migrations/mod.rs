@@ -9,6 +9,7 @@ mod m0089_contribution_request_stacks;
 mod m0090_job_traceparents;
 mod m0091_media_reconcile_once;
 mod m0092_request_discussion_line_anchors;
+mod m0093_github_main_publication;
 mod m0094_github_carrier_pull_requests;
 mod m0095_github_review_imports;
 mod m0096_github_review_bot_gate;
@@ -97,6 +98,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0092_request_discussion_line_anchors::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0093_github_main_publication::Migration),
             metadata_restore_safe: true,
         },
         RegisteredMigration {

@@ -1,14 +1,21 @@
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
-    auth::tokens::random_token, error::ApiError,
-    git::request_refs::with_request_revision_store_repo, github::GitHubApp, persistence::unix_now,
-    repo_events::RepoChangeReason, state::AppState,
+    auth::tokens::random_token,
+    error::ApiError,
+    git::request_refs::with_request_revision_store_repo,
+    github::{GitHubApp, GitHubPublishFailure},
+    persistence::unix_now,
+    repo_events::RepoChangeReason,
+    state::AppState,
     use_cases::view_check_commits::with_check_commit,
 };
 use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
-    requests::{GitHubBranch, GitHubPush, GitHubPushState, github_push_retry_at},
+    requests::{
+        GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, GitHubPushState,
+        github_push_retry_at,
+    },
 };
 use scope_postgres::db::{GitHubJobOutcome, GitHubPushStanding};
 use std::path::Path;
@@ -159,13 +166,20 @@ async fn ensure_current(
                     .to_string(),
             )
         })?;
-    ensure_may_receive(&connection, view)
+    ensure_may_receive(&connection, &push.branch, view)
 }
 
 fn ensure_may_receive(
     connection: &GitHubConnection,
+    branch: &GitHubBranch,
     view: Option<ViewId>,
 ) -> Result<(), JobFailure> {
+    if *branch == GitHubBranch::Main {
+        return match connection.main_publication_refusal() {
+            Some(refusal) => Err(JobFailure::GiveUp(refusal.to_string())),
+            None => Ok(()),
+        };
+    }
     if view.as_ref().is_some_and(|view| !view.is_public())
         && !connection.may_receive_private_requests()
     {
@@ -179,21 +193,18 @@ fn ensure_may_receive(
 pub(crate) async fn refresh_github_visibility(
     state: &AppState,
     connection: &GitHubConnection,
-) -> Result<GitHubConnection, ApiError> {
-    let repository = state
+) -> Result<Option<GitHubConnection>, ApiError> {
+    let Some(repository) = state
         .github_app()?
         .installation_repository(connection.installation_id, connection.github_repository_id)
         .await?
-        .ok_or_else(|| {
-            ApiError::upstream_unavailable(
-                "The Scope GitHub App can no longer reach this GitHub repository.",
-                format!(
-                    "installation {} no longer lists {}",
-                    connection.installation_id, connection.github_full_name
-                ),
-            )
-        })?;
-    let mut refreshed = connection.clone();
+    else {
+        return Ok(None);
+    };
+    let mut refreshed = GitHubConnection {
+        github_full_name: repository.full_name,
+        ..connection.clone()
+    };
     if refreshed.apply_visibility(repository.private)
         && let Some(incarnation) = state
             .metadata
@@ -208,7 +219,7 @@ pub(crate) async fn refresh_github_visibility(
             )
             .await;
     }
-    Ok(refreshed)
+    Ok(Some(refreshed))
 }
 
 async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<(), JobFailure> {
@@ -236,7 +247,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
                 .ok_or_else(gone)?;
             Some((request, evaluation))
         }
-        GitHubBranch::SetupCheck => None,
+        GitHubBranch::SetupCheck | GitHubBranch::Main => None,
     };
     let view = Some(
         tested
@@ -246,20 +257,15 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             }),
     );
     ensure_current(state, push, claim_token, view.clone()).await?;
-    if view.as_ref().is_some_and(|view| !view.is_public())
-        && let Some(connection) = state
-            .metadata
-            .repositories()
-            .github_connection(&push.repo_id)
-            .await?
-    {
-        ensure_may_receive(
-            &refresh_github_visibility(state, &connection).await?,
-            view.clone(),
-        )?;
-    }
+    let github_full_name = if view.as_ref().is_some_and(|view| !view.is_public()) {
+        let live = live_destination(state, push).await?;
+        ensure_may_receive(&live, &push.branch, view.clone())?;
+        live.github_full_name
+    } else {
+        destination.github_full_name.clone()
+    };
     let token = installation_token(&app, destination.installation_id).await?;
-    let remote = app.push_remote(&destination.github_full_name, &token);
+    let remote = app.push_remote(&github_full_name, &token);
     let git_ref = push.branch.git_ref();
     let incarnation = state
         .metadata
@@ -268,20 +274,27 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         .await?
         .ok_or_else(gone)?
         .incarnation();
-    let (check_state, check_push, claim_token) =
+    let (check_state, check_push, check_claim) =
         (state.clone(), push.clone(), claim_token.to_string());
     let expected_oid = target_oid.clone();
+    let owned_by_scope = push.branch.owned_by_scope();
     let push_when_current = move |repo: &Path| {
         crate::git::blocking::block_on(ensure_current(
             &check_state,
             &check_push,
-            &claim_token,
+            &check_claim,
             view,
         ))
         .and_then(|()| {
-            remote
-                .push(repo, &target_oid, &git_ref)
-                .map_err(JobFailure::Retry)
+            if owned_by_scope {
+                remote
+                    .push(repo, &target_oid, &git_ref)
+                    .map_err(JobFailure::Retry)
+            } else {
+                remote
+                    .publish(repo, &target_oid, &git_ref)
+                    .map_err(publish_failure)
+            }
         })
     };
     let Some((request, evaluation)) = tested else {
@@ -293,11 +306,19 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         else {
             return Err(gone());
         };
+        if push.branch == GitHubBranch::Main && head.head_oid != expected_oid {
+            requests
+                .drop_stale_github_push(&push.id, claim_token)
+                .await?;
+            return Err(JobFailure::Stale);
+        }
         let repo = state
             .repository_engine
             .materialize_repository(state, &incarnation, &head, &spans)
             .await?;
-        record_setup_check_baseline(state, &app, push).await?;
+        if push.branch == GitHubBranch::SetupCheck {
+            record_setup_check_baseline(state, &app, push).await?;
+        }
         return crate::git::blocking::run(move || Ok(push_when_current(repo.as_ref()))).await?;
     };
     let revision = requests
@@ -327,6 +348,40 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
             )
             .await?
         }
+    }
+}
+
+async fn live_destination(
+    state: &AppState,
+    push: &GitHubPush,
+) -> Result<GitHubConnection, JobFailure> {
+    let unreachable = || {
+        let error = "The Scope GitHub App can no longer reach this GitHub repository.".to_string();
+        if push.branch.owned_by_scope() {
+            JobFailure::Retry(error)
+        } else {
+            JobFailure::GiveUp(error)
+        }
+    };
+    let connection = state
+        .metadata
+        .repositories()
+        .github_connection(&push.repo_id)
+        .await?
+        .filter(|connection| push.destination.is_connected_through(connection))
+        .ok_or_else(unreachable)?;
+    refresh_github_visibility(state, &connection)
+        .await?
+        .ok_or_else(unreachable)
+}
+
+fn publish_failure(failure: GitHubPublishFailure) -> JobFailure {
+    match failure {
+        GitHubPublishFailure::Diverged => {
+            JobFailure::GiveUp(GITHUB_MAIN_DIVERGED_MESSAGE.to_string())
+        }
+        GitHubPublishFailure::Refused(error) => JobFailure::GiveUp(error),
+        GitHubPublishFailure::Failed(error) => JobFailure::Retry(error),
     }
 }
 
@@ -386,6 +441,14 @@ async fn publish_push_change(state: &AppState, push: &GitHubPush) {
         (Ok(Some(incarnation)), GitHubBranch::Request(request_id)) => {
             state
                 .publish_request_state_refresh(&incarnation, request_id)
+                .await;
+        }
+        (Ok(Some(incarnation)), GitHubBranch::Main) => {
+            state
+                .publish_request_summary_refresh(
+                    &incarnation,
+                    RepoChangeReason::GitHubConnectionChanged,
+                )
                 .await;
         }
         (Ok(Some(incarnation)), GitHubBranch::SetupCheck) => {

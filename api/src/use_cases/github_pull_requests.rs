@@ -19,8 +19,8 @@ use scope_domain::{
     },
     requests::{
         GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestObservation,
-        GitHubPullRequestStep, carrier_text_digest, carries_private_request, github_retry_at,
-        may_carry_on_github, review_request_comment_body, review_request_marker,
+        GitHubPullRequestStep, carrier_may_change, carrier_text_digest, carries_private_request,
+        github_retry_at, may_carry_on_github, review_request_comment_body, review_request_marker,
     },
 };
 use scope_postgres::db::GitHubJobOutcome;
@@ -142,7 +142,9 @@ async fn advance(
                     "This repository is no longer connected to that GitHub repository.".to_string(),
                 )
             })?;
-            ensure_may_carry(state, carrier, connection).await?;
+            if ensure_may_carry(state, carrier, connection).await? == Flow::Stop {
+                return Ok(());
+            }
             checked_visibility = true;
         }
         if take_step(&app, &claim, carrier, step, &review_bots, text.as_ref()).await? == Flow::Stop
@@ -211,22 +213,31 @@ async fn ensure_may_carry(
     state: &AppState,
     carrier: &GitHubPullRequest,
     connection: &GitHubConnection,
-) -> Result<(), JobFailure> {
+) -> Result<Flow, JobFailure> {
     let request = state
         .metadata
         .requests()
         .request_by_id(&carrier.request_id)
         .await?
         .ok_or_else(|| JobFailure::GiveUp("Scope no longer has this request.".to_string()))?;
+    if !carrier_may_change(&request) {
+        return Ok(Flow::Stop);
+    }
     let refreshed;
     let connection = if carries_private_request(&request) {
-        refreshed = refresh_github_visibility(state, connection).await?;
+        refreshed = refresh_github_visibility(state, connection)
+            .await?
+            .ok_or_else(|| {
+                JobFailure::Retry(
+                    "The Scope GitHub App can no longer reach this GitHub repository.".to_string(),
+                )
+            })?;
         &refreshed
     } else {
         connection
     };
     if may_carry_on_github(connection, &request) {
-        Ok(())
+        Ok(Flow::Continue)
     } else {
         Err(JobFailure::GiveUp(
             PRIVATE_REQUESTS_WITHHELD_MESSAGE.to_string(),

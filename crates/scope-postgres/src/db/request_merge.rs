@@ -35,6 +35,7 @@ use {
 pub struct MergeRequestContentMutation {
     pub request: RequestLifecycleMutation,
     pub git_head: GitHead,
+    pub queued_main_publication: bool,
 }
 
 impl RequestStore {
@@ -246,7 +247,7 @@ impl RequestStore {
             },
         )?;
 
-        let git_head = accept_and_persist_request_merge(
+        let persisted = accept_and_persist_request_merge(
             &tx,
             repo_row,
             update,
@@ -258,6 +259,7 @@ impl RequestStore {
             now_unix,
         )
         .await?;
+        let git_head = persisted.git_head;
 
         persist_lifecycle_mutation(&tx, &request_mutation.request, &request_mutation.events)
             .await?;
@@ -297,6 +299,7 @@ impl RequestStore {
         Ok(MergeRequestContentMutation {
             request: request_mutation,
             git_head,
+            queued_main_publication: persisted.queued_main_publication,
         })
     }
 }

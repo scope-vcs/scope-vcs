@@ -147,8 +147,21 @@ pub fn carrier_text_digest(title: &str, body: &str) -> String {
     hex::encode(digest.finalize())
 }
 
-pub fn closes_carrier_pull_request(request: &Request) -> bool {
-    matches!(request.state(), RequestState::Closed | RequestState::Merged)
+pub fn closes_carrier_pull_request(
+    request: &Request,
+    connection: Option<&GitHubConnection>,
+) -> bool {
+    match request.state() {
+        RequestState::Closed => true,
+        RequestState::Merged => !connection.is_some_and(|connection| {
+            GitHubPushDestination::for_main_publication(connection).is_some()
+        }),
+        RequestState::Draft | RequestState::Open => false,
+    }
+}
+
+pub fn carrier_may_change(request: &Request) -> bool {
+    request.state() == RequestState::Open
 }
 
 impl GitHubPullRequest {
