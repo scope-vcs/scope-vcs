@@ -12,12 +12,22 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path as FsPath, PathBuf},
-    sync::atomic::Ordering,
+    sync::{Arc, atomic::Ordering},
 };
 
 pub(crate) struct VerifiedProjections {
-    root: PathBuf,
+    root: Arc<VerificationRoot>,
     latest: HashMap<ViewId, VerifiedProjection>,
+}
+
+struct VerificationRoot(PathBuf);
+
+impl Drop for VerificationRoot {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_dir_all(&self.0) {
+            tracing::warn!(%error, path = %self.0.display(), "failed to remove verified projections");
+        }
+    }
 }
 
 struct VerifiedProjection {
@@ -35,7 +45,7 @@ impl VerifiedProjections {
         ));
         fs::create_dir_all(&root).map_err(ApiError::internal)?;
         Ok(Self {
-            root,
+            root: Arc::new(VerificationRoot(root)),
             latest: HashMap::new(),
         })
     }
@@ -91,7 +101,7 @@ impl VerifiedProjections {
                     &labels,
                     &proposed,
                     &native_source_repo,
-                    &root,
+                    &root.0,
                 )
             })
             .await
@@ -107,14 +117,6 @@ impl VerifiedProjections {
             fs::remove_dir_all(&previous.repo).map_err(ApiError::internal)?;
         }
         Ok(head)
-    }
-}
-
-impl Drop for VerifiedProjections {
-    fn drop(&mut self) {
-        if let Err(error) = fs::remove_dir_all(&self.root) {
-            tracing::warn!(%error, path = %self.root.display(), "failed to remove verified projections");
-        }
     }
 }
 

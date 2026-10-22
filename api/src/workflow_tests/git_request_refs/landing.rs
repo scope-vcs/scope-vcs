@@ -326,3 +326,40 @@ async fn a_merge_prepared_on_a_batch_that_fails_to_land_lands_on_the_committed_m
         Some("second work\n")
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_replica_with_queued_merges_yields_the_merge_turn_to_a_waiting_replica() {
+    let names = ["first", "second"];
+    let landing = DisjointRequests::open("yielded-turn", &names).await;
+    let committer = landing.state.merge_committer.clone();
+    committer.yield_turn_after(1);
+    let admin = landing.state.metadata.admin();
+    let held = admin.lock_aggregates_for_tests().await.unwrap();
+
+    let first =
+        commit_blocked_behind_held_lock(&landing.state, landing.merge(&landing.request_ids[0]))
+            .await;
+    let second = tokio::spawn(landing.merge(&landing.request_ids[1]));
+    let other_replica = tokio::spawn({
+        let repositories = landing.state.metadata.repositories();
+        async move { repositories.acquire_merge_turn(TEST_REPO_ID).await }
+    });
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while committer.submitted(TEST_REPO_ID) < 2
+            || admin.lock_waiters_for_tests().await.unwrap() < 2
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the second merge and the other replica must wait behind the first commit");
+    held.rollback().await.unwrap();
+
+    let turn = other_replica.await.unwrap().unwrap();
+    assert_eq!(committer.queued(TEST_REPO_ID), 1);
+    turn.release().await;
+
+    landing
+        .assert_all_landed(&names, vec![first.await.unwrap(), second.await.unwrap()])
+        .await;
+}

@@ -15,17 +15,30 @@ use scope_domain::{
 use scope_product_analytics::ProductEvent;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex, PoisonError},
+    sync::{
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 use tokio::sync::{Notify, oneshot};
 
 mod persist;
 
 const MAX_MERGES_PER_COMMIT: usize = 16;
+const BATCHES_PER_TURN: usize = 4;
 
-#[derive(Default)]
 pub(crate) struct MergeCommitter {
     queues: Mutex<HashMap<String, RepositoryQueue>>,
+    batches_per_turn: AtomicUsize,
+}
+
+impl Default for MergeCommitter {
+    fn default() -> Self {
+        Self {
+            queues: Mutex::default(),
+            batches_per_turn: AtomicUsize::new(BATCHES_PER_TURN),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -116,6 +129,11 @@ impl MergeCommitter {
         self.lock()
             .get(repository_id)
             .map_or(0, |queue| queue.merges.len())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn yield_turn_after(&self, batches: usize) {
+        self.batches_per_turn.store(batches, Ordering::Relaxed);
     }
 
     #[cfg(test)]
@@ -255,14 +273,24 @@ async fn drain(state: &AppState, repository_id: &str, batch: Vec<QueuedMerge>) -
     let incarnation = repo.incarnation();
     let mut prepared = prepare_batch(state, &repo, &mut staging, batch).await;
     drop(repo);
+    let batches_per_turn = state
+        .merge_committer
+        .batches_per_turn
+        .load(Ordering::Relaxed);
+    let mut batches = 0;
     let retry = loop {
         let (ready, proposed, settled) = prepared.settle(state, staging.committed()).await;
         state.merge_committer.requeue(repository_id, settled);
         if ready.is_empty() {
             break Vec::new();
         }
-        let (Persisted { all_landed, retry }, next) =
-            persist_while_preparing(state, repository_id, ready, &proposed, &mut staging).await;
+        batches += 1;
+        let last_in_turn = batches >= batches_per_turn;
+        let (Persisted { all_landed, retry }, next) = if last_in_turn {
+            (persist_batch(state, ready).await, None)
+        } else {
+            persist_while_preparing(state, repository_id, ready, &proposed, &mut staging).await
+        };
         state.wakeups.auto_merge.notify_one();
         if !all_landed {
             let mut retry = retry;
@@ -270,6 +298,9 @@ async fn drain(state: &AppState, repository_id: &str, batch: Vec<QueuedMerge>) -
                 retry.extend(next.unwind(state).await);
             }
             break retry;
+        }
+        if last_in_turn {
+            break Vec::new();
         }
         staging.landed(proposed.clone());
         prepared = match next {
