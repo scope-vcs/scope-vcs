@@ -11,14 +11,14 @@ export async function syncProductReports(request, reports) {
     }
   }
   const dashboardName = 'Scope product outcomes'
-  const dashboards = await listAll('dashboards/')
+  const dashboards = await listAll(request, 'dashboards/')
   const matches = dashboards.filter((item) => !item.deleted && item.name === dashboardName)
   if (matches.length > 1) throw new Error('Multiple Scope product outcomes dashboards; resolve the duplicate before syncing')
   const dashboard = matches[0] ?? await request('dashboards/', { method: 'POST', body: {
     name: dashboardName,
     description: 'Production product outcomes. Definitions maintained in dev/analytics/reports.mjs. Counts describe captured events; delivery is best effort.',
   } })
-  const insights = await listAll(`insights/?${new URLSearchParams({ dashboards: JSON.stringify([dashboard.id]) })}`)
+  const insights = await listAll(request, `insights/?${new URLSearchParams({ dashboards: JSON.stringify([dashboard.id]) })}`)
   const results = []
   for (const report of reports) {
     const tag = `scope-product-report:${report.key}`
@@ -36,20 +36,20 @@ export async function syncProductReports(request, reports) {
     results.push({ key: report.key, id: saved.id, shortId: saved.short_id })
   }
   return { dashboardId: dashboard.id, insights: results }
+}
 
-  async function listAll(path) {
-    const items = []
-    let next = path
-    const visited = new Set()
-    while (next) {
-      if (visited.has(next)) throw new Error('PostHog returned a pagination cycle')
-      visited.add(next)
-      const page = await request(next)
-      items.push(...page.results)
-      next = page.next
-    }
-    return items
+export async function listAll(request, path) {
+  const items = []
+  let next = path
+  const visited = new Set()
+  while (next) {
+    if (visited.has(next)) throw new Error('PostHog returned a pagination cycle')
+    visited.add(next)
+    const page = await request(next)
+    items.push(...page.results)
+    next = page.next
   }
+  return items
 }
 
 export function posthogRequest({ apiKey, projectId, host = 'https://us.posthog.com', fetchImpl = fetch }) {

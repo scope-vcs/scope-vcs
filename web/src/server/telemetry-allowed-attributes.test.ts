@@ -1,6 +1,6 @@
 import { SpanKind, SpanStatusCode, TraceFlags } from '@opentelemetry/api'
 import { resourceFromAttributes } from '@opentelemetry/resources'
-import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-node'
+import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace'
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
 import { AllowedAttributesExporter } from './telemetry-allowed-attributes'

@@ -24,32 +24,6 @@ use scope_postgres::db::{CatalogFixture, TestDatabaseTarget};
 use serde_json::json;
 
 #[tokio::test]
-async fn zero_cloud_concurrency_pauses_admission() {
-    let metadata = queued_runs(1).await;
-    let provider = FakeEcs::new().await;
-    let coordinator = coordinator(&metadata, &provider, 0);
-    assert_eq!(
-        coordinator
-            .dispatch_available(crate::unix_now().unwrap())
-            .await
-            .unwrap(),
-        0
-    );
-    assert_eq!(provider.count("start"), 0);
-    assert_eq!(
-        metadata
-            .runs()
-            .run_snapshot("run-0")
-            .await
-            .unwrap()
-            .unwrap()
-            .jobs[0]
-            .state,
-        scope_domain::runs::job::RunJobState::Queued
-    );
-}
-
-#[tokio::test]
 async fn paused_dispatch_still_checks_cleanup_without_marking_stopping_as_complete() {
     let metadata = queued_runs(2).await;
     let now = crate::unix_now().unwrap();

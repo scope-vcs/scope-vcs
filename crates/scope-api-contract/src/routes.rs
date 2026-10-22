@@ -44,10 +44,18 @@ routes! {
         REPO_GITHUB_AUTHORIZE = "/v1/repos/{owner}/{repo}/github/authorize" => "repoGitHubAuthorize";
         REPO_GITHUB_REQUIRED_CHECKS = "/v1/repos/{owner}/{repo}/github/required-checks"
             => "repoGitHubRequiredChecks";
+        REPO_GITHUB_REVIEW_BOTS = "/v1/repos/{owner}/{repo}/github/review-bots"
+            => "repoGitHubReviewBots";
+        REPO_GITHUB_REVIEW_BOT_PULL_REQUESTS = "/v1/repos/{owner}/{repo}/github/review-bot-pull-requests"
+            => "repoGitHubReviewBotPullRequests";
+        REPO_GITHUB_REVIEW_REQUEST_COMMENT = "/v1/repos/{owner}/{repo}/github/review-request-comment"
+            => "repoGitHubReviewRequestComment";
         REPO_GITHUB_PUBLIC_CONFIRMATION = "/v1/repos/{owner}/{repo}/github/public-confirmation"
             => "repoGitHubPublicConfirmation";
         REPO_GITHUB_SETUP_CHECK = "/v1/repos/{owner}/{repo}/github/setup-check"
             => "repoGitHubSetupCheck";
+        REPO_GITHUB_MAIN_PUBLICATION = "/v1/repos/{owner}/{repo}/github/main-publication"
+            => "repoGitHubMainPublication";
         REPO_GITHUB_WORKFLOW_RUNS = "/v1/repos/{owner}/{repo}/github/workflow-runs"
             => "repoGitHubWorkflowRuns";
         REPO_GITHUB_WORKFLOW_NAMES = "/v1/repos/{owner}/{repo}/github/workflow-names"

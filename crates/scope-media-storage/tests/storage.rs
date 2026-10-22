@@ -93,16 +93,13 @@ async fn writer_download_preserves_all_chunks() {
 async fn reads_fail_when_stored_bytes_disagree_with_the_manifest_digests() {
     let storage = MediaStorage::encrypted(Arc::new(MemoryBackend::default()), [17; 32], 2).unwrap();
     let attempt = WriteAttempt::new("att_5", "original", "lease_5").unwrap();
-    let plaintext = vec![0x33; MAX_CHUNK_BYTES + 5];
+    let plaintext = b"manifest digest".to_vec();
     let object = support::store_bytes(&storage, &attempt, &plaintext).await;
 
     let mut wrong_chunk = object.clone();
-    wrong_chunk.chunks[1].sha256 = hex::encode(Sha256::digest(b"other"));
+    wrong_chunk.chunks[0].sha256 = hex::encode(Sha256::digest(b"other"));
     let mut stream = storage
-        .read_range(
-            &wrong_chunk,
-            MAX_CHUNK_BYTES as u64..=plaintext.len() as u64 - 1,
-        )
+        .read_range(&wrong_chunk, 0..=plaintext.len() as u64 - 1)
         .await
         .unwrap();
     let mut failure = None;

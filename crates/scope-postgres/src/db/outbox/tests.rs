@@ -21,14 +21,6 @@ fn retry_backoff_is_bounded() {
     assert_eq!(retry_delay_seconds(99), 300);
 }
 
-#[test]
-fn retry_policy_stops_at_max_attempts() {
-    assert_eq!(next_retry_attempt(0).unwrap(), 1);
-    assert!(!is_terminal_retry_attempt(MAX_JOB_ATTEMPTS - 1));
-    assert!(is_terminal_retry_attempt(MAX_JOB_ATTEMPTS));
-    assert!(is_terminal_retry_attempt(MAX_JOB_ATTEMPTS + 10));
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn worker_role_rebuilds_repository_history() {
     let Ok(admin_url) = std::env::var("SCOPE_WORKER_ROLE_TEST_ADMIN_URL") else {

@@ -1,7 +1,8 @@
 use super::*;
 use crate::api::{
-    QueuePageQuery, RequestAttentionActionRequest, RequestAttentionReason, RequestQueueGroup,
-    RequestQueueItemResponse, RequestQueueSection, apply_request_attention, request_queue_page,
+    QueuePageQuery, RequestAttentionActionRequest, RequestAttentionReason,
+    RequestMergeabilityStatus, RequestQueueGroup, RequestQueueItemResponse, RequestQueueSection,
+    apply_request_attention, request_queue_page,
 };
 use crate::display::terminal_text;
 use crate::error::CliError;
@@ -163,8 +164,15 @@ fn queue_row_line(row: &QueueRow, now_unix: u64) -> String {
     } else {
         ' '
     };
+    let review_hold = match request.mergeability.status {
+        RequestMergeabilityStatus::ReviewsPending
+        | RequestMergeabilityStatus::ReviewFindingsOpen => {
+            format!(" · {}", render::mergeability_label(&request.mergeability))
+        }
+        _ => String::new(),
+    };
     format!(
-        "{marker}{:>5}  {} ({}) — {} · {} · base {} · depth {} · {:?}",
+        "{marker}{:>5}  {} ({}) — {} · {} · base {} · depth {} · {:?}{review_hold}",
         render::wait_label(row.item.attention_at_unix, now_unix),
         terminal_text(&request.name),
         terminal_text(&request.id),
@@ -409,6 +417,13 @@ mod tests {
         assert_eq!(
             claimed,
             "   <1m  fix-refs (req_one) — Fix refs · Reviewing: @dana · base main · depth 1 · Main"
+        );
+        let mut held = item("new_activity", serde_json::Value::Null);
+        held.request.mergeability.status = RequestMergeabilityStatus::ReviewFindingsOpen;
+        held.request.mergeability.reason = Some("a review bot's discussion is unresolved".into());
+        assert!(
+            queue_row_line(&row(held), 4_600)
+                .ends_with(" · Main · a review bot's discussion is unresolved")
         );
     }
 

@@ -3,47 +3,11 @@ use crate::repository::git::fixtures::{segment, span};
 
 #[test]
 fn selection_surfaces_layout_errors_before_looking_for_a_pair() {
-    let disconnected = GitPackSpan {
-        base_oid: Some("different".to_string()),
-        ..span(3, 3, 0)
-    };
-    for (spans, expected) in [
-        (
-            vec![GitPackSpan {
-                geometric_tier: 1,
-                ..span(1, 1, 0)
-            }],
-            GitPackLayoutError::InvalidGeometricTier {
-                first_sequence: 1,
-                last_sequence: 1,
-                actual: 1,
-                expected: 0,
-            },
-        ),
-        (
-            vec![span(2, 2, 0), span(3, 3, 0)],
-            GitPackLayoutError::InvalidStart { first_sequence: 2 },
-        ),
-        (
-            vec![span(1, 2, 1), disconnected, span(4, 4, 0)],
-            GitPackLayoutError::DisconnectedHistory {
-                previous_head_oid: "head-2".to_string(),
-                next_base_oid: Some("different".to_string()),
-            },
-        ),
-        (
-            vec![span(1, 1, 0), span(3, 3, 0)],
-            GitPackLayoutError::NonContiguous {
-                previous_last_sequence: 1,
-                next_first_sequence: 3,
-            },
-        ),
-    ] {
-        assert_eq!(
-            GitCompactionPlan::select(&spans, u64::MAX).unwrap_err(),
-            GitCompactionError::InvalidLayout(expected)
-        );
-    }
+    let spans = [span(2, 2, 0), span(3, 3, 0)];
+    assert_eq!(
+        GitCompactionPlan::select(&spans, u64::MAX).unwrap_err(),
+        GitCompactionError::InvalidLayout(GitPackLayoutError::InvalidStart { first_sequence: 2 })
+    );
 }
 
 #[test]

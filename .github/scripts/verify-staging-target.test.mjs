@@ -107,7 +107,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   `)
   writeFileSync(join(root, 'prepared.json'), JSON.stringify({ schemaVersion: 1, sourceSha: candidate,
     components: { web: { sourceSha: candidate, serviceId: 'web', image: `ghcr.io/scope-vcs/release-web@sha256:${'b'.repeat(64)}` } } }))
-  for (const name of ['railway-artifact.mjs', 'railway-retry.mjs']) {
+  for (const name of ['railway-artifact.mjs', 'railway-client.mjs', 'railway-retry.mjs']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   }
   writeFileSync(join(scripts, 'railway-read.mjs'), 'export function readRailway() {}\n' + readFileSync(join(scripts, 'railway-read.mjs'), 'utf8'))
@@ -212,7 +212,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   }
   writeFileSync(join(root, 'provider.json'), JSON.stringify({ ...input, activations: [], maintenance: [] }))
   writeFileSync(join(root, '.github/deployment-services.json'), JSON.stringify(input.manifest))
-  for (const name of ['deploy-staging-railway.sh', 'railway-service-health.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-retry.mjs', 'railway-predecessor-teardown.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh']) {
+  for (const name of ['deploy-staging-railway.sh', 'railway-service-health.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-client.mjs', 'railway-retry.mjs', 'railway-predecessor-teardown.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   }
   mkdirSync(join(root, 'deploy/postgres'), { recursive: true })

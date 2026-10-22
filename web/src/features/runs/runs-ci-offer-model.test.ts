@@ -6,8 +6,9 @@ import { runsCiOffer } from './runs-ci-offer-model'
 const notConnected: GitHubConnectionResponse = {
   configured: true,
   connection: null,
-  required_checks: [],
+  required_checks: [], review_bots: [],
   can_confirm_public: true,
+  can_publish_main: false,
   setup_check: null,
   run_import_count: 50,
   run_import: null,
@@ -46,6 +47,9 @@ test('a repository with workflows of its own or a GitHub link keeps its empty st
     disconnected: null,
     public_on_github: false,
     public_confirmed: true,
+    open_review_bot_pull_requests: false,
+    review_request_comment: null,
+    main_publication: { enabled: false, latest: null },
   }
   assert.deepEqual(offer({ github: { ...notConnected, connection } }), { kind: 'none' })
 })

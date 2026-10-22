@@ -1,6 +1,6 @@
 use crate::{
     error::DomainError, github_run_import::validate_github_run_import_count,
-    repository::access::RepositoryAccess,
+    repository::access::RepositoryAccess, views::Views,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -15,7 +15,17 @@ pub struct GitHubConnection {
     pub connected_at_unix: u64,
     pub status: GitHubConnectionStatus,
     pub visibility: GitHubRepositoryVisibility,
+    pub review_bots: GitHubReviewBotSettings,
+    pub publishes_main: bool,
 }
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GitHubReviewBotSettings {
+    pub open_pull_requests: bool,
+    pub review_request_comment: Option<String>,
+}
+
+pub const REVIEW_REQUEST_COMMENT_MAX_CHARS: usize = 500;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitHubRepositoryVisibility {
@@ -29,6 +39,11 @@ pub const PUBLIC_GITHUB_REPOSITORY_CONFIRMATION: &str = "This GitHub repository 
 pub const PRIVATE_REQUESTS_WITHHELD_MESSAGE: &str = "This repository's GitHub repository is now \
     public, so Scope does not send private requests there. A maintainer who can change file \
     visibility can confirm in repository settings that they may become public.";
+pub const MAIN_WITHHELD_MESSAGE: &str = "This repository's GitHub repository is now public, \
+    so Scope does not publish main there. A maintainer who can change file visibility can \
+    confirm in repository settings that every file may become public.";
+pub const MAIN_PUBLICATION_OFF_MESSAGE: &str =
+    "Publishing main to GitHub was turned off before this push ran.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitHubConnectionStatus {
@@ -81,6 +96,20 @@ impl GitHubConnection {
             }
     }
 
+    pub fn may_receive_main(&self) -> bool {
+        self.may_receive_private_requests()
+    }
+
+    pub fn main_publication_refusal(&self) -> Option<&'static str> {
+        if !self.may_receive_main() {
+            Some(MAIN_WITHHELD_MESSAGE)
+        } else if !self.publishes_main {
+            Some(MAIN_PUBLICATION_OFF_MESSAGE)
+        } else {
+            None
+        }
+    }
+
     pub fn apply_visibility(&mut self, github_private: bool) -> bool {
         let visibility = match (github_private, self.visibility) {
             (true, _) => GitHubRepositoryVisibility::Private,
@@ -91,6 +120,9 @@ impl GitHubConnection {
         };
         let changed = visibility != self.visibility;
         self.visibility = visibility;
+        if !self.may_receive_main() {
+            self.publishes_main = false;
+        }
         changed
     }
 
@@ -117,6 +149,8 @@ impl GitHubConnection {
             reason,
             at_unix: now_unix.max(self.connected_at_unix),
         };
+        self.review_bots = GitHubReviewBotSettings::default();
+        self.publishes_main = false;
         true
     }
 }
@@ -175,6 +209,8 @@ pub fn connect_github_repository(
         connected_at_unix: command.now_unix,
         status: GitHubConnectionStatus::Connected,
         visibility,
+        review_bots: GitHubReviewBotSettings::default(),
+        publishes_main: false,
     })
 }
 
@@ -204,6 +240,38 @@ pub fn can_publish_to_github(access: RepositoryAccess) -> bool {
     access.is_maintainer() && access.can_change_file_visibility
 }
 
+pub fn can_publish_main_to_github(access: &RepositoryAccess, views: &Views) -> bool {
+    access.reads_full_view(views) && can_publish_to_github(access.clone())
+}
+
+pub fn set_github_main_publication(
+    access: &RepositoryAccess,
+    views: &Views,
+    current: Option<&GitHubConnection>,
+    enabled: bool,
+) -> Result<GitHubConnection, DomainError> {
+    ensure_maintainer(access.clone())?;
+    let Some(current) = current.filter(|current| current.is_connected()) else {
+        return Err(DomainError::not_found(
+            "this repository is not connected to GitHub",
+        ));
+    };
+    if enabled {
+        if !can_publish_main_to_github(access, views) {
+            return Err(DomainError::forbidden(
+                "Only maintainers who read the full view and can change file visibility can publish main to GitHub.",
+            ));
+        }
+        if !current.may_receive_main() {
+            return Err(DomainError::conflict(MAIN_WITHHELD_MESSAGE));
+        }
+    }
+    Ok(GitHubConnection {
+        publishes_main: enabled,
+        ..current.clone()
+    })
+}
+
 fn ensure_can_publish(access: RepositoryAccess) -> Result<(), DomainError> {
     if can_publish_to_github(access) {
         Ok(())
@@ -225,6 +293,43 @@ pub fn disconnect_github_repository(
         ));
     }
     Ok(())
+}
+
+pub fn set_review_bot_pull_requests(
+    access: RepositoryAccess,
+    current: Option<&GitHubConnection>,
+    enabled: bool,
+) -> Result<GitHubConnection, DomainError> {
+    let mut connection = linked_connection(access, current)?;
+    connection.review_bots.open_pull_requests = enabled;
+    Ok(connection)
+}
+
+pub fn set_review_request_comment(
+    access: RepositoryAccess,
+    current: Option<&GitHubConnection>,
+    comment: &str,
+) -> Result<GitHubConnection, DomainError> {
+    let mut connection = linked_connection(access, current)?;
+    let comment = comment.trim();
+    if comment.chars().count() > REVIEW_REQUEST_COMMENT_MAX_CHARS {
+        return Err(DomainError::invalid_input(format!(
+            "The review request comment can be at most {REVIEW_REQUEST_COMMENT_MAX_CHARS} characters."
+        )));
+    }
+    connection.review_bots.review_request_comment =
+        (!comment.is_empty()).then(|| comment.to_string());
+    Ok(connection)
+}
+
+fn linked_connection(
+    access: RepositoryAccess,
+    current: Option<&GitHubConnection>,
+) -> Result<GitHubConnection, DomainError> {
+    ensure_maintainer(access)?;
+    current
+        .cloned()
+        .ok_or_else(|| DomainError::not_found("this repository is not connected to GitHub"))
 }
 
 pub const GITHUB_REQUIRED_CHECKS_LIMIT: usize = 50;
