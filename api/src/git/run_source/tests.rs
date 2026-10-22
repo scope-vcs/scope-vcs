@@ -84,7 +84,7 @@ async fn concurrent_file_reads_and_run_bundles_reuse_objects_at_the_requested_re
     let incarnation = state
         .metadata
         .repositories()
-        .git_push_context("owner", "repo", "user-owner")
+        .git_push_state("owner", "repo", "user-owner")
         .await
         .unwrap()
         .unwrap()
@@ -384,7 +384,7 @@ async fn cancelled_revision_and_bundle_requests_keep_repository_and_capacity_unt
             let incarnation = state
                 .metadata
                 .repositories()
-                .git_push_context("owner", "repo", "user-owner")
+                .git_push_state("owner", "repo", "user-owner")
                 .await
                 .unwrap()
                 .unwrap()

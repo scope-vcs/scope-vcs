@@ -307,7 +307,9 @@ async fn publish_change(
     };
     let result = async {
         let payload = serde_json::to_string(&notification)?;
-        metadata.repositories().notify_repo_change(&payload).await?;
+        metadata
+            .repositories()
+            .queue_repo_change_notification(payload)?;
         Ok::<_, anyhow::Error>(())
     }
     .await;

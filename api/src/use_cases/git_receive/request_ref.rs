@@ -153,12 +153,10 @@ pub(crate) async fn prepare_request_staging_repo(
 
 pub(super) async fn seed_editable_request_refs(
     state: &AppState,
-    owner: &str,
-    repo_name: &str,
+    context: &GitPushContext,
     actor_user_id: &str,
     staging_repo: &Path,
 ) -> Result<(), ApiError> {
-    let context = git_push_context(state, owner, repo_name, actor_user_id).await?;
     let candidates = state
         .metadata
         .requests()
@@ -166,7 +164,7 @@ pub(super) async fn seed_editable_request_refs(
         .await?;
     seed_editable_request_refs_for_repo(
         state,
-        &context,
+        context,
         actor_user_id,
         context.repo_config.views().full(),
         staging_repo,

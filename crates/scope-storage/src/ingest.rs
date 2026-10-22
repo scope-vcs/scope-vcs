@@ -1,7 +1,7 @@
 use super::{
     BackendError, EncryptionKey, GitSegmentIngestTimings, GitSegmentReservation, GitSegmentStore,
     GitStorageError, MultipartUpload, ObjectBackend, StagedGitSegment, UploadedPart, is_hex_id_32,
-    random_hex_id, segment_object_key, sync_directory,
+    random_hex_id, segment_object_key,
 };
 use crate::envelope::{EnvelopeScope, EnvelopeWriter};
 use bytes::Bytes;
@@ -228,7 +228,7 @@ impl GitSegmentStore {
             local_pack_path: local.path,
             timings: GitSegmentIngestTimings {
                 total: started.elapsed(),
-                local_write_and_fsync: local.elapsed,
+                local_write: local.elapsed,
                 remote_upload: remote.elapsed,
                 fanout_blocked,
                 plaintext_bytes,
@@ -386,7 +386,6 @@ async fn write_local(
             }
         }
         file.flush().await.map_err(GitStorageError::Local)?;
-        file.sync_all().await.map_err(GitStorageError::Local)?;
         drop(file);
         if fs::try_exists(&final_path)
             .await
@@ -398,9 +397,6 @@ async fn write_local(
             )));
         }
         fs::rename(&temp_path, &final_path)
-            .await
-            .map_err(GitStorageError::Local)?;
-        sync_directory(directory.clone())
             .await
             .map_err(GitStorageError::Local)?;
         Ok(LocalOutcome {

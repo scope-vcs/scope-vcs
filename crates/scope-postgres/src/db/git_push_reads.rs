@@ -1,8 +1,11 @@
 use super::{
-    RepositoryStore, begin_metadata_read_snapshot, entities, git_segments::load_git_pack_spans,
-    repository_access::load_repo_record,
+    RepositoryStore, begin_metadata_read_snapshot, entities, repository_access::load_repo_record,
 };
-use sea_orm::{ConnectionTrait, EntityTrait};
+use sea_orm::{
+    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, IdenStatic, Iterable,
+    QueryResult, Statement,
+};
+use std::sync::OnceLock;
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -15,7 +18,7 @@ use {
 };
 
 #[derive(Clone, Debug)]
-pub struct GitPushContext {
+pub struct GitPushState {
     pub repo_id: String,
     pub incarnation: RepositoryIncarnation,
     pub owner_user_id: String,
@@ -23,9 +26,22 @@ pub struct GitPushContext {
     pub access: RepositoryAccess,
     pub repo_config: RepoConfig,
     pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
     pub change_version: u64,
     pub content_version: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct GitPushContext {
+    pub state: GitPushState,
+    pub git_pack_spans: Vec<GitPackSpan>,
+}
+
+impl std::ops::Deref for GitPushContext {
+    type Target = GitPushState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -69,10 +85,18 @@ impl RepositoryStore {
         user_id: &str,
     ) -> Result<Option<GitPushContext>, PostgresError> {
         let id = repo_id(owner, name);
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let context = git_push_context_for_id(&tx, &id, user_id).await?;
-        tx.commit().await?;
-        Ok(context)
+        git_push_context_for_id(self.db.as_ref(), &id, user_id).await
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_push_state"))]
+    pub async fn git_push_state(
+        &self,
+        owner: &str,
+        name: &str,
+        user_id: &str,
+    ) -> Result<Option<GitPushState>, PostgresError> {
+        let id = repo_id(owner, name);
+        git_push_state_for_id(self.db.as_ref(), &id, user_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_push_credentials"))]
@@ -112,25 +136,76 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
     id: &str,
     user_id: &str,
 ) -> Result<Option<GitPushContext>, PostgresError> {
-    let Some(repo_row) = entities::repository::Entity::find_by_id(id)
-        .one(conn)
+    let Some(row) = conn
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            git_push_context_sql(),
+            [id.into(), user_id.into()],
+        ))
         .await?
     else {
         return Ok(None);
     };
-    let head = entities::git_head::Entity::find_by_id(id)
-        .one(conn)
-        .await?
-        .map(entities::git_head::Model::try_into_domain)
-        .transpose()?;
-    let pack_spans = load_git_pack_spans(conn, id).await?;
-    let permissions =
-        entities::repository_member::Entity::find_by_id((id.to_string(), user_id.to_string()))
-            .one(conn)
-            .await?
-            .map(entities::repository_member::Model::try_into_domain)
-            .transpose()?
-            .map(|member| member.permissions);
+    let spans: Vec<(
+        entities::git_pack_span::Model,
+        Option<entities::git_segment_upload::Model>,
+    )> = row
+        .try_get::<Option<serde_json::Value>>("", "pack_spans")?
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(PostgresError::internal)?
+        .unwrap_or_default();
+    let mut git_pack_spans = Vec::with_capacity(spans.len());
+    for (span, upload) in spans {
+        let Some(upload) = upload else {
+            return Err(PostgresError::internal_message(format!(
+                "Git pack span references missing segment {}",
+                span.segment_id
+            )));
+        };
+        git_pack_spans.push(span.try_into_domain(upload.ready_segment_ref()?)?);
+    }
+    Ok(Some(GitPushContext {
+        state: git_push_state_from_row(&row, id, user_id)?,
+        git_pack_spans,
+    }))
+}
+
+async fn git_push_state_for_id<C: ConnectionTrait>(
+    conn: &C,
+    id: &str,
+    user_id: &str,
+) -> Result<Option<GitPushState>, PostgresError> {
+    conn.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        git_push_state_sql(),
+        [id.into(), user_id.into()],
+    ))
+    .await?
+    .map(|row| git_push_state_from_row(&row, id, user_id))
+    .transpose()
+}
+
+fn git_push_state_from_row(
+    row: &QueryResult,
+    id: &str,
+    user_id: &str,
+) -> Result<GitPushState, PostgresError> {
+    let repo_row = entities::repository::Model::from_query_result(row, "r_")?;
+    let git_head = if joined(row, "h_repo_id")? {
+        Some(entities::git_head::Model::from_query_result(row, "h_")?.try_into_domain()?)
+    } else {
+        None
+    };
+    let permissions = if joined(row, "m_repo_id")? {
+        Some(
+            entities::repository_member::Model::from_query_result(row, "m_")?
+                .try_into_domain()?
+                .permissions,
+        )
+    } else {
+        None
+    };
     let lifecycle_state = entities::decode_enum(repo_row.publication_state)?;
     let access = repository_access_for_user_id(
         &repo_row.owner_user_id,
@@ -138,7 +213,7 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
         permissions,
         user_id,
     );
-    let context = GitPushContext {
+    Ok(GitPushState {
         incarnation: RepositoryIncarnation::new(id, repo_row.incarnation_id)
             .map_err(PostgresError::internal)?,
         repo_id: id.to_string(),
@@ -147,8 +222,7 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
         access,
         repo_config: serde_json::from_value(repo_row.repo_config)
             .map_err(PostgresError::internal)?,
-        git_head: head,
-        git_pack_spans: pack_spans,
+        git_head,
         change_version: super::integer_columns::i64_to_u64(
             repo_row.change_version,
             "repository change version",
@@ -157,6 +231,55 @@ pub(super) async fn git_push_context_for_id<C: ConnectionTrait>(
             repo_row.content_version,
             "repository content version",
         )?,
-    };
-    Ok(Some(context))
+    })
+}
+
+fn joined(row: &QueryResult, column: &str) -> Result<bool, PostgresError> {
+    Ok(row.try_get::<Option<String>>("", column)?.is_some())
+}
+
+fn git_push_state_columns() -> String {
+    [
+        prefixed_columns::<entities::repository::Column>("repo", "r_"),
+        prefixed_columns::<entities::git_head::Column>("head", "h_"),
+        prefixed_columns::<entities::repository_member::Column>("member", "m_"),
+    ]
+    .join(", ")
+}
+
+const GIT_PUSH_STATE_FROM: &str = "FROM scope_repositories repo
+     LEFT JOIN scope_git_heads head ON head.repo_id = repo.id
+     LEFT JOIN scope_repository_members member
+       ON member.repo_id = repo.id AND member.user_id = $2
+     WHERE repo.id = $1";
+
+fn git_push_state_sql() -> &'static str {
+    static SQL: OnceLock<String> = OnceLock::new();
+    SQL.get_or_init(|| format!("SELECT {} {GIT_PUSH_STATE_FROM}", git_push_state_columns()))
+}
+
+fn git_push_context_sql() -> &'static str {
+    static SQL: OnceLock<String> = OnceLock::new();
+    SQL.get_or_init(|| {
+        format!(
+            "SELECT {},
+                    (SELECT json_agg(
+                                json_build_array(row_to_json(span), row_to_json(upload))
+                                ORDER BY span.first_sequence
+                            )
+                     FROM scope_git_segments span
+                     LEFT JOIN scope_git_segment_uploads upload
+                       ON upload.segment_id = span.segment_id
+                     WHERE span.repo_id = repo.id) AS pack_spans
+             {GIT_PUSH_STATE_FROM}",
+            git_push_state_columns()
+        )
+    })
+}
+
+fn prefixed_columns<C: Iterable + IdenStatic>(table: &str, prefix: &str) -> String {
+    C::iter()
+        .map(|column| format!("{table}.\"{0}\" AS \"{prefix}{0}\"", column.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ")
 }

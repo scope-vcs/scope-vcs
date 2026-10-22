@@ -47,7 +47,10 @@ pub(crate) async fn publish_run_change_for(
             return;
         }
     };
-    if let Err(error) = metadata.repositories().notify_repo_change(&payload).await {
+    if let Err(error) = metadata
+        .repositories()
+        .queue_repo_change_notification(payload)
+    {
         tracing::warn!(
             repo_id,
             run_id,

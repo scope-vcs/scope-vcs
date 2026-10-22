@@ -1,4 +1,7 @@
-use crate::{config::git_storage_limits_from_env, error::ApiError};
+use crate::{
+    config::{git_storage_limits_from_env, parse_positive_usize_env, parse_usize_env},
+    error::ApiError,
+};
 use async_trait::async_trait;
 use scope_git::GitStorageLimits;
 use scope_storage::{ObjectStore, ObjectStoreError, ensure_object_size};
@@ -17,6 +20,15 @@ const DEFAULT_GIT_MATERIALIZATION_CONCURRENCY: usize = 2;
 const DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY: usize = 4;
 const DEFAULT_OBJECT_STORE_CONCURRENCY: usize = 16;
 const DEFAULT_GIT_COMMAND_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_GIT_ADMISSION_WAIT_MS: u64 = 2_000;
+
+const RECEIVE_PACK_CONCURRENCY_ENV: &str = "SCOPE_GIT_RECEIVE_PACK_CONCURRENCY";
+const UPLOAD_PACK_CONCURRENCY_ENV: &str = "SCOPE_GIT_UPLOAD_PACK_CONCURRENCY";
+const GIT_MATERIALIZATION_CONCURRENCY_ENV: &str = "SCOPE_GIT_MATERIALIZATION_CONCURRENCY";
+const GIT_SEGMENT_INGEST_CONCURRENCY_ENV: &str = "SCOPE_GIT_SEGMENT_INGEST_CONCURRENCY";
+const OBJECT_STORE_CONCURRENCY_ENV: &str = "SCOPE_OBJECT_STORE_CONCURRENCY";
+const GIT_COMMAND_TIMEOUT_SECS_ENV: &str = "SCOPE_GIT_COMMAND_TIMEOUT_SECS";
+const GIT_ADMISSION_WAIT_MS_ENV: &str = "SCOPE_GIT_ADMISSION_WAIT_MS";
 
 #[derive(Clone, Debug)]
 pub(crate) struct RuntimeBudgetConfig {
@@ -26,14 +38,42 @@ pub(crate) struct RuntimeBudgetConfig {
     pub(crate) git_segment_ingest_concurrency: usize,
     pub(crate) object_store_concurrency: usize,
     pub(crate) git_command_timeout: Duration,
+    pub(crate) git_admission_wait: Duration,
     pub(crate) git_storage_limits: GitStorageLimits,
 }
 
 impl RuntimeBudgetConfig {
     pub(crate) fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
+            receive_pack_concurrency: parse_positive_usize_env(
+                RECEIVE_PACK_CONCURRENCY_ENV,
+                DEFAULT_RECEIVE_PACK_CONCURRENCY,
+            )?,
+            upload_pack_concurrency: parse_positive_usize_env(
+                UPLOAD_PACK_CONCURRENCY_ENV,
+                DEFAULT_UPLOAD_PACK_CONCURRENCY,
+            )?,
+            git_materialization_concurrency: parse_positive_usize_env(
+                GIT_MATERIALIZATION_CONCURRENCY_ENV,
+                DEFAULT_GIT_MATERIALIZATION_CONCURRENCY,
+            )?,
+            git_segment_ingest_concurrency: parse_positive_usize_env(
+                GIT_SEGMENT_INGEST_CONCURRENCY_ENV,
+                DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY,
+            )?,
+            object_store_concurrency: parse_positive_usize_env(
+                OBJECT_STORE_CONCURRENCY_ENV,
+                DEFAULT_OBJECT_STORE_CONCURRENCY,
+            )?,
+            git_command_timeout: Duration::from_secs(parse_positive_usize_env(
+                GIT_COMMAND_TIMEOUT_SECS_ENV,
+                DEFAULT_GIT_COMMAND_TIMEOUT_SECS as usize,
+            )? as u64),
+            git_admission_wait: Duration::from_millis(parse_usize_env(
+                GIT_ADMISSION_WAIT_MS_ENV,
+                DEFAULT_GIT_ADMISSION_WAIT_MS as usize,
+            )? as u64),
             git_storage_limits: git_storage_limits_from_env()?,
-            ..Self::default()
         })
     }
 }
@@ -47,6 +87,7 @@ impl Default for RuntimeBudgetConfig {
             git_segment_ingest_concurrency: DEFAULT_GIT_SEGMENT_INGEST_CONCURRENCY,
             object_store_concurrency: DEFAULT_OBJECT_STORE_CONCURRENCY,
             git_command_timeout: Duration::from_secs(DEFAULT_GIT_COMMAND_TIMEOUT_SECS),
+            git_admission_wait: Duration::from_millis(DEFAULT_GIT_ADMISSION_WAIT_MS),
             git_storage_limits: GitStorageLimits::default(),
         }
     }
@@ -54,11 +95,13 @@ impl Default for RuntimeBudgetConfig {
 
 pub(crate) struct RuntimeBudgets {
     receive_pack: Arc<Semaphore>,
+    receive_pack_concurrency: usize,
     upload_pack: Arc<Semaphore>,
     git_materialization: Arc<Semaphore>,
     git_segment_ingest: Arc<Semaphore>,
     object_store: Arc<Semaphore>,
     git_command_timeout: Duration,
+    git_admission_wait: Duration,
     git_storage_limits: GitStorageLimits,
 }
 
@@ -70,21 +113,27 @@ impl RuntimeBudgets {
     pub(crate) fn from_config(config: RuntimeBudgetConfig) -> Self {
         Self {
             receive_pack: Arc::new(Semaphore::new(config.receive_pack_concurrency)),
+            receive_pack_concurrency: config.receive_pack_concurrency,
             upload_pack: Arc::new(Semaphore::new(config.upload_pack_concurrency)),
             git_materialization: Arc::new(Semaphore::new(config.git_materialization_concurrency)),
             git_segment_ingest: Arc::new(Semaphore::new(config.git_segment_ingest_concurrency)),
             object_store: Arc::new(Semaphore::new(config.object_store_concurrency)),
             git_command_timeout: config.git_command_timeout,
+            git_admission_wait: config.git_admission_wait,
             git_storage_limits: config.git_storage_limits,
         }
     }
 
-    pub(crate) fn try_receive_pack(&self) -> Result<RuntimePermit, ApiError> {
-        self.try_acquire(&self.receive_pack, "Git receive-pack")
+    pub(crate) fn receive_pack_concurrency(&self) -> usize {
+        self.receive_pack_concurrency
     }
 
-    pub(crate) fn try_upload_pack(&self) -> Result<RuntimePermit, ApiError> {
-        self.try_acquire(&self.upload_pack, "Git upload-pack")
+    pub(crate) async fn admit_receive_pack(&self) -> Result<RuntimePermit, ApiError> {
+        self.admit(&self.receive_pack, "Git receive-pack").await
+    }
+
+    pub(crate) async fn admit_upload_pack(&self) -> Result<RuntimePermit, ApiError> {
+        self.admit(&self.upload_pack, "Git upload-pack").await
     }
 
     pub(crate) fn try_git_materialization(&self) -> Result<RuntimePermit, ApiError> {
@@ -133,6 +182,27 @@ impl RuntimeBudgets {
                 .map(|config| config.git_command_timeout)
                 .unwrap_or_else(|_| RuntimeBudgetConfig::default().git_command_timeout)
         })
+    }
+
+    async fn admit(
+        &self,
+        semaphore: &Arc<Semaphore>,
+        operation: &str,
+    ) -> Result<RuntimePermit, ApiError> {
+        if let Ok(permit) = self.try_acquire(semaphore, operation) {
+            return Ok(permit);
+        }
+        tokio::time::timeout(self.git_admission_wait, semaphore.clone().acquire_owned())
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .map(|permit| RuntimePermit { _permit: permit })
+            .ok_or_else(|| {
+                tracing::warn!(operation, "runtime capacity admission timed out");
+                ApiError::too_many_requests(format!(
+                    "{operation} capacity is exhausted; retry later"
+                ))
+            })
     }
 
     fn try_acquire(
@@ -348,6 +418,29 @@ mod tests {
             .readiness_check()
             .await
             .expect("readiness must not wait for an operation permit");
+    }
+
+    #[tokio::test]
+    async fn git_admission_waits_briefly_for_a_released_slot_before_rejecting() {
+        let budgets = Arc::new(RuntimeBudgets::from_config(RuntimeBudgetConfig {
+            receive_pack_concurrency: 1,
+            git_admission_wait: Duration::from_millis(500),
+            ..Default::default()
+        }));
+        let busy = budgets.admit_receive_pack().await.unwrap();
+        let waiting = tokio::spawn({
+            let budgets = budgets.clone();
+            async move { budgets.admit_receive_pack().await.map(drop) }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        drop(busy);
+        waiting.await.unwrap().unwrap();
+
+        let _busy = budgets.admit_receive_pack().await.unwrap();
+        let started = std::time::Instant::now();
+        let rejected = budgets.admit_receive_pack().await.err().unwrap();
+        assert_eq!(rejected.status(), axum::http::StatusCode::TOO_MANY_REQUESTS);
+        assert!(started.elapsed() >= Duration::from_millis(500));
     }
 
     #[tokio::test]

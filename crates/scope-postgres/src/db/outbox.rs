@@ -79,6 +79,7 @@ impl JobStore {
 
         let db = Arc::clone(&self.db);
         let mut summary = OutboxRunSummary::default();
+        let mut last_completion = None;
         for _ in 0..limit {
             let (claim_now_unix, claim_now) = outbox_time(current_time)?;
             let Some(job) =
@@ -98,19 +99,23 @@ impl JobStore {
             );
             job.queued_trace.link(&span);
 
-            match execute_outbox_job(db.as_ref(), &job, claim_now_unix)
+            let tx = db.begin().await?;
+            match execute_outbox_job(&tx, &job, claim_now_unix)
                 .instrument(span.clone())
                 .await
             {
                 Ok(created_runs) => {
                     let (_, completion_now) = outbox_time(current_time)?;
-                    complete_outbox_job(db.as_ref(), &job, worker_id, completion_now)
+                    complete_outbox_job(&tx, &job, worker_id, completion_now)
                         .instrument(span)
                         .await?;
+                    tx.commit().await?;
+                    last_completion = Some(completion_now);
                     summary.completed += 1;
                     summary.created_runs.extend(created_runs);
                 }
                 Err(error) => {
+                    tx.rollback().await?;
                     let message = error.message;
                     let (_, completion_now) = outbox_time(current_time)?;
                     let attempts = next_retry_attempt(job.attempts)?;
@@ -142,6 +147,9 @@ impl JobStore {
                     summary.failed += 1;
                 }
             }
+        }
+        if let Some(completed_at) = last_completion {
+            prune_succeeded_outbox_jobs(db.as_ref(), completed_at).await?;
         }
         Ok(summary)
     }
@@ -380,7 +388,6 @@ where
             "outbox job lease was lost before completion",
         ));
     }
-    prune_succeeded_outbox_jobs(conn, now).await?;
     Ok(())
 }
 

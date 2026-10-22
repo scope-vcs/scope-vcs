@@ -63,6 +63,7 @@ impl RunStore {
             }));
         }
         let Some(head) = context
+            .state
             .git_head
             .filter(|head| head.head_oid == request.git_oid())
         else {

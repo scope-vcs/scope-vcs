@@ -133,7 +133,12 @@ async fn connect_worker_or_wait(
     health: &WorkerHealth,
 ) -> Option<MetadataStore> {
     loop {
-        match MetadataStore::connect(settings.database_url.clone()).await {
+        match MetadataStore::connect_with_pool_limits(
+            settings.database_url.clone(),
+            settings.metadata_pool_limits(),
+        )
+        .await
+        {
             Ok(metadata) => return Some(metadata),
             Err(error) => {
                 health.mark_schema_waiting();

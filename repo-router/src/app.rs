@@ -26,7 +26,7 @@ pub fn router(config: RouterConfig) -> anyhow::Result<Router> {
         http,
         selector,
         replay: crate::replay::ReplayBuffer::new(
-            config.upload_pack_replay_slots,
+            config.upload_pack_replay_budget_bytes,
             config.upload_pack_replay_max_bytes,
             config.incoming_body_timeout,
         )?,
@@ -78,7 +78,7 @@ pub(crate) fn test_router_with_state(
         http,
         selector: BackendSelector::new(read_replicas),
         replay: crate::replay::ReplayBuffer::new(
-            4,
+            4 * upload_pack_replay_max_bytes,
             upload_pack_replay_max_bytes,
             std::time::Duration::from_secs(15),
         )

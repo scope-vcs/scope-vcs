@@ -51,15 +51,17 @@ where
             "push trigger input does not match the accepted Git head",
         ));
     }
-    let pinned_source = RunSource::accepted_git_head(repo_id, head.clone(), pack_spans.to_vec())
+    let evaluation = PushTriggerEvaluation::for_push(repo_id, head.change_version, input, now_unix)
         .map_err(PostgresError::from)?;
-    let evaluation =
-        PushTriggerEvaluation::pending(repo_id, head.change_version, &head.head_oid, now_unix)
-            .map_err(PostgresError::from)?;
     entities::push_trigger_evaluation::Model::from_domain(&evaluation)?
         .into_active_model()
         .insert(conn)
         .await?;
+    if evaluation.state != PushTriggerEvaluationState::Pending {
+        return Ok(());
+    }
+    let pinned_source = RunSource::accepted_git_head(repo_id, head.clone(), pack_spans.to_vec())
+        .map_err(PostgresError::from)?;
     let job = entities::outbox_job::Model::push_main_trigger_evaluation(
         generate_id(GeneratedIdKind::OutboxJob)?,
         JOB_KIND,
@@ -497,7 +499,8 @@ mod tests {
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         let repo_id = seed_repo(&store).await;
         let head_oid = "5555555555555555555555555555555555555555";
-        enqueue(&store, &repo_id, head_oid, 5, Vec::new()).await;
+        let workflows = vec![workflow_file("malformed", CHECKS)];
+        enqueue(&store, &repo_id, head_oid, 5, workflows).await;
         store
             .db
             .execute_raw(sea_orm::Statement::from_sql_and_values(

@@ -134,7 +134,8 @@ pub use cli_auth_results::{
 };
 use connection::begin_metadata_read_snapshot;
 pub use connection::{
-    ExclusiveWriterFence, terminate_metadata_writer_sessions, verify_writer_fence_available,
+    DEFAULT_METADATA_POOL_MAX_CONNECTIONS, ExclusiveWriterFence, MetadataPoolLimits,
+    terminate_metadata_writer_sessions, verify_writer_fence_available,
 };
 #[cfg(test)]
 use connection::{connect_postgres_store, connect_writer_database};
@@ -145,7 +146,7 @@ pub use dependency_analysis::{
 pub use fast_push::ApplyContentOnlyPushCommand;
 use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
-pub use git_push_reads::{GitPushContext, GitPushCredentials};
+pub use git_push_reads::{GitPushContext, GitPushCredentials, GitPushState};
 pub use git_segments::RepositoryGitWriteLease;
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};

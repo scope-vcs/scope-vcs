@@ -20,7 +20,12 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
     );
     assert!(plan.applied.is_empty());
 
-    let api_error = match connect_postgres_store(target.schema_database_url()).await {
+    let api_error = match connect_postgres_store(
+        target.schema_database_url(),
+        crate::db::connection::MetadataPoolLimits::default(),
+    )
+    .await
+    {
         Ok(_) => panic!("API must refuse a pending maintenance migration"),
         Err(error) => error,
     };
@@ -32,9 +37,13 @@ async fn ordinary_startup_refuses_pending_maintenance_migration() {
 async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     let (target, db, _lease) = isolated_database().await;
     let database_url = target.schema_database_url();
-    let writer = connect_writer_database(&database_url, database_url.parse().unwrap())
-        .await
-        .unwrap();
+    let writer = connect_writer_database(
+        &database_url,
+        database_url.parse().unwrap(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
+    )
+    .await
+    .unwrap();
 
     let writer_pid = writer
         .query_one_raw(Statement::from_string(
@@ -81,9 +90,12 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
     assert!(migrations::plan(db.as_ref()).await.unwrap().exact);
 
-    let worker_store = connect_postgres_store(target.schema_database_url())
-        .await
-        .unwrap();
+    let worker_store = connect_postgres_store(
+        target.schema_database_url(),
+        crate::db::connection::MetadataPoolLimits::default(),
+    )
+    .await
+    .unwrap();
     worker_store.admin().readiness_check().await.unwrap();
 
     db.execute_unprepared(

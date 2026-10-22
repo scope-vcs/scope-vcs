@@ -31,6 +31,7 @@ use tracing_subscriber::{
 
 #[cfg(feature = "postgres")]
 mod job_trace;
+mod log_writer;
 
 const EXPORTED_SPANS: &str =
     "off,otel::tracing=trace,api=info,worker=info,scope_=info,aws_sdk_s3::operation=debug";
@@ -69,18 +70,23 @@ const EXPORTED_ATTRIBUTES: [&str; 21] = [
 #[must_use = "dropping telemetry without shutdown loses the final batch of spans and logs"]
 pub struct Telemetry {
     exporters: Option<Exporters>,
+    stdout: log_writer::LogFlush,
 }
+
+const STDOUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl Telemetry {
     pub fn shutdown(self) {
-        let Some(exporters) = self.exporters else {
-            return;
-        };
-        if let Err(error) = exporters.tracer.shutdown() {
-            tracing::warn!(%error, "flushing exported spans failed");
+        if let Some(exporters) = self.exporters {
+            if let Err(error) = exporters.tracer.shutdown() {
+                tracing::warn!(%error, "flushing exported spans failed");
+            }
+            if let Err(error) = exporters.logger.shutdown() {
+                tracing::warn!(%error, "flushing exported logs failed");
+            }
         }
-        if let Err(error) = exporters.logger.shutdown() {
-            tracing::warn!(%error, "flushing exported logs failed");
+        if !self.stdout.flush(STDOUT_DRAIN_TIMEOUT) {
+            eprintln!("scope log writer did not drain queued stdout lines before shutdown");
         }
     }
 }
@@ -97,13 +103,18 @@ pub fn init_telemetry(service: &'static str, log_filter: &str) -> anyhow::Result
         Ok(Some(destination)) => Some(destination.exporters(service)?),
         _ => None,
     };
-    install(subscriber(log_filter, exporters.as_ref(), std::io::stdout))?;
+    let stdout = log_writer::QueuedLogWriter::stdout()?;
+    let stdout_flush = stdout.flusher();
+    install(subscriber(log_filter, exporters.as_ref(), stdout))?;
     if let Err(InjectedExporterHeaders(variable)) = destination {
         eprintln!(
             "PostHog telemetry export disabled because Railway still injects {variable}; disable Railway tracing for this service"
         );
     }
-    Ok(Telemetry { exporters })
+    Ok(Telemetry {
+        exporters,
+        stdout: stdout_flush,
+    })
 }
 
 fn service_log_filter(rust_log: Option<String>, service_default: &str) -> EnvFilter {

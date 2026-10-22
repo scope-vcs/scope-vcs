@@ -1,4 +1,5 @@
 use super::*;
+use axum::{body::Bytes, http::header::CONTENT_LENGTH};
 use scope_domain::views::ViewId;
 use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend};
 use std::{process::Command, time::Duration};
@@ -7,6 +8,7 @@ use std::{process::Command, time::Duration};
 async fn receive_pack_capacity_exhaustion_returns_backpressure() {
     let state = state_with_budget_config(RuntimeBudgetConfig {
         receive_pack_concurrency: 0,
+        git_admission_wait: Duration::ZERO,
         ..Default::default()
     });
     let secret = "scope_git_budget_test";
@@ -49,10 +51,77 @@ async fn receive_pack_capacity_exhaustion_returns_backpressure() {
 }
 
 #[tokio::test]
+async fn receive_pack_probe_is_answered_without_a_push_slot() {
+    let state = state_with_budget_config(RuntimeBudgetConfig {
+        receive_pack_concurrency: 0,
+        git_admission_wait: Duration::ZERO,
+        git_command_timeout: Duration::from_millis(200),
+        ..Default::default()
+    });
+    let secret = "scope_git_probe_test";
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests(TEST_REPO_ID, |repo| {
+            repo.git_push_token = Some(GitPushToken {
+                token_hash: token_hash(secret),
+                owner_user_id: repo.record.owner_user_id.clone(),
+                created_at_unix: unix_now(),
+            });
+        })
+        .await
+        .unwrap();
+    let push_intent = create_test_push_intent(&state, &test_owner_id(), TEST_PUSH_HEAD_OID).await;
+    let post = |length: usize, body: Body| {
+        Request::builder()
+            .method("POST")
+            .uri("/git/private/owner/repo/git-receive-pack")
+            .header(
+                AUTHORIZATION,
+                format!("Basic {}", BASE64.encode(format!("scope:{secret}"))),
+            )
+            .header("x-scope-push-intent", push_intent.clone())
+            .header(CONTENT_TYPE, "application/x-git-receive-pack-request")
+            .header(CONTENT_LENGTH, length)
+            .body(body)
+            .unwrap()
+    };
+
+    let probe = router(state.clone())
+        .oneshot(post(4, Body::from("0000")))
+        .await
+        .unwrap();
+    assert_eq!(probe.status(), StatusCode::OK);
+    assert!(to_bytes(probe.into_body(), 1024).await.unwrap().is_empty());
+
+    let upload = router(state.clone())
+        .oneshot(post(4, Body::from("0001")))
+        .await
+        .unwrap();
+    assert_eq!(upload.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(1);
+    sender.send(Ok(Bytes::from_static(b"00"))).await.unwrap();
+    let stalled = tokio::time::timeout(
+        Duration::from_secs(5),
+        router(state).oneshot(post(
+            4,
+            Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(receiver)),
+        )),
+    )
+    .await
+    .expect("a stalled probe ends at the Git command deadline")
+    .unwrap();
+    assert_eq!(stalled.status(), StatusCode::SERVICE_UNAVAILABLE);
+    drop(sender);
+}
+
+#[tokio::test]
 async fn upload_pack_capacity_exhaustion_happens_before_materialization() {
     let state = state_with_budget_config(RuntimeBudgetConfig {
         upload_pack_concurrency: 0,
         git_materialization_concurrency: 0,
+        git_admission_wait: Duration::ZERO,
         ..Default::default()
     });
 

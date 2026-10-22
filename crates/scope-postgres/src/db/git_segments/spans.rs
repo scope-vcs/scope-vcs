@@ -6,6 +6,7 @@ use crate::{
 use scope_domain::repository::git::{GitPackSpan, GitSegmentRef};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, QueryOrder, Statement,
+    sea_query::Query,
 };
 use std::collections::BTreeMap;
 
@@ -21,15 +22,19 @@ where
         .order_by_asc(entities::git_pack_span::Column::FirstSequence)
         .all(conn)
         .await?;
-    let segment_ids = rows
-        .iter()
-        .map(|row| row.segment_id.clone())
-        .collect::<Vec<_>>();
-    let uploads = if segment_ids.is_empty() {
+    let uploads = if rows.is_empty() {
         Vec::new()
     } else {
         entities::git_segment_upload::Entity::find()
-            .filter(entities::git_segment_upload::Column::SegmentId.is_in(segment_ids))
+            .filter(
+                entities::git_segment_upload::Column::SegmentId.in_subquery(
+                    Query::select()
+                        .column(entities::git_pack_span::Column::SegmentId)
+                        .from(entities::git_pack_span::Entity)
+                        .and_where(entities::git_pack_span::Column::RepoId.eq(repo_id))
+                        .to_owned(),
+                ),
+            )
             .all(conn)
             .await?
     };

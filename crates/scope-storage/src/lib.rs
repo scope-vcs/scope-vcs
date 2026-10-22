@@ -88,7 +88,7 @@ impl GitSegmentStoreConfig {
 #[derive(Clone, Debug)]
 pub struct GitSegmentIngestTimings {
     pub total: Duration,
-    pub local_write_and_fsync: Duration,
+    pub local_write: Duration,
     pub remote_upload: Duration,
     pub fanout_blocked: Duration,
     pub plaintext_bytes: u64,
