@@ -19,9 +19,10 @@ use super::{
         requests_by_repo_id, save_request_row,
     },
 };
-use sea_orm::TransactionTrait;
+use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
 use {
     crate::error::PostgresError,
+    scope_domain::content::SourceBlob,
     scope_domain::requests::{
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
         RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request,
@@ -31,7 +32,6 @@ use {
         record_request_revision, record_working_request_upload, start_request,
         stop_request_auto_merge,
     },
-    scope_domain::{content::SourceBlob, repository::RepositoryIncarnation},
 };
 
 impl RequestStore {
@@ -188,8 +188,27 @@ impl RequestStore {
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
-        self.publish_request_revision(input, expected_base_version, facts, children, None)
+        self.publish_request_revision(input, expected_base_version, facts, children, None, None)
             .await
+    }
+
+    pub async fn record_pushed_request_revision(
+        &self,
+        input: RecordRequestRevisionInput,
+        expected_base_version: u64,
+        facts: Option<super::RequestBasePublicationFacts>,
+        children: Vec<super::RequestStackChildFacts>,
+        objects: PushedRevisionObjects,
+    ) -> Result<RequestRevisionMutation, PostgresError> {
+        self.publish_request_revision(
+            input,
+            expected_base_version,
+            facts,
+            children,
+            None,
+            Some(objects),
+        )
+        .await
     }
 
     pub async fn record_request_revision_context(
@@ -205,6 +224,7 @@ impl RequestStore {
             facts,
             children,
             Some(context),
+            None,
         )
         .await
     }
@@ -216,6 +236,7 @@ impl RequestStore {
         facts: Option<super::RequestBasePublicationFacts>,
         children: Vec<super::RequestStackChildFacts>,
         context: Option<super::RequestRevisionContextPublication>,
+        pushed: Option<PushedRevisionObjects>,
     ) -> Result<RequestRevisionMutation, PostgresError> {
         let observed = self
             .request_by_id(&input.request_id)
@@ -228,6 +249,9 @@ impl RequestStore {
             .filter(|request| request.repo_id == observed.repo_id)
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
         let repo = repo_by_id(&tx, &request.repo_id, &input.actor_user_id).await?;
+        if let Some(pushed) = &pushed {
+            ensure_object_generation(&tx, &request.repo_id, &pushed.object_generation).await?;
+        }
         super::request_stack::lock_graph(&tx, &request, input.new_base.as_ref()).await?;
         let request = request_by_id(&tx, &input.request_id)
             .await?
@@ -297,6 +321,16 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
+        if let Some(pack) = pushed.as_ref().and_then(|pushed| pushed.pool_pack.as_ref()) {
+            if pack.request_id != mutation.request.id || pack.head_oid != mutation.request.head_oid
+            {
+                return Err(PostgresError::internal_message(
+                    "Git pool pack does not belong to the recorded revision",
+                ));
+            }
+            super::git_segments::register_git_pool_pack(&tx, &repo.record.id, pack, now_unix)
+                .await?;
+        }
         super::request_checks::clear_current_evaluation(&tx, &mutation.request.id).await?;
         let mutation = if let Some(stored) = active_auto_merge {
             let stopped = stop_request_auto_merge(
@@ -425,15 +459,8 @@ impl RequestStore {
                 orphan_objects,
                 ..
             } => {
-                persist_deleted_draft(
-                    &tx,
-                    &repo.incarnation(),
-                    request,
-                    revisions,
-                    orphan_objects.clone(),
-                    now_unix,
-                )
-                .await?;
+                persist_deleted_draft(&tx, request, revisions, orphan_objects.clone(), now_unix)
+                    .await?;
             }
             CloseRequestMutation::Closed { request, event } => {
                 persist_lifecycle_mutation(&tx, request, std::slice::from_ref(event)).await?;
@@ -456,16 +483,43 @@ impl RequestStore {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct PushedRevisionObjects {
+    pub object_generation: String,
+    pub pool_pack: Option<scope_domain::repository::git::GitPoolPack>,
+}
+
+async fn ensure_object_generation<C: sea_orm::ConnectionTrait>(
+    tx: &C,
+    repo_id: &str,
+    expected: &str,
+) -> Result<(), PostgresError> {
+    let config = super::entities::repository::Entity::find_by_id(repo_id)
+        .select_only()
+        .column(super::entities::repository::Column::RepoConfig)
+        .into_tuple::<serde_json::Value>()
+        .one(tx)
+        .await?
+        .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+    let config: scope_domain::repo_config::RepoConfig =
+        serde_json::from_value(config).map_err(PostgresError::internal)?;
+    if config.object_generation() == expected {
+        Ok(())
+    } else {
+        Err(PostgresError::conflict(
+            "repository visibility changed during the push; retry",
+        ))
+    }
+}
+
 pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
     tx: &C,
-    incarnation: &RepositoryIncarnation,
     request: &Request,
     revisions: &[RequestRevision],
     orphan_objects: Vec<SourceBlob>,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    super::cleanup_queue::queue_pending_request_ref_cleanup(tx, incarnation, request, now_unix)
-        .await?;
+    super::git_segments::retire_request_pool_packs(tx, &request.id, now_unix).await?;
     super::github_pushes::queue_github_branch_deletion(tx, &request.repo_id, &request.id, now_unix)
         .await?;
     tombstone_request_attachments(tx, &request.id, now_unix).await?;

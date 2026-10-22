@@ -90,7 +90,6 @@ impl RepositoryEngine {
         self.cache.root()
     }
 
-    #[cfg(test)]
     pub(crate) fn repository_path(&self, incarnation: &RepositoryIncarnation) -> PathBuf {
         self.cache.path_for(incarnation)
     }

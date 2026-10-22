@@ -76,27 +76,23 @@ pub(crate) struct StagedGitPush {
     pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
 }
 
-pub(crate) async fn git_push_from_repo(
+pub(crate) struct StagedGitPack {
+    pub(crate) staged_segment: StagedGitSegment,
+    pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
+}
+
+pub(crate) async fn stage_git_pack(
     state: &AppState,
     repository_id: &str,
     repo: &FsPath,
-    previous: Option<&GitHead>,
-) -> Result<StagedGitPush, ApiError> {
-    let _ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
+    revisions: &[String],
+) -> Result<StagedGitPack, ApiError> {
+    let ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
     let storage_limits = state.runtime_budgets.git_storage_limits();
-    let path = repo.to_path_buf();
-    let (head_oid, ingest_permit) = crate::git::blocking::run(move || {
-        let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
-        let head = git_stdout_text(&path, &["rev-parse", &refname], "reading pushed Git head")?;
-        Ok((head.trim().to_string(), _ingest_permit))
-    })
-    .await?;
-    let mut revisions = format!("{head_oid}\n");
-    if let Some(previous) = previous {
-        revisions.push('^');
-        revisions.push_str(&previous.head_oid);
-        revisions.push('\n');
-    }
+    let revisions = revisions
+        .iter()
+        .map(|revision| format!("{revision}\n"))
+        .collect::<String>();
     let mut command = Command::new("git");
     command
         .current_dir(repo)
@@ -105,8 +101,6 @@ pub(crate) async fn git_push_from_repo(
     let (reservation, upload_heartbeat) = begin_git_segment_upload(state, repository_id).await?;
     let segment_id = reservation.segment_id.clone();
     let object_key = reservation.object_key.clone();
-
-    let pack_started = Instant::now();
     let segment_store = state.git_segment_store.clone();
     let repository_id_for_ingest = repository_id.to_string();
     let timeout = state.runtime_budgets.git_command_timeout();
@@ -151,7 +145,6 @@ pub(crate) async fn git_push_from_repo(
             return Err(ApiError::internal(error));
         }
     };
-    let pack_elapsed = pack_started.elapsed();
     let output = match output {
         Ok(output) => output,
         Err(error) => {
@@ -189,13 +182,6 @@ pub(crate) async fn git_push_from_repo(
     };
     let staged_segment = output.value;
     if !output.status.success() {
-        tracing::info!(
-            incremental = previous.is_some(),
-            pack_us = pack_elapsed.as_micros(),
-            pack_bytes = staged_segment.segment.plaintext_bytes,
-            success = false,
-            "Git push pack timing"
-        );
         best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
         return Err(ApiError::infrastructure_unavailable(format!(
             "creating incremental Git pack: {}",
@@ -215,7 +201,36 @@ pub(crate) async fn git_push_from_repo(
         best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
         return Err(error.into());
     }
+    Ok(StagedGitPack {
+        staged_segment,
+        upload_heartbeat,
+    })
+}
 
+pub(crate) async fn git_push_from_repo(
+    state: &AppState,
+    repository_id: &str,
+    repo: &FsPath,
+    previous: Option<&GitHead>,
+) -> Result<StagedGitPush, ApiError> {
+    let storage_limits = state.runtime_budgets.git_storage_limits();
+    let path = repo.to_path_buf();
+    let head_oid = crate::git::blocking::run(move || {
+        let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
+        let head = git_stdout_text(&path, &["rev-parse", &refname], "reading pushed Git head")?;
+        Ok(head.trim().to_string())
+    })
+    .await?;
+    let mut revisions = vec![head_oid.clone()];
+    if let Some(previous) = previous {
+        revisions.push(format!("^{}", previous.head_oid));
+    }
+    let pack_started = Instant::now();
+    let StagedGitPack {
+        staged_segment,
+        upload_heartbeat,
+    } = stage_git_pack(state, repository_id, repo, &revisions).await?;
+    let pack_elapsed = pack_started.elapsed();
     let pack_bytes = staged_segment.segment.plaintext_bytes;
     let store_started = Instant::now();
     let stored = match prepare_git_push(

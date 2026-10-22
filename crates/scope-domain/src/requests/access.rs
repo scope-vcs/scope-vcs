@@ -115,6 +115,10 @@ pub fn request_actor_role(access: RepositoryAccess) -> RequestActorRole {
     }
 }
 
+pub fn request_visible_to_every_maintainer(view: &ViewId, submitted: bool, views: &Views) -> bool {
+    views.get(view).is_some() && (submitted || views.anyone() != Some(view))
+}
+
 pub fn request_policy(
     request: &Request,
     viewer: RequestViewer<'_>,

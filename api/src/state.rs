@@ -196,6 +196,28 @@ impl AppState {
             RepoChangeBus::default(),
         )
     }
+
+    #[cfg(test)]
+    pub(crate) fn replica_for_tests(&self) -> Self {
+        let data_dir = crate::persistence::test_data_dir();
+        let git_segment_store = Arc::new(
+            self.git_segment_store
+                .with_local_root(data_dir.join("git-segments"))
+                .unwrap(),
+        );
+        let repository_engine = crate::git::repository_engine::RepositoryEngine::new(
+            data_dir.join("git-cache"),
+            crate::config::DEFAULT_GIT_CACHE_MAX_BYTES,
+            git_segment_store.clone(),
+        )
+        .unwrap();
+        Self {
+            data_dir: Arc::new(data_dir),
+            git_segment_store,
+            repository_engine,
+            ..self.clone()
+        }
+    }
 }
 
 #[cfg(test)]

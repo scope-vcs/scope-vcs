@@ -208,10 +208,9 @@ impl AuthStore {
             .collect::<Result<_, _>>()
             .map_err(PostgresError::internal)?;
         for (request_id, repo_id) in drafts {
-            let Some(repo) = others.iter().find(|repo| repo.record.id == repo_id) else {
-                continue;
-            };
-            delete_draft(&tx, &repo.incarnation(), &request_id, user_id, now_unix).await?;
+            if others.iter().any(|repo| repo.record.id == repo_id) {
+                delete_draft(&tx, &request_id, user_id, now_unix).await?;
+            }
         }
         for mut repo in others {
             let before = repo.clone();
@@ -315,7 +314,6 @@ impl AuthStore {
 
 async fn delete_draft(
     tx: &DatabaseTransaction,
-    incarnation: &RepositoryIncarnation,
     request_id: &str,
     user_id: &str,
     now_unix: u64,
@@ -349,15 +347,7 @@ async fn delete_draft(
             "an unsubmitted request was closed instead of deleted",
         ));
     };
-    persist_deleted_draft(
-        tx,
-        incarnation,
-        &request,
-        &revisions,
-        orphan_objects,
-        now_unix,
-    )
-    .await
+    persist_deleted_draft(tx, &request, &revisions, orphan_objects, now_unix).await
 }
 
 #[cfg(test)]

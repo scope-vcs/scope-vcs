@@ -6,7 +6,7 @@ use crate::{
         projection_repo::verify_and_restore_projection,
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, validate_view_request_merge_range},
-        request_refs::{RequestViewBases, StoredRequestRefs, attach_request_refs_from_store},
+        request_refs::{RequestViewBases, attach_request_refs_from_pool},
         staging::create_seeded_receive_pack_staging_repo,
         storage::remove_dir_if_exists,
     },
@@ -367,24 +367,15 @@ async fn prepare_request_merge_for_execution(
     };
     let request_incarnation = repo.incarnation();
     let prepared = async {
-        let attach = {
-            let state = state.clone();
-            let request = request.clone();
-            let staging_repo = staging_repo.clone();
-            let incarnation = request_incarnation.clone();
-            crate::git::blocking::run(move || {
-                attach_request_refs_from_store(
-                    &state,
-                    &incarnation,
-                    StoredRequestRefs {
-                        objects_for: &[],
-                        refs_for: std::slice::from_ref(&request),
-                    },
-                    &staging_repo,
-                    &RequestViewBases::new(),
-                )
-            })
-        };
+        let attach = attach_request_refs_from_pool(
+            state,
+            &request_incarnation,
+            &repo.repo_config,
+            actor_user_id,
+            (Vec::new(), vec![request.clone()]),
+            &staging_repo,
+            RequestViewBases::new(),
+        );
         attach.await.map_err(|error| {
             if error.kind == crate::error::ErrorKind::NotFound {
                 RequestMergeFailure::RequestBranchMissing(error)

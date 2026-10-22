@@ -243,3 +243,29 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
         Some("merging needs a maintainer who reads the full view")
     );
 }
+
+#[test]
+fn every_full_view_maintainer_sees_exactly_the_requests_shared_across_maintainers() {
+    let views = views_with_agent();
+    let maintainer = access(RepositoryActor::Member, ViewId::private(), true);
+    for view in [ViewId::public(), ViewId::private(), agent()] {
+        for submitted in [false, true] {
+            let mut request = if submitted {
+                open_request()
+            } else {
+                super::requests::fixtures::pushed_draft(RequestActorRole::Public)
+            };
+            request.view = view.clone();
+            assert_eq!(
+                request_policy(
+                    &request,
+                    RequestViewer::new(maintainer.clone(), Some("maintainer"), false),
+                    &views,
+                )
+                .exact_visible,
+                request_visible_to_every_maintainer(&view, submitted, &views),
+                "{view} submitted={submitted}"
+            );
+        }
+    }
+}

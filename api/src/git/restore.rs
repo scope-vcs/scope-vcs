@@ -201,7 +201,7 @@ pub(crate) async fn hydrate_git_pack_spans(
     Ok(())
 }
 
-pub(super) fn install_verified_git_pack(
+pub(crate) fn install_verified_git_pack(
     repo_root: &Path,
     pack: &Path,
     timeout: Duration,

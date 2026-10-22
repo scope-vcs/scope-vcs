@@ -68,6 +68,21 @@ pub struct GitSegmentRef {
     pub encoding_version: u32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitPoolPack {
+    pub id: String,
+    pub request_id: String,
+    pub head_oid: String,
+    pub prerequisites: Vec<String>,
+    pub storage: GitPoolPackStorage,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitPoolPackStorage {
+    Inline { sealed: Vec<u8> },
+    Segment(GitSegmentRef),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GitSegmentUploadState {

@@ -6,6 +6,7 @@ mod envelope;
 mod error;
 mod file;
 mod ingest;
+mod inline;
 mod lifecycle;
 mod memory;
 mod objects;
@@ -157,6 +158,17 @@ impl GitSegmentStore {
             verified_cache,
             hydration_permits: Arc::new(tokio::sync::Semaphore::new(MAX_VERIFIED_PACK_HYDRATIONS)),
         })
+    }
+
+    pub fn with_local_root(&self, local_root: impl Into<PathBuf>) -> Result<Self, GitStorageError> {
+        Self::new(
+            self.backend.clone(),
+            self.encryption_key.clone(),
+            GitSegmentStoreConfig {
+                local_root: local_root.into(),
+                ..self.config.clone()
+            },
+        )
     }
 
     fn local_directory(&self, repository_id: &str) -> PathBuf {

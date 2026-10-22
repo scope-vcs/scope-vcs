@@ -9,7 +9,10 @@ use crate::{
     git::{
         cache::GitRepoHandle,
         import::PreparedReceivePackUpdate,
-        request_refs::{non_request_refs_changed, receive_pack_refs, request_ref_update_from_refs},
+        request_refs::{
+            DeferredRequestObjects, non_request_refs_changed, receive_pack_refs,
+            request_ref_update_from_refs,
+        },
         staging::{
             ensure_first_push_receive_pack_staging_repo, ensure_ready_receive_pack_staging_repo,
         },
@@ -20,7 +23,7 @@ use crate::{
 };
 pub(crate) use authorization::authorize;
 pub(crate) use request_ref::RequestRefSeeding;
-use request_ref::RequestStagingKind;
+use request_ref::{RequestStagingKind, SeededRequestRefs};
 use scope_domain::{repository::RepositoryIncarnation, views::ViewId};
 use scope_postgres::db::GitPushContext;
 use std::{
@@ -86,6 +89,8 @@ pub(crate) struct ReceivePreparation {
     _staging_seed: Option<GitRepoHandle>,
     pub(crate) refs_before: Option<Vec<(String, String)>>,
     pub(crate) advertised_request_refs: Vec<(String, String)>,
+    pub(crate) deferred_request_objects: Option<DeferredRequestObjects>,
+    pub(crate) object_generation: Option<String>,
     pub(crate) base_publication:
         Option<crate::use_cases::request_base_publication::RequestBasePublicationHeaders>,
 }
@@ -107,11 +112,12 @@ pub(crate) async fn prepare(
     seeding: RequestRefSeeding<'_>,
 ) -> Result<ReceivePreparation, ApiError> {
     let incarnation = access.incarnation().clone();
-    let (staging_repo, staging_seed, advertised_request_refs) = match &access {
+    let (staging_repo, staging_seed, seeded, object_generation) = match &access {
         ReceivePackAccess::FirstPush { .. } => (
             ensure_first_push_receive_pack_staging_repo(state, &incarnation).await?,
             None,
-            Vec::new(),
+            SeededRequestRefs::default(),
+            None,
         ),
         ReceivePackAccess::ReadyMember {
             author_id, context, ..
@@ -126,7 +132,12 @@ pub(crate) async fn prepare(
             )
             .await
             {
-                Ok(advertised) => (staging.path, Some(staging.seed), advertised),
+                Ok(seeded) => (
+                    staging.path,
+                    Some(staging.seed),
+                    seeded,
+                    Some(context.repo_config.object_generation()),
+                ),
                 Err(error) => {
                     let _ = crate::git::storage::remove_dir_if_exists(&staging.path);
                     return Err(error);
@@ -157,7 +168,12 @@ pub(crate) async fn prepare(
                 seeding,
             )
             .await?;
-            (staging.path, Some(staging.seed), staging.advertised_refs)
+            (
+                staging.path,
+                Some(staging.seed),
+                staging.seeded,
+                Some(staging.object_generation),
+            )
         }
     };
     let refs_before = if matches!(seeding, RequestRefSeeding::Advertise) {
@@ -177,7 +193,9 @@ pub(crate) async fn prepare(
         staging_repo,
         _staging_seed: staging_seed,
         refs_before,
-        advertised_request_refs,
+        advertised_request_refs: seeded.advertised,
+        deferred_request_objects: seeded.deferred_objects,
+        object_generation,
         base_publication: None,
     })
 }
@@ -252,12 +270,18 @@ async fn complete_inner(
                 "request refs cannot be pushed during first push",
             ));
         }
+        let object_generation = preparation.object_generation.ok_or_else(|| {
+            ApiError::internal_message("request revision staging has no object generation")
+        })?;
         request_ref::persist_request_ref_revision(
             state,
             owner,
             repo_name,
             &preparation.access,
-            staging_repo,
+            request_ref::RequestRevisionStaging {
+                repo: staging_repo,
+                object_generation,
+            },
             update,
             preparation.base_publication,
         )
