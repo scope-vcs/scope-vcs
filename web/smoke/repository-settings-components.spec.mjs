@@ -21,6 +21,7 @@ test('repository components retain drafts, previews and pending actions across r
   assert.equal(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches), true)
   assert.equal(await initialClose.evaluate(node => getComputedStyle(node).opacity), '1')
   assert.equal(await initialClose.evaluate(node => getComputedStyle(node).minWidth), '44px')
+  assert.equal(await initialClose.evaluate(node => getComputedStyle(node).minHeight), '44px')
   await page.getByLabel('Description', { exact: true }).fill('Unsaved draft')
   await page.getByRole('button', { name: 'Remote metadata update' }).click()
   assert.equal(await page.getByLabel('Description', { exact: true }).inputValue(), 'Unsaved draft')
@@ -58,17 +59,61 @@ test('repository components retain drafts, previews and pending actions across r
   await checks.getByText('The Scope GitHub App was uninstalled from the GitHub account.').waitFor()
   await checks.getByRole('button', { name: 'Reconnect', exact: true }).waitFor()
   await page.evaluate(() => window.calls.splice(0))
-  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false }, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+  const becamePublic = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: true, public_confirmed: false, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: [], review_bots: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), becamePublic)
   await checks.getByText('This GitHub repository became public, so Scope stopped sending requests outside the Public view there.', { exact: false }).waitFor()
+  const blockedSwitch = checks.getByRole('switch', { name: 'Publish main to GitHub', exact: false })
+  assert.equal(await blockedSwitch.isDisabled(), true)
+  const unconfirmedReason = 'This GitHub repository is public and not confirmed. Allow it above before publishing main.'
+  await checks.getByText(unconfirmedReason, { exact: true }).waitFor()
+  assert.equal(await page.locator(`[id="${await blockedSwitch.getAttribute('aria-describedby')}"]`).textContent(), unconfirmedReason)
   await checks.getByRole('button', { name: 'Allow these requests', exact: true }).click()
   await checks.getByText('Public on GitHub: everything Scope pushes here is public.', { exact: true }).waitFor()
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { confirmPublicGitHub: { owner: 'owner', repo: 'demo' } },
   ])
-  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true }, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+  const github = { configured: true, connection: { github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo', connected_by: null, connected_at_unix: 1, disconnected: null, public_on_github: false, public_confirmed: true, open_review_bot_pull_requests: false, review_request_comment: null, main_publication: { enabled: false, latest: null } }, required_checks: ['ci / test'], review_bots: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null }
   await page.evaluate((github) => window.setFixtureGitHub(github), github)
   await checks.getByText('ci / test', { exact: true }).waitFor()
+  const publishMain = checks.getByRole('switch', { name: 'Publish main to GitHub', exact: false })
+  await checks.getByText('Scope pushes its main to GitHub’s main and never force-pushes.', { exact: false }).waitFor()
+  assert.equal(await publishMain.isChecked(), false)
+  await publishMain.click()
+  assert.equal(await publishMain.isDisabled(), true)
+  await page.evaluate(() => window.finishAction('main-publication'))
+  await checks.getByText('Publishing main (abcdef1).', { exact: true }).waitFor()
+  assert.equal(await publishMain.isChecked(), true)
+  assert.equal(await publishMain.isDisabled(), false)
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubMainPublication: true },
+  ])
+  const publication = publishMain.locator('xpath=ancestor::div[contains(@class, "border-t")][1]')
+  const retrying = { state: 'queued', commit_oid: 'abcdef1234567890abcdef1234567890abcdef12', error: 'GitHub answered 502', updated_at_unix: 1_767_225_600 }
+  await page.evaluate((github) => window.setFixtureGitHub(github), { ...github, connection: { ...github.connection, main_publication: { enabled: true, latest: retrying } } })
+  await publication.getByText('Publishing main (abcdef1). Scope will try again.', { exact: true }).waitFor()
+  await publication.getByText('The last attempt failed: GitHub answered 502', { exact: true }).waitFor()
+  assert.equal(await publication.getByRole('alert').count(), 0)
+  for (const [width, name] of [[1280, 'desktop'], [390, 'phone'], [320, 'narrow-phone']]) {
+    await page.setViewportSize({ width, height: 900 })
+    const bounds = await publication.boundingBox()
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `${name} main publication fits`)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${name} page does not scroll sideways`)
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await publication.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.main-publication-${name}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.evaluate((github) => window.setFixtureGitHub(github), { ...github, can_publish_main: false })
+  const notAllowed = 'Only a maintainer who reads the full view and can change file visibility can turn this on.'
+  await publication.getByText(notAllowed, { exact: true }).waitFor()
+  assert.equal(await publishMain.isDisabled(), true)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.setViewportSize({ width: 320, height: 900 })
+    await publication.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.main-publication-blocked-narrow-phone.png` })
+    await page.setViewportSize({ width: 1280, height: 900 })
+  }
+  await page.evaluate((github) => window.setFixtureGitHub(github), github)
+  assert.equal(await publishMain.isDisabled(), false)
   const saveRequirements = checks.getByRole('button', { name: 'Save requirements', exact: true })
   assert.equal(await saveRequirements.isDisabled(), true)
   await checks.getByRole('button', { name: 'Enter an exact result name…', exact: true }).click()
@@ -129,6 +174,76 @@ test('repository components retain drafts, previews and pending actions across r
   assert.equal(await lint.isChecked(), true)
   assert.equal(await remote.isChecked(), true)
   assert.equal(await saveRequirements.isDisabled(), true)
+  const reviewBotLogins = checks.getByRole('textbox', { name: 'Review bots', exact: true })
+  await checks.getByText('Scope imports GitHub reviews from these bots and from GitHub users who can write to the repository. A required bot must finish reviewing the latest commit before a request merges.', { exact: true }).waitFor()
+  const saveReviewBots = checks.getByRole('button', { name: 'Save review bots', exact: true })
+  assert.equal(await saveReviewBots.isDisabled(), true)
+  await reviewBotLogins.fill('greptile-apps[bot], octocat')
+  await saveReviewBots.click()
+  await checks.getByRole('alert').filter({ hasText: '"octocat" is not a bot.' }).waitFor()
+  assert.equal(await reviewBotLogins.getAttribute('aria-invalid'), 'true')
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [])
+  await reviewBotLogins.fill(' greptile-apps[bot],\nchatgpt-codex-connector[bot] ')
+  assert.equal(await checks.getByRole('alert').filter({ hasText: 'is not a bot' }).count(), 0)
+  await saveReviewBots.click()
+  await page.evaluate(() => window.finishAction('review-bots'))
+  await checks.getByText('Review bots saved.', { exact: true }).waitFor()
+  assert.equal(await reviewBotLogins.inputValue(), 'greptile-apps[bot]\nchatgpt-codex-connector[bot]')
+  assert.equal(await saveReviewBots.isDisabled(), true)
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubReviewBots: [{ login: 'greptile-apps[bot]', required: false }, { login: 'chatgpt-codex-connector[bot]', required: false }] },
+  ])
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 })
+    const fit = await reviewBotLogins.evaluate((field) => ({
+      scrollWidth: field.scrollWidth,
+      clientWidth: field.clientWidth,
+      scrollHeight: field.scrollHeight,
+      clientHeight: field.clientHeight,
+    }))
+    assert(fit.scrollWidth <= fit.clientWidth, `review bots fit across at ${width}: ${JSON.stringify(fit)}`)
+    assert(fit.scrollHeight <= fit.clientHeight, `review bots fit down at ${width}: ${JSON.stringify(fit)}`)
+    const bounds = await reviewBotLogins.boundingBox()
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `review bots field fits at ${width}`)
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await reviewBotLogins.locator('xpath=../..').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.review-bots-${width}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  const requiredBots = checks.getByRole('list', { name: 'Required to merge', exact: true })
+  const requiredOnlyWithPullRequests = checks.getByText('Required bots hold merges only while Open pull requests for review bots is on.', { exact: true })
+  await requiredOnlyWithPullRequests.waitFor()
+  const greptileRequired = requiredBots.getByRole('checkbox', { name: 'greptile-apps[bot]', exact: false })
+  assert.equal(await greptileRequired.isChecked(), false)
+  await greptileRequired.click()
+  await page.evaluate(() => window.finishAction('review-bots'))
+  await page.waitForFunction(() => window.fixtureGitHub().review_bots[0]?.required === true)
+  assert.equal(await greptileRequired.isChecked(), true)
+  assert.equal(await reviewBotLogins.inputValue(), 'greptile-apps[bot]\nchatgpt-codex-connector[bot]')
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubReviewBots: [{ login: 'greptile-apps[bot]', required: true }, { login: 'chatgpt-codex-connector[bot]', required: false }] },
+  ])
+  await reviewBotLogins.fill('Greptile-Apps[bot], octo-reviewer[bot]')
+  await saveReviewBots.click()
+  await page.evaluate(() => window.finishAction('review-bots'))
+  await checks.getByText('Review bots saved.', { exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubReviewBots: [{ login: 'Greptile-Apps[bot]', required: true }, { login: 'octo-reviewer[bot]', required: false }] },
+  ])
+  assert.equal(await requiredBots.getByRole('checkbox', { name: 'Greptile-Apps[bot]', exact: false }).isChecked(), true)
+  assert.equal(await requiredBots.getByRole('checkbox', { name: 'octo-reviewer[bot]', exact: false }).isChecked(), false)
+  await page.evaluate(() => {
+    const github = window.fixtureGitHub()
+    window.setFixtureGitHub({ ...github, review_bots: [{ login: 'octo-reviewer[bot]', required: true }, { login: 'chatgpt-codex-connector[bot]', required: false }] })
+  })
+  await page.waitForFunction(() => document.getElementById('github-review-bots').value === 'octo-reviewer[bot]\nchatgpt-codex-connector[bot]')
+  assert.equal(await checks.getByText('Review bots saved.', { exact: true }).count(), 0)
+  assert.equal(await requiredBots.getByRole('checkbox', { name: 'octo-reviewer[bot]', exact: true }).isChecked(), true)
+  await page.evaluate(() => {
+    const github = window.fixtureGitHub()
+    window.setFixtureGitHub({ ...github, review_bots: [] })
+  })
+  await page.waitForFunction(() => document.getElementById('github-review-bots').value === '')
   for (const [width, name] of [[1280, 'desktop'], [320, 'narrow-phone'], [390, 'phone'], [768, 'tablet']]) {
     await page.setViewportSize({ width, height: 900 })
     const bounds = await checks.last().boundingBox()
@@ -178,6 +293,52 @@ test('repository components retain drafts, previews and pending actions across r
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { setGitHubRunImportCount: 200 },
     { startGitHubRunImport: { owner: 'owner', repo: 'demo' } },
+  ])
+
+  const reviewBots = checks.getByRole('switch', { name: 'Open pull requests for review bots' })
+  assert.equal(await reviewBots.isChecked(), false)
+  await reviewBots.click()
+  assert.equal(await reviewBots.isDisabled(), true)
+  await page.evaluate(() => window.finishAction('review-bot-pull-requests'))
+  await page.waitForFunction(() => window.fixtureGitHub().connection.open_review_bot_pull_requests === true)
+  assert.equal(await reviewBots.isChecked(), true)
+  assert.equal(await requiredOnlyWithPullRequests.count(), 0)
+  assert.equal(await reviewBots.isDisabled(), false)
+  const reviewComment = checks.getByRole('textbox', { name: 'Review request comment' })
+  const saveComment = checks.getByRole('button', { name: 'Save comment', exact: true })
+  assert.equal(await reviewComment.inputValue(), '')
+  assert.equal(await saveComment.isDisabled(), true)
+  await reviewComment.fill('x'.repeat(501))
+  await checks.getByText('Keep it to 500 characters.', { exact: true }).waitFor()
+  assert.equal(await saveComment.isDisabled(), true)
+  await reviewComment.fill(' @bot review ')
+  await saveComment.click()
+  assert.equal(await reviewComment.isDisabled(), true)
+  await page.evaluate(() => window.finishAction('review-request-comment', 'Comment denied by fixture'))
+  await checks.getByRole('alert').filter({ hasText: 'Comment denied by fixture' }).waitFor()
+  assert.equal(await reviewComment.inputValue(), ' @bot review ')
+  await saveComment.click()
+  await page.evaluate(() => window.finishAction('review-request-comment'))
+  await page.waitForFunction(() => window.fixtureGitHub().connection.review_request_comment === '@bot review')
+  await page.waitForFunction(() => [...document.querySelectorAll('input')].some((input) => input.value === '@bot review'))
+  assert.equal(await reviewComment.inputValue(), '@bot review')
+  assert.equal(await checks.getByRole('button', { name: 'Save comment', exact: true }).isDisabled(), true)
+  for (const [width, name] of [[1280, 'desktop'], [320, 'narrow-phone']]) {
+    await page.setViewportSize({ width, height: 900 })
+    const bounds = await checks.last().boundingBox()
+    assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `${name} review bot settings fit`)
+    const field = await checks.getByRole('textbox', { name: 'Review request comment' }).boundingBox()
+    assert(field.x >= bounds.x && field.x + field.width <= bounds.x + bounds.width, `${name} comment field fits`)
+    if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+      await reviewBots.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.review-bots-${name}.png` })
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 })
+  assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
+    { setGitHubReviewBotPullRequests: true },
+    { setGitHubReviewRequestComment: ' @bot review ' },
+    { setGitHubReviewRequestComment: ' @bot review ' },
   ])
 
   await checks.getByRole('button', { name: 'Disconnect', exact: true }).click()

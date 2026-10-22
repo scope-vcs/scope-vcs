@@ -7,6 +7,8 @@ pub(crate) enum GeneratedIdKind {
     OutboxJob,
     RepositoryIncarnation,
     RequestAutoMergeClaim,
+    RequestDiscussion,
+    RequestDiscussionReply,
     RequestMergedEvent,
 }
 
@@ -18,6 +20,8 @@ impl GeneratedIdKind {
             Self::OutboxJob => "outbox_",
             Self::RepositoryIncarnation => "repoi_",
             Self::RequestAutoMergeClaim => "auto_merge_claim_",
+            Self::RequestDiscussion => "discussion_",
+            Self::RequestDiscussionReply => "discussion_reply_",
             Self::RequestMergedEvent => "event_request_merged_",
         }
     }

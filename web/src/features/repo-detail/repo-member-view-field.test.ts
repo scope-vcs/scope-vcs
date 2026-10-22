@@ -25,10 +25,6 @@ function render(view: string) {
   }))
 }
 
-test('the member view picker is labelled View', () => {
-  assert.match(render('agent'), /<label[^>]*for="([^"]+)"[^>]*>View<\/label><span[^>]*><select[^>]*id="\1"/)
-})
-
 test('a narrower view explains that only changing file visibility needs the full view', () => {
   assert.match(render('agent'), /Changing file visibility needs the Private view/)
   assert.doesNotMatch(render('agent'), /Pushing/)

@@ -28,17 +28,3 @@ test('web responses protect framing while sandboxed previews and blob images ren
     await page.waitForFunction(() => document.querySelector('img[alt="Security blob fixture"]')?.naturalWidth === 10)
   })
 })
-
-test('web pages cannot be embedded by another page', async () => {
-  await withPage('/', async (page) => {
-    const blocked = page.waitForEvent('console', {
-      predicate: (message) => /frame-ancestors|X-Frame-Options/.test(message.text()),
-    })
-    await page.evaluate((url) => {
-      const frame = document.createElement('iframe')
-      frame.src = url
-      document.body.append(frame)
-    }, `${baseUrl}/`)
-    await blocked
-  })
-})

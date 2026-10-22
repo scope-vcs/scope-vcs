@@ -14,6 +14,7 @@ fn direct_main_authority_preserves_push_permission_without_clearing_request_chec
         viewer: &viewer,
         views: &views,
         checks: RequestChecksOutcome::Failed,
+        reviews: RequestReviewsOutcome::Clear,
     });
     assert_eq!(request_merge.authority(), None);
     assert_eq!(
@@ -68,11 +69,88 @@ fn narrow_view_merge_authority_requires_the_current_author_and_push_grant() {
                 viewer: &viewer,
                 views: &views,
                 checks: RequestChecksOutcome::Clear,
+                reviews: RequestReviewsOutcome::Clear,
             })
             .authority(),
             expected
         );
     }
+}
+
+#[test]
+fn review_bots_wait_behind_ci_and_open_findings_yield_only_to_failed_ci() {
+    use crate::requests::RequestStackStatus;
+    use RequestChecksOutcome as Checks;
+    use RequestMergeabilityStatus as Status;
+    use RequestReviewsOutcome as Reviews;
+    let views = Views::builtin();
+    let viewer = RequestViewer::new(
+        access(RepositoryActor::Owner, ViewId::private(), true),
+        Some("owner"),
+        false,
+    );
+    let mut request = open_request();
+    request.view = ViewId::private();
+    let status = |request: &Request, checks, reviews| {
+        evaluate_merge_gate(MergeGateInput::RequestMerge {
+            repository_lifecycle: RepoLifecycleState::Ready,
+            subject: request.into(),
+            viewer: &viewer,
+            views: &views,
+            checks,
+            reviews,
+        })
+        .request_mergeability()
+        .unwrap()
+        .status
+    };
+    for (checks, reviews, expected) in [
+        (Checks::Clear, Reviews::Clear, Status::Ready),
+        (Checks::Clear, Reviews::Pending, Status::ReviewsPending),
+        (Checks::Pending, Reviews::Pending, Status::ChecksPending),
+        (
+            Checks::NotEvaluated,
+            Reviews::Pending,
+            Status::ChecksNotEvaluated,
+        ),
+        (
+            Checks::AwaitingApproval,
+            Reviews::Pending,
+            Status::ChecksAwaitingApproval,
+        ),
+        (
+            Checks::Clear,
+            Reviews::FindingsOpen,
+            Status::ReviewFindingsOpen,
+        ),
+        (
+            Checks::Pending,
+            Reviews::FindingsOpen,
+            Status::ReviewFindingsOpen,
+        ),
+        (Checks::Failed, Reviews::FindingsOpen, Status::ChecksFailed),
+        (Checks::Failed, Reviews::Pending, Status::ChecksFailed),
+        (
+            Checks::ConfigurationError,
+            Reviews::FindingsOpen,
+            Status::ChecksConfigurationError,
+        ),
+    ] {
+        assert_eq!(
+            status(&request, checks, reviews),
+            expected,
+            "{checks:?} {reviews:?}"
+        );
+    }
+    request.stack_status = RequestStackStatus::WaitingForParent;
+    assert_eq!(
+        status(&request, Checks::Clear, Reviews::Pending),
+        Status::WaitingForParent
+    );
+    assert_eq!(
+        status(&request, Checks::Clear, Reviews::FindingsOpen),
+        Status::ReviewFindingsOpen
+    );
 }
 
 #[test]
@@ -124,6 +202,7 @@ fn clear_checks_cannot_authorize_a_child_before_containing_parent_landing() {
             viewer: &viewer,
             views: &views,
             checks: RequestChecksOutcome::Clear,
+            reviews: RequestReviewsOutcome::Clear,
         });
         assert_eq!(gate.request_mergeability().unwrap().status, expected);
         assert_eq!(

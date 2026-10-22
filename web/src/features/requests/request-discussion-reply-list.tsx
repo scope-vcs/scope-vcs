@@ -2,10 +2,8 @@ import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { CornerLeftUp, Ellipsis, Reply, RotateCcw } from 'lucide-react'
 import { compactDiscussionSummary } from './discussion-preview-text'
-import {
-  RequestDiscussionActorAvatar,
-  RequestDiscussionByline,
-} from './request-discussion-byline'
+import { RequestDiscussionByline } from './request-discussion-byline'
+import { RequestDiscussionAuthorAvatar } from './request-discussion-avatar'
 import { RequestDiscussionMarkdown } from './request-discussion-markdown'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
 import {
@@ -17,7 +15,7 @@ import { RelativeTimestamp } from '@/components/timestamp'
 import { formatUnixDayLabel } from '@/lib/date-format'
 import { useHydrated } from '@/lib/use-hydrated'
 import type { RequestDiscussionReplyView } from './request-discussion-types'
-import { actorHandle } from './request-actor'
+import { discussionAuthorName } from './request-discussion-author'
 
 export function RequestDiscussionReplyList({
   canReply,
@@ -115,19 +113,19 @@ function DiscussionReply({
       tabIndex={-1}
     >
       <span aria-hidden="true" className="hidden min-[701px]:block">
-        {grouped ? null : <RequestDiscussionActorAvatar handle={actorHandle(reply.author)} />}
+        {grouped ? null : <RequestDiscussionAuthorAvatar author={reply.author} />}
       </span>
 
       <div className="min-w-0">
         {grouped ? (
           <span className="sr-only">
-            {actorHandle(reply.author)}, <RelativeTimestamp value={reply.created_at_unix} />
+            {discussionAuthorName(reply.author)}, <RelativeTimestamp value={reply.created_at_unix} />
           </span>
         ) : null}
         {!grouped ? (
           <div className={cn('flex min-w-0 items-start gap-2', hasActions && 'pr-10 min-[701px]:pr-0')}>
             <span className="min-[701px]:hidden">
-              <RequestDiscussionActorAvatar handle={actorHandle(reply.author)} small />
+              <RequestDiscussionAuthorAvatar author={reply.author} small />
             </span>
             <RequestDiscussionByline
               author={reply.author}
@@ -166,7 +164,7 @@ function DiscussionReply({
       {hasActions ? (
         <details className="group/actions absolute top-1 right-1 z-10 lg:hidden">
           <summary
-            aria-label={`Actions for ${actorHandle(reply.author)}'s reply`}
+            aria-label={`Actions for ${discussionAuthorName(reply.author)}'s reply`}
             className="grid size-8 cursor-pointer list-none place-items-center rounded-md border border-border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden"
           >
             <Ellipsis className="size-4" />
@@ -207,13 +205,13 @@ function ReplyActionItems({
     <>
       {canReply ? (
         <button
-          aria-label={`Reply to ${actorHandle(reply.author)}`}
+          aria-label={`Reply to ${discussionAuthorName(reply.author)}`}
           className={itemClass}
           onClick={(event) => {
             closeMobileActions(event.currentTarget)
             onQuote(reply)
           }}
-          title={`Reply to ${actorHandle(reply.author)}`}
+          title={`Reply to ${discussionAuthorName(reply.author)}`}
           type="button"
         >
           <Reply className="size-3.5" />
@@ -252,7 +250,7 @@ function ReplyReference({ reply }: { reply: RequestDiscussionReplyView }) {
       >
         <CornerLeftUp className="size-3 shrink-0" />
         <span className="max-w-[45%] shrink-0 truncate font-medium text-foreground">
-          {actorHandle(reply.reply_to.author)}
+          {discussionAuthorName(reply.reply_to.author)}
         </span>
         <span className="truncate">
           {compactDiscussionSummary(reply.reply_to.body_markdown)}

@@ -22,6 +22,7 @@ export type LoadDiscussionsInput = RequestParams & {
   commit_oid?: string
   cursor?: string
   discussion_id?: string
+  include_carried_line_anchors?: boolean
   include_revision_anchor?: boolean
   limit?: number
   revision_id?: string
@@ -63,6 +64,7 @@ export async function loadRequestDiscussionsForRequest(
       commit: data.commit_oid,
       cursor: data.cursor,
       discussion: data.discussion_id,
+      include_carried_line_anchors: data.include_carried_line_anchors ? 'true' : undefined,
       include_revision_anchor: data.include_revision_anchor ? 'true' : undefined,
       limit: (data.limit ?? 25).toString(),
       revision: data.revision_id,
