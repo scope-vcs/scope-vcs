@@ -43,13 +43,18 @@ mod checks;
 pub use checks::{
     CheckCommitBase, GITHUB_MAIN_DIVERGED_MESSAGE, GITHUB_WORKFLOWS_START_WITHIN_SECS,
     GitHubBranch, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus,
-    GitHubCheckTarget, GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus,
-    GitHubRequestChecks, GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck,
+    GitHubCheckTarget, GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestJobState,
+    GitHubPullRequestObservation, GitHubPullRequestState, GitHubPullRequestStatus,
+    GitHubPullRequestStatusState, GitHubPullRequestStep, GitHubPush, GitHubPushDestination,
+    GitHubPushState, GitHubPushStatus, GitHubRequestChecks, GitHubTestedCommit,
+    NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, OpenedGitHubPullRequest,
     PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
     RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
-    RequestCheckReviewer, RequestChecksOutcome, changes_github_workflows, check_commit_message,
-    ensure_approving_reviewed_head, github_push_retry_at, github_retry_at, request_checks_message,
-    request_checks_outcome, request_head_awaits_evaluation,
+    RequestCheckReviewer, RequestChecksOutcome, carrier_may_change, carrier_pull_request_intent,
+    carrier_text_digest, carries_private_request, changes_github_workflows, check_commit_message,
+    closes_carrier_pull_request, ensure_approving_reviewed_head, github_push_retry_at,
+    github_retry_at, may_carry_on_github, request_checks_message, request_checks_outcome,
+    request_head_awaits_evaluation, review_request_comment_body, review_request_marker,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};

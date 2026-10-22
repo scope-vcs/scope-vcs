@@ -205,6 +205,20 @@ pub(crate) struct SetGitHubRunImportCountRequest {
     pub(crate) count: u32,
 }
 
+/// Turns review bot pull requests on or off for the repository.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubReviewBotPullRequestsRequest {
+    pub(crate) enabled: bool,
+}
+
+/// The comment Scope posts on review bot pull requests. Empty posts none.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubReviewRequestCommentRequest {
+    pub(crate) comment: String,
+}
+
 /// The whole list of required check names, replacing the stored one.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -227,6 +241,12 @@ pub(crate) struct GitHubConnectionDetailsResponse {
     /// False while a repository that became public waits for a maintainer to
     /// confirm; private requests are not sent there meanwhile.
     pub(crate) public_confirmed: bool,
+    /// Whether Scope opens a GitHub pull request for each submitted
+    /// full-view request so review bots on GitHub review it.
+    pub(crate) open_review_bot_pull_requests: bool,
+    /// Posted on that pull request when Scope opens it and after each new
+    /// head Scope pushes there.
+    pub(crate) review_request_comment: Option<String>,
     pub(crate) main_publication: GitHubMainPublicationResponse,
 }
 
@@ -428,6 +448,8 @@ pub(crate) fn github_connection_response(
             },
             github_url: format!("https://github.com/{}", connection.github_full_name),
             github_full_name: connection.github_full_name,
+            open_review_bot_pull_requests: connection.review_bots.open_pull_requests,
+            review_request_comment: connection.review_bots.review_request_comment,
             connected_by: connection
                 .connected_by
                 .zip(read.connected_by_handle)

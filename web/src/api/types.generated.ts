@@ -271,7 +271,17 @@ public_on_github: boolean,
  * False while a repository that became public waits for a maintainer to
  * confirm; private requests are not sent there meanwhile.
  */
-public_confirmed: boolean, main_publication: GitHubMainPublicationResponse, };
+public_confirmed: boolean,
+/**
+ * Whether Scope opens a GitHub pull request for each submitted
+ * full-view request so review bots on GitHub review it.
+ */
+open_review_bot_pull_requests: boolean,
+/**
+ * Posted on that pull request when Scope opens it and after each new
+ * head Scope pushes there.
+ */
+review_request_comment: string | null, main_publication: GitHubMainPublicationResponse, };
 
 export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonResponse, at_unix: number, };
 
@@ -335,6 +345,10 @@ acknowledge_public: boolean,
 run_import_count: number, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
+
+export type SetGitHubReviewBotPullRequestsRequest = { enabled: boolean, };
+
+export type SetGitHubReviewRequestCommentRequest = { comment: string, };
 
 export type SetGitHubRunImportCountRequest = { count: number, };
 
@@ -621,6 +635,18 @@ export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch:
  */
 error: string | null, };
 
+export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "failed";
+
+export type RequestGitHubPullRequestResponse = { state: RequestGitHubPullRequestState,
+/**
+ * `None` until Scope opens or adopts the pull request.
+ */
+number: number | null, url: string | null,
+/**
+ * Only maintainers see what GitHub answered.
+ */
+error: string | null, };
+
 export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null,
 /**
  * The workflow run and job on Scope's run page that answer the
@@ -650,6 +676,11 @@ can_approve: boolean,
  * way there or waits for approval to go.
  */
 github_push: RequestGitHubPushResponse | null,
+/**
+ * Set when the repository opens pull requests for review bots and this
+ * request has one, or Scope is opening one.
+ */
+github_pull_request: RequestGitHubPullRequestResponse | null,
 /**
  * Whether approving would run workflow files this request changes. Only
  * worked out for a viewer who can approve GitHub checks.
@@ -839,6 +870,8 @@ export const ApiRouteTemplates = {
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
   repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
+  repoGitHubReviewBotPullRequests: "/v1/repos/{owner}/{repo}/github/review-bot-pull-requests",
+  repoGitHubReviewRequestComment: "/v1/repos/{owner}/{repo}/github/review-request-comment",
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
   repoGitHubMainPublication: "/v1/repos/{owner}/{repo}/github/main-publication",

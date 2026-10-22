@@ -58,7 +58,7 @@ test('a GitHub connection change keeps the rest of the settings and refreshes ev
     connection: {
       github_full_name: 'octo/checks', github_url: 'https://github.com/octo/checks',
       connected_by: null, connected_at_unix: 1, disconnected: null,
-      public_on_github: false, public_confirmed: true,
+      public_on_github: false, public_confirmed: true, open_review_bot_pull_requests: false, review_request_comment: null,
       main_publication: { enabled: false, latest: null },
     },
     required_checks: ['ci / test'],

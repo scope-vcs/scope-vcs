@@ -12,8 +12,8 @@ use scope_domain::{
         repo_id,
     },
     requests::{
-        GitHubPush, Request, RequestAutoMergeIntent, RequestCheckEvaluation, RequestCheckResults,
-        RequestRevision, RequestViewer, request_policy,
+        GitHubPullRequest, GitHubPush, Request, RequestAutoMergeIntent, RequestCheckEvaluation,
+        RequestCheckResults, RequestRevision, RequestViewer, request_policy,
     },
 };
 use sea_orm::DatabaseTransaction;
@@ -35,6 +35,7 @@ pub struct RequestStateSnapshot {
     pub users: BTreeMap<String, UserAccount>,
     pub github_connection: Option<GitHubConnection>,
     pub github_push: Option<GitHubPush>,
+    pub github_pull_request: Option<GitHubPullRequest>,
     pub github_runs: HashMap<u64, GitHubWorkflowRunReference>,
     pub current_main_oid: Option<String>,
 }
@@ -178,6 +179,8 @@ async fn read_request_state(
     let github_connection =
         super::github_connections::repository_github_connection(&tx, &request.repo_id).await?;
     let github_push = super::github_pushes::latest_github_push(&tx, request_id).await?;
+    let github_pull_request =
+        super::github_pull_requests::github_pull_request(&tx, request_id).await?;
     let suites = evaluation
         .iter()
         .flat_map(|evaluation| {
@@ -237,6 +240,7 @@ async fn read_request_state(
         users,
         github_connection,
         github_push,
+        github_pull_request,
         github_runs,
         current_main_oid,
     })

@@ -3,9 +3,10 @@ use crate::api::{
     RepositoryActor, RequestActivityPageResponse, RequestCheckEvaluationState,
     RequestCheckResponse, RequestChecksOutcome, RequestChecksResponse, RequestCloseResponse,
     RequestDiscussionMutationResponse, RequestDiscussionReplyMutationResponse, RequestEventPayload,
-    RequestGitHubPushResponse, RequestGitHubPushState, RequestInviteeMutationResponse,
-    RequestMergeabilityResponse, RequestMergeabilityStatus, RequestMutationResponse,
-    RequestPermissionsResponse, RequestState, RequestSummaryResponse, ViewId,
+    RequestGitHubPullRequestResponse, RequestGitHubPullRequestState, RequestGitHubPushResponse,
+    RequestGitHubPushState, RequestInviteeMutationResponse, RequestMergeabilityResponse,
+    RequestMergeabilityStatus, RequestMutationResponse, RequestPermissionsResponse, RequestState,
+    RequestSummaryResponse, ViewId,
 };
 use crate::display::{short_oid, terminal_text};
 use scope_api_contract::{RequestDiffSide, RequestDiscussionLatestPosition};
@@ -393,6 +394,9 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     if let Some(push) = &checks.github_push {
         lines.push(github_push_line(push));
     }
+    if let Some(pull_request) = &checks.github_pull_request {
+        lines.push(github_pull_request_line(pull_request));
+    }
     if checks.private_request_on_public_github {
         lines.push(
             "GitHub: CI runs in a public GitHub repository, so this request is public there."
@@ -438,6 +442,31 @@ fn github_push_line(push: &RequestGitHubPushResponse) -> String {
         (RequestGitHubPushState::Failed, None) => format!("GitHub: sending to {branch} failed"),
         (RequestGitHubPushState::Failed, Some(error)) => {
             format!("GitHub: sending to {branch} failed: {error}")
+        }
+    }
+}
+
+fn github_pull_request_line(pull_request: &RequestGitHubPullRequestResponse) -> String {
+    let named = match (pull_request.number, pull_request.url.as_deref()) {
+        (Some(number), Some(url)) => format!("pull request #{number} ({})", terminal_text(url)),
+        _ => "pull request".to_string(),
+    };
+    let error = pull_request.error.as_deref().map(terminal_text);
+    match (pull_request.state, error) {
+        (RequestGitHubPullRequestState::Opening, None) => format!("GitHub: opening a {named}"),
+        (RequestGitHubPullRequestState::Opening, Some(error)) => {
+            format!("GitHub: opening a {named} again; the last attempt failed: {error}")
+        }
+        (RequestGitHubPullRequestState::Open, _) => format!("GitHub: {named} for review bots"),
+        (RequestGitHubPullRequestState::Closed, _) => format!("GitHub: {named} closed"),
+        (RequestGitHubPullRequestState::ClosedOnGitHub, _) => {
+            format!("GitHub: {named} was closed on GitHub")
+        }
+        (RequestGitHubPullRequestState::Failed, None) => {
+            format!("GitHub: keeping the {named} in step failed")
+        }
+        (RequestGitHubPullRequestState::Failed, Some(error)) => {
+            format!("GitHub: keeping the {named} in step failed: {error}")
         }
     }
 }

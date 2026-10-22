@@ -391,6 +391,57 @@ fn github_checks_say_where_the_revision_is_and_warn_before_running_changed_workf
 }
 
 #[test]
+fn a_carrier_pull_request_is_named_with_its_link_and_state() {
+    let base = json!({
+        "request_id": "req_one", "head_oid": oid('b'), "state": "no-checks",
+        "outcome": "clear", "message": null, "can_approve": false, "github_push": null,
+        "changes_github_workflows": false, "private_request_on_public_github": false,
+        "checks": [],
+        "mergeability": {
+            "status": "ChecksPending", "current_main_oid": oid('a'),
+            "request_head_oid": oid('b'), "reason": "CI has not finished"
+        }
+    });
+    let url = "https://github.com/o/r/pull/5";
+    for (state, number, error, line) in [
+        ("opening", None, None, "GitHub: opening a pull request"),
+        (
+            "opening",
+            None,
+            Some("GitHub was down"),
+            "GitHub: opening a pull request again; the last attempt failed: GitHub was down",
+        ),
+        (
+            "open",
+            Some(5),
+            None,
+            "GitHub: pull request #5 (https://github.com/o/r/pull/5) for review bots",
+        ),
+        (
+            "closed_on_github",
+            Some(5),
+            None,
+            "GitHub: pull request #5 (https://github.com/o/r/pull/5) was closed on GitHub",
+        ),
+        (
+            "failed",
+            None,
+            Some("no permission\u{001b}[31m"),
+            "GitHub: keeping the pull request in step failed: no permission [31m",
+        ),
+    ] {
+        let mut value = base.clone();
+        value["github_pull_request"] = json!({
+            "state": state, "number": number, "url": number.map(|_| url), "error": error,
+        });
+        let checks: RequestChecksResponse = serde_json::from_value(value).unwrap();
+        let rendered = request_checks_lines(&checks).join("\n");
+        assert!(rendered.contains(line), "{rendered}");
+        assert!(!rendered.contains('\u{1b}'), "{rendered:?}");
+    }
+}
+
+#[test]
 fn a_head_without_checks_says_so_and_a_broken_workflow_shows_its_message() {
     let no_checks: RequestChecksResponse = serde_json::from_value(json!({
         "request_id": "req_one", "head_oid": oid('b'), "state": "no-checks",

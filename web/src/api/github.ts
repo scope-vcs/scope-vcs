@@ -9,6 +9,8 @@ import type {
   RunActionInput,
   SetRepoGitHubMainPublicationInput,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubReviewBotPullRequestsInput,
+  SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
 } from './types'
 import type {
@@ -114,6 +116,22 @@ export async function startRepoGitHubSetupCheckForRequest(data: RepoParams) {
 
 export async function setRepoGitHubRunImportCountForRequest(data: SetRepoGitHubRunImportCountInput) {
   return changeRepoGitHub('put', ApiRouteTemplates.repoGitHubRunImport, data, { count: data.count })
+}
+
+export async function setRepoGitHubReviewBotPullRequestsForRequest(
+  data: SetRepoGitHubReviewBotPullRequestsInput,
+) {
+  return changeRepoGitHub('put', ApiRouteTemplates.repoGitHubReviewBotPullRequests, data, {
+    enabled: data.enabled,
+  })
+}
+
+export async function setRepoGitHubReviewRequestCommentForRequest(
+  data: SetRepoGitHubReviewRequestCommentInput,
+) {
+  return changeRepoGitHub('put', ApiRouteTemplates.repoGitHubReviewRequestComment, data, {
+    comment: data.comment,
+  })
 }
 
 export async function startRepoGitHubRunImportForRequest(data: RepoParams) {

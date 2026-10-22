@@ -457,6 +457,7 @@ fn a_repository_linked_to_github_uses_github_checks_even_once_disconnected() {
         connected_at_unix: 1,
         status: GitHubConnectionStatus::Connected,
         visibility: crate::github_connection::GitHubRepositoryVisibility::Private,
+        review_bots: Default::default(),
         publishes_main: false,
     };
     assert_eq!(
@@ -593,6 +594,7 @@ fn a_push_is_revoked_by_a_disconnect_or_a_reconnect_elsewhere() {
         connected_at_unix: 1,
         status: GitHubConnectionStatus::Connected,
         visibility: crate::github_connection::GitHubRepositoryVisibility::Private,
+        review_bots: Default::default(),
         publishes_main: false,
     };
     let destination = GitHubPushDestination::of(&connection);

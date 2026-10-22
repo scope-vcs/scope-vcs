@@ -46,6 +46,7 @@ const githubConnection = {
   github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo',
   connected_by: { id: 'owner', handle: 'owner' }, connected_at_unix: 1_767_225_600, disconnected: null,
   public_on_github: false, public_confirmed: true,
+  open_review_bot_pull_requests: false, review_request_comment: null,
   main_publication: { enabled: false, latest: null },
 }
 repoSettingsResource.write(settingsScope, {
@@ -145,6 +146,23 @@ function App() {
           await hold('run-import-count')
           const current = repoSettingsResource.peek(settingsScope)!.github!
           const github = { ...current, run_import_count: input.count }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubReviewBotPullRequests={async (input) => {
+          calls.push({ setGitHubReviewBotPullRequests: input.enabled })
+          await hold('review-bot-pull-requests')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = { ...current, connection: { ...current.connection!, open_review_bot_pull_requests: input.enabled } }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubReviewRequestComment={async (input) => {
+          calls.push({ setGitHubReviewRequestComment: input.comment })
+          await hold('review-request-comment')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const comment = input.comment.trim() || null
+          const github = { ...current, connection: { ...current.connection!, review_request_comment: comment } }
           retainGitHubConnection(settingsScope, github)
           return github
         }}

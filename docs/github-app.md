@@ -26,12 +26,21 @@ checklist for the production app.
 - **Webhook URL**: `https://<api origin>/v1/github/webhooks`, with a random
   webhook secret.
 - **Repository permissions**: Contents read and write, Workflows read and
-  write, Checks read, Actions read, Metadata read.
+  write, Pull requests read and write, Checks read, Actions read, Issues
+  read, Metadata read.
 - **Subscribed events**: Check run, Check suite, Workflow run, Workflow job,
-  Repository, Installation, Installation repositories. Installation events
-  are always delivered to GitHub Apps; the others are chosen on the
-  registration page. Repository events report a repository made public or
-  private, and Workflow job events keep an open run's jobs current.
+  Repository, Pull request, Pull request review, Pull request review comment,
+  Pull request review thread, Issue comment, Installation, Installation
+  repositories. Installation events are always delivered to GitHub Apps; the
+  others are chosen on the registration page. Repository events report a
+  repository made public or private, Workflow job events keep an open run's
+  jobs current, and Pull request events keep review bot pull requests in
+  step. Scope does not act on the review and comment events yet.
+
+Adding permissions to a registered app asks every installation to accept
+them. Until an installation accepts Pull requests read and write, a review
+bot pull request for its repositories fails with a message saying so in the
+request's pull request status.
 - **Where can this app be installed**: any account.
 
 Generate a private key and a client secret on the app's page. The callback
@@ -313,6 +322,84 @@ seconds, then 2, 10 and 30 minutes, and then gives up. While the revision is
 being sent, the request view says its CI is starting, and if sending
 fails, that it couldn't start. Maintainers also see the last error. A push to a repository whose link is
 gone gives up at once.
+
+### Pull requests for review bots
+
+Review bots on GitHub review pull requests, not branches. A maintainer can
+turn on **Open pull requests for review bots** in the repository's CI
+settings. Scope then keeps one carrier pull request per submitted request,
+from `scope/requests/<request id>` into `main`, or into the parent's branch
+for a stacked request whose parent is still open. Its title is the
+request's title, and its body links to the request in Scope and then repeats
+the description. Scope never opens a draft.
+
+A request gets a carrier only when its branch was pushed with the request's
+own head: an open request in the repository's full view, while the link is
+connected. A request tested through a check commit never gets one, because
+the diff against `main` would expose the private main it was built from. A
+request outside the anyone view gets one only while the GitHub repository
+may receive private requests. Scope asks GitHub for the repository's
+visibility right before it opens, edits or comments on such a pull request,
+so a repository that turned public before its webhook arrived is caught.
+Turning the setting on queues a carrier for every open request whose latest
+push reached GitHub. Turning it off stops opening, retargeting and
+commenting at once, queued work included; carriers that already exist still
+close with their requests. Turning it off also fences runs already in flight:
+the same transaction advances their intent, and a run confirms its claim is
+still current right before each GitHub write, so it stops instead of opening
+or commenting after the change.
+
+After each successful push of a request head, Scope looks for an open pull
+request from that branch in the same repository and adopts it, or creates
+one. When a pull request Scope created gets out of step with the request's
+title or description, Scope rewrites its title and body; it never rewrites
+an adopted pull request's text. When a stacked request's parent closes or
+merges, the same transaction requeues each open child's carrier to move it
+onto `main`. If GitHub closes the child's pull request first, because Scope
+deleted the parent's branch, that close happened while Scope was moving the
+base, so it counts as Scope's and the next run opens a new pull request
+against `main`. When the
+repository sets a **Review request comment**, up to 500 characters, Scope
+posts it once per pushed head: after opening the pull request and after each
+later head. Some bots review only when asked, so this is where a mention
+such as a bot's review command goes. Each comment ends with an invisible
+`<!-- scope-review-request head=<sha> -->` marker. Before posting, Scope
+looks for the app's comment with that marker, so a comment GitHub accepted
+whose answer was lost is not posted twice.
+
+Closing the request closes its carrier. Merging it closes the carrier only
+while the repository does not publish main to GitHub; when it does, Scope
+leaves the pull request alone, and GitHub marks it merged once main with the
+request's commits arrives. The decision lives in
+`closes_carrier_pull_request` in `scope-domain` and reads the connection when
+the request ends. Once a request has ended, Scope no longer opens, retargets,
+rewrites or comments on its carrier. A close counts only when
+GitHub confirms it or reports the pull request already closed or merged; a
+pull request Scope cannot reach is an error that retries. A request that ends
+before Scope recorded its carrier's number, for example because GitHub's
+answer to the create was lost, gets its open pull request looked up by
+branch, adopted and closed. When someone other
+than the app closes a carrier while its request is open, Scope records it as
+closed on GitHub and leaves it closed until someone reopens it there. A
+carrier GitHub closed because the app deleted its base branch is replaced by
+the next push.
+
+A `pull_request` delivery is only a hint, because GitHub can deliver events
+late and out of order. It requeues the carrier's job, even one still running
+before it has recorded the pull request's number, and each run first
+reads the pull request and who closed it from GitHub, then decides. The job
+is the only writer of a carrier's recorded number, state and base.
+
+The work is a job per request in `scope_github_pull_requests`, run by a
+background loop with leases. A newer intent, such as a new head, the request
+ending or a delivery, replaces an older one, also while a claim is running;
+that claim records what it did and the job runs again. Failures retry on the
+push schedule and then give up. A rate limit is not a failure: GitHub
+answers 403 or 429 with `x-ratelimit-remaining: 0`, `retry-after` or a
+secondary-limit message, and Scope tries again when GitHub says it may. Only
+other 403 answers report the missing Pull requests permission. The request
+view and `scope request ci` show "Pull request #N on GitHub" with its state,
+and maintainers see the last error. Disconnecting clears both settings.
 
 ### Reading results
 

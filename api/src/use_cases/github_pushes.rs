@@ -12,7 +12,10 @@ use crate::{
 use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
-    requests::{GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, github_push_retry_at},
+    requests::{
+        GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, GitHubPushState,
+        github_push_retry_at,
+    },
 };
 use scope_postgres::db::{GitHubJobOutcome, GitHubPushStanding};
 use std::path::Path;
@@ -24,6 +27,7 @@ const LEASE_SECS: u64 = 45 * 60;
 
 pub(super) enum JobFailure {
     Retry(String),
+    RetryAt { error: String, at_unix: u64 },
     GiveUp(String),
     Stale,
 }
@@ -49,6 +53,10 @@ pub(super) fn job_outcome<T>(
         Err(JobFailure::Retry(error)) => Some(GitHubJobOutcome::Failed {
             error,
             retry_at_unix,
+        }),
+        Err(JobFailure::RetryAt { error, at_unix }) => Some(GitHubJobOutcome::Failed {
+            error,
+            retry_at_unix: Some(at_unix),
         }),
         Err(JobFailure::GiveUp(error)) => Some(GitHubJobOutcome::Failed {
             error,
@@ -111,7 +119,12 @@ pub(crate) async fn run_claimed_push(
         .finish_github_push(&push.id, claim_token, outcome, now_unix)
         .await
     {
-        Ok(Some(_)) => publish_push_change(state, push).await,
+        Ok(Some(finished)) => {
+            if finished.state == GitHubPushState::Succeeded {
+                state.wakeups.github_pull_requests.notify_one();
+            }
+            publish_push_change(state, push).await
+        }
         Ok(None) => {}
         Err(error) => tracing::warn!(
             push_id = push.id,

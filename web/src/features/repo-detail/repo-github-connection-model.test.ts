@@ -16,6 +16,8 @@ const connection: GitHubConnectionDetailsResponse = {
   disconnected: null,
   public_on_github: false,
   public_confirmed: true,
+  open_review_bot_pull_requests: false,
+  review_request_comment: null,
   main_publication: { enabled: false, latest: null },
 }
 

@@ -1,4 +1,6 @@
 use super::*;
+
+mod pulls;
 use crate::github::{GitHubApp, config::GitHubAppConfig};
 use axum::{
     Json, Router,
@@ -75,6 +77,7 @@ pub(super) struct FakeGitHub {
     pub(super) job_log_bytes_served: AtomicUsize,
     pub(super) run_list_reads: AtomicUsize,
     pub(super) run_list_unavailable: AtomicBool,
+    pub(super) pulls: pulls::FakePulls,
     git_root: GitRoot,
 }
 
@@ -635,6 +638,7 @@ impl FakeGitHub {
                     },
                 ),
             )
+            .merge(pulls::routes())
             .with_state(self);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
