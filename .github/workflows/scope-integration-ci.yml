@@ -62,10 +62,24 @@ jobs:
         if: inputs.run_cli
         run: node dev/check-git-version.mjs
 
+      - name: Restore media codec packages
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ~/.cache/media-codec-debs
+          key: media-codec-debs-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
+
       - name: Install media codecs
         run: |
+          packages="$HOME/.cache/media-codec-debs"
+          mkdir -p "$packages"
+          if compgen -G "$packages/*.deb" > /dev/null; then
+            sudo cp "$packages"/*.deb /var/cache/apt/archives/
+          fi
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends ffmpeg libheif-examples
+          if compgen -G "/var/cache/apt/archives/*.deb" > /dev/null; then
+            cp /var/cache/apt/archives/*.deb "$packages"/
+          fi
           ffprobe -version
           heif-convert --version
 
