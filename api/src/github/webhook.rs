@@ -389,12 +389,10 @@ mod tests {
                 "{action} {head} {head_repository}"
             );
         }
-        for event in ["issue_comment"] {
-            assert_eq!(
-                GitHubWebhookEvent::parse(event, b"{}").unwrap(),
-                GitHubWebhookEvent::Ignored
-            );
-        }
+        assert_eq!(
+            GitHubWebhookEvent::parse("issue_comment", b"{}").unwrap(),
+            GitHubWebhookEvent::Ignored
+        );
     }
 
     #[test]
