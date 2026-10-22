@@ -11,6 +11,7 @@ mod baseline_bridge;
 mod cache_schema;
 mod current_schema_baseline;
 mod github_connections;
+mod github_discussion_authors;
 mod github_request_checks;
 mod github_run_imports;
 mod github_setup_checks_and_workflow_runs;

@@ -148,6 +148,10 @@ pub fn router(state: AppState) -> Router {
             axum::routing::put(http::github::set_github_required_checks),
         )
         .route(
+            routes::REPO_GITHUB_REVIEW_BOTS,
+            axum::routing::put(http::github::set_github_review_bots),
+        )
+        .route(
             routes::REPO_GITHUB_REVIEW_BOT_PULL_REQUESTS,
             axum::routing::put(http::github::set_github_review_bot_pull_requests),
         )

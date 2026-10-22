@@ -9,7 +9,10 @@ use crate::api::{
     RequestSummaryResponse, ViewId,
 };
 use crate::display::{short_oid, terminal_text};
-use scope_api_contract::{RequestDiffSide, RequestDiscussionLatestPosition};
+use scope_api_contract::{
+    RequestDiffSide, RequestDiscussionAuthorResponse, RequestDiscussionLatestPosition,
+    RequestDiscussionSummaryResponse,
+};
 use scope_domain::views::Views;
 
 mod auto_merge;
@@ -150,16 +153,18 @@ pub(super) fn discussion_replied_receipt(
     response: &RequestDiscussionReplyMutationResponse,
 ) -> String {
     format!(
-        "Replied to discussion {} · reply {}",
+        "Replied to discussion {}{} · reply {}",
         terminal_text(&response.discussion.id),
+        github_origin(&response.discussion),
         terminal_text(&response.reply.id),
     )
 }
 
 pub(super) fn discussion_resolved_receipt(response: &RequestDiscussionMutationResponse) -> String {
     format!(
-        "Resolved discussion {}",
+        "Resolved discussion {}{}",
         terminal_text(&response.discussion.id),
+        github_origin(&response.discussion),
     )
 }
 
@@ -167,10 +172,25 @@ pub(super) fn discussion_reopened_receipt(
     response: &RequestDiscussionReplyMutationResponse,
 ) -> String {
     format!(
-        "Reopened discussion {} · reply {}",
+        "Reopened discussion {}{} · reply {}",
         terminal_text(&response.discussion.id),
+        github_origin(&response.discussion),
         terminal_text(&response.reply.id),
     )
+}
+
+fn github_origin(discussion: &RequestDiscussionSummaryResponse) -> String {
+    match &discussion.author {
+        Some(RequestDiscussionAuthorResponse::GitHub {
+            account,
+            source_url,
+        }) => format!(
+            " from {} via GitHub ({})",
+            terminal_text(&account.login),
+            terminal_text(source_url)
+        ),
+        _ => String::new(),
+    }
 }
 
 pub(super) fn request_line(request: &RequestSummaryResponse) -> String {

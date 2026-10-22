@@ -54,6 +54,8 @@ pub(crate) struct GitHubConnectionResponse {
     pub(crate) connection: Option<GitHubConnectionDetailsResponse>,
     /// The check names GitHub must pass before a request merges.
     pub(crate) required_checks: Vec<String>,
+    /// GitHub accounts whose reviews Scope imports without asking GitHub whether they can write; cleared on disconnect.
+    pub(crate) review_bots: Vec<GitHubReviewBotResponse>,
     /// Whether the viewer may confirm that a public GitHub repository
     /// receives what Scope pushes, private requests included.
     pub(crate) can_confirm_public: bool,
@@ -203,6 +205,27 @@ pub(crate) enum GitHubWorkflowJobLogResponse {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct SetGitHubRunImportCountRequest {
     pub(crate) count: u32,
+}
+
+/// A GitHub account listed as a review bot.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubReviewBotResponse {
+    pub(crate) login: String,
+}
+
+/// The whole list of review bots, replacing the stored one; at most 20 distinct GitHub logins such as `greptile-apps[bot]`.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubReviewBotsRequest {
+    pub(crate) bots: Vec<GitHubReviewBotRequest>,
+}
+
+/// A GitHub login to list as a review bot.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubReviewBotRequest {
+    pub(crate) login: String,
 }
 
 /// Turns review bot pull requests on or off for the repository.
@@ -407,6 +430,7 @@ pub(crate) fn github_workflow_job_response(job: GitHubWorkflowJob) -> GitHubWork
 pub(crate) struct GitHubConnectionParts {
     pub(crate) read: Option<GitHubConnectionRead>,
     pub(crate) required_checks: Vec<String>,
+    pub(crate) review_bots: Vec<scope_domain::github_review_bots::GitHubReviewBot>,
     pub(crate) can_confirm_public: bool,
     pub(crate) can_publish_main: bool,
     pub(crate) main_push: Option<GitHubPush>,
@@ -471,6 +495,13 @@ pub(crate) fn github_connection_response(
         setup_check: setup_check.map(github_setup_check_response),
         connection,
         required_checks: parts.required_checks,
+        review_bots: parts
+            .review_bots
+            .into_iter()
+            .map(|bot| GitHubReviewBotResponse {
+                login: bot.login.as_str().to_string(),
+            })
+            .collect(),
         can_confirm_public: parts.can_confirm_public,
         can_publish_main: parts.can_publish_main,
         run_import_count: parts.run_import_count,

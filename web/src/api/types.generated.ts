@@ -232,6 +232,10 @@ configured: boolean, connection: GitHubConnectionDetailsResponse | null,
  */
 required_checks: Array<string>,
 /**
+ * GitHub accounts whose reviews Scope imports without asking GitHub whether they can write; cleared on disconnect.
+ */
+review_bots: Array<GitHubReviewBotResponse>,
+/**
  * Whether the viewer may confirm that a public GitHub repository
  * receives what Scope pushes, private requests included.
  */
@@ -345,6 +349,12 @@ acknowledge_public: boolean,
 run_import_count: number, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
+
+export type GitHubReviewBotResponse = { login: string, };
+
+export type SetGitHubReviewBotsRequest = { bots: Array<GitHubReviewBotRequest>, };
+
+export type GitHubReviewBotRequest = { login: string, };
 
 export type SetGitHubReviewBotPullRequestsRequest = { enabled: boolean, };
 
@@ -708,21 +718,25 @@ export type RequestDiscussionStatus = "Open" | "Resolved";
 
 export type RequestDiscussionReplyReferenceResponse = { id: string, position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, };
 
 export type RequestDiscussionReplyResponse = { id: string, discussion_id: string, position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, reply_to: RequestDiscussionReplyReferenceResponse | null, created_at_unix: number, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, reply_to: RequestDiscussionReplyReferenceResponse | null, created_at_unix: number, };
 
 export type RequestDiscussionSummaryResponse = { id: string, request_id: string, client_discussion_id: string, opened_position: number, last_activity_position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null, resolved_by: RequestActorSummaryResponse | null, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null,
+/**
+ * Null while open, or once the resolving Scope account is deleted.
+ */
+resolved_by: RequestDiscussionResolverResponse | null, };
 
 export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null,
 /**
@@ -749,6 +763,14 @@ export type RequestDiffSide = "old" | "new";
 export type RequestDiscussionLineRange = { side: RequestDiffSide, start_line: number, end_line: number, };
 
 export type RequestDiscussionLatestPosition = { "kind": "mapped", revision_id: string, start_line: number, end_line: number, } | { "kind": "outdated", revision_id: string, };
+
+export type GitHubAccountType = "user" | "bot" | "organization";
+
+export type GitHubAccountResponse = { github_user_id: number, login: string, account_type: GitHubAccountType, avatar_url: string | null, };
+
+export type RequestDiscussionAuthorResponse = { "kind": "user", id: string, handle: string, } | { "kind": "github", account: GitHubAccountResponse, source_url: string, };
+
+export type RequestDiscussionResolverResponse = { "kind": "user", id: string, handle: string, } | { "kind": "github", account: GitHubAccountResponse, };
 
 export type RequestRevisionCommitResponse = { oid: string, parent_oids: Array<string>, author: string | null, authored_at_unix: number, message: string, change_count: number, files: Array<CommitFileResponse>, files_truncated: boolean, };
 
@@ -870,6 +892,7 @@ export const ApiRouteTemplates = {
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
   repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
+  repoGitHubReviewBots: "/v1/repos/{owner}/{repo}/github/review-bots",
   repoGitHubReviewBotPullRequests: "/v1/repos/{owner}/{repo}/github/review-bot-pull-requests",
   repoGitHubReviewRequestComment: "/v1/repos/{owner}/{repo}/github/review-request-comment",
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",

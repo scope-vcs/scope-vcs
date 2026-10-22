@@ -3,9 +3,9 @@ use super::responses::{
     GitHubConnectionParts, GitHubConnectionResponse, GitHubSetupRequest, GitHubSetupResponse,
     GitHubWorkflowNamesResponse, GitHubWorkflowRunListResponse, GitHubWorkflowRunsResponse,
     SetGitHubMainPublicationRequest, SetGitHubRequiredChecksRequest,
-    SetGitHubReviewBotPullRequestsRequest, SetGitHubReviewRequestCommentRequest,
-    SetGitHubRunImportCountRequest, github_connection_response, github_repository_response,
-    github_workflow_run_response,
+    SetGitHubReviewBotPullRequestsRequest, SetGitHubReviewBotsRequest,
+    SetGitHubReviewRequestCommentRequest, SetGitHubRunImportCountRequest,
+    github_connection_response, github_repository_response, github_workflow_run_response,
 };
 use crate::{
     auth::scope::require_scope_user,
@@ -24,8 +24,8 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
-        github_check_results, github_pull_requests, github_pushes, github_workflow_jobs,
-        github_workflow_runs, run_inspection::require_full_view_member,
+        github_check_results, github_pull_requests, github_pushes, github_review_imports,
+        github_workflow_jobs, github_workflow_runs, run_inspection::require_full_view_member,
     },
 };
 use axum::{
@@ -39,6 +39,7 @@ use scope_domain::{
         ConnectGitHubRepository, can_publish_main_to_github, can_publish_to_github,
         ensure_can_manage_github_connection,
     },
+    github_review_bots::GitHubReviewBotInput,
     repository::{RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
     requests::RequestCheckProvider,
 };
@@ -218,6 +219,29 @@ pub(crate) async fn set_github_required_checks(
         .metadata
         .repositories()
         .set_github_required_checks(&context.record.id, &user_id, input.names)
+        .await?;
+    changed(&state, &context, &incarnation).await
+}
+
+pub(crate) async fn set_github_review_bots(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((owner, repo)): Path<(String, String)>,
+    Json(input): Json<SetGitHubReviewBotsRequest>,
+) -> Result<Json<GitHubConnectionResponse>, ApiError> {
+    let (user_id, context) = maintainer(&state, &headers, &owner, &repo).await?;
+    let (_, incarnation) = state
+        .metadata
+        .repositories()
+        .set_github_review_bots(
+            &context.record.id,
+            &user_id,
+            input
+                .bots
+                .into_iter()
+                .map(|bot| GitHubReviewBotInput { login: bot.login })
+                .collect(),
+        )
         .await?;
     changed(&state, &context, &incarnation).await
 }
@@ -526,6 +550,10 @@ pub(crate) async fn receive_github_webhook(
                 }
             }
         }
+        GitHubWebhookEvent::ReviewActivity(delivery) => {
+            github_review_imports::queue_github_review_delivery(&state, delivery, unix_now()?)
+                .await?;
+        }
         GitHubWebhookEvent::PullRequestChanged {
             github_repository_id,
             request_id,
@@ -610,6 +638,7 @@ async fn connection_response(
     let required_checks = repositories
         .github_required_checks(&context.record.id)
         .await?;
+    let review_bots = repositories.github_review_bots(&context.record.id).await?;
     let setup_check = repositories.github_setup_check(&context.record.id).await?;
     let run_import_count = repositories
         .github_run_import_count(&context.record.id)
@@ -623,6 +652,7 @@ async fn connection_response(
         GitHubConnectionParts {
             read,
             required_checks,
+            review_bots,
             can_confirm_public: can_publish_to_github(context.access.clone()),
             can_publish_main: can_publish_main_to_github(&context.access, &context.views),
             main_push,

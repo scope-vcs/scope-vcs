@@ -25,7 +25,8 @@ const collaborationTables = names(`request_discussion_read_states request_discus
   request_discussions request_events request_invitees request_ratings request_revisions requests
   request_claims request_attention_states request_check_evaluations request_auto_merge_intents
   request_revision_context_receipts
-  github_check_runs github_check_refreshes`);
+  github_check_runs github_check_refreshes github_accounts github_review_imports
+  github_review_bots github_imported_comments`);
 const authTables = names(`auth_identities cli_browser_logins cli_device_logins cli_exchange_grants
   cli_sessions clerk_user_deletions users`);
 export const tables = [...cacheTables, ...mediaTables, ...repositoryTables, ...runTables,

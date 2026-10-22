@@ -15,10 +15,10 @@ use crate::{
 use scope_api_contract::GitOid;
 use scope_domain::{
     policy::{Policy, ScopePath},
-    repository::access::RepositoryAccess,
+    repository::access::{RepositoryAccess, RepositoryAccessContext},
     requests::{
-        RequestDiscussionAnchor, RequestDiscussionLines, RequestLineRange, RequestLineTarget,
-        RequestRevision,
+        Request, RequestDiscussionAnchor, RequestDiscussionLines, RequestLineRange,
+        RequestLineTarget, RequestRevision,
     },
     views::Views,
 };
@@ -60,23 +60,43 @@ pub(super) async fn validate(
             .transpose()?,
         lines,
     };
+    ensure_target(
+        state,
+        &context.repo,
+        &context.access,
+        &context.request,
+        &revision,
+        &anchor,
+    )
+    .await?;
+    Ok(anchor)
+}
+
+pub(super) async fn ensure_target(
+    state: &AppState,
+    repo_context: &RepositoryAccessContext,
+    access: &RepositoryAccess,
+    request: &Request,
+    revision: &RequestRevision,
+    anchor: &RequestDiscussionAnchor,
+) -> Result<(), ApiError> {
     anchor.validate()?;
     if anchor.commit_oid.is_none() && anchor.path.is_none() {
-        return Ok(anchor);
+        return Ok(());
     }
     let repo = state
         .metadata
         .repositories()
-        .repository_policy_config(&context.repo)
+        .repository_policy_config(repo_context)
         .await?;
     let inspection_state = state.clone();
-    let access = context.access.clone();
+    let access = access.clone();
     let checked = anchor.clone();
     with_request_revision_store_repo(
         state,
-        &context.repo.incarnation(),
-        &context.request,
-        &revision,
+        &repo_context.incarnation(),
+        request,
+        revision,
         move |raw_repo, revision| {
             let path = match (checked.path.as_ref(), checked.commit_oid.as_deref()) {
                 (Some(path), _) => path,
@@ -127,8 +147,7 @@ pub(super) async fn validate(
             Ok(())
         },
     )
-    .await?;
-    Ok(anchor)
+    .await
 }
 
 fn visible_commit_paths(

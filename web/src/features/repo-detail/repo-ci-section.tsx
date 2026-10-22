@@ -14,6 +14,7 @@ import { RepoGitHubReviewBots } from './repo-github-review-bots'
 import { RepoGitHubRunImport } from './repo-github-run-import'
 import { RepoGitHubSetupCheck } from './repo-github-setup-check'
 import { RepoRequiredChecks } from './repo-required-checks'
+import { RepoReviewBots } from './repo-review-bots'
 import { CiSection } from './repo-settings-sections'
 import { useSettingsAction } from './use-settings-action'
 
@@ -23,6 +24,7 @@ export function RepoCiSection({
   github,
   setMainPublication,
   setRequiredChecks,
+  setReviewBots,
   setReviewBotPullRequests,
   setReviewRequestComment,
   setRunImportCount,
@@ -35,6 +37,7 @@ export function RepoCiSection({
   github: GitHubConnectionResponse | null
   setMainPublication: (enabled: boolean) => Promise<GitHubConnectionResponse>
   setRequiredChecks: (names: string[]) => Promise<GitHubConnectionResponse>
+  setReviewBots: (logins: string[]) => Promise<GitHubConnectionResponse>
   setReviewBotPullRequests: (enabled: boolean) => Promise<GitHubConnectionResponse>
   setReviewRequestComment: (comment: string) => Promise<GitHubConnectionResponse>
   setRunImportCount: (count: number) => Promise<GitHubConnectionResponse>
@@ -156,6 +159,8 @@ export function RepoCiSection({
         {(view.kind === 'connected' || view.kind === 'disconnected') && (
           <RepoRequiredChecks github={github} save={setRequiredChecks} />
         )}
+
+        {view.kind === 'connected' && <RepoReviewBots github={github} save={setReviewBots} />}
 
         {view.kind === 'connected' && github.connection && (
           <RepoGitHubReviewBots

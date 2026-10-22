@@ -1,5 +1,6 @@
 use scope_domain::{
     account::SessionIdentity as DomainSessionIdentity,
+    github_account::GitHubAccountType as DomainGitHubAccountType,
     history::{FileChangeKind as DomainFileChangeKind, HistoryEntryKind as DomainHistoryEntryKind},
     repository::RepoLifecycleState as DomainRepoLifecycleState,
     repository::access::RepositoryActor as DomainRepositoryActor,
@@ -278,6 +279,12 @@ wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
     RequestDiffSide => DomainRequestDiffSide { Old, New }
+);
+
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    GitHubAccountType => DomainGitHubAccountType { User, Bot, Organization }
 );
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

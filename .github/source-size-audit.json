@@ -25,11 +25,6 @@
       "path": "crates/scope-git/src/projection_identity.rs",
       "owner": "Git projection identity",
       "reason": "Tree construction, native-range validation, deterministic object identity, and identity fixtures are one algorithm."
-    },
-    {
-      "path": "crates/scope-postgres/src/db/request_discussions.rs",
-      "owner": "request discussion persistence",
-      "reason": "Discussion and reply mutations, visibility, read state, attachment binding, and notifications share the same request discussion transaction boundary."
     }
   ]
 }

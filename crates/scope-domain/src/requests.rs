@@ -65,6 +65,17 @@ pub use discussion_anchor::{
     RequestDiffSide, RequestDiscussionAnchor, RequestDiscussionLines, RequestLinePosition,
     RequestLineRange, RequestLineTarget, carry_forward_line_range,
 };
+mod discussion_authors;
+pub use discussion_authors::{RequestDiscussionAuthor, RequestDiscussionResolver};
+mod github_review_import;
+pub use github_review_import::{
+    GitHubCommentPosition, GitHubCommentSubject, GitHubReviewImportSubject,
+    ImportGitHubDiscussionInput, ImportGitHubReplyInput, accepts_github_reviews,
+    github_comment_anchors, github_comment_body, github_review_anchor, github_review_client_id,
+    github_review_comment_client_id, github_thread_status, import_github_discussion,
+    import_github_reply, reactivate_author_attention_for_github_review,
+    transition_github_discussion,
+};
 mod discussions;
 pub use discussions::{
     CreateRequestDiscussionInput, CreateRequestDiscussionMutation,

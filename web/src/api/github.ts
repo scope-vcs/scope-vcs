@@ -9,6 +9,7 @@ import type {
   RunActionInput,
   SetRepoGitHubMainPublicationInput,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubReviewBotsInput,
   SetRepoGitHubReviewBotPullRequestsInput,
   SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
@@ -96,6 +97,10 @@ export async function connectRepoGitHubForRequest(data: ConnectRepoGitHubInput) 
 
 export async function setRepoGitHubRequiredChecksForRequest(data: SetRepoGitHubRequiredChecksInput) {
   return changeRepoGitHub('put', ApiRouteTemplates.repoGitHubRequiredChecks, data, { names: data.names })
+}
+
+export async function setRepoGitHubReviewBotsForRequest(data: SetRepoGitHubReviewBotsInput) {
+  return changeRepoGitHub('put', ApiRouteTemplates.repoGitHubReviewBots, data, { bots: data.bots })
 }
 
 export async function setRepoGitHubMainPublicationForRequest(data: SetRepoGitHubMainPublicationInput) {

@@ -1,0 +1,786 @@
+use super::*;
+use crate::db::{
+    MetadataStore, RequestDiscussionsPageQuery, entities,
+    requests::tests::{postgres_store, public_start_input, public_upload_input},
+};
+use scope_domain::{
+    github_account::GitHubAccountType,
+    requests::{
+        RequestActorRole, RequestAttention, RequestAttentionReason, RequestAttentionState,
+        RequestDiscussionAuthor, RequestDiscussionResolver, github_review_comment_client_id,
+    },
+};
+use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel};
+
+const REVIEWER: u64 = 900;
+const RESOLVER: u64 = 901;
+
+fn account(id: u64, login: &str) -> GitHubAccount {
+    GitHubAccount::new(
+        id,
+        login,
+        GitHubAccountType::Bot,
+        Some(format!("https://avatars.example/{id}")),
+    )
+    .unwrap()
+}
+
+fn comment(id: u64, reply_to: Option<u64>) -> GitHubImportedComment {
+    GitHubImportedComment {
+        client_id: github_review_comment_client_id(id),
+        reply_to_client_id: reply_to.map(github_review_comment_client_id),
+        github_account_id: REVIEWER,
+        source_url: format!("https://github.com/octo/repo/pull/1#discussion_r{id}"),
+        body_markdown: format!("Comment {id}"),
+        anchor: None,
+        created_at_unix: id,
+    }
+}
+
+fn review(
+    github_link_id: &str,
+    comments: Vec<GitHubImportedComment>,
+    now_unix: u64,
+) -> ImportGitHubReviewCommand {
+    ImportGitHubReviewCommand {
+        request_id: "req_1".to_string(),
+        github_link_id: github_link_id.to_string(),
+        accounts: vec![account(REVIEWER, "greptile-apps[bot]")],
+        comments,
+        now_unix,
+    }
+}
+
+async fn open_full_view_request(store: &MetadataStore) -> Request {
+    let mut start = public_start_input();
+    start.author_user_id = "user_owner".into();
+    start.author_role = RequestActorRole::Owner;
+    start.view = Views::builtin().full().clone();
+    store.requests().start_request(start).await.unwrap();
+    let mut upload = public_upload_input();
+    upload.actor_user_id = "user_owner".into();
+    store
+        .requests()
+        .record_working_request_upload(upload)
+        .await
+        .unwrap();
+    let mut request = store
+        .requests()
+        .request_by_id("req_1")
+        .await
+        .unwrap()
+        .unwrap();
+    request.submitted_at_unix = Some(3);
+    save_request_row(store.db.as_ref(), &request).await.unwrap();
+    connect_github(store).await;
+    request
+}
+
+async fn connect_github(store: &MetadataStore) {
+    store
+        .repositories()
+        .connect_github_repository(
+            scope_domain::github_connection::ConnectGitHubRepository {
+                repository_id: "owner/repo".to_string(),
+                installation_id: 7,
+                github_repository_id: 42,
+                github_full_name: "octo/repo".to_string(),
+                github_private: true,
+                acknowledge_public: false,
+                run_import_count: 0,
+                user_id: "user_owner".to_string(),
+                now_unix: 4,
+            },
+            async || Ok::<_, PostgresError>(true),
+        )
+        .await
+        .unwrap();
+}
+
+async fn live_link(store: &MetadataStore) -> String {
+    store
+        .db
+        .query_one_raw(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT link_id FROM scope_github_connections WHERE repo_id = 'owner/repo'",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "link_id")
+        .unwrap()
+}
+
+async fn discussions(store: &MetadataStore) -> crate::db::RequestDiscussionReadBatch {
+    store
+        .requests()
+        .request_discussions_page(RequestDiscussionsPageQuery {
+            request_id: "req_1",
+            viewer_user_id: None,
+            snapshot_version: u64::MAX >> 1,
+            cursor: None,
+            discussion_id: None,
+            anchor_revision_id: None,
+            anchor_commit_oid: None,
+            include_revision_anchor: false,
+            include_carried_line_anchors: false,
+            limit: 50,
+        })
+        .await
+        .unwrap()
+}
+
+async fn waiting(store: &MetadataStore, user_id: &str, through: u64) {
+    entities::request_attention_state::Model::from_domain(&RequestAttention {
+        request_id: "req_1".to_string(),
+        user_id: user_id.to_string(),
+        state: RequestAttentionState::Waiting,
+        reason: RequestAttentionReason::Waiting,
+        through_activity_version: through,
+        snoozed_until_unix: None,
+        updated_at_unix: 3,
+        revision: 1,
+    })
+    .unwrap()
+    .into_active_model()
+    .insert(store.db.as_ref())
+    .await
+    .unwrap();
+}
+
+async fn attention(store: &MetadataStore, user_id: &str) -> RequestAttention {
+    entities::request_attention_state::Entity::find_by_id(("req_1".to_string(), user_id.into()))
+        .one(store.db.as_ref())
+        .await
+        .unwrap()
+        .unwrap()
+        .try_into_domain()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_review_imports_once_with_replies_and_one_author_attention_effect() {
+    let store = postgres_store();
+    let request = open_full_view_request(&store).await;
+    let link = live_link(&store).await;
+    waiting(&store, "user_owner", request.activity_version).await;
+    waiting(&store, "user_public", request.activity_version).await;
+    let comments = vec![comment(11, None), comment(12, None), comment(13, Some(11))];
+
+    let first = store
+        .requests()
+        .import_github_review(review(&link, comments.clone(), 10))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.request.activity_version, request.activity_version + 3);
+    assert_eq!(first.discussions.len(), 2);
+    let author = attention(&store, "user_owner").await;
+    assert_eq!(author.state, RequestAttentionState::Active);
+    assert_eq!(
+        author.through_activity_version,
+        first.request.activity_version
+    );
+    assert_eq!(author.revision, 2);
+    assert_eq!(
+        attention(&store, "user_public").await.state,
+        RequestAttentionState::Waiting
+    );
+
+    let again = store
+        .requests()
+        .import_github_review(review(&link, comments, 20))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(again.discussions.is_empty());
+    assert_eq!(
+        again.request.activity_version,
+        first.request.activity_version
+    );
+    assert_eq!(attention(&store, "user_owner").await.revision, 2);
+
+    let batch = discussions(&store).await;
+    assert_eq!(batch.discussions.len(), 2);
+    let root = batch
+        .discussions
+        .iter()
+        .find(|model| model.discussion.client_discussion_id == "github:review-comment:11")
+        .unwrap();
+    assert_eq!(root.reply_count, 1);
+    assert_eq!(
+        root.latest_replies[0].reply.author,
+        RequestDiscussionAuthor::GitHub {
+            github_account_id: REVIEWER,
+            source_url: "https://github.com/octo/repo/pull/1#discussion_r13".to_string(),
+        }
+    );
+    assert_eq!(
+        batch.actors.github_accounts[&REVIEWER].login,
+        "greptile-apps[bot]"
+    );
+    assert!(batch.actors.users.is_empty());
+}
+
+#[tokio::test]
+async fn a_reply_without_its_root_becomes_a_discussion_and_later_replies_attach() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let link = live_link(&store).await;
+    store
+        .requests()
+        .import_github_review(review(&link, vec![comment(21, Some(20))], 10))
+        .await
+        .unwrap();
+    store
+        .requests()
+        .import_github_review(review(
+            &link,
+            vec![comment(22, Some(21)), comment(23, Some(21))],
+            11,
+        ))
+        .await
+        .unwrap();
+
+    let batch = discussions(&store).await;
+    assert_eq!(batch.discussions.len(), 1);
+    assert_eq!(
+        batch.discussions[0].discussion.client_discussion_id,
+        "github:review-comment:21"
+    );
+    assert_eq!(batch.discussions[0].reply_count, 2);
+}
+
+#[tokio::test]
+async fn thread_resolution_resolves_and_reopens_the_root_discussion() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let link = live_link(&store).await;
+    let claim_token = claim_thread(&store, "PRRT_31", RESOLVER).await;
+    let transition = |status| TransitionGitHubDiscussionCommand {
+        request_id: "req_1".to_string(),
+        github_link_id: link.clone(),
+        root_comment_id: 31,
+        claim_token: claim_token.clone(),
+        resolver: account(RESOLVER, "octocat"),
+        status,
+        now_unix: 40,
+    };
+    assert_eq!(
+        store
+            .requests()
+            .transition_github_discussion(transition(RequestDiscussionStatus::Resolved))
+            .await
+            .unwrap(),
+        GitHubThreadTransition::MissingDiscussion
+    );
+    let mut import = review(&link, vec![comment(31, None)], 10);
+    import.accounts.push(account(RESOLVER, "octocat"));
+    store.requests().import_github_review(import).await.unwrap();
+
+    let GitHubThreadTransition::Applied(resolved) = store
+        .requests()
+        .transition_github_discussion(transition(RequestDiscussionStatus::Resolved))
+        .await
+        .unwrap()
+    else {
+        panic!("resolution must apply");
+    };
+    let discussion = &resolved.discussions[0];
+    assert_eq!(discussion.status, RequestDiscussionStatus::Resolved);
+    assert_eq!(
+        discussion.resolved_by,
+        Some(RequestDiscussionResolver::GitHub(RESOLVER))
+    );
+    let batch = discussions(&store).await;
+    assert_eq!(
+        batch.discussions[0].discussion.resolved_by,
+        Some(RequestDiscussionResolver::GitHub(RESOLVER))
+    );
+    assert_eq!(batch.actors.github_accounts[&RESOLVER].login, "octocat");
+    assert_eq!(
+        store
+            .requests()
+            .transition_github_discussion(transition(RequestDiscussionStatus::Resolved))
+            .await
+            .unwrap(),
+        GitHubThreadTransition::Unchanged
+    );
+    let GitHubThreadTransition::Applied(reopened) = store
+        .requests()
+        .transition_github_discussion(transition(RequestDiscussionStatus::Open))
+        .await
+        .unwrap()
+    else {
+        panic!("reopening must apply");
+    };
+    assert_eq!(reopened.discussions[0].resolved_by, None);
+}
+
+#[tokio::test]
+async fn draft_requests_import_nothing() {
+    let store = postgres_store();
+    let mut request = open_full_view_request(&store).await;
+    let link = live_link(&store).await;
+    request.submitted_at_unix = None;
+    save_request_row(store.db.as_ref(), &request).await.unwrap();
+    assert_eq!(
+        store
+            .requests()
+            .import_github_review(review(&link, vec![comment(41, None)], 10))
+            .await
+            .unwrap(),
+        None
+    );
+    assert!(discussions(&store).await.discussions.is_empty());
+}
+
+#[tokio::test]
+async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let job = |subject| QueueGitHubReviewImport {
+        request_id: "req_1".to_string(),
+        repo_id: "owner/repo".to_string(),
+        github_repository_id: 42,
+        pull_number: 7,
+        subject,
+    };
+    let review_job = job(GitHubReviewImportSubject::Review { review_id: 5 });
+    let thread = |node_id: &str| {
+        job(GitHubReviewImportSubject::Thread {
+            root_comment_id: 31,
+            node_id: node_id.to_string(),
+            resolved: true,
+            github_account_id: RESOLVER,
+        })
+    };
+    let accounts = [account(RESOLVER, "octocat")];
+    let requests = store.requests();
+    requests
+        .queue_github_review_import(&review_job, &[], 10)
+        .await
+        .unwrap();
+    requests
+        .queue_github_review_import(&review_job, &[], 10)
+        .await
+        .unwrap();
+    requests
+        .queue_github_review_import(&thread("PRRT_first"), &accounts, 10)
+        .await
+        .unwrap();
+    let mut other_repo = job(GitHubReviewImportSubject::Reply { comment_id: 9 });
+    other_repo.repo_id = "other/repo".to_string();
+    requests
+        .queue_github_review_import(&other_repo, &[], 10)
+        .await
+        .unwrap();
+
+    let claimed = requests
+        .claim_due_github_review_imports(10, 100, 10)
+        .await
+        .unwrap();
+    assert_eq!(claimed.len(), 2);
+    let claimed_thread = claimed
+        .iter()
+        .find(|job| matches!(job.subject, GitHubReviewImportSubject::Thread { .. }))
+        .unwrap()
+        .clone();
+    assert_eq!(claimed_thread.attempts, 1);
+    requests
+        .queue_github_review_import(&thread("PRRT_second"), &accounts, 20)
+        .await
+        .unwrap();
+    requests
+        .finish_github_review_import(&claimed_thread, GitHubReviewImportFinish::Done)
+        .await
+        .unwrap();
+    let claimed_review = claimed
+        .iter()
+        .find(|job| job.subject == review_job.subject)
+        .unwrap();
+    requests
+        .finish_github_review_import(claimed_review, GitHubReviewImportFinish::Done)
+        .await
+        .unwrap();
+
+    let remaining = requests
+        .claim_due_github_review_imports(20, 200, 10)
+        .await
+        .unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(
+        remaining[0].subject,
+        GitHubReviewImportSubject::Thread {
+            root_comment_id: 31,
+            node_id: "PRRT_second".to_string(),
+            resolved: true,
+            github_account_id: RESOLVER,
+        }
+    );
+    assert_eq!(remaining[0].attempts, 1);
+}
+
+fn thread_job(node_id: &str, github_account_id: u64) -> QueueGitHubReviewImport {
+    QueueGitHubReviewImport {
+        request_id: "req_1".to_string(),
+        repo_id: "owner/repo".to_string(),
+        github_repository_id: 42,
+        pull_number: 7,
+        subject: GitHubReviewImportSubject::Thread {
+            root_comment_id: 31,
+            node_id: node_id.to_string(),
+            resolved: true,
+            github_account_id,
+        },
+    }
+}
+
+async fn claim_thread(store: &MetadataStore, node_id: &str, github_account_id: u64) -> String {
+    store
+        .requests()
+        .queue_github_review_import(
+            &thread_job(node_id, github_account_id),
+            &[account(github_account_id, "octocat")],
+            10,
+        )
+        .await
+        .unwrap();
+    store
+        .requests()
+        .claim_due_github_review_imports(1_000, 2_000, 10)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap()
+        .claim_token
+}
+
+async fn last_errors(store: &MetadataStore) -> Vec<(i64, Option<i64>, Option<String>)> {
+    store
+        .db
+        .query_all_raw(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT github_subject_id, next_attempt_at_unix, last_error
+               FROM scope_github_review_imports ORDER BY github_subject_id",
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "github_subject_id").unwrap(),
+                row.try_get("", "next_attempt_at_unix").unwrap(),
+                row.try_get("", "last_error").unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_recorded_reason_keeps_the_job_until_github_delivers_it_again() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let requests = store.requests();
+    let job = QueueGitHubReviewImport {
+        request_id: "req_1".to_string(),
+        repo_id: "owner/repo".to_string(),
+        github_repository_id: 42,
+        pull_number: 7,
+        subject: GitHubReviewImportSubject::Reply { comment_id: 9 },
+    };
+    requests
+        .queue_github_review_import(&job, &[], 10)
+        .await
+        .unwrap();
+    let claimed = requests
+        .claim_due_github_review_imports(10, 100, 10)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    requests
+        .finish_github_review_import(
+            &claimed,
+            GitHubReviewImportFinish::Record {
+                error: "GitHub refused to say whether octocat can write".to_string(),
+                retry_at_unix: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        last_errors(&store).await,
+        [(
+            9,
+            None,
+            Some("GitHub refused to say whether octocat can write".to_string())
+        )]
+    );
+    assert!(
+        requests
+            .claim_due_github_review_imports(1_000, 1_100, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    requests
+        .queue_github_review_import(&job, &[], 20)
+        .await
+        .unwrap();
+    assert_eq!(last_errors(&store).await, [(9, Some(20), None)]);
+    let again = requests
+        .claim_due_github_review_imports(20, 120, 10)
+        .await
+        .unwrap();
+    assert_eq!(again.len(), 1);
+    assert_eq!(again[0].attempts, 1);
+}
+
+fn reply_job() -> QueueGitHubReviewImport {
+    QueueGitHubReviewImport {
+        request_id: "req_1".to_string(),
+        repo_id: "owner/repo".to_string(),
+        github_repository_id: 42,
+        pull_number: 7,
+        subject: GitHubReviewImportSubject::Reply { comment_id: 9 },
+    }
+}
+
+#[tokio::test]
+async fn tearing_down_the_github_connection_drops_queued_imports() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let requests = store.requests();
+    let repositories = store.repositories();
+
+    requests
+        .queue_github_review_import(&reply_job(), &[], 10)
+        .await
+        .unwrap();
+    repositories
+        .disconnect_github_repository("owner/repo", "user_owner")
+        .await
+        .unwrap();
+    assert!(
+        requests
+            .claim_due_github_review_imports(10, 100, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    requests
+        .queue_github_review_import(&reply_job(), &[], 11)
+        .await
+        .unwrap();
+    assert!(last_errors(&store).await.is_empty());
+
+    connect_github(&store).await;
+    requests
+        .queue_github_review_import(&reply_job(), &[], 12)
+        .await
+        .unwrap();
+    repositories
+        .apply_github_installation_change(7, 13, async || {
+            Ok::<_, PostgresError>(Some(
+                scope_domain::github_connection::GitHubInstallationChange::Uninstalled,
+            ))
+        })
+        .await
+        .unwrap();
+    assert!(last_errors(&store).await.is_empty());
+
+    connect_github(&store).await;
+    requests
+        .queue_github_review_import(&reply_job(), &[], 14)
+        .await
+        .unwrap();
+    connect_github(&store).await;
+    assert!(last_errors(&store).await.is_empty());
+}
+
+#[tokio::test]
+async fn an_import_that_loses_the_race_with_a_disconnect_commits_nothing() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let requests = store.requests();
+    requests
+        .queue_github_review_import(&reply_job(), &[], 10)
+        .await
+        .unwrap();
+    let claimed = requests
+        .claim_due_github_review_imports(10, 100, 10)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    let stale_link = claimed.github_link_id.clone();
+    assert_eq!(stale_link, live_link(&store).await);
+
+    let disconnect = store.db.begin().await.unwrap();
+    acquire_aggregate_lock(&disconnect, "github-connection", "owner/repo")
+        .await
+        .unwrap();
+    disconnect
+        .execute_unprepared("DELETE FROM scope_github_connections WHERE repo_id = 'owner/repo'")
+        .await
+        .unwrap();
+    let importing_store = store.clone();
+    let importing_link = stale_link.clone();
+    let mut importing = tokio::spawn(async move {
+        importing_store
+            .requests()
+            .import_github_review(review(&importing_link, vec![comment(51, None)], 20))
+            .await
+    });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(200), &mut importing)
+            .await
+            .is_err(),
+        "an import must wait for a disconnect that holds the connection"
+    );
+    disconnect.commit().await.unwrap();
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), importing)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap(),
+        None
+    );
+
+    connect_github(&store).await;
+    assert_ne!(live_link(&store).await, stale_link);
+    assert_eq!(
+        requests
+            .import_github_review(review(&stale_link, vec![comment(52, None)], 21))
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        requests
+            .transition_github_discussion(TransitionGitHubDiscussionCommand {
+                request_id: "req_1".to_string(),
+                github_link_id: stale_link,
+                root_comment_id: 51,
+                claim_token: "stale-claim".to_string(),
+                resolver: account(RESOLVER, "octocat"),
+                status: RequestDiscussionStatus::Resolved,
+                now_unix: 22,
+            })
+            .await
+            .unwrap(),
+        GitHubThreadTransition::Ignored
+    );
+    assert!(discussions(&store).await.discussions.is_empty());
+}
+
+#[tokio::test]
+async fn a_comment_imported_on_its_own_is_never_imported_again_as_a_reply() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let link = live_link(&store).await;
+    store
+        .requests()
+        .import_github_review(review(&link, vec![comment(21, Some(20))], 10))
+        .await
+        .unwrap();
+    let redelivered = store
+        .requests()
+        .import_github_review(review(
+            &link,
+            vec![comment(20, None), comment(21, Some(20))],
+            11,
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        redelivered
+            .discussions
+            .iter()
+            .map(|discussion| discussion.client_discussion_id.as_str())
+            .collect::<Vec<_>>(),
+        ["github:review-comment:20"]
+    );
+
+    let batch = discussions(&store).await;
+    let mut imported = batch
+        .discussions
+        .iter()
+        .map(|model| {
+            (
+                model.discussion.client_discussion_id.as_str(),
+                model.reply_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    imported.sort();
+    assert_eq!(
+        imported,
+        [
+            ("github:review-comment:20", 0),
+            ("github:review-comment:21", 0)
+        ]
+    );
+}
+
+#[tokio::test]
+async fn an_older_thread_worker_cannot_apply_after_a_newer_delivery() {
+    let store = postgres_store();
+    open_full_view_request(&store).await;
+    let link = live_link(&store).await;
+    let mut import = review(&link, vec![comment(31, None)], 10);
+    import.accounts.push(account(RESOLVER, "octocat"));
+    store.requests().import_github_review(import).await.unwrap();
+    let older = claim_thread(&store, "PRRT_31", RESOLVER).await;
+    let newer = claim_thread(&store, "PRRT_31", RESOLVER).await;
+    assert_ne!(older, newer);
+    let transition = |claim_token: &str, status| TransitionGitHubDiscussionCommand {
+        request_id: "req_1".to_string(),
+        github_link_id: link.clone(),
+        root_comment_id: 31,
+        claim_token: claim_token.to_string(),
+        resolver: account(RESOLVER, "octocat"),
+        status,
+        now_unix: 40,
+    };
+    let requests = store.requests();
+
+    assert!(matches!(
+        requests
+            .transition_github_discussion(transition(&newer, RequestDiscussionStatus::Resolved))
+            .await
+            .unwrap(),
+        GitHubThreadTransition::Applied(_)
+    ));
+    requests
+        .finish_github_review_import(
+            &GitHubReviewImportJob {
+                request_id: "req_1".to_string(),
+                repo_id: "owner/repo".to_string(),
+                github_repository_id: 42,
+                pull_number: 7,
+                github_link_id: link.clone(),
+                subject: thread_job("PRRT_31", RESOLVER).subject,
+                claim_token: newer.clone(),
+                attempts: 1,
+            },
+            GitHubReviewImportFinish::Done,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        requests
+            .transition_github_discussion(transition(&older, RequestDiscussionStatus::Open))
+            .await
+            .unwrap(),
+        GitHubThreadTransition::Superseded
+    );
+    assert_eq!(
+        discussions(&store).await.discussions[0].discussion.status,
+        RequestDiscussionStatus::Resolved
+    );
+}

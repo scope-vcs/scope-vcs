@@ -34,8 +34,8 @@ checklist for the production app.
   repositories. Installation events are always delivered to GitHub Apps; the
   others are chosen on the registration page. Repository events report a
   repository made public or private, Workflow job events keep an open run's
-  jobs current, and Pull request events keep review bot pull requests in
-  step. Scope does not act on the review and comment events yet.
+  jobs current, Pull request events keep review bot pull requests in step,
+  and the pull request review events bring GitHub reviews into requests.
 
 Adding permissions to a registered app asks every installation to accept
 them. Until an installation accepts Pull requests read and write, a review
@@ -430,6 +430,77 @@ workflows has the push trigger. So when the tested commit has had no check run
 at all for 10 minutes after its push succeeded, the request view (web and
 `scope request ci`) says "No workflows started. Check that your workflows
 include the scope/** push trigger."
+
+## Importing GitHub reviews
+
+A submitted full-view request has a GitHub pull request from its
+`scope/requests/<request id>` branch, and review apps such as Greptile and
+Codex review it there. Scope imports those reviews as request discussions,
+credited to the GitHub account that wrote each comment.
+
+Only pull requests whose head is a `scope/requests/<id>` branch of the
+connected repository itself count; forks, other branches, requests outside
+the full view, drafts, and closed or merged requests import nothing. A
+webhook only records a durable import job (`scope_github_review_imports`); a
+background pass claims due jobs with a five-minute lease and retries a failed
+one after 30 seconds, 2, 10, and 30 minutes, then gives up.
+
+- **Pull request review** (`submitted`): Scope reads
+  `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{id}` and
+  `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{id}/comments`, then
+  creates the review's discussions in one transaction with one attention
+  change for the request author. A non-empty review body becomes a discussion
+  on the reviewed revision. Each comment becomes a discussion anchored to the
+  newest revision whose head is the comment's commit: `RIGHT` is the new
+  side, `LEFT` the old, `start_line` to `line` the range, and a file comment
+  anchors to the file. An outdated comment (no `line`) uses its original
+  commit and lines. A comment whose lines fail Scope's anchor checks anchors
+  to its file, then to its revision, and one whose commit Scope does not know
+  becomes a request-level discussion; no comment is dropped.
+- **Pull request review comment** (`created`): a reply imports just that
+  reply onto the discussion made from its thread's first comment, read with
+  `GET /repos/{owner}/{repo}/pulls/comments/{id}`. When that first comment was
+  never imported, Scope reads and imports it too. Top-level comments arrive
+  with their review instead.
+- **Pull request review thread** (`resolved`, `unresolved`): the delivery is
+  only a hint. When the job runs, Scope reads the thread's current state with
+  GraphQL (`node(id:)` on the thread's `node_id`, `isResolved` and
+  `resolvedBy`, under Pull requests read) and resolves or reopens the
+  discussion made from the thread's first comment to match, recording GitHub's
+  `resolvedBy` account as the resolver. A delivery applies only while GitHub
+  still agrees with its action: a `resolved` delivery is credited to
+  `resolvedBy`, an `unresolved` one to its sender, and one GitHub has since
+  reversed is ignored, since the reversing delivery carries the newer state. A newer delivery for the same thread
+  replaces the job's claim, so an older worker that is still reading GitHub
+  commits nothing.
+
+Scope imports a review, review comment, reply, or thread resolution only
+from a listed review bot or from a GitHub user who can write to the
+repository; for a resolution the author is the account that resolved it.
+Maintainers list review bots by their GitHub bot login, which always ends in
+`[bot]` (for example `greptile-apps[bot]` or `chatgpt-codex-connector[bot]`,
+at most 20); a person's login is refused, since people come in through the
+write check, and a listed login matches only a GitHub bot account. They are
+set under
+CI in repository settings, or with
+`PUT /v1/repos/{owner}/{repo}/github/review-bots`. The list belongs to one
+live link: disconnecting, losing the installation or repository on GitHub,
+or connecting to a different GitHub repository clears it. Any other GitHub user is checked once per import job with
+`GET /repos/{owner}/{repo}/collaborators/{username}/permission`, which
+needs only the Metadata read permission: admin and write count, read and
+none do not, and other bot accounts are never asked about. When GitHub
+refuses that answer the user counts as unable to write, and the job keeps
+GitHub's refusal as its last error. Skipped activity is acknowledged and not
+retried; a later delivery of the same review or comment is read again.
+
+Imported discussions and replies use the client IDs
+`github:review:<review id>` and `github:review-comment:<comment id>`, so a
+redelivered webhook or a retry creates nothing twice. Edits and deletions on
+GitHub are not copied. A GitHub account can do nothing in Scope: read
+markers, permissions, and attention stay with Scope users. The web shows the
+account's login and avatar with a "via GitHub" link to the original comment,
+and the CLI's reply, resolve, and reopen receipts name the GitHub account and
+link.
 
 ## Runs page
 

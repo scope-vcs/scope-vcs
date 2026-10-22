@@ -6,6 +6,9 @@ use serde::Deserialize;
 use sha2::Sha256;
 use std::collections::BTreeSet;
 
+mod reviews;
+pub(crate) use reviews::GitHubReviewDelivery;
+
 pub(crate) const GITHUB_SIGNATURE_HEADER: &str = "x-hub-signature-256";
 pub(crate) const GITHUB_EVENT_HEADER: &str = "x-github-event";
 
@@ -39,6 +42,7 @@ pub(crate) enum GitHubWebhookEvent {
     RepositoryVisibilityChanged {
         github_repository_id: u64,
     },
+    ReviewActivity(GitHubReviewDelivery),
     PullRequestChanged {
         github_repository_id: u64,
         request_id: String,
@@ -48,6 +52,9 @@ pub(crate) enum GitHubWebhookEvent {
 
 impl GitHubWebhookEvent {
     pub(crate) fn parse(event: &str, body: &[u8]) -> Result<Self, ApiError> {
+        if reviews::EVENTS.contains(&event) {
+            return Ok(reviews::parse(event, body)?.map_or(Self::Ignored, Self::ReviewActivity));
+        }
         if !matches!(
             event,
             "repository"
@@ -382,17 +389,10 @@ mod tests {
                 "{action} {head} {head_repository}"
             );
         }
-        for event in [
-            "pull_request_review",
-            "pull_request_review_comment",
-            "pull_request_review_thread",
-            "issue_comment",
-        ] {
-            assert_eq!(
-                GitHubWebhookEvent::parse(event, b"{}").unwrap(),
-                GitHubWebhookEvent::Ignored
-            );
-        }
+        assert_eq!(
+            GitHubWebhookEvent::parse("issue_comment", b"{}").unwrap(),
+            GitHubWebhookEvent::Ignored
+        );
     }
 
     #[test]
