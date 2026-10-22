@@ -10,7 +10,7 @@ import { Link } from '@tanstack/react-router'
 import { Check, ChevronDown, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-react'
 import { useRef, useState, type CSSProperties } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
-import { RequestDiscussionActorAvatar } from './request-discussion-byline'
+import { RequestDiscussionActorAvatar } from './request-discussion-avatar'
 import { RequestRailMarker } from './request-workspace-rail-marker'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import {

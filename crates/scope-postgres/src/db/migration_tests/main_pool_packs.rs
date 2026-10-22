@@ -5,7 +5,7 @@ async fn main_pack_spans_become_main_pool_packs_and_the_span_table_is_dropped() 
     let (_target, db, _lease) = isolated_database().await;
     let previous_count = migrations::Migrator::migrations()
         .iter()
-        .position(|migration| migration.name() == "m0095_main_pool_packs")
+        .position(|migration| migration.name() == "m0101_main_pool_packs")
         .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await

@@ -296,6 +296,9 @@ async fn persist_prepared_merge(
         .await;
     match mutation {
         Ok(mutation) => {
+            if mutation.queued_main_publication {
+                state.wakeups.github_pushes.notify_one();
+            }
             crate::use_cases::git_receive::best_effort_sync_cache(
                 state,
                 &command.owner,

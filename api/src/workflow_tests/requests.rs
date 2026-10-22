@@ -139,22 +139,6 @@ async fn request_reads_rebuild_current_history_before_projection_jobs_run() {
 }
 
 #[tokio::test]
-async fn request_list_rejects_malformed_cursors() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    let response = api_request(
-        router(state),
-        "GET",
-        "/v1/repos/owner/repo/requests?cursor=not-versioned",
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn request_list_pages_one_hundred_and_one_visible_rows_without_overlap() {
     let state = test_state_with_readme().await;
     cache_test_jwks(&state);

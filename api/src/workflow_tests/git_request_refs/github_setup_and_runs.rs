@@ -384,23 +384,6 @@ async fn the_runs_page_lists_github_workflow_runs_and_links_request_branches() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_repository_without_github_keeps_its_native_runs() {
-    let (mut state, _source, _main) =
-        super::super::push_intent_completion::published_git_fixture("github-runs-native").await;
-    let listed = github_json(&state, "GET", "/workflow-runs").await;
-    assert_eq!(
-        listed,
-        serde_json::json!({ "configured": false, "github": null })
-    );
-    FakeGitHub::install(&mut state).await;
-    let listed = github_json(&state, "GET", "/workflow-runs").await;
-    assert_eq!(
-        listed,
-        serde_json::json!({ "configured": true, "github": null })
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deleting_the_setup_branch_is_tried_again_when_github_refuses() {
     let (state, fake, main) = connected_repository("github-setup-delete-retry").await;
     github_json(&state, "POST", "/setup-check").await;

@@ -121,7 +121,7 @@ impl RepositoryStore {
             current_config: &current_config,
             proposed_config: &update.config,
         })?;
-        let git_head = accept_and_persist_content_push(
+        let persisted = accept_and_persist_content_push(
             &tx,
             repo_row,
             update,
@@ -136,7 +136,7 @@ impl RepositoryStore {
         let completed_landed_requests = complete_landed_requests(
             &tx,
             &repo_id,
-            &git_head.head_oid,
+            &persisted.git_head.head_oid,
             LandedRequestCompletion {
                 actor_user_id: author_id,
                 candidates: landed_request_candidates,
@@ -146,8 +146,9 @@ impl RepositoryStore {
         .await?;
         tx.commit().await?;
         Ok(Some(RepositoryMutationResult {
-            result: git_head,
+            result: persisted.git_head,
             completed_landed_requests,
+            queued_main_publication: persisted.queued_main_publication,
         }))
     }
 }

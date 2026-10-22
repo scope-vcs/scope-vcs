@@ -1,6 +1,6 @@
 use super::merge_gate::{RequestMergeSubject, RequestMergeability, evaluate_request_merge};
 use super::{
-    Request, RequestActorRole, RequestState, checks::RequestChecksOutcome,
+    Request, RequestActorRole, RequestReviewsOutcome, RequestState, checks::RequestChecksOutcome,
     lifecycle::ensure_request_close_allowed,
 };
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
@@ -204,9 +204,17 @@ pub fn request_list_mergeability(
     viewer: &RequestViewer<'_>,
     views: &Views,
     checks: RequestChecksOutcome,
+    reviews: RequestReviewsOutcome,
     repository_lifecycle: crate::repository::RepoLifecycleState,
 ) -> RequestMergeability {
-    evaluate_request_merge(repository_lifecycle, subject, viewer, views, checks)
+    evaluate_request_merge(
+        repository_lifecycle,
+        subject,
+        viewer,
+        views,
+        checks,
+        reviews,
+    )
 }
 
 pub fn request_mergeability(
@@ -214,7 +222,15 @@ pub fn request_mergeability(
     viewer: &RequestViewer<'_>,
     views: &Views,
     checks: RequestChecksOutcome,
+    reviews: RequestReviewsOutcome,
     repository_lifecycle: crate::repository::RepoLifecycleState,
 ) -> RequestMergeability {
-    request_list_mergeability(request.into(), viewer, views, checks, repository_lifecycle)
+    request_list_mergeability(
+        request.into(),
+        viewer,
+        views,
+        checks,
+        reviews,
+        repository_lifecycle,
+    )
 }

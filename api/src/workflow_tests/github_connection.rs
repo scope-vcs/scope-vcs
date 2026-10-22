@@ -103,7 +103,7 @@ async fn github_is_off_when_the_app_is_not_configured() {
     let body = connection(&state).await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
+        serde_json::json!({ "configured": false, "connection": null, "required_checks": [], "review_bots": [], "can_confirm_public": true, "can_publish_main": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let install = authorize_response(&state, &bearer_header(), serde_json::json!({})).await;
     assert_eq!(install.status(), StatusCode::NOT_FOUND);
@@ -122,7 +122,7 @@ async fn a_maintainer_connects_through_github_setup() {
     let (state, fake) = github_state().await;
     assert_eq!(
         connection(&state).await,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "review_bots": [], "can_confirm_public": true, "can_publish_main": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let mut events = state.repo_events.subscribe(TEST_REPO_ID);
 
@@ -175,6 +175,12 @@ async fn a_maintainer_connects_through_github_setup() {
     assert_eq!(owner_view["connection"], connected["connection"]);
     assert_eq!(connected["can_confirm_public"], false);
     assert_eq!(owner_view["can_confirm_public"], true);
+    assert_eq!(connected["can_publish_main"], false);
+    assert_eq!(owner_view["can_publish_main"], true);
+    assert_eq!(
+        owner_view["connection"]["main_publication"],
+        serde_json::json!({ "enabled": false, "latest": null })
+    );
     assert_eq!(
         events.try_recv().unwrap().kind,
         crate::repo_events::RepoChangeKind::RepositoryChanged {
@@ -482,6 +488,146 @@ async fn maintainers_name_the_checks_github_must_pass() {
 }
 
 #[tokio::test]
+async fn maintainers_list_review_bots_until_the_repository_disconnects() {
+    let (state, fake) = github_state().await;
+    let set = |bearer: String, logins: &[&str]| {
+        let state = state.clone();
+        let bots = logins
+            .iter()
+            .map(|login| serde_json::json!({ "login": login, "required": false }))
+            .collect::<Vec<_>>();
+        async move {
+            github_api(
+                &state,
+                "PUT",
+                "/review-bots",
+                &bearer,
+                Some(serde_json::json!({ "bots": bots })),
+            )
+            .await
+        }
+    };
+    let unconnected = set(bearer_header(), &["greptile-apps[bot]"]).await;
+    assert_eq!(unconnected.status(), StatusCode::NOT_FOUND);
+    let first_grant = grant(&state).await;
+    expect_json(
+        connect(&state, &bearer_header(), &first_grant, GITHUB_REPOSITORY_ID).await,
+        StatusCode::OK,
+    )
+    .await;
+
+    let mut events = state.repo_events.subscribe(TEST_REPO_ID);
+    let member = add_member(&state).await;
+    let body = expect_json(
+        set(
+            member,
+            &[" greptile-apps[bot] ", "chatgpt-codex-connector[bot]"],
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    let listed = serde_json::json!([
+        { "login": "greptile-apps[bot]", "required": false },
+        { "login": "chatgpt-codex-connector[bot]", "required": false },
+    ]);
+    assert_eq!(body["review_bots"], listed);
+    assert_eq!(connection(&state).await["review_bots"], listed);
+    assert_eq!(
+        events.try_recv().unwrap().kind,
+        crate::repo_events::RepoChangeKind::RepositoryChanged {
+            reason: "github-connection-changed".into()
+        }
+    );
+
+    let outsider = bearer_header_for("user_github_outsider", "outsider@example.com");
+    assert_eq!(
+        set(outsider, &["octocat"]).await.status(),
+        StatusCode::FORBIDDEN
+    );
+    let too_many = (0..21)
+        .map(|index| format!("bot-{index}"))
+        .collect::<Vec<_>>();
+    for logins in [
+        vec![""],
+        vec!["not a login"],
+        vec!["greptile-apps[bot]", "GREPTILE-APPS[bot]"],
+        too_many.iter().map(String::as_str).collect(),
+    ] {
+        assert_eq!(
+            set(bearer_header(), &logins).await.status(),
+            StatusCode::BAD_REQUEST,
+            "{logins:?}"
+        );
+    }
+    assert_eq!(connection(&state).await["review_bots"], listed);
+    let person = set(bearer_header(), &["greptile-apps[bot]", "octocat"]).await;
+    assert_eq!(person.status(), StatusCode::BAD_REQUEST);
+    let person = response_json(person).await;
+    assert!(
+        person["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("\"octocat\" is not a bot."),
+        "{person}"
+    );
+    assert_eq!(connection(&state).await["review_bots"], listed);
+
+    fake.installation_states
+        .lock()
+        .unwrap()
+        .insert(INSTALLATION_ID, InstallationState::Uninstalled);
+    let uninstalled = webhook(
+        &state,
+        "installation",
+        serde_json::json!({ "action": "deleted", "installation": { "id": INSTALLATION_ID } }),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(uninstalled.status(), StatusCode::NO_CONTENT);
+    let gone = connection(&state).await;
+    assert_eq!(
+        gone["connection"]["disconnected"]["reason"],
+        "app_uninstalled"
+    );
+    assert_eq!(gone["review_bots"], serde_json::json!([]));
+    fake.installation_states.lock().unwrap().clear();
+    expect_json(
+        connect(
+            &state,
+            &bearer_header(),
+            &grant(&state).await,
+            GITHUB_REPOSITORY_ID,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    expect_json(
+        set(bearer_header(), &["greptile-apps[bot]"]).await,
+        StatusCode::OK,
+    )
+    .await;
+
+    github_json(&state, "DELETE", "").await;
+    expect_json(
+        connect(
+            &state,
+            &bearer_header(),
+            &grant(&state).await,
+            GITHUB_REPOSITORY_ID,
+        )
+        .await,
+        StatusCode::OK,
+    )
+    .await;
+    assert_eq!(
+        connection(&state).await["review_bots"],
+        serde_json::json!([])
+    );
+}
+
+#[tokio::test]
 async fn a_maintainer_disconnects() {
     let (state, _fake) = github_state().await;
     let grant = grant(&state).await;
@@ -493,7 +639,7 @@ async fn a_maintainer_disconnects() {
     let body = github_json(&state, "DELETE", "").await;
     assert_eq!(
         body,
-        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "can_confirm_public": true, "setup_check": null, "run_import_count": 50, "run_import": null })
+        serde_json::json!({ "configured": true, "connection": null, "required_checks": [], "review_bots": [], "can_confirm_public": true, "can_publish_main": true, "setup_check": null, "run_import_count": 50, "run_import": null })
     );
     let again = github_api(&state, "DELETE", "", &bearer_header(), None).await;
     assert_eq!(again.status(), StatusCode::NOT_FOUND);

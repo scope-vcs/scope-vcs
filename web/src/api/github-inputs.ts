@@ -5,12 +5,17 @@ import type {
   RepoGitHubWorkflowJobLogInput,
   RepoGitHubWorkflowRunsInput,
   RunActionInput,
+  SetRepoGitHubMainPublicationInput,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubReviewBotsInput,
+  SetRepoGitHubReviewBotPullRequestsInput,
+  SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
 } from './types'
 import { parseRepoParams } from './repo-params'
 
 export const GITHUB_RUN_IMPORT_MAX_COUNT = 1000
+export const REVIEW_REQUEST_COMMENT_MAX_CHARS = 500
 
 const SETUP_INCOMPLETE = 'GitHub did not send everything needed to finish connecting. Start again from repository settings.'
 
@@ -46,6 +51,34 @@ export function parseConnectRepoGitHubInput(input: unknown): ConnectRepoGitHubIn
 export function parseSetRepoGitHubRunImportCountInput(input: unknown): SetRepoGitHubRunImportCountInput {
   const params = parseRepoParams(input)
   return { ...params, count: runImportCount((input as Partial<SetRepoGitHubRunImportCountInput>).count) }
+}
+
+export function parseSetRepoGitHubReviewBotPullRequestsInput(
+  input: unknown,
+): SetRepoGitHubReviewBotPullRequestsInput {
+  const params = parseRepoParams(input)
+  const enabled = (input as Partial<SetRepoGitHubReviewBotPullRequestsInput>).enabled
+  if (typeof enabled !== 'boolean') throw new Error('Choose whether Scope opens pull requests.')
+  return { ...params, enabled }
+}
+
+export function parseSetRepoGitHubReviewRequestCommentInput(
+  input: unknown,
+): SetRepoGitHubReviewRequestCommentInput {
+  const params = parseRepoParams(input)
+  const comment = (input as Partial<SetRepoGitHubReviewRequestCommentInput>).comment
+  if (typeof comment !== 'string') throw new Error('Enter a comment or leave it empty.')
+  if ([...comment.trim()].length > REVIEW_REQUEST_COMMENT_MAX_CHARS) {
+    throw new Error(`The comment can be at most ${REVIEW_REQUEST_COMMENT_MAX_CHARS} characters.`)
+  }
+  return { ...params, comment }
+}
+
+export function parseSetRepoGitHubMainPublicationInput(input: unknown): SetRepoGitHubMainPublicationInput {
+  const params = parseRepoParams(input)
+  const enabled = (input as Partial<SetRepoGitHubMainPublicationInput>).enabled
+  if (typeof enabled !== 'boolean') throw new Error('Choose whether to publish main to GitHub.')
+  return { ...params, enabled }
 }
 
 export function parseRepoGitHubWorkflowRunsInput(input: unknown): RepoGitHubWorkflowRunsInput {
@@ -100,6 +133,19 @@ export function parseSetRepoGitHubRequiredChecksInput(
     throw new Error('CI requirements must be a list of result names.')
   }
   return { ...params, names }
+}
+
+export function parseSetRepoGitHubReviewBotsInput(input: unknown): SetRepoGitHubReviewBotsInput {
+  const params = parseRepoParams(input)
+  const bots = (input as Partial<SetRepoGitHubReviewBotsInput>).bots
+  if (
+    !Array.isArray(bots)
+    || bots.some((bot) => typeof bot !== 'object' || bot === null
+      || typeof bot.login !== 'string' || typeof bot.required !== 'boolean')
+  ) {
+    throw new Error('Review bots must be a list of GitHub logins.')
+  }
+  return { ...params, bots: bots.map(({ login, required }) => ({ login, required })) }
 }
 
 function requiredText(value: unknown, message: string) {

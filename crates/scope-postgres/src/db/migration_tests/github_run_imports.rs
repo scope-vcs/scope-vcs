@@ -2,10 +2,8 @@ use super::*;
 
 #[tokio::test]
 async fn run_import_counts_stay_in_bounds_and_imports_keep_a_consistent_state() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
+    let store = migrated_store();
+    let db = Arc::clone(&store.db);
     db.execute_unprepared(
         r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);

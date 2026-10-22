@@ -544,6 +544,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
     );
 }
 
+mod carrier_pull_requests;
 mod github_pushes;
 mod integration_conflict;
 

@@ -12,7 +12,8 @@ import {
 import { memo, useEffect, useRef } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import { RequestDiscussionAnchor } from './request-discussion-anchor'
-import { RequestDiscussionActorAvatar, RequestDiscussionByline } from './request-discussion-byline'
+import { RequestDiscussionAuthorAvatar } from './request-discussion-avatar'
+import { RequestDiscussionByline } from './request-discussion-byline'
 import { RequestReplyComposer } from './request-discussion-composer'
 import { RequestDiscussionMarkdown } from './request-discussion-markdown'
 import { REQUEST_DISCUSSION_CONTENT_CLASS } from './request-content-layout'
@@ -33,7 +34,12 @@ import {
   useRequestDiscussionReplies,
   type RequestDiscussionThreadActions,
 } from './use-request-discussion-replies'
-import { actorHandle } from './request-actor'
+import {
+  discussionAuthorName,
+  discussionResolverName,
+  isSameDiscussionAuthor,
+  type DiscussionAuthor,
+} from './request-discussion-author'
 
 export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   actions,
@@ -199,7 +205,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   const replyCount = Math.max(discussion.reply_count, availableReplies.length)
   const hasReplies = replyCount > 0
   const latestReply = availableReplies.at(-1)
-  const participantHandles = latestParticipantHandles(availableReplies)
+  const participants = latestParticipants(availableReplies)
   const replyRegionId = `discussion-${discussion.id}-replies`
 
   return (
@@ -214,7 +220,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
       ) : null}
 
       <div>
-        <RequestDiscussionActorAvatar handle={actorHandle(discussion.author)} />
+        <RequestDiscussionAuthorAvatar author={discussion.author} />
       </div>
 
       <div className="min-w-0">
@@ -231,7 +237,9 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
           {discussion.status === 'Resolved' ? (
             <Badge variant="success">
               <Check />
-              {discussion.resolved_by ? `Resolved by ${discussion.resolved_by.handle}` : 'Resolved'}
+              {discussion.resolved_by
+                ? `Resolved by ${discussionResolverName(discussion.resolved_by)}`
+                : 'Resolved'}
             </Badge>
           ) : null}
           {discussion.pending === 'sending' ? (
@@ -298,10 +306,14 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
               {collapsed ? '' : 'Hide '}
               {replyCount} {replyCount === 1 ? 'reply' : 'replies'}
             </span>
-            {participantHandles.length > 0 ? (
+            {participants.length > 0 ? (
               <span aria-hidden="true" className="flex -space-x-1">
-                {participantHandles.map((handle) => (
-                  <RequestDiscussionActorAvatar handle={handle} key={handle} small />
+                {participants.map((author) => (
+                  <RequestDiscussionAuthorAvatar
+                    author={author}
+                    key={discussionAuthorName(author)}
+                    small
+                  />
                 ))}
               </span>
             ) : null}
@@ -380,7 +392,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                   quote={
                     quotedReply
                       ? {
-                          author: actorHandle(quotedReply.author),
+                          author: discussionAuthorName(quotedReply.author),
                           body: compactDiscussionSummary(quotedReply.body_markdown),
                           id: quotedReply.id,
                         }
@@ -400,16 +412,22 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   )
 })
 
-function latestParticipantHandles(replies: RequestDiscussionReplyView[]) {
-  const handles: string[] = []
-  const seen = new Set<string>()
-  for (let index = replies.length - 1; index >= 0 && handles.length < 2; index -= 1) {
+function latestParticipants(replies: RequestDiscussionReplyView[]) {
+  const participants: DiscussionAuthor[] = []
+  for (let index = replies.length - 1; index >= 0 && participants.length < 2; index -= 1) {
     const reply = replies[index]
     if (!reply) continue
-    const handle = actorHandle(reply.author)
-    if (seen.has(handle)) continue
-    seen.add(handle)
-    handles.push(handle)
+    const author = reply.author
+    if (
+      participants.some(
+        (seen) =>
+          isSameDiscussionAuthor(seen, author) ||
+          discussionAuthorName(seen) === discussionAuthorName(author),
+      )
+    ) {
+      continue
+    }
+    participants.push(author)
   }
-  return handles
+  return participants
 }

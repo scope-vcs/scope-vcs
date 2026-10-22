@@ -28,8 +28,8 @@ use scope_domain::{
     repository::access::{RepositoryAccess, RepositoryAccessContext},
     requests::{
         CloseRequestMutation, REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, Request,
-        RequestChecksOutcome, RequestViewer, StartRequestInput, request_actor_role, request_policy,
-        validate_start_request_view,
+        RequestChecksOutcome, RequestReviewsOutcome, RequestViewer, StartRequestInput,
+        request_actor_role, request_policy, validate_start_request_view,
     },
 };
 use scope_postgres::db::{EditRequestIdentityCommand, RepositoryReadPolicy};
@@ -87,6 +87,13 @@ pub(crate) async fn list_requests(
     let checks =
         crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &requests)
             .await?;
+    let reviews = crate::use_cases::github_review_bot_statuses::reviews_outcomes(
+        &state,
+        &repo.record.id,
+        &repo.views,
+        &requests,
+    )
+    .await?;
     let mut parents = state
         .metadata
         .requests()
@@ -99,13 +106,17 @@ pub(crate) async fn list_requests(
                 .get(&request.id)
                 .copied()
                 .unwrap_or(RequestChecksOutcome::NotEvaluated);
+            let reviews = reviews
+                .get(&request.id)
+                .copied()
+                .unwrap_or(RequestReviewsOutcome::Clear);
             let parent = parents.remove(&request.id);
             request_list_item_response(
                 request,
                 &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
                 &repo.views,
                 current_main_oid.clone(),
-                checks,
+                RequestGateOutcomes { checks, reviews },
                 repo.record.lifecycle_state,
                 parent,
             )
@@ -613,13 +624,18 @@ async fn request_response_for_viewer(
     let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
         .await?
         .outcome;
+    let reviews = state
+        .metadata
+        .requests()
+        .request_reviews_outcome(&request, views)
+        .await?;
     request_response(
         request,
         viewer,
         views,
         current_main_oid,
         invitees,
-        checks,
+        RequestGateOutcomes { checks, reviews },
         repository_lifecycle,
     )
 }

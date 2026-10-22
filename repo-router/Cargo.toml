@@ -15,5 +15,6 @@ tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sig
 tracing.workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = "0.1.17"
 tower = { workspace = true, features = ["util"] }
