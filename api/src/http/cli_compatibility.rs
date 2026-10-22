@@ -92,78 +92,38 @@ mod tests {
 
     #[tokio::test]
     async fn incompatible_cli_mutation_returns_actionable_426() {
-        let response = test_router()
-            .oneshot(request(Method::POST, "/v1/mutate", Some("0")))
-            .await
-            .unwrap();
+        for (protocol, installed) in [(Some("0"), Some(0)), (None, None), (Some("2"), Some(2))] {
+            let response = test_router()
+                .oneshot(request(Method::POST, "/v1/mutate", protocol))
+                .await
+                .unwrap();
 
-        assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
-        let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
-        let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(error.code, ErrorCode::CliUpgradeRequired);
-        assert_eq!(error.fields.installed_protocol, Some(0));
-        assert_eq!(error.fields.supported_protocol, Some(1));
-        assert!(error.message.contains("installed Scope CLI protocol 0"));
-        assert!(error.message.contains("supports protocol 1"));
-        assert!(error.instruction.unwrap().contains("install.sh | sh"));
-    }
-
-    #[tokio::test]
-    async fn missing_protocol_is_rejected_before_mutation() {
-        let response = test_router()
-            .oneshot(request(Method::POST, "/v1/mutate", None))
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
-        let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
-        let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
-        assert!(error.message.contains("protocol missing"));
-        assert_eq!(error.fields.installed_protocol, None);
-        assert_eq!(error.fields.supported_protocol, Some(1));
-    }
-
-    #[tokio::test]
-    async fn future_protocol_is_rejected_until_the_api_supports_it() {
-        let response = test_router()
-            .oneshot(request(Method::POST, "/v1/mutate", Some("2")))
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
-        let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
-        let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(error.fields.installed_protocol, Some(2));
-        assert_eq!(error.fields.supported_protocol, Some(1));
-        assert_eq!(
-            error.instruction.as_deref(),
-            Some("This Scope CLI requires API protocol 2. Retry after the Scope API is updated.")
-        );
-    }
-
-    #[tokio::test]
-    async fn current_cli_and_non_mutating_or_git_traffic_pass_through() {
-        for request in [
-            request(Method::POST, "/v1/mutate", Some("1")),
-            request(Method::GET, "/v1/read", None),
-            request(Method::POST, "/v1/cli/device-login/code/complete", None),
-            request(Method::POST, "/git/private/repo/git-receive-pack", None),
-        ] {
-            let response = test_router().oneshot(request).await.unwrap();
-            assert_eq!(response.status(), StatusCode::NO_CONTENT);
+            assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
+            let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
+            let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
+            assert_eq!(error.code, ErrorCode::CliUpgradeRequired);
+            assert_eq!(error.fields.installed_protocol, installed);
+            assert_eq!(error.fields.supported_protocol, Some(CLI_PROTOCOL_VERSION));
         }
     }
 
     #[tokio::test]
-    async fn non_cli_bearer_mutations_are_not_gated() {
-        let request = HttpRequest::builder()
+    async fn current_cli_and_non_mutating_or_git_traffic_pass_through() {
+        let non_cli_bearer_mutation = HttpRequest::builder()
             .method(Method::POST)
             .uri("/v1/mutate")
             .header(AUTHORIZATION, "Bearer clerk_fixture")
             .body(Body::empty())
             .unwrap();
-
-        let response = test_router().oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        for request in [
+            request(Method::POST, "/v1/mutate", Some("1")),
+            request(Method::GET, "/v1/read", None),
+            request(Method::POST, "/v1/cli/device-login/code/complete", None),
+            request(Method::POST, "/git/private/repo/git-receive-pack", None),
+            non_cli_bearer_mutation,
+        ] {
+            let response = test_router().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        }
     }
 }

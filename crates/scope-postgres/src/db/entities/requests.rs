@@ -1,10 +1,14 @@
+use super::github_accounts::{
+    AuthorColumns, author_columns, discussion_author, discussion_resolver, resolver_columns,
+};
 use super::*;
 use scope_domain::requests::{
     CheckCommitBase, Request, RequestActorRole, RequestAttention, RequestAttentionReason,
-    RequestAttentionState, RequestBase, RequestCheckEvaluation, RequestClaim, RequestDiscussion,
-    RequestDiscussionAnchor, RequestDiscussionReadState, RequestDiscussionReply,
-    RequestDiscussionStatus, RequestEvent, RequestEventKind, RequestEventPayload, RequestInvitee,
-    RequestRating, RequestRevision, RequestStackStatus,
+    RequestAttentionState, RequestBase, RequestCheckEvaluation, RequestClaim, RequestDiffSide,
+    RequestDiscussion, RequestDiscussionAnchor, RequestDiscussionLines, RequestDiscussionReadState,
+    RequestDiscussionReply, RequestDiscussionStatus, RequestEvent, RequestEventKind,
+    RequestEventPayload, RequestInvitee, RequestLineRange, RequestRating, RequestRevision,
+    RequestStackStatus,
 };
 use scope_domain::views::ViewId;
 use scope_domain::{content::SourceBlob, policy::ScopePath};
@@ -272,11 +276,17 @@ pub mod request_discussion {
         pub revision_id: Option<String>,
         pub commit_oid: Option<String>,
         pub path: Option<String>,
+        pub line_side: Option<String>,
+        pub start_line: Option<i32>,
+        pub end_line: Option<i32>,
         pub status: String,
         pub client_discussion_id: String,
         pub created_at_unix: i64,
         pub resolved_at_unix: Option<i64>,
         pub resolved_by_user_id: Option<String>,
+        pub author_github_user_id: Option<i64>,
+        pub source_url: Option<String>,
+        pub resolved_by_github_user_id: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -286,6 +296,10 @@ pub mod request_discussion {
 
     impl Model {
         pub fn from_domain(value: &RequestDiscussion) -> Result<Self, PostgresError> {
+            let lines = value.anchor.as_ref().and_then(|anchor| anchor.lines);
+            let author = author_columns(&value.author)?;
+            let (resolved_by_user_id, resolved_by_github_user_id) =
+                resolver_columns(value.resolved_by.as_ref())?;
             Ok(Self {
                 id: value.id.clone(),
                 request_id: value.request_id.clone(),
@@ -294,7 +308,7 @@ pub mod request_discussion {
                     value.last_activity_position,
                     "discussion last activity position",
                 )?,
-                author_user_id: value.author_user_id.clone(),
+                author_user_id: author.user_id,
                 body_markdown: value.body_markdown.clone(),
                 revision_id: value
                     .anchor
@@ -309,6 +323,13 @@ pub mod request_discussion {
                     .as_ref()
                     .and_then(|anchor| anchor.path.as_ref())
                     .map(|path| path.as_str().to_string()),
+                line_side: lines.map(|lines| encode_enum(lines.side)).transpose()?,
+                start_line: lines
+                    .map(|lines| u32_to_i32(lines.range.start_line(), "discussion start line"))
+                    .transpose()?,
+                end_line: lines
+                    .map(|lines| u32_to_i32(lines.range.end_line(), "discussion end line"))
+                    .transpose()?,
                 status: encode_enum(value.status)?,
                 client_discussion_id: value.client_discussion_id.clone(),
                 created_at_unix: u64_to_i64(value.created_at_unix, "discussion creation time")?,
@@ -316,7 +337,10 @@ pub mod request_discussion {
                     value.resolved_at_unix,
                     "discussion resolution time",
                 )?,
-                resolved_by_user_id: value.resolved_by_user_id.clone(),
+                resolved_by_user_id,
+                author_github_user_id: author.github_user_id,
+                source_url: author.source_url,
+                resolved_by_github_user_id,
             })
         }
 
@@ -332,6 +356,7 @@ pub mod request_discussion {
                             .map(ScopePath::parse)
                             .transpose()
                             .map_err(PostgresError::internal)?,
+                        lines: discussion_lines(self.line_side, self.start_line, self.end_line)?,
                     })
                 })
                 .transpose()?;
@@ -343,7 +368,11 @@ pub mod request_discussion {
                     self.last_activity_position,
                     "discussion last activity position",
                 )?,
-                author_user_id: self.author_user_id,
+                author: discussion_author(AuthorColumns {
+                    user_id: self.author_user_id,
+                    github_user_id: self.author_github_user_id,
+                    source_url: self.source_url,
+                })?,
                 body_markdown: self.body_markdown,
                 anchor,
                 status: decode_enum::<RequestDiscussionStatus>(self.status)?,
@@ -353,8 +382,32 @@ pub mod request_discussion {
                     self.resolved_at_unix,
                     "discussion resolution time",
                 )?,
-                resolved_by_user_id: self.resolved_by_user_id,
+                resolved_by: discussion_resolver(
+                    self.resolved_by_user_id,
+                    self.resolved_by_github_user_id,
+                )?,
             })
+        }
+    }
+
+    fn discussion_lines(
+        side: Option<String>,
+        start_line: Option<i32>,
+        end_line: Option<i32>,
+    ) -> Result<Option<RequestDiscussionLines>, PostgresError> {
+        match (side, start_line, end_line) {
+            (None, None, None) => Ok(None),
+            (Some(side), Some(start_line), Some(end_line)) => Ok(Some(RequestDiscussionLines {
+                side: decode_enum::<RequestDiffSide>(side)?,
+                range: RequestLineRange::new(
+                    i32_to_u32(start_line, "discussion start line")?,
+                    i32_to_u32(end_line, "discussion end line")?,
+                )
+                .map_err(PostgresError::internal)?,
+            })),
+            _ => Err(PostgresError::internal_message(
+                "request discussion line anchor is incomplete",
+            )),
         }
     }
 }
@@ -374,6 +427,8 @@ pub mod request_discussion_reply {
         pub reply_to_reply_id: Option<String>,
         pub client_reply_id: String,
         pub created_at_unix: i64,
+        pub author_github_user_id: Option<i64>,
+        pub source_url: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -383,11 +438,12 @@ pub mod request_discussion_reply {
 
     impl Model {
         pub fn from_domain(value: &RequestDiscussionReply) -> Result<Self, PostgresError> {
+            let author = author_columns(&value.author)?;
             Ok(Self {
                 id: value.id.clone(),
                 discussion_id: value.discussion_id.clone(),
                 position: u64_to_i64(value.position, "discussion reply position")?,
-                author_user_id: value.author_user_id.clone(),
+                author_user_id: author.user_id,
                 body_markdown: value.body_markdown.clone(),
                 reply_to_reply_id: value.reply_to_reply_id.clone(),
                 client_reply_id: value.client_reply_id.clone(),
@@ -395,6 +451,8 @@ pub mod request_discussion_reply {
                     value.created_at_unix,
                     "discussion reply creation time",
                 )?,
+                author_github_user_id: author.github_user_id,
+                source_url: author.source_url,
             })
         }
 
@@ -403,7 +461,11 @@ pub mod request_discussion_reply {
                 id: self.id,
                 discussion_id: self.discussion_id,
                 position: i64_to_u64(self.position, "discussion reply position")?,
-                author_user_id: self.author_user_id,
+                author: discussion_author(AuthorColumns {
+                    user_id: self.author_user_id,
+                    github_user_id: self.author_github_user_id,
+                    source_url: self.source_url,
+                })?,
                 body_markdown: self.body_markdown,
                 reply_to_reply_id: self.reply_to_reply_id,
                 client_reply_id: self.client_reply_id,

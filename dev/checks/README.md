@@ -11,7 +11,7 @@ root, regardless of the caller's working directory.
 | `cli-bundle` | Host release binaries, packaged analyzer runtime, archive size cap, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |
-| `policy` | License inventory freshness, complete-tree source size, Rust boundaries, toolchain pins, workflow job timeouts, gate inventory |
+| `policy` | License inventory freshness, complete-tree source size, comments, test waits, Rust boundaries, toolchain pins, workflow job timeouts, gate inventory |
 | `integration web` | Browser smoke against a running seeded stack |
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |
 | `integration journey` | Signed-in browser contribution journey against a freshly started, signed-in seeded stack |

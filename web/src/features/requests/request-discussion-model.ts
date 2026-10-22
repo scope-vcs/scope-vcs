@@ -3,7 +3,7 @@ import type {
   RequestDiscussionPage,
   RequestDiscussionView,
 } from './request-discussion-types'
-import { isSameActor } from './request-actor'
+import { isSameDiscussionAuthor } from './request-discussion-author'
 
 export type DiscussionCollection = {
   byId: ReadonlyMap<string, RequestDiscussionView>
@@ -82,7 +82,7 @@ export function mergeRefreshedDiscussionPage(
     page.discussions.flatMap((discussion) => {
       const optimistic = collection.byId.get(discussion.client_discussion_id)
       return optimistic?.pending !== undefined &&
-        isSameActor(optimistic.author, discussion.author)
+        isSameDiscussionAuthor(optimistic.author, discussion.author)
         ? [discussion.client_discussion_id]
         : []
     }),
@@ -133,7 +133,7 @@ export function mergeDiscussion(
   if (
     optimisticId !== discussion.id &&
     optimistic?.pending !== undefined &&
-    isSameActor(optimistic.author, discussion.author)
+    isSameDiscussionAuthor(optimistic.author, discussion.author)
   ) {
     return reconcileDiscussionMutation(collection, discussion, optimisticId)
   }

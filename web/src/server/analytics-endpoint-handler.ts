@@ -2,13 +2,9 @@ import type { AnalyticsProxyOptions } from './analytics-proxy'
 import { proxyAnalyticsCapture } from './analytics-proxy'
 import { getAnalyticsRuntimeConfig } from './analytics-runtime-config'
 
-type AnalyticsEndpointOptions = AnalyticsProxyOptions & {
-  runtime?: Readonly<Record<string, string | undefined>>
-}
-
 export async function analyticsEndpointResponse(
   request: Request,
-  options: AnalyticsEndpointOptions = {},
+  options: AnalyticsProxyOptions = {},
 ) {
   const url = new URL(request.url)
   if (url.pathname !== '/e' && !url.pathname.startsWith('/e/')) return null
@@ -24,7 +20,7 @@ export async function analyticsEndpointResponse(
   if (url.pathname !== '/e/e/') return endpointResponse('Not found.', 404)
   if (request.method !== 'POST') return methodNotAllowed('POST')
   if (!config) return endpointResponse('Not found.', 404)
-  return proxyAnalyticsCapture(request, options)
+  return proxyAnalyticsCapture(request, config, options)
 }
 
 function methodNotAllowed(method: string) {

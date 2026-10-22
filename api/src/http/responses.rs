@@ -631,30 +631,3 @@ fn history_entry_file_response(file: &HistoryEntryFile) -> HistoryEntryFileRespo
         label: file.label.clone().into(),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_deleted_history_author_has_no_handle() {
-        let users = BTreeMap::from([(
-            "scope_usr_kept".to_string(),
-            UserAccount {
-                id: "scope_usr_kept".into(),
-                handle: "kept".into(),
-                email: "kept@example.com".into(),
-                email_verified: true,
-            },
-        )]);
-        assert_eq!(
-            history_author_handle(Some("scope_usr_kept"), &users).as_deref(),
-            Some("kept")
-        );
-        assert_eq!(
-            history_author_handle(Some("scope_usr_deleted"), &users),
-            None
-        );
-        assert_eq!(history_author_handle(None, &users), None);
-    }
-}

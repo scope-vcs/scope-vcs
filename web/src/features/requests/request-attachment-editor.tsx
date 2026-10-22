@@ -21,6 +21,7 @@ import {
 import {
   addRequestAttachmentDraftFiles,
   beginRequestAttachmentSubmission,
+  requestAttachmentSubmissionPayload,
   clearRequestAttachmentDraft,
   finishRequestAttachmentSubmission,
   inferredMediaType,
@@ -61,6 +62,7 @@ export function RequestAttachmentEditor({
   placeholder,
   quote,
   secondarySubmit,
+  submissionSubject,
   submitIcon,
   submitLabel,
   target,
@@ -81,6 +83,7 @@ export function RequestAttachmentEditor({
     label: string
     onSubmit: (markdown: string, baseText: string | null, submissionId: string) => Promise<boolean>
   }
+  submissionSubject?: string
   submitIcon: ReactNode
   submitLabel: string
   target: RequestAttachmentDraftTarget
@@ -106,6 +109,10 @@ export function RequestAttachmentEditor({
   )
   const read = useCallback(() => readRequestAttachmentDraft(draftKey), [draftKey])
   const draft = useSyncExternalStore(subscribe, read, read)
+
+  useEffect(() => {
+    if (autoFocus) textareaRef.current?.focus()
+  }, [autoFocus])
   const editsDescription = target === 'description'
   const staleDescription = editsDescription && draft.initialized && draft.baseText !== initialText
   const limits = environment.limits
@@ -161,7 +168,13 @@ export function RequestAttachmentEditor({
     const markdown = markdownWithAttachments(draft.text, readyAttachments)
     const submissionId = beginRequestAttachmentSubmission(
       draftKey,
-      JSON.stringify([action, markdown, draft.baseText, quote?.id ?? null]),
+      requestAttachmentSubmissionPayload({
+        action,
+        baseText: draft.baseText,
+        markdown,
+        quoteId: quote?.id ?? null,
+        subject: submissionSubject ?? null,
+      }),
     )
     if (!submissionId) return
     setPendingAction(action)
@@ -291,7 +304,6 @@ export function RequestAttachmentEditor({
         onDrop={handleDrop}
       >
         <textarea
-          autoFocus={autoFocus}
           className={cn(
             'block w-full resize-none bg-transparent outline-none placeholder:text-muted-foreground disabled:cursor-wait disabled:opacity-70',
             editsDescription ? 'text-base leading-[26px]' : 'min-h-28 px-3 py-2 text-sm leading-6',
@@ -381,7 +393,7 @@ function EditorActions({
       >
         <Paperclip />
       </Button>
-      <p aria-live="polite" className="min-w-0 flex-1 text-xs text-muted-foreground">{status}</p>
+      <p aria-live="polite" className={cn('min-w-0 flex-1 text-xs text-muted-foreground', status && 'min-w-40')}>{status}</p>
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         {onDiscardDraft ? (
           <Button

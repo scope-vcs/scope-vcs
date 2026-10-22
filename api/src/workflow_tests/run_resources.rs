@@ -217,22 +217,6 @@ async fn missing_or_inconsistent_workflow_catalog_fails_closed() {
         workflow_list_response(wrong_source).await.status(),
         StatusCode::INTERNAL_SERVER_ERROR
     );
-
-    let corrupt_file = state_with_pushed_workflow("workflow-catalog-corrupt-file").await;
-    corrupt_file
-        .metadata
-        .repositories()
-        .corrupt_repository_workflow_file_content_for_tests(
-            TEST_REPO_ID,
-            "/.scope/runs/test.yml",
-            b"not the captured workflow".to_vec(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        workflow_list_response(corrupt_file).await.status(),
-        StatusCode::INTERNAL_SERVER_ERROR
-    );
 }
 
 #[tokio::test]

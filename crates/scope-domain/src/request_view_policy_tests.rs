@@ -205,6 +205,7 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
             &viewer,
             &views,
             RequestChecksOutcome::Clear,
+            crate::requests::RequestReviewsOutcome::Clear,
             crate::repository::RepoLifecycleState::Ready,
         );
         assert_eq!(
@@ -218,6 +219,7 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
                 &viewer,
                 &views,
                 RequestChecksOutcome::Clear,
+                crate::requests::RequestReviewsOutcome::Clear,
                 crate::repository::RepoLifecycleState::Ready
             ),
             mergeability
@@ -234,6 +236,7 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
             &narrower,
             &views,
             RequestChecksOutcome::Clear,
+            crate::requests::RequestReviewsOutcome::Clear,
             crate::repository::RepoLifecycleState::Ready
         )
         .reason,

@@ -20,10 +20,8 @@ async fn insert_repository(db: &DatabaseConnection) {
 
 #[tokio::test]
 async fn repository_landing_file_schema_enforces_identity_bounds_and_cascade() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
+    let store = migrated_store();
+    let db = Arc::clone(&store.db);
     insert_repository(db.as_ref()).await;
     db.execute_unprepared(
         "

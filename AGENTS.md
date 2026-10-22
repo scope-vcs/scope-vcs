@@ -51,6 +51,7 @@ unrepresentable state. Evidence and proof for this audit are in
 | Keep domain policy and required effects in their owners. | Crate dependencies: `dev/checks/policy` and `check-rust-boundaries.mjs`. Lifecycle and refresh behavior: Rust domain/store/use-case tests. Placement of new policy still requires review. |
 | Reuse frontend resource owners; keep retained data scoped and refreshed. | `createCachedResource` owns retention and viewer resets. `pnpm check:resource-boundary` rejects effect-owned reads and direct route publication; resource behavior tests cover races. |
 | Assert callback behavior outside the code that can catch its failures. | `pnpm check:resource-boundary` checks test sources with `callback-assertions.mjs`; use `mock.fn()` and assert `mock.callCount()` after awaiting work. |
+| Write tests that catch real breaks and stay fast. | `dev/checks/policy` runs `check-test-waits.mjs`: real-clock test waits of 5 s or more, or of a computed number of seconds, fail. Duplication, signal, and setup cost still require review with the `scope-tests` skill. |
 | Audit large files and separate responsibilities. | `dev/checks/policy` runs `check-source-size.mjs`: ownership audit at 700 lines, hard cap at 1,000. |
 | Preserve generated contracts and digest-locked migrations. | `dev/checks/contract` and `check-migration-immutability.mjs`. |
 | Avoid ordinary code comments. | `dev/checks/policy` runs `check-comments.mjs` and its regression tests, added by merged PR #525. The exceptions above remain the intended policy. |

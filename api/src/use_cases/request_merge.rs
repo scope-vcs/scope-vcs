@@ -159,6 +159,11 @@ pub(crate) async fn merge_request_inner(
         viewer: &viewer,
         views: &context.views,
         checks,
+        reviews: state
+            .metadata
+            .requests()
+            .request_reviews_outcome(&request, &context.views)
+            .await?,
     });
     if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
         return Err(
@@ -289,6 +294,9 @@ async fn persist_prepared_merge(
         .await;
     match mutation {
         Ok(mutation) => {
+            if mutation.queued_main_publication {
+                state.wakeups.github_pushes.notify_one();
+            }
             if let Err(error) = state
                 .git_segment_store
                 .promote_verified_pack(&repository_incarnation, &staged_segment)

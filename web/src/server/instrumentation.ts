@@ -1,5 +1,7 @@
 import type { IncomingMessage } from 'node:http'
 import { createRequire } from 'node:module'
+import { context, propagation, trace } from '@opentelemetry/api'
+import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks'
 import { W3CTraceContextPropagator } from '@opentelemetry/core'
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
@@ -9,7 +11,7 @@ import { HttpInstrumentation } from '@opentelemetry/instrumentation-http'
 import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
-import { BatchSpanProcessor, NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
+import { BatchSpanProcessor, TracerProvider } from '@opentelemetry/sdk-trace'
 import { AllowedAttributesExporter } from './telemetry-allowed-attributes'
 import { getTelemetryConfig, INJECTED_OTLP_VARIABLES_MESSAGE } from './telemetry-config'
 import { requestSpanRoute } from './request-span-route'
@@ -32,17 +34,21 @@ function patchHttpServerModules() {
 
 if (config.enabled) {
   const resource = resourceFromAttributes(config.resourceAttributes)
-  const tracerProvider = new NodeTracerProvider({
+  const tracerProvider = new TracerProvider({
     resource,
     sampler: requestTraceSampler(),
     spanProcessors: [
-      new BatchSpanProcessor(new AllowedAttributesExporter(new OTLPTraceExporter({
-        headers: config.headers,
-        url: config.tracesUrl,
-      }))),
+      new BatchSpanProcessor({
+        exporter: new AllowedAttributesExporter(new OTLPTraceExporter({
+          headers: config.headers,
+          url: config.tracesUrl,
+        })),
+      }),
     ],
   })
-  tracerProvider.register({ propagator: new W3CTraceContextPropagator() })
+  trace.setGlobalTracerProvider(tracerProvider)
+  context.setGlobalContextManager(new AsyncLocalStorageContextManager())
+  propagation.setGlobalPropagator(new W3CTraceContextPropagator())
 
   const loggerProvider = new LoggerProvider({
     processors: [

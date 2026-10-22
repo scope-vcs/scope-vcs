@@ -23,6 +23,7 @@ import type {
   RequestDiscussionReplyMutation,
 } from './request-discussion-types'
 import { RequestDiscussionWorkbench } from './request-discussion-workbench'
+import { discussionAuthorUserId } from './request-discussion-author'
 
 type RequestDiscussionViewProps = {
   viewer: RequestActorSummaryResponse | null
@@ -95,7 +96,7 @@ export function RequestDiscussionView({
   const canResolve = useCallback(
     (discussion: RequestDiscussion) => !['Closed', 'Merged'].includes(request.state) && (
       isMaintainer ||
-      actor.id === discussion.author?.id ||
+      actor.id === discussionAuthorUserId(discussion.author) ||
       actor.id === request.author_user_id
     ),
     [actor.id, isMaintainer, request.author_user_id, request.state],
