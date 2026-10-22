@@ -174,28 +174,28 @@ test('repository components retain drafts, previews and pending actions across r
   assert.equal(await lint.isChecked(), true)
   assert.equal(await remote.isChecked(), true)
   assert.equal(await saveRequirements.isDisabled(), true)
-  const reviewBots = checks.getByRole('textbox', { name: 'Review bots', exact: true })
+  const reviewBotLogins = checks.getByRole('textbox', { name: 'Review bots', exact: true })
   await checks.getByText('Scope imports GitHub reviews from these bots and from GitHub users who can write to the repository.', { exact: true }).waitFor()
   const saveReviewBots = checks.getByRole('button', { name: 'Save review bots', exact: true })
   assert.equal(await saveReviewBots.isDisabled(), true)
-  await reviewBots.fill('greptile-apps[bot], octocat')
+  await reviewBotLogins.fill('greptile-apps[bot], octocat')
   await saveReviewBots.click()
   await checks.getByRole('alert').filter({ hasText: '"octocat" is not a bot.' }).waitFor()
-  assert.equal(await reviewBots.getAttribute('aria-invalid'), 'true')
+  assert.equal(await reviewBotLogins.getAttribute('aria-invalid'), 'true')
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [])
-  await reviewBots.fill(' greptile-apps[bot],\nchatgpt-codex-connector[bot] ')
+  await reviewBotLogins.fill(' greptile-apps[bot],\nchatgpt-codex-connector[bot] ')
   assert.equal(await checks.getByRole('alert').filter({ hasText: 'is not a bot' }).count(), 0)
   await saveReviewBots.click()
   await page.evaluate(() => window.finishAction('review-bots'))
   await checks.getByText('Review bots saved.', { exact: true }).waitFor()
-  assert.equal(await reviewBots.inputValue(), 'greptile-apps[bot]\nchatgpt-codex-connector[bot]')
+  assert.equal(await reviewBotLogins.inputValue(), 'greptile-apps[bot]\nchatgpt-codex-connector[bot]')
   assert.equal(await saveReviewBots.isDisabled(), true)
   assert.deepEqual(await page.evaluate(() => window.calls.splice(0)), [
     { setGitHubReviewBots: [{ login: 'greptile-apps[bot]' }, { login: 'chatgpt-codex-connector[bot]' }] },
   ])
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 900 })
-    const fit = await reviewBots.evaluate((field) => ({
+    const fit = await reviewBotLogins.evaluate((field) => ({
       scrollWidth: field.scrollWidth,
       clientWidth: field.clientWidth,
       scrollHeight: field.scrollHeight,
@@ -203,10 +203,10 @@ test('repository components retain drafts, previews and pending actions across r
     }))
     assert(fit.scrollWidth <= fit.clientWidth, `review bots fit across at ${width}: ${JSON.stringify(fit)}`)
     assert(fit.scrollHeight <= fit.clientHeight, `review bots fit down at ${width}: ${JSON.stringify(fit)}`)
-    const bounds = await reviewBots.boundingBox()
+    const bounds = await reviewBotLogins.boundingBox()
     assert(bounds.x >= 0 && bounds.x + bounds.width <= width, `review bots field fits at ${width}`)
     if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
-      await reviewBots.locator('xpath=../..').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.review-bots-${width}.png` })
+      await reviewBotLogins.locator('xpath=../..').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.review-bots-${width}.png` })
     }
   }
   await page.setViewportSize({ width: 1280, height: 900 })
