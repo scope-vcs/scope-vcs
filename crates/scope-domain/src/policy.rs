@@ -239,4 +239,31 @@ impl Policy {
     pub fn rules(&self) -> &[LabelRule] {
         &self.rules
     }
+
+    pub fn split_rules(self, at: impl Fn(&ScopePath) -> bool) -> (Self, Vec<LabelRule>) {
+        let (split, rules) = self.rules.into_iter().partition(|rule| at(&rule.path));
+        (
+            Self {
+                default: self.default,
+                rules,
+            },
+            split,
+        )
+    }
+
+    pub fn join_rules(self, rules: impl IntoIterator<Item = LabelRule>) -> Self {
+        let rules = self
+            .rules
+            .into_iter()
+            .chain(rules)
+            .map(|rule| (rule.path, rule.view))
+            .collect::<BTreeMap<_, _>>()
+            .into_iter()
+            .map(|(path, view)| LabelRule { path, view })
+            .collect();
+        Self {
+            default: self.default,
+            rules,
+        }
+    }
 }

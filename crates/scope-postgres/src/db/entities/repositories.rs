@@ -46,7 +46,10 @@ pub mod repository {
                     "repository content version",
                 )?,
                 repo_config: encode_json(&repo.repo_config)?,
-                policy: encode_json(&repo.policy)?,
+                policy: encode_json(&crate::db::history_rows::policy_without_file_rules(
+                    &repo.policy,
+                    &repo.live_files,
+                ))?,
             })
         }
 
@@ -76,10 +79,10 @@ pub mod repository {
                 repo_config: decode_json(self.repo_config)?,
                 first_push_token: facts.first_push_token,
                 git_push_token: facts.git_push_token,
-                policy: decode_json::<Policy>(self.policy)?,
+                policy: decode_json::<Policy>(self.policy)?.join_rules(history.live_files.rules),
                 graph: history.graph,
                 visibility_change_sets: history.visibility_change_sets,
-                live_files: history.live_files,
+                live_files: history.live_files.files,
                 git_head: facts.git_head,
                 git_pack_spans: facts.git_pack_spans,
                 collaboration,

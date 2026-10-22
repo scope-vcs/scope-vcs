@@ -164,3 +164,34 @@ fn replacing_a_private_rule_with_public_keeps_existing_children_valid() {
         ViewId::public()
     );
 }
+
+#[test]
+fn split_rules_rejoin_to_the_same_policy_and_labels() {
+    let views = Views::builtin();
+    let mut policy = Policy::new(ViewId::private());
+    policy
+        .add_rules([
+            LabelRule::public(path("/docs")),
+            LabelRule::private(path("/docs/secret.md")),
+            LabelRule::public(path("/readme.md")),
+        ])
+        .unwrap();
+
+    let (directories, files) = policy
+        .clone()
+        .split_rules(|rule_path| rule_path.as_str().ends_with(".md"));
+
+    assert_eq!(directories.rules(), &[LabelRule::public(path("/docs"))]);
+    assert_eq!(
+        directories.label(&path("/docs/secret.md"), &views),
+        ViewId::public()
+    );
+    assert_eq!(
+        files,
+        vec![
+            LabelRule::private(path("/docs/secret.md")),
+            LabelRule::public(path("/readme.md")),
+        ]
+    );
+    assert_eq!(directories.join_rules(files.into_iter().rev()), policy);
+}

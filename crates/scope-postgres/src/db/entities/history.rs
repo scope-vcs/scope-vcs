@@ -103,6 +103,7 @@ pub mod live_file {
         #[sea_orm(primary_key, auto_increment = false)]
         pub path: String,
         pub content: Json,
+        pub view: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -418,11 +418,7 @@ async fn git_state_reads_no_history() {
 #[tokio::test]
 async fn read_policy_reads_no_history_and_hides_unreadable_repositories() {
     let store = fixture().await;
-    let held = lock(
-        &store,
-        &format!("{PROJECTION_HISTORY_TABLES}, scope_live_files"),
-    )
-    .await;
+    let held = lock(&store, PROJECTION_HISTORY_TABLES).await;
 
     let read = within_lock(store.repositories().repository_read_policy(
         "owner",

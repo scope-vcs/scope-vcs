@@ -312,8 +312,11 @@ async fn load_policy_config<C: ConnectionTrait>(
         .one(conn)
         .await?
         .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+    let policy = serde_json::from_value::<scope_domain::policy::Policy>(policy)
+        .map_err(PostgresError::internal)?
+        .join_rules(super::history_rows::load_live_file_rules(conn, repo_id).await?);
     Ok((
-        serde_json::from_value(policy).map_err(PostgresError::internal)?,
+        policy,
         serde_json::from_value(config).map_err(PostgresError::internal)?,
     ))
 }

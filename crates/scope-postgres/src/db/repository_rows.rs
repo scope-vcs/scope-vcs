@@ -34,7 +34,7 @@ where
         .await?;
     insert_repository_fact_rows(conn, repo, now_unix).await?;
     insert_repository_history(conn, &repo.graph, &repo.visibility_change_sets).await?;
-    insert_repository_live_files(conn, &repo.record.id, &repo.live_files).await?;
+    insert_repository_live_files(conn, &repo.record.id, &repo.live_files, &repo.policy).await?;
     insert_repository_collaboration(conn, &repo.collaboration).await?;
     fold_live_projection_read_models(conn, &repo.record.id, repo.record.content_version).await?;
     enqueue_projection_read_model_rebuild(
@@ -136,6 +136,8 @@ where
             after_visibility_change_sets: &after.visibility_change_sets,
             before_live_files: &before.live_files,
             after_live_files: &after.live_files,
+            before_policy: &before.policy,
+            after_policy: &after.policy,
             history_rewritten: before.repo_config.history.rewrites
                 != after.repo_config.history.rewrites,
         },
