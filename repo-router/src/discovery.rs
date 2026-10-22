@@ -261,6 +261,7 @@ mod tests {
             connect_timeout: Duration::from_secs(1),
             read_timeout: Duration::from_secs(1),
             read_replicas: 1,
+            write_replicas: 1,
             upload_pack_replay_max_bytes: 1024,
             upload_pack_replay_budget_bytes: 4096,
             incoming_body_timeout: Duration::from_secs(15),

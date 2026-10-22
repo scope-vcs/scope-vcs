@@ -1,6 +1,6 @@
 use crate::{
     app::RouterState,
-    backend_selection::GitRequestKind,
+    backend_selection::{GitRequestKind, GitRequestPhase},
     discovery::{Backend, DiscoveryFreshness},
     rendezvous::rank_backends,
     repository_path::repository_key,
@@ -49,7 +49,10 @@ pub(crate) async fn repository_request(
     let ranked = rank_backends(&repository, &discovery.backends, |backend| {
         backend.address.to_string()
     });
-    let candidate_ranks = state.selector.candidate_indices(kind, ranked.len());
+    let candidate_ranks =
+        state
+            .selector
+            .candidate_indices(kind, GitRequestPhase::of(request.method()), ranked.len());
     if candidate_ranks.is_empty() {
         return upstream_unavailable(&repository, "no API replicas are available");
     }
@@ -78,7 +81,7 @@ pub(crate) async fn repository_request(
             };
             forward_upload_pack(&state, &route, &candidate_ranks, upstream_request, body).await
         }
-        GitRequestKind::PrimaryOnly => {
+        GitRequestKind::ReceivePack | GitRequestKind::PrimaryOnly => {
             let rank = candidate_ranks[0];
             let backend = route.backend(rank);
             route_telemetry(&route, kind, backend, rank, 1, 1, &upstream_request.method);

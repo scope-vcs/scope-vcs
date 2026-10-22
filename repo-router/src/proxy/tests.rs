@@ -207,6 +207,7 @@ async fn ends_an_upstream_read_that_stops_making_progress() {
         connect_timeout: std::time::Duration::from_secs(1),
         read_timeout: std::time::Duration::from_millis(20),
         read_replicas: 1,
+        write_replicas: 1,
         upload_pack_replay_max_bytes: 1024,
         upload_pack_replay_budget_bytes: 4096,
         incoming_body_timeout: Duration::from_secs(15),
