@@ -3,7 +3,7 @@ import type { RequestDiscussion, RequestDiscussionPage, RequestDiscussionReplyVi
 export function discussion(id: string, lastActivity: number, overrides: Partial<RequestDiscussion> = {}): RequestDiscussion {
   return {
     anchor: null,
-    author: { handle: 'maya', id: 'user-maya' },
+    author: { kind: 'user', handle: 'maya', id: 'user-maya' },
     body_markdown: `Discussion ${id}`,
     client_discussion_id: id,
     created_at_unix: lastActivity,
@@ -24,7 +24,7 @@ export function discussion(id: string, lastActivity: number, overrides: Partial<
 
 export function reply(id: string, position: number, overrides: Partial<RequestDiscussionReplyView> = {}): RequestDiscussionReplyView {
   return {
-    author: { handle: 'maya', id: 'user-maya' },
+    author: { kind: 'user', handle: 'maya', id: 'user-maya' },
     body_markdown: `Reply ${id}`,
     created_at_unix: position,
     discussion_id: 'one',

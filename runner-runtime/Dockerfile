@@ -6,9 +6,11 @@ ARG GIT_SOURCE_SHA256
 COPY deploy/railway/install-git.sh /tmp/install-git.sh
 RUN bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
 
-FROM --platform=linux/amd64 rust:1.98.1-slim-bookworm@sha256:dacc9e51f252243eb59d2fb4cb4ad8b0d3f607b6a82c398cf8a321e59ff778a7 AS runtime-builder
-
+FROM --platform=linux/amd64 rust:1.98.1-slim-bookworm@sha256:dacc9e51f252243eb59d2fb4cb4ad8b0d3f607b6a82c398cf8a321e59ff778a7 AS chef
+RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /build
+
+FROM chef AS planner
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
 COPY api api
@@ -18,11 +20,17 @@ COPY media-worker media-worker
 COPY repo-router repo-router
 COPY worker worker
 COPY runner-runtime runner-runtime
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS runtime-builder
+COPY --from=planner /build/recipe.json recipe.json
+RUN cargo chef cook --locked --release -p scope-runner-runtime --recipe-path recipe.json
+COPY --from=planner /build ./
 RUN cargo build --locked --release -p scope-runner-runtime
 
 FROM --platform=linux/amd64 debian:bookworm-slim@sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867
 
-ARG DEBIAN_SNAPSHOT=20261019T110620Z
+ARG DEBIAN_SNAPSHOT=20261022T144638Z
 ARG GIT_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive

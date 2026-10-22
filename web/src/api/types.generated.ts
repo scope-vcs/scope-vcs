@@ -232,10 +232,19 @@ configured: boolean, connection: GitHubConnectionDetailsResponse | null,
  */
 required_checks: Array<string>,
 /**
+ * GitHub accounts whose reviews Scope imports without asking GitHub whether they can write; cleared on disconnect.
+ */
+review_bots: Array<GitHubReviewBotResponse>,
+/**
  * Whether the viewer may confirm that a public GitHub repository
  * receives what Scope pushes, private requests included.
  */
 can_confirm_public: boolean,
+/**
+ * Whether the viewer may turn on publishing main: a maintainer who reads
+ * the full view and can change file visibility.
+ */
+can_publish_main: boolean,
 /**
  * The latest connection test, while the repository has a link.
  */
@@ -266,9 +275,39 @@ public_on_github: boolean,
  * False while a repository that became public waits for a maintainer to
  * confirm; private requests are not sent there meanwhile.
  */
-public_confirmed: boolean, };
+public_confirmed: boolean,
+/**
+ * Whether Scope opens a GitHub pull request for each submitted
+ * full-view request so review bots on GitHub review it.
+ */
+open_review_bot_pull_requests: boolean,
+/**
+ * Posted on that pull request when Scope opens it and after each new
+ * head Scope pushes there.
+ */
+review_request_comment: string | null, main_publication: GitHubMainPublicationResponse, };
 
 export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonResponse, at_unix: number, };
+
+export type GitHubMainPublicationResponse = {
+/**
+ * Whether every change to Scope main is pushed to GitHub main, never forced.
+ */
+enabled: boolean,
+/**
+ * The latest push of main to this GitHub repository.
+ */
+latest: GitHubMainPushResponse | null, };
+
+export type GitHubMainPushResponse = { state: GitHubMainPushStateResponse, commit_oid: string,
+/**
+ * Why the latest attempt failed. A queued push with an error tries again.
+ */
+error: string | null, updated_at_unix: number, };
+
+export type GitHubMainPushStateResponse = "queued" | "running" | "succeeded" | "failed";
+
+export type SetGitHubMainPublicationRequest = { enabled: boolean, };
 
 export type GitHubDisconnectReasonResponse = "app_uninstalled" | "installation_suspended" | "repository_removed";
 
@@ -310,6 +349,24 @@ acknowledge_public: boolean,
 run_import_count: number, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
+
+export type GitHubReviewBotResponse = { login: string,
+/**
+ * Whether requests wait for this bot to finish their latest commit before they can merge.
+ */
+required: boolean, };
+
+export type SetGitHubReviewBotsRequest = { bots: Array<GitHubReviewBotRequest>, };
+
+export type GitHubReviewBotRequest = { login: string,
+/**
+ * Whether requests wait for this bot to finish their latest commit before they can merge.
+ */
+required: boolean, };
+
+export type SetGitHubReviewBotPullRequestsRequest = { enabled: boolean, };
+
+export type SetGitHubReviewRequestCommentRequest = { comment: string, };
 
 export type SetGitHubRunImportCountRequest = { count: number, };
 
@@ -564,7 +621,7 @@ export type LeaveRequestResponse = { invitee: RequestInviteeResponse, };
 
 export type RequestPermissionsResponse = { can_view_activity: boolean, can_open_discussion: boolean, can_reply_to_discussion: boolean, can_wait_after_reply: boolean, can_edit_identity: boolean, can_pull_branch: boolean, can_push_branch: boolean, can_submit: boolean, can_manage_invitees: boolean, can_leave_request: boolean, can_close: boolean, can_merge: boolean, };
 
-export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "NeedsMainUpdate" | "Ready" | "RepositoryNotReady" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError";
+export type RequestMergeabilityStatus = "WaitingForParent" | "ParentRewritten" | "ParentClosed" | "AncestorBlocked" | "IntegrationConflict" | "NeedsMainUpdate" | "Ready" | "RepositoryNotReady" | "Draft" | "Closed" | "Merged" | "NotMaintainer" | "MissingRequestBranch" | "ChecksNotEvaluated" | "ChecksAwaitingApproval" | "ChecksPending" | "ChecksFailed" | "ChecksConfigurationError" | "ReviewsPending" | "ReviewFindingsOpen";
 
 export type RequestMergeabilityResponse = { status: RequestMergeabilityStatus, current_main_oid: GitOid | null, request_head_oid: GitOid, reason: string | null, };
 
@@ -596,6 +653,26 @@ export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch:
  */
 error: string | null, };
 
+export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "failed";
+
+export type RequestGitHubPullRequestResponse = { state: RequestGitHubPullRequestState,
+/**
+ * `None` until Scope opens or adopts the pull request.
+ */
+number: number | null, url: string | null,
+/**
+ * Only maintainers see what GitHub answered.
+ */
+error: string | null, };
+
+export type RequestReviewBotState = "not_started" | "working" | "commented" | "clear";
+
+export type RequestReviewBotResponse = { login: string,
+/**
+ * Whether the request waits for this bot to finish its head before it can merge.
+ */
+required: boolean, state: RequestReviewBotState, };
+
 export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null,
 /**
  * The workflow run and job on Scope's run page that answer the
@@ -626,6 +703,22 @@ can_approve: boolean,
  */
 github_push: RequestGitHubPushResponse | null,
 /**
+ * Set when the repository opens pull requests for review bots and this
+ * request has one, or Scope is opening one.
+ */
+github_pull_request: RequestGitHubPullRequestResponse | null,
+/**
+ * The repository's review bots, in their listed order, for full-view
+ * requests; empty when none is listed or the request is narrower.
+ */
+review_bots: Array<RequestReviewBotResponse>,
+/**
+ * Whether required review bots hold the merge. They do only while the
+ * repository opens pull requests for review bots, since a bot can only
+ * review a request through that pull request.
+ */
+review_bots_enforced: boolean,
+/**
  * Whether approving would run workflow files this request changes. Only
  * worked out for a viewer who can approve GitHub checks.
  */
@@ -652,25 +745,59 @@ export type RequestDiscussionStatus = "Open" | "Resolved";
 
 export type RequestDiscussionReplyReferenceResponse = { id: string, position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, };
 
 export type RequestDiscussionReplyResponse = { id: string, discussion_id: string, position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, reply_to: RequestDiscussionReplyReferenceResponse | null, created_at_unix: number, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, reply_to: RequestDiscussionReplyReferenceResponse | null, created_at_unix: number, };
 
 export type RequestDiscussionSummaryResponse = { id: string, request_id: string, client_discussion_id: string, opened_position: number, last_activity_position: number,
 /**
- * Null once that account is deleted; clients show a deleted user.
+ * Null once that Scope account is deleted; clients show a deleted user.
  */
-author: RequestActorSummaryResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null, resolved_by: RequestActorSummaryResponse | null, };
+author: RequestDiscussionAuthorResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null,
+/**
+ * Null while open, or once the resolving Scope account is deleted.
+ */
+resolved_by: RequestDiscussionResolverResponse | null, };
 
-export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null, path: string | null, };
+export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null,
+/**
+ * The changed path; with a commit it is in that commit's diff, otherwise in the revision's whole-request diff.
+ */
+path: string | null, lines: RequestDiscussionLineRange | null,
+/**
+ * Where the lines sit on the request's latest revision; null unless the anchor has lines and a newer revision exists.
+ */
+latest: RequestDiscussionLatestPosition | null, };
 
-export type RequestDiscussionAnchorInput = { revision_id: string, commit_oid: string | null, path: string | null, };
+export type RequestDiscussionAnchorInput = { revision_id: string, commit_oid: string | null,
+/**
+ * A changed path; without a commit it must be changed by the revision's whole-request diff.
+ */
+path: string | null,
+/**
+ * Lines on one side of the path's diff; requires a path.
+ */
+lines: RequestDiscussionLineRange | null, };
+
+export type RequestDiffSide = "old" | "new";
+
+export type RequestDiscussionLineRange = { side: RequestDiffSide, start_line: number, end_line: number, };
+
+export type RequestDiscussionLatestPosition = { "kind": "mapped", revision_id: string, start_line: number, end_line: number, } | { "kind": "outdated", revision_id: string, };
+
+export type GitHubAccountType = "user" | "bot" | "organization";
+
+export type GitHubAccountResponse = { github_user_id: number, login: string, account_type: GitHubAccountType, avatar_url: string | null, };
+
+export type RequestDiscussionAuthorResponse = { "kind": "user", id: string, handle: string, } | { "kind": "github", account: GitHubAccountResponse, source_url: string, };
+
+export type RequestDiscussionResolverResponse = { "kind": "user", id: string, handle: string, } | { "kind": "github", account: GitHubAccountResponse, };
 
 export type RequestRevisionCommitResponse = { oid: string, parent_oids: Array<string>, author: string | null, authored_at_unix: number, message: string, change_count: number, files: Array<CommitFileResponse>, files_truncated: boolean, };
 
@@ -792,8 +919,12 @@ export const ApiRouteTemplates = {
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
   repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
+  repoGitHubReviewBots: "/v1/repos/{owner}/{repo}/github/review-bots",
+  repoGitHubReviewBotPullRequests: "/v1/repos/{owner}/{repo}/github/review-bot-pull-requests",
+  repoGitHubReviewRequestComment: "/v1/repos/{owner}/{repo}/github/review-request-comment",
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
+  repoGitHubMainPublication: "/v1/repos/{owner}/{repo}/github/main-publication",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
   repoGitHubWorkflowNames: "/v1/repos/{owner}/{repo}/github/workflow-names",
   repoGitHubWorkflowRun: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}",

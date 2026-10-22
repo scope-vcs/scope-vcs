@@ -7,11 +7,14 @@ use git_fixtures::*;
 mod dependency_repositories;
 #[path = "seed/git_segments.rs"]
 mod git_segments;
+#[cfg(feature = "local-dev")]
+#[path = "seed/request_discussion_gallery.rs"]
+mod request_discussion_gallery;
 #[path = "seed/request_discussions.rs"]
 mod request_discussions;
 #[path = "seed/request_revisions.rs"]
 mod request_revisions;
-#[cfg(any(test, feature = "local-dev"))]
+#[cfg(feature = "local-dev")]
 #[path = "seed/runs.rs"]
 mod runs;
 #[cfg(test)]
@@ -23,7 +26,7 @@ use git_segments::store_seed_git_pack;
 #[cfg(test)]
 pub(super) use git_segments::test_seed_git_segment_store;
 #[cfg(feature = "local-dev")]
-pub(crate) use request_discussions::seed_request_discussion_gallery;
+pub(crate) use request_discussion_gallery::seed_request_discussion_gallery;
 use request_revisions::SeedRequestRevision;
 #[cfg(feature = "local-dev")]
 pub(crate) use runs::seed_run_gallery;

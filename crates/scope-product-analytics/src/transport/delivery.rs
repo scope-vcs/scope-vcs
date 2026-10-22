@@ -270,7 +270,7 @@ mod tests {
         let app = Router::new().route(
             "/e/",
             post(|| async {
-                sleep(Duration::from_secs(5)).await;
+                std::future::pending::<()>().await;
                 StatusCode::OK
             }),
         );

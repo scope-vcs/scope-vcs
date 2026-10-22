@@ -1,10 +1,16 @@
 use super::{GitHubApp, InstallationStatus};
 use crate::error::ApiError;
 use hmac::{Hmac, KeyInit, Mac};
-use scope_domain::github_connection::GitHubInstallationChange;
+use scope_domain::{
+    github_connection::GitHubInstallationChange,
+    requests::{CodexReviewState, GitHubBranch},
+};
 use serde::Deserialize;
 use sha2::Sha256;
 use std::collections::BTreeSet;
+
+mod reviews;
+pub(crate) use reviews::GitHubReviewDelivery;
 
 pub(crate) const GITHUB_SIGNATURE_HEADER: &str = "x-hub-signature-256";
 pub(crate) const GITHUB_EVENT_HEADER: &str = "x-github-event";
@@ -39,14 +45,28 @@ pub(crate) enum GitHubWebhookEvent {
     RepositoryVisibilityChanged {
         github_repository_id: u64,
     },
+    ReviewActivity(GitHubReviewDelivery),
+    PullRequestChanged {
+        github_repository_id: u64,
+        request_id: String,
+    },
+    ReviewStateCommented {
+        github_repository_id: u64,
+        number: u64,
+    },
     Ignored,
 }
 
 impl GitHubWebhookEvent {
     pub(crate) fn parse(event: &str, body: &[u8]) -> Result<Self, ApiError> {
+        if reviews::EVENTS.contains(&event) {
+            return Ok(reviews::parse(event, body)?.map_or(Self::Ignored, Self::ReviewActivity));
+        }
         if !matches!(
             event,
             "repository"
+                | "pull_request"
+                | "issue_comment"
                 | "check_run"
                 | "check_suite"
                 | "workflow_run"
@@ -68,6 +88,51 @@ impl GitHubWebhookEvent {
                 ("publicized" | "privatized", Some(repository)) => {
                     Self::RepositoryVisibilityChanged {
                         github_repository_id: repository.id,
+                    }
+                }
+                _ => Self::Ignored,
+            },
+            "pull_request" => match (
+                required(payload.action.as_deref(), "action")?,
+                payload.repository,
+                payload.pull_request,
+            ) {
+                (
+                    "opened" | "closed" | "reopened" | "edited",
+                    Some(repository),
+                    Some(pull_request),
+                ) => match (
+                    GitHubBranch::parse(&pull_request.head.name),
+                    pull_request.head.repo,
+                ) {
+                    (Some(GitHubBranch::Request(request_id)), Some(head_repository))
+                        if head_repository.id == repository.id =>
+                    {
+                        Self::PullRequestChanged {
+                            github_repository_id: repository.id,
+                            request_id,
+                        }
+                    }
+                    _ => Self::Ignored,
+                },
+                _ => Self::Ignored,
+            },
+            "issue_comment" => match (
+                required(payload.action.as_deref(), "action")?,
+                payload.repository,
+                payload.issue,
+                payload.comment,
+            ) {
+                ("created" | "edited", Some(repository), Some(issue), Some(comment))
+                    if issue.pull_request.is_some()
+                        && comment
+                            .body
+                            .as_deref()
+                            .is_some_and(CodexReviewState::appears_in) =>
+                {
+                    Self::ReviewStateCommented {
+                        github_repository_id: repository.id,
+                        number: issue.number,
                     }
                 }
                 _ => Self::Ignored,
@@ -164,6 +229,32 @@ struct Payload {
     check_suite: Option<ChecksSubject>,
     workflow_run: Option<ChecksSubject>,
     workflow_job: Option<Id>,
+    pull_request: Option<PullRequestSubject>,
+    issue: Option<IssueSubject>,
+    comment: Option<CommentSubject>,
+}
+
+#[derive(Deserialize)]
+struct IssueSubject {
+    number: u64,
+    pull_request: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct CommentSubject {
+    body: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PullRequestSubject {
+    head: PullRequestBranch,
+}
+
+#[derive(Deserialize)]
+struct PullRequestBranch {
+    #[serde(rename = "ref")]
+    name: String,
+    repo: Option<Id>,
 }
 
 #[derive(Deserialize)]
@@ -291,6 +382,85 @@ mod tests {
         }
         assert_eq!(
             parse(serde_json::json!({ "action": "renamed", "repository": { "id": 42 } })),
+            GitHubWebhookEvent::Ignored
+        );
+    }
+
+    #[test]
+    fn pull_request_events_on_a_request_branch_name_the_carrier_to_read_again() {
+        let parse = |action: &str, head: &str, head_repository: u64| {
+            GitHubWebhookEvent::parse(
+                "pull_request",
+                serde_json::json!({
+                    "action": action,
+                    "repository": { "id": 42 },
+                    "sender": { "login": "scope-checks[bot]" },
+                    "pull_request": {
+                        "number": 5,
+                        "html_url": "https://github.com/octo/repo/pull/5",
+                        "state": if action == "closed" { "closed" } else { "open" },
+                        "head": { "ref": head, "repo": { "id": head_repository } },
+                        "base": { "ref": "main", "repo": { "id": 42 } },
+                    },
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .unwrap()
+        };
+        for action in ["opened", "reopened", "edited", "closed"] {
+            assert_eq!(
+                parse(action, "scope/requests/req_1", 42),
+                GitHubWebhookEvent::PullRequestChanged {
+                    github_repository_id: 42,
+                    request_id: "req_1".into(),
+                },
+                "{action}"
+            );
+        }
+        for (action, head, head_repository) in [
+            ("synchronize", "scope/requests/req_1", 42),
+            ("closed", "feature", 42),
+            ("closed", "scope/setup-check", 42),
+            ("closed", "scope/requests/req_1", 99),
+        ] {
+            assert_eq!(
+                parse(action, head, head_repository),
+                GitHubWebhookEvent::Ignored,
+                "{action} {head} {head_repository}"
+            );
+        }
+    }
+
+    #[test]
+    fn codex_state_comments_on_pull_requests_name_the_pull_request_to_reconcile() {
+        let state = "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {\"code_review\":{\"commit_sha\":\"1196d9ca\",\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":\"running\"}} -->\n## Codex Review Summary";
+        let parse = |action: &str, pull_request: bool, body: &str| {
+            let mut issue = serde_json::json!({ "number": 727 });
+            if pull_request {
+                issue["pull_request"] = serde_json::json!({ "url": "https://api.github.com/x" });
+            }
+            let body = serde_json::json!({
+                "action": action,
+                "repository": { "id": 42 },
+                "issue": issue,
+                "comment": { "body": body },
+            });
+            GitHubWebhookEvent::parse("issue_comment", body.to_string().as_bytes()).unwrap()
+        };
+        for action in ["created", "edited"] {
+            assert_eq!(
+                parse(action, true, state),
+                GitHubWebhookEvent::ReviewStateCommented {
+                    github_repository_id: 42,
+                    number: 727,
+                }
+            );
+        }
+        assert_eq!(parse("deleted", true, state), GitHubWebhookEvent::Ignored);
+        assert_eq!(parse("created", false, state), GitHubWebhookEvent::Ignored);
+        assert_eq!(
+            parse("created", true, "Looks good to me"),
             GitHubWebhookEvent::Ignored
         );
     }

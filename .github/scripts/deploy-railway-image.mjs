@@ -4,6 +4,7 @@ import { loadComponentConfig } from "./deployment-components.mjs";
 import { runtimeDeploySettings } from "./railway-artifact.mjs";
 import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from "./railway-retry.mjs";
 import { readRailway } from "./railway-read.mjs";
+import { mutateRailway } from "./railway-client.mjs";
 import { activePredecessors, excludeActivated, recordPredecessors } from "./railway-predecessor-teardown.mjs";
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -25,16 +26,7 @@ function railway(args, { input, timeout = RAILWAY_MUTATION_TIMEOUT_MS } = {}) {
 }
 
 function graphql(query, variables) {
-  let response;
-  try {
-    response = JSON.parse(railway(["api", query, "--variables", "@-", "--compact"], {
-      input: JSON.stringify(variables),
-    }));
-  } catch {
-    throw new Error("Railway GraphQL request failed");
-  }
-  if (response.errors?.length) throw new Error("Railway GraphQL request failed");
-  return response.data;
+  return mutateRailway(query, variables, { env: railwayEnvironment }).data;
 }
 
 function deployments(serviceId) {

@@ -304,7 +304,28 @@ async fn media_reads_load_derivative_manifests_until_cleanup_tombstones_the_atta
         })
         .await
         .unwrap();
-    assert!(matches!(completed, MediaLeaseMutation::Applied(_)));
+    let MediaLeaseMutation::Applied(completed) = completed else {
+        panic!("current processing lease should complete");
+    };
+    assert_eq!(completed.state, RequestAttachmentState::Ready);
+    assert_eq!(completed.derivatives.len(), 1);
+    let inventory = fixture
+        .store
+        .db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT state, manifest_id FROM scope_request_media_processing_objects
+             WHERE object_key = $1",
+            [output_key.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(inventory.try_get::<String>("", "state").unwrap(), "Adopted");
+    assert_eq!(
+        inventory.try_get::<String>("", "manifest_id").unwrap(),
+        "manifest_derivative_preview"
+    );
 
     let read = |target| {
         media.request_attachment_media_for_viewer(

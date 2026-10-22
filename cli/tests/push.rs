@@ -196,7 +196,7 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
                         let request_started = Arc::clone(&request_started);
                         async move {
                             request_started.store(true, Ordering::Release);
-                            tokio::time::sleep(Duration::from_secs(10)).await;
+                            std::future::pending::<()>().await;
                             Json(session_response("usr_test", "owner", "owner@example.test"))
                         }
                     }

@@ -11,9 +11,12 @@ use scope_api_contract::routes::{
 use scope_postgres::db::RecordRequestChecksCommand;
 use std::sync::atomic::Ordering;
 
+mod carrier_pull_requests;
 mod native_runs_list;
 mod public;
 mod public_repositories;
+mod review_bot_gate;
+mod review_imports;
 mod run_page;
 
 pub(in crate::workflow_tests) const REQUIRED_CHECK: &str = "ci / test";

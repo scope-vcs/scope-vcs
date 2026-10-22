@@ -21,13 +21,19 @@ async fn identified_backend() -> std::net::SocketAddr {
     address
 }
 
+fn bound_socket() -> tokio::net::TcpSocket {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    socket
+}
+
 async fn dead_rank_one_with_live_router(
     upstream: Router,
     read_timeout: Duration,
     replay_max_bytes: usize,
 ) -> Router {
-    let first = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let second = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let first = bound_socket();
+    let second = bound_socket();
     let first_address = first.local_addr().unwrap();
     let second_address = second.local_addr().unwrap();
     let addresses = vec![first_address, second_address];
@@ -36,14 +42,16 @@ async fn dead_rank_one_with_live_router(
         .map(ToString::to_string)
         .collect::<Vec<_>>();
     let rank_one = rank_backends("scope/router", &identities, Clone::clone)[0];
-    let live_listener = if *rank_one == first_address.to_string() {
-        drop(first);
-        second
+    let (refusing_rank_one, live) = if *rank_one == first_address.to_string() {
+        (first, second)
     } else {
-        drop(second);
-        first
+        (second, first)
     };
-    tokio::spawn(async move { axum::serve(live_listener, upstream).await.unwrap() });
+    let live_listener = live.listen(1024).unwrap();
+    tokio::spawn(async move {
+        let _refusing_rank_one = refusing_rank_one;
+        axum::serve(live_listener, upstream).await.unwrap()
+    });
     let http = reqwest::Client::builder()
         .connect_timeout(Duration::from_millis(100))
         .read_timeout(read_timeout)

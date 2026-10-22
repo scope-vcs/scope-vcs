@@ -1,13 +1,8 @@
 use crate::{
     error::ApiError,
-    git::{
-        command::{run_git_output, run_git_output_bounded},
-        request_refs::with_request_revision_store_repo,
-    },
+    git::{command::run_git_output_bounded, request_refs::with_request_revision_store_repo},
     http::{
-        file_diffs::{
-            MAX_RENDERED_TEXT_BYTES, binary_content_response, review_content_response_for_bytes,
-        },
+        file_diffs::binary_content_response,
         requests::{repo_and_access, visible_request},
         responses::{
             RequestFileDiffRequest, ReviewFileContentResponse, ReviewFileDiffResponse,
@@ -16,6 +11,9 @@ use crate::{
     },
     state::AppState,
     use_cases::{
+        request_diff_file::{
+            RequestBlobContent, RequestDiffRange, request_blob_content, request_diff_file,
+        },
         request_revision_inspection::{
             InspectedRequestChange, commit_belongs_to_revision, inspect_request_changes,
             request_commit_changes, request_revision_commit_oids,
@@ -36,7 +34,7 @@ use scope_api_contract::{
 use scope_domain::{
     policy::ScopePath,
     repository::access::RepositoryAccess,
-    requests::{RequestComparison, RequestRevision, select_request_review_revision},
+    requests::{Request, RequestComparison, RequestRevision, select_request_review_revision},
 };
 use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
@@ -46,9 +44,7 @@ mod comparison;
 mod inspection;
 pub(crate) use comparison::get_request_revision_file_diff;
 
-use inspection::{
-    inspect_request_commit, inspect_request_commits_identity_only, request_revision_commit_files,
-};
+use inspection::{inspect_request_commit, inspect_request_commits_identity_only};
 
 const MAX_LISTED_REQUEST_REVISIONS: usize = 50;
 const MAX_LISTED_COMMITS_PER_REVISION: usize = 100;
@@ -166,10 +162,7 @@ pub(crate) async fn list_request_revisions(
                                     revision,
                                     mode,
                                     selected_commit.as_deref(),
-                                    comparison::ComparisonFileSelection {
-                                        limit: file_limit,
-                                        path: None,
-                                    },
+                                    file_limit,
                                 )?)
                             }
                             None => Some(comparison::unavailable_comparison(revision, mode)),
@@ -340,37 +333,47 @@ pub(crate) async fn get_request_revision_commit_file_diff(
         .await?
         .ok_or_else(|| ApiError::not_found("request revision not found"))?;
     let commit_oid = canonical_commit_oid(commit_oid)?;
-    let path = normalized_path(&input.path)?;
-    let repo_for_inspection = repo.clone();
-    let path_for_inspection = path.clone();
-    let inspection_state = state.clone();
-    let (file, old_content, new_content) = with_request_revision_store_repo(
+    let path = normalized_scope_path(&input.path)?;
+    let diff = request_diff_file_response(
         &state,
-        &repo.context.incarnation(),
+        Arc::unwrap_or_clone(repo),
         &request,
         &revision,
+        RequestDiffRange::Commit(commit_oid),
+        path,
+    )
+    .await?;
+    Ok(Json(diff))
+}
+
+async fn request_diff_file_response(
+    state: &AppState,
+    repo: RepositoryReadPolicy,
+    request: &Request,
+    revision: &RequestRevision,
+    range: RequestDiffRange,
+    path: ScopePath,
+) -> Result<ReviewFileDiffResponse, ApiError> {
+    let incarnation = repo.context.incarnation();
+    let inspection_state = state.clone();
+    let inspected_path = path.clone();
+    let (file, old_content, new_content) = with_request_revision_store_repo(
+        state,
+        &incarnation,
+        request,
+        revision,
         move |raw_repo, revision| {
-            let policy = crate::use_cases::request_inspection_policy::resolve_commit(
+            let access = repo.context.access.clone();
+            let file = request_diff_file(
                 &inspection_state,
-                &repo_for_inspection,
-                &access.view,
+                &repo,
+                &access,
                 raw_repo,
-                &commit_oid,
-            )?;
-            let inspected = request_revision_commit_files(
-                raw_repo,
-                &policy,
-                &repo_for_inspection.context.views,
-                access,
                 revision,
-                &commit_oid,
-            )?;
-            let file = inspected
-                .commit
-                .files
-                .into_iter()
-                .find(|file| file.path == path_for_inspection)
-                .ok_or_else(|| ApiError::not_found("request revision file not found"))?;
+                &range,
+                &inspected_path,
+            )?
+            .ok_or_else(|| ApiError::not_found("request revision file not found"))?;
             let old_content = file
                 .old_oid
                 .as_deref()
@@ -385,14 +388,14 @@ pub(crate) async fn get_request_revision_commit_file_diff(
         },
     )
     .await?;
-    Ok(Json(ReviewFileDiffResponse {
-        path,
-        kind: file.kind,
+    Ok(ReviewFileDiffResponse {
+        path: file.path,
+        kind: file.kind.into(),
         old_mode: file.old_mode,
         new_mode: file.new_mode,
         old_content,
         new_content,
-    }))
+    })
 }
 
 fn request_revision_commits(
@@ -515,44 +518,10 @@ fn request_file_response(file: InspectedRequestChange) -> CommitFileResponse {
 }
 
 fn git_blob_content(repo: &FsPath, oid: &str) -> Result<ReviewFileContentResponse, ApiError> {
-    let size_output = run_git_output(
-        Some(repo),
-        &["cat-file", "-s", oid],
-        "reading request file size",
-    )?;
-    if !size_output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading request file size: {}",
-            String::from_utf8_lossy(&size_output.stderr).trim()
-        )));
-    }
-    let size = std::str::from_utf8(&size_output.stdout)
-        .map_err(ApiError::bad_request)?
-        .trim()
-        .parse::<u64>()
-        .map_err(ApiError::bad_request)?;
-    if size > MAX_RENDERED_TEXT_BYTES as u64 {
-        return Ok(binary_content_response(oid, size));
-    }
-
-    let output = run_git_output(
-        Some(repo),
-        &["cat-file", "blob", oid],
-        "reading request file",
-    )?;
-    if output.status.success() {
-        Ok(review_content_response_for_bytes(oid, &output.stdout))
-    } else {
-        Err(ApiError::infrastructure_unavailable(format!(
-            "reading request file: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )))
-    }
-}
-
-fn normalized_path(path: &str) -> Result<String, ApiError> {
-    let scope_path = normalized_scope_path(path)?;
-    Ok(scope_path.as_str().trim_start_matches('/').to_string())
+    Ok(match request_blob_content(repo, oid)? {
+        RequestBlobContent::Text(text) => ReviewFileContentResponse::Text { text },
+        RequestBlobContent::Binary { size_bytes } => binary_content_response(oid, size_bytes),
+    })
 }
 
 fn canonical_commit_oid(oid: String) -> Result<String, ApiError> {

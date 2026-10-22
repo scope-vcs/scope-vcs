@@ -1,7 +1,7 @@
-import { RAILWAY_MUTATION_TIMEOUT_MS, retryRailway } from './railway-retry.mjs';
+import { retryRailway } from './railway-retry.mjs';
+import { mutateRailway } from './railway-client.mjs';
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { readRailway } from './railway-read.mjs';
 import { APPLICATION_COMPONENTS, RAILWAY_COMPONENTS, deploymentComponent, loadComponentConfig } from './deployment-components.mjs';
@@ -206,14 +206,8 @@ export function activateArtifact(release, component, environmentId, { config, se
 }
 
 function runRailway(query, variables) {
-  const args = ['api', query, '--variables', '@-'];
-  if (query.startsWith('query ')) return readRailway(args, { input: JSON.stringify(variables) });
-  const result = JSON.parse(execFileSync('railway', args, {
-    input: JSON.stringify(variables), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    timeout: RAILWAY_MUTATION_TIMEOUT_MS, killSignal: 'SIGKILL',
-  }));
-  if (result.errors?.length) throw new Error('Railway GraphQL request failed.');
-  return result;
+  if (query.startsWith('query ')) return readRailway(['api', query, '--variables', '@-'], { input: JSON.stringify(variables) });
+  return mutateRailway(query, variables);
 }
 
 async function main() {

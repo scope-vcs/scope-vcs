@@ -5,6 +5,7 @@ use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
+    policy::ScopePath,
     repository::Repository,
     requests::RequestBase,
     views::ViewId,
@@ -87,22 +88,10 @@ fn request_comparison_keeps_cumulative_net_changes_separate_from_push_and_commit
     let repo = Repository::new(&owner, "repo", ViewId::public(), "repoi_test").unwrap();
     let policy = read_policy(&repo);
     let access = repo.access_for_user_id(&owner.id);
-    let inspect = |mode, commit, budget, path| {
-        inspect_comparison(
-            raw_repo,
-            &policy,
-            &access,
-            &revision,
-            mode,
-            commit,
-            ComparisonFileSelection {
-                limit: budget,
-                path,
-            },
-        )
-        .unwrap()
+    let inspect = |mode, commit, budget| {
+        inspect_comparison(raw_repo, &policy, &access, &revision, mode, commit, budget).unwrap()
     };
-    let aggregate = inspect(RequestComparisonMode::Request, None, 100, None);
+    let aggregate = inspect(RequestComparisonMode::Request, None, 100);
     assert_eq!(
         aggregate.base_oid.as_ref().map(|oid| oid.as_str()),
         Some(parent.as_str())
@@ -123,7 +112,7 @@ fn request_comparison_keeps_cumulative_net_changes_separate_from_push_and_commit
         aggregate.inspection,
         RequestRevisionInspectionState::Complete
     );
-    let push = inspect(RequestComparisonMode::Push, None, 100, None);
+    let push = inspect(RequestComparisonMode::Push, None, 100);
     assert_eq!(
         push.files
             .iter()
@@ -131,26 +120,30 @@ fn request_comparison_keeps_cumulative_net_changes_separate_from_push_and_commit
             .collect::<Vec<_>>(),
         [("temporary.txt", scope_api_contract::FileChangeKind::Deleted)]
     );
-    let commit = inspect(
-        RequestComparisonMode::Commit,
-        Some(head.as_str()),
-        100,
-        None,
-    );
+    let commit = inspect(RequestComparisonMode::Commit, Some(head.as_str()), 100);
     assert_eq!(
         commit.base_oid.as_ref().map(|oid| oid.as_str()),
         Some(first.as_str())
     );
     assert_eq!(commit.files[0].path, "temporary.txt");
-    let truncated = inspect(RequestComparisonMode::Request, None, 0, None);
+    let truncated = inspect(RequestComparisonMode::Request, None, 0);
     assert!(truncated.files.is_empty());
     assert_eq!(
         truncated.inspection,
         RequestRevisionInspectionState::Incomplete
     );
-    let detail = inspect(RequestComparisonMode::Request, None, 1, Some("child.txt"));
-    assert_eq!(detail.files[0].path, "child.txt");
-    assert_eq!(detail.inspection, RequestRevisionInspectionState::Complete);
+    let detail = crate::use_cases::request_diff_file::select_request_diff_file(
+        raw_repo,
+        &policy.policy,
+        &policy.context.views,
+        &access,
+        &revision,
+        &crate::use_cases::request_diff_file::RequestDiffRange::Request,
+        &ScopePath::parse("/child.txt").unwrap(),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(detail.path, "child.txt");
     assert!(!commit_belongs_to_revision(raw_repo, &revision, &parent).unwrap());
     assert!(!commit_belongs_to_revision(raw_repo, &revision, &first).unwrap());
     assert!(commit_belongs_to_revision(raw_repo, &revision, &head).unwrap());
@@ -203,10 +196,7 @@ fn request_comparison_keeps_cumulative_net_changes_separate_from_push_and_commit
         &main_based_revision,
         RequestComparisonMode::Request,
         None,
-        ComparisonFileSelection {
-            limit: 100,
-            path: None,
-        },
+        100,
     )
     .unwrap();
     assert_eq!(

@@ -258,6 +258,7 @@
     },
     "media-worker": {
       "files": [
+        "dev/local-stack.sh",
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "media-worker/Dockerfile",
@@ -318,6 +319,7 @@
     "media-api": {
       "files": [
         "dev/media-smoke.mjs",
+        "dev/local-stack.sh",
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "Cargo.lock",
@@ -382,6 +384,7 @@
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
+        "dev/local-stack.sh",
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "dev/local-process.py",
@@ -420,6 +423,7 @@
         "dev/checks/integration",
         ".github/scripts/select-cli-distribution-targets.mjs",
         ".github/scripts/deploy-railway.sh",
+        "dev/local-stack.sh",
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "dev/local-process.py",

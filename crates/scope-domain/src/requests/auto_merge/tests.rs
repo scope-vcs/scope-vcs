@@ -325,6 +325,28 @@ fn auto_merge_is_offered_only_while_checks_are_undecided() {
 }
 
 #[test]
+fn review_bots_hold_auto_merge_without_stopping_it() {
+    use crate::requests::{RequestChecksOutcome, RequestReviewsOutcome};
+    let mut request = open_request();
+    request.view = crate::views::ViewId::private();
+    for (reviews, message) in [
+        (
+            RequestReviewsOutcome::Pending,
+            "Waiting for required review bots to finish",
+        ),
+        (
+            RequestReviewsOutcome::FindingsOpen,
+            "Waiting for review bot discussions to be resolved",
+        ),
+    ] {
+        assert_eq!(
+            gate_readiness(&request, RequestChecksOutcome::Clear, reviews).waiting_reason_message(),
+            Some(message)
+        );
+    }
+}
+
+#[test]
 fn evaluation_state_is_explicitly_interpreted() {
     let awaiting = RequestCheckEvaluation::awaiting_approval(
         &check_context("request_1", HEAD),
@@ -361,6 +383,18 @@ fn request_readiness(
     request: &Request,
     checks: crate::requests::RequestChecksOutcome,
 ) -> RequestAutoMergeReadiness {
+    gate_readiness(
+        request,
+        checks,
+        crate::requests::RequestReviewsOutcome::Clear,
+    )
+}
+
+fn gate_readiness(
+    request: &Request,
+    checks: crate::requests::RequestChecksOutcome,
+    reviews: crate::requests::RequestReviewsOutcome,
+) -> RequestAutoMergeReadiness {
     let access = crate::requests::fixtures::access(
         crate::repository::access::RepositoryActor::Owner,
         crate::views::ViewId::private(),
@@ -375,6 +409,7 @@ fn request_readiness(
             viewer: &viewer,
             views: &views,
             checks,
+            reviews,
         },
     ))
 }
