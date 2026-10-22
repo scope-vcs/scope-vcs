@@ -159,7 +159,7 @@ pub(crate) async fn prepare_request_merge(
     repo: &Repository,
     request: &Request,
 ) -> Result<PreparedRequestMerge, ApiError> {
-    let staging = prepare::MergeStaging::open(state, repo).await?;
+    let mut staging = prepare::MergeStaging::open(state, repo).await?;
     let prepared = prepare::prepare_merge_on(
         state,
         prepare::MergeAuthor {
@@ -168,13 +168,13 @@ pub(crate) async fn prepare_request_merge(
             actor_user_id,
         },
         repo,
-        &staging,
+        &mut staging,
         request,
     )
     .await;
     let prepared = match prepared {
         Ok((prepared, proposed)) => {
-            match prepare::preflight_anyone_views(state, repo, &proposed, &staging).await {
+            match prepare::preflight_anyone_views(state, &proposed, &mut staging).await {
                 Ok(()) => Ok(prepared),
                 Err(error) => {
                     prepared.staged_pack.discard(state, &repo.record.id).await;

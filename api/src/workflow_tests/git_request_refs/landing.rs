@@ -1,4 +1,5 @@
 use super::super::main_pool::main_pool_packs;
+use super::super::merge_commits::{commit_blocked_behind_held_lock, taken_while_committing};
 use super::*;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -262,5 +263,66 @@ async fn a_merge_whose_caller_disconnected_still_announces_its_change() {
             .unwrap()
             .state(),
         scope_domain::requests::RequestState::Merged
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_merge_arriving_while_a_batch_commits_is_prepared_before_it_commits() {
+    let names = ["first", "second"];
+    let landing = DisjointRequests::open("pipelined-landing", &names).await;
+    let admin = landing.state.metadata.admin();
+    let held = admin.lock_aggregates_for_tests().await.unwrap();
+
+    let mut merges = vec![
+        commit_blocked_behind_held_lock(&landing.state, landing.merge(&landing.request_ids[0]))
+            .await,
+    ];
+    merges.extend(
+        taken_while_committing(&landing.state, vec![landing.merge(&landing.request_ids[1])]).await,
+    );
+    assert_eq!(admin.lock_waiters_for_tests().await.unwrap(), 1);
+    held.rollback().await.unwrap();
+
+    let mut merged = Vec::new();
+    for merge in merges {
+        merged.push(merge.await.unwrap());
+    }
+    landing.assert_all_landed(&names, merged).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_merge_prepared_on_a_batch_that_fails_to_land_lands_on_the_committed_main() {
+    let landing = DisjointRequests::open("pipelined-rejection", &["first", "second"]).await;
+    let admin = landing.state.metadata.admin();
+    let held = admin.lock_aggregates_for_tests().await.unwrap();
+
+    let first =
+        commit_blocked_behind_held_lock(&landing.state, landing.merge(&landing.request_ids[0]))
+            .await;
+    let second =
+        taken_while_committing(&landing.state, vec![landing.merge(&landing.request_ids[1])])
+            .await
+            .pop()
+            .unwrap();
+    admin
+        .execute_for_tests(&format!(
+            "UPDATE scope_requests SET head_oid = review_base_oid WHERE id = '{}'",
+            landing.request_ids[0]
+        ))
+        .await
+        .unwrap();
+    held.rollback().await.unwrap();
+
+    assert_eq!(first.await.unwrap().status(), StatusCode::CONFLICT);
+    assert_eq!(
+        expect_json(second.await.unwrap(), StatusCode::OK).await["request"]["state"],
+        "Merged"
+    );
+    assert_eq!(live_file_content(&landing.state, "/first.txt").await, None);
+    assert_eq!(
+        live_file_content(&landing.state, "/second.txt")
+            .await
+            .as_deref(),
+        Some("second work\n")
     );
 }

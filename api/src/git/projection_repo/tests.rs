@@ -463,9 +463,10 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         changes: vec![projected_change("/request.txt", "after native\n")],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&extended), &extended)
-        .unwrap()
-        .unwrap();
+    let prefix =
+        cached_projection_prefix(&engine, &incarnation, &labels(&extended), &extended, None)
+            .unwrap()
+            .unwrap();
     assert_eq!(prefix.commits, projection.commits.len());
     let extended_repo = projection_bare_repo_with_loader(
         &cache,
@@ -736,9 +737,15 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
         changes: vec![projected_change("/file-0.txt", "appended\n")],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
-        .unwrap()
-        .unwrap();
+    let prefix = cached_projection_prefix(
+        &engine,
+        &incarnation,
+        &labels(&projection),
+        &projection,
+        None,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(prefix.commits, 20);
     loaded.set(0);
     bytes.set(0);
@@ -798,9 +805,15 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
         changes: vec![mode_change],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
-        .unwrap()
-        .unwrap();
+    let prefix = cached_projection_prefix(
+        &engine,
+        &incarnation,
+        &labels(&projection),
+        &projection,
+        None,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(prefix.commits, 21);
     let mode_only = projection_bare_repo_with_loader(
         root.path(),
@@ -821,9 +834,15 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
 
     projection.commits[0].changes.remove(1);
     assert!(
-        cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
-            .unwrap()
-            .is_none()
+        cached_projection_prefix(
+            &engine,
+            &incarnation,
+            &labels(&projection),
+            &projection,
+            None
+        )
+        .unwrap()
+        .is_none()
     );
     let rewritten = projection_bare_repo_with_loader(
         root.path(),
@@ -843,7 +862,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     );
     let other = RepositoryIncarnation::new("owner/repo", "repoi_recreated").unwrap();
     assert!(
-        cached_projection_prefix(&engine, &other, &labels(&projection), &projection)
+        cached_projection_prefix(&engine, &other, &labels(&projection), &projection, None)
             .unwrap()
             .is_none()
     );

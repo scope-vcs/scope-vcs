@@ -3,7 +3,7 @@ use crate::{
     git::{
         command::{git_is_ancestor, run_git_output},
         import::{ReceivePackUpdate, apply_receive_pack_update},
-        projection_repo::verify_and_restore_projection,
+        projection_repo::VerifiedProjections,
     },
     state::AppState,
 };
@@ -55,6 +55,7 @@ pub(super) async fn landed_request_candidates(
     proposed_update.previous_config = Some(proposed_repo.repo_config.clone());
     apply_receive_pack_update(&mut proposed_repo, proposed_update)?;
     let mut view_heads = BTreeMap::new();
+    let mut verified = VerifiedProjections::create(state)?;
     for candidate in &mut landed {
         let parent = state
             .metadata
@@ -76,8 +77,9 @@ pub(super) async fn landed_request_candidates(
                 proposed_repo.repo_config.views(),
                 &parent.view,
             );
-            let head =
-                verify_and_restore_projection(state, &committed, projection, staging_repo).await?;
+            let head = verified
+                .verify_and_restore(state, &committed, projection, staging_repo)
+                .await?;
             view_heads.insert(parent.view.clone(), head);
         }
         candidate.stack_children = crate::use_cases::request_stack_landing::prepare_stack_landing(

@@ -7,7 +7,7 @@ use crate::{
     git::{
         command::run_git,
         import::{PreparedReceivePackUpdate, ReviewTarget, reviewed_merge_update},
-        projection_repo::verify_and_restore_projection,
+        projection_repo::VerifiedProjections,
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, validate_view_request_merge_range},
         request_refs::{RequestViewBases, attach_request_refs_from_pool},
@@ -32,6 +32,8 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 pub(super) struct MergeStaging {
     path: PathBuf,
+    projections: VerifiedProjections,
+    committed: Repository,
 }
 
 impl MergeStaging {
@@ -44,6 +46,7 @@ impl MergeStaging {
             .repository_engine
             .materialize_repository(state, &repo.incarnation(), current)
             .await?;
+        let projections = VerifiedProjections::create(state)?;
         let state = state.clone();
         let incarnation = repo.incarnation();
         let seed = base_repo.to_path_buf();
@@ -51,7 +54,19 @@ impl MergeStaging {
             create_seeded_receive_pack_staging_repo(&state, &incarnation, &seed)
         })
         .await?;
-        Ok(Self { path })
+        Ok(Self {
+            path,
+            projections,
+            committed: repo.clone(),
+        })
+    }
+
+    pub(super) fn committed(&self) -> &Repository {
+        &self.committed
+    }
+
+    pub(super) fn landed(&mut self, committed: Repository) {
+        self.committed = committed;
     }
 
     pub(super) fn close(self) -> Result<(), ApiError> {
@@ -69,10 +84,10 @@ pub(super) async fn prepare_merge_on(
     state: &AppState,
     author: MergeAuthor<'_>,
     base: &Repository,
-    staging: &MergeStaging,
+    staging: &mut MergeStaging,
     request: &Request,
 ) -> Result<(PreparedRequestMerge, Repository), RequestMergeFailure> {
-    let staging_repo = &staging.path;
+    let staging_repo = &staging.path.clone();
     let current = base.git_head.as_ref().ok_or_else(|| {
         RequestMergeFailure::Other(ApiError::conflict("repo has no accepted Git head"))
     })?;
@@ -193,7 +208,6 @@ pub(super) async fn prepare_merge_on(
         } else {
             preflight_projections(
                 state,
-                base,
                 &proposed,
                 staging,
                 merge_preflight_views(proposed.repo_config.views(), &request.view),
@@ -245,14 +259,12 @@ pub(super) async fn prepare_merge_on(
 
 pub(super) async fn preflight_anyone_views(
     state: &AppState,
-    committed: &Repository,
     proposed: &Repository,
-    staging: &MergeStaging,
+    staging: &mut MergeStaging,
 ) -> Result<(), ApiError> {
     let views = proposed.repo_config.views();
     preflight_projections(
         state,
-        committed,
         proposed,
         staging,
         views.anyone().into_iter().collect(),
@@ -263,9 +275,8 @@ pub(super) async fn preflight_anyone_views(
 
 async fn preflight_projections(
     state: &AppState,
-    committed: &Repository,
     proposed: &Repository,
-    staging: &MergeStaging,
+    staging: &mut MergeStaging,
     preflight_views: Vec<&ViewId>,
 ) -> Result<BTreeMap<ViewId, Option<String>>, ApiError> {
     let views = proposed.repo_config.views();
@@ -277,8 +288,10 @@ async fn preflight_projections(
             views,
             view,
         );
-        let head =
-            verify_and_restore_projection(state, committed, projection, &staging.path).await?;
+        let head = staging
+            .projections
+            .verify_and_restore(state, &staging.committed, projection, &staging.path)
+            .await?;
         heads.insert(view.clone(), head);
     }
     Ok(heads)
