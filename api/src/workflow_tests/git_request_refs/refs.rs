@@ -177,7 +177,7 @@ async fn request_ref_completion_cannot_cross_repository_recreation() {
             incarnation: test_repo_incarnation(),
             view: scope_domain::views::ViewId::public(),
         },
-        false,
+        git_receive_use_case::RequestRefSeeding::Pushed(&[REQUEST_REF.to_string()]),
     )
     .await
     .unwrap();
@@ -835,4 +835,39 @@ async fn public_actor_cannot_push_private_request_after_membership_loss() {
         stored_request(&state, PRIVATE_REQUEST_ID).await.head_oid,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     );
+}
+
+#[tokio::test]
+async fn restricted_view_push_staging_borrows_no_objects() {
+    let state = test_state_with_request().await;
+    let store_repo =
+        crate::git::storage::request_ref_store_repo_path(&state, &test_repo_incarnation());
+    fs::create_dir_all(store_repo.parent().unwrap()).unwrap();
+    run_git(
+        None,
+        &["init", "--bare", store_repo.to_str().unwrap()],
+        "init request store",
+    )
+    .unwrap();
+    let preparation = git_receive_use_case::prepare(
+        &state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        ReceivePackAccess::RequestContributor {
+            author_id: public_user_id(),
+            incarnation: test_repo_incarnation(),
+            view: ViewId::public(),
+        },
+        git_receive_use_case::RequestRefSeeding::Pushed(&[REQUEST_REF.to_string()]),
+    )
+    .await
+    .unwrap();
+
+    let alternates = fs::read_to_string(preparation.staging_repo.join("objects/info/alternates"))
+        .unwrap_or_default();
+    assert!(
+        alternates.trim().is_empty(),
+        "a public-view push must only see objects its view can reach: {alternates}"
+    );
+    let _ = fs::remove_dir_all(&preparation.staging_repo);
 }

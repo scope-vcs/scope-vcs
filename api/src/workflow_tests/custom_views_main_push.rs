@@ -288,9 +288,15 @@ async fn prepare_agent_main_push(
     )
     .await
     .unwrap();
-    git_receive_use_case::prepare(state, TEST_REPO_OWNER, TEST_REPO_NAME, access, false)
-        .await
-        .unwrap()
+    git_receive_use_case::prepare(
+        state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        access,
+        git_receive_use_case::RequestRefSeeding::Pushed(&["refs/heads/main".to_string()]),
+    )
+    .await
+    .unwrap()
 }
 
 async fn complete_agent_main_push(

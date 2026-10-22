@@ -12,10 +12,15 @@ async fn no_op_receive_pack_does_not_record_push_success() {
     let access = receive_pack_access(&state, &headers, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
-    let preparation =
-        git_receive_use_case::prepare(&state, TEST_REPO_OWNER, TEST_REPO_NAME, access, false)
-            .await
-            .unwrap();
+    let preparation = git_receive_use_case::prepare(
+        &state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        access,
+        git_receive_use_case::RequestRefSeeding::Pushed(&[]),
+    )
+    .await
+    .unwrap();
     let staging_repo = preparation.staging_repo.clone();
 
     let completion = git_receive_use_case::complete(

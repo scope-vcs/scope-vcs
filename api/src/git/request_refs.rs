@@ -34,15 +34,17 @@ mod cleanup;
 pub(crate) use cleanup::cleanup_deleted_request_ref;
 mod locks;
 mod revision;
+mod seeding;
 mod snapshot;
 mod view_bases;
 pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
     ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
 };
-use locks::acquire_request_ref_store_lock;
+use locks::acquire_request_ref_store_init_lock;
 pub(crate) use locks::acquire_request_ref_update_lock_async;
 pub(crate) use revision::with_request_revision_store_repo;
+pub(crate) use seeding::{StoredRequestRefs, attach_request_refs_from_store};
 #[cfg(test)]
 use snapshot::bundle_prerequisites;
 use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};
@@ -349,7 +351,6 @@ pub(crate) async fn persist_request_ref_to_store(
         .await?
     };
     let PreparedRequestRef {
-        store_lock,
         previous_head,
         git_snapshot,
         git_facts,
@@ -365,7 +366,6 @@ pub(crate) async fn persist_request_ref_to_store(
             let state = state.clone();
             let request_ref = update.request_ref.clone();
             crate::git::blocking::run(move || {
-                let _store_lock = store_lock;
                 rollback_request_ref(&state, &incarnation, &request_ref, previous_head);
                 Ok(())
             })
@@ -373,26 +373,18 @@ pub(crate) async fn persist_request_ref_to_store(
             return Err(error.into());
         }
     };
-    let result = {
-        let state = state.clone();
+    let object_key = scope_storage::object_key(&git_snapshot);
+    if let Err(error) = state.object_store.put(&object_key, snapshot_bytes).await {
+        let rollback_state = state.clone();
         let request_ref = update.request_ref.clone();
-        let previous_head = previous_head.clone();
-        let object_key = scope_storage::object_key(&git_snapshot);
+        let rollback_head = previous_head.clone();
         crate::git::blocking::run(move || {
-            let _store_lock = store_lock;
-            if let Err(error) =
-                crate::git::blocking::block_on(state.object_store.put(&object_key, snapshot_bytes))
-            {
-                rollback_request_ref(&state, &incarnation, &request_ref, previous_head);
-                return Err(error.into());
-            }
+            rollback_request_ref(&rollback_state, &incarnation, &request_ref, rollback_head);
             Ok(())
         })
-        .await
-    };
-    if let Err(error) = result {
+        .await?;
         fence.release().await;
-        return Err(error);
+        return Err(error.into());
     }
     Ok(PersistedRequestRef {
         previous_head,
@@ -403,7 +395,6 @@ pub(crate) async fn persist_request_ref_to_store(
 }
 
 struct PreparedRequestRef {
-    store_lock: locks::GitLockFile,
     previous_head: Option<String>,
     git_snapshot: SourceBlob,
     git_facts: RequestRevisionGitFacts,
@@ -423,9 +414,8 @@ fn prepare_request_ref_snapshot(
     update: &RequestRefUpdate,
     main_tips: RequestMainTips<'_>,
 ) -> Result<PreparedRequestRef, ApiError> {
-    let store_lock = acquire_request_ref_store_lock(state, incarnation)?;
-    let store_repo = ensure_request_ref_store_repo_locked(state, incarnation)?;
-    ensure_request_ref_available_in_store_locked(state, &store_repo, staging_repo, request)?;
+    let store_repo = ensure_request_ref_store_repo(state, incarnation)?;
+    ensure_request_ref_available_in_store(state, &store_repo, staging_repo, request)?;
     let previous_head = request_ref_head(&store_repo, &update.request_ref)?;
     let expected_stored_head = previous_head.as_deref().or_else(|| {
         request
@@ -455,7 +445,12 @@ fn prepare_request_ref_snapshot(
     let refspec = format!("+{}:{}", update.request_ref, update.request_ref);
     run_git(
         Some(&store_repo),
-        &["fetch", staging_repo.to_string_lossy().as_ref(), &refspec],
+        &[
+            "fetch",
+            "--no-write-fetch-head",
+            staging_repo.to_string_lossy().as_ref(),
+            &refspec,
+        ],
         "persisting request ref",
     )?;
     let (git_snapshot, snapshot_bytes) =
@@ -467,7 +462,6 @@ fn prepare_request_ref_snapshot(
             }
         };
     Ok(PreparedRequestRef {
-        store_lock,
         previous_head,
         git_snapshot,
         git_facts,
@@ -482,7 +476,7 @@ fn ensure_request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<(), ApiE
     Err(ApiError::bad_request(REQUEST_REF_COMMIT_ERROR))
 }
 
-fn ensure_request_ref_available_in_store_locked(
+fn ensure_request_ref_available_in_store(
     state: &AppState,
     store_repo: &FsPath,
     staging_repo: &FsPath,
@@ -531,11 +525,15 @@ fn ensure_request_ref_store_head_matches_push(
     ))
 }
 
-fn ensure_request_ref_store_repo_locked(
+fn ensure_request_ref_store_repo(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
 ) -> Result<PathBuf, ApiError> {
     let store_repo = request_ref_store_repo_path(state, incarnation);
+    if store_repo.join("objects").is_dir() {
+        return Ok(store_repo);
+    }
+    let _init_lock = acquire_request_ref_store_init_lock(state, incarnation)?;
     if store_repo.join("objects").is_dir() {
         return Ok(store_repo);
     }
@@ -545,13 +543,15 @@ fn ensure_request_ref_store_repo_locked(
     if let Some(parent) = store_repo.parent() {
         crate::persistence::ensure_private_dir(parent)?;
     }
+    let initializing = store_repo.with_extension("initializing");
+    remove_dir_if_exists(&initializing)?;
     run_git(
         None,
-        &["init", "--bare", store_repo.to_string_lossy().as_ref()],
+        &["init", "--bare", initializing.to_string_lossy().as_ref()],
         "initializing request ref store",
     )?;
     run_git(
-        Some(&store_repo),
+        Some(&initializing),
         &[
             "symbolic-ref",
             "HEAD",
@@ -559,6 +559,7 @@ fn ensure_request_ref_store_repo_locked(
         ],
         "setting request ref store head",
     )?;
+    fs::rename(&initializing, &store_repo).map_err(ApiError::internal)?;
     Ok(store_repo)
 }
 
