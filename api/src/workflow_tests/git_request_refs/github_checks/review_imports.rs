@@ -48,6 +48,7 @@ async fn list_review_bots(owner: &OwnerRequest, logins: &[&str]) {
                 .iter()
                 .map(|login| GitHubReviewBotInput {
                     login: login.to_string(),
+                    required: false,
                 })
                 .collect(),
         )

@@ -24,8 +24,9 @@ use crate::{
     repo_events::RepoChangeReason,
     state::AppState,
     use_cases::{
-        github_check_results, github_pull_requests, github_pushes, github_review_imports,
-        github_workflow_jobs, github_workflow_runs, run_inspection::require_full_view_member,
+        github_check_results, github_pull_requests, github_pushes, github_review_bot_statuses,
+        github_review_imports, github_workflow_jobs, github_workflow_runs,
+        run_inspection::require_full_view_member,
     },
 };
 use axum::{
@@ -239,7 +240,10 @@ pub(crate) async fn set_github_review_bots(
             input
                 .bots
                 .into_iter()
-                .map(|bot| GitHubReviewBotInput { login: bot.login })
+                .map(|bot| GitHubReviewBotInput {
+                    login: bot.login,
+                    required: bot.required,
+                })
                 .collect(),
         )
         .await?;
@@ -551,8 +555,25 @@ pub(crate) async fn receive_github_webhook(
             }
         }
         GitHubWebhookEvent::ReviewActivity(delivery) => {
+            github_review_bot_statuses::note_review_bot_activity(
+                &state,
+                delivery.github_repository_id,
+                delivery.pull_number,
+            )
+            .await?;
             github_review_imports::queue_github_review_delivery(&state, delivery, unix_now()?)
                 .await?;
+        }
+        GitHubWebhookEvent::ReviewStateCommented {
+            github_repository_id,
+            number,
+        } => {
+            github_review_bot_statuses::note_review_bot_activity(
+                &state,
+                github_repository_id,
+                number,
+            )
+            .await?;
         }
         GitHubWebhookEvent::PullRequestChanged {
             github_repository_id,

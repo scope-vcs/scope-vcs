@@ -41,3 +41,16 @@ export function reviewBotsProblem(logins: string[]) {
   }
   return null
 }
+
+export function reviewBotsFromText(text: string, saved: GitHubReviewBotResponse[]): GitHubReviewBotResponse[] {
+  const required = new Set(saved.filter((bot) => bot.required).map((bot) => bot.login.toLowerCase()))
+  return reviewBotLogins(text).map((login) => ({ login, required: required.has(login.toLowerCase()) }))
+}
+
+export function withReviewBotRequired(
+  bots: GitHubReviewBotResponse[],
+  login: string,
+  required: boolean,
+): GitHubReviewBotResponse[] {
+  return bots.map((bot) => bot.login === login ? { ...bot, required } : bot)
+}

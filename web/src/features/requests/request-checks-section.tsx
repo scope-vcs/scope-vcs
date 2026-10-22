@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { ChevronDown } from 'lucide-react'
 import { useId, useState } from 'react'
 import { RUN_TONE_TEXT_CLASS } from '../runs/run-status-icon'
-import { requestChecksSummary, requestPullRequestView } from './request-check-rows'
+import { requestChecksSummary, requestPullRequestView, requestReviewBotRows } from './request-check-rows'
 import { RequestCheckWorkflows } from './request-check-workflows'
 import {
   requestCheckEvaluationNote,
@@ -25,7 +25,8 @@ export function RequestChecksSection({
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
   const pullRequest = requestPullRequestView(checks.github_pull_request)
-  if (checks.state === 'no-checks' && !pullRequest) return null
+  const reviewBots = requestReviewBotRows(checks.review_bots)
+  if (checks.state === 'no-checks' && !pullRequest && !reviewBots.length) return null
 
   const note = requestCheckEvaluationNote(checks)
   const warning = requestChecksWorkflowWarning(checks)
@@ -93,6 +94,20 @@ export function RequestChecksSection({
             </p>
           ) : null}
         </div>
+      ) : null}
+      {reviewBots.length ? (
+        <>
+          <p className="mt-2 text-xs text-muted-foreground">Review bots</p>
+          <ul aria-label="Review bots" className="mt-0.5 space-y-0.5 text-[13px]">
+            {reviewBots.map((bot) => (
+              <li className="flex flex-wrap items-baseline gap-x-2" key={bot.login}>
+                <span className="min-w-0 break-words font-mono [overflow-wrap:anywhere]">{bot.login}</span>
+                {bot.required ? <span className="text-xs text-muted-foreground">required</span> : null}
+                <span className={cn('ml-auto text-xs', RUN_TONE_TEXT_CLASS[bot.tone])}>{bot.label}</span>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : null}
       <RequestCheckWorkflows id={listId} params={params} rows={expanded ? summary.all : summary.attention} />
       {folded ? (

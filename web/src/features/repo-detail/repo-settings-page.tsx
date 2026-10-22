@@ -209,10 +209,7 @@ export function RepoSettingsPage({
           github={github}
           setMainPublication={(enabled) => setGitHubMainPublication({ ...params, enabled })}
           setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
-          setReviewBots={(logins) => setGitHubReviewBots({
-            ...params,
-            bots: logins.map((login) => ({ login })),
-          })}
+          setReviewBots={(bots) => setGitHubReviewBots({ ...params, bots })}
           setReviewBotPullRequests={(enabled) => setGitHubReviewBotPullRequests({ ...params, enabled })}
           setReviewRequestComment={(comment) => setGitHubReviewRequestComment({ ...params, comment })}
           setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}

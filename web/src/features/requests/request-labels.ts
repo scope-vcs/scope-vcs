@@ -40,6 +40,8 @@ const MERGEABILITY = {
   ChecksPending: { label: 'Waiting for CI', tone: 'info' },
   ChecksFailed: { label: 'CI failed', tone: 'danger' },
   ChecksConfigurationError: { label: 'CI needs configuration', tone: 'danger' },
+  ReviewsPending: { label: 'Waiting for review bots', tone: 'info' },
+  ReviewFindingsOpen: { label: 'Review findings open', tone: 'warning' },
   WaitingForParent: { label: 'Waiting for parent', tone: 'info' },
   ParentRewritten: { label: 'Parent rewritten', tone: 'warning' },
   ParentClosed: { label: 'Parent closed', tone: 'warning' },

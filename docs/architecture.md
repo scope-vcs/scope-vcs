@@ -156,7 +156,11 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   GitHub request branches and deletes branches of settled requests, with
   retries; `github_pull_requests.rs` for the leased loop that opens, adopts,
   comments on and closes the carrier pull request review bots read for each
-  request; and `github_check_results.rs` for reading GitHub's check runs when
+  request; `github_review_bot_statuses.rs` for the reconciler that reads each
+  open carrier pull request's reviews, reactions and review state comments
+  and records how far each listed bot got with the request head, queueing
+  the import of any finishing review Scope has not imported yet; and
+  `github_check_results.rs` for reading GitHub's check runs when
   a webhook names a tested commit and for the reconciler that reads pending
   ones a delivery missed;
 - `view_check_commits.rs` for building the check commit GitHub tests for a

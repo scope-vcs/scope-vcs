@@ -1,4 +1,8 @@
-import type { GitHubConnectionResponse, GitHubReviewBotResponse } from '@/api/types.generated'
+import type {
+  GitHubConnectionResponse,
+  GitHubReviewBotRequest,
+  GitHubReviewBotResponse,
+} from '@/api/types.generated'
 import { PageErrorAlert } from '@/components/page-error-alert'
 import { Button } from '@/components/ui/button'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
@@ -6,9 +10,11 @@ import { cn } from '@/lib/utils'
 import { useEffect, useState } from 'react'
 import {
   reviewBotLogins,
+  reviewBotsFromText,
   reviewBotsProblem,
   reviewBotsText,
   sameReviewBots,
+  withReviewBotRequired,
 } from './repo-review-bots-model'
 
 function sameSaved(saved: GitHubReviewBotResponse[] | null, bots: GitHubReviewBotResponse[]) {
@@ -20,7 +26,7 @@ export function RepoReviewBots({
   save,
 }: {
   github: GitHubConnectionResponse
-  save: (logins: string[]) => Promise<GitHubConnectionResponse>
+  save: (bots: GitHubReviewBotRequest[]) => Promise<GitHubConnectionResponse>
 }) {
   const bots = github.review_bots
   const [draft, setDraft] = useState(() => reviewBotsText(bots))
@@ -38,15 +44,18 @@ export function RepoReviewBots({
     setSource(bots)
   }, [bots, draft, source])
 
-  async function update() {
+  async function saveLogins() {
     const found = reviewBotsProblem(logins)
     setProblem(found)
-    if (found) return
+    if (!found) await update(reviewBotsFromText(draft, bots), false)
+  }
+
+  async function update(next: GitHubReviewBotRequest[], keepsDraft: boolean) {
     setError(null)
     setPending(true)
     try {
-      const result = await save(logins)
-      setDraft(reviewBotsText(result.review_bots))
+      const result = await save(next)
+      if (!keepsDraft) setDraft(reviewBotsText(result.review_bots))
       setSource(result.review_bots)
       setSaved(result.review_bots)
     } catch (cause) {
@@ -61,14 +70,14 @@ export function RepoReviewBots({
       <div>
         <label className="block leading-5 font-medium" htmlFor="github-review-bots">Review bots</label>
         <p className="leading-5 text-muted-foreground" id="github-review-bots-description">
-          Scope imports GitHub reviews from these bots and from GitHub users who can write to the repository.
+          Scope imports GitHub reviews from these bots and from GitHub users who can write to the repository. A required bot must finish reviewing the latest commit before a request merges.
         </p>
       </div>
       <form
         className="space-y-2"
         onSubmit={(event) => {
           event.preventDefault()
-          if (dirty && !pending) void update()
+          if (dirty && !pending) void saveLogins()
         }}
       >
         <textarea
@@ -105,6 +114,32 @@ export function RepoReviewBots({
           </Button>
         </div>
       </form>
+      {bots.length ? (
+        <div>
+          <p className="leading-5 text-muted-foreground" id="github-review-bots-required">Required to merge</p>
+          {github.connection?.open_review_bot_pull_requests ? null : (
+            <p className="leading-5 text-muted-foreground">
+              Required bots hold merges only while Open pull requests for review bots is on.
+            </p>
+          )}
+          <ul aria-labelledby="github-review-bots-required" className="divide-y divide-border">
+            {bots.map((bot) => (
+              <li key={bot.login}>
+                <label className="flex min-h-9 cursor-pointer items-center gap-3 py-1.5">
+                  <input
+                    checked={bot.required}
+                    className="size-4 shrink-0 accent-primary"
+                    disabled={pending}
+                    onChange={(event) => void update(withReviewBotRequired(bots, bot.login, event.target.checked), dirty)}
+                    type="checkbox"
+                  />
+                  <span className="min-w-0 break-words font-mono text-[13px] [overflow-wrap:anywhere]">{bot.login}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {error && (
         <PageErrorAlert className="mt-0" title="Review bots were not saved">
           {error}

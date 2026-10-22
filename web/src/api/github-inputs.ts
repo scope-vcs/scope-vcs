@@ -140,11 +140,12 @@ export function parseSetRepoGitHubReviewBotsInput(input: unknown): SetRepoGitHub
   const bots = (input as Partial<SetRepoGitHubReviewBotsInput>).bots
   if (
     !Array.isArray(bots)
-    || bots.some((bot) => typeof bot !== 'object' || bot === null || typeof bot.login !== 'string')
+    || bots.some((bot) => typeof bot !== 'object' || bot === null
+      || typeof bot.login !== 'string' || typeof bot.required !== 'boolean')
   ) {
     throw new Error('Review bots must be a list of GitHub logins.')
   }
-  return { ...params, bots: bots.map(({ login }) => ({ login })) }
+  return { ...params, bots: bots.map(({ login, required }) => ({ login, required })) }
 }
 
 function requiredText(value: unknown, message: string) {

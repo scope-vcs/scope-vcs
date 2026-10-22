@@ -88,6 +88,30 @@ test('request CI states its count once, names workflows only when several share 
   }
   await page.evaluate(() => window.showPullRequest(null))
   await checks.waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.showReviewBots([
+    { login: 'greptile-apps[bot]', required: true, state: 'working' },
+    { login: 'chatgpt-codex-connector[bot]', required: false, state: 'commented' },
+    { login: 'octo-reviewer[bot]', required: true, state: 'clear' },
+    { login: 'lint-bot[bot]', required: false, state: 'not_started' },
+  ]))
+  assert.deepEqual(
+    await checks.getByRole('list', { name: 'Review bots', exact: true }).getByRole('listitem').allTextContents(),
+    [
+      'greptile-apps[bot]requiredReviewing',
+      'chatgpt-codex-connector[bot]Finished with comments',
+      'octo-reviewer[bot]requiredFinished, nothing found',
+      'lint-bot[bot]Not started',
+    ],
+  )
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await checks.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-review-bots-narrow.png` })
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await checks.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-review-bots.png` })
+    await page.setViewportSize({ width: 320, height: 740 })
+  }
+  await page.evaluate(() => window.showReviewBots([]))
+  await checks.waitFor({ state: 'hidden' })
   await page.evaluate(() => window.showState(null))
   await checks.getByText('CI status is not available yet.', { exact: true }).waitFor()
   await page.evaluate(() => window.showState('configuration-error'))

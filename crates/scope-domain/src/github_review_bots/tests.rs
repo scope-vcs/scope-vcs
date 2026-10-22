@@ -19,6 +19,7 @@ fn inputs(logins: &[&str]) -> Vec<GitHubReviewBotInput> {
         .iter()
         .map(|login| GitHubReviewBotInput {
             login: login.to_string(),
+            required: false,
         })
         .collect()
 }
@@ -70,6 +71,25 @@ fn review_bots_are_github_bot_logins_listed_once_by_maintainers() {
             "chatgpt-codex-connector[bot]",
             "octo-reviewer[bot]"
         ]
+    );
+    let marked = set_github_review_bots(
+        maintainer(),
+        Some(&connection()),
+        vec![
+            GitHubReviewBotInput {
+                login: "greptile-apps[bot]".to_string(),
+                required: true,
+            },
+            GitHubReviewBotInput {
+                login: "octo-reviewer[bot]".to_string(),
+                required: false,
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        marked.iter().map(|bot| bot.required).collect::<Vec<_>>(),
+        [true, false]
     );
     assert!(
         set_github_review_bots(maintainer(), Some(&connection()), Vec::new())

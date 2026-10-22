@@ -163,6 +163,12 @@ impl RequestStore {
                 checks.evaluation.as_ref(),
                 &checks.results,
             ),
+            reviews: super::github_review_bot_statuses::reviews_outcome(
+                &tx,
+                &request,
+                &context.views,
+            )
+            .await?,
         });
         if expected_auto_merge.is_some()
             && let Some(locked) = &locked_auto_merge

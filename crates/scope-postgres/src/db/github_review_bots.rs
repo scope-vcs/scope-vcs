@@ -33,14 +33,15 @@ impl RepositoryStore {
         for (position, bot) in bots.iter().enumerate() {
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "INSERT INTO scope_github_review_bots (repo_id, position, login)
-                 VALUES ($1, $2, $3)",
+                "INSERT INTO scope_github_review_bots (repo_id, position, login, required)
+                 VALUES ($1, $2, $3, $4)",
                 [
                     repo_id.into(),
                     i32::try_from(position)
                         .map_err(PostgresError::internal)?
                         .into(),
                     bot.login.as_str().into(),
+                    bot.required.into(),
                 ],
             ))
             .await?;
@@ -63,13 +64,13 @@ pub(super) async fn delete_review_bots<C: ConnectionTrait>(
     Ok(())
 }
 
-async fn review_bots<C: ConnectionTrait>(
+pub(super) async fn review_bots<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
 ) -> Result<Vec<GitHubReviewBot>, PostgresError> {
     conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT login FROM scope_github_review_bots WHERE repo_id = $1 ORDER BY position",
+        "SELECT login, required FROM scope_github_review_bots WHERE repo_id = $1 ORDER BY position",
         [repo_id.into()],
     ))
     .await?
@@ -80,6 +81,9 @@ async fn review_bots<C: ConnectionTrait>(
             .map_err(PostgresError::internal)?;
         Ok(GitHubReviewBot {
             login: GitHubBotLogin::parse(&login).map_err(PostgresError::internal)?,
+            required: row
+                .try_get::<bool>("", "required")
+                .map_err(PostgresError::internal)?,
         })
     })
     .collect()

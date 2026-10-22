@@ -19,6 +19,10 @@ pub fn github_review_client_id(review_id: u64) -> String {
     format!("{REVIEW_CLIENT_PREFIX}{review_id}")
 }
 
+pub fn github_review_id_from_client_id(client_id: &str) -> Option<u64> {
+    client_id.strip_prefix(REVIEW_CLIENT_PREFIX)?.parse().ok()
+}
+
 pub fn github_review_comment_client_id(comment_id: u64) -> String {
     format!("{REVIEW_COMMENT_CLIENT_PREFIX}{comment_id}")
 }

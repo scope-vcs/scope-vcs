@@ -494,7 +494,7 @@ async fn maintainers_list_review_bots_until_the_repository_disconnects() {
         let state = state.clone();
         let bots = logins
             .iter()
-            .map(|login| serde_json::json!({ "login": login }))
+            .map(|login| serde_json::json!({ "login": login, "required": false }))
             .collect::<Vec<_>>();
         async move {
             github_api(
@@ -528,8 +528,8 @@ async fn maintainers_list_review_bots_until_the_repository_disconnects() {
     )
     .await;
     let listed = serde_json::json!([
-        { "login": "greptile-apps[bot]" },
-        { "login": "chatgpt-codex-connector[bot]" },
+        { "login": "greptile-apps[bot]", "required": false },
+        { "login": "chatgpt-codex-connector[bot]", "required": false },
     ]);
     assert_eq!(body["review_bots"], listed);
     assert_eq!(connection(&state).await["review_bots"], listed);
