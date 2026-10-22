@@ -26,7 +26,25 @@ RUN apt-get update \
 RUN LD_LIBRARY_PATH=/opt/libheif/lib /opt/libheif/bin/heif-info --version \
     | grep --fixed-strings "$LIBHEIF_VERSION"
 
-FROM docker.io/library/rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546 AS build
+FROM docker.io/library/rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546 AS chef
+RUN cargo install cargo-chef --version 0.1.78 --locked
+WORKDIR /scope
+
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY api ./api
+COPY cli-downloads ./cli-downloads
+COPY crates ./crates
+COPY media-service ./media-service
+COPY media-worker/Cargo.toml ./media-worker/Cargo.toml
+COPY media-worker/src ./media-worker/src
+COPY media-worker/tests ./media-worker/tests
+COPY repo-router ./repo-router
+COPY runner-runtime ./runner-runtime
+COPY worker ./worker
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
 
 COPY --from=heif-builder /opt/libheif /opt/libheif
 ENV PATH=/opt/libheif/bin:$PATH LD_LIBRARY_PATH=/opt/libheif/lib CARGO_BUILD_JOBS=2
@@ -43,18 +61,10 @@ RUN apt-get update \
 ENV SCOPE_MEDIA_HEIF_CONVERT=/opt/libheif/bin/heif-convert \
     SCOPE_MEDIA_HEIF_INFO=/opt/libheif/bin/heif-info
 
-WORKDIR /scope
-COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
-COPY api ./api
-COPY cli-downloads ./cli-downloads
-COPY crates ./crates
-COPY media-service ./media-service
-COPY media-worker/Cargo.toml ./media-worker/Cargo.toml
-COPY media-worker/src ./media-worker/src
-COPY media-worker/tests ./media-worker/tests
-COPY repo-router ./repo-router
-COPY runner-runtime ./runner-runtime
-COPY worker ./worker
+COPY --from=planner /scope/recipe.json recipe.json
+RUN cargo chef cook --locked --release --tests -p scope-media-worker --recipe-path recipe.json \
+    && cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
+COPY --from=planner /scope ./
 RUN cargo test --locked --release -p scope-media-worker \
     && cargo build --locked --release -p scope-media-worker \
     && chmod +x media-worker/tests/*.sh \

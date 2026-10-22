@@ -1,4 +1,8 @@
+mod request_discussion_anchors;
+mod request_discussion_authors;
 mod request_stacks;
+pub use request_discussion_anchors::*;
+pub use request_discussion_authors::*;
 pub use request_stacks::*;
 
 use crate::{
@@ -416,8 +420,8 @@ pub struct RequestActorSummaryResponse {
 pub struct RequestDiscussionReplyReferenceResponse {
     pub id: String,
     pub position: u64,
-    /// Null once that account is deleted; clients show a deleted user.
-    pub author: Option<RequestActorSummaryResponse>,
+    /// Null once that Scope account is deleted; clients show a deleted user.
+    pub author: Option<RequestDiscussionAuthorResponse>,
     pub body_markdown: String,
 }
 
@@ -427,8 +431,8 @@ pub struct RequestDiscussionReplyResponse {
     pub id: String,
     pub discussion_id: String,
     pub position: u64,
-    /// Null once that account is deleted; clients show a deleted user.
-    pub author: Option<RequestActorSummaryResponse>,
+    /// Null once that Scope account is deleted; clients show a deleted user.
+    pub author: Option<RequestDiscussionAuthorResponse>,
     pub body_markdown: String,
     pub reply_to: Option<RequestDiscussionReplyReferenceResponse>,
     pub created_at_unix: u64,
@@ -442,8 +446,8 @@ pub struct RequestDiscussionSummaryResponse {
     pub client_discussion_id: String,
     pub opened_position: u64,
     pub last_activity_position: u64,
-    /// Null once that account is deleted; clients show a deleted user.
-    pub author: Option<RequestActorSummaryResponse>,
+    /// Null once that Scope account is deleted; clients show a deleted user.
+    pub author: Option<RequestDiscussionAuthorResponse>,
     pub body_markdown: String,
     pub anchor: Option<RequestDiscussionAnchor>,
     pub status: RequestDiscussionStatus,
@@ -453,24 +457,8 @@ pub struct RequestDiscussionSummaryResponse {
     pub latest_replies: Vec<RequestDiscussionReplyResponse>,
     pub created_at_unix: u64,
     pub resolved_at_unix: Option<u64>,
-    pub resolved_by: Option<RequestActorSummaryResponse>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub struct RequestDiscussionAnchor {
-    pub revision_id: String,
-    pub revision_position: u64,
-    pub commit_oid: Option<String>,
-    pub path: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
-pub struct RequestDiscussionAnchorInput {
-    pub revision_id: String,
-    pub commit_oid: Option<String>,
-    pub path: Option<String>,
+    /// Null while open, or once the resolving Scope account is deleted.
+    pub resolved_by: Option<RequestDiscussionResolverResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

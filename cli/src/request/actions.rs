@@ -370,8 +370,10 @@ pub(super) fn show_one_request(
         detail.request.activity_version,
     )?;
     let auto_merge = get_request_auto_merge(api, api_target(&context, &request_id))?;
+    let checks = crate::api::request_checks(api, api_target(&context, &request_id))?;
     let mut human_lines =
         request_detail_lines(&detail.request, &detail.stack_navigation, &context.views);
+    human_lines.extend(super::render::review_bots_detail_lines(&checks));
     human_lines.extend(auto_merge_status_lines(&auto_merge));
     human_lines.extend(request_activity_lines_for_response(&activity));
     Ok(RequestCommandOutcome::new(
@@ -382,6 +384,7 @@ pub(super) fn show_one_request(
             stack_navigation: detail.stack_navigation,
             activity: Some(activity),
             auto_merge: Some(auto_merge),
+            review_bots: Some(checks.review_bots),
         })),
         human_lines,
     ))

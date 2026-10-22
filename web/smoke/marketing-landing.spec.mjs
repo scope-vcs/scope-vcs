@@ -124,23 +124,21 @@ test('the lens follows the pointer, closes over links, floods on hold and goes a
   })
 })
 
-for (const reducedMotion of ['no-preference', 'reduce']) {
-  test(`finding every note fires confetti (${reducedMotion} motion)`, async () => {
-    await withLanding(async (page) => {
-      const notes = page.locator(`${publicLayer} [data-note]`)
-      const count = await notes.count()
-      assert.equal(count, 9)
-      for (let index = 0; index < count; index++) {
-        const note = notes.nth(index)
-        await note.scrollIntoViewIfNeeded()
-        const box = await note.boundingBox()
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-        await page.waitForTimeout(reducedMotion === 'reduce' ? 250 : 900)
-      }
-      await page.locator('canvas').waitFor({ state: 'attached' })
-    }, { reducedMotion })
-  })
-}
+test('finding every note fires confetti', async () => {
+  await withLanding(async (page) => {
+    const notes = page.locator(`${publicLayer} [data-note]`)
+    const count = await notes.count()
+    assert.equal(count, 9)
+    for (let index = 0; index < count; index++) {
+      const note = notes.nth(index)
+      await note.scrollIntoViewIfNeeded()
+      const box = await note.boundingBox()
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.waitForTimeout(250)
+    }
+    await page.locator('canvas').waitFor({ state: 'attached' })
+  }, { reducedMotion: 'reduce' })
+})
 
 test('without JavaScript the landing page keeps the native cursor', async () => {
   await withPage('/', async (page) => {

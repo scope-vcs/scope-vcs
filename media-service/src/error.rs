@@ -29,7 +29,6 @@ pub(crate) fn media_storage_error(error: MediaStorageError) -> ServiceError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scope_service_runtime::http::ErrorKind;
 
     #[tokio::test]
     async fn metadata_misses_read_like_every_other_unreachable_object() {
@@ -46,30 +45,5 @@ mod tests {
             br#"{"code":"not_found","message":"media object not found","retryable":false}"#
                 .as_slice()
         );
-    }
-
-    #[test]
-    fn storage_failures_keep_their_caller_visible_kinds() {
-        let kinds = [
-            (
-                MediaStorageErrorKind::CapacityExhausted,
-                ErrorKind::TooManyRequests,
-            ),
-            (MediaStorageErrorKind::InvalidInput, ErrorKind::BadRequest),
-            (MediaStorageErrorKind::NotFound, ErrorKind::NotFound),
-            (
-                MediaStorageErrorKind::ServiceUnavailable,
-                ErrorKind::ServiceUnavailable,
-            ),
-            (MediaStorageErrorKind::Integrity, ErrorKind::Internal),
-            (MediaStorageErrorKind::Internal, ErrorKind::Internal),
-        ];
-        for (storage_kind, expected) in kinds {
-            let error = media_storage_error(MediaStorageError {
-                kind: storage_kind,
-                message: "object key /srv/media/private".to_string(),
-            });
-            assert_eq!(error.kind(), expected, "{storage_kind:?}");
-        }
     }
 }

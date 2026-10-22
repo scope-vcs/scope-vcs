@@ -5,67 +5,67 @@
     "pinned-revision-mit-notice": "Published package declares MIT but omits the license file. Preserve upstream copyright and license file from the pinned repository revision; this revision supplies missing notice text and is not asserted to be the package source revision."
   },
   "inherited_reasons": {
-    "web:oxlint@1.82.0": "Published native package declares MIT. Retain the exact-version parent project license text alongside any bundled dependency notices.",
+    "web:oxlint@1.87.0": "Published native package declares MIT. Retain the exact-version parent project license text alongside any bundled dependency notices.",
     "web:rolldown@1.2.13": "Published native package declares MIT. Retain the exact-version parent project license text alongside any bundled dependency notices.",
     "web:tailwindcss@4.3.3": "Published native package declares MIT. Retain the exact-version parent project license text alongside any bundled dependency notices."
   },
   "packages": {
-    "web:@oxlint/binding-android-arm-eabi@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-android-arm-eabi@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-android-arm64@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-android-arm64@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-darwin-arm64@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-darwin-arm64@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-darwin-x64@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-darwin-x64@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-freebsd-x64@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-freebsd-x64@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-arm-gnueabihf@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-arm-gnueabihf@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-arm-musleabihf@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-arm-musleabihf@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-arm64-gnu@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-arm64-gnu@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-arm64-musl@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-arm64-musl@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-ppc64-gnu@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-ppc64-gnu@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-riscv64-gnu@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-riscv64-gnu@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-riscv64-musl@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-riscv64-musl@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-s390x-gnu@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-s390x-gnu@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-x64-gnu@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-x64-gnu@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-linux-x64-musl@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-linux-x64-musl@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-openharmony-arm64@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-openharmony-arm64@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-win32-arm64-msvc@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-win32-arm64-msvc@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-win32-ia32-msvc@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-win32-ia32-msvc@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
-    "web:@oxlint/binding-win32-x64-msvc@1.82.0": {
-      "from_package": "web:oxlint@1.82.0"
+    "web:@oxlint/binding-win32-x64-msvc@1.87.0": {
+      "from_package": "web:oxlint@1.87.0"
     },
     "web:@pierre/theming@0.0.1": {
       "reason": "The checksum-verified package.json explicitly declares apache-2.0. No license file, repository URL, or copyright notice is supplied. Preserve published metadata and provide the standard Apache-2.0 terms. No copyright holder or year is inferred.",

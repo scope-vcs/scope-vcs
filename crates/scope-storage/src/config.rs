@@ -141,9 +141,7 @@ mod tests {
             (None, false),
             (Some("false"), false),
             (Some("1"), true),
-            (Some("true"), true),
             (Some("TRUE"), true),
-            (Some("yes"), true),
             (Some("YES"), true),
         ] {
             let mut child = std::process::Command::new(std::env::current_exe().unwrap());

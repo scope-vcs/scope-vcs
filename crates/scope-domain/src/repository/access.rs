@@ -165,6 +165,17 @@ impl RepositoryAccess {
         }
     }
 
+    pub fn full_view_reader(views: &Views) -> Self {
+        Self {
+            actor: RepositoryActor::Member,
+            view: views.full().clone(),
+            can_push: false,
+            can_change_file_visibility: false,
+            can_manage_members: false,
+            can_delete_repo: false,
+        }
+    }
+
     pub fn public() -> Self {
         Self {
             actor: RepositoryActor::Public,

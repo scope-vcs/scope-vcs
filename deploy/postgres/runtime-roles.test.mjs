@@ -12,7 +12,8 @@ import { localClusterSkip, pgBin } from './test-cluster.mjs';
 const migrationsDir = new URL('../../crates/scope-postgres/src/migrations/', import.meta.url);
 const baselineMigration = 'm0084_current_schema_baseline.sql';
 const appliedMigrations = ['m0084_request_review_bases.rs', 'm0085_request_check_identity.rs', 'm0086_private_request_stacks.rs',
-  'm0090_job_traceparents.rs', 'm0093_request_object_pool.rs'];
+  'm0090_job_traceparents.rs', 'm0094_github_carrier_pull_requests.rs', 'm0095_github_review_imports.rs',
+  'm0096_github_review_bot_gate.rs', 'm0099_request_object_pool.rs'];
 
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)

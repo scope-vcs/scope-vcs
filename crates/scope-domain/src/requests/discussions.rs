@@ -1,10 +1,12 @@
+use super::discussion_anchor::RequestDiscussionAnchor;
+use super::discussion_authors::{RequestDiscussionAuthor, RequestDiscussionResolver};
 use super::{
     REQUEST_DISCUSSION_BODY_MAX_BYTES, REQUEST_DISCUSSION_CLIENT_ID_MAX_BYTES, Request,
     RequestEvent, RequestEventKind, RequestEventPayload, advance_request_activity,
     ensure_request_matches, next_request_activity_position, validate_body_size, validate_required,
 };
+use crate::error::DomainError;
 use crate::views::ViewId;
-use crate::{error::DomainError, policy::ScopePath};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,26 +16,19 @@ pub enum RequestDiscussionStatus {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RequestDiscussionAnchor {
-    pub revision_id: String,
-    pub commit_oid: Option<String>,
-    pub path: Option<ScopePath>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestDiscussion {
     pub id: String,
     pub request_id: String,
     pub opened_position: u64,
     pub last_activity_position: u64,
-    pub author_user_id: Option<String>,
+    pub author: RequestDiscussionAuthor,
     pub body_markdown: String,
     pub anchor: Option<RequestDiscussionAnchor>,
     pub status: RequestDiscussionStatus,
     pub client_discussion_id: String,
     pub created_at_unix: u64,
     pub resolved_at_unix: Option<u64>,
-    pub resolved_by_user_id: Option<String>,
+    pub resolved_by: Option<RequestDiscussionResolver>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,7 +36,7 @@ pub struct RequestDiscussionReply {
     pub id: String,
     pub discussion_id: String,
     pub position: u64,
-    pub author_user_id: Option<String>,
+    pub author: RequestDiscussionAuthor,
     pub body_markdown: String,
     pub reply_to_reply_id: Option<String>,
     pub client_reply_id: String,
@@ -153,7 +148,11 @@ pub fn create_request_discussion(
         &input.client_discussion_id,
         &input.body_markdown,
     )?;
-    validate_anchor(input.anchor.as_ref())?;
+    input
+        .anchor
+        .as_ref()
+        .map(RequestDiscussionAnchor::validate)
+        .transpose()?;
     if !input.actor_can_participate {
         return Err(DomainError::forbidden("request discussion access required"));
     }
@@ -168,14 +167,14 @@ pub fn create_request_discussion(
         request_id: request.id.clone(),
         opened_position: position,
         last_activity_position: position,
-        author_user_id: Some(input.actor_user_id.clone()),
+        author: RequestDiscussionAuthor::User(input.actor_user_id.clone()),
         body_markdown: input.body_markdown,
         anchor: input.anchor,
         status: RequestDiscussionStatus::Open,
         client_discussion_id: input.client_discussion_id,
         created_at_unix: input.now_unix,
         resolved_at_unix: None,
-        resolved_by_user_id: None,
+        resolved_by: None,
     };
     let read_state = read_state(&discussion, &input.actor_user_id, position, input.now_unix);
     Ok(CreateRequestDiscussionMutation {
@@ -229,7 +228,7 @@ pub fn create_request_discussion_reply(
         id: input.id,
         discussion_id: discussion.id.clone(),
         position,
-        author_user_id: Some(input.actor_user_id.clone()),
+        author: RequestDiscussionAuthor::User(input.actor_user_id.clone()),
         body_markdown: input.body_markdown,
         reply_to_reply_id: input.reply_to_reply_id,
         client_reply_id: input.client_reply_id,
@@ -309,13 +308,13 @@ pub fn reopen_and_reply_to_request_discussion(
     request.updated_at_unix = input.now_unix;
     discussion.status = RequestDiscussionStatus::Open;
     discussion.resolved_at_unix = None;
-    discussion.resolved_by_user_id = None;
+    discussion.resolved_by = None;
     discussion.last_activity_position = position;
     let reply = RequestDiscussionReply {
         id: input.reply_id,
         discussion_id: discussion.id.clone(),
         position,
-        author_user_id: Some(input.actor_user_id.clone()),
+        author: RequestDiscussionAuthor::User(input.actor_user_id.clone()),
         body_markdown: input.body_markdown,
         reply_to_reply_id: input.reply_to_reply_id,
         client_reply_id: input.client_reply_id,
@@ -402,7 +401,7 @@ fn transition_discussion(
     let (kind, payload) = match target {
         RequestDiscussionStatus::Open => {
             discussion.resolved_at_unix = None;
-            discussion.resolved_by_user_id = None;
+            discussion.resolved_by = None;
             (
                 RequestEventKind::DiscussionReopened,
                 RequestEventPayload::DiscussionReopened {
@@ -412,7 +411,8 @@ fn transition_discussion(
         }
         RequestDiscussionStatus::Resolved => {
             discussion.resolved_at_unix = Some(input.now_unix);
-            discussion.resolved_by_user_id = Some(input.actor_user_id.clone());
+            discussion.resolved_by =
+                Some(RequestDiscussionResolver::User(input.actor_user_id.clone()));
             (
                 RequestEventKind::DiscussionResolved,
                 RequestEventPayload::DiscussionResolved {
@@ -444,7 +444,7 @@ fn ensure_can_transition(
     actor_is_maintainer: bool,
 ) -> Result<(), DomainError> {
     if actor_is_maintainer
-        || discussion.author_user_id.as_deref() == Some(actor_user_id)
+        || discussion.author.user_id() == Some(actor_user_id)
         || request.is_author(actor_user_id)
     {
         Ok(())
@@ -490,22 +490,6 @@ fn validate_common(
     )?;
     validate_required("discussion body", body)?;
     validate_body_size("discussion body", body, REQUEST_DISCUSSION_BODY_MAX_BYTES)
-}
-
-fn validate_anchor(anchor: Option<&RequestDiscussionAnchor>) -> Result<(), DomainError> {
-    let Some(anchor) = anchor else {
-        return Ok(());
-    };
-    validate_required("revision id", &anchor.revision_id)?;
-    if let Some(commit_oid) = anchor.commit_oid.as_deref() {
-        validate_required("commit oid", commit_oid)?;
-    }
-    if anchor.path.is_some() && anchor.commit_oid.is_none() {
-        return Err(DomainError::invalid_input(
-            "discussion path anchor requires a commit",
-        ));
-    }
-    Ok(())
 }
 
 fn validate_reply_input(
@@ -589,37 +573,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn path_anchor_requires_a_commit() {
-        let error = validate_anchor(Some(&RequestDiscussionAnchor {
-            revision_id: "revision".to_string(),
-            commit_oid: None,
-            path: Some(ScopePath::parse("/src/lib.rs").unwrap()),
-        }))
-        .unwrap_err();
-        assert_eq!(error.kind, crate::error::DomainErrorKind::InvalidInput);
-    }
-
-    #[test]
     fn reply_target_must_be_in_the_same_discussion_and_earlier() {
         let discussion = RequestDiscussion {
             id: "discussion".to_string(),
             request_id: "request".to_string(),
             opened_position: 1,
             last_activity_position: 1,
-            author_user_id: Some("author".to_string()),
+            author: RequestDiscussionAuthor::User("author".to_string()),
             body_markdown: "Thread".to_string(),
             anchor: None,
             status: RequestDiscussionStatus::Open,
             client_discussion_id: "client".to_string(),
             created_at_unix: 1,
             resolved_at_unix: None,
-            resolved_by_user_id: None,
+            resolved_by: None,
         };
         let parent = RequestDiscussionReply {
             id: "parent".to_string(),
             discussion_id: discussion.id.clone(),
             position: 2,
-            author_user_id: Some("author".to_string()),
+            author: RequestDiscussionAuthor::User("author".to_string()),
             body_markdown: "Parent".to_string(),
             reply_to_reply_id: None,
             client_reply_id: "client-parent".to_string(),
@@ -652,14 +625,14 @@ mod tests {
             request_id: "request".to_string(),
             opened_position: 1,
             last_activity_position: 1,
-            author_user_id: Some("author".to_string()),
+            author: RequestDiscussionAuthor::User("author".to_string()),
             body_markdown: "Other".to_string(),
             anchor: None,
             status: RequestDiscussionStatus::Open,
             client_discussion_id: "other-client".to_string(),
             created_at_unix: 1,
             resolved_at_unix: None,
-            resolved_by_user_id: None,
+            resolved_by: None,
         };
         assert_eq!(
             validate_reply_target(&other, Some(&parent), "other", Some("parent"), 3)

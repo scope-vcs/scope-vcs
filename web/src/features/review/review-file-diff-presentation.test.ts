@@ -3,7 +3,6 @@ import test from 'node:test'
 import type { ReviewFileDiff } from '../../api/types'
 import {
   reviewFileDiffEmptyLabel,
-  reviewFileDiffOmittedLabel,
 } from './review-file-diff-presentation'
 
 function emptyDiff(overrides: Partial<ReviewFileDiff> = {}): ReviewFileDiff {
@@ -30,13 +29,5 @@ test('preserves zero-hunk and mode-only labels', () => {
   assert.equal(
     reviewFileDiffEmptyLabel(emptyDiff({ kind: 'Deleted', new_mode: null })),
     'Empty file deleted',
-  )
-})
-
-test('uses a bounded omission message rather than an error state', () => {
-  assert.equal(reviewFileDiffOmittedLabel('input'), 'Diff is too large to render')
-  assert.equal(
-    reviewFileDiffOmittedLabel('output'),
-    'Rendered diff is too large to display',
   )
 })

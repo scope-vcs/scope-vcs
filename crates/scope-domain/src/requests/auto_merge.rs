@@ -109,6 +109,8 @@ pub enum RequestAutoMergeWaitingReason {
     CheckEvaluationMissing,
     ChecksAwaitingApproval,
     ChecksPending,
+    ReviewsPending,
+    ReviewFindingsOpen,
     WaitingForParent,
 }
 
@@ -118,6 +120,8 @@ impl RequestAutoMergeWaitingReason {
             Self::CheckEvaluationMissing => "Waiting for CI evaluation",
             Self::ChecksAwaitingApproval => "Waiting for CI approval",
             Self::ChecksPending => "Waiting for CI to finish",
+            Self::ReviewsPending => "Waiting for required review bots to finish",
+            Self::ReviewFindingsOpen => "Waiting for review bot discussions to be resolved",
             Self::WaitingForParent => "Waiting for the parent request to land",
         }
     }
@@ -162,6 +166,12 @@ pub fn request_auto_merge_readiness(gate: super::MergeGateDecision) -> RequestAu
         RequestMergeabilityStatus::ChecksPending
         | RequestMergeabilityStatus::RepositoryNotReady => {
             RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::ChecksPending)
+        }
+        RequestMergeabilityStatus::ReviewsPending => {
+            RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::ReviewsPending)
+        }
+        RequestMergeabilityStatus::ReviewFindingsOpen => {
+            RequestAutoMergeReadiness::Waiting(RequestAutoMergeWaitingReason::ReviewFindingsOpen)
         }
         RequestMergeabilityStatus::ChecksFailed => {
             RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::ChecksFailed)

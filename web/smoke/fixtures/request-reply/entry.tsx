@@ -12,9 +12,9 @@ Object.assign(window, { calls })
 
 const params = { owner: 'dev', repo: 'demo', request_id: 'request' }
 const live = { repo: { id: 'repo', owner_handle: 'dev', name: 'demo', views: [{ id: 'public', name: 'Public', includes: [], readers: 'anyone' as const }, { id: 'private', name: 'Private', includes: 'all' as const, readers: 'assigned' as const }], access: { actor: 'Owner', view: 'private' } } } as RepoLiveState
-const viewer = { handle: 'viewer', id: 'viewer' }
+const viewer = { kind: 'user' as const, handle: 'viewer', id: 'viewer' }
 const reply = (id: string, handle: string, body: string, position: number): RequestDiscussionReply => ({
-  author: { handle, id: handle } as RequestDiscussionReply['author'],
+  author: { kind: 'user', handle, id: handle },
   body_markdown: body,
   created_at_unix: 1,
   discussion_id: 'discussion',
@@ -22,9 +22,16 @@ const reply = (id: string, handle: string, body: string, position: number): Requ
   position,
   reply_to: null,
 })
+const bot = (comment: number) => ({
+  kind: 'github' as const,
+  account: { account_type: 'bot' as const, avatar_url: null, github_user_id: 9, login: 'greptile-apps[bot]' },
+  source_url: `https://github.com/octo/demo/pull/1#discussion_r${comment}`,
+})
 const replies = [
   reply('reply-alice', 'alice', 'Cap retries at five.', 2),
   reply('reply-bob', 'bob', 'Cap retries at three.', 3),
+  { ...reply('reply-bot-201', 'bot', 'The retry loop never backs off.', 4), author: bot(201) },
+  { ...reply('reply-bot-202', 'bot', 'The cap is read before it is set.', 5), author: bot(202) },
 ]
 const discussion = {
   anchor: null,
@@ -53,7 +60,7 @@ async function createReply(input: CreateReplyInput) {
   return {
     discussion: { ...discussion, reply_count: replies.length + 1 },
     reply: {
-      ...reply(input.client_reply_id, viewer.handle, input.body_markdown, 4),
+      ...reply(input.client_reply_id, viewer.handle, input.body_markdown, 6),
       reply_to: quoted ? { author: quoted.author, body_markdown: quoted.body_markdown, id: quoted.id, position: quoted.position } : null,
     },
   }

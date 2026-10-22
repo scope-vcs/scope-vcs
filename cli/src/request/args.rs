@@ -280,10 +280,49 @@ pub(super) struct RequestDiscussionStartArgs {
     #[arg(
         long,
         value_name = "PATH",
-        requires = "commit",
-        help = "File within the referenced revision"
+        requires = "revision",
+        help = "Changed file in the commit, or in the revision's whole request diff"
     )]
     pub(super) path: Option<String>,
+    #[arg(
+        long,
+        value_name = "SIDE",
+        requires = "line",
+        default_value = "new",
+        help = "Diff side of the lines: old is the base, new is the head"
+    )]
+    pub(super) side: DiffSideArg,
+    #[arg(
+        long,
+        value_name = "N",
+        requires = "path",
+        value_parser = clap::value_parser!(u32).range(1..),
+        help = "Last line of the referenced range, or the only line"
+    )]
+    pub(super) line: Option<u32>,
+    #[arg(
+        long,
+        value_name = "M",
+        requires = "line",
+        value_parser = clap::value_parser!(u32).range(1..),
+        help = "First line of a multi-line range"
+    )]
+    pub(super) start_line: Option<u32>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
+pub(super) enum DiffSideArg {
+    Old,
+    New,
+}
+
+impl From<DiffSideArg> for scope_api_contract::RequestDiffSide {
+    fn from(side: DiffSideArg) -> Self {
+        match side {
+            DiffSideArg::Old => Self::Old,
+            DiffSideArg::New => Self::New,
+        }
+    }
 }
 
 #[derive(Parser)]

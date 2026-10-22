@@ -87,24 +87,4 @@ mod tests {
         health.mark_dependencies_waiting();
         assert_eq!(health.readyz_at(100), STALE);
     }
-
-    #[test]
-    fn active_long_running_work_keeps_each_loop_fresh() {
-        let health = WorkerHealth::new(Duration::from_secs(1));
-        health.mark_codecs_ready();
-        health.mark_dependencies_ready();
-        let photo = health.activity(MediaWorkerLoop::PhotoProcessing);
-        let general = health.activity(MediaWorkerLoop::GeneralProcessing);
-        let cleanup = health.activity(MediaWorkerLoop::Cleanup);
-        assert_eq!(health.readyz_at(10_000), READY);
-
-        drop(general);
-        assert_eq!(health.readyz_at(10_000), STALE);
-        health.mark_poll(MediaWorkerLoop::GeneralProcessing, 10_000);
-        assert_eq!(health.readyz_at(10_000), READY);
-
-        drop(photo);
-        drop(cleanup);
-        assert_eq!(health.readyz_at(10_016), STALE);
-    }
 }

@@ -1,0 +1,38 @@
+let properties := {}
+for (let key, value in event.properties ?? {}) {
+    if (key != '$ip'
+        and key != '$set' and key != '$set_once' and key != '$unset'
+        and (key == '$geoip_disable' or not startsWith(key, '$geoip_'))
+        and not startsWith(key, '$initial_geoip_')) {
+        properties[key] := value
+    }
+}
+let result := event
+result.properties := properties
+if (event.properties?.source != 'browser'
+    or event.properties?.$geoip_disable != false
+    or empty(event.properties?.$ip)) {
+    return result
+}
+let location := geoipLookup(event.properties.$ip)
+if (not location) {
+    return result
+}
+if (location.country) {
+    result.properties.$geoip_country_name := location.country.names?.en
+    result.properties.$geoip_country_code := location.country.isoCode
+}
+if (location.city) {
+    result.properties.$geoip_city_name := location.city.names?.en
+}
+if (location.subdivisions) {
+    let first := true
+    for (let index, subdivision in location.subdivisions) {
+        if (first) {
+            result.properties.$geoip_subdivision_1_name := subdivision.names?.en
+            result.properties.$geoip_subdivision_1_code := subdivision.isoCode
+            first := false
+        }
+    }
+}
+return result

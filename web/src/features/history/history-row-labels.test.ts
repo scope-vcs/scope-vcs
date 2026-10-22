@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  compactHistorySourceId,
   historyEntryLabels,
   historyRowLabels,
 } from './history-row-labels'
@@ -85,11 +84,6 @@ test('labels repository history entries by their actual update kind', () => {
     kind: 'Views',
     title: 'Ship the history page',
   })
-})
-
-test('compacts reviewed push ids and keeps other source ids whole', () => {
-  assert.equal(compactHistorySourceId(`rv_push_${'2f91a73cf8bd'.padEnd(40, '1')}`), '2f91a73cf8bd')
-  assert.equal(compactHistorySourceId('visibility_59'), 'visibility_59')
 })
 
 function commit(logicalCommitId: string, message: string, changeCount = 3) {

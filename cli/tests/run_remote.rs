@@ -47,28 +47,34 @@ fn run_discovery_and_history_work_without_a_checkout_and_preserve_pagination() {
             Json(serde_json::json!({"runs":[],"next_cursor":"v2:42:checks"}))
         })));
     let dir = TempDir::new("run-remote");
-    for args in [
-        vec!["run", "workflows"],
-        vec![
-            "run",
-            "list",
-            "--workflow",
-            "checks",
-            "--limit",
-            "2",
-            "--after",
-            "v2:99:checks",
-        ],
-    ] {
+    let run = |args: &[&str]| {
         let output = server.command(&dir).args(args).output().unwrap();
         assert!(
             output.status.success(),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let data: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert!(data["command"].as_str().unwrap().starts_with("run."));
-    }
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+
+    let workflows = run(&["run", "workflows"]);
+    assert_eq!(workflows["command"], "run.workflows");
+    assert_eq!(workflows["result"]["workflows"][0]["key"], "checks");
+    assert_eq!(workflows["result"]["native_runs_available"], true);
+
+    let history = run(&[
+        "run",
+        "list",
+        "--workflow",
+        "checks",
+        "--limit",
+        "2",
+        "--after",
+        "v2:99:checks",
+    ]);
+    assert_eq!(history["command"], "run.list");
+    assert_eq!(history["result"]["runs"], serde_json::json!([]));
+    assert_eq!(history["result"]["next_cursor"], "v2:42:checks");
 }
 
 #[test]

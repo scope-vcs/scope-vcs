@@ -49,13 +49,3 @@ test('the picker stays hidden when the reader has a single view', () => {
   }))
   assert.equal(html, '')
 })
-
-test('the picker trigger names the selected view it is viewing as', () => {
-  const html = renderToStaticMarkup(createElement(ViewingAsPicker, {
-    onChange: () => undefined,
-    options: views.readableBy('private'),
-    value: 'agent',
-  }))
-  const trigger = html.match(/<button[^>]*aria-haspopup="menu"[^>]*>([\s\S]*?)<\/button>/)?.[1] ?? ''
-  assert.equal(trigger.replace(/<[^>]+>/g, ''), 'Viewing as Agent')
-})

@@ -71,6 +71,7 @@ pub struct RepositoryFacts {
 
 mod auth;
 mod collaboration;
+mod github_accounts;
 mod history;
 mod jobs;
 mod read_models;
@@ -86,6 +87,7 @@ pub use auth::{
 pub use collaboration::{
     repository_invite, repository_invite_email, repository_invite_link, repository_member,
 };
+pub use github_accounts::{AuthorColumns, discussion_author, github_account};
 pub use history::{
     file_change, live_file, logical_commit, object_reference, visibility_change,
     visibility_change_set,

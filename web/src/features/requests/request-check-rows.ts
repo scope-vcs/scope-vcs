@@ -1,4 +1,10 @@
-import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
+import type {
+  RequestCheckResponse,
+  RequestChecksResponse,
+  RequestGitHubPullRequestResponse,
+  RequestReviewBotResponse,
+  RequestReviewBotState,
+} from '@/api/types.generated'
 import { githubRunResult } from '../runs/github-run-status'
 import { runJobPanelId } from '../runs/run-job-ids'
 import { type RunTone, runStatus } from '../runs/run-status'
@@ -12,12 +18,14 @@ export type RequestCheckRow = {
   parents: string[]
   state: string
   tone: RunTone
-  label: string
+  reason: string | null
   run: { id: string; hash?: string } | null
 }
 
+type RequestChecksStatus = { tone: RunTone; text: string }
+
 type RequestChecksSummary = {
-  lead: { state: 'failed' | 'running' | 'succeeded'; text: string } | null
+  status: RequestChecksStatus | null
   counts: string | null
   startError: { text: string; failed: boolean } | null
   attention: RequestCheckRow[]
@@ -34,7 +42,7 @@ function requestCheckRow(check: RequestCheckResponse): RequestCheckRow {
       null,
       check.workflow_name,
       check.run_state === 'canceled' ? 'failed' : check.run_state ?? 'pending',
-      check.run_state ? runStatus(check.run_state).label : 'not started',
+      runStatus(check.run_state ?? 'pending').label,
       check.run_id ? { id: check.run_id } : null,
     )
   }
@@ -65,33 +73,76 @@ export function requestChecksSummary(checks: RequestChecksResponse): RequestChec
   const passed = count('success')
   const skipped = count('inert')
 
+  const part = (total: number, tone: RunTone, text: string): RequestChecksStatus[] => total ? [{ tone, text }] : []
+  const tally = [
+    ...part(failed, 'danger', `${failed} failed`),
+    ...part(left, 'running', failed ? `${left} left` : `${left} of ${all.length - skipped} left`),
+    ...part(passed, 'success', `${passed} passed`),
+    ...part(skipped, 'inert', `${skipped} skipped`),
+  ]
+
   const push = checks.github_push
-  const lead: RequestChecksSummary['lead'] = checks.state !== 'started'
+  const status: RequestChecksStatus | null = checks.state !== 'started'
     ? null
     : push?.state === 'failed'
-      ? { state: 'failed', text: 'CI couldn’t start' }
+      ? { tone: 'danger', text: 'Couldn’t start' }
       : push?.state === 'sending'
-        ? { state: 'running', text: 'Starting CI' }
-        : failed
-          ? { state: 'failed', text: 'CI failed' }
-          : left
-            ? { state: 'running', text: 'CI running' }
-            : passed || skipped
-              ? { state: 'succeeded', text: 'CI passed' }
-              : null
-  const counts = [
-    failed ? `${failed} failed` : null,
-    left ? failed ? `${left} left` : `${left} of ${all.length - skipped} left` : null,
-    passed ? `${passed} passed` : null,
-    skipped ? `${skipped} skipped` : null,
-  ].filter(Boolean)
+        ? { tone: 'running', text: 'Starting' }
+        : tally[0] ?? null
+  const counts = tally.filter((part) => part !== status).map((part) => part.text)
   const startError = push?.error && (push.state === 'failed' || push.state === 'sending')
     ? push.state === 'failed'
       ? { text: push.error, failed: true }
       : { text: `The last attempt failed: ${push.error}`, failed: false }
     : null
 
-  return { lead, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
+  return { status, counts: counts.length ? counts.join(' · ') : null, startError, attention, all }
+}
+
+export type RequestPullRequestView = {
+  text: string
+  url: string | null
+  note: { text: string; failed: boolean } | null
+}
+
+export function requestPullRequestView(
+  pullRequest: RequestGitHubPullRequestResponse | null,
+): RequestPullRequestView | null {
+  if (!pullRequest) return null
+  const named = pullRequest.number === null ? null : `Pull request #${pullRequest.number} on GitHub`
+  const url = named ? pullRequest.url : null
+  const error = pullRequest.error
+  switch (pullRequest.state) {
+    case 'opening':
+      return {
+        text: 'Opening a pull request on GitHub',
+        url: null,
+        note: error ? { text: `The last attempt failed: ${error}`, failed: false } : null,
+      }
+    case 'open':
+      return { text: named ?? 'Pull request on GitHub', url, note: null }
+    case 'closed':
+      return { text: `${named ?? 'Pull request on GitHub'} · closed`, url, note: null }
+    case 'closed_on_github':
+      return { text: `${named ?? 'Pull request on GitHub'} · closed on GitHub`, url, note: null }
+    case 'failed':
+      return {
+        text: named ? `${named} is out of step` : 'Scope couldn’t open a pull request on GitHub',
+        url,
+        note: error ? { text: error, failed: true } : null,
+      }
+  }
+}
+
+const REVIEW_BOT_STATES = {
+  not_started: { label: 'Not started', tone: 'inert' },
+  working: { label: 'Reviewing', tone: 'running' },
+  commented: { label: 'Finished with comments', tone: 'waiting' },
+  clear: { label: 'Finished, nothing found', tone: 'success' },
+} as const satisfies Record<RequestReviewBotState, { label: string; tone: RunTone }>
+
+export function requestReviewBotRows(bots: RequestReviewBotResponse[]) {
+  return bots.map((bot) => ({ login: bot.login, required: bot.required, ...REVIEW_BOT_STATES[bot.state] }))
 }
 
 type RequestCheckGroup =
@@ -140,5 +191,7 @@ function row(
 ): RequestCheckRow {
   const parts = name.split(' / ')
   const leaf = parts.pop()!
-  return { key, provider, workflow, name, leaf, parents: parts, state, tone: runStatus(state).tone, label, run }
+  const tone = runStatus(state).tone
+  const reason = tone === 'danger' && label !== 'failed' ? label : null
+  return { key, provider, workflow, name, leaf, parents: parts, state, tone, reason, run }
 }
