@@ -220,7 +220,13 @@ async fn ensure_may_carry(
         .ok_or_else(|| JobFailure::GiveUp("Scope no longer has this request.".to_string()))?;
     let refreshed;
     let connection = if carries_private_request(&request) {
-        refreshed = refresh_github_visibility(state, connection).await?;
+        refreshed = refresh_github_visibility(state, connection)
+            .await?
+            .ok_or_else(|| {
+                JobFailure::Retry(
+                    "The Scope GitHub App can no longer reach this GitHub repository.".to_string(),
+                )
+            })?;
         &refreshed
     } else {
         connection

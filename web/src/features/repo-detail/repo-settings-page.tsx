@@ -3,6 +3,7 @@ import type {
   RepoInviteInput,
   DeleteRepoMemberInput,
   RepoParams,
+  SetRepoGitHubMainPublicationInput,
   SetRepoGitHubRequiredChecksInput,
   SetRepoGitHubReviewBotsInput,
   SetRepoGitHubReviewBotPullRequestsInput,
@@ -58,6 +59,7 @@ export function RepoSettingsPage({
   disconnectGitHub,
   github,
   params,
+  setGitHubMainPublication,
   setGitHubRequiredChecks,
   setGitHubReviewBots,
   setGitHubReviewBotPullRequests,
@@ -85,6 +87,9 @@ export function RepoSettingsPage({
   disconnectGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
   params: RepoParams
+  setGitHubMainPublication: (
+    input: SetRepoGitHubMainPublicationInput,
+  ) => Promise<GitHubConnectionResponse>
   setGitHubRequiredChecks: (
     input: SetRepoGitHubRequiredChecksInput,
   ) => Promise<GitHubConnectionResponse>
@@ -202,6 +207,7 @@ export function RepoSettingsPage({
           confirmPublic={() => confirmPublicGitHub(params)}
           disconnect={() => disconnectGitHub(params)}
           github={github}
+          setMainPublication={(enabled) => setGitHubMainPublication({ ...params, enabled })}
           setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
           setReviewBots={(logins) => setGitHubReviewBots({
             ...params,

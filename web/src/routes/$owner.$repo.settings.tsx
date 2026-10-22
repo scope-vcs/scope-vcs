@@ -19,6 +19,7 @@ import {
 import {
   confirmRepoGitHubPublicForRequest,
   disconnectRepoGitHubForRequest,
+  setRepoGitHubMainPublicationForRequest,
   setRepoGitHubRequiredChecksForRequest,
   setRepoGitHubReviewBotsForRequest,
   setRepoGitHubReviewBotPullRequestsForRequest,
@@ -28,6 +29,7 @@ import {
   startRepoGitHubSetupCheckForRequest,
 } from '@/api/github'
 import {
+  parseSetRepoGitHubMainPublicationInput,
   parseSetRepoGitHubRequiredChecksInput,
   parseSetRepoGitHubReviewBotsInput,
   parseSetRepoGitHubReviewBotPullRequestsInput,
@@ -71,6 +73,10 @@ const disconnectRepoGitHub = createServerFn({ method: 'POST' })
 const confirmRepoGitHubPublic = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
   .handler(({ data }) => confirmRepoGitHubPublicForRequest(data))
+
+const setRepoGitHubMainPublication = createServerFn({ method: 'POST' })
+  .validator(parseSetRepoGitHubMainPublicationInput)
+  .handler(({ data }) => setRepoGitHubMainPublicationForRequest(data))
 
 const setRepoGitHubRequiredChecks = createServerFn({ method: 'POST' })
   .validator(parseSetRepoGitHubRequiredChecksInput)
@@ -218,6 +224,11 @@ function RepoSettingsRoute() {
               return github
             }}
             github={settings?.github ?? null}
+            setGitHubMainPublication={async (data) => {
+              const github = await setRepoGitHubMainPublication({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
             setGitHubRequiredChecks={async (data) => {
               const github = await setRepoGitHubRequiredChecks({ data })
               if (scope) retainGitHubConnection(scope, github)

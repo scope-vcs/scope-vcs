@@ -22,6 +22,7 @@ fn connection() -> GitHubConnection {
             open_pull_requests: true,
             review_request_comment: None,
         },
+        publishes_main: false,
     }
 }
 

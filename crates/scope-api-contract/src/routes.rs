@@ -54,6 +54,8 @@ routes! {
             => "repoGitHubPublicConfirmation";
         REPO_GITHUB_SETUP_CHECK = "/v1/repos/{owner}/{repo}/github/setup-check"
             => "repoGitHubSetupCheck";
+        REPO_GITHUB_MAIN_PUBLICATION = "/v1/repos/{owner}/{repo}/github/main-publication"
+            => "repoGitHubMainPublication";
         REPO_GITHUB_WORKFLOW_RUNS = "/v1/repos/{owner}/{repo}/github/workflow-runs"
             => "repoGitHubWorkflowRuns";
         REPO_GITHUB_WORKFLOW_NAMES = "/v1/repos/{owner}/{repo}/github/workflow-names"

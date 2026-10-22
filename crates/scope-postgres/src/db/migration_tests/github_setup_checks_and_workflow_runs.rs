@@ -17,6 +17,9 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
         INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
             VALUES ('push_1','owner/one',NULL,'refs/heads/scope/setup-check',1,7,42,'octo/one',
                     repeat('a',40),'push','queued',0,10,10,10);
+        INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
+            VALUES ('push_main','owner/one',NULL,'refs/heads/main',1,7,42,'octo/one',
+                    repeat('a',40),'push','queued',0,10,10,10);
         INSERT INTO scope_github_setup_checks (repo_id,github_repository_id,commit_oid,state,
             started_at_unix)
             VALUES ('owner/one',42,repeat('a',40),'waiting',10);
@@ -36,9 +39,19 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
     for invalid in [
         format!(
             "INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
-                VALUES ('push_2','owner/one',NULL,'refs/heads/main',1,7,42,'octo/one',
+                VALUES ('push_2','owner/one',NULL,'refs/heads/main',2,7,42,'octo/one',
+                        NULL,'delete','queued',0,10,10,10)"
+        ),
+        format!(
+            "INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
+                VALUES ('push_2','owner/one',NULL,'refs/heads/other',1,7,42,'octo/one',
                         repeat('a',40),'push','queued',0,10,10,10)"
         ),
+        "INSERT INTO scope_github_connections (repo_id,installation_id,github_repository_id,
+            github_full_name,connected_at_unix,status,disconnect_reason,disconnected_at_unix,
+            publishes_main)
+            VALUES ('owner/one',7,42,'octo/one',10,'Disconnected','AppUninstalled',20,true)"
+            .to_string(),
         format!(
             "INSERT INTO scope_github_pushes ({PUSH_COLUMNS})
                 VALUES ('push_2','owner/one','req_1','refs/heads/scope/setup-check',2,7,42,
@@ -62,7 +75,7 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
         .await
         .unwrap();
     for (table, kept) in [
-        ("scope_github_pushes", 1),
+        ("scope_github_pushes", 2),
         ("scope_github_setup_checks", 0),
         ("scope_github_workflow_runs", 0),
         ("scope_github_check_runs", 0),
