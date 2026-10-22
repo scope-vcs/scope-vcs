@@ -226,3 +226,41 @@ async fn a_conflicting_merge_fails_alone_and_the_rest_of_its_batch_lands() {
         );
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_merge_whose_caller_disconnected_still_announces_its_change() {
+    let landing = DisjointRequests::open("disconnected-merge", &["left"]).await;
+    let mut events = landing.state.repo_events.subscribe(TEST_REPO_ID);
+    let turn = landing
+        .state
+        .metadata
+        .repositories()
+        .acquire_merge_turn(TEST_REPO_ID)
+        .await
+        .unwrap();
+    let caller = landing
+        .queue_behind_held_turn(&landing.request_ids)
+        .await
+        .pop()
+        .unwrap();
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    turn.release().await;
+
+    tokio::time::timeout(Duration::from_secs(30), events.recv())
+        .await
+        .expect("the landed merge must announce its repository change")
+        .unwrap();
+    assert_eq!(
+        landing
+            .state
+            .metadata
+            .requests()
+            .request_by_id(&landing.request_ids[0])
+            .await
+            .unwrap()
+            .unwrap()
+            .state(),
+        scope_domain::requests::RequestState::Merged
+    );
+}

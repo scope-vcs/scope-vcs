@@ -7,7 +7,8 @@ use super::{
     retries_preparation,
 };
 use crate::{
-    error::ApiError, git::pool_pack::StagedPoolPack, persistence::unix_now, state::AppState,
+    error::ApiError, git::pool_pack::StagedPoolPack, persistence::unix_now,
+    repo_events::RepoChangeReason, state::AppState,
 };
 use scope_domain::{
     repository::{Repository, RepositoryIncarnation},
@@ -17,6 +18,7 @@ use scope_postgres::{
     db::{MergeRequestContentCommand, MergeRequestContentsOutcome},
     error::{PostgresError, PostgresErrorKind},
 };
+use scope_product_analytics::ProductEvent;
 use std::{
     collections::{HashMap, VecDeque},
     sync::{Arc, Mutex, PoisonError},
@@ -33,7 +35,6 @@ pub(crate) struct MergeCommitter {
 pub(super) struct LandedMerge {
     pub(super) request: Request,
     pub(super) main_oid: String,
-    pub(super) change_version: u64,
 }
 
 pub(super) struct MergeSubmission {
@@ -41,6 +42,7 @@ pub(super) struct MergeSubmission {
     pub(super) request: Request,
     pub(super) incarnation: RepositoryIncarnation,
     pub(super) merged_event_id: String,
+    pub(super) analytics_event: ProductEvent,
 }
 
 struct QueuedMerge {
@@ -402,6 +404,8 @@ async fn persist_batch(
         },
     };
     let mut persisting = persisting.into_iter();
+    let mut landed_in = None;
+    let mut landed_replies = Vec::new();
     for (mutation, persisted) in landed.into_iter().zip(persisting.by_ref()) {
         let command = &persisted.merge.submission.command;
         crate::use_cases::git_receive::best_effort_sync_cache(
@@ -415,11 +419,42 @@ async fn persist_batch(
         )
         .await;
         persisted.staged_pack.finish(state).await;
-        persisted.merge.answer(Ok(LandedMerge {
-            request: mutation.request.request,
-            main_oid: mutation.git_head.head_oid,
-            change_version: mutation.git_head.change_version,
-        }));
+        state
+            .publish_repo_change(
+                &persisted.incarnation,
+                mutation.git_head.change_version,
+                RepoChangeReason::RequestMerged,
+            )
+            .await;
+        landed_in.get_or_insert_with(|| {
+            (
+                persisted.incarnation.clone(),
+                command.owner.clone(),
+                command.repo_name.clone(),
+            )
+        });
+        let QueuedMerge {
+            submission, reply, ..
+        } = persisted.merge;
+        state.product_analytics.capture(submission.analytics_event);
+        landed_replies.push((
+            reply,
+            LandedMerge {
+                request: mutation.request.request,
+                main_oid: mutation.git_head.head_oid,
+            },
+        ));
+    }
+    if let Some((incarnation, owner, repo_name)) = landed_in {
+        state
+            .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
+            .await;
+        crate::use_cases::request_checks::renew_stale_check_commits_in_background(
+            state, &owner, &repo_name,
+        );
+    }
+    for (reply, landed) in landed_replies {
+        let _ = reply.send(Ok(landed));
     }
     let mut retry = Vec::new();
     if let Some(error) = rejected

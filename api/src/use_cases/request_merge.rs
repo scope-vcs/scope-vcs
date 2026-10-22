@@ -2,7 +2,6 @@ use crate::{
     error::ApiError,
     git::{import::ReceivePackUpdate, pool_pack::StagedPoolPack, repository_git::RepositoryGit},
     operation_analytics::ObservedOperation,
-    repo_events::RepoChangeReason,
     state::AppState,
 };
 use scope_domain::{
@@ -113,11 +112,11 @@ pub(crate) async fn merge_request_inner(
             request,
             incarnation: incarnation.clone(),
             merged_event_id,
+            analytics_event,
         },
     )
     .await?;
 
-    state.product_analytics.capture(analytics_event);
     let reader = crate::repo_access::find_read_access(
         state,
         &command.owner,
@@ -134,21 +133,6 @@ pub(crate) async fn merge_request_inner(
             .view_head(state, &access.view)
             .await?
     };
-    state
-        .publish_repo_change(
-            &incarnation,
-            landed.change_version,
-            RepoChangeReason::RequestMerged,
-        )
-        .await;
-    state
-        .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
-        .await;
-    crate::use_cases::request_checks::renew_stale_check_commits_in_background(
-        state,
-        &command.owner,
-        &command.repo_name,
-    );
     Ok(MergeRequestResult {
         main_oid,
         access,
