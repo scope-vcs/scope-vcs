@@ -4441,10 +4441,10 @@ LICENSE-MIT.md: text bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e
 LICENSE-ZLIB.md: text 943f36fd309fb5ea67a82f577433f4ed3bc877e5b00f9b874e2f8b7f72bf0bdc
 
 ==============================================================================
-tokio 1.54.0
+tokio 1.54.1
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/tokio/tokio-1.54.0.crate
+Source: https://static.crates.io/crates/tokio/tokio-1.54.1.crate
 
 Published author metadata: ["Tokio Contributors <team@tokio.rs>"]
 Repository: "https://github.com/tokio-rs/tokio"
