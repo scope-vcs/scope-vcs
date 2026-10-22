@@ -463,7 +463,7 @@ async fn complete_main_push(
     Ok(())
 }
 
-async fn best_effort_sync_cache(
+pub(crate) async fn best_effort_sync_cache(
     state: &AppState,
     owner: &str,
     repo_name: &str,
