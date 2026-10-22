@@ -191,7 +191,7 @@ fn git_push_state_from_row(
     id: &str,
     user_id: &str,
 ) -> Result<GitPushState, PostgresError> {
-    let repo_row = entities::repository::Model::from_query_result(row, "r_")?;
+    let repo_row = PushRepositoryRow::from_query_result(row, "r_")?;
     let git_head = if joined(row, "h_repo_id")? {
         Some(entities::git_head::Model::from_query_result(row, "h_")?.try_into_domain()?)
     } else {
@@ -238,9 +238,31 @@ fn joined(row: &QueryResult, column: &str) -> Result<bool, PostgresError> {
     Ok(row.try_get::<Option<String>>("", column)?.is_some())
 }
 
+#[derive(FromQueryResult)]
+struct PushRepositoryRow {
+    incarnation_id: String,
+    owner_user_id: String,
+    publication_state: String,
+    change_version: i64,
+    content_version: i64,
+    repo_config: serde_json::Value,
+}
+
 fn git_push_state_columns() -> String {
+    use entities::repository::Column;
     [
-        prefixed_columns::<entities::repository::Column>("repo", "r_"),
+        [
+            Column::IncarnationId,
+            Column::OwnerUserId,
+            Column::PublicationState,
+            Column::ChangeVersion,
+            Column::ContentVersion,
+            Column::RepoConfig,
+        ]
+        .iter()
+        .map(|column| format!("repo.\"{0}\" AS \"r_{0}\"", column.as_str()))
+        .collect::<Vec<_>>()
+        .join(", "),
         prefixed_columns::<entities::git_head::Column>("head", "h_"),
         prefixed_columns::<entities::repository_member::Column>("member", "m_"),
     ]
