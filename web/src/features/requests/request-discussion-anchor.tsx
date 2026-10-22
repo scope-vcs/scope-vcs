@@ -3,6 +3,7 @@ import { GitCommit } from 'lucide-react'
 import { displayRouteFilePath } from '@/lib/route-file'
 import type { RequestDiscussion } from './request-discussion-types'
 import { shortOid } from '@/lib/short-oid'
+import { lineRangeLabel } from './request-changes-line-discussions'
 
 export function RequestDiscussionAnchor({
   anchor,
@@ -31,7 +32,12 @@ export function RequestDiscussionAnchor({
       to="/$owner/$repo/requests/$requestId/changes"
     >
       <GitCommit aria-hidden="true" className="size-3.5" />
-      <span aria-hidden="true" className="text-xs">rev {anchor.revision_position}</span>
+      <span aria-hidden="true" className="text-xs">
+        rev {anchor.revision_position}
+        {anchor.lines ? ` · L${lineSpan(anchor.lines)}` : null}
+        {anchor.latest?.kind === 'mapped' ? ` → L${lineSpan(anchor.latest)}` : null}
+        {anchor.latest?.kind === 'outdated' ? ' · outdated' : null}
+      </span>
     </Link>
   )
 }
@@ -43,5 +49,15 @@ function requestDiscussionAnchorLabel(
     ? ` at commit ${shortOid(anchor.commit_oid)}`
     : ''
   const path = anchor.path ? ` for ${displayRouteFilePath(anchor.path)}` : ''
-  return `View revision ${anchor.revision_position} changes${path}${commit}`
+  const lines = anchor.lines ? ` ${lineRangeLabel(anchor.lines)}` : ''
+  const latest = anchor.latest?.kind === 'outdated'
+    ? ', outdated on the latest revision'
+    : anchor.latest?.kind === 'mapped' && anchor.lines
+      ? `, now ${lineRangeLabel({ ...anchor.lines, start_line: anchor.latest.start_line, end_line: anchor.latest.end_line })} on the latest revision`
+      : ''
+  return `View revision ${anchor.revision_position} changes${path}${lines}${commit}${latest}`
+}
+
+function lineSpan(lines: { start_line: number; end_line: number }) {
+  return lines.start_line === lines.end_line ? `${lines.start_line}` : `${lines.start_line}-${lines.end_line}`
 }

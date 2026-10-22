@@ -18,6 +18,7 @@ const running: RequestChecksResponse = {
   request_id: 'req_1', head_oid: 'a'.repeat(40), state: 'started', message: null, can_approve: false,
   changes_github_workflows: false, private_request_on_public_github: true,
   github_push: { state: 'sent', branch: 'scope/requests/req_1', error: null },
+  github_pull_request: null,
   checks: [
     github('Check operations', 'in_progress', null, ciRun('31')),
     github('Check repository policy', 'completed', 'success', ciRun('32')),
@@ -49,6 +50,8 @@ function Request() {
     showState: (state: RequestChecksResponse['state']) => setChecks({
       ...running, state, checks: [], github_push: null, private_request_on_public_github: false,
     }),
+    showPullRequest: (github_pull_request: RequestChecksResponse['github_pull_request']) =>
+      setChecks((current) => ({ ...current, github_pull_request })),
     showApproval: () => setChecks({
       ...running, state: 'awaiting-approval', can_approve: true, changes_github_workflows: true,
     }),

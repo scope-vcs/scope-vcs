@@ -237,6 +237,11 @@ required_checks: Array<string>,
  */
 can_confirm_public: boolean,
 /**
+ * Whether the viewer may turn on publishing main: a maintainer who reads
+ * the full view and can change file visibility.
+ */
+can_publish_main: boolean,
+/**
  * The latest connection test, while the repository has a link.
  */
 setup_check: GitHubSetupCheckResponse | null,
@@ -266,9 +271,39 @@ public_on_github: boolean,
  * False while a repository that became public waits for a maintainer to
  * confirm; private requests are not sent there meanwhile.
  */
-public_confirmed: boolean, };
+public_confirmed: boolean,
+/**
+ * Whether Scope opens a GitHub pull request for each submitted
+ * full-view request so review bots on GitHub review it.
+ */
+open_review_bot_pull_requests: boolean,
+/**
+ * Posted on that pull request when Scope opens it and after each new
+ * head Scope pushes there.
+ */
+review_request_comment: string | null, main_publication: GitHubMainPublicationResponse, };
 
 export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonResponse, at_unix: number, };
+
+export type GitHubMainPublicationResponse = {
+/**
+ * Whether every change to Scope main is pushed to GitHub main, never forced.
+ */
+enabled: boolean,
+/**
+ * The latest push of main to this GitHub repository.
+ */
+latest: GitHubMainPushResponse | null, };
+
+export type GitHubMainPushResponse = { state: GitHubMainPushStateResponse, commit_oid: string,
+/**
+ * Why the latest attempt failed. A queued push with an error tries again.
+ */
+error: string | null, updated_at_unix: number, };
+
+export type GitHubMainPushStateResponse = "queued" | "running" | "succeeded" | "failed";
+
+export type SetGitHubMainPublicationRequest = { enabled: boolean, };
 
 export type GitHubDisconnectReasonResponse = "app_uninstalled" | "installation_suspended" | "repository_removed";
 
@@ -310,6 +345,10 @@ acknowledge_public: boolean,
 run_import_count: number, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
+
+export type SetGitHubReviewBotPullRequestsRequest = { enabled: boolean, };
+
+export type SetGitHubReviewRequestCommentRequest = { comment: string, };
 
 export type SetGitHubRunImportCountRequest = { count: number, };
 
@@ -596,6 +635,18 @@ export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch:
  */
 error: string | null, };
 
+export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "failed";
+
+export type RequestGitHubPullRequestResponse = { state: RequestGitHubPullRequestState,
+/**
+ * `None` until Scope opens or adopts the pull request.
+ */
+number: number | null, url: string | null,
+/**
+ * Only maintainers see what GitHub answered.
+ */
+error: string | null, };
+
 export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null,
 /**
  * The workflow run and job on Scope's run page that answer the
@@ -625,6 +676,11 @@ can_approve: boolean,
  * way there or waits for approval to go.
  */
 github_push: RequestGitHubPushResponse | null,
+/**
+ * Set when the repository opens pull requests for review bots and this
+ * request has one, or Scope is opening one.
+ */
+github_pull_request: RequestGitHubPullRequestResponse | null,
 /**
  * Whether approving would run workflow files this request changes. Only
  * worked out for a viewer who can approve GitHub checks.
@@ -668,9 +724,31 @@ export type RequestDiscussionSummaryResponse = { id: string, request_id: string,
  */
 author: RequestActorSummaryResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null, resolved_by: RequestActorSummaryResponse | null, };
 
-export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null, path: string | null, };
+export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null,
+/**
+ * The changed path; with a commit it is in that commit's diff, otherwise in the revision's whole-request diff.
+ */
+path: string | null, lines: RequestDiscussionLineRange | null,
+/**
+ * Where the lines sit on the request's latest revision; null unless the anchor has lines and a newer revision exists.
+ */
+latest: RequestDiscussionLatestPosition | null, };
 
-export type RequestDiscussionAnchorInput = { revision_id: string, commit_oid: string | null, path: string | null, };
+export type RequestDiscussionAnchorInput = { revision_id: string, commit_oid: string | null,
+/**
+ * A changed path; without a commit it must be changed by the revision's whole-request diff.
+ */
+path: string | null,
+/**
+ * Lines on one side of the path's diff; requires a path.
+ */
+lines: RequestDiscussionLineRange | null, };
+
+export type RequestDiffSide = "old" | "new";
+
+export type RequestDiscussionLineRange = { side: RequestDiffSide, start_line: number, end_line: number, };
+
+export type RequestDiscussionLatestPosition = { "kind": "mapped", revision_id: string, start_line: number, end_line: number, } | { "kind": "outdated", revision_id: string, };
 
 export type RequestRevisionCommitResponse = { oid: string, parent_oids: Array<string>, author: string | null, authored_at_unix: number, message: string, change_count: number, files: Array<CommitFileResponse>, files_truncated: boolean, };
 
@@ -792,8 +870,11 @@ export const ApiRouteTemplates = {
   repoGitHub: "/v1/repos/{owner}/{repo}/github",
   repoGitHubAuthorize: "/v1/repos/{owner}/{repo}/github/authorize",
   repoGitHubRequiredChecks: "/v1/repos/{owner}/{repo}/github/required-checks",
+  repoGitHubReviewBotPullRequests: "/v1/repos/{owner}/{repo}/github/review-bot-pull-requests",
+  repoGitHubReviewRequestComment: "/v1/repos/{owner}/{repo}/github/review-request-comment",
   repoGitHubPublicConfirmation: "/v1/repos/{owner}/{repo}/github/public-confirmation",
   repoGitHubSetupCheck: "/v1/repos/{owner}/{repo}/github/setup-check",
+  repoGitHubMainPublication: "/v1/repos/{owner}/{repo}/github/main-publication",
   repoGitHubWorkflowRuns: "/v1/repos/{owner}/{repo}/github/workflow-runs",
   repoGitHubWorkflowNames: "/v1/repos/{owner}/{repo}/github/workflow-names",
   repoGitHubWorkflowRun: "/v1/repos/{owner}/{repo}/github/workflow-runs/{run_id}",

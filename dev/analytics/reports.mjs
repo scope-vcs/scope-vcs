@@ -15,6 +15,17 @@ export function buildProductReports({ excludedUserIds = [], excludedRepositoryId
   })
 
   return [
+    report('browser-geography', 'Scope: browser pageviews by location',
+      'Browser pageviews in the last 30 days by approximate GeoIP country, region and city. Counts are pageviews, not unique people: anonymous IDs reset on each page load. Unknown locations remain visible to show missing coverage.', `
+SELECT coalesce(nullIf(properties.$geoip_country_name, ''), 'Unknown') AS country,
+  coalesce(nullIf(properties.$geoip_subdivision_1_name, ''), 'Unknown') AS region,
+  coalesce(nullIf(properties.$geoip_city_name, ''), 'Unknown') AS city,
+  count() AS pageviews
+FROM product_events
+WHERE event = '$pageview' AND properties.source = 'browser'
+  AND timestamp >= now() - INTERVAL 30 DAY
+GROUP BY country, region, city
+ORDER BY pageviews DESC, country, region, city`),
     report('activation', 'Scope: account to first push',
       'Users created 7–37 days ago; CLI authentication and first push must occur in order within 7 days of account creation. Latest 7 days excluded so the cohort has a full conversion window.', `,
   signups AS (

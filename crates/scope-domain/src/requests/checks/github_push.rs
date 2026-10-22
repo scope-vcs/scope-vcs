@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 const REQUEST_BRANCH_PREFIX: &str = "scope/requests/";
 const SETUP_CHECK_BRANCH: &str = "scope/setup-check";
+const MAIN_BRANCH: &str = "main";
 const RETRY_DELAYS_SECS: [u64; 4] = [30, 2 * 60, 10 * 60, 30 * 60];
 const WORKFLOWS_DIRECTORY: &str = ".github/workflows/";
 
@@ -11,12 +12,18 @@ const WORKFLOWS_DIRECTORY: &str = ".github/workflows/";
 pub enum GitHubBranch {
     Request(String),
     SetupCheck,
+    Main,
 }
+
+pub const GITHUB_MAIN_DIVERGED_MESSAGE: &str = "GitHub main has commits Scope does not have. \
+    Bring them into Scope main, or remove them from GitHub, before Scope publishes main again.";
 
 impl GitHubBranch {
     pub fn parse(branch: &str) -> Option<Self> {
-        if branch == SETUP_CHECK_BRANCH {
-            return Some(Self::SetupCheck);
+        match branch {
+            SETUP_CHECK_BRANCH => return Some(Self::SetupCheck),
+            MAIN_BRANCH => return Some(Self::Main),
+            _ => {}
         }
         branch
             .strip_prefix(REQUEST_BRANCH_PREFIX)
@@ -28,7 +35,12 @@ impl GitHubBranch {
         match self {
             Self::Request(request_id) => format!("{REQUEST_BRANCH_PREFIX}{request_id}"),
             Self::SetupCheck => SETUP_CHECK_BRANCH.to_string(),
+            Self::Main => MAIN_BRANCH.to_string(),
         }
+    }
+
+    pub fn owned_by_scope(&self) -> bool {
+        !matches!(self, Self::Main)
     }
 
     pub fn git_ref(&self) -> String {
@@ -59,6 +71,10 @@ impl GitHubPushDestination {
             github_repository_id: connection.github_repository_id,
             github_full_name: connection.github_full_name.clone(),
         }
+    }
+
+    pub fn for_main_publication(connection: &GitHubConnection) -> Option<Self> {
+        (connection.publishes_main && connection.is_connected()).then(|| Self::of(connection))
     }
 
     pub fn is_connected_through(&self, connection: &GitHubConnection) -> bool {

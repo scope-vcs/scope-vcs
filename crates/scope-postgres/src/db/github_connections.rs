@@ -1,6 +1,7 @@
 use super::{
     RepositoryStore, acquire_aggregate_lock,
-    entities::{decode_enum, encode_enum},
+    entities::{self, decode_enum, encode_enum},
+    github_pushes::queue_main_publication,
     github_run_imports::{
         delete_github_run_import, queue_github_run_import, save_run_import_count,
     },
@@ -13,15 +14,17 @@ use crate::error::PostgresError;
 use scope_domain::{
     github_connection::{
         ConnectGitHubRepository, GitHubConnection, GitHubConnectionStatus,
-        GitHubInstallationChange, GitHubRepositoryVisibility, acknowledge_public_github_repository,
-        connect_github_repository, disconnect_github_repository,
+        GitHubInstallationChange, GitHubRepositoryVisibility, GitHubReviewBotSettings,
+        acknowledge_public_github_repository, connect_github_repository,
+        disconnect_github_repository, set_github_main_publication, set_review_bot_pull_requests,
+        set_review_request_comment,
     },
     github_run_import::GitHubRunImport,
     repository::{RepositoryIncarnation, access::RepositoryAccessContext},
     requests::{GitHubBranch, GitHubPushDestination},
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, Statement,
+    ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, FromQueryResult, Statement,
     TransactionTrait, Value,
 };
 
@@ -33,7 +36,9 @@ const SELECT_CONNECTION: &str = "SELECT connection.repo_id, connection.installat
         connection.github_repository_id, connection.github_full_name,
         connection.connected_by_user_id, connected_by.handle AS connected_by_handle,
         connection.connected_at_unix, connection.status, connection.disconnect_reason,
-        connection.disconnected_at_unix, connection.github_visibility
+        connection.disconnected_at_unix, connection.github_visibility,
+        connection.open_review_bot_pull_requests, connection.review_request_comment,
+        connection.publishes_main
     FROM scope_github_connections connection
     LEFT JOIN scope_users connected_by ON connected_by.id = connection.connected_by_user_id";
 
@@ -55,6 +60,9 @@ struct ConnectionRow {
     disconnect_reason: Option<String>,
     disconnected_at_unix: Option<i64>,
     github_visibility: String,
+    open_review_bot_pull_requests: bool,
+    review_request_comment: Option<String>,
+    publishes_main: bool,
 }
 
 impl RepositoryStore {
@@ -124,8 +132,9 @@ impl RepositoryStore {
             "INSERT INTO scope_github_connections (repo_id, installation_id,
                 github_repository_id, github_full_name, connected_by_user_id,
                 connected_at_unix, status, disconnect_reason, disconnected_at_unix,
-                github_visibility)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                github_visibility, open_review_bot_pull_requests, review_request_comment,
+                publishes_main)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
              ON CONFLICT (repo_id) DO UPDATE SET
                 installation_id = EXCLUDED.installation_id,
                 github_repository_id = EXCLUDED.github_repository_id,
@@ -135,7 +144,10 @@ impl RepositoryStore {
                 status = EXCLUDED.status,
                 disconnect_reason = EXCLUDED.disconnect_reason,
                 disconnected_at_unix = EXCLUDED.disconnected_at_unix,
-                github_visibility = EXCLUDED.github_visibility",
+                github_visibility = EXCLUDED.github_visibility,
+                open_review_bot_pull_requests = EXCLUDED.open_review_bot_pull_requests,
+                review_request_comment = EXCLUDED.review_request_comment,
+                publishes_main = EXCLUDED.publishes_main",
             connection_values(&connection)?,
         ))
         .await
@@ -189,13 +201,51 @@ impl RepositoryStore {
         let (tx, context) = self
             .begin_github_change(repo_id, user_id, &["github-connection"])
             .await?;
-        let current = repository_github_connection(&tx, repo_id).await?;
+        let current = locked_repository_github_connection(&tx, repo_id).await?;
         let connection =
             acknowledge_public_github_repository(context.access.clone(), current.as_ref())?;
         save_visibility(&tx, &connection).await?;
         requeue_started_github_evaluations(&tx, &connection).await?;
         tx.commit().await?;
         Ok(context.incarnation())
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "set_github_main_publication"))]
+    pub async fn set_github_main_publication(
+        &self,
+        repo_id: &str,
+        user_id: &str,
+        enabled: bool,
+        now_unix: u64,
+    ) -> Result<(RepositoryIncarnation, bool), PostgresError> {
+        let (tx, context) = self
+            .begin_github_change(repo_id, user_id, &["github-connection"])
+            .await?;
+        let current = locked_repository_github_connection(&tx, repo_id).await?;
+        let connection = set_github_main_publication(
+            &context.access,
+            &context.views,
+            current.as_ref(),
+            enabled,
+        )?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE scope_github_connections SET publishes_main = $2 WHERE repo_id = $1",
+            [repo_id.into(), connection.publishes_main.into()],
+        ))
+        .await?;
+        let main_oid = entities::git_head::Entity::find_by_id(repo_id)
+            .one(&tx)
+            .await?
+            .map(entities::git_head::Model::try_into_domain)
+            .transpose()?
+            .map(|head| head.head_oid);
+        let queued = match main_oid {
+            Some(main_oid) => queue_main_publication(&tx, repo_id, &main_oid, now_unix).await?,
+            None => false,
+        };
+        tx.commit().await?;
+        Ok((context.incarnation(), queued))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "disconnect_github_repository"))]
@@ -263,12 +313,17 @@ impl RepositoryStore {
             tx.execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_github_connections
-                 SET status = 'Disconnected', disconnect_reason = $2, disconnected_at_unix = $3
+                 SET status = 'Disconnected', disconnect_reason = $2, disconnected_at_unix = $3,
+                     open_review_bot_pull_requests = $4, review_request_comment = $5,
+                     publishes_main = $6
                  WHERE repo_id = $1",
                 [
                     connection.repository_id.clone().into(),
                     encode_enum(reason)?.into(),
                     u64_to_i64(at_unix, "GitHub disconnection time")?.into(),
+                    connection.review_bots.open_pull_requests.into(),
+                    connection.review_bots.review_request_comment.clone().into(),
+                    connection.publishes_main.into(),
                 ],
             ))
             .await
@@ -280,6 +335,49 @@ impl RepositoryStore {
         }
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(changed)
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "set_github_review_bot_pull_requests"))]
+    pub async fn set_github_review_bot_pull_requests(
+        &self,
+        repo_id: &str,
+        user_id: &str,
+        enabled: bool,
+        now_unix: u64,
+    ) -> Result<RepositoryIncarnation, PostgresError> {
+        let (tx, context) = self
+            .begin_github_change(repo_id, user_id, &["github-connection"])
+            .await?;
+        let current = repository_github_connection(&tx, repo_id).await?;
+        let connection =
+            set_review_bot_pull_requests(context.access.clone(), current.as_ref(), enabled)?;
+        save_review_bots(&tx, &connection).await?;
+        if enabled {
+            super::github_pull_requests::queue_carriers_for_repository(&tx, repo_id, now_unix)
+                .await?;
+        } else {
+            super::github_pull_requests::fence_running_carriers(&tx, repo_id).await?;
+        }
+        tx.commit().await?;
+        Ok(context.incarnation())
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "set_github_review_request_comment"))]
+    pub async fn set_github_review_request_comment(
+        &self,
+        repo_id: &str,
+        user_id: &str,
+        comment: &str,
+    ) -> Result<RepositoryIncarnation, PostgresError> {
+        let (tx, context) = self
+            .begin_github_change(repo_id, user_id, &["github-connection"])
+            .await?;
+        let current = repository_github_connection(&tx, repo_id).await?;
+        let connection =
+            set_review_request_comment(context.access.clone(), current.as_ref(), comment)?;
+        save_review_bots(&tx, &connection).await?;
+        tx.commit().await?;
+        Ok(context.incarnation())
     }
 
     pub(super) async fn begin_github_change(
@@ -372,10 +470,31 @@ async fn save_visibility<C: ConnectionTrait>(
 ) -> Result<(), PostgresError> {
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "UPDATE scope_github_connections SET github_visibility = $2 WHERE repo_id = $1",
+        "UPDATE scope_github_connections SET github_visibility = $2, publishes_main = $3
+         WHERE repo_id = $1",
         [
             connection.repository_id.clone().into(),
             visibility_name(connection.visibility).into(),
+            connection.publishes_main.into(),
+        ],
+    ))
+    .await?;
+    Ok(())
+}
+
+async fn save_review_bots<C: ConnectionTrait>(
+    conn: &C,
+    connection: &GitHubConnection,
+) -> Result<(), PostgresError> {
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_github_connections
+            SET open_review_bot_pull_requests = $2, review_request_comment = $3
+          WHERE repo_id = $1",
+        [
+            connection.repository_id.clone().into(),
+            connection.review_bots.open_pull_requests.into(),
+            connection.review_bots.review_request_comment.clone().into(),
         ],
     ))
     .await?;
@@ -396,6 +515,19 @@ pub(super) async fn repository_github_connection<C: ConnectionTrait>(
     Ok(load_connection(conn, BY_REPO, [repo_id.into()])
         .await?
         .map(|read| read.connection))
+}
+
+async fn locked_repository_github_connection<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+) -> Result<Option<GitHubConnection>, PostgresError> {
+    Ok(load_connection(
+        conn,
+        &format!("{BY_REPO} FOR UPDATE OF connection"),
+        [repo_id.into()],
+    )
+    .await?
+    .map(|read| read.connection))
 }
 
 async fn connected_github_repository<C: ConnectionTrait>(
@@ -448,6 +580,9 @@ fn connection_values(connection: &GitHubConnection) -> Result<Vec<Value>, Postgr
         reason.into(),
         at_unix.into(),
         visibility_name(connection.visibility).into(),
+        connection.review_bots.open_pull_requests.into(),
+        connection.review_bots.review_request_comment.clone().into(),
+        connection.publishes_main.into(),
     ])
 }
 
@@ -505,8 +640,16 @@ impl ConnectionRow {
                         )));
                     }
                 },
+                review_bots: GitHubReviewBotSettings {
+                    open_pull_requests: self.open_review_bot_pull_requests,
+                    review_request_comment: self.review_request_comment,
+                },
+                publishes_main: self.publishes_main,
             },
             connected_by_handle: self.connected_by_handle,
         })
     }
 }
+
+#[cfg(test)]
+mod tests;

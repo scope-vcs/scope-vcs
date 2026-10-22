@@ -31,7 +31,7 @@ impl GitHubWorkflowRun {
     pub fn request_id(&self) -> Option<String> {
         match self.scope_branch()? {
             GitHubBranch::Request(request_id) => Some(request_id),
-            GitHubBranch::SetupCheck => None,
+            GitHubBranch::SetupCheck | GitHubBranch::Main => None,
         }
     }
 

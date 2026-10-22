@@ -8,7 +8,8 @@ use scope_domain::{
     account::UserAccount,
     content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     content_ref::ContentRef,
-    policy::{LabelRule, ScopePath},
+    history::FileChangeKind,
+    policy::{LabelRule, Policy, ScopePath},
     repository::{
         Repository,
         access::{RepositoryAccess, RepositoryAccessContext},
@@ -262,7 +263,7 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
 
 #[test]
 fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
-    use super::inspection::request_revision_commit_files;
+    use crate::use_cases::request_diff_file::{RequestDiffRange, select_request_diff_file};
 
     let directory = tempfile::tempdir().unwrap();
     let raw_repo = directory.path();
@@ -353,32 +354,29 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         assert_eq!(root_summary.change_count, 1);
         assert_eq!(root_summary.files_truncated, file_budget == 0);
     }
-    let files = request_revision_commit_files(
-        raw_repo,
-        &repo.policy,
-        repo.repo_config.views(),
-        owner_access.clone(),
-        &revision,
-        &root,
-    )
-    .unwrap();
-    assert_eq!(files.commit.files.len(), 1);
-    let file = &files.commit.files[0];
+    let root_path = ScopePath::parse("/root.txt").unwrap();
+    let views = repo.repo_config.views().clone();
+    let select = |policy: &Policy, access: &RepositoryAccess| {
+        select_request_diff_file(
+            raw_repo,
+            policy,
+            &views,
+            access,
+            &revision,
+            &RequestDiffRange::Commit(root.clone()),
+            &root_path,
+        )
+    };
+    let file = select(&repo.policy, &owner_access).unwrap().unwrap();
     assert_eq!(file.path, "root.txt");
     assert_eq!(file.old_oid, None);
     assert_eq!(file.new_oid.as_deref(), Some(blob.as_str()));
-    assert_eq!(file.kind, scope_api_contract::FileChangeKind::Added);
+    assert_eq!(file.kind, FileChangeKind::Added);
     let public = RepositoryAccess::public();
-    let public_files = request_revision_commit_files(
-        raw_repo,
-        &repo.policy,
-        repo.repo_config.views(),
-        public.clone(),
-        &revision,
-        &root,
-    )
-    .unwrap();
-    assert_eq!(public_files.commit.files[0].path, "root.txt");
+    assert_eq!(
+        select(&repo.policy, &public).unwrap().unwrap().path,
+        "root.txt"
+    );
 
     repo.policy
         .add_rule(LabelRule::private(ScopePath::parse("/root.txt").unwrap()))
@@ -396,26 +394,6 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         .unwrap();
         assert!(!listing.visible.iter().any(|commit| commit.oid == root));
     }
-    assert!(
-        request_revision_commit_files(
-            raw_repo,
-            &repo.policy,
-            repo.repo_config.views(),
-            public.clone(),
-            &revision,
-            &root,
-        )
-        .is_err()
-    );
-    assert!(
-        request_revision_commit_files(
-            raw_repo,
-            &repo.policy,
-            repo.repo_config.views(),
-            owner_access.clone(),
-            &revision,
-            &root
-        )
-        .is_ok()
-    );
+    assert!(select(&repo.policy, &public).is_err());
+    assert!(select(&repo.policy, &owner_access).unwrap().is_some());
 }

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { ChevronDown } from 'lucide-react'
 import { useId, useState } from 'react'
 import { RUN_TONE_TEXT_CLASS } from '../runs/run-status-icon'
-import { requestChecksSummary } from './request-check-rows'
+import { requestChecksSummary, requestPullRequestView } from './request-check-rows'
 import { RequestCheckWorkflows } from './request-check-workflows'
 import {
   requestCheckEvaluationNote,
@@ -24,7 +24,8 @@ export function RequestChecksSection({
 }) {
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
-  if (checks.state === 'no-checks') return null
+  const pullRequest = requestPullRequestView(checks.github_pull_request)
+  if (checks.state === 'no-checks' && !pullRequest) return null
 
   const note = requestCheckEvaluationNote(checks)
   const warning = requestChecksWorkflowWarning(checks)
@@ -66,6 +67,32 @@ export function RequestChecksSection({
         >
           {summary.startError.text}
         </p>
+      ) : null}
+      {pullRequest ? (
+        <div className="mt-1.5 text-[13px]">
+          {pullRequest.url ? (
+            <a
+              className="text-foreground underline-offset-4 hover:underline"
+              href={pullRequest.url}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {pullRequest.text}
+            </a>
+          ) : (
+            <span className="text-muted-foreground">{pullRequest.text}</span>
+          )}
+          {pullRequest.note ? (
+            <p
+              className={cn(
+                'mt-0.5 break-words',
+                pullRequest.note.failed ? 'text-danger-strong' : 'text-muted-foreground',
+              )}
+            >
+              {pullRequest.note.text}
+            </p>
+          ) : null}
+        </div>
       ) : null}
       <RequestCheckWorkflows id={listId} params={params} rows={expanded ? summary.all : summary.attention} />
       {folded ? (

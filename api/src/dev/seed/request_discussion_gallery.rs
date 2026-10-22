@@ -78,6 +78,7 @@ async fn create_revision_conversations(metadata: &MetadataStore) -> Result<(), A
                     revision_id: discussion.revision_id.to_string(),
                     commit_oid: None,
                     path: None,
+                    lines: None,
                 }),
                 now_unix: 1_800_000_150 + index as u64,
             })

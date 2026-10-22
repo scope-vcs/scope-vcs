@@ -3,11 +3,13 @@ use crate::api::{
     RepositoryActor, RequestActivityPageResponse, RequestCheckEvaluationState,
     RequestCheckResponse, RequestChecksOutcome, RequestChecksResponse, RequestCloseResponse,
     RequestDiscussionMutationResponse, RequestDiscussionReplyMutationResponse, RequestEventPayload,
-    RequestGitHubPushResponse, RequestGitHubPushState, RequestInviteeMutationResponse,
-    RequestMergeabilityResponse, RequestMergeabilityStatus, RequestMutationResponse,
-    RequestPermissionsResponse, RequestState, RequestSummaryResponse, ViewId,
+    RequestGitHubPullRequestResponse, RequestGitHubPullRequestState, RequestGitHubPushResponse,
+    RequestGitHubPushState, RequestInviteeMutationResponse, RequestMergeabilityResponse,
+    RequestMergeabilityStatus, RequestMutationResponse, RequestPermissionsResponse, RequestState,
+    RequestSummaryResponse, ViewId,
 };
 use crate::display::{short_oid, terminal_text};
+use scope_api_contract::{RequestDiffSide, RequestDiscussionLatestPosition};
 use scope_domain::views::Views;
 
 mod auto_merge;
@@ -98,10 +100,50 @@ pub(super) fn discussion_started_receipt(
         }
         if let Some(path) = anchor.path.as_deref() {
             reference.push_str(&format!(" · {}", terminal_text(path)));
+            if let Some(lines) = anchor.lines.as_ref() {
+                reference.push_str(&format!(
+                    ":{} ({})",
+                    line_span(lines.start_line, lines.end_line),
+                    diff_side_label(lines.side)
+                ));
+            }
+        }
+        match anchor.latest.as_ref() {
+            Some(RequestDiscussionLatestPosition::Mapped {
+                revision_id,
+                start_line,
+                end_line,
+            }) => reference.push_str(&format!(
+                " · latest revision {}: {}",
+                terminal_text(revision_id),
+                line_span(*start_line, *end_line)
+            )),
+            Some(RequestDiscussionLatestPosition::Outdated { revision_id }) => {
+                reference.push_str(&format!(
+                    " · outdated on latest revision {}",
+                    terminal_text(revision_id)
+                ))
+            }
+            None => {}
         }
         lines.push(reference);
     }
     lines
+}
+
+fn line_span(start_line: u32, end_line: u32) -> String {
+    if start_line == end_line {
+        start_line.to_string()
+    } else {
+        format!("{start_line}-{end_line}")
+    }
+}
+
+fn diff_side_label(side: RequestDiffSide) -> &'static str {
+    match side {
+        RequestDiffSide::Old => "old",
+        RequestDiffSide::New => "new",
+    }
 }
 
 pub(super) fn discussion_replied_receipt(
@@ -352,6 +394,9 @@ pub(super) fn request_checks_lines(checks: &RequestChecksResponse) -> Vec<String
     if let Some(push) = &checks.github_push {
         lines.push(github_push_line(push));
     }
+    if let Some(pull_request) = &checks.github_pull_request {
+        lines.push(github_pull_request_line(pull_request));
+    }
     if checks.private_request_on_public_github {
         lines.push(
             "GitHub: CI runs in a public GitHub repository, so this request is public there."
@@ -397,6 +442,31 @@ fn github_push_line(push: &RequestGitHubPushResponse) -> String {
         (RequestGitHubPushState::Failed, None) => format!("GitHub: sending to {branch} failed"),
         (RequestGitHubPushState::Failed, Some(error)) => {
             format!("GitHub: sending to {branch} failed: {error}")
+        }
+    }
+}
+
+fn github_pull_request_line(pull_request: &RequestGitHubPullRequestResponse) -> String {
+    let named = match (pull_request.number, pull_request.url.as_deref()) {
+        (Some(number), Some(url)) => format!("pull request #{number} ({})", terminal_text(url)),
+        _ => "pull request".to_string(),
+    };
+    let error = pull_request.error.as_deref().map(terminal_text);
+    match (pull_request.state, error) {
+        (RequestGitHubPullRequestState::Opening, None) => format!("GitHub: opening a {named}"),
+        (RequestGitHubPullRequestState::Opening, Some(error)) => {
+            format!("GitHub: opening a {named} again; the last attempt failed: {error}")
+        }
+        (RequestGitHubPullRequestState::Open, _) => format!("GitHub: {named} for review bots"),
+        (RequestGitHubPullRequestState::Closed, _) => format!("GitHub: {named} closed"),
+        (RequestGitHubPullRequestState::ClosedOnGitHub, _) => {
+            format!("GitHub: {named} was closed on GitHub")
+        }
+        (RequestGitHubPullRequestState::Failed, None) => {
+            format!("GitHub: keeping the {named} in step failed")
+        }
+        (RequestGitHubPullRequestState::Failed, Some(error)) => {
+            format!("GitHub: keeping the {named} in step failed: {error}")
         }
     }
 }

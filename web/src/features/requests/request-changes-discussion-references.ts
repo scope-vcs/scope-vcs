@@ -1,8 +1,8 @@
 import type { RequestParams } from '@/api/types'
-import type { RequestRevisionListResponse } from '@/api/types.generated'
+import type { RequestComparisonMode, RequestRevisionListResponse } from '@/api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import type { LoadDiscussionsInput } from './request-discussion-api'
-import { requestChangeSelection } from './request-changes-model'
+import { latestRequestRevision, requestChangeSelection } from './request-changes-model'
 import type { RequestDiscussionPage } from './request-discussion-types'
 
 const DISCUSSION_REFERENCE_LIMITS = { items: 100, bytes: 512 * 1024, milliseconds: 2_000 }
@@ -24,14 +24,20 @@ export function requestDiscussionReferenceIdentity(accessScope: string, requestI
   return `${accessScope}\0${requestId}\0${referenceKey}`
 }
 
-export function discussionReferenceQuery(
+export function comparisonDiscussionReferenceQuery(
   params: RequestParams,
+  revisions: RequestRevision[],
   revision: RequestRevision,
+  mode: RequestComparisonMode,
   commit: string | null,
 ) {
+  if (mode === 'commit' && !commit) return null
   const filter = {
-    commit_oid: commit ?? undefined,
-    include_revision_anchor: commit !== null && commit === revision.commits.at(-1)?.oid,
+    commit_oid: mode === 'commit' ? commit ?? undefined : undefined,
+    include_carried_line_anchors: mode !== 'commit' && revision.id === latestRequestRevision(revisions)?.id
+      ? true
+      : undefined,
+    include_revision_anchor: mode === 'commit' && commit === revision.commits.at(-1)?.oid,
     revision_id: revision.id,
   }
   return { key: JSON.stringify(filter), input: { ...params, ...filter } }
@@ -46,9 +52,15 @@ export function selectedDiscussionReferenceQuery(
     revisions.review_revision_id,
     { commit: params.commit_oid, revision: params.revision_id },
   )
-  const mode = params.comparison ?? (params.commit_oid ? 'commit' : revisions.comparison?.mode ?? 'request')
-  if (!revision || mode === 'commit' && !commit) return null
-  return discussionReferenceQuery(params, revision, mode === 'commit' ? commit : null)
+  const mode = params.comparison === 'push' || params.comparison === 'commit' || params.comparison === 'request'
+    ? params.comparison
+    : params.commit_oid ? 'commit' : revisions.comparison?.mode ?? 'request'
+  if (!revision) return null
+  return comparisonDiscussionReferenceQuery(params, revisions.revisions, revision, mode, commit)
+}
+
+export function refreshRequestDiscussionReferences(accessScope: string, requestId: string) {
+  requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${accessScope}\0${requestId}\0`))
 }
 
 export function openRequestDiscussionReferences(identity: string, page: RequestDiscussionPage) {

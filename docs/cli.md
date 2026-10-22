@@ -325,6 +325,21 @@ explicitly labeled. Checkout requires a clean tree. An existing local branch mus
 already belong to the same request and can only fast-forward; checkout never
 resets it or discards work.
 
+A discussion can point at a revision, a commit in it, a changed file, and lines
+of that file. `--path` names a file changed by `--commit`, or without a commit, a
+file changed by the revision's whole request diff. `--line N` points at one line
+and `--start-line M --line N` at a range; `--side old` counts lines on the base
+side of the diff and `--side new`, the default, on the head side:
+
+```sh
+scope request discussion start --revision rev_1 --path src/lib.rs \
+  --start-line 7 --line 9 --body "This loop never ends"
+```
+
+The receipt shows the anchor as `/src/lib.rs:7-9 (new)`. When the request has a
+newer revision, it also shows where those lines are on the latest revision, or
+`outdated` when they changed there or the file was renamed or deleted.
+
 Read Markdown from stdin without shell interpolation:
 
 ```sh

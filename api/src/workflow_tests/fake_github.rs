@@ -1,4 +1,6 @@
 use super::*;
+
+mod pulls;
 use crate::github::{GitHubApp, config::GitHubAppConfig};
 use axum::{
     Json, Router,
@@ -75,6 +77,7 @@ pub(super) struct FakeGitHub {
     pub(super) job_log_bytes_served: AtomicUsize,
     pub(super) run_list_reads: AtomicUsize,
     pub(super) run_list_unavailable: AtomicBool,
+    pub(super) pulls: pulls::FakePulls,
     git_root: GitRoot,
 }
 
@@ -230,14 +233,7 @@ impl FakeGitHub {
             )]),
             ..Self::default()
         });
-        let repository = fake.repository_path();
-        fs::create_dir_all(repository.parent().unwrap()).unwrap();
-        run_git(
-            None,
-            &["init", "--quiet", "--bare", repository.to_str().unwrap()],
-            "create the fake GitHub repository",
-        )
-        .unwrap();
+        fake.create_repository(GITHUB_FULL_NAME);
         let url = Arc::clone(&fake).serve().await;
         let config = GitHubAppConfig {
             app_id: 123,
@@ -255,15 +251,31 @@ impl FakeGitHub {
     }
 
     pub(super) fn repository_path(&self) -> PathBuf {
-        self.git_root
-            .0
-            .path()
-            .join(format!("{GITHUB_FULL_NAME}.git"))
+        self.repository_path_of(GITHUB_FULL_NAME)
+    }
+
+    fn repository_path_of(&self, full_name: &str) -> PathBuf {
+        self.git_root.0.path().join(format!("{full_name}.git"))
+    }
+
+    pub(super) fn create_repository(&self, full_name: &str) {
+        let repository = self.repository_path_of(full_name);
+        fs::create_dir_all(repository.parent().unwrap()).unwrap();
+        run_git(
+            None,
+            &["init", "--quiet", "--bare", repository.to_str().unwrap()],
+            "create a fake GitHub repository",
+        )
+        .unwrap();
     }
 
     pub(super) fn branch_head(&self, branch: &str) -> Option<String> {
+        self.branch_head_of(GITHUB_FULL_NAME, branch)
+    }
+
+    pub(super) fn branch_head_of(&self, full_name: &str, branch: &str) -> Option<String> {
         let output = run_git_output(
-            Some(&self.repository_path()),
+            Some(&self.repository_path_of(full_name)),
             &[
                 "rev-parse",
                 "--verify",
@@ -626,6 +638,7 @@ impl FakeGitHub {
                     },
                 ),
             )
+            .merge(pulls::routes())
             .with_state(self);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());

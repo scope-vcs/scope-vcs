@@ -55,6 +55,7 @@ export function useRequestDiscussionStore({
   initialPage,
   params,
   repoId,
+  requestHead,
   viewerId,
 }: {
   actions: RequestDiscussionActions
@@ -62,6 +63,7 @@ export function useRequestDiscussionStore({
   initialPage: RequestDiscussionPage
   params: RequestParams
   repoId: string
+  requestHead: string
   viewerId: string
 }) {
   const key = requestDiscussionCacheKey({
@@ -76,9 +78,12 @@ export function useRequestDiscussionStore({
   const subscribe = useCallback((listener: () => void) => requestDiscussionResource.subscribe(key, listener), [key])
   const read = useCallback(() => requestDiscussionResource.peek(key) ?? session, [key, session])
   const { collection, error, loadingMore } = useSyncExternalStore(subscribe, read, () => session)
-  const { sync, updateCollection, setError, setLoadingMore } = session
+  const { sync, syncProjections, updateCollection, setError, setLoadingMore } = session
 
   useEffect(() => { void session.refresh(initialPage) }, [initialPage, session])
+  useEffect(() => {
+    void syncProjections(requestHead, (page) => actions.load({ ...params, ...page }))
+  }, [actions, params, requestHead, syncProjections])
 
   const onRepoChange = useCallback(
     (event: RepoChangeEvent) => {

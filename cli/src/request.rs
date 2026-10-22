@@ -16,7 +16,9 @@ use crate::{
     },
 };
 use anyhow::{Context, bail};
-use scope_api_contract::{ErrorCode, ErrorResponse, RequestDiscussionAnchorInput, ViewId};
+use scope_api_contract::{
+    ErrorCode, ErrorResponse, RequestDiscussionAnchorInput, RequestDiscussionLineRange, ViewId,
+};
 use scope_domain::{policy::ScopePath, repo_control::is_request_protected_path, views::Views};
 use std::{
     sync::atomic::{AtomicU64, Ordering},
@@ -243,13 +245,7 @@ fn start_request_discussion(
     api: ApiSession<'_>,
     args: RequestDiscussionStartArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    let anchor = args
-        .revision
-        .map(|revision_id| RequestDiscussionAnchorInput {
-            revision_id,
-            commit_oid: args.commit,
-            path: args.path,
-        });
+    let anchor = discussion_start_anchor(&args);
     discussion_mutation(
         git_repo,
         api,
@@ -257,6 +253,24 @@ fn start_request_discussion(
         args.content,
         DiscussionMutation::Start(anchor),
     )
+}
+
+fn discussion_start_anchor(
+    args: &RequestDiscussionStartArgs,
+) -> Option<RequestDiscussionAnchorInput> {
+    let lines = args.line.map(|end_line| RequestDiscussionLineRange {
+        side: args.side.into(),
+        start_line: args.start_line.unwrap_or(end_line),
+        end_line,
+    });
+    args.revision
+        .clone()
+        .map(|revision_id| RequestDiscussionAnchorInput {
+            revision_id,
+            commit_oid: args.commit.clone(),
+            path: args.path.clone(),
+            lines,
+        })
 }
 
 fn reply_to_request_discussion(

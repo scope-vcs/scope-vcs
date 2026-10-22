@@ -1,6 +1,7 @@
 mod client;
 pub(crate) mod config;
 mod jobs;
+pub(crate) mod pull_requests;
 pub(crate) mod push;
 pub(crate) mod setup_tokens;
 pub(crate) mod webhook;
@@ -8,6 +9,7 @@ pub(crate) mod webhook;
 pub(crate) use client::{GitHubRepository, InstallationStatus};
 use config::GitHubAppConfig;
 use jsonwebtoken::EncodingKey;
+pub(crate) use push::GitHubPublishFailure;
 use setup_tokens::SetupTokenSigner;
 use std::{collections::HashMap, sync::Mutex, time::Duration};
 

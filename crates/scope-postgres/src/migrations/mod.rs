@@ -8,6 +8,9 @@ mod m0088_request_navigation_children_index;
 mod m0089_contribution_request_stacks;
 mod m0090_job_traceparents;
 mod m0091_media_reconcile_once;
+mod m0092_request_discussion_line_anchors;
+mod m0093_github_main_publication;
+mod m0094_github_carrier_pull_requests;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -88,6 +91,18 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0091_media_reconcile_once::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0092_request_discussion_line_anchors::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0093_github_main_publication::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0094_github_carrier_pull_requests::Migration),
             metadata_restore_safe: true,
         },
     ]

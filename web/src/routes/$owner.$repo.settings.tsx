@@ -19,13 +19,19 @@ import {
 import {
   confirmRepoGitHubPublicForRequest,
   disconnectRepoGitHubForRequest,
+  setRepoGitHubMainPublicationForRequest,
   setRepoGitHubRequiredChecksForRequest,
+  setRepoGitHubReviewBotPullRequestsForRequest,
+  setRepoGitHubReviewRequestCommentForRequest,
   setRepoGitHubRunImportCountForRequest,
   startRepoGitHubRunImportForRequest,
   startRepoGitHubSetupCheckForRequest,
 } from '@/api/github'
 import {
+  parseSetRepoGitHubMainPublicationInput,
   parseSetRepoGitHubRequiredChecksInput,
+  parseSetRepoGitHubReviewBotPullRequestsInput,
+  parseSetRepoGitHubReviewRequestCommentInput,
   parseSetRepoGitHubRunImportCountInput,
 } from '@/api/github-inputs'
 import { RepoSettingsPage } from '@/features/repo-detail/repo-settings-page'
@@ -66,6 +72,10 @@ const confirmRepoGitHubPublic = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
   .handler(({ data }) => confirmRepoGitHubPublicForRequest(data))
 
+const setRepoGitHubMainPublication = createServerFn({ method: 'POST' })
+  .validator(parseSetRepoGitHubMainPublicationInput)
+  .handler(({ data }) => setRepoGitHubMainPublicationForRequest(data))
+
 const setRepoGitHubRequiredChecks = createServerFn({ method: 'POST' })
   .validator(parseSetRepoGitHubRequiredChecksInput)
   .handler(({ data }) => setRepoGitHubRequiredChecksForRequest(data))
@@ -73,6 +83,14 @@ const setRepoGitHubRequiredChecks = createServerFn({ method: 'POST' })
 const setRepoGitHubRunImportCount = createServerFn({ method: 'POST' })
   .validator(parseSetRepoGitHubRunImportCountInput)
   .handler(({ data }) => setRepoGitHubRunImportCountForRequest(data))
+
+const setRepoGitHubReviewBotPullRequests = createServerFn({ method: 'POST' })
+  .validator(parseSetRepoGitHubReviewBotPullRequestsInput)
+  .handler(({ data }) => setRepoGitHubReviewBotPullRequestsForRequest(data))
+
+const setRepoGitHubReviewRequestComment = createServerFn({ method: 'POST' })
+  .validator(parseSetRepoGitHubReviewRequestCommentInput)
+  .handler(({ data }) => setRepoGitHubReviewRequestCommentForRequest(data))
 
 const startRepoGitHubRunImport = createServerFn({ method: 'POST' })
   .validator(parseRepoParams)
@@ -200,6 +218,11 @@ function RepoSettingsRoute() {
               return github
             }}
             github={settings?.github ?? null}
+            setGitHubMainPublication={async (data) => {
+              const github = await setRepoGitHubMainPublication({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
             setGitHubRequiredChecks={async (data) => {
               const github = await setRepoGitHubRequiredChecks({ data })
               if (scope) retainGitHubConnection(scope, github)
@@ -207,6 +230,16 @@ function RepoSettingsRoute() {
             }}
             setGitHubRunImportCount={async (data) => {
               const github = await setRepoGitHubRunImportCount({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            setGitHubReviewBotPullRequests={async (data) => {
+              const github = await setRepoGitHubReviewBotPullRequests({ data })
+              if (scope) retainGitHubConnection(scope, github)
+              return github
+            }}
+            setGitHubReviewRequestComment={async (data) => {
+              const github = await setRepoGitHubReviewRequestComment({ data })
               if (scope) retainGitHubConnection(scope, github)
               return github
             }}

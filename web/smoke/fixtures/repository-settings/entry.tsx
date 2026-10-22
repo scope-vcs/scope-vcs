@@ -46,10 +46,12 @@ const githubConnection = {
   github_full_name: 'octo/demo', github_url: 'https://github.com/octo/demo',
   connected_by: { id: 'owner', handle: 'owner' }, connected_at_unix: 1_767_225_600, disconnected: null,
   public_on_github: false, public_confirmed: true,
+  open_review_bot_pull_requests: false, review_request_comment: null,
+  main_publication: { enabled: false, latest: null },
 }
 repoSettingsResource.write(settingsScope, {
   collaboration: { members, invites: [] },
-  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null },
+  github: { configured: true, connection: githubConnection, required_checks: ['ci / test'], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null },
 })
 const loadSettings = () => new Promise<{ collaboration: null; github: null }>(() => {})
 function setGitHub(github: GitHubConnectionResponse) {
@@ -72,6 +74,7 @@ function App() {
         connection: { ...githubConnection, disconnected: { reason: 'app_uninstalled', at_unix: 1_767_312_000 } },
         required_checks: ['ci / test'],
         can_confirm_public: true,
+        can_publish_main: true,
         setup_check: null,
         run_import_count: 50,
         run_import: null,
@@ -99,7 +102,7 @@ function App() {
         disconnectGitHub={async (params) => {
           calls.push({ disconnectGitHub: params })
           await hold('disconnect-github')
-          const github = { configured: true, connection: null, required_checks: [], can_confirm_public: true, setup_check: null, run_import_count: 50, run_import: null }
+          const github = { configured: true, connection: null, required_checks: [], can_confirm_public: true, can_publish_main: true, setup_check: null, run_import_count: 50, run_import: null }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
@@ -107,6 +110,26 @@ function App() {
           calls.push({ confirmPublicGitHub: params })
           const current = repoSettingsResource.peek(settingsScope)!.github!
           const github = { ...current, connection: { ...current.connection!, public_confirmed: true } }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubMainPublication={async (input) => {
+          calls.push({ setGitHubMainPublication: input.enabled })
+          await hold('main-publication')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const connection = current.connection!
+          const github = {
+            ...current,
+            connection: {
+              ...connection,
+              main_publication: {
+                enabled: input.enabled,
+                latest: input.enabled
+                  ? { state: 'queued' as const, commit_oid: 'abcdef1234567890abcdef1234567890abcdef12', error: null, updated_at_unix: 1_767_225_600 }
+                  : connection.main_publication.latest,
+              },
+            },
+          }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
@@ -123,6 +146,23 @@ function App() {
           await hold('run-import-count')
           const current = repoSettingsResource.peek(settingsScope)!.github!
           const github = { ...current, run_import_count: input.count }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubReviewBotPullRequests={async (input) => {
+          calls.push({ setGitHubReviewBotPullRequests: input.enabled })
+          await hold('review-bot-pull-requests')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const github = { ...current, connection: { ...current.connection!, open_review_bot_pull_requests: input.enabled } }
+          retainGitHubConnection(settingsScope, github)
+          return github
+        }}
+        setGitHubReviewRequestComment={async (input) => {
+          calls.push({ setGitHubReviewRequestComment: input.comment })
+          await hold('review-request-comment')
+          const current = repoSettingsResource.peek(settingsScope)!.github!
+          const comment = input.comment.trim() || null
+          const github = { ...current, connection: { ...current.connection!, review_request_comment: comment } }
           retainGitHubConnection(settingsScope, github)
           return github
         }}
