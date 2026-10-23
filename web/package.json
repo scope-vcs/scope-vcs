@@ -16,7 +16,7 @@
     "check:diff-worker-bundle": "node scripts/check-review-diff-worker-bundle.mjs",
     "check:resource-boundary": "node --test scripts/resource-boundary.test.mjs scripts/callback-assertions.test.mjs && node scripts/check-resource-boundary.mjs",
     "generate:api-contract": "node scripts/generate-api-contract.mjs",
-    "test": "node scripts/prepare-test-output.mjs && tsc -p tsconfig.test.json && TZ=UTC node --test \".test-output/**/*.test.js\"",
+    "test": "node scripts/prepare-test-output.mjs && tsc -p tsconfig.test.json && TZ=UTC node --test \".test-output/**/*.test.js\" scripts/dev-runner-connections.test.mjs",
     "test:smoke": "node --test \"smoke/**/*.spec.mjs\"",
     "test:journey": "node --test \"journeys/**/*.spec.mjs\"",
     "typecheck": "tsc --noEmit",
