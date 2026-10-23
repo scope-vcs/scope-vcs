@@ -8,6 +8,7 @@ pub(crate) mod file_diffs;
 pub(crate) mod github;
 pub(crate) mod github_runs;
 pub(crate) mod history;
+pub(crate) mod merge_routing;
 pub(crate) mod origins;
 pub(crate) mod repo_collaboration;
 pub(crate) mod repo_events;
