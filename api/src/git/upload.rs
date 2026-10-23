@@ -334,7 +334,9 @@ async fn build_git_read_view(
                     )
                 }),
             };
-            read_view_omissions::record_build(&read_view_name_for_record, unreadable);
+            if result.is_err() {
+                read_view_omissions::record_failed_build(&read_view_name_for_record, unreadable);
+            }
             result
         },
     )

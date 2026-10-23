@@ -13,7 +13,7 @@ fn omissions() -> &'static Mutex<Omissions> {
     OMISSIONS.get_or_init(Mutex::default)
 }
 
-pub(super) fn record_build(read_view: &str, unreadable_requests: Vec<String>) {
+pub(super) fn record_failed_build(read_view: &str, unreadable_requests: Vec<String>) {
     let mut omissions = omissions().lock().unwrap_or_else(PoisonError::into_inner);
     if unreadable_requests.is_empty() {
         omissions.remove(read_view);
