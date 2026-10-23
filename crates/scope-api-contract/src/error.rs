@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+pub const SERVICE_UNAVAILABLE_MESSAGE: &str =
+    "Scope is temporarily unavailable; retry with bounded backoff.";
+pub const CAPACITY_EXHAUSTED_MESSAGE: &str =
+    "Scope is temporarily at capacity; retry with bounded backoff.";
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "snake_case")]

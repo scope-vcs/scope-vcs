@@ -1,7 +1,7 @@
 use super::request_ref_oid_is_commit;
 use crate::{error::ApiError, git::command::run_git, state::AppState};
 use scope_domain::content::SourceBlob;
-use scope_storage::{ObjectStore, write_source_blob_to};
+use scope_storage::{ObjectStore, ObjectStoreError, write_source_blob_to};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -10,7 +10,6 @@ use std::{
 };
 
 static SNAPSHOT_DOWNLOAD: AtomicU64 = AtomicU64::new(1);
-
 pub(super) fn fetch_snapshot_into(
     state: &AppState,
     repo: &FsPath,
@@ -18,7 +17,7 @@ pub(super) fn fetch_snapshot_into(
     snapshot: &SourceBlob,
     base_repo: Option<&FsPath>,
     action: &str,
-) -> Result<(), ApiError> {
+) -> Result<Result<(), ObjectStoreError>, ApiError> {
     fetch_snapshot_into_ref(
         state,
         repo,
@@ -44,7 +43,7 @@ pub(super) fn fetch_snapshot_into_ref(
     snapshot: &SourceBlob,
     base_repo: Option<&FsPath>,
     action: &str,
-) -> Result<(), ApiError> {
+) -> Result<Result<(), ObjectStoreError>, ApiError> {
     let bundle_path = repo.with_extension(format!(
         "snapshot-{}-{}-{}.bundle.tmp",
         hex::encode(
@@ -54,8 +53,15 @@ pub(super) fn fetch_snapshot_into_ref(
         std::process::id(),
         SNAPSHOT_DOWNLOAD.fetch_add(1, Ordering::Relaxed),
     ));
-    let result = download_snapshot(state.object_store.as_ref(), snapshot, &bundle_path)
-        .and_then(|()| fetch_bundle_into_ref(repo, bundle_ref, &bundle_path, base_repo, action));
+    let result =
+        download_snapshot(state.object_store.as_ref(), snapshot, &bundle_path).and_then(|stored| {
+            match stored {
+                Ok(()) => {
+                    fetch_bundle_into_ref(repo, bundle_ref, &bundle_path, base_repo, action).map(Ok)
+                }
+                Err(error) => Ok(Err(error)),
+            }
+        });
     let _ = fs::remove_file(&bundle_path);
     result
 }
@@ -64,13 +70,12 @@ pub(super) fn download_snapshot(
     objects: &dyn ObjectStore,
     snapshot: &SourceBlob,
     path: &FsPath,
-) -> Result<(), ApiError> {
+) -> Result<Result<(), ObjectStoreError>, ApiError> {
     crate::git::blocking::block_on(async {
         let mut file = tokio::fs::File::create(path)
             .await
             .map_err(ApiError::internal)?;
-        write_source_blob_to(objects, snapshot, &mut file).await?;
-        Ok(())
+        Ok(write_source_blob_to(objects, snapshot, &mut file).await)
     })
 }
 
