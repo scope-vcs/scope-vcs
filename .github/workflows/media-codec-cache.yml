@@ -1,0 +1,30 @@
+name: Media codec cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/actions/install-media-codecs/**
+      - .github/workflows/media-codec-cache.yml
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: media-codec-cache
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    name: Save media codec packages on main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install media codecs
+        uses: ./.github/actions/install-media-codecs
