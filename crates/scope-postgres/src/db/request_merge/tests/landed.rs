@@ -54,6 +54,11 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
             .await
             .unwrap()
             .unwrap();
+        let before_main_packs = store
+            .repositories()
+            .main_pool_packs("owner/repo")
+            .await
+            .unwrap();
         let before_jobs = store
             .jobs()
             .outbox_job_counts_for_tests()
@@ -96,7 +101,14 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
             .unwrap();
         assert_eq!(after_repo.record, before_repo.record);
         assert_eq!(after_repo.git_head, before_repo.git_head);
-        assert_eq!(after_repo.git_pack_spans, before_repo.git_pack_spans);
+        assert_eq!(
+            store
+                .repositories()
+                .main_pool_packs("owner/repo")
+                .await
+                .unwrap(),
+            before_main_packs
+        );
         assert_eq!(after_repo.graph, before_repo.graph);
         assert_eq!(after_repo.live_files, before_repo.live_files);
         assert_eq!(

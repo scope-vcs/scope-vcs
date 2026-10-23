@@ -4,16 +4,19 @@ use super::segment_upload::{
 };
 use crate::{
     error::ApiError,
-    git::command::{
-        git_ref_listing, git_stdout_text, prepare_git_subprocess, record_git_exit, run_git,
-        truncated_git_stderr,
+    git::{
+        command::{
+            git_ref_listing, git_stdout_text, prepare_git_subprocess, record_git_exit, run_git,
+            truncated_git_stderr,
+        },
+        pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
     },
     state::AppState,
 };
 use scope_domain::content::SourceBlob;
-use scope_domain::repository::git::GitHead;
+use scope_domain::repository::git::{GitHead, GitPoolPackStorage};
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_git::{StoredGitPush, prepare_git_push};
+use scope_git::{PreparedGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_storage::{ContentObjectKind, content_object_for_bytes};
 use scope_storage::{GitStorageError, StagedGitSegment};
@@ -71,14 +74,13 @@ pub(super) fn describe_refs(refs: &[(String, String)]) -> String {
 }
 
 pub(crate) struct StagedGitPush {
-    pub(crate) stored: StoredGitPush,
-    pub(crate) staged_segment: StagedGitSegment,
-    pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
+    pub(crate) head: GitHead,
+    pub(crate) pack: StagedPoolPack,
 }
 
 pub(crate) struct StagedGitPack {
     pub(crate) staged_segment: StagedGitSegment,
-    pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
+    pub(crate) _upload_heartbeat: GitSegmentUploadHeartbeat,
 }
 
 pub(crate) async fn stage_git_pack(
@@ -203,7 +205,7 @@ pub(crate) async fn stage_git_pack(
     }
     Ok(StagedGitPack {
         staged_segment,
-        upload_heartbeat,
+        _upload_heartbeat: upload_heartbeat,
     })
 }
 
@@ -213,7 +215,6 @@ pub(crate) async fn git_push_from_repo(
     repo: &FsPath,
     previous: Option<&GitHead>,
 ) -> Result<StagedGitPush, ApiError> {
-    let storage_limits = state.runtime_budgets.git_storage_limits();
     let path = repo.to_path_buf();
     let head_oid = crate::git::blocking::run(move || {
         let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
@@ -221,59 +222,36 @@ pub(crate) async fn git_push_from_repo(
         Ok(head.trim().to_string())
     })
     .await?;
-    let mut revisions = vec![head_oid.clone()];
-    if let Some(previous) = previous {
-        revisions.push(format!("^{}", previous.head_oid));
-    }
-    let pack_started = Instant::now();
-    let StagedGitPack {
-        staged_segment,
-        upload_heartbeat,
-    } = stage_git_pack(state, repository_id, repo, &revisions).await?;
-    let pack_elapsed = pack_started.elapsed();
-    let pack_bytes = staged_segment.segment.plaintext_bytes;
-    let store_started = Instant::now();
-    let stored = match prepare_git_push(
-        staged_segment.segment.clone(),
-        head_oid,
+    let PreparedGitPush {
+        head,
+        owner,
+        prerequisites,
+    } = prepare_git_push(
+        head_oid.clone(),
         previous,
-        storage_limits,
-    ) {
-        Ok(prepared) => prepared,
-        Err(error) => {
-            best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
-            return Err(error.into());
-        }
-    };
-    let timings = &staged_segment.timings;
-    tracing::info!(
-        phase = "complete",
+        state.runtime_budgets.git_storage_limits(),
+    )?;
+    let pack_started = Instant::now();
+    let pack = stage_pool_pack(
+        state,
         repository_id,
-        segment_id = staged_segment.segment.segment_id,
-        success = true,
-        duration_us = timings.total.as_micros(),
-        local_write_us = timings.local_write.as_micros(),
-        remote_upload_us = timings.remote_upload.as_micros(),
-        uploaded_parts = timings.uploaded_parts,
-        bytes = timings.plaintext_bytes,
-        blocked_us = timings.fanout_blocked.as_micros(),
-        configured_buffer_capacity_bytes =
-            timings.chunk_bytes.saturating_mul(timings.channel_capacity),
-        "Git segment ingest telemetry"
-    );
+        repo,
+        PoolPackRevision {
+            owner,
+            head_oid,
+            prerequisites,
+        },
+    )
+    .await?;
     tracing::info!(
         incremental = previous.is_some(),
-        pack_us = pack_elapsed.as_micros(),
-        store_us = store_started.elapsed().as_micros(),
-        pack_bytes,
+        pack_us = pack_started.elapsed().as_micros(),
+        inline = matches!(pack.pack.storage, GitPoolPackStorage::Inline { .. }),
+        pack_bytes = pack.pack.storage.stored_bytes(),
         success = true,
         "Git push pack timing"
     );
-    Ok(StagedGitPush {
-        stored,
-        staged_segment,
-        upload_heartbeat,
-    })
+    Ok(StagedGitPush { head, pack })
 }
 
 pub(crate) fn git_snapshot_from_ref(

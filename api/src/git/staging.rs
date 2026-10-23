@@ -10,7 +10,7 @@ use crate::{
 };
 use scope_domain::repository::{RepoLifecycleState, RepositoryIncarnation};
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_postgres::db::GitPushContext;
+use scope_postgres::db::GitPushState;
 use std::{
     fs,
     path::{Path as FsPath, PathBuf},
@@ -46,7 +46,7 @@ pub(crate) struct ReceivePackStagingRepo {
 
 pub(crate) async fn ensure_ready_receive_pack_staging_repo(
     state: &AppState,
-    repo: &GitPushContext,
+    repo: &GitPushState,
 ) -> Result<ReceivePackStagingRepo, ApiError> {
     if repo.lifecycle_state != RepoLifecycleState::Ready {
         return Err(ApiError::conflict("repo must be ready before push"));
@@ -55,10 +55,10 @@ pub(crate) async fn ensure_ready_receive_pack_staging_repo(
     let seed = if let Some(head) = repo.git_head.as_ref() {
         state
             .repository_engine
-            .materialize_repository(state, incarnation, head, &repo.git_pack_spans)
+            .materialize_repository(state, incarnation, head)
             .await?
     } else {
-        RepositoryGit::of_push_context(repo)
+        RepositoryGit::of_push_state(repo)
             .view_repo(state, repo.repo_config.views(), &repo.access.view)
             .await?
     };

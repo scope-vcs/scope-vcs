@@ -211,7 +211,7 @@ impl RequestStore {
             }
         }
         if context.record.change_version != expected_repo_change_version {
-            return Err(PostgresError::conflict(
+            return Err(PostgresError::repository_moved(
                 "repo changed since merge was prepared; retry merge",
             ));
         }
@@ -221,7 +221,7 @@ impl RequestStore {
             .ok_or_else(|| PostgresError::conflict("repo has no accepted Git head"))?
             .try_into_domain()?;
         if head.frontier() != expected_git_frontier {
-            return Err(PostgresError::conflict(
+            return Err(PostgresError::repository_moved(
                 "repo changed since merge was prepared; retry merge",
             ));
         }

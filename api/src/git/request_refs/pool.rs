@@ -1,22 +1,21 @@
-use super::{
-    pack_consolidation::consolidate_pool_repos,
-    pool_pack::{LocalPoolPack, StagedPoolPack},
-    seeding::present_commits,
-};
+use super::pack_consolidation::consolidate_pool_repos;
 use crate::{
     error::ApiError,
     git::{
-        command::git_command_output, restore::install_verified_git_pack,
-        staging::add_receive_pack_alternate, storage::request_objects_root,
+        pool_install::{
+            FetchedPack, install_chain, install_fetched, installable_packs, present_commits,
+        },
+        pool_pack::{LocalPoolPack, StagedPoolPack},
+        staging::add_receive_pack_alternate,
+        storage::request_objects_root,
     },
     state::AppState,
 };
-use futures_util::{StreamExt as _, stream};
 use scope_domain::{
     repo_config::RepoConfig,
     repository::{
         RepositoryIncarnation,
-        git::{GitPoolPack, GitPoolPackStorage},
+        git::{GitPoolPack, GitPoolPackOwner},
     },
     requests::{Request, request_visible_to_every_maintainer},
 };
@@ -26,10 +25,8 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path as FsPath, PathBuf},
-    process::Command,
 };
 
-const CONCURRENT_POOL_FETCHES: usize = 4;
 const MAX_POOL_PACKS_PER_REQUEST: usize = 16;
 
 #[derive(Clone)]
@@ -145,7 +142,9 @@ async fn install_missing_request_packs(
             .filter_map(|listed| {
                 storage.remove(&listed.id).map(|storage| GitPoolPack {
                     id: listed.id,
-                    request_id: listed.request_id,
+                    owner: GitPoolPackOwner::Request {
+                        request_id: listed.request_id,
+                    },
                     head_oid: listed.head_oid,
                     prerequisites: listed.prerequisites,
                     storage,
@@ -192,106 +191,6 @@ fn pack_target<'a>(install: &PoolInstall<'a>, listed: &PooledRequestPack) -> Opt
     }
 }
 
-async fn install_chain(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    objects_repo: &FsPath,
-    mut pending: Vec<GitPoolPack>,
-) -> Result<usize, ApiError> {
-    let mut installed_total = 0;
-    loop {
-        let (installable, waiting) = {
-            let objects_repo = objects_repo.to_path_buf();
-            crate::git::blocking::run(move || installable_packs(&objects_repo, pending)).await?
-        };
-        if installable.is_empty() {
-            break;
-        }
-        let mut fetched = stream::iter(installable.into_iter().map(|pack| async move {
-            let fetched = fetch_pack(state, incarnation, &pack).await;
-            (pack, fetched)
-        }))
-        .buffered(CONCURRENT_POOL_FETCHES);
-        let mut installed = 0;
-        while let Some((pack, fetched)) = fetched.next().await {
-            let result = match fetched {
-                Ok(fetched) => install_fetched(state, objects_repo, fetched)
-                    .await
-                    .map_err(|error| ("install", error)),
-                Err(error) => Err(("fetch", error)),
-            };
-            match result {
-                Ok(()) => installed += 1,
-                Err((step, error)) => tracing::warn!(
-                    repository_id = incarnation.repository_id(),
-                    pack_id = pack.id,
-                    step,
-                    error = %error.operator_diagnostic(),
-                    "skipping an unusable request pool pack"
-                ),
-            }
-        }
-        if installed == 0 {
-            break;
-        }
-        installed_total += installed;
-        pending = waiting;
-    }
-    Ok(installed_total)
-}
-
-enum FetchedPack {
-    Bytes(Vec<u8>),
-    Verified(scope_storage::VerifiedGitPack),
-}
-
-async fn fetch_pack(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    pack: &GitPoolPack,
-) -> Result<FetchedPack, ApiError> {
-    let unavailable = |error: scope_storage::GitStorageError| {
-        ApiError::infrastructure_unavailable(error.to_string())
-    };
-    match &pack.storage {
-        GitPoolPackStorage::Inline { sealed } => state
-            .git_segment_store
-            .open_inline_pack(incarnation.repository_id(), &pack.id, sealed)
-            .await
-            .map(FetchedPack::Bytes)
-            .map_err(unavailable),
-        GitPoolPackStorage::Segment(segment) => state
-            .git_segment_store
-            .get_verified_pack(incarnation, segment)
-            .await
-            .map(FetchedPack::Verified)
-            .map_err(unavailable),
-    }
-}
-
-async fn install_fetched(
-    state: &AppState,
-    objects_repo: &FsPath,
-    fetched: FetchedPack,
-) -> Result<(), ApiError> {
-    let objects_repo = objects_repo.to_path_buf();
-    let timeout = state.runtime_budgets.git_command_timeout();
-    crate::git::blocking::run(move || match fetched {
-        FetchedPack::Bytes(pack) => git_command_output(
-            Command::new("git")
-                .arg("-C")
-                .arg(&objects_repo)
-                .args(["index-pack", "--stdin"]),
-            Some(&pack),
-        )
-        .map(drop),
-        FetchedPack::Verified(verified) => {
-            install_verified_git_pack(&objects_repo, verified.path(), timeout)
-        }
-    })
-    .await
-}
-
 pub(crate) async fn retain_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -319,19 +218,7 @@ pub(crate) async fn retain_staged_pool_pack(
             "request revision committed but its pool pack was not installed locally"
         );
     }
-    if let LocalPoolPack::Segment(staged) = &pool_pack.local
-        && let Err(error) = state
-            .git_segment_store
-            .delete_local(&staged.staged_segment)
-            .await
-    {
-        tracing::warn!(
-            repository_id = incarnation.repository_id(),
-            pack_id = pool_pack.pack.id,
-            error = %error,
-            "failed to delete local request pool pack"
-        );
-    }
+    pool_pack.finish(state).await;
 }
 
 async fn install_staged_pool_pack(
@@ -404,25 +291,4 @@ fn link_pack_files(
         }
     }
     Ok(())
-}
-
-fn installable_packs(
-    objects_repo: &FsPath,
-    packs: Vec<GitPoolPack>,
-) -> Result<(Vec<GitPoolPack>, Vec<GitPoolPack>), ApiError> {
-    let present = present_commits(
-        objects_repo,
-        packs
-            .iter()
-            .flat_map(|pack| std::iter::once(&pack.head_oid).chain(&pack.prerequisites))
-            .map(String::as_str),
-    )?;
-    Ok(packs
-        .into_iter()
-        .filter(|pack| !present.contains(&pack.head_oid))
-        .partition(|pack| {
-            pack.prerequisites
-                .iter()
-                .all(|prerequisite| present.contains(prerequisite))
-        }))
 }

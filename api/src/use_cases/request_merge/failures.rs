@@ -7,6 +7,10 @@ pub(crate) enum RequestMergeFailure {
 }
 
 impl RequestMergeFailure {
+    pub(super) fn is_conflict(&self) -> bool {
+        matches!(self, Self::Other(error) if error.kind == ErrorKind::Conflict)
+    }
+
     pub(super) fn view_range(error: ApiError) -> Self {
         if error.kind == ErrorKind::Conflict {
             Self::MergeConflict(error)

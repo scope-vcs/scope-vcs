@@ -9,7 +9,10 @@ use super::{
 };
 use crate::{
     error::ApiError,
-    git::{command::git_command_output, staging::add_receive_pack_alternate},
+    git::{
+        command::git_command_output, pool_install::present_commits,
+        staging::add_receive_pack_alternate,
+    },
     state::AppState,
 };
 use scope_domain::{
@@ -17,7 +20,7 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     requests::{Request, canonical_request_ref},
 };
-use std::{collections::BTreeSet, path::Path as FsPath, process::Command};
+use std::{path::Path as FsPath, process::Command};
 
 pub(crate) struct AttachedRequestRefs {
     pub(crate) unreachable: Vec<Request>,
@@ -233,29 +236,6 @@ fn restore_request_objects(
     restored.and(Err(ApiError::infrastructure_unavailable(
         "stored request branch snapshot does not match request metadata",
     )))
-}
-
-pub(super) fn present_commits<'a>(
-    repo: &FsPath,
-    oids: impl Iterator<Item = &'a str>,
-) -> Result<BTreeSet<String>, ApiError> {
-    if !repo.join("objects").is_dir() {
-        return Ok(BTreeSet::new());
-    }
-    let input = oids.map(|oid| format!("{oid}\n")).collect::<String>();
-    let output = git_command_output(
-        Command::new("git")
-            .arg("-C")
-            .arg(repo)
-            .args(["cat-file", "--batch-check=%(objectname) %(objecttype)"]),
-        Some(input.as_bytes()),
-    )?;
-    let output = String::from_utf8(output).map_err(ApiError::internal)?;
-    Ok(output
-        .lines()
-        .filter_map(|line| line.strip_suffix(" commit"))
-        .map(str::to_string)
-        .collect())
 }
 
 fn update_refs<'a>(

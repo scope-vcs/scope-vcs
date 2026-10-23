@@ -9,7 +9,7 @@ export const mediaTables = names(`request_media_abandoned_objects request_media_
   request_media_processing_jobs request_media_processing_objects request_media_retry_operations
   request_media_upload_parts`);
 const repositoryTables = names(`file_changes git_compaction_jobs git_heads git_pool_packs
-  git_segment_references git_segment_uploads git_segments live_files logical_commits metadata_locks object_references
+  git_segment_uploads live_files logical_commits metadata_locks object_references
   orphan_object_jobs outbox_jobs projection_files projection_read_models push_trigger_evaluations
   repo_storage_cleanup_jobs repositories repository_first_push_tokens repository_git_push_tokens
   repository_history_entries repository_history_payloads repository_invites repository_invite_links
@@ -43,8 +43,8 @@ function policy(write, read = [], lock = []) {
 export const grants = {
   scope_api: policy([...repositoryTables, ...runTables, ...nativeRunsTables, ...collaborationTables,
     ...authTables, ...mediaTables, ...cacheTables]),
-  scope_run_worker: { ...policy([...names(`git_compaction_jobs git_segment_references git_segment_uploads
-    git_segments metadata_locks object_references orphan_object_jobs outbox_jobs projection_files
+  scope_run_worker: { ...policy([...names(`git_compaction_jobs git_pool_packs git_segment_uploads
+    metadata_locks object_references orphan_object_jobs outbox_jobs projection_files
     projection_read_models push_trigger_evaluations repo_storage_cleanup_jobs workflow_revisions
     dependency_analyses dependency_reports dependency_analysis_jobs`), ...runTables],
     names(`file_changes git_heads live_files logical_commits repositories repository_first_push_tokens

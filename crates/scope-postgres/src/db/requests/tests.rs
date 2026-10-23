@@ -518,7 +518,9 @@ async fn close_draft_request_deletes_request_and_events() {
     };
     let pool_pack = scope_domain::repository::git::GitPoolPack {
         id: "pool-draft".to_string(),
-        request_id: "req_1".to_string(),
+        owner: scope_domain::repository::git::GitPoolPackOwner::Request {
+            request_id: "req_1".to_string(),
+        },
         head_oid: "head-2".to_string(),
         prerequisites: vec!["head".to_string()],
         storage: scope_domain::repository::git::GitPoolPackStorage::Segment(pool_segment.clone()),

@@ -1,7 +1,6 @@
 use super::integer_columns;
 use super::{
     RunStore, entities,
-    git_segments::insert_git_segment_references,
     native_runs::lock_native_runs_availability,
     object_references::insert_object_reference,
     run_attempt_persistence::{
@@ -323,13 +322,6 @@ pub(super) async fn enqueue_run_in_transaction(
     for object in run.source.retained_objects() {
         insert_object_reference(tx, "run_source", &run.id, object).await?;
     }
-    insert_git_segment_references(
-        tx,
-        "run_source",
-        &run.id,
-        run.source.retained_git_segments(),
-    )
-    .await?;
     Ok(EnqueueRunResult {
         run,
         inserted: true,

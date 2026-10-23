@@ -23,7 +23,7 @@ use scope_domain::{
     views::ViewId,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_postgres::db::GitPushContext;
+use scope_postgres::db::GitPushState;
 use std::{collections::BTreeMap, path::Path};
 
 pub(super) struct ViewMainPush {
@@ -56,7 +56,7 @@ pub(super) async fn complete_view_main_push(
             "repository changed after receive-pack; retry the push",
         ));
     }
-    let git = RepositoryGit::of_push_context(&context);
+    let git = RepositoryGit::of_push_state(&context);
     let views = context.repo_config.views();
     let view_main_oid = ensure_request_ref_is_view_safe(
         RequestView::new(&git, views, &push.view),
@@ -227,7 +227,7 @@ struct ProvisionalMainPush<'a> {
 
 async fn provisional_request(
     state: &AppState,
-    context: &GitPushContext,
+    context: &GitPushState,
     push: &ViewMainPush,
     provisional: ProvisionalMainPush<'_>,
 ) -> Result<Option<Request>, ApiError> {

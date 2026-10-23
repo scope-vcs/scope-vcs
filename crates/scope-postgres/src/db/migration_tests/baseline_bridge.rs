@@ -42,7 +42,7 @@ async fn the_bridge_replaces_the_previous_ledger_after_verifying_the_schema() {
     assert!(
         connect_postgres_store(
             target.schema_database_url(),
-            crate::db::connection::MetadataPoolLimits::default(),
+            crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
         )
         .await
         .is_err()
@@ -72,7 +72,7 @@ async fn the_bridge_replaces_the_previous_ledger_after_verifying_the_schema() {
     );
     connect_postgres_store(
         target.schema_database_url(),
-        crate::db::connection::MetadataPoolLimits::default(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
     )
     .await
     .unwrap();

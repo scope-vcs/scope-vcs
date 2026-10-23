@@ -22,6 +22,7 @@ mod entities;
 mod fast_push;
 mod generated_ids;
 mod git_compaction;
+mod git_heads;
 mod git_push_reads;
 mod git_segments;
 mod git_transport_reads;
@@ -51,6 +52,7 @@ mod locks;
 mod main_push_requests;
 mod maintenance;
 mod manual_runs;
+mod merge_turns;
 #[cfg(test)]
 mod migration_tests;
 mod native_runs;
@@ -135,7 +137,7 @@ pub use cli_auth_results::{
 };
 use connection::begin_metadata_read_snapshot;
 pub use connection::{
-    DEFAULT_METADATA_POOL_MAX_CONNECTIONS, ExclusiveWriterFence, MetadataPoolLimits,
+    DEFAULT_METADATA_POOL_MAX_CONNECTIONS, ExclusiveWriterFence,
     terminate_metadata_writer_sessions, verify_writer_fence_available,
 };
 #[cfg(test)]
@@ -147,8 +149,8 @@ pub use dependency_analysis::{
 pub use fast_push::ApplyContentOnlyPushCommand;
 use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
-pub use git_push_reads::{GitPushContext, GitPushCredentials, GitPushState};
-pub use git_segments::{PooledRequestPack, RepositoryGitWriteLease};
+pub use git_push_reads::{GitPushCredentials, GitPushState};
+pub use git_segments::{ListedMainPoolPack, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
@@ -177,6 +179,7 @@ pub use maintenance::{
     apply_maintenance_migrations, migration_plan, migration_preflight,
     repository_workflow_catalogs_for_maintenance, verify_schema,
 };
+pub use merge_turns::RepositoryMergeTurn;
 pub use native_runs::{NativeRunsAccountListing, NativeRunsAddition, NativeRunsWithdrawal};
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{

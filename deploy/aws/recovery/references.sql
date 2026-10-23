@@ -7,7 +7,7 @@ FROM scope_object_references
 UNION ALL
 SELECT 'segment', 'objects', NULL, object_key, sha256, repo_id, segment_id,
        plaintext_bytes, NULL, NULL, NULL, NULL
-FROM scope_git_segment_uploads WHERE state IN ('ready', 'published', 'retained')
+FROM scope_git_segment_uploads WHERE state IN ('ready', 'published')
 UNION ALL
 SELECT 'media', 'media', NULL, chunk.object_key, chunk.sha256, NULL, NULL,
        chunk.plaintext_size_bytes, manifest.id, chunk.chunk_index,

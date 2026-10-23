@@ -17,7 +17,7 @@ use scope_domain::{
     landing_file::RepositoryLandingFileMutation,
     policy::ScopePath,
     repository::{
-        git::{GitHead, GitPackSpan},
+        git::{GitHead, GitPoolPack, GitPoolPackOwner, GitPoolPackStorage},
         updates::RequestMergeOrigin,
     },
     requests::{
@@ -247,7 +247,6 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         "/.scope/RULES.md",
         source_blob("rules-content"),
     );
-    stage_segment(&store, &initial_update.git_pack_span.segment).await;
     apply_reviewed_update_to_repo(&mut repo, initial_update).unwrap();
     store
         .repositories()
@@ -374,7 +373,6 @@ async fn merge_preparation(store: &super::super::MetadataStore) -> MergePreparat
         "/README.md",
         source_blob("merged-content"),
     );
-    stage_segment(store, &update.git_pack_span.segment).await;
     let workflow_catalog = RepositoryWorkflowCatalog::captured(
         "owner/repo",
         MERGED_HEAD,
@@ -390,27 +388,6 @@ async fn merge_preparation(store: &super::super::MetadataStore) -> MergePreparat
     }
 }
 
-async fn stage_segment(
-    store: &super::super::MetadataStore,
-    segment: &scope_domain::repository::git::GitSegmentRef,
-) {
-    let repositories = store.repositories();
-    repositories
-        .begin_git_segment_upload(
-            "owner/repo",
-            &segment.segment_id,
-            &format!("git/segments/v2/owner/repo/{}", segment.segment_id),
-            segment.encoding_version,
-            1,
-        )
-        .await
-        .unwrap();
-    repositories
-        .mark_git_segment_upload_ready(segment, 2, 2)
-        .await
-        .unwrap();
-}
-
 fn reviewed_update(
     repo: &scope_domain::repository::Repository,
     head_oid: &str,
@@ -419,12 +396,6 @@ fn reviewed_update(
     path: &str,
     content: SourceBlob,
 ) -> ReviewedUpdateInput {
-    let segment = scope_domain::repository::git::GitSegmentRef {
-        segment_id: format!("segment-{head_oid}"),
-        sha256: "c".repeat(64),
-        plaintext_bytes: 1,
-        encoding_version: 2,
-    };
     ReviewedUpdateInput {
         occurred_at_unix: None,
         branch: "refs/heads/main".to_string(),
@@ -435,13 +406,17 @@ fn reviewed_update(
             sequence,
             repo.record.change_version + 1,
         ),
-        git_pack_span: GitPackSpan {
-            first_sequence: sequence,
-            last_sequence: sequence,
-            geometric_tier: 0,
-            base_oid: base_oid.map(str::to_string),
+        main_pack: GitPoolPack {
+            id: format!("main-pack-{head_oid}"),
+            owner: GitPoolPackOwner::Main {
+                first_sequence: sequence,
+                last_sequence: sequence,
+            },
             head_oid: head_oid.to_string(),
-            segment,
+            prerequisites: base_oid.map(str::to_string).into_iter().collect(),
+            storage: GitPoolPackStorage::Inline {
+                sealed: head_oid.as_bytes().to_vec(),
+            },
         },
         changes: vec![ReviewedContentChange {
             path: ScopePath::parse(path).unwrap(),

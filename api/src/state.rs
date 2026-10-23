@@ -18,7 +18,7 @@ use crate::{
         run_caches::RunCacheStorage,
     },
 };
-use scope_postgres::db::{MetadataPoolLimits, MetadataStore};
+use scope_postgres::db::MetadataStore;
 use scope_product_analytics::{EventSource, ProductAnalytics};
 use scope_storage::GitSegmentStore;
 use scope_storage::ObjectStore;
@@ -100,14 +100,9 @@ impl AppState {
         let git_public_url = git_public_url_from_env(None)?;
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
         storage.git_segment_store.cleanup_temporary().await?;
-        let metadata = MetadataStore::connect_with_pool_limits(
+        let metadata = MetadataStore::connect_with_max_connections(
             database_url_from_env()?,
-            MetadataPoolLimits {
-                connections: database_max_connections_from_env()?,
-                git_write_lease_sessions: u32::try_from(
-                    storage.runtime_budgets.receive_pack_concurrency(),
-                )?,
-            },
+            database_max_connections_from_env()?,
         )
         .await?;
         let state = Self::connect(AppServices {

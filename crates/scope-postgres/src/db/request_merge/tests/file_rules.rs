@@ -54,7 +54,6 @@ async fn deletion(store: &crate::db::MetadataStore, path: &str) -> MergePreparat
         source_blob("deleted"),
     );
     update.changes[0].content = None;
-    stage_segment(store, &update.git_pack_span.segment).await;
     MergePreparation {
         expected_git_frontier: repo.git_head.as_ref().unwrap().frontier(),
         expected_repo_change_version: repo.record.change_version,

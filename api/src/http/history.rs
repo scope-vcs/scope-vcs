@@ -318,15 +318,14 @@ async fn history_entry_file_diff_response(
     repo: &RepositoryAccessContext,
     file: &HistoryEntryFile,
 ) -> Result<ReviewFileDiffResponse, ApiError> {
-    let (head, spans) = state
+    let head = state
         .metadata
         .repositories()
         .repository_content_source(&repo.incarnation())
         .await?;
     review_file_diff_response_for_blobs(
         state,
-        head.as_ref()
-            .map(|head| (repo.incarnation(), head, spans.as_slice())),
+        head.as_ref().map(|head| (repo.incarnation(), head)),
         file.path.as_str().to_string(),
         file.kind,
         file.old_content.as_ref(),

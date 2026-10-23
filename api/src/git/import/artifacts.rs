@@ -4,11 +4,13 @@ use super::pushed_tree::{
 use super::repo_io::{
     PushedCommit, StagedGitPush, describe_refs, git_push_from_repo, git_refs, pushed_commit,
 };
-use super::segment_upload::GitSegmentUploadHeartbeat;
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
 use crate::{
     error::ApiError,
-    git::command::{git_process_output, run_git_output, run_git_output_bounded},
+    git::{
+        command::{git_process_output, run_git_output, run_git_output_bounded},
+        pool_pack::StagedPoolPack,
+    },
     runtime_budgets::RuntimeBudgets,
     state::AppState,
 };
@@ -18,7 +20,7 @@ use scope_domain::landing_file::{
 };
 use scope_domain::policy::ScopePath;
 use scope_domain::repo_config::RepoConfig;
-use scope_domain::repository::RepoLifecycleState;
+use scope_domain::repository::{RepoLifecycleState, Repository, git::GitHead};
 use scope_domain::runs::{
     catalog::{
         MAX_REPOSITORY_WORKFLOW_FILES, MAX_WORKFLOW_DEFINITION_BYTES, RepositoryWorkflowCatalog,
@@ -28,8 +30,6 @@ use scope_domain::runs::{
 };
 use scope_git::git_blob_reference;
 use scope_git_process::ProcessLimits;
-use scope_postgres::db::RepositoryGitWriteLease;
-use scope_storage::StagedGitSegment;
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -41,9 +41,7 @@ pub(crate) enum ReviewedUpdateMode {
 
 pub(crate) struct PreparedReceivePackUpdate {
     pub(crate) update: ReceivePackUpdate,
-    pub(crate) staged_segment: StagedGitSegment,
-    pub(crate) write_lease: RepositoryGitWriteLease,
-    pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
+    pub(crate) staged_pack: StagedPoolPack,
 }
 
 impl std::fmt::Debug for PreparedReceivePackUpdate {
@@ -78,111 +76,88 @@ pub(crate) async fn reviewed_update_from_staging_repo(
     config: RepoConfig,
     mode: ReviewedUpdateMode,
 ) -> Result<PreparedReceivePackUpdate, ApiError> {
-    let (branch, head_oid) = single_pushed_branch(staging_repo).await?;
-    let repository_id = scope_domain::repository::repo_id(owner, repo_name);
-    let lease_started = Instant::now();
-    let write_lease = state
-        .metadata
-        .repositories()
-        .acquire_git_write_lease(&repository_id)
-        .await?;
-    let lease_wait_ms = lease_started.elapsed().as_millis();
-    reviewed_update_under_lease(
-        state,
-        ReviewedUpdateTarget {
-            owner,
-            repo_name,
-            staging_repo,
-            author_id,
-            branch,
-            head_oid,
-        },
-        config,
-        mode,
-        write_lease,
-        lease_wait_ms,
-    )
-    .await
-}
-
-pub(crate) async fn reviewed_merge_under_lease(
-    state: &AppState,
-    owner: &str,
-    repo_name: &str,
-    staging_repo: &FsPath,
-    author_id: &str,
-    config: RepoConfig,
-    write_lease: RepositoryGitWriteLease,
-) -> Result<PreparedReceivePackUpdate, ApiError> {
-    let (branch, head_oid) = single_pushed_branch(staging_repo).await?;
-    reviewed_update_under_lease(
-        state,
-        ReviewedUpdateTarget {
-            owner,
-            repo_name,
-            staging_repo,
-            author_id,
-            branch,
-            head_oid,
-        },
-        config,
-        ReviewedUpdateMode::RequestMerge,
-        write_lease,
-        0,
-    )
-    .await
-}
-
-struct ReviewedUpdateTarget<'a> {
-    owner: &'a str,
-    repo_name: &'a str,
-    staging_repo: &'a FsPath,
-    author_id: &'a str,
-    branch: String,
-    head_oid: String,
-}
-
-async fn single_pushed_branch(staging_repo: &FsPath) -> Result<(String, String), ApiError> {
-    let path = staging_repo.to_path_buf();
-    let refs = crate::git::blocking::run(move || git_refs(&path)).await?;
-    if refs.len() != 1 {
-        return Err(ApiError::bad_request(format!(
-            "push must update exactly one branch and no tags; found {}",
-            describe_refs(&refs)
-        )));
-    }
-    let (branch, head_oid) = refs.into_iter().next().expect("length checked");
-    ensure_default_branch(&branch)?;
-    Ok((branch, head_oid))
-}
-
-async fn reviewed_update_under_lease(
-    state: &AppState,
-    target: ReviewedUpdateTarget<'_>,
-    config: RepoConfig,
-    mode: ReviewedUpdateMode,
-    write_lease: RepositoryGitWriteLease,
-    lease_wait_ms: u128,
-) -> Result<PreparedReceivePackUpdate, ApiError> {
-    let ReviewedUpdateTarget {
-        owner,
-        repo_name,
-        staging_repo,
-        author_id,
-        branch,
-        head_oid,
-    } = target;
     let repo = state
         .metadata
         .repositories()
         .git_push_state(owner, repo_name, author_id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
+    reviewed_update_on_base(
+        state,
+        ReviewTarget {
+            owner,
+            repo_name,
+            staging_repo,
+            author_id,
+        },
+        ReviewBase {
+            repo_id: &repo.repo_id,
+            lifecycle_state: repo.lifecycle_state,
+            git_head: repo.git_head.as_ref(),
+            change_version: repo.change_version,
+            repo_config: &repo.repo_config,
+        },
+        config,
+        mode,
+    )
+    .await
+}
+
+pub(crate) async fn reviewed_merge_update(
+    state: &AppState,
+    target: ReviewTarget<'_>,
+    base: &Repository,
+) -> Result<PreparedReceivePackUpdate, ApiError> {
+    reviewed_update_on_base(
+        state,
+        target,
+        ReviewBase {
+            repo_id: &base.record.id,
+            lifecycle_state: base.record.lifecycle_state,
+            git_head: base.git_head.as_ref(),
+            change_version: base.record.change_version,
+            repo_config: &base.repo_config,
+        },
+        base.repo_config.clone(),
+        ReviewedUpdateMode::RequestMerge,
+    )
+    .await
+}
+
+pub(crate) struct ReviewTarget<'a> {
+    pub(crate) owner: &'a str,
+    pub(crate) repo_name: &'a str,
+    pub(crate) staging_repo: &'a FsPath,
+    pub(crate) author_id: &'a str,
+}
+
+struct ReviewBase<'a> {
+    repo_id: &'a str,
+    lifecycle_state: RepoLifecycleState,
+    git_head: Option<&'a GitHead>,
+    change_version: u64,
+    repo_config: &'a RepoConfig,
+}
+
+async fn reviewed_update_on_base(
+    state: &AppState,
+    target: ReviewTarget<'_>,
+    repo: ReviewBase<'_>,
+    config: RepoConfig,
+    mode: ReviewedUpdateMode,
+) -> Result<PreparedReceivePackUpdate, ApiError> {
+    let ReviewTarget {
+        owner,
+        repo_name,
+        staging_repo,
+        author_id,
+    } = target;
+    let (branch, head_oid) = single_pushed_branch(staging_repo).await?;
     if mode != ReviewedUpdateMode::FirstPush && repo.lifecycle_state != RepoLifecycleState::Ready {
         return Err(ApiError::conflict("repo must be ready before push"));
     }
     if mode == ReviewedUpdateMode::ReadyPush
-        && let Some(current_head) = repo.git_head.as_ref().map(|head| head.head_oid.clone())
+        && let Some(current_head) = repo.git_head.map(|head| head.head_oid.clone())
     {
         let path = staging_repo.to_path_buf();
         let pushed_head = head_oid.clone();
@@ -191,12 +166,12 @@ async fn reviewed_update_under_lease(
         })
         .await?;
     }
-    let base_config_hash = crate::push_intents::repo_config_fingerprint(&repo.repo_config)?;
+    let base_config_hash = crate::push_intents::repo_config_fingerprint(repo.repo_config)?;
     let inspected = {
         let path = staging_repo.to_path_buf();
         let head = head_oid.clone();
-        let repo_id = repo.repo_id.clone();
-        let base_head = repo.git_head.as_ref().map(|head| head.head_oid.clone());
+        let repo_id = repo.repo_id.to_string();
+        let base_head = repo.git_head.map(|head| head.head_oid.clone());
         let change_version = repo.change_version.saturating_add(1);
         crate::git::blocking::run(move || {
             inspect_received_tree(
@@ -220,13 +195,12 @@ async fn reviewed_update_under_lease(
     } = inspected;
     let pack_started = Instant::now();
     let StagedGitPush {
-        stored: mut created_push,
-        staged_segment,
-        upload_heartbeat,
-    } = git_push_from_repo(state, &repo.repo_id, staging_repo, repo.git_head.as_ref()).await?;
-    created_push.head.change_version = repo.change_version.saturating_add(1);
+        head: mut git_head,
+        pack: staged_pack,
+    } = git_push_from_repo(state, repo.repo_id, staging_repo, repo.git_head).await?;
+    git_head.change_version = repo.change_version.saturating_add(1);
     let pack_put_ms = pack_started.elapsed().as_millis();
-    let pack_bytes = created_push.pack_span.segment.plaintext_bytes;
+    let pack_bytes = staged_pack.pack.storage.stored_bytes();
     tracing::info!(
         owner,
         repo = repo_name,
@@ -234,7 +208,6 @@ async fn reviewed_update_under_lease(
         pack_bytes,
         diff_ms,
         pack_put_ms,
-        lease_wait_ms,
         "prepared durable Git push objects"
     );
 
@@ -246,8 +219,8 @@ async fn reviewed_update_under_lease(
             base_git_frontier: None,
             author_id: author_id.to_string(),
             message,
-            git_head: created_push.head,
-            git_pack_span: created_push.pack_span,
+            git_head,
+            main_pack: staged_pack.pack.clone(),
             workflow_catalog,
             landing_file_mutation,
             changes,
@@ -256,10 +229,22 @@ async fn reviewed_update_under_lease(
             config,
             open_requests_by_view: Default::default(),
         },
-        staged_segment,
-        upload_heartbeat,
-        write_lease,
+        staged_pack,
     })
+}
+
+async fn single_pushed_branch(staging_repo: &FsPath) -> Result<(String, String), ApiError> {
+    let path = staging_repo.to_path_buf();
+    let refs = crate::git::blocking::run(move || git_refs(&path)).await?;
+    if refs.len() != 1 {
+        return Err(ApiError::bad_request(format!(
+            "push must update exactly one branch and no tags; found {}",
+            describe_refs(&refs)
+        )));
+    }
+    let (branch, head_oid) = refs.into_iter().next().expect("length checked");
+    ensure_default_branch(&branch)?;
+    Ok((branch, head_oid))
 }
 
 pub(crate) const STALE_MAIN_PUSH_ERROR: &str =

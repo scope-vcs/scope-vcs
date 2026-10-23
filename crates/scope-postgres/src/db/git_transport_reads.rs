@@ -1,6 +1,5 @@
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
-    git_segments::load_git_pack_spans,
     history_rows::{RepositoryProjectionSource, load_repository_projection_sources},
     projection_read_models::{live_projection_read_model, repository_views},
     repository_access::load_repo_record,
@@ -9,10 +8,7 @@ use crate::error::PostgresError;
 use scope_domain::{
     policy::ScopePath,
     repository::{
-        RepoRecord, RepositoryIncarnation,
-        access::RepositoryAccessContext,
-        git::{GitHead, GitPackSpan},
-        repo_id,
+        RepoRecord, RepositoryIncarnation, access::RepositoryAccessContext, git::GitHead, repo_id,
     },
     requests::PathHistory,
     views::{ViewId, Views},
@@ -24,14 +20,12 @@ pub struct GitReadSource {
     pub context: RepositoryAccessContext,
     pub public_files_visible: bool,
     pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RepositoryGitState {
     pub content_version: u64,
     pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
 }
 
 impl RepositoryStore {
@@ -52,12 +46,10 @@ impl RepositoryStore {
             .await?
             .map(entities::git_head::Model::try_into_domain)
             .transpose()?;
-        let git_pack_spans = load_git_pack_spans(&tx, incarnation.repository_id()).await?;
         tx.commit().await?;
         Ok(RepositoryGitState {
             content_version: record.content_version,
             git_head,
-            git_pack_spans,
         })
     }
 
@@ -79,13 +71,11 @@ impl RepositoryStore {
             .await?
             .map(entities::git_head::Model::try_into_domain)
             .transpose()?;
-        let git_pack_spans = load_git_pack_spans(&tx, &context.record.id).await?;
         tx.commit().await?;
         Ok(Some(GitReadSource {
             context,
             public_files_visible,
             git_head,
-            git_pack_spans,
         }))
     }
 

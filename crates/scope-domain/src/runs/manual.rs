@@ -138,7 +138,7 @@ impl ManualRunRequest {
                 "manual run source and workflow do not match the request",
             ));
         }
-        if let Some((repository_id, _, _)) = source.logical_git_head()
+        if let Some((repository_id, _)) = source.logical_git_head()
             && repository_id != self.repository_id
         {
             return Err(DomainError::invalid_input(

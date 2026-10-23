@@ -15,7 +15,7 @@ use crate::{
     repository::{
         RepoLifecycleState, Repository,
         access::{MainPushMode, RepositoryAccess, RepositoryActor},
-        git::{GitHead, GitPackSpan},
+        git::{GitHead, GitPoolPack, MainPackAdvanceError, validate_main_pack_advance},
         updates::RequestMergeOrigin,
     },
     visibility_changes::{VisibilityChange, VisibilityChangeSet, visibility_change_set_id},
@@ -35,7 +35,7 @@ pub struct ReviewedUpdateInput {
     pub author_id: String,
     pub message: String,
     pub git_head: GitHead,
-    pub git_pack_span: GitPackSpan,
+    pub main_pack: GitPoolPack,
     pub changes: Vec<ReviewedContentChange>,
     pub previous_config: Option<RepoConfig>,
     pub config: RepoConfig,
@@ -95,7 +95,7 @@ pub struct AcceptedContentPush {
     pub content_version: u64,
     pub policy: Policy,
     pub git_head: GitHead,
-    pub git_pack_span: GitPackSpan,
+    pub main_pack: GitPoolPack,
     pub logical_commit: LogicalCommit,
 }
 
@@ -115,12 +115,9 @@ pub fn source_content_matches(left: Option<&SourceBlob>, right: Option<&SourceBl
 pub fn apply_reviewed_update_to_repo(
     repo: &mut Repository,
     update: ReviewedUpdateInput,
-) -> ReviewedUpdateResult<()> {
-    validate_git_push_transition(
-        repo.git_head.as_ref(),
-        &update.git_head,
-        &update.git_pack_span,
-    )?;
+) -> ReviewedUpdateResult<GitPoolPack> {
+    validate_main_pack_advance(repo.git_head.as_ref(), &update.git_head, &update.main_pack)
+        .map_err(main_pack_conflict)?;
     if update.changes.is_empty() {
         return Err(ReviewedUpdateError::BadRequest(
             "update must include file changes",
@@ -250,18 +247,17 @@ pub fn apply_reviewed_update_to_repo(
     repo.live_files = new_tree;
     repo.policy = next_policy;
     repo.repo_config = next_config;
-    repo.git_pack_spans.push(update.git_pack_span);
     repo.git_head = Some(update.git_head);
     repo.first_push_token = None;
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
     repo.bump_content_version();
-    Ok(())
+    Ok(update.main_pack)
 }
 
 fn apply_content_only_update(
     repo: &mut Repository,
     update: ReviewedUpdateInput,
-) -> ReviewedUpdateResult<()> {
+) -> ReviewedUpdateResult<GitPoolPack> {
     let accepted = accept_content_push(
         ContentPushState {
             change_version: repo.record.change_version,
@@ -273,15 +269,14 @@ fn apply_content_only_update(
         },
         update,
     )?;
-    apply_accepted_content_push(repo, accepted);
-    Ok(())
+    Ok(apply_accepted_content_push(repo, accepted))
 }
 
 pub fn apply_request_merge_to_repo(
     repo: &mut Repository,
     update: ReviewedUpdateInput,
     origin: RequestMergeOrigin,
-) -> ReviewedUpdateResult<()> {
+) -> ReviewedUpdateResult<GitPoolPack> {
     let accepted = accept_request_merge(
         ContentPushState {
             change_version: repo.record.change_version,
@@ -294,11 +289,13 @@ pub fn apply_request_merge_to_repo(
         update,
         origin,
     )?;
-    apply_accepted_content_push(repo, accepted);
-    Ok(())
+    Ok(apply_accepted_content_push(repo, accepted))
 }
 
-fn apply_accepted_content_push(repo: &mut Repository, accepted: AcceptedContentPush) {
+fn apply_accepted_content_push(
+    repo: &mut Repository,
+    accepted: AcceptedContentPush,
+) -> GitPoolPack {
     for change in &accepted.logical_commit.changes {
         match &change.new_content {
             Some(content) => {
@@ -313,10 +310,10 @@ fn apply_accepted_content_push(repo: &mut Repository, accepted: AcceptedContentP
     repo.record.content_version = accepted.content_version;
     repo.policy = accepted.policy;
     repo.graph.commits.push(accepted.logical_commit);
-    repo.git_pack_spans.push(accepted.git_pack_span);
     repo.git_head = Some(accepted.git_head);
     repo.first_push_token = None;
     repo.record.lifecycle_state = RepoLifecycleState::Ready;
+    accepted.main_pack
 }
 
 pub fn accept_content_push(
@@ -346,11 +343,8 @@ fn accept_content_update(
     allow_unchanged_tree: bool,
     origin: LogicalCommitOrigin,
 ) -> ReviewedUpdateResult<AcceptedContentPush> {
-    validate_git_push_transition(
-        state.git_head.as_ref(),
-        &update.git_head,
-        &update.git_pack_span,
-    )?;
+    validate_main_pack_advance(state.git_head.as_ref(), &update.git_head, &update.main_pack)
+        .map_err(main_pack_conflict)?;
     if update.changes.is_empty() && !allow_unchanged_tree {
         return Err(ReviewedUpdateError::BadRequest(
             "update must include file changes",
@@ -413,7 +407,7 @@ fn accept_content_update(
         content_version,
         policy,
         git_head: update.git_head,
-        git_pack_span: update.git_pack_span,
+        main_pack: update.main_pack,
         logical_commit,
     })
 }
@@ -457,30 +451,16 @@ fn build_file_changes(
     file_changes
 }
 
-fn validate_git_push_transition(
-    previous: Option<&GitHead>,
-    next: &GitHead,
-    span: &GitPackSpan,
-) -> ReviewedUpdateResult<()> {
-    if span.first_sequence != next.push_sequence
-        || span.last_sequence != next.push_sequence
-        || span.geometric_tier != 0
-        || span.head_oid != next.head_oid
-    {
-        return Err(ReviewedUpdateError::Conflict(
-            "Git push pack span does not match the logical head",
-        ));
-    }
-    let expected_sequence = previous
-        .map_or(Some(1), |head| head.push_sequence.checked_add(1))
-        .ok_or(ReviewedUpdateError::Conflict("Git push sequence overflow"))?;
-    let expected_base = previous.map(|head| head.head_oid.as_str());
-    if next.push_sequence != expected_sequence || span.base_oid.as_deref() != expected_base {
-        return Err(ReviewedUpdateError::Conflict(
-            "Git push does not advance the current pack frontier",
-        ));
-    }
-    Ok(())
+fn main_pack_conflict(error: MainPackAdvanceError) -> ReviewedUpdateError {
+    ReviewedUpdateError::Conflict(match error {
+        MainPackAdvanceError::SequenceOverflow => "Git push sequence overflow",
+        MainPackAdvanceError::NotNextSequence | MainPackAdvanceError::WrongPrerequisites => {
+            "Git push does not advance the current main head"
+        }
+        MainPackAdvanceError::WrongOwner | MainPackAdvanceError::WrongHead => {
+            "Git push main pack does not match the logical head"
+        }
+    })
 }
 
 fn validate_commit_origin(

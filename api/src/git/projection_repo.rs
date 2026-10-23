@@ -395,13 +395,12 @@ pub(crate) async fn projection_bare_repo_for_state(
     views: &Views,
     projection: &Projection,
     git_head: Option<&scope_domain::repository::git::GitHead>,
-    git_pack_spans: &[scope_domain::repository::git::GitPackSpan],
 ) -> Result<GitRepoHandle, ApiError> {
     let canonical_repo = if let Some(head) = git_head {
         Some(
             state
                 .repository_engine
-                .materialize_repository(state, incarnation, head, git_pack_spans)
+                .materialize_repository(state, incarnation, head)
                 .await?,
         )
     } else {

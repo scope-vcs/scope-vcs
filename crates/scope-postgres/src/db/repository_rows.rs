@@ -5,7 +5,7 @@ use super::{
     },
     dependency_analysis::enqueue_dependency_analysis_for_repository,
     entities,
-    git_segments::{load_git_pack_spans, publish_git_segment, retire_git_segment},
+    git_heads::advance_git_head,
     history_rows::{
         RepositoryHistoryDelta, insert_repository_history, insert_repository_live_files,
         load_repository_histories, save_repository_history_delta,
@@ -32,7 +32,7 @@ where
         .into_active_model()
         .insert(conn)
         .await?;
-    insert_repository_fact_rows(conn, repo, now_unix).await?;
+    insert_repository_fact_rows(conn, repo).await?;
     insert_repository_history(conn, &repo.graph, &repo.visibility_change_sets).await?;
     insert_repository_live_files(conn, &repo.record.id, &repo.live_files, &repo.policy).await?;
     insert_repository_collaboration(conn, &repo.collaboration).await?;
@@ -62,7 +62,7 @@ where
             "repository content changed without advancing its content version",
         ));
     }
-    save_repository_rows(conn, before, after, now_unix).await?;
+    save_repository_rows(conn, before, after).await?;
     if content_changed {
         refresh_content_read_models(conn, after, now_unix).await?;
     }
@@ -73,7 +73,6 @@ pub(super) async fn save_repository_rows<C>(
     conn: &C,
     before: &Repository,
     after: &Repository,
-    now_unix: u64,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -126,7 +125,7 @@ where
         active.update(conn).await?;
     }
 
-    save_repository_fact_delta(conn, before, after, now_unix).await?;
+    save_repository_fact_delta(conn, before, after).await?;
     save_repository_history_delta(
         conn,
         RepositoryHistoryDelta {
@@ -171,11 +170,7 @@ where
     enqueue_dependency_analysis_for_repository(conn, repo, now_unix).await
 }
 
-async fn insert_repository_fact_rows<C>(
-    conn: &C,
-    repo: &Repository,
-    now_unix: u64,
-) -> Result<(), PostgresError>
+async fn insert_repository_fact_rows<C>(conn: &C, repo: &Repository) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -199,13 +194,6 @@ where
             .insert(conn)
             .await?;
     }
-    for span in &repo.git_pack_spans {
-        entities::git_pack_span::Model::from_domain(&repo_id, span)?
-            .into_active_model()
-            .insert(conn)
-            .await?;
-        publish_git_segment(conn, &repo_id, &span.segment, now_unix).await?;
-    }
 
     Ok(())
 }
@@ -214,7 +202,6 @@ async fn save_repository_fact_delta<C>(
     conn: &C,
     before: &Repository,
     after: &Repository,
-    now_unix: u64,
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -243,47 +230,13 @@ where
         }
     }
     if before.git_head != after.git_head {
-        entities::git_head::Entity::delete_by_id(repo_id.clone())
-            .exec(conn)
-            .await?;
-        if let Some(head) = &after.git_head {
-            entities::git_head::Model::from_domain(repo_id, head)?
-                .into_active_model()
-                .insert(conn)
-                .await?;
-        }
-    }
-    let spans_are_append_only = after.git_pack_spans.len() >= before.git_pack_spans.len()
-        && after.git_pack_spans[..before.git_pack_spans.len()] == before.git_pack_spans[..];
-    if !spans_are_append_only {
-        let retained_segment_ids = after
-            .git_pack_spans
-            .iter()
-            .map(|span| span.segment.segment_id.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
-        entities::git_pack_span::Entity::delete_many()
-            .filter(entities::git_pack_span::Column::RepoId.eq(repo_id.clone()))
-            .exec(conn)
-            .await?;
-        for span in &before.git_pack_spans {
-            if !retained_segment_ids.contains(span.segment.segment_id.as_str()) {
-                retire_git_segment(conn, &span.segment.segment_id, now_unix).await?;
+        match &after.git_head {
+            Some(head) => advance_git_head(conn, repo_id, before.git_head.as_ref(), head).await?,
+            None => {
+                entities::git_head::Entity::delete_by_id(repo_id.clone())
+                    .exec(conn)
+                    .await?;
             }
-        }
-        for span in &after.git_pack_spans {
-            entities::git_pack_span::Model::from_domain(repo_id, span)?
-                .into_active_model()
-                .insert(conn)
-                .await?;
-            publish_git_segment(conn, repo_id, &span.segment, now_unix).await?;
-        }
-    } else {
-        for span in &after.git_pack_spans[before.git_pack_spans.len()..] {
-            entities::git_pack_span::Model::from_domain(repo_id, span)?
-                .into_active_model()
-                .insert(conn)
-                .await?;
-            publish_git_segment(conn, repo_id, &span.segment, now_unix).await?;
         }
     }
     Ok(())
@@ -332,9 +285,6 @@ where
     for row in git_heads {
         let repo_id = row.repo_id.clone();
         facts.entry(repo_id).or_default().git_head = Some(row.try_into_domain()?);
-    }
-    for (repo_id, fact) in facts.iter_mut() {
-        fact.git_pack_spans = load_git_pack_spans(conn, repo_id).await?;
     }
 
     Ok(facts)

@@ -1,4 +1,4 @@
-use super::{MetadataStore, git_segments::GitWriteLeaseSessions};
+use super::MetadataStore;
 use crate::error::PostgresError;
 use sea_orm::{
     AccessMode, ConnectOptions, DatabaseConnection, DatabaseTransaction, IsolationLevel,
@@ -9,49 +9,31 @@ use std::sync::Arc;
 
 const WRITER_FENCE_KEY: &str = "scope:metadata-writers";
 pub const DEFAULT_METADATA_POOL_MAX_CONNECTIONS: u32 = 10;
-pub const DEFAULT_GIT_WRITE_LEASE_SESSIONS: u32 = 16;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct MetadataPoolLimits {
-    pub connections: u32,
-    pub git_write_lease_sessions: u32,
-}
-
-impl Default for MetadataPoolLimits {
-    fn default() -> Self {
-        Self {
-            connections: DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
-            git_write_lease_sessions: DEFAULT_GIT_WRITE_LEASE_SESSIONS,
-        }
-    }
-}
 
 pub(super) async fn connect_postgres_store(
     database_url: String,
-    limits: MetadataPoolLimits,
+    max_connections: u32,
 ) -> anyhow::Result<MetadataStore> {
     let options = database_url.parse()?;
-    connect_postgres_store_with_options(database_url, options, limits).await
+    connect_postgres_store_with_options(database_url, options, max_connections).await
 }
 
 pub(super) async fn connect_postgres_store_with_options(
     database_url: String,
     connection_options: sqlx::postgres::PgConnectOptions,
-    limits: MetadataPoolLimits,
+    max_connections: u32,
 ) -> anyhow::Result<MetadataStore> {
     let database_url = Arc::<str>::from(database_url);
-    let db = connect_writer_database(&database_url, connection_options, limits.connections).await?;
+    let db = connect_writer_database(&database_url, connection_options, max_connections).await?;
     if let Err(error) = crate::migrations::assert_exact_state(&db).await {
         db.close().await?;
         return Err(error.into());
     }
-    let git_write_lease_sessions =
-        GitWriteLeaseSessions::lazy(&database_url, limits.git_write_lease_sessions)?;
     Ok(MetadataStore {
         db: Arc::new(db),
+        merge_turn_sessions: super::merge_turns::MergeTurnSessions::new(Arc::clone(&database_url)),
         postgres_database_url: Some(database_url),
         repo_change_notifier: Default::default(),
-        git_write_lease_sessions,
         #[cfg(any(test, feature = "test-support"))]
         _test_schema: None,
     })

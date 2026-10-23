@@ -2,7 +2,8 @@ use super::{
     dependency_analysis::enqueue_dependency_analysis_target,
     entities,
     git_compaction::schedule_git_compaction,
-    git_segments::{load_git_pack_spans, publish_git_segment},
+    git_heads::advance_git_head,
+    git_segments::register_git_pool_pack,
     github_pushes::queue_main_publication,
     history_rows::{
         LiveFileRow, LiveFiles, file_rules, insert_commits, load_live_files_at, save_live_files,
@@ -129,7 +130,7 @@ async fn accept_and_persist_content_update(
     let mut live_paths = live_files.keys().cloned().collect::<BTreeSet<_>>();
     let change_version = i64_to_u64(repo_row.change_version, "repository change version")?;
     let content_version = i64_to_u64(repo_row.content_version, "repository content version")?;
-    let git_head = entities::git_head::Entity::find_by_id(&repo_id)
+    let previous_git_head = entities::git_head::Entity::find_by_id(&repo_id)
         .one(tx)
         .await?
         .map(entities::git_head::Model::try_into_domain)
@@ -142,7 +143,7 @@ async fn accept_and_persist_content_update(
             policy,
             repo_config,
             live_files,
-            git_head,
+            git_head: previous_git_head.clone(),
         };
         match kind {
             ContentUpdateKind::MainPush(input) => (accept_content_push(state, update), Some(input)),
@@ -157,7 +158,7 @@ async fn accept_and_persist_content_update(
         content_version,
         policy,
         git_head,
-        git_pack_span,
+        main_pack,
         logical_commit,
     } = accepted;
     let workflow_catalog = workflow_catalog
@@ -183,18 +184,8 @@ async fn accept_and_persist_content_update(
             Set(serde_json::to_value(&repository_policy).map_err(PostgresError::internal)?);
     }
     repo_update.update(tx).await?;
-    entities::git_head::Entity::delete_by_id(&repo_id)
-        .exec(tx)
-        .await?;
-    entities::git_head::Model::from_domain(&repo_id, &git_head)?
-        .into_active_model()
-        .insert(tx)
-        .await?;
-    entities::git_pack_span::Model::from_domain(&repo_id, &git_pack_span)?
-        .into_active_model()
-        .insert(tx)
-        .await?;
-    publish_git_segment(tx, &repo_id, &git_pack_span.segment, now_unix).await?;
+    advance_git_head(tx, &repo_id, previous_git_head.as_ref(), &git_head).await?;
+    register_git_pool_pack(tx, &repo_id, &main_pack, now_unix).await?;
     schedule_git_compaction(tx, &repo_id, git_head.push_sequence, now_unix).await?;
     let ordinal = usize::try_from(next_ordinal)
         .map_err(|_| PostgresError::internal_message("logical commit ordinal is invalid"))?;
@@ -227,20 +218,7 @@ async fn accept_and_persist_content_update(
     apply_repository_workflow_catalog(tx, &workflow_catalog).await?;
     fold_live_projection_read_models(tx, &repo_id, content_version).await?;
     if let Some(input) = push_trigger_input {
-        let pinned_pack_spans = if input.requires_evaluation() {
-            load_git_pack_spans(tx, &repo_id).await?
-        } else {
-            Vec::new()
-        };
-        enqueue_push_main_trigger_evaluation(
-            tx,
-            &repo_id,
-            &git_head,
-            &pinned_pack_spans,
-            &input,
-            now_unix,
-        )
-        .await?;
+        enqueue_push_main_trigger_evaluation(tx, &repo_id, &git_head, &input, now_unix).await?;
     }
     let queued_main_publication =
         queue_main_publication(tx, &repo_id, &git_head.head_oid, now_unix).await?;

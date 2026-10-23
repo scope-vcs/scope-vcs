@@ -16,6 +16,8 @@ mod m0096_github_review_bot_gate;
 mod m0097_review_bot_status_carriers;
 mod m0098_live_file_views;
 mod m0099_request_object_pool;
+mod m0100_head_only_run_sources;
+mod m0101_main_pool_packs;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -128,6 +130,14 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0099_request_object_pool::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0100_head_only_run_sources::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0101_main_pool_packs::Migration),
             metadata_restore_safe: true,
         },
     ]

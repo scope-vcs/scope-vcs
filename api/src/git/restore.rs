@@ -1,13 +1,12 @@
 use crate::{
     error::ApiError,
-    git::command::{prepare_git_subprocess, record_git_exit, run_git, truncated_git_stderr},
+    git::{
+        command::{prepare_git_subprocess, record_git_exit, run_git, truncated_git_stderr},
+        pool_install::install_main_head,
+    },
     state::AppState,
 };
-use futures_util::{StreamExt as _, stream};
-use scope_domain::repository::{
-    RepositoryIncarnation,
-    git::{GitHead, GitPackSpan, validate_git_pack_layout},
-};
+use scope_domain::repository::{RepositoryIncarnation, git::GitHead};
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, run as run_process};
 use std::{
@@ -18,52 +17,33 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(crate) async fn restore_git_pack_spans(
+pub(crate) async fn restore_main_head(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     head: &GitHead,
-    pack_spans: &[GitPackSpan],
     repo_root: &Path,
 ) -> Result<(), ApiError> {
     let repository_id = incarnation.repository_id();
     let started_at = Instant::now();
-    let total_pack_bytes = pack_spans
-        .iter()
-        .map(|span| span.segment.plaintext_bytes)
-        .sum::<u64>();
-    let result =
-        restore_git_pack_spans_inner(state, incarnation, head, pack_spans, repo_root).await;
+    let result = restore_main_head_inner(state, incarnation, head, repo_root).await;
     tracing::info!(
         repository_id,
-        operation = "restore_pack_layout",
+        operation = "restore_main_head",
         duration_ms = started_at.elapsed().as_millis(),
         requested_sequence = head.push_sequence,
-        pack_span_count = pack_spans.len(),
-        total_pack_bytes,
         success = result.is_ok(),
         "Git restore operation completed"
     );
     result
 }
 
-async fn restore_git_pack_spans_inner(
+async fn restore_main_head_inner(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     head: &GitHead,
-    pack_spans: &[GitPackSpan],
     repo_root: &Path,
 ) -> Result<(), ApiError> {
     let repository_id = incarnation.repository_id();
-    validate_git_pack_layout(pack_spans)
-        .map_err(|error| ApiError::internal_message(error.to_string()))?;
-    let final_span = pack_spans
-        .last()
-        .ok_or_else(|| ApiError::internal_message("Git head has no physical pack spans"))?;
-    if final_span.last_sequence != head.push_sequence || final_span.head_oid != head.head_oid {
-        return Err(ApiError::internal_message(
-            "Git pack layout frontier does not match the logical head",
-        ));
-    }
     let repo_root_for_cleanup = repo_root.to_path_buf();
     tokio::task::spawn_blocking(move || {
         if repo_root_for_cleanup.exists() {
@@ -87,13 +67,13 @@ async fn restore_git_pack_spans_inner(
         "initializing Git snapshot repo",
     )
     .await?;
-    hydrate_git_pack_spans(state, repo_root, incarnation, pack_spans).await?;
+    install_main_head(state, incarnation, repo_root, head).await?;
     advance_head_and_verify(
         repository_id,
         repo_root,
         &head.head_oid,
-        "restoring Git pack-layout head",
-        "verifying restored Git pack layout",
+        "restoring Git main head",
+        "verifying restored Git main head",
     )
     .await?;
     run_timed_git_restore_phase_async(
@@ -142,63 +122,6 @@ pub(crate) async fn advance_head_and_verify(
         fsck_context,
     )
     .await
-}
-
-pub(crate) async fn hydrate_git_pack_spans(
-    state: &AppState,
-    repo_root: &Path,
-    incarnation: &RepositoryIncarnation,
-    spans: &[GitPackSpan],
-) -> Result<(), ApiError> {
-    let mut packs = stream::iter(spans.iter().cloned().enumerate().map(
-        |(index, span)| async move {
-            let started = Instant::now();
-            let pack = state
-                .git_segment_store
-                .get_verified_pack(incarnation, &span.segment)
-                .await;
-            tracing::info!(
-                phase = "verified", repository_id = incarnation.repository_id(),
-                segment_id = span.segment.segment_id,
-                source = ?pack.as_ref().ok().map(|pack| pack.timings().source),
-                success = pack.is_ok(), duration_us = started.elapsed().as_micros(),
-                bytes = span.segment.plaintext_bytes, "Git segment restore telemetry"
-            );
-            let pack =
-                pack.map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
-            Ok::<_, ApiError>((index, span, pack))
-        },
-    ))
-    .buffered(4);
-    while let Some(pack) = packs.next().await {
-        let (index, span, pack) = pack?;
-        let repository_id = incarnation.repository_id().to_string();
-        let root = repo_root.to_path_buf();
-        let count = spans.len();
-        let timeout = state.runtime_budgets.git_command_timeout();
-        let parent_span = tracing::Span::current();
-        tokio::task::spawn_blocking(move || {
-            let _entered = parent_span.enter();
-            let started = Instant::now();
-            let result = install_verified_git_pack(&root, pack.path(), timeout);
-            tracing::info!(
-                repository_id,
-                operation = "index_pack",
-                duration_ms = started.elapsed().as_millis(),
-                span_index = index + 1,
-                span_count = count,
-                size_bytes = span.segment.plaintext_bytes,
-                success = result.is_ok(),
-                "Git restore operation completed"
-            );
-            result
-        })
-        .await
-        .map_err(|error| {
-            ApiError::internal_message(format!("Git index-pack task failed: {error}"))
-        })??;
-    }
-    Ok(())
 }
 
 pub(crate) fn install_verified_git_pack(
