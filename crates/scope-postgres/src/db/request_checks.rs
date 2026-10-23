@@ -63,7 +63,7 @@ impl RequestStore {
         )
         .await?;
         super::acquire_aggregate_lock(&tx, "request", &command.evaluation.request_id).await?;
-        super::run_retention::lock_run_evidence_retention(&tx).await?;
+        super::run_retention::lock_run_evidence_for_recording(&tx).await?;
         let active_auto_merge = super::request_auto_merge::lock_active_intent_for_request(
             &tx,
             &command.evaluation.request_id,
@@ -164,7 +164,7 @@ impl RequestStore {
         let tx = self.db.begin().await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
-        super::run_retention::lock_run_evidence_retention(&tx).await?;
+        super::run_retention::lock_run_evidence_for_recording(&tx).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
         let approver =
             RequestCheckReviewer::for_actor(&command.actor_user_id, &repo.access, &repo.views)
