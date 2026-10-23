@@ -6,6 +6,7 @@ use super::git_request_refs::github_checks::{REQUIRED_CHECK, checks, connect_git
 use super::*;
 use scope_domain::projection::LogicalCommitOrigin;
 
+mod pipelined;
 mod privacy;
 mod review;
 mod stacks;

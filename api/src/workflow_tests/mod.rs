@@ -75,6 +75,7 @@ mod http;
 mod landing_file;
 mod main_pool;
 mod manual_runs;
+mod merge_commits;
 mod native_runs_accounts;
 mod push_intent_completion;
 mod repo_cleanup;

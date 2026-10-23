@@ -6,30 +6,47 @@ use super::{
     },
     retries_preparation,
 };
-use crate::{
-    error::ApiError, git::pool_pack::StagedPoolPack, persistence::unix_now,
-    repo_events::RepoChangeReason, state::AppState,
-};
+use crate::{error::ApiError, state::AppState};
+use persist::{Persisted, persist_batch};
 use scope_domain::{
     repository::{Repository, RepositoryIncarnation},
     requests::Request,
 };
-use scope_postgres::{
-    db::{MergeRequestContentCommand, MergeRequestContentsOutcome},
-    error::{PostgresError, PostgresErrorKind},
-};
 use scope_product_analytics::ProductEvent;
 use std::{
     collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex, PoisonError},
+    sync::{
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
-use tokio::sync::oneshot;
+use tokio::sync::{Notify, oneshot};
+
+mod persist;
 
 const MAX_MERGES_PER_COMMIT: usize = 16;
+const BATCHES_PER_TURN: usize = 4;
+
+pub(crate) struct MergeCommitter {
+    queues: Mutex<HashMap<String, RepositoryQueue>>,
+    batches_per_turn: AtomicUsize,
+}
+
+impl Default for MergeCommitter {
+    fn default() -> Self {
+        Self {
+            queues: Mutex::default(),
+            batches_per_turn: AtomicUsize::new(BATCHES_PER_TURN),
+        }
+    }
+}
 
 #[derive(Default)]
-pub(crate) struct MergeCommitter {
-    queues: Mutex<HashMap<String, VecDeque<QueuedMerge>>>,
+struct RepositoryQueue {
+    merges: VecDeque<QueuedMerge>,
+    arrivals: Arc<Notify>,
+    #[cfg(test)]
+    submitted: usize,
 }
 
 pub(super) struct LandedMerge {
@@ -66,6 +83,12 @@ impl QueuedMerge {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WhenDrained {
+    KeepLeading,
+    StopLeading,
+}
+
 impl MergeCommitter {
     pub(super) async fn submit(
         state: &AppState,
@@ -81,16 +104,15 @@ impl MergeCommitter {
         };
         let starts_leader = {
             let mut queues = state.merge_committer.lock();
-            match queues.get_mut(&repository_id) {
-                Some(queue) => {
-                    queue.push_back(queued);
-                    false
-                }
-                None => {
-                    queues.insert(repository_id.clone(), VecDeque::from([queued]));
-                    true
-                }
+            let starts_leader = !queues.contains_key(&repository_id);
+            let queue = queues.entry(repository_id.clone()).or_default();
+            queue.merges.push_back(queued);
+            queue.arrivals.notify_one();
+            #[cfg(test)]
+            {
+                queue.submitted += 1;
             }
+            starts_leader
         };
         if starts_leader {
             tokio::spawn(lead(state.clone(), repository_id));
@@ -104,16 +126,37 @@ impl MergeCommitter {
 
     #[cfg(test)]
     pub(crate) fn queued(&self, repository_id: &str) -> usize {
-        self.lock().get(repository_id).map_or(0, VecDeque::len)
+        self.lock()
+            .get(repository_id)
+            .map_or(0, |queue| queue.merges.len())
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, VecDeque<QueuedMerge>>> {
+    #[cfg(test)]
+    pub(crate) fn yield_turn_after(&self, batches: usize) {
+        self.batches_per_turn.store(batches, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn submitted(&self, repository_id: &str) -> usize {
+        self.lock()
+            .get(repository_id)
+            .map_or(0, |queue| queue.submitted)
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, RepositoryQueue>> {
         self.queues.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn take_batch(&self, repository_id: &str) -> Vec<QueuedMerge> {
+    fn arrivals(&self, repository_id: &str) -> Arc<Notify> {
+        self.lock()
+            .get(repository_id)
+            .map(|queue| queue.arrivals.clone())
+            .unwrap_or_default()
+    }
+
+    fn take_batch(&self, repository_id: &str, when_drained: WhenDrained) -> Vec<QueuedMerge> {
         let mut queues = self.lock();
-        let Some(queue) = queues.get_mut(repository_id) else {
+        let Some(RepositoryQueue { merges: queue, .. }) = queues.get_mut(repository_id) else {
             return Vec::new();
         };
         let mut batch = Vec::new();
@@ -130,7 +173,7 @@ impl MergeCommitter {
                 break;
             }
         }
-        if batch.is_empty() {
+        if batch.is_empty() && when_drained == WhenDrained::StopLeading {
             queues.remove(repository_id);
         }
         batch
@@ -143,14 +186,14 @@ impl MergeCommitter {
         let mut queues = self.lock();
         let queue = queues.entry(repository_id.to_string()).or_default();
         for merge in merges.into_iter().rev() {
-            queue.push_front(merge);
+            queue.merges.push_front(merge);
         }
     }
 
     fn abandon(&self, repository_id: &str) -> Vec<QueuedMerge> {
         self.lock()
             .remove(repository_id)
-            .map(Vec::from)
+            .map(|queue| Vec::from(queue.merges))
             .unwrap_or_default()
     }
 }
@@ -192,20 +235,22 @@ async fn lead(state: AppState, repository_id: String) {
                 return;
             }
         };
-        let batch = state.merge_committer.take_batch(&repository_id);
+        let batch = state
+            .merge_committer
+            .take_batch(&repository_id, WhenDrained::StopLeading);
         if batch.is_empty() {
             turn.release().await;
             leadership.active = false;
             return;
         }
-        let retry = commit_batch(&state, batch).await;
+        let retry = drain(&state, &repository_id, batch).await;
         turn.release().await;
         state.wakeups.auto_merge.notify_one();
         state.merge_committer.requeue(&repository_id, retry);
     }
 }
 
-async fn commit_batch(state: &AppState, batch: Vec<QueuedMerge>) -> Vec<QueuedMerge> {
+async fn drain(state: &AppState, repository_id: &str, batch: Vec<QueuedMerge>) -> Vec<QueuedMerge> {
     let command = &batch[0].submission.command;
     let repo = match state
         .metadata
@@ -213,55 +258,199 @@ async fn commit_batch(state: &AppState, batch: Vec<QueuedMerge>) -> Vec<QueuedMe
         .repository(&command.owner, &command.repo_name)
         .await
     {
-        Ok(repo) => repo,
+        Ok(Some(repo)) => repo,
+        Ok(None) => return fail_all(batch, stale_repository()),
         Err(error) => return fail_all(batch, ApiError::from(error)),
     };
-    let mut current = Vec::with_capacity(batch.len());
-    for merge in batch {
-        if repo
-            .as_ref()
-            .is_some_and(|repo| repo.incarnation() == merge.submission.incarnation)
-        {
-            current.push(merge);
-        } else {
-            merge.answer(Err(ApiError::conflict(
-                "repository changed while the merge was checked; retry",
-            )
-            .into()));
-        }
-    }
-    let Some(repo) = repo.filter(|_| !current.is_empty()) else {
+    let batch = of_incarnation(batch, &repo.incarnation());
+    if batch.is_empty() {
         return Vec::new();
-    };
-    let staging = match MergeStaging::open(state, &repo).await {
-        Ok(staging) => staging,
-        Err(error) => return fail_all(current, error),
-    };
-    let (prepared, mut retry) = prepare_batch(state, &repo, &staging, current).await;
-    let closed = staging.close();
-    if let Err(error) = closed {
-        fail_all(discard_all(state, prepared).await, error);
-        return retry;
     }
-    if !prepared.is_empty() {
-        retry.splice(0..0, persist_batch(state, prepared).await);
+    let mut staging = match MergeStaging::open(state, &repo).await {
+        Ok(staging) => staging,
+        Err(error) => return fail_all(batch, error),
+    };
+    let incarnation = repo.incarnation();
+    let mut prepared = prepare_batch(state, &repo, &mut staging, batch).await;
+    drop(repo);
+    let batches_per_turn = state
+        .merge_committer
+        .batches_per_turn
+        .load(Ordering::Relaxed);
+    let mut batches = 0;
+    let retry = loop {
+        let (ready, proposed, settled) = prepared.settle(state, staging.committed()).await;
+        state.merge_committer.requeue(repository_id, settled);
+        if ready.is_empty() {
+            break Vec::new();
+        }
+        batches += 1;
+        let last_in_turn = batches >= batches_per_turn;
+        let (Persisted { all_landed, retry }, next) = if last_in_turn {
+            (persist_batch(state, ready).await, None)
+        } else {
+            persist_while_preparing(state, repository_id, ready, &proposed, &mut staging).await
+        };
+        state.wakeups.auto_merge.notify_one();
+        if !all_landed {
+            let mut retry = retry;
+            if let Some(next) = next {
+                retry.extend(next.unwind(state).await);
+            }
+            break retry;
+        }
+        if last_in_turn {
+            break Vec::new();
+        }
+        staging.landed(proposed.clone());
+        prepared = match next {
+            Some(next) => next,
+            None => {
+                let next = of_incarnation(
+                    state
+                        .merge_committer
+                        .take_batch(repository_id, WhenDrained::KeepLeading),
+                    &incarnation,
+                );
+                if next.is_empty() {
+                    break Vec::new();
+                }
+                prepare_batch(state, &proposed, &mut staging, next).await
+            }
+        };
+    };
+    if let Err(error) = staging.close() {
+        tracing::warn!(error = %error.operator_diagnostic(), "failed to remove merge staging");
     }
     retry
 }
 
+async fn persist_while_preparing(
+    state: &AppState,
+    repository_id: &str,
+    ready: Vec<(QueuedMerge, PreparedRequestMerge)>,
+    proposed: &Repository,
+    staging: &mut MergeStaging,
+) -> (Persisted, Option<PreparedBatch>) {
+    let arrivals = state.merge_committer.arrivals(repository_id);
+    let persisting = persist_batch(state, ready);
+    tokio::pin!(persisting);
+    loop {
+        let arrived = arrivals.notified();
+        let next = of_incarnation(
+            state
+                .merge_committer
+                .take_batch(repository_id, WhenDrained::KeepLeading),
+            &proposed.incarnation(),
+        );
+        if !next.is_empty() {
+            let (persisted, next) = tokio::join!(
+                &mut persisting,
+                prepare_batch(state, proposed, staging, next)
+            );
+            return (persisted, Some(next));
+        }
+        tokio::select! {
+            persisted = &mut persisting => return (persisted, None),
+            () = arrived => {}
+        }
+    }
+}
+
+fn of_incarnation(
+    batch: Vec<QueuedMerge>,
+    incarnation: &RepositoryIncarnation,
+) -> Vec<QueuedMerge> {
+    let mut current = Vec::with_capacity(batch.len());
+    for merge in batch {
+        if &merge.submission.incarnation == incarnation {
+            current.push(merge);
+        } else {
+            merge.answer(Err(stale_repository().into()));
+        }
+    }
+    current
+}
+
+fn stale_repository() -> ApiError {
+    ApiError::conflict("repository changed while the merge was checked; retry")
+}
+
+struct PreparedBatch {
+    ready: Vec<(QueuedMerge, PreparedRequestMerge)>,
+    proposed: Repository,
+    speculative: bool,
+    stop: Option<BatchStop>,
+    waiting: Vec<QueuedMerge>,
+}
+
+enum BatchStop {
+    FirstFailed(Box<QueuedMerge>, RequestMergeFailure),
+    PreflightFailed(Vec<QueuedMerge>, ApiError),
+}
+
+impl BatchStop {
+    fn into_merges(self) -> Vec<QueuedMerge> {
+        match self {
+            Self::FirstFailed(merge, _) => vec![*merge],
+            Self::PreflightFailed(unprepared, _) => unprepared,
+        }
+    }
+}
+
+impl PreparedBatch {
+    async fn settle(
+        self,
+        state: &AppState,
+        committed: &Repository,
+    ) -> (
+        Vec<(QueuedMerge, PreparedRequestMerge)>,
+        Repository,
+        Vec<QueuedMerge>,
+    ) {
+        let mut requeue = Vec::new();
+        match self.stop {
+            Some(stop) if self.speculative => requeue.extend(stop.into_merges()),
+            Some(BatchStop::FirstFailed(merge, failure)) => {
+                requeue.extend(settle_first_failure(state, committed, *merge, failure).await);
+            }
+            Some(BatchStop::PreflightFailed(unprepared, error)) if unprepared.len() == 1 => {
+                fail_all(unprepared, error);
+            }
+            Some(BatchStop::PreflightFailed(unprepared, _)) => {
+                requeue.extend(unprepared.into_iter().map(|mut merge| {
+                    merge.alone = true;
+                    merge
+                }));
+            }
+            None => {}
+        }
+        requeue.extend(self.waiting);
+        (self.ready, self.proposed, requeue)
+    }
+
+    async fn unwind(self, state: &AppState) -> Vec<QueuedMerge> {
+        let mut unwound = discard_all(state, self.ready).await;
+        unwound.extend(self.stop.into_iter().flat_map(BatchStop::into_merges));
+        unwound.extend(self.waiting);
+        unwound
+    }
+}
+
 async fn prepare_batch(
     state: &AppState,
-    repo: &Repository,
-    staging: &MergeStaging,
+    base: &Repository,
+    staging: &mut MergeStaging,
     batch: Vec<QueuedMerge>,
-) -> (Vec<(QueuedMerge, PreparedRequestMerge)>, Vec<QueuedMerge>) {
-    let full_view = repo.repo_config.views().full().clone();
-    let mut proposed = repo.clone();
-    let mut merges = Vec::new();
+) -> PreparedBatch {
+    let full_view = base.repo_config.views().full().clone();
+    let speculative = base.git_head != staging.committed().git_head;
+    let mut proposed = base.clone();
+    let mut ready = Vec::new();
     let mut waiting = VecDeque::from(batch);
     while let Some(merge) = waiting.pop_front() {
         let restricted = merge.submission.request.view != full_view;
-        if restricted && !merges.is_empty() {
+        if restricted && !ready.is_empty() {
             waiting.push_front(merge);
             break;
         }
@@ -275,17 +464,20 @@ async fn prepare_batch(
         .await
         {
             Ok((prepared, next)) => {
-                merges.push((merge, prepared));
+                ready.push((merge, prepared));
                 proposed = next;
                 if restricted {
                     break;
                 }
             }
-            Err(failure) if merges.is_empty() => {
-                if let Some(merge) = settle_first_failure(state, repo, merge, failure).await {
-                    waiting.push_front(merge);
-                }
-                return (Vec::new(), waiting.into());
+            Err(failure) if ready.is_empty() => {
+                return PreparedBatch {
+                    speculative,
+                    ready,
+                    proposed,
+                    stop: Some(BatchStop::FirstFailed(Box::new(merge), failure)),
+                    waiting: waiting.into(),
+                };
             }
             Err(_) => {
                 waiting.push_front(merge);
@@ -294,35 +486,42 @@ async fn prepare_batch(
         }
     }
     let waiting = Vec::from(waiting);
-    if merges.is_empty() {
-        return (Vec::new(), waiting);
-    }
-    let restricted = merges[0].0.submission.request.view != full_view;
-    if !restricted && let Err(error) = preflight_anyone_views(state, repo, &proposed, staging).await
+    let restricted = ready
+        .first()
+        .is_some_and(|(merge, _)| merge.submission.request.view != full_view);
+    if !ready.is_empty()
+        && !restricted
+        && let Err(error) = preflight_anyone_views(state, &proposed, staging).await
     {
-        let mut unprepared = discard_all(state, merges).await;
-        if unprepared.len() == 1 {
-            fail_all(unprepared, error);
-            return (Vec::new(), waiting);
-        }
-        for merge in &mut unprepared {
-            merge.alone = true;
-        }
-        unprepared.extend(waiting);
-        return (Vec::new(), unprepared);
+        return PreparedBatch {
+            speculative,
+            stop: Some(BatchStop::PreflightFailed(
+                discard_all(state, ready).await,
+                error,
+            )),
+            ready: Vec::new(),
+            proposed: base.clone(),
+            waiting,
+        };
     }
-    (merges, waiting)
+    PreparedBatch {
+        speculative,
+        ready,
+        proposed,
+        stop: None,
+        waiting,
+    }
 }
 
 async fn settle_first_failure(
     state: &AppState,
-    repo: &Repository,
+    committed: &Repository,
     mut merge: QueuedMerge,
     failure: RequestMergeFailure,
 ) -> Option<QueuedMerge> {
     let moved = failure.is_conflict()
         && merge.attempt < MERGE_ATTEMPTS
-        && repository_moved_since(state, repo, &merge.submission.command).await;
+        && repository_moved_since(state, committed, &merge.submission.command).await;
     if retries_preparation(&failure, moved, merge.attempt) {
         tracing::info!(
             attempt = merge.attempt,
@@ -335,7 +534,7 @@ async fn settle_first_failure(
     if matches!(failure, RequestMergeFailure::MergeConflict(_))
         && let Err(error) = record_integration_conflict(
             state,
-            repo,
+            committed,
             &merge.submission.command.actor_user_id,
             &merge.submission.request,
         )
@@ -346,13 +545,6 @@ async fn settle_first_failure(
     }
     merge.answer(Err(failure));
     None
-}
-
-struct PersistingMerge {
-    merge: QueuedMerge,
-    staged_pack: StagedPoolPack,
-    incarnation: RepositoryIncarnation,
-    repository_id: String,
 }
 
 async fn repository_moved_since(
@@ -368,165 +560,6 @@ async fn repository_moved_since(
         .ok()
         .flatten()
         .is_some_and(|latest| latest.record.content_version != repo.record.content_version)
-}
-
-async fn persist_batch(
-    state: &AppState,
-    merges: Vec<(QueuedMerge, PreparedRequestMerge)>,
-) -> Vec<QueuedMerge> {
-    let now_unix = match unix_now() {
-        Ok(now_unix) => now_unix,
-        Err(error) => {
-            fail_all(discard_all(state, merges).await, error);
-            return Vec::new();
-        }
-    };
-    let (persisting, commands): (Vec<_>, Vec<_>) = merges
-        .into_iter()
-        .map(|(merge, prepared)| split_prepared(merge, prepared, now_unix))
-        .unzip();
-    let started = std::time::Instant::now();
-    let outcome = state
-        .metadata
-        .requests()
-        .merge_request_contents(commands)
-        .await;
-    tracing::info!(
-        merges = persisting.len(),
-        persist_ms = started.elapsed().as_millis(),
-        "request merge batch persisted"
-    );
-    let MergeRequestContentsOutcome { landed, rejected } = match outcome {
-        Ok(outcome) => outcome,
-        Err(error) => MergeRequestContentsOutcome {
-            landed: Vec::new(),
-            rejected: Some(error),
-        },
-    };
-    let mut persisting = persisting.into_iter();
-    let mut landed_in = None;
-    let mut landed_replies = Vec::new();
-    for (mutation, persisted) in landed.into_iter().zip(persisting.by_ref()) {
-        let command = &persisted.merge.submission.command;
-        if mutation.queued_main_publication {
-            state.wakeups.github_pushes.notify_one();
-        }
-        crate::use_cases::git_receive::best_effort_sync_cache(
-            state,
-            &command.owner,
-            &command.repo_name,
-            &command.actor_user_id,
-            &persisted.incarnation,
-            &persisted.staged_pack,
-            &mutation.git_head,
-        )
-        .await;
-        persisted.staged_pack.finish(state).await;
-        state
-            .publish_repo_change(
-                &persisted.incarnation,
-                mutation.git_head.change_version,
-                RepoChangeReason::RequestMerged,
-            )
-            .await;
-        landed_in.get_or_insert_with(|| {
-            (
-                persisted.incarnation.clone(),
-                command.owner.clone(),
-                command.repo_name.clone(),
-            )
-        });
-        let QueuedMerge {
-            submission, reply, ..
-        } = persisted.merge;
-        state.product_analytics.capture(submission.analytics_event);
-        landed_replies.push((
-            reply,
-            LandedMerge {
-                request: mutation.request.request,
-                main_oid: mutation.git_head.head_oid,
-            },
-        ));
-    }
-    if let Some((incarnation, owner, repo_name)) = landed_in {
-        state
-            .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
-            .await;
-        crate::use_cases::request_checks::renew_stale_check_commits_in_background(
-            state, &owner, &repo_name,
-        );
-    }
-    for (reply, landed) in landed_replies {
-        let _ = reply.send(Ok(landed));
-    }
-    let mut retry = Vec::new();
-    if let Some(error) = rejected
-        && let Some(rejected) = persisting.next()
-    {
-        rejected
-            .staged_pack
-            .discard(state, &rejected.repository_id)
-            .await;
-        let mut merge = rejected.merge;
-        if retries_after_rejection(&error, merge.attempt) {
-            tracing::info!(
-                attempt = merge.attempt,
-                request_id = %merge.submission.request.id,
-                "main moved while the merge was prepared; preparing it again"
-            );
-            merge.attempt += 1;
-            retry.push(merge);
-        } else {
-            merge.answer(Err(ApiError::from(error).into()));
-        }
-    }
-    for unpersisted in persisting {
-        unpersisted
-            .staged_pack
-            .discard(state, &unpersisted.repository_id)
-            .await;
-        retry.push(unpersisted.merge);
-    }
-    retry
-}
-
-fn retries_after_rejection(error: &PostgresError, attempt: usize) -> bool {
-    error.kind == PostgresErrorKind::RepositoryMoved && attempt < MERGE_ATTEMPTS
-}
-
-fn split_prepared(
-    merge: QueuedMerge,
-    prepared: PreparedRequestMerge,
-    now_unix: u64,
-) -> (PersistingMerge, MergeRequestContentCommand) {
-    let command = &merge.submission.command;
-    let content = MergeRequestContentCommand {
-        owner: command.owner.clone(),
-        name: command.repo_name.clone(),
-        request_id: command.request_id.clone(),
-        actor_user_id: command.actor_user_id.clone(),
-        expected_auto_merge: command.expected_auto_merge.clone(),
-        merged_event_id: merge.submission.merged_event_id.clone(),
-        expected_git_frontier: prepared.expected_git_frontier,
-        expected_repo_change_version: prepared.expected_repo_change_version,
-        expected_request_head_oid: prepared.prepared_request_head_oid,
-        expected_merge_evidence: prepared.expected_merge_evidence,
-        stack_children: prepared.stack_children,
-        update: prepared.update.into_reviewed_update(),
-        landing_file_mutation: prepared.landing_file_mutation,
-        workflow_catalog: prepared.workflow_catalog,
-        origin: prepared.origin,
-        now_unix,
-    };
-    (
-        PersistingMerge {
-            merge,
-            staged_pack: prepared.staged_pack,
-            incarnation: prepared.repository_incarnation,
-            repository_id: prepared.repository_id,
-        },
-        content,
-    )
 }
 
 async fn discard_all(
