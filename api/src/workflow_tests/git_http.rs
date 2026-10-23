@@ -1,4 +1,5 @@
 use super::*;
+use scope_domain::content::SYMLINK_GIT_FILE_MODE;
 use scope_domain::views::ViewId;
 
 #[tokio::test]
@@ -237,6 +238,7 @@ async fn real_git_first_push_over_http_applies_immediately() {
         "real-first-http-push",
         "hello over http\n",
         Some(("script.sh", "#!/bin/sh\necho hi\n")),
+        Some(("latest.sh", "script.sh")),
     )
     .await;
     run_git(
@@ -263,6 +265,13 @@ async fn real_git_first_push_over_http_applies_immediately() {
             .unwrap()
             .git_file_mode,
         "100755"
+    );
+    assert_eq!(
+        live_tree
+            .get(&ScopePath::parse("/latest.sh").unwrap())
+            .unwrap()
+            .git_file_mode,
+        SYMLINK_GIT_FILE_MODE
     );
 }
 
@@ -363,7 +372,7 @@ async fn chunked_real_git_published_push_over_http_accepts_image_context() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn first_push_unsupported_control_file_displays_rejection_without_persisting() {
     let (state, source, _server, recording) =
-        first_push_fixture("unsupported-control-file-http", "hello\n", None).await;
+        first_push_fixture("unsupported-control-file-http", "hello\n", None, None).await;
     fs::create_dir(source.join(".scope")).unwrap();
     fs::write(source.join(".scope/other.yml"), "").unwrap();
     run_git(Some(&source), &["add", "-A"], "add control file").unwrap();
@@ -403,6 +412,7 @@ pub(super) async fn first_push_fixture(
     label: &str,
     readme: &str,
     executable: Option<(&str, &str)>,
+    link: Option<(&str, &str)>,
 ) -> (
     AppState,
     TempGitRepo,
@@ -417,6 +427,9 @@ pub(super) async fn first_push_fixture(
     fs::write(source.join("README.md"), readme).unwrap();
     if let Some((path, content)) = executable {
         fs::write(source.join(path), content).unwrap();
+    }
+    if let Some((path, target)) = link {
+        std::os::unix::fs::symlink(target, source.join(path)).unwrap();
     }
     run_git(Some(&source), &["add", "-A"], "add first push files").unwrap();
     if let Some((path, _)) = executable {
