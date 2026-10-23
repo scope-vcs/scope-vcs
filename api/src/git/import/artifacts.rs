@@ -1,23 +1,27 @@
-use super::repo_io::{
-    GitTreeFile, StagedGitPush, describe_refs, git_changed_tree_entries, git_push_from_repo,
-    git_refs, git_tree_entries_under, pushed_commit_message, pushed_commit_time,
-    validate_pushed_commit_range,
+use super::pushed_tree::{
+    GitTreeFile, git_changed_tree_entries, git_tree_entries_under, validate_pushed_commit_range,
 };
-use super::segment_upload::GitSegmentUploadHeartbeat;
+use super::repo_io::{
+    PushedCommit, StagedGitPush, describe_refs, git_push_from_repo, git_refs, pushed_commit,
+};
 use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
 use crate::{
     error::ApiError,
-    git::command::{git_process_output, run_git_output_bounded},
+    git::{
+        command::{git_process_output, run_git_output, run_git_output_bounded},
+        pool_pack::StagedPoolPack,
+    },
     runtime_budgets::RuntimeBudgets,
     state::AppState,
 };
+use scope_domain::content::is_regular_git_file_mode;
 use scope_domain::landing_file::{
     MAX_REPOSITORY_LANDING_FILE_BYTES, REPOSITORY_LANDING_FILE_PATH, RepositoryLandingFile,
     RepositoryLandingFileMutation,
 };
 use scope_domain::policy::ScopePath;
 use scope_domain::repo_config::RepoConfig;
-use scope_domain::repository::RepoLifecycleState;
+use scope_domain::repository::{RepoLifecycleState, Repository, git::GitHead};
 use scope_domain::runs::{
     catalog::{
         MAX_REPOSITORY_WORKFLOW_FILES, MAX_WORKFLOW_DEFINITION_BYTES, RepositoryWorkflowCatalog,
@@ -27,8 +31,6 @@ use scope_domain::runs::{
 };
 use scope_git::git_blob_reference;
 use scope_git_process::ProcessLimits;
-use scope_postgres::db::RepositoryGitWriteLease;
-use scope_storage::StagedGitSegment;
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -40,9 +42,7 @@ pub(crate) enum ReviewedUpdateMode {
 
 pub(crate) struct PreparedReceivePackUpdate {
     pub(crate) update: ReceivePackUpdate,
-    pub(crate) staged_segment: StagedGitSegment,
-    pub(crate) write_lease: RepositoryGitWriteLease,
-    pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
+    pub(crate) staged_pack: StagedPoolPack,
 }
 
 impl std::fmt::Debug for PreparedReceivePackUpdate {
@@ -77,37 +77,102 @@ pub(crate) async fn reviewed_update_from_staging_repo(
     config: RepoConfig,
     mode: ReviewedUpdateMode,
 ) -> Result<PreparedReceivePackUpdate, ApiError> {
-    let path = staging_repo.to_path_buf();
-    let refs = crate::git::blocking::run(move || git_refs(&path)).await?;
-    if refs.len() != 1 {
-        return Err(ApiError::bad_request(format!(
-            "push must update exactly one branch and no tags; found {}",
-            describe_refs(&refs)
-        )));
-    }
-    let (branch, head_oid) = refs.into_iter().next().expect("length checked");
-    ensure_default_branch(&branch)?;
-    let repository_id = scope_domain::repository::repo_id(owner, repo_name);
-    let write_lease = state
-        .metadata
-        .repositories()
-        .acquire_git_write_lease(&repository_id)
-        .await?;
     let repo = state
         .metadata
         .repositories()
-        .git_push_context(owner, repo_name, author_id)
+        .git_push_state(owner, repo_name, author_id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
+    reviewed_update_on_base(
+        state,
+        ReviewTarget {
+            owner,
+            repo_name,
+            staging_repo,
+            author_id,
+        },
+        ReviewBase {
+            repo_id: &repo.repo_id,
+            lifecycle_state: repo.lifecycle_state,
+            git_head: repo.git_head.as_ref(),
+            change_version: repo.change_version,
+            repo_config: &repo.repo_config,
+        },
+        config,
+        mode,
+    )
+    .await
+}
+
+pub(crate) async fn reviewed_merge_update(
+    state: &AppState,
+    target: ReviewTarget<'_>,
+    base: &Repository,
+) -> Result<PreparedReceivePackUpdate, ApiError> {
+    reviewed_update_on_base(
+        state,
+        target,
+        ReviewBase {
+            repo_id: &base.record.id,
+            lifecycle_state: base.record.lifecycle_state,
+            git_head: base.git_head.as_ref(),
+            change_version: base.record.change_version,
+            repo_config: &base.repo_config,
+        },
+        base.repo_config.clone(),
+        ReviewedUpdateMode::RequestMerge,
+    )
+    .await
+}
+
+pub(crate) struct ReviewTarget<'a> {
+    pub(crate) owner: &'a str,
+    pub(crate) repo_name: &'a str,
+    pub(crate) staging_repo: &'a FsPath,
+    pub(crate) author_id: &'a str,
+}
+
+struct ReviewBase<'a> {
+    repo_id: &'a str,
+    lifecycle_state: RepoLifecycleState,
+    git_head: Option<&'a GitHead>,
+    change_version: u64,
+    repo_config: &'a RepoConfig,
+}
+
+async fn reviewed_update_on_base(
+    state: &AppState,
+    target: ReviewTarget<'_>,
+    repo: ReviewBase<'_>,
+    config: RepoConfig,
+    mode: ReviewedUpdateMode,
+) -> Result<PreparedReceivePackUpdate, ApiError> {
+    let ReviewTarget {
+        owner,
+        repo_name,
+        staging_repo,
+        author_id,
+    } = target;
+    let (branch, head_oid) = single_pushed_branch(staging_repo).await?;
     if mode != ReviewedUpdateMode::FirstPush && repo.lifecycle_state != RepoLifecycleState::Ready {
         return Err(ApiError::conflict("repo must be ready before push"));
     }
-    let base_config_hash = crate::push_intents::repo_config_fingerprint(&repo.repo_config)?;
+    if mode == ReviewedUpdateMode::ReadyPush
+        && let Some(current_head) = repo.git_head.map(|head| head.head_oid.clone())
+    {
+        let path = staging_repo.to_path_buf();
+        let pushed_head = head_oid.clone();
+        crate::git::blocking::run(move || {
+            ensure_pushed_head_extends(&path, &current_head, &pushed_head)
+        })
+        .await?;
+    }
+    let base_config_hash = crate::push_intents::repo_config_fingerprint(repo.repo_config)?;
     let inspected = {
         let path = staging_repo.to_path_buf();
         let head = head_oid.clone();
-        let repo_id = repo.repo_id.clone();
-        let base_head = repo.git_head.as_ref().map(|head| head.head_oid.clone());
+        let repo_id = repo.repo_id.to_string();
+        let base_head = repo.git_head.map(|head| head.head_oid.clone());
         let change_version = repo.change_version.saturating_add(1);
         crate::git::blocking::run(move || {
             inspect_received_tree(
@@ -131,13 +196,12 @@ pub(crate) async fn reviewed_update_from_staging_repo(
     } = inspected;
     let pack_started = Instant::now();
     let StagedGitPush {
-        stored: mut created_push,
-        staged_segment,
-        upload_heartbeat,
-    } = git_push_from_repo(state, &repo.repo_id, staging_repo, repo.git_head.as_ref()).await?;
-    created_push.head.change_version = repo.change_version.saturating_add(1);
+        head: mut git_head,
+        pack: staged_pack,
+    } = git_push_from_repo(state, repo.repo_id, staging_repo, repo.git_head).await?;
+    git_head.change_version = repo.change_version.saturating_add(1);
     let pack_put_ms = pack_started.elapsed().as_millis();
-    let pack_bytes = created_push.pack_span.segment.plaintext_bytes;
+    let pack_bytes = staged_pack.pack.storage.stored_bytes();
     tracing::info!(
         owner,
         repo = repo_name,
@@ -156,8 +220,8 @@ pub(crate) async fn reviewed_update_from_staging_repo(
             base_git_frontier: None,
             author_id: author_id.to_string(),
             message,
-            git_head: created_push.head,
-            git_pack_span: created_push.pack_span,
+            git_head,
+            main_pack: staged_pack.pack.clone(),
             workflow_catalog,
             landing_file_mutation,
             changes,
@@ -166,10 +230,59 @@ pub(crate) async fn reviewed_update_from_staging_repo(
             config,
             open_requests_by_view: Default::default(),
         },
-        staged_segment,
-        upload_heartbeat,
-        write_lease,
+        staged_pack,
     })
+}
+
+async fn single_pushed_branch(staging_repo: &FsPath) -> Result<(String, String), ApiError> {
+    let path = staging_repo.to_path_buf();
+    let refs = crate::git::blocking::run(move || git_refs(&path)).await?;
+    if refs.len() != 1 {
+        return Err(ApiError::bad_request(format!(
+            "push must update exactly one branch and no tags; found {}",
+            describe_refs(&refs)
+        )));
+    }
+    let (branch, head_oid) = refs.into_iter().next().expect("length checked");
+    ensure_default_branch(&branch)?;
+    Ok((branch, head_oid))
+}
+
+pub(crate) const STALE_MAIN_PUSH_ERROR: &str =
+    "main moved while this push was in flight; fetch, rebase, and push again";
+
+fn ensure_pushed_head_extends(
+    staging_repo: &FsPath,
+    current_head: &str,
+    pushed_head: &str,
+) -> Result<(), ApiError> {
+    let action = "checking that the push extends the current main head";
+    let ancestry = run_git_output(
+        Some(staging_repo),
+        &["merge-base", "--is-ancestor", current_head, pushed_head],
+        action,
+    )?;
+    match ancestry.status.code() {
+        Some(0) => return Ok(()),
+        Some(1) => return Err(ApiError::conflict(STALE_MAIN_PUSH_ERROR)),
+        _ => {}
+    }
+    let current_commit = format!("{current_head}^{{commit}}");
+    let present = run_git_output(
+        Some(staging_repo),
+        &["cat-file", "-e", &current_commit],
+        "checking the current main head in the pushed objects",
+    )?
+    .status
+    .success();
+    if present {
+        Err(ApiError::infrastructure_unavailable(format!(
+            "{action}: {}",
+            String::from_utf8_lossy(&ancestry.stderr).trim()
+        )))
+    } else {
+        Err(ApiError::conflict(STALE_MAIN_PUSH_ERROR))
+    }
 }
 
 struct InspectedReceiveTree {
@@ -189,8 +302,11 @@ fn inspect_received_tree(
     change_version: u64,
     mode: ReviewedUpdateMode,
 ) -> Result<InspectedReceiveTree, ApiError> {
-    let message = pushed_commit_message(staging_repo, head_oid)?;
-    let occurred_at_unix = Some(pushed_commit_time(staging_repo, head_oid)?);
+    let PushedCommit {
+        message,
+        committed_at_unix,
+    } = pushed_commit(staging_repo, head_oid)?;
+    let occurred_at_unix = Some(committed_at_unix);
     validate_pushed_commit_range(staging_repo, base_head_oid, head_oid)?;
     let diff_started = Instant::now();
     let pushed_entries = git_changed_tree_entries(staging_repo, base_head_oid, head_oid)?;
@@ -233,7 +349,9 @@ fn repository_landing_file_mutation(
     let Some(entry) = entry else {
         return Ok(RepositoryLandingFileMutation::Delete);
     };
-    if entry.size_bytes > MAX_REPOSITORY_LANDING_FILE_BYTES as u64 {
+    if entry.size_bytes > MAX_REPOSITORY_LANDING_FILE_BYTES as u64
+        || !is_regular_git_file_mode(&entry.mode)
+    {
         return Ok(RepositoryLandingFileMutation::Delete);
     }
 
@@ -280,6 +398,11 @@ pub(crate) fn read_repository_workflow_files(
         if entry.size_bytes > MAX_WORKFLOW_DEFINITION_BYTES as u64 {
             return Ok(ReadWorkflowFiles::Rejected(format!(
                 "workflow {path} exceeds {MAX_WORKFLOW_DEFINITION_BYTES} bytes"
+            )));
+        }
+        if !is_regular_git_file_mode(&entry.mode) {
+            return Ok(ReadWorkflowFiles::Rejected(format!(
+                "workflow {path} must be a regular file"
             )));
         }
     }
@@ -374,6 +497,36 @@ mod tests {
     };
     use scope_domain::{content::DEFAULT_GIT_FILE_MODE, policy::ScopePath};
     use std::fs;
+
+    #[test]
+    fn stale_main_push_is_a_conflict_before_any_pack_work() {
+        let repo = TestRepo::init();
+        fs::write(repo.join("a.txt"), b"a").unwrap();
+        repo.commit_all("base");
+        let base = repo.oid("HEAD");
+        fs::write(repo.join("b.txt"), b"b").unwrap();
+        repo.commit_all("pushed");
+        let pushed = repo.oid("HEAD");
+        ensure_pushed_head_extends(&repo, &base, &pushed).unwrap();
+
+        run_git(
+            Some(&repo),
+            &["checkout", "-q", "-b", "other", &base],
+            "branching",
+        )
+        .unwrap();
+        fs::write(repo.join("c.txt"), b"c").unwrap();
+        repo.commit_all("concurrent main");
+        let concurrent = repo.oid("HEAD");
+        for current in [
+            concurrent.as_str(),
+            "1111111111111111111111111111111111111111",
+        ] {
+            let error = ensure_pushed_head_extends(&repo, current, &pushed).unwrap_err();
+            assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+            assert_eq!(error.into_public_message(), STALE_MAIN_PUSH_ERROR);
+        }
+    }
 
     #[test]
     fn landing_file_mutation_distinguishes_unchanged_delete_and_oversized() {

@@ -209,7 +209,7 @@ function optimisticReply({
   waitAfterReply: boolean
 }): RequestDiscussionReplyView {
   return {
-    author: actor,
+    author: { kind: 'user', id: actor.id, handle: actor.handle },
     body_markdown: body,
     created_at_unix: Math.floor(Date.now() / 1000),
     discussion_id: discussion.id,

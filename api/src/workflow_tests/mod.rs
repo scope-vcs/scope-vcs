@@ -73,7 +73,9 @@ mod github_run_imports;
 mod history;
 mod http;
 mod landing_file;
+mod main_pool;
 mod manual_runs;
+mod merge_commits;
 mod native_runs_accounts;
 mod push_intent_completion;
 mod repo_cleanup;
@@ -539,21 +541,29 @@ async fn persist_and_promote_test_update(
                     crate::persistence::unix_now()?,
                 )
                 .await?;
-            update.git_pack_span.segment = staged_segment.segment.clone();
-            let write_lease = state
-                .metadata
-                .repositories()
-                .acquire_git_write_lease(TEST_REPO_ID)
-                .await?;
-            let upload_heartbeat = crate::git::import::GitSegmentUploadHeartbeat::start(
+            let _upload_heartbeat = crate::git::import::GitSegmentUploadHeartbeat::start(
                 state,
                 staged_segment.segment.segment_id.clone(),
             );
+            let staged_pack = crate::git::pool_pack::StagedPoolPack {
+                pack: scope_domain::repository::git::GitPoolPack {
+                    id: staged_segment.segment.segment_id.clone(),
+                    storage: scope_domain::repository::git::GitPoolPackStorage::Segment(
+                        staged_segment.segment.clone(),
+                    ),
+                    ..update.main_pack.clone()
+                },
+                local: crate::git::pool_pack::LocalPoolPack::Segment(
+                    crate::git::import::StagedGitPack {
+                        staged_segment,
+                        _upload_heartbeat,
+                    },
+                ),
+            };
+            update.main_pack = staged_pack.pack.clone();
             PreparedReceivePackUpdate {
                 update,
-                staged_segment,
-                write_lease,
-                upload_heartbeat,
+                staged_pack,
             }
         }
     };
@@ -568,17 +578,11 @@ async fn persist_and_promote_test_update(
     )
     .await?;
     let head = persisted.head;
-    let _verified = state
-        .git_segment_store
-        .promote_verified_pack(&persisted.incarnation, &persisted.staged_segment)
-        .await
-        .map_err(|error| crate::error::ApiError::internal_message(error.to_string()))?;
-    state
-        .git_segment_store
-        .delete_local(&persisted.staged_segment)
-        .await
-        .map_err(|error| crate::error::ApiError::internal_message(error.to_string()))?;
-    persisted.write_lease.release().await;
+    let _retained = persisted
+        .staged_pack
+        .retain_local(state, &persisted.incarnation)
+        .await;
+    persisted.staged_pack.finish(state).await;
     Ok(head)
 }
 
@@ -601,15 +605,20 @@ async fn receive_pack_access(
 }
 
 async fn published_staging_repo(state: &AppState) -> PathBuf {
-    ensure_ready_receive_pack_staging_repo(
-        state,
-        &test_repo_incarnation(),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &test_owner_id(),
-    )
-    .await
-    .unwrap()
+    ensure_ready_receive_pack_staging_repo(state, &owner_push_context(state).await)
+        .await
+        .unwrap()
+        .path
+}
+
+async fn owner_push_context(state: &AppState) -> scope_postgres::db::GitPushState {
+    state
+        .metadata
+        .repositories()
+        .git_push_state(TEST_REPO_OWNER, TEST_REPO_NAME, &test_owner_id())
+        .await
+        .unwrap()
+        .unwrap()
 }
 
 async fn find_repo(
@@ -662,7 +671,6 @@ fn test_repo(owner_id: &str) -> Repository {
         visibility_change_sets: Vec::new(),
         live_files: BTreeMap::new(),
         git_head: None,
-        git_pack_spans: Vec::new(),
         collaboration: Default::default(),
     }
 }
@@ -733,7 +741,7 @@ async fn blob_content(
     let git_source = repo
         .git_head
         .as_ref()
-        .map(|head| (repo.incarnation(), head, repo.git_pack_spans.as_slice()));
+        .map(|head| (repo.incarnation(), head));
     String::from_utf8(
         crate::git::content::source_content_bytes(state, blob, git_source)
             .await
@@ -780,13 +788,17 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
             1,
             1,
         ),
-        git_pack_span: scope_domain::repository::git::GitPackSpan {
-            first_sequence: 1,
-            last_sequence: 1,
-            geometric_tier: 0,
-            base_oid: None,
-            head_oid: "1111111111111111111111111111111111111111".to_string(),
-            segment: test_git_segment_ref("test staged Git segment"),
+        main_pack: scope_domain::repository::git::GitPoolPack {
+            id: "test-main-pack".to_string(),
+            owner: scope_domain::repository::git::GitPoolPackOwner::Main {
+                first_sequence: 1,
+                last_sequence: 1,
+            },
+            head_oid: head_oid.to_string(),
+            prerequisites: Vec::new(),
+            storage: scope_domain::repository::git::GitPoolPackStorage::Segment(
+                test_git_segment_ref("test staged Git segment"),
+            ),
         },
         workflow_catalog: scope_domain::runs::catalog::RepositoryWorkflowCatalog::captured(
             TEST_REPO_ID,

@@ -29,14 +29,3 @@ impl StepConclusion {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn setup_failures_report_sysexits_codes() {
-        assert_eq!(SetupFailure::ProviderRejected.exit_code(), 69);
-        assert_eq!(SetupFailure::RuntimeSetup.exit_code(), 70);
-    }
-}

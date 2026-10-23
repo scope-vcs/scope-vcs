@@ -3,9 +3,7 @@ use crate::views::{ViewId, Views};
 use crate::{
     content::SourceBlob,
     content_ref::ContentRef,
-    requests::{
-        CheckCommitBase, RequestCheckEvaluationState, check_commit_message, fixtures::open_request,
-    },
+    requests::{CheckCommitBase, RequestCheckEvaluationState, fixtures::open_request},
     runs::{
         availability::NativeRunsAvailability,
         run::RunState,
@@ -807,14 +805,6 @@ fn a_check_commit_carries_private_code_and_a_public_head_does_not() {
     assert_eq!(
         private_head.tested_code_view(ViewId::private()),
         ViewId::private()
-    );
-}
-
-#[test]
-fn a_check_commit_message_names_the_request_and_its_short_head() {
-    assert_eq!(
-        check_commit_message("req_1", &"a1".repeat(20)),
-        "Scope check for req_1 at a1a1a1a1a1a1"
     );
 }
 

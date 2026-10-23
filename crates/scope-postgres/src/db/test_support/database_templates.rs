@@ -36,6 +36,10 @@ pub(super) async fn connect_store(target: &TestDatabaseTarget) -> anyhow::Result
     Ok(MetadataStore {
         db: Arc::clone(&lease.database),
         postgres_database_url: Some(Arc::from(lease.database_url.clone())),
+        repo_change_notifier: Default::default(),
+        merge_turn_sessions: crate::db::merge_turns::MergeTurnSessions::new(Arc::from(
+            lease.database_url.clone(),
+        )),
         _test_schema: Some(lease),
     })
 }

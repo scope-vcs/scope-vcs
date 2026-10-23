@@ -40,6 +40,8 @@ const MERGEABILITY = {
   ChecksPending: { label: 'Waiting for CI', tone: 'info' },
   ChecksFailed: { label: 'CI failed', tone: 'danger' },
   ChecksConfigurationError: { label: 'CI needs configuration', tone: 'danger' },
+  ReviewsPending: { label: 'Waiting for review bots', tone: 'info' },
+  ReviewFindingsOpen: { label: 'Review findings open', tone: 'warning' },
   WaitingForParent: { label: 'Waiting for parent', tone: 'info' },
   ParentRewritten: { label: 'Parent rewritten', tone: 'warning' },
   ParentClosed: { label: 'Parent closed', tone: 'warning' },
@@ -104,9 +106,9 @@ export function requestChecksWorkflowWarning(checks: RequestChecksResponse) {
     : null
 }
 
-export function requestPublicChecksNote(checks: RequestChecksResponse, requestViewName: string) {
+export function requestPublicChecksNote(checks: RequestChecksResponse) {
   return checks.private_request_on_public_github
-    ? `CI runs publicly, so this ${requestViewName} request’s changes are public.`
+    ? 'CI runs publicly, so these changes are public.'
     : null
 }
 

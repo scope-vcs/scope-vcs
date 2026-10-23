@@ -1,7 +1,7 @@
 use super::{
     AuthStore, acquire_aggregate_lock,
     cli_auth_results::{DeviceLoginPoll, NewCliSession, StartDeviceLoginCommand},
-    cli_sessions::{insert_cli_session_in_tx, record_cli_session_use},
+    cli_sessions::{cli_session_use_is_stale, insert_cli_session_in_tx, record_cli_session_use},
     entities,
     integer_columns::{i64_to_u64, u64_to_i64},
 };
@@ -154,10 +154,9 @@ impl AuthStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<UserAccount, PostgresError> {
-        let tx = self.db.begin().await?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))
-            .one(&tx)
+            .one(self.db.as_ref())
             .await?
         else {
             return Err(PostgresError::unauthenticated("invalid CLI token"));
@@ -175,9 +174,10 @@ impl AuthStore {
             }
             cli_auth_rules::CliSessionUseDecision::Active { user_id } => user_id,
         };
-        let user = load_user_by_id(&tx, &user_id).await?;
-        record_cli_session_use(&tx, &session.id, now_unix).await?;
-        tx.commit().await?;
+        let user = load_user_by_id(self.db.as_ref(), &user_id).await?;
+        if cli_session_use_is_stale(session.last_used_at_unix, now_unix)? {
+            record_cli_session_use(self.db.as_ref(), &session.id, now_unix).await?;
+        }
         Ok(user)
     }
 

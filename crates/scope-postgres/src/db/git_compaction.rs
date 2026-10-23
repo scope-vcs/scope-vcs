@@ -1,11 +1,10 @@
 use super::{
     GeneratedIdKind, JobStore, acquire_aggregate_lock, entities,
     generated_ids::generate_id,
-    git_segments::{load_git_pack_spans, publish_git_segment, retire_git_segment},
+    git_segments::{load_main_pool_packs, register_git_pool_pack, retire_git_segment},
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult,
-    IntoActiveModel, QueryFilter, Statement, TransactionTrait,
+    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, Statement, TransactionTrait,
 };
 use {
     crate::{
@@ -14,9 +13,7 @@ use {
         job_trace::QueuedTrace,
     },
     scope_domain::repository::{
-        RepositoryIncarnation,
-        git::{GitPackSpan, validate_git_pack_layout},
-        git_compaction::GitCompactionPlan,
+        RepositoryIncarnation, git::GitPoolPack, git_compaction::GitCompactionPlan,
     },
 };
 
@@ -160,10 +157,10 @@ impl JobStore {
             .ok_or_else(|| {
                 PostgresError::internal_message("Git compaction job has no repository")
             })?;
-        let spans = load_git_pack_spans(&tx, &job.repo_id).await?;
+        let packs = load_main_pool_packs(&tx, &job.repo_id).await?;
         let incarnation = RepositoryIncarnation::new(job.repo_id.clone(), repo.incarnation_id)
             .map_err(|error| PostgresError::internal_message(error.to_string()))?;
-        let candidate = GitCompactionPlan::select(&spans, max_source_bytes)
+        let candidate = GitCompactionPlan::select(&packs, max_source_bytes)
             .map_err(|error| PostgresError::internal_message(error.to_string()))?
             .map(|plan| GitCompactionCandidate {
                 incarnation,
@@ -340,66 +337,53 @@ impl JobStore {
         Ok(())
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "replace_git_pack_spans_with_compaction"))]
-    pub async fn replace_git_pack_spans_with_compaction(
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "replace_main_pool_packs_with_compaction"))]
+    pub async fn replace_main_pool_packs_with_compaction(
         &self,
         repo_id: &str,
         plan: &GitCompactionPlan,
-        replacement: GitPackSpan,
+        replacement: GitPoolPack,
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
         plan.validate_replacement(&replacement)
             .map_err(|error| PostgresError::internal_message(error.to_string()))?;
-        let expected_spans = plan.selected_spans();
+        let replacement_segment = replacement.storage.segment().ok_or_else(|| {
+            PostgresError::internal_message("Git compaction replacement must be a segment")
+        })?;
+        let selected = plan.selected_packs();
         let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", repo_id).await?;
-        let current_spans = load_git_pack_spans(&tx, repo_id).await?;
-        validate_git_pack_layout(&current_spans)
-            .map_err(|error| PostgresError::internal_message(error.to_string()))?;
-
-        let expected_first = &expected_spans[0];
-        let range_start = current_spans
+        let current = load_main_pool_packs(&tx, repo_id).await?;
+        let still_current = selected
             .iter()
-            .position(|span| span.first_sequence == expected_first.first_sequence);
-        let current_range = range_start.and_then(|start| {
-            current_spans
-                .get(start..start.checked_add(expected_spans.len())?)
-                .map(|spans| (start, spans))
-        });
-        let Some((range_start, current_range)) = current_range else {
-            retire_git_segment(&tx, &replacement.segment.segment_id, now_unix).await?;
-            tx.commit().await?;
-            return Ok(false);
-        };
-        if current_range != expected_spans {
-            retire_git_segment(&tx, &replacement.segment.segment_id, now_unix).await?;
+            .all(|pack| current.iter().any(|current| current == pack));
+        if !still_current {
+            retire_git_segment(&tx, &replacement_segment.segment_id, now_unix).await?;
             tx.commit().await?;
             return Ok(false);
         }
 
-        plan.resulting_layout(&current_spans, range_start, replacement.clone())
-            .map_err(|error| PostgresError::internal_message(error.to_string()))?;
-
-        entities::git_pack_span::Entity::delete_many()
-            .filter(entities::git_pack_span::Column::RepoId.eq(repo_id.to_string()))
-            .filter(
-                entities::git_pack_span::Column::FirstSequence.is_in(
-                    expected_spans
-                        .iter()
-                        .map(|span| u64_to_i64(span.first_sequence, "Git pack span sequence"))
-                        .collect::<Result<Vec<_>, _>>()?,
-                ),
-            )
-            .exec(&tx)
+        let selected_ids = selected
+            .iter()
+            .map(|pack| pack.id.clone())
+            .collect::<Vec<_>>();
+        let deleted = tx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "DELETE FROM scope_git_pool_packs
+                 WHERE repo_id = $1 AND request_id IS NULL AND id = ANY($2)",
+                [repo_id.into(), selected_ids.into()],
+            ))
             .await?;
-        entities::git_pack_span::Model::from_domain(repo_id, &replacement)?
-            .into_active_model()
-            .insert(&tx)
-            .await?;
-        publish_git_segment(&tx, repo_id, &replacement.segment, now_unix).await?;
-        for span in expected_spans {
-            if span.segment.segment_id != replacement.segment.segment_id {
-                retire_git_segment(&tx, &span.segment.segment_id, now_unix).await?;
+        if deleted.rows_affected() != selected.len() as u64 {
+            return Err(PostgresError::internal_message(
+                "Git compaction removed an unexpected number of main packs",
+            ));
+        }
+        register_git_pool_pack(&tx, repo_id, &replacement, now_unix).await?;
+        for segment in selected.iter().filter_map(|pack| pack.storage.segment()) {
+            if segment.segment_id != replacement_segment.segment_id {
+                retire_git_segment(&tx, &segment.segment_id, now_unix).await?;
             }
         }
         tx.commit().await?;

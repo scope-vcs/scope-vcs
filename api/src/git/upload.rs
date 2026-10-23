@@ -10,7 +10,7 @@ use crate::{
         git_read_scope_user,
         repository_git::RepositoryGit,
         request_refs::{
-            RequestViewBases, attach_visible_request_refs, request_view_bases,
+            RequestViewBases, attach_readable_request_refs, request_view_bases,
             share_request_view_bases,
         },
         storage::repository_storage_key,
@@ -46,6 +46,7 @@ use std::{
 };
 use tracing::Instrument as _;
 mod read_view_identity;
+mod read_view_omissions;
 mod read_view_seed;
 #[cfg(test)]
 mod read_view_tests;
@@ -121,7 +122,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
         Some(head) if private_view => {
             state
                 .repository_engine
-                .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
+                .materialize_repository(state, &git.incarnation, head)
                 .await?
         }
         _ => git.view_repo(state, &views, view).await?,
@@ -154,6 +155,48 @@ async fn git_read_view_repo(
     view_bases: RequestViewBases,
     requests: &[Request],
 ) -> Result<GitRepoHandle, ApiError> {
+    let mut attached = requests.to_vec();
+    loop {
+        let ReadViewFailure { error, unreadable } = match build_git_read_view(
+            state,
+            incarnation,
+            base_repo.share()?,
+            share_request_view_bases(&view_bases)?,
+            &attached,
+        )
+        .await
+        {
+            Ok(read_view) => return Ok(read_view),
+            Err(failure) => failure,
+        };
+        if unreadable.is_empty() {
+            return Err(error);
+        }
+        attached.retain(|request| !unreadable.contains(&request.name));
+    }
+}
+
+struct ReadViewFailure {
+    error: ApiError,
+    unreadable: Vec<String>,
+}
+
+impl From<ApiError> for ReadViewFailure {
+    fn from(error: ApiError) -> Self {
+        Self {
+            error,
+            unreadable: Vec::new(),
+        }
+    }
+}
+
+async fn build_git_read_view(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    base_repo: GitRepoHandle,
+    view_bases: RequestViewBases,
+    requests: &[Request],
+) -> Result<GitRepoHandle, ReadViewFailure> {
     if requests.is_empty() {
         return Ok(base_repo);
     }
@@ -205,6 +248,8 @@ async fn git_read_view_repo(
     let cache_root_for_build = cache_root.clone();
     let repo_path_for_build = repo_path.clone();
     let repository_id = incarnation.repository_id().to_string();
+    let read_view_name_for_build = read_view_name.clone();
+    let read_view_name_for_record = read_view_name.clone();
     let read_view = state.repository_engine.materialize_derived(
         incarnation,
         GitDerivedCacheNamespace::RequestReadView,
@@ -212,74 +257,94 @@ async fn git_read_view_repo(
         &repo_path,
         is_ready,
         move || async move {
-            let permit = state_for_build.runtime_budgets.try_git_materialization()?;
-            tokio::task::spawn_blocking(move || {
-                let _permit = permit;
-                let attempt = GIT_READ_VIEW_CACHE_ATTEMPT.fetch_add(1, Ordering::Relaxed);
-                let temp_path = cache_root_for_build.join(format!(
-                    "{read_view_name}.{}.{}.tmp",
-                    std::process::id(),
-                    attempt
-                ));
-                if temp_path.exists() {
-                    fs::remove_dir_all(&temp_path).map_err(ApiError::internal)?;
-                }
-                let result = (|| {
-                    git_command_output(
-                        Command::new("git")
-                            .arg("clone")
-                            .arg("--bare")
-                            .arg(base_repo_for_build.as_ref())
-                            .arg(&temp_path),
-                        None,
-                    )?;
-                    let seeded = seed_request_refs_from_read_views(
-                        &state_for_build.repository_engine,
-                        &read_view_prefix,
-                        &requests_for_build,
-                        &temp_path,
-                    )?;
-                    let unattached: Vec<Request> = requests_for_build
-                        .iter()
-                        .filter(|request| !seeded.contains(&request.name))
-                        .cloned()
-                        .collect();
-                    tracing::info!(
-                        repository_id,
-                        seeded_refs = seeded.len(),
-                        snapshot_downloads = unattached
-                            .iter()
-                            .filter(|request| request.git_snapshot.is_some())
-                            .count(),
-                        "attaching request refs to Git read view"
-                    );
-                    attach_visible_request_refs(
-                        &state_for_build,
-                        &unattached,
-                        &temp_path,
-                        &view_bases_for_build,
-                    )?;
-                    match fs::rename(&temp_path, &repo_path_for_build) {
-                        Ok(()) => Ok(()),
-                        Err(error) if repo_path_for_build.join("objects").is_dir() => {
-                            tracing::debug!(%error, path = %repo_path_for_build.display(), "using externally-created Git read view cache");
-                            Ok(())
+            let (unreadable, result) = match state_for_build.runtime_budgets.try_git_materialization() {
+                Err(error) => (Vec::new(), Err(error)),
+                Ok(permit) => tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    let attempt = GIT_READ_VIEW_CACHE_ATTEMPT.fetch_add(1, Ordering::Relaxed);
+                    let temp_path = cache_root_for_build.join(format!(
+                        "{read_view_name_for_build}.{}.{}.tmp",
+                        std::process::id(),
+                        attempt
+                    ));
+                    let mut unreadable = Vec::new();
+                    let result = (|| {
+                        if temp_path.exists() {
+                            fs::remove_dir_all(&temp_path).map_err(ApiError::internal)?;
                         }
-                        Err(error) => Err(ApiError::internal(error)),
-                    }
-                })();
-                let _ = fs::remove_dir_all(&temp_path);
-                result
-            })
-            .await
-            .map_err(|error| {
-                ApiError::internal_message(format!(
-                    "Git read-view materialization task failed: {error}"
-                ))
-            })?
+                        git_command_output(
+                            Command::new("git")
+                                .arg("clone")
+                                .arg("--bare")
+                                .arg(base_repo_for_build.as_ref())
+                                .arg(&temp_path),
+                            None,
+                        )?;
+                        let seeded = seed_request_refs_from_read_views(
+                            &state_for_build.repository_engine,
+                            &read_view_prefix,
+                            &requests_for_build,
+                            &temp_path,
+                        )?;
+                        let unattached: Vec<Request> = requests_for_build
+                            .iter()
+                            .filter(|request| !seeded.contains(&request.name))
+                            .cloned()
+                            .collect();
+                        tracing::info!(
+                            repository_id,
+                            seeded_refs = seeded.len(),
+                            snapshot_downloads = unattached
+                                .iter()
+                                .filter(|request| request.git_snapshot.is_some())
+                                .count(),
+                            "attaching request refs to Git read view"
+                        );
+                        unreadable = attach_readable_request_refs(
+                            &state_for_build,
+                            &unattached,
+                            &temp_path,
+                            &view_bases_for_build,
+                        )?;
+                        if !unreadable.is_empty() {
+                            return Err(ApiError::infrastructure_unavailable(format!(
+                                "Git read view needs request snapshots storage could not serve: {}",
+                                unreadable.join(", ")
+                            )));
+                        }
+                        match fs::rename(&temp_path, &repo_path_for_build) {
+                            Ok(()) => Ok(()),
+                            Err(error) if repo_path_for_build.join("objects").is_dir() => {
+                                tracing::debug!(%error, path = %repo_path_for_build.display(), "using externally-created Git read view cache");
+                                Ok(())
+                            }
+                            Err(error) => Err(ApiError::internal(error)),
+                        }
+                    })();
+                    let _ = fs::remove_dir_all(&temp_path);
+                    (unreadable, result)
+                })
+                .await
+                .unwrap_or_else(|error| {
+                    (
+                        Vec::new(),
+                        Err(ApiError::internal_message(format!(
+                            "Git read-view materialization task failed: {error}"
+                        ))),
+                    )
+                }),
+            };
+            if result.is_err() {
+                read_view_omissions::record_failed_build(&read_view_name_for_record, unreadable);
+            }
+            result
         },
     )
-    .await?;
+    .await
+    .map_err(|error| ReadViewFailure {
+        error,
+        unreadable: read_view_omissions::unreadable_requests(&read_view_name),
+    })?;
     Ok(view_bases
         .into_values()
         .fold(read_view.with_dependency(base_repo), |read_view, base| {

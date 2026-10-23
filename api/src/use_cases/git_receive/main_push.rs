@@ -1,8 +1,11 @@
 use crate::{
     error::ApiError,
-    git::import::{
-        PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
-        apply_receive_pack_update, reviewed_update_from_staging_repo,
+    git::{
+        import::{
+            PreparedReceivePackUpdate, ReceivePackUpdate, ReviewedUpdateMode,
+            STALE_MAIN_PUSH_ERROR, apply_receive_pack_update, reviewed_update_from_staging_repo,
+        },
+        pool_pack::StagedPoolPack,
     },
     state::AppState,
 };
@@ -13,10 +16,13 @@ use scope_domain::{
     reviewed_updates::content::{ReviewedUpdateAuthorization, authorize_reviewed_update},
     runs::trigger::PushTriggerInput,
 };
-use scope_postgres::db::{
-    LandedRequestCandidate, LandedRequestCompletion, RepositoryGitWriteLease, RepositoryMutation,
+use scope_postgres::{
+    db::{
+        LandedRequestCandidate, LandedRequestCompletion, RepositoryMutation,
+        RepositoryMutationError,
+    },
+    error::PostgresErrorKind,
 };
-use scope_storage::StagedGitSegment;
 use std::{path::Path, time::Instant};
 
 use super::ReceivePackAccess;
@@ -25,8 +31,7 @@ pub(crate) struct PersistedGitPush {
     pub(crate) incarnation: RepositoryIncarnation,
     pub(crate) head: GitHead,
     pub(crate) completed_landed_requests: usize,
-    pub(crate) staged_segment: StagedGitSegment,
-    pub(crate) write_lease: RepositoryGitWriteLease,
+    pub(crate) staged_pack: StagedPoolPack,
 }
 
 impl std::fmt::Debug for PersistedGitPush {
@@ -34,7 +39,7 @@ impl std::fmt::Debug for PersistedGitPush {
         formatter
             .debug_struct("PersistedGitPush")
             .field("head", &self.head)
-            .field("segment", &self.staged_segment.segment)
+            .field("pack_id", &self.staged_pack.pack.id)
             .finish_non_exhaustive()
     }
 }
@@ -92,13 +97,7 @@ pub(super) async fn prepare_main_push(
             Ok(base) => base,
             Err(error) => {
                 let repository_id = scope_domain::repository::repo_id(owner, repo_name);
-                crate::git::import::best_effort_delete_staged_git_segment(
-                    state,
-                    &repository_id,
-                    &prepared.staged_segment,
-                )
-                .await;
-                prepared.write_lease.release().await;
+                prepared.staged_pack.discard(state, &repository_id).await;
                 return Err(error);
             }
         },
@@ -119,15 +118,13 @@ pub(crate) async fn persist_main_push(
 ) -> Result<PersistedGitPush, ApiError> {
     let PreparedReceivePackUpdate {
         update,
-        staged_segment,
-        write_lease,
-        upload_heartbeat: _upload_heartbeat,
+        staged_pack,
     } = prepared;
     let repository_id = scope_domain::repository::repo_id(owner, repo_name);
     let now_unix = match crate::persistence::unix_now() {
         Ok(now) => now,
         Err(error) => {
-            cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
+            staged_pack.discard(state, &repository_id).await;
             return Err(error);
         }
     };
@@ -162,18 +159,20 @@ pub(crate) async fn persist_main_push(
         {
             Ok(result) => result,
             Err(error) => {
-                cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
-                return Err(error.into());
+                staged_pack.discard(state, &repository_id).await;
+                return Err(main_push_commit_error(error.into()));
             }
         }
     {
         tracing::info!("committed focused content-only push transaction");
+        if git_head.queued_main_publication {
+            state.wakeups.github_pushes.notify_one();
+        }
         return Ok(PersistedGitPush {
             incarnation: incarnation.clone(),
             head: git_head.result,
             completed_landed_requests: git_head.completed_landed_requests,
-            staged_segment,
-            write_lease,
+            staged_pack,
         });
     }
 
@@ -229,7 +228,7 @@ pub(crate) async fn persist_main_push(
                 update.open_requests_by_view = open_requests_by_view;
                 ensure_receive_pack_base_matches(repo, &update)?;
                 let landing_file_mutation = update.landing_file_mutation.clone();
-                apply_receive_pack_update(repo, update)?;
+                let main_pack = apply_receive_pack_update(repo, update)?;
                 tracing::info!(
                     domain_apply_ms = domain_started.elapsed().as_millis(),
                     "applied reviewed push domain transition"
@@ -251,6 +250,7 @@ pub(crate) async fn persist_main_push(
                     actor_user_id: author_id,
                     candidates: landed_request_candidates,
                 });
+                mutation.main_pack = Some(main_pack);
                 Ok(mutation)
             },
         )
@@ -258,32 +258,34 @@ pub(crate) async fn persist_main_push(
     let git_head = match git_head {
         Ok(git_head) => git_head,
         Err(error) => {
-            cleanup_failed_persist(state, &repository_id, &staged_segment, write_lease).await;
-            return Err(error.into());
+            staged_pack.discard(state, &repository_id).await;
+            return Err(main_push_commit_error(error));
         }
     };
     tracing::info!(
         database_commit_ms = transaction_started.elapsed().as_millis(),
         "committed reviewed push transaction"
     );
+    if git_head.queued_main_publication {
+        state.wakeups.github_pushes.notify_one();
+    }
     Ok(PersistedGitPush {
         incarnation: incarnation.clone(),
         head: git_head.result,
         completed_landed_requests: git_head.completed_landed_requests,
-        staged_segment,
-        write_lease,
+        staged_pack,
     })
 }
 
-pub(super) async fn cleanup_failed_persist(
-    state: &AppState,
-    repository_id: &str,
-    staged_segment: &StagedGitSegment,
-    write_lease: RepositoryGitWriteLease,
-) {
-    crate::git::import::best_effort_delete_staged_git_segment(state, repository_id, staged_segment)
-        .await;
-    write_lease.release().await;
+fn main_push_commit_error(error: RepositoryMutationError) -> ApiError {
+    match error {
+        RepositoryMutationError::Persistence(error)
+            if error.kind == PostgresErrorKind::RepositoryMoved =>
+        {
+            ApiError::conflict(STALE_MAIN_PUSH_ERROR)
+        }
+        error => error.into(),
+    }
 }
 
 fn ensure_receive_pack_config_base_matches(
@@ -315,8 +317,6 @@ fn ensure_receive_pack_base_matches(
     if actual_base_ref.as_ref() == expected_base_ref.as_ref() {
         Ok(())
     } else {
-        Err(DomainError::conflict(
-            "repo changed since push was reviewed; rerun scope push --main",
-        ))
+        Err(DomainError::conflict(STALE_MAIN_PUSH_ERROR))
     }
 }

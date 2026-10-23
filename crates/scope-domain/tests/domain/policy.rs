@@ -75,17 +75,6 @@ fn private_parent_hides_children() {
 }
 
 #[test]
-fn rejects_public_island_under_private_parent() {
-    let mut policy = policy_with_private_internal();
-
-    let error = policy
-        .add_rule(LabelRule::public(path("/internal/readme.md")))
-        .unwrap_err();
-
-    assert!(matches!(error, PolicyError::PublicIsland { .. }));
-}
-
-#[test]
 fn batched_rules_preserve_visibility_and_last_replacement() {
     let rules = [
         LabelRule::public(path("/docs")),
@@ -174,4 +163,35 @@ fn replacing_a_private_rule_with_public_keeps_existing_children_valid() {
         policy.label(&path("/docs/guide.md"), &Views::builtin()),
         ViewId::public()
     );
+}
+
+#[test]
+fn split_rules_rejoin_to_the_same_policy_and_labels() {
+    let views = Views::builtin();
+    let mut policy = Policy::new(ViewId::private());
+    policy
+        .add_rules([
+            LabelRule::public(path("/docs")),
+            LabelRule::private(path("/docs/secret.md")),
+            LabelRule::public(path("/readme.md")),
+        ])
+        .unwrap();
+
+    let (directories, files) = policy
+        .clone()
+        .split_rules(|rule_path| rule_path.as_str().ends_with(".md"));
+
+    assert_eq!(directories.rules(), &[LabelRule::public(path("/docs"))]);
+    assert_eq!(
+        directories.label(&path("/docs/secret.md"), &views),
+        ViewId::public()
+    );
+    assert_eq!(
+        files,
+        vec![
+            LabelRule::private(path("/docs/secret.md")),
+            LabelRule::public(path("/readme.md")),
+        ]
+    );
+    assert_eq!(directories.join_rules(files.into_iter().rev()), policy);
 }

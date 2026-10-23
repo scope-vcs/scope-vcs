@@ -293,9 +293,11 @@ fn apply_update_with_head(
             sequence,
             update.git_head.change_version,
         );
-        update.git_pack_span.first_sequence = sequence;
-        update.git_pack_span.last_sequence = sequence;
-        update.git_pack_span.base_oid = Some(previous.head_oid.clone());
+        update.main_pack.owner = scope_domain::repository::git::GitPoolPackOwner::Main {
+            first_sequence: sequence,
+            last_sequence: sequence,
+        };
+        update.main_pack.prerequisites = vec![previous.head_oid.clone()];
     }
     apply_reviewed_update_to_repo(repo, update).unwrap();
 }
@@ -313,17 +315,16 @@ fn reviewed_update(
         author_id: "owner".to_string(),
         message: message.to_string(),
         git_head: scope_domain::repository::git::GitHead::new(head_oid.to_string(), 1, 1),
-        git_pack_span: scope_domain::repository::git::GitPackSpan {
-            first_sequence: 1,
-            last_sequence: 1,
-            geometric_tier: 0,
-            base_oid: None,
+        main_pack: scope_domain::repository::git::GitPoolPack {
+            id: "main-pack".to_string(),
+            owner: scope_domain::repository::git::GitPoolPackOwner::Main {
+                first_sequence: 1,
+                last_sequence: 1,
+            },
             head_oid: head_oid.to_string(),
-            segment: scope_domain::repository::git::GitSegmentRef {
-                segment_id: "segment-v2".to_string(),
-                sha256: "sha256:segment v2".to_string(),
-                plaintext_bytes: 10,
-                encoding_version: 2,
+            prerequisites: Vec::new(),
+            storage: scope_domain::repository::git::GitPoolPackStorage::Inline {
+                sealed: b"sealed main pack".to_vec(),
             },
         },
         changes,
@@ -334,7 +335,7 @@ fn reviewed_update(
 }
 
 #[test]
-fn reviewed_push_rejects_a_pack_span_that_does_not_advance_the_current_frontier() {
+fn reviewed_push_rejects_a_main_pack_that_does_not_advance_the_current_head() {
     let mut repo = published_repo_with_public_file("initial", "/README.md", "hello");
     let config = repo.repo_config.clone();
     apply_update_with_head(
@@ -357,7 +358,7 @@ fn reviewed_push_rejects_a_pack_span_that_does_not_advance_the_current_frontier(
 
     assert!(matches!(
         error,
-        ReviewedUpdateError::Conflict("Git push does not advance the current pack frontier")
+        ReviewedUpdateError::Conflict("Git push does not advance the current main head")
     ));
 }
 

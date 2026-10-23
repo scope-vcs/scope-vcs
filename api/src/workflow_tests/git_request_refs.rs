@@ -25,13 +25,16 @@ fn request_workflow() -> String {
 
 mod cache;
 mod checks;
-mod cleanup;
 pub(super) mod github_checks;
+mod github_main_publication;
 mod github_setup_and_runs;
 mod http;
 mod landed;
+mod landing;
+mod line_anchors;
 mod merge;
 mod policy;
+mod pool;
 mod privacy;
 mod public_checks;
 mod refs;
@@ -46,12 +49,16 @@ async fn assert_restored_request_head(state: &AppState, expected: &str) -> PathB
         &test_repo_incarnation(),
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
-        &public_user_id(),
-        &scope_domain::views::ViewId::public(),
+        crate::use_cases::git_receive::request_ref::RequestPusher {
+            actor_user_id: &public_user_id(),
+            address_view: &scope_domain::views::ViewId::public(),
+        },
         crate::use_cases::git_receive::request_ref::RequestStagingKind::RequestRefsOnly,
+        crate::use_cases::git_receive::RequestRefSeeding::Pushed(&[REQUEST_REF.to_string()]),
     )
     .await
-    .unwrap();
+    .unwrap()
+    .path;
     let head = git_stdout_text(&staging, &["rev-parse", REQUEST_REF], "read request ref")
         .unwrap()
         .trim()
@@ -123,7 +130,6 @@ async fn start_request_for_author(
         repo.repo_config.views(),
         &projection,
         repo.git_head.as_ref(),
-        &repo.git_pack_spans,
     )
     .await
     .unwrap();

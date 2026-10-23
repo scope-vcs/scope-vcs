@@ -1,6 +1,7 @@
 export type RequestAttachmentDraftTarget =
   | 'description'
   | 'discussion'
+  | `line-discussion:${string}`
   | `reply:${string}`
 
 type RequestAttachmentDraftScope = {
@@ -447,6 +448,22 @@ function restoredSubmission(value: unknown): RequestAttachmentDraft['submission'
   if (!value || typeof value !== 'object' || !('id' in value) || !('payload' in value)) return null
   return typeof value.id === 'string' && typeof value.payload === 'string'
     ? { id: value.id, payload: value.payload } : null
+}
+
+export function requestAttachmentSubmissionPayload({
+  action,
+  baseText,
+  markdown,
+  quoteId,
+  subject,
+}: {
+  action: 'primary' | 'secondary'
+  baseText: string | null
+  markdown: string
+  quoteId: string | null
+  subject: string | null
+}) {
+  return JSON.stringify([action, markdown, baseText, quoteId, subject])
 }
 
 export function beginRequestAttachmentSubmission(key: string, payload: string) {

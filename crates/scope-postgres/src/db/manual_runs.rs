@@ -1,6 +1,6 @@
 use super::{
     EnqueueRunResult, RunStore, acquire_aggregate_lock, entities,
-    git_push_reads::git_push_context_for_id, repository_access::repository_access,
+    git_push_reads::git_push_state_for_id, repository_access::repository_access,
     runs::enqueue_run_in_transaction, workflow_catalogs::repository_workflow_catalog,
 };
 use crate::error::PostgresError;
@@ -46,7 +46,7 @@ impl RunStore {
     ) -> Result<Option<EnqueueRunResult>, PostgresError> {
         let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", request.repository_id()).await?;
-        let context = git_push_context_for_id(&tx, request.repository_id(), request.user_id())
+        let context = git_push_state_for_id(&tx, request.repository_id(), request.user_id())
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
         request.require_access(&context.access, context.repo_config.views())?;
@@ -85,8 +85,7 @@ impl RunStore {
                 .map_err(PostgresError::invalid_input)?
                 .into_revision(request.repository_id())
                 .map_err(PostgresError::invalid_input)?;
-        let source =
-            RunSource::accepted_git_head(request.repository_id(), head, context.git_pack_spans)?;
+        let source = RunSource::accepted_git_head(request.repository_id(), head)?;
         let run = request.create_run(&revision, source, now_unix)?;
         let enqueued = enqueue_run_in_transaction(&tx, run, revision).await?;
         tx.commit().await?;

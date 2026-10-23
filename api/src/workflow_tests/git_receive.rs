@@ -1,3 +1,4 @@
+use super::main_pool::main_pool_packs;
 use super::*;
 use scope_domain::views::ViewId;
 
@@ -95,13 +96,16 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
     let state = test_state_with_repo();
     let mut repo = repo_with_readme(&state);
     let base_head_oid = "0000000000000000000000000000000000000001".to_string();
-    let base_segment = scope_domain::repository::git::GitPackSpan {
-        first_sequence: 1,
-        last_sequence: 1,
-        geometric_tier: 0,
-        base_oid: None,
+    let base_segment = ready_test_git_segment(&state, "base Git segment").await;
+    let base_pack = scope_domain::repository::git::GitPoolPack {
+        id: base_segment.segment_id.clone(),
+        owner: scope_domain::repository::git::GitPoolPackOwner::Main {
+            first_sequence: 1,
+            last_sequence: 1,
+        },
         head_oid: base_head_oid.clone(),
-        segment: ready_test_git_segment(&state, "base Git segment").await,
+        prerequisites: Vec::new(),
+        storage: scope_domain::repository::git::GitPoolPackStorage::Segment(base_segment),
     };
     repo.git_head = Some(scope_domain::repository::git::GitHead::new(
         base_head_oid.clone(),
@@ -109,8 +113,13 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         repo.record.change_version,
     ));
     let mut previous_frontier = repo.git_head.as_ref().unwrap().frontier();
-    repo.git_pack_spans.push(base_segment);
     replace_test_repo(&state, repo).await;
+    state
+        .metadata
+        .repositories()
+        .register_main_pool_pack_for_tests(TEST_REPO_ID, &base_pack)
+        .await
+        .unwrap();
 
     let initial_rebuild = drain_outbox(&state, "content-push-test").await;
     assert_eq!(initial_rebuild.failed, 0);
@@ -126,13 +135,17 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         update.head_oid = head_oid.clone();
         update.git_head =
             scope_domain::repository::git::GitHead::new(head_oid.clone(), sequence, sequence);
-        update.git_pack_span = scope_domain::repository::git::GitPackSpan {
-            first_sequence: sequence,
-            last_sequence: sequence,
-            geometric_tier: 0,
-            base_oid: Some(previous_head_oid),
+        update.main_pack = scope_domain::repository::git::GitPoolPack {
+            id: format!("main-pack-{sequence}"),
+            owner: scope_domain::repository::git::GitPoolPackOwner::Main {
+                first_sequence: sequence,
+                last_sequence: sequence,
+            },
             head_oid: head_oid.clone(),
-            segment: test_git_segment_ref(&format!("Git segment {sequence}")),
+            prerequisites: vec![previous_head_oid],
+            storage: scope_domain::repository::git::GitPoolPackStorage::Segment(
+                test_git_segment_ref(&format!("Git segment {sequence}")),
+            ),
         };
         update.workflow_catalog = scope_domain::runs::catalog::RepositoryWorkflowCatalog::captured(
             TEST_REPO_ID,
@@ -151,9 +164,8 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         assert_eq!(stored.record.change_version, sequence);
         assert_eq!(stored.git_head.unwrap().change_version, sequence);
 
-        let rebuilt = drain_outbox(&state, "content-push-test").await;
-        assert_eq!(rebuilt.failed, 0);
-        assert_eq!(rebuilt.completed, 2);
+        let deferred = drain_outbox(&state, "content-push-test").await;
+        assert_eq!(deferred.claimed, 0);
         let projected = state
             .metadata
             .repositories()
@@ -186,8 +198,8 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         .outbox_job_counts_for_tests()
         .await
         .unwrap();
-    assert_eq!(jobs.succeeded, 5);
-    assert_eq!(jobs.total, 5);
+    assert_eq!(jobs.succeeded, 1);
+    assert_eq!(jobs.total, 1);
 
     let now_unix = crate::persistence::unix_now().unwrap();
     let compaction = state
@@ -203,9 +215,12 @@ async fn consecutive_content_only_pushes_advance_the_live_projection() {
         .as_ref()
         .expect("an equal-tier pair is eligible after two pushes")
         .plan
-        .selected_spans();
+        .selected_packs();
     assert_eq!(
-        (selected[0].first_sequence, selected[1].last_sequence),
+        (
+            selected[0].owner.main_sequences().unwrap().0,
+            selected[1].owner.main_sequences().unwrap().1
+        ),
         (1, 2)
     );
     state
@@ -328,15 +343,11 @@ async fn published_receive_pack_staging_restores_accepted_git_head_from_bucket_s
         git_stdout_text(&bare, &["rev-parse", DEFAULT_GIT_BRANCH], "first push head").unwrap();
     apply_first_push_from_staging_repo(&state, &bare, repo_config(ViewId::public())).await;
 
-    let restored = ensure_ready_receive_pack_staging_repo(
-        &state,
-        &test_repo_incarnation(),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &test_owner_id(),
-    )
-    .await
-    .unwrap();
+    let restored =
+        ensure_ready_receive_pack_staging_repo(&state, &owner_push_context(&state).await)
+            .await
+            .unwrap()
+            .path;
     let actual_head = git_stdout_text(
         &restored,
         &["rev-parse", DEFAULT_GIT_BRANCH],
@@ -349,7 +360,7 @@ async fn published_receive_pack_staging_restores_accepted_git_head_from_bucket_s
 }
 
 #[tokio::test]
-async fn applying_push_retains_previous_git_segment() {
+async fn applying_push_retains_previous_main_pool_pack() {
     let state = test_state_with_repo();
     let old_head_oid = "0000000000000000000000000000000000000001".to_string();
     let old_segment = ready_test_git_segment(&state, "old live Git pack").await;
@@ -359,40 +370,71 @@ async fn applying_push_retains_previous_git_segment() {
         2,
         update.git_head.change_version,
     );
-    update.git_pack_span.first_sequence = 2;
-    update.git_pack_span.last_sequence = 2;
-    update.git_pack_span.base_oid = Some(old_head_oid.clone());
+    update.main_pack.owner = scope_domain::repository::git::GitPoolPackOwner::Main {
+        first_sequence: 2,
+        last_sequence: 2,
+    };
+    update.main_pack.prerequisites = vec![old_head_oid.clone()];
     let mut repo = repo_with_readme(&state);
     repo.git_head = Some(scope_domain::repository::git::GitHead::new(
         old_head_oid.clone(),
         1,
         1,
     ));
-    repo.git_pack_spans
-        .push(scope_domain::repository::git::GitPackSpan {
-            first_sequence: 1,
-            last_sequence: 1,
-            geometric_tier: 0,
-            base_oid: None,
-            head_oid: repo.git_head.as_ref().unwrap().head_oid.clone(),
-            segment: old_segment.clone(),
-        });
     replace_test_repo(&state, repo).await;
+    state
+        .metadata
+        .repositories()
+        .register_main_pool_pack_for_tests(
+            TEST_REPO_ID,
+            &scope_domain::repository::git::GitPoolPack {
+                id: old_segment.segment_id.clone(),
+                owner: scope_domain::repository::git::GitPoolPackOwner::Main {
+                    first_sequence: 1,
+                    last_sequence: 1,
+                },
+                head_oid: old_head_oid.clone(),
+                prerequisites: Vec::new(),
+                storage: scope_domain::repository::git::GitPoolPackStorage::Segment(
+                    old_segment.clone(),
+                ),
+            },
+        )
+        .await
+        .unwrap();
 
     let persisted = persist_and_promote_test_update(&state, update, &test_owner_id())
         .await
         .unwrap();
 
     assert!(!persisted.head_oid.is_empty());
-    let stored = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+    let listed = main_pool_packs(&state).await;
+    assert_eq!(
+        listed
+            .iter()
+            .map(|pack| (pack.first_sequence, pack.prerequisites.clone()))
+            .collect::<Vec<_>>(),
+        [(1, Vec::new()), (2, vec![old_head_oid])]
+    );
+    assert_eq!(listed[0].id, old_segment.segment_id);
+    let storage = state
+        .metadata
+        .repositories()
+        .git_pool_pack_storage(
+            TEST_REPO_ID,
+            &listed
+                .iter()
+                .map(|pack| pack.id.clone())
+                .collect::<Vec<_>>(),
+        )
         .await
         .unwrap();
-    assert_eq!(stored.git_pack_spans.len(), 2);
-    assert_eq!(stored.git_pack_spans[0].segment, old_segment);
-    for span in &stored.git_pack_spans {
+    assert_eq!(storage.len(), 2);
+    for (_, storage) in storage {
+        let segment = storage.segment().unwrap();
         state
             .git_segment_store
-            .restore_to(TEST_REPO_ID, &span.segment, tokio::io::sink())
+            .restore_to(TEST_REPO_ID, segment, tokio::io::sink())
             .await
             .unwrap();
     }

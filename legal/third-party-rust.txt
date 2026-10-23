@@ -169,10 +169,10 @@ Repository: "https://github.com/brendanzab/approx"
 LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-arc-swap 1.9.2
+arc-swap 1.9.3
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/arc-swap/arc-swap-1.9.2.crate
+Source: https://static.crates.io/crates/arc-swap/arc-swap-1.9.3.crate
 
 Published author metadata: ["Michal 'vorner' Vaner <vorner@vorner.cz>"]
 Repository: "https://github.com/vorner/arc-swap"
@@ -191,10 +191,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 92c666480f818e051a4c16f0d8d29d1cc47fc5abaa6e89c681e5024dd6291e7c
 
 ==============================================================================
-arrow 58.4.0
+arrow 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow/arrow-58.4.0.crate
+Source: https://static.crates.io/crates/arrow/arrow-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -202,10 +202,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-arith 58.4.0
+arrow-arith 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-arith/arrow-arith-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-arith/arrow-arith-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -213,10 +213,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-array 58.4.0
+arrow-array 60.0.0
 Declared license: Apache-2.0 AND MIT
 Selected license: Apache-2.0 AND MIT
-Source: https://static.crates.io/crates/arrow-array/arrow-array-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-array/arrow-array-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -225,10 +225,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-buffer 58.4.0
+arrow-buffer 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-buffer/arrow-buffer-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-buffer/arrow-buffer-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -236,10 +236,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-cast 58.4.0
+arrow-cast 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-cast/arrow-cast-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-cast/arrow-cast-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -247,10 +247,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-data 58.4.0
+arrow-cmp 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-data/arrow-data-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-cmp/arrow-cmp-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -258,10 +258,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-ord 58.4.0
+arrow-data 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-ord/arrow-ord-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-data/arrow-data-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -269,10 +269,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-row 58.4.0
+arrow-ord 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-row/arrow-row-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-ord/arrow-ord-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -280,10 +280,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-schema 58.4.0
+arrow-row 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-schema/arrow-schema-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-row/arrow-row-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -291,10 +291,10 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-select 58.4.0
+arrow-schema 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-select/arrow-select-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-schema/arrow-schema-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -302,10 +302,21 @@ LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e199
 NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
 
 ==============================================================================
-arrow-string 58.4.0
+arrow-select 60.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/arrow-string/arrow-string-58.4.0.crate
+Source: https://static.crates.io/crates/arrow-select/arrow-select-60.0.0.crate
+
+Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
+Repository: "https://github.com/apache/arrow-rs"
+LICENSE.txt: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+NOTICE.txt: text 5018b4040991b939e7d3ba647a0317a9659383e80248a84e440cbabe110405a4
+
+==============================================================================
+arrow-string 60.0.0
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/arrow-string/arrow-string-60.0.0.crate
 
 Published author metadata: ["Apache Arrow <dev@arrow.apache.org>"]
 Repository: "https://github.com/apache/arrow-rs"
@@ -354,6 +365,16 @@ Repository: "https://github.com/pacman82/atoi-rs"
 LICENSE: text 60ae21e45c3d7bab0f3c12472c21083ec0a9f1b03dfe7c22497b16f5509af3bf
 
 ==============================================================================
+atoi 3.1.1
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/atoi/atoi-3.1.1.crate
+
+Published author metadata: ["Markus Klein"]
+Repository: "https://github.com/pacman82/atoi-rs"
+LICENSE: text 60ae21e45c3d7bab0f3c12472c21083ec0a9f1b03dfe7c22497b16f5509af3bf
+
+==============================================================================
 atomic-waker 1.1.2
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
@@ -377,40 +398,40 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 99afaa30c17801207692138b8a7d9f7522b52711dabb4cde25855dadc950e4c8
 
 ==============================================================================
-aws-config 1.12.0
+aws-config 1.13.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-config/aws-config-1.12.0.crate
+Source: https://static.crates.io/crates/aws-config/aws-config-1.13.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-credential-types 1.3.0
+aws-credential-types 1.3.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-credential-types/aws-credential-types-1.3.0.crate
+Source: https://static.crates.io/crates/aws-credential-types/aws-credential-types-1.3.1.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-lc-rs 1.18.1
+aws-lc-rs 1.18.2
 Declared license: ISC AND (Apache-2.0 OR ISC)
 Selected license: ISC
-Source: https://static.crates.io/crates/aws-lc-rs/aws-lc-rs-1.18.1.crate
+Source: https://static.crates.io/crates/aws-lc-rs/aws-lc-rs-1.18.2.crate
 
 Published author metadata: ["AWS-LibCrypto"]
 Repository: "https://github.com/aws/aws-lc-rs"
 LICENSE: text efbbbcefb4b8588630bec285cd7372a4dc3eb208a6c457d4313f62cb10f87aa3
 
 ==============================================================================
-aws-lc-sys 0.45.0
+aws-lc-sys 0.46.0
 Declared license: ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)
 Selected license: ISC AND Apache-2.0 AND MIT AND BSD-3-Clause
-Source: https://static.crates.io/crates/aws-lc-sys/aws-lc-sys-0.45.0.crate
+Source: https://static.crates.io/crates/aws-lc-sys/aws-lc-sys-0.46.0.crate
 
 Published author metadata: ["AWS-LC"]
 Repository: "https://github.com/aws/aws-lc-rs"
@@ -419,20 +440,20 @@ aws-lc/LICENSE: text 49f5cc2a2e4db6cc86cc1c853cbf00af70abd12c55dae8d6561f26ccd1b
 aws-lc/third_party/fiat/LICENSE: text c86c0f590ac954babf892ba6b03c50c00cdf326ddfd0ad31ed0ec16abdaada52
 
 ==============================================================================
-aws-runtime 1.10.0
+aws-runtime 1.10.2
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-runtime/aws-runtime-1.10.0.crate
+Source: https://static.crates.io/crates/aws-runtime/aws-runtime-1.10.2.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-sdk-lambda 1.147.0
+aws-sdk-lambda 1.152.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-sdk-lambda/aws-sdk-lambda-1.147.0.crate
+Source: https://static.crates.io/crates/aws-sdk-lambda/aws-sdk-lambda-1.152.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/awslabs/aws-sdk-rust"
@@ -440,10 +461,10 @@ LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
 tests/blns/LICENSE: text 5d4c9a3b2f328ddc76394c48bb0c54d6169480c661778628372f40b582f95943
 
 ==============================================================================
-aws-sdk-s3 1.149.0
+aws-sdk-s3 1.153.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-sdk-s3/aws-sdk-s3-1.149.0.crate
+Source: https://static.crates.io/crates/aws-sdk-s3/aws-sdk-s3-1.153.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/awslabs/aws-sdk-rust"
@@ -451,30 +472,30 @@ LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
 tests/blns/LICENSE: text 5d4c9a3b2f328ddc76394c48bb0c54d6169480c661778628372f40b582f95943
 
 ==============================================================================
-aws-sdk-sts 1.117.0
+aws-sdk-sts 1.120.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-sdk-sts/aws-sdk-sts-1.117.0.crate
+Source: https://static.crates.io/crates/aws-sdk-sts/aws-sdk-sts-1.120.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/awslabs/aws-sdk-rust"
 LICENSE: text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e
 
 ==============================================================================
-aws-sigv4 1.6.0
+aws-sigv4 1.6.2
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-sigv4/aws-sigv4-1.6.0.crate
+Source: https://static.crates.io/crates/aws-sigv4/aws-sigv4-1.6.2.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "David Barsky <me@davidbarsky.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-async 1.3.0
+aws-smithy-async 1.3.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-async/aws-smithy-async-1.3.0.crate
+Source: https://static.crates.io/crates/aws-smithy-async/aws-smithy-async-1.3.1.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "John DiSanti <jdisanti@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
@@ -491,40 +512,40 @@ Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-eventstream 0.61.4
+aws-smithy-eventstream 0.61.5
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-eventstream/aws-smithy-eventstream-0.61.4.crate
+Source: https://static.crates.io/crates/aws-smithy-eventstream/aws-smithy-eventstream-0.61.5.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "John DiSanti <jdisanti@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-http 0.64.0
+aws-smithy-http 0.64.2
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-http/aws-smithy-http-0.64.0.crate
+Source: https://static.crates.io/crates/aws-smithy-http/aws-smithy-http-0.64.2.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-http-client 1.4.2
+aws-smithy-http-client 1.5.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-http-client/aws-smithy-http-client-1.4.2.crate
+Source: https://static.crates.io/crates/aws-smithy-http-client/aws-smithy-http-client-1.5.1.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-json 0.63.1
+aws-smithy-json 0.65.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-json/aws-smithy-json-0.63.1.crate
+Source: https://static.crates.io/crates/aws-smithy-json/aws-smithy-json-0.65.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "John DiSanti <jdisanti@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
@@ -541,30 +562,30 @@ Repository: "https://github.com/awslabs/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-query 0.62.1
+aws-smithy-query 0.64.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-query/aws-smithy-query-0.62.1.crate
+Source: https://static.crates.io/crates/aws-smithy-query/aws-smithy-query-0.64.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "John DiSanti <jdisanti@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-runtime 1.15.0
+aws-smithy-runtime 1.16.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-runtime/aws-smithy-runtime-1.15.0.crate
+Source: https://static.crates.io/crates/aws-smithy-runtime/aws-smithy-runtime-1.16.1.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Zelda Hessler <zhessler@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-runtime-api 1.17.0
+aws-smithy-runtime-api 1.19.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-runtime-api/aws-smithy-runtime-api-1.17.0.crate
+Source: https://static.crates.io/crates/aws-smithy-runtime-api/aws-smithy-runtime-api-1.19.1.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Zelda Hessler <zhessler@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
@@ -581,40 +602,40 @@ Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-schema 0.2.1
+aws-smithy-schema 1.0.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-schema/aws-smithy-schema-0.2.1.crate
+Source: https://static.crates.io/crates/aws-smithy-schema/aws-smithy-schema-1.0.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-types 1.8.0
+aws-smithy-types 1.9.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-types/aws-smithy-types-1.8.0.crate
+Source: https://static.crates.io/crates/aws-smithy-types/aws-smithy-types-1.9.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-smithy-xml 0.62.1
+aws-smithy-xml 0.64.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-smithy-xml/aws-smithy-xml-0.62.1.crate
+Source: https://static.crates.io/crates/aws-smithy-xml/aws-smithy-xml-0.64.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
 LICENSE: text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485
 
 ==============================================================================
-aws-types 1.6.0
+aws-types 1.7.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/aws-types/aws-types-1.6.0.crate
+Source: https://static.crates.io/crates/aws-types/aws-types-1.7.0.crate
 
 Published author metadata: ["AWS Rust SDK Team <aws-sdk-rust@amazon.com>", "Russell Cohen <rcoh@amazon.com>"]
 Repository: "https://github.com/smithy-lang/smithy-rs"
@@ -650,17 +671,6 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 legal/upstream/davidB-tracing-opentelemetry-instrumentation-sdk-7efdaf5cb7b4-LICENSE: text 6d489af6292662d9e36d34ce49423784984a5f6e41d7b58f49b01264df59fa03
 
 ==============================================================================
-base16ct 0.2.0
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/base16ct/base16ct-0.2.0.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats/tree/master/base16ct"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 0fa917c28568f1dc5a58d947b5b586d4426bbae594afc096dc1288af5970cf9d
-
-==============================================================================
 base64 0.22.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -694,21 +704,10 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 legal/upstream/Nugine-simd-d74c030d9dc4-LICENSE: text 71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d
 
 ==============================================================================
-base64ct 1.8.3
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/base64ct/base64ct-1.8.3.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 79697635de7275c58e2f250f12e2a4addba33e919e61f127331f48068d36fd99
-
-==============================================================================
-bigdecimal 0.4.10
+bigdecimal 0.4.11
 Declared license: MIT/Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/bigdecimal/bigdecimal-0.4.10.crate
+Source: https://static.crates.io/crates/bigdecimal/bigdecimal-0.4.11.crate
 
 Published author metadata: ["Andrew Kubera"]
 Repository: "https://github.com/akubera/bigdecimal-rs"
@@ -850,10 +849,10 @@ Repository: "https://github.com/sagebind/castaway"
 LICENSE: text 936b4d7e9de4afbdb3781543c0edc9d0d884bab93eb8ebeeb3f85b0e196bf33e
 
 ==============================================================================
-cc 1.4.7
+cc 1.9.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/cc/cc-1.4.7.crate
+Source: https://static.crates.io/crates/cc/cc-1.9.0.crate
 
 Repository: "https://github.com/rust-lang/cc-rs"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
@@ -1005,10 +1004,10 @@ LICENSE-APACHE: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197
 LICENSE-MIT: text 4498464c2864825d7bb4c83e2ac4e9dbb533d49964fbf218c24f8d44ee4e87a9
 
 ==============================================================================
-combine 4.6.8
+combine 4.6.9
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/combine/combine-4.6.8.crate
+Source: https://static.crates.io/crates/combine/combine-4.6.9.crate
 
 Published author metadata: ["Markus Westerlind <marwes91@gmail.com>"]
 Repository: "https://github.com/Marwes/combine"
@@ -1034,17 +1033,6 @@ Published author metadata: ["RustCrypto Developers"]
 Repository: "https://github.com/RustCrypto/formats"
 LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
 LICENSE-MIT: text ea753cf1e3ec3e02b9f8fdb7876d2a82e881209eb54fdb0df52997e3a14e40d7
-
-==============================================================================
-const-oid 0.9.6
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/const-oid/const-oid-0.9.6.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats/tree/master/const-oid"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 045a1c4f9aa0a307b3a4a153e9646adc7ceb5c6c5c27c272b4486b92f96438a8
 
 ==============================================================================
 const-random 0.1.18
@@ -1158,10 +1146,10 @@ LICENSE-Apache: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e
 LICENSE-MIT: text 96febbdecdb0d87a43e8be377c2e8667744ee2cd065f9a7a172e294462ef8081
 
 ==============================================================================
-crc32fast 1.5.2
+crc32fast 1.5.3
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/crc32fast/crc32fast-1.5.2.crate
+Source: https://static.crates.io/crates/crc32fast/crc32fast-1.5.3.crate
 
 Published author metadata: ["Sam Rijs <srijs@airpost.net>", "Alex Crichton <alex@alexcrichton.com>"]
 Repository: "https://github.com/srijs/rust-crc32fast"
@@ -1219,17 +1207,6 @@ Repository: "https://github.com/eira-fransham/crunchy"
 LICENSE: text e35e8f8a37b546c01c7eb82d11d7554bb6292a29fc6147c21765d1e9c40b2bae
 
 ==============================================================================
-crypto-bigint 0.5.5
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/crypto-bigint/crypto-bigint-0.5.5.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/crypto-bigint"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 053bd85296345c1ac5067d84548e512f9f8e5e9e06d0583dc49120ddbb3d06dd
-
-==============================================================================
 crypto-common 0.1.6
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -1263,35 +1240,15 @@ LICENSE-APACHE: text fd7d8f1fe049992c00b619e8274cdb3566542bdb45cbf85426790ee1f7c
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-ctutils 0.4.2
+ctutils 0.4.4
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/ctutils/ctutils-0.4.2.crate
+Source: https://static.crates.io/crates/ctutils/ctutils-0.4.4.crate
 
 Published author metadata: ["RustCrypto Developers"]
 Repository: "https://github.com/RustCrypto/utils"
 LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 LICENSE-MIT: text 44924708b16974ac3a1df266da789724ab84c27a875364aab7c1b2b06d54bf3f
-
-==============================================================================
-curve25519-dalek 4.1.3
-Declared license: BSD-3-Clause
-Selected license: BSD-3-Clause
-Source: https://static.crates.io/crates/curve25519-dalek/curve25519-dalek-4.1.3.crate
-
-Published author metadata: ["Isis Lovecruft <isis@patternsinthevoid.net>", "Henry de Valence <hdevalence@hdevalence.ca>"]
-Repository: "https://github.com/dalek-cryptography/curve25519-dalek/tree/main/curve25519-dalek"
-LICENSE: text 82771e440a2341f400e5fd3691e876745a9d0daee5371371d93bdb668ed2e706
-
-==============================================================================
-curve25519-dalek-derive 0.1.1
-Declared license: MIT/Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/curve25519-dalek-derive/curve25519-dalek-derive-0.1.1.crate
-
-Repository: "https://github.com/dalek-cryptography/curve25519-dalek"
-LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
 darling 0.20.11
@@ -1354,21 +1311,10 @@ Repository: "https://github.com/TedDriggs/darling"
 LICENSE: text cc8f3c8ab396de7fa549e3907319281cf13d0a4a456a2b0695c5b61d877dba68
 
 ==============================================================================
-der 0.7.10
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/der/der-0.7.10.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats/tree/master/der"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 6b118915d98a1411a19001b2e77010ce4333fa8245e2d5839c119968e096f232
-
-==============================================================================
-deranged 0.5.8
+deranged 0.5.9
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/deranged/deranged-0.5.8.crate
+Source: https://static.crates.io/crates/deranged/deranged-0.5.9.crate
 
 Published author metadata: ["Jacob Pratt <jacob@jhpratt.dev>"]
 Repository: "https://github.com/jhpratt/deranged"
@@ -1495,63 +1441,20 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-ecdsa 0.16.9
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/ecdsa/ecdsa-0.16.9.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/signatures/tree/master/ecdsa"
-LICENSE-APACHE: text f330b45715b8c05aa21f1fe40c0060f98a3cb1c3858f586b821f4589546af337
-LICENSE-MIT: text d640976912a163b157d0b76d45379fe61d6cbeaeaa4ef27d82b4efae51d721f9
-
-==============================================================================
-ed25519 2.2.3
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/ed25519/ed25519-2.2.3.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/signatures/tree/master/ed25519"
-LICENSE-APACHE: text f330b45715b8c05aa21f1fe40c0060f98a3cb1c3858f586b821f4589546af337
-LICENSE-MIT: text 7d9f551458e84cf849649d2659dff470445dd14e1a9a37098da9eca6f7a13f62
-
-==============================================================================
-ed25519-dalek 2.2.0
-Declared license: BSD-3-Clause
-Selected license: BSD-3-Clause
-Source: https://static.crates.io/crates/ed25519-dalek/ed25519-dalek-2.2.0.crate
-
-Published author metadata: ["isis lovecruft <isis@patternsinthevoid.net>", "Tony Arcieri <bascule@gmail.com>", "Michael Rosenberg <michael@mrosenberg.pub>"]
-Repository: "https://github.com/dalek-cryptography/curve25519-dalek/tree/main/ed25519-dalek"
-LICENSE: text d2778eb7f5d0322fd866e3fe0a67000a2e4fddd9ace29b43069095d78272d7af
-
-==============================================================================
-either 1.18.0
+either 1.19.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/either/either-1.18.0.crate
+Source: https://static.crates.io/crates/either/either-1.19.0.crate
 
 Repository: "https://github.com/rayon-rs/either"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 LICENSE-MIT: text fdd1c2117bcf8157d1d013d0953c0a7e6e5fab73df9e36773cd77634428568eb
 
 ==============================================================================
-elliptic-curve 0.13.8
+equivalent 1.0.3
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/elliptic-curve/elliptic-curve-0.13.8.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/traits/tree/master/elliptic-curve"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text ea3358adfd416b24a0a71fd783f35510248af23db80d4ca11dd997b63a283ea9
-
-==============================================================================
-equivalent 1.0.2
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/equivalent/equivalent-1.0.2.crate
+Source: https://static.crates.io/crates/equivalent/equivalent-1.0.3.crate
 
 Repository: "https://github.com/indexmap-rs/equivalent"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
@@ -1601,30 +1504,6 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-ff 0.13.1
-Declared license: MIT/Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/ff/ff-0.13.1.crate
-
-Published author metadata: ["Sean Bowe <ewillbefull@gmail.com>", "Jack Grigg <thestr4d@gmail.com>"]
-Repository: "https://github.com/zkcrypto/ff"
-LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text a241ea2c0d6391f0f6646dc9acae77c83ee0bc6b1efa7dbd8397dd94644d4045
-
-==============================================================================
-fiat-crypto 0.2.9
-Declared license: MIT OR Apache-2.0 OR BSD-1-Clause
-Selected license: MIT
-Source: https://static.crates.io/crates/fiat-crypto/fiat-crypto-0.2.9.crate
-
-Published author metadata: ["Fiat Crypto library authors <jgross@mit.edu>"]
-Repository: "https://github.com/mit-plv/fiat-crypto"
-COPYRIGHT: text d9b4bc5257686af9ff0e11953d5f909d533bca543795b1d926f667d3c3f42273
-LICENSE-APACHE: text f1954d2b51ee6ac825defdc6ee947930241269d40ad6082b9d9e758613ce7b61
-LICENSE-BSD-1: text cb320ccefaa5680ed9898cb3e956ab11e0b8fc3d7e89918d5129bc1c9121d4e9
-LICENSE-MIT: text 5abb4b606ff4cbadaf5523189091b44dba35c96138e19b87b76539c7bb59e4d7
-
-==============================================================================
 filetime 0.2.29
 Declared license: MIT/Apache-2.0
 Selected license: MIT
@@ -1636,10 +1515,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
 
 ==============================================================================
-find-msvc-tools 0.1.13
+find-msvc-tools 0.1.15
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/find-msvc-tools/find-msvc-tools-0.1.13.crate
+Source: https://static.crates.io/crates/find-msvc-tools/find-msvc-tools-0.1.15.crate
 
 Repository: "https://github.com/rust-lang/cc-rs"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
@@ -1855,22 +1734,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 14435fbcd271e2783f721b57b7bf4f6502c1379249a4300e0e5bb774686c2d90
 
 ==============================================================================
-group 0.13.0
-Declared license: MIT/Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/group/group-0.13.0.crate
-
-Published author metadata: ["Sean Bowe <ewillbefull@gmail.com>", "Jack Grigg <jack@z.cash>"]
-Repository: "https://github.com/zkcrypto/group"
-COPYRIGHT: text f98a51ab06f4771e0707c5a2c9b23ad837862e51623ac35cd1cd667477144926
-LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
-
-==============================================================================
-h2 0.4.19
+h2 0.4.20
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/h2/h2-0.4.19.crate
+Source: https://static.crates.io/crates/h2/h2-0.4.20.crate
 
 Published author metadata: ["Carl Lerche <me@carllerche.com>", "Sean McArthur <sean@seanmonstar.com>"]
 Repository: "https://github.com/hyperium/h2"
@@ -1951,17 +1818,6 @@ LICENSE-APACHE: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197
 LICENSE-MIT: text 9dde4a6ad496606322ae0b61b70dc7123fa231be543caa0896d567e34d20fbf8
 
 ==============================================================================
-hkdf 0.12.4
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/hkdf/hkdf-0.12.4.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/KDFs/"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 2ab57d98da8310e83d38b9e53f97187cefb44b21917f7ccb4b78aa191854b717
-
-==============================================================================
 hkdf 0.13.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -1971,17 +1827,6 @@ Published author metadata: ["RustCrypto Developers"]
 Repository: "https://github.com/RustCrypto/KDFs/"
 LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
 LICENSE-MIT: text 2ab57d98da8310e83d38b9e53f97187cefb44b21917f7ccb4b78aa191854b717
-
-==============================================================================
-hmac 0.12.1
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/hmac/hmac-0.12.1.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/MACs"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 9c5127ab88e8f55b26f7846eefbe1f582b9c2c596c65bfbb9a622b0c6f678d13
 
 ==============================================================================
 hmac 0.13.0
@@ -2059,10 +1904,10 @@ LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130
 LICENSE-MIT: text a1aa15c3898d79b739990fd6bdc2c0acb73410f8eea62de02d693633bf664193
 
 ==============================================================================
-hyper 1.11.1
+hyper 1.12.0
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/hyper/hyper-1.11.1.crate
+Source: https://static.crates.io/crates/hyper/hyper-1.12.0.crate
 
 Published author metadata: ["Sean McArthur <sean@seanmonstar.com>"]
 Repository: "https://github.com/hyperium/hyper"
@@ -2080,10 +1925,10 @@ LICENSE-ISC: text af6da3f3f6b4929e02f81fd890835fd6d70ffddae12a8d735c0d7f294ac5ff
 LICENSE-MIT: text a3320aa8d192a02cc2c9f31ebcceb861d71b737acdff1397d0d8a49361e86e73
 
 ==============================================================================
-hyper-util 0.1.20
+hyper-util 0.1.21
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/hyper-util/hyper-util-0.1.20.crate
+Source: https://static.crates.io/crates/hyper-util/hyper-util-0.1.21.crate
 
 Published author metadata: ["Sean McArthur <sean@seanmonstar.com>"]
 Repository: "https://github.com/hyperium/hyper-util"
@@ -2224,10 +2069,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 4f2ac128e429d9646bf481baaa120eb561234f980503d337c710c06d0af6bbf9
 
 ==============================================================================
-indoc 2.0.7
+indoc 2.0.8
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/indoc/indoc-2.0.7.crate
+Source: https://static.crates.io/crates/indoc/indoc-2.0.8.crate
 
 Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
 Repository: "https://github.com/dtolnay/indoc"
@@ -2235,10 +2080,10 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-inout 0.2.2
+inout 0.2.5
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/inout/inout-0.2.2.crate
+Source: https://static.crates.io/crates/inout/inout-0.2.5.crate
 
 Published author metadata: ["RustCrypto Developers"]
 Repository: "https://github.com/RustCrypto/utils"
@@ -2359,10 +2204,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
 
 ==============================================================================
-js-sys 0.3.105
+js-sys 0.3.106
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/js-sys/js-sys-0.3.105.crate
+Source: https://static.crates.io/crates/js-sys/js-sys-0.3.106.crate
 
 Published author metadata: ["The wasm-bindgen Developers"]
 Repository: "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys"
@@ -2380,10 +2225,10 @@ Repository: "https://github.com/Keats/jsonwebtoken"
 LICENSE: text 3a738a7fc3616453db94bc2f8f4efabd792769004984b30f6440c85e7d9319e7
 
 ==============================================================================
-kasuari 0.4.12
+kasuari 0.4.13
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/kasuari/kasuari-0.4.12.crate
+Source: https://static.crates.io/crates/kasuari/kasuari-0.4.13.crate
 
 Published author metadata: ["Dylan Ede <dylanede@googlemail.com>", "The Ratatui Developers"]
 Repository: "https://github.com/ratatui/kasuari"
@@ -2391,10 +2236,10 @@ LICENSE-APACHE: text e07c56fea52cb8d9ddd7a68916a9fe102e575c2ef8de7f3b09c4c52ce74
 LICENSE-MIT: text 5c45a95456ebc13374cd2ab5b7d4493723a2d2d390714664bb452dd98e6bb47d
 
 ==============================================================================
-keyring-core 1.0.0
+keyring-core 1.0.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/keyring-core/keyring-core-1.0.0.crate
+Source: https://static.crates.io/crates/keyring-core/keyring-core-1.0.1.crate
 
 Published author metadata: ["Daniel Brotsky <dev@brotsky.com>"]
 Repository: "https://github.com/open-source-cooperative/keyring-core.git"
@@ -2402,15 +2247,15 @@ LICENSE-APACHE: text 6205fe4502daf35e54d14308e1d9bebf8cbeeef098479664c226e92dea2
 LICENSE-MIT: text b5e6923cd7c0e4a493cb1b0a26ddbad80effa363dd8dbf0ff8077117ff68f5d9
 
 ==============================================================================
-lazy_static 1.5.0
+lazy_static 1.5.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/lazy_static/lazy_static-1.5.0.crate
+Source: https://static.crates.io/crates/lazy_static/lazy_static-1.5.1.crate
 
 Published author metadata: ["Marvin Löbel <loebel.marvin@gmail.com>"]
 Repository: "https://github.com/rust-lang-nursery/lazy-static.rs"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text 9e0027807b0c548ac1df1bd85fe0d72da6665498b06ebf8a64d5cb841f39fcef
+LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
 lexical-core 1.0.6
@@ -2484,10 +2329,10 @@ LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c00856
 LICENSE.md: text b13e29f71daa3f94070e95927e2b360808b24252b268c6c523390dffb6a04f06
 
 ==============================================================================
-libc 0.2.189
+libc 0.2.191
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/libc/libc-0.2.189.crate
+Source: https://static.crates.io/crates/libc/libc-0.2.191.crate
 
 Repository: "https://github.com/rust-lang/libc"
 LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e38179
@@ -2569,10 +2414,10 @@ Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-litrs 1.0.0
+litrs 1.0.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/litrs/litrs-1.0.0.crate
+Source: https://static.crates.io/crates/litrs/litrs-1.0.1.crate
 
 Published author metadata: ["Lukas Kalbertodt <lukas.kalbertodt@gmail.com>"]
 Repository: "https://github.com/LukasKalbertodt/litrs"
@@ -2624,13 +2469,13 @@ LICENSE-MIT: text c9cf4d18fd9d2ab3fb30d39facfe8cff8ff8354950e2de5c864707e6c80a27
 LICENSE-ZLIB: text cebce11166dcba4336442c8d748df16c004b436c49b40b30721e59f221bae058
 
 ==============================================================================
-mac_address 1.1.8
+mac_address 1.2.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/mac_address/mac_address-1.1.8.crate
+Source: https://static.crates.io/crates/mac_address/mac_address-1.2.1.crate
 
-Published author metadata: ["rep-nop <repnop@outlook.com>"]
-Repository: "https://github.com/rep-nop/mac_address"
+Published author metadata: ["repnop <repnop@repnop.dev>"]
+Repository: "https://github.com/repnop/mac_address"
 LICENSE-APACHE2.0: text e77d2f5330f39df2fb0d2a27c822a7ecad28d4bcdc1b4cf016b8d5c5ce523b26
 LICENSE-MIT: text 16c5a3cc951992b74de5f73206aa0005300fbe610708b76a25ca65006aab76d3
 
@@ -2713,10 +2558,10 @@ LICENSE-MIT.md: text ac9859ce4e9a80a4846ee0b453981427f4fc2ba9ac7d0e568de61ab80a5
 LICENSE-ZLIB.md: text eac3911cc3d41ffb7de705edeec755d3f83189b61839389cc9079acb54d8c5af
 
 ==============================================================================
-mio 1.2.3
+mio 1.2.4
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/mio/mio-1.2.3.crate
+Source: https://static.crates.io/crates/mio/mio-1.2.4.crate
 
 Published author metadata: ["Carl Lerche <me@carllerche.com>", "Thomas de Zeeuw <thomasdezeeuw@gmail.com>", "Tokio Contributors <team@tokio.rs>"]
 Repository: "https://github.com/tokio-rs/mio"
@@ -2734,16 +2579,6 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 
 legal/upstream/rust-windowing-android-ndk-rs-10f2ba388fca-LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 legal/upstream/rust-windowing-android-ndk-rs-10f2ba388fca-LICENSE-MIT: text 1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f
-
-==============================================================================
-nix 0.29.0
-Declared license: MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/nix/nix-0.29.0.crate
-
-Published author metadata: ["The nix-rust Project Developers"]
-Repository: "https://github.com/nix-rust/nix"
-LICENSE: text b9b039b5058cfe9680025ca12f8591df832666baef9f469ea8ba24e73a7fee60
 
 ==============================================================================
 nix 0.31.3
@@ -2776,13 +2611,12 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 14435fbcd271e2783f721b57b7bf4f6502c1379249a4300e0e5bb774686c2d90
 
 ==============================================================================
-num-bigint-dig 0.8.6
-Declared license: MIT/Apache-2.0
+num-bigint 0.5.1
+Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/num-bigint-dig/num-bigint-dig-0.8.6.crate
+Source: https://static.crates.io/crates/num-bigint/num-bigint-0.5.1.crate
 
-Published author metadata: ["dignifiedquire <dignifiedquire@gmail.com>", "The Rust Project Developers"]
-Repository: "https://github.com/dignifiedquire/num-bigint"
+Repository: "https://github.com/rust-num/num-bigint"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 LICENSE-MIT: text 14435fbcd271e2783f721b57b7bf4f6502c1379249a4300e0e5bb774686c2d90
 
@@ -2820,17 +2654,6 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 14435fbcd271e2783f721b57b7bf4f6502c1379249a4300e0e5bb774686c2d90
 
 ==============================================================================
-num-iter 0.1.46
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/num-iter/num-iter-0.1.46.crate
-
-Published author metadata: ["The Rust Project Developers"]
-Repository: "https://github.com/rust-num/num-iter"
-LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text 14435fbcd271e2783f721b57b7bf4f6502c1379249a4300e0e5bb774686c2d90
-
-==============================================================================
 num-traits 0.2.19
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -2842,10 +2665,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 14435fbcd271e2783f721b57b7bf4f6502c1379249a4300e0e5bb774686c2d90
 
 ==============================================================================
-num_threads 0.1.7
+num_threads 0.1.8
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/num_threads/num_threads-0.1.7.crate
+Source: https://static.crates.io/crates/num_threads/num_threads-0.1.8.crate
 
 Published author metadata: ["Jacob Pratt <open-source@jhpratt.dev>"]
 Repository: "https://github.com/jhpratt/num_threads"
@@ -2853,10 +2676,10 @@ LICENSE-Apache: text bdcd4825d5221f2bfc4426e5ee4ae5ce5ed1e57c9a650c1b182128d3fb4
 LICENSE-MIT: text c2c01161ef13c73287afaecf023fd81f23cc76f50662ee03c3f7eacef1b3d0bc
 
 ==============================================================================
-objc2 0.6.4
+objc2 0.6.5
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/objc2/objc2-0.6.4.crate
+Source: https://static.crates.io/crates/objc2/objc2-0.6.5.crate
 
 Published author metadata: ["Mads Marquart <mads@marquart.dk>"]
 Repository: "https://github.com/madsmtm/objc2"
@@ -2864,7 +2687,7 @@ MIT license selected. Published crate omits license documents. Preserve its exac
 
 legal/upstream/madsmtm-objc2-8852b424193c-LICENSE.md: text 1aa0a34224480ff916817aafd48263c880fe53a1d116261a7bb8c952ee0173ab
 legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt: text c435050845f96340bfb02c18e46653138e73475492f519b7e6e381853bdfbace
-Published package license and author metadata: text db7c42bff1020a8b24483d64562b228ab8aeee376ad29a77c84fded3142e8cf5
+Published package license and author metadata: text e3678ecaf4f13f6141a71758115e611f67e26236b2be1228f7453808e3fbcecb
 
 ==============================================================================
 objc2-app-kit 0.3.2
@@ -2969,10 +2792,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
 
 ==============================================================================
-opentelemetry 0.33.0
+opentelemetry 0.33.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/opentelemetry/opentelemetry-0.33.0.crate
+Source: https://static.crates.io/crates/opentelemetry/opentelemetry-0.33.1.crate
 
 Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry"
 Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
@@ -2980,10 +2803,10 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-opentelemetry-appender-tracing 0.33.0
+opentelemetry-appender-tracing 0.33.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/opentelemetry-appender-tracing/opentelemetry-appender-tracing-0.33.0.crate
+Source: https://static.crates.io/crates/opentelemetry-appender-tracing/opentelemetry-appender-tracing-0.33.1.crate
 
 Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-appender-tracing"
 Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
@@ -2991,10 +2814,10 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-opentelemetry-http 0.33.0
+opentelemetry-http 0.33.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/opentelemetry-http/opentelemetry-http-0.33.0.crate
+Source: https://static.crates.io/crates/opentelemetry-http/opentelemetry-http-0.33.1.crate
 
 Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-http"
 Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
@@ -3002,10 +2825,10 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-opentelemetry-otlp 0.33.0
+opentelemetry-otlp 0.33.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/opentelemetry-otlp/opentelemetry-otlp-0.33.0.crate
+Source: https://static.crates.io/crates/opentelemetry-otlp/opentelemetry-otlp-0.33.1.crate
 
 Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp"
 Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
@@ -3013,21 +2836,22 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-opentelemetry-proto 0.33.0
+opentelemetry-proto 0.33.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/opentelemetry-proto/opentelemetry-proto-0.33.0.crate
+Source: https://static.crates.io/crates/opentelemetry-proto/opentelemetry-proto-0.33.1.crate
 
 Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto"
 Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
 
+src/proto/opentelemetry-proto/LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-opentelemetry-semantic-conventions 0.33.0
+opentelemetry-semantic-conventions 0.33.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/opentelemetry-semantic-conventions/opentelemetry-semantic-conventions-0.33.0.crate
+Source: https://static.crates.io/crates/opentelemetry-semantic-conventions/opentelemetry-semantic-conventions-0.33.1.crate
 
 Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-semantic-conventions"
 Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
@@ -3035,10 +2859,10 @@ Published crate archive omits license texts; preserved unmodified from its .carg
 legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
-opentelemetry_sdk 0.33.0
+opentelemetry_sdk 0.33.1
 Declared license: Apache-2.0
 Selected license: Apache-2.0
-Source: https://static.crates.io/crates/opentelemetry_sdk/opentelemetry_sdk-0.33.0.crate
+Source: https://static.crates.io/crates/opentelemetry_sdk/opentelemetry_sdk-0.33.1.crate
 
 Repository: "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-sdk"
 Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
@@ -3085,28 +2909,6 @@ Source: https://static.crates.io/crates/outref/outref-0.5.2.crate
 
 Repository: "https://github.com/Nugine/outref"
 LICENSE: text a00511478c83ebb464ef19d840f061c7444adc4636bb561900e75c5808cfc6cc
-
-==============================================================================
-p256 0.13.2
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/p256/p256-0.13.2.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/elliptic-curves/tree/master/p256"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 8a87674755cec4feeaa77d7d0f55d25f0c018516fe838e2b0626fb8bc870129e
-
-==============================================================================
-p384 0.13.1
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/p384/p384-0.13.1.crate
-
-Published author metadata: ["RustCrypto Developers", "Frank Denis <github@pureftpd.org>"]
-Repository: "https://github.com/RustCrypto/elliptic-curves/tree/master/p384"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text ee25a6da6cea276fd9179763b0e05d7123d616dd55d64a44694e604a4f4731a6
 
 ==============================================================================
 palette 0.7.7
@@ -3186,17 +2988,6 @@ Repository: "https://github.com/jcreekmore/pem-rs.git"
 LICENSE.md: text fd270b8c59ed37680ea2106f920afe52ebc4d276d2377283f8b13276b36c09bd
 
 ==============================================================================
-pem-rfc7468 0.7.0
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/pem-rfc7468/pem-rfc7468-0.7.0.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats/tree/master/pem-rfc7468"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 053bd85296345c1ac5067d84548e512f9f8e5e9e06d0583dc49120ddbb3d06dd
-
-==============================================================================
 percent-encoding 2.3.2
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -3227,39 +3018,6 @@ Source: https://static.crates.io/crates/pin-project-lite/pin-project-lite-0.2.17
 Repository: "https://github.com/taiki-e/pin-project-lite"
 LICENSE-APACHE: text 4bf96504d6e83ce5c6fc7167f1795d9ceaa68e70ab86bc5d08ab93184262bbbe
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
-
-==============================================================================
-pin-utils 0.1.0
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/pin-utils/pin-utils-0.1.0.crate
-
-Published author metadata: ["Josef Brandl <mail@josefbrandl.de>"]
-Repository: "https://github.com/rust-lang-nursery/pin-utils"
-LICENSE-APACHE: text 8348c9fe2fb74122288d01b62b79a292b71cc6b561cdceb8f2d46cc196a31e49
-LICENSE-MIT: text e768d9875925100c3f72e0bb125813323829393f0e2ae5ac6b69ca5861aa2e16
-
-==============================================================================
-pkcs1 0.7.5
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/pkcs1/pkcs1-0.7.5.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats/tree/master/pkcs1"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 07ce2f16212bdab8e8bf9ddad7f37f1e16e2fdc57031dab901356a66348cdf00
-
-==============================================================================
-pkcs8 0.10.2
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/pkcs8/pkcs8-0.10.2.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats/tree/master/pkcs8"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 6b118915d98a1411a19001b2e77010ce4333fa8245e2d5839c119968e096f232
 
 ==============================================================================
 pkg-config 0.3.34
@@ -3315,10 +3073,10 @@ Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-powerfmt 0.2.0
+powerfmt 0.2.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/powerfmt/powerfmt-0.2.0.crate
+Source: https://static.crates.io/crates/powerfmt/powerfmt-0.2.1.crate
 
 Published author metadata: ["Jacob Pratt <jacob@jhpratt.dev>"]
 Repository: "https://github.com/jhpratt/powerfmt"
@@ -3335,17 +3093,6 @@ Published author metadata: ["The CryptoCorrosion Contributors"]
 Repository: "https://github.com/cryptocorrosion/cryptocorrosion"
 LICENSE-APACHE: text f0a559a114200228b3a06d7d22961a7e0fc21a9c2b139a970be5830cebac8e10
 LICENSE-MIT: text b2a541f10560a218c2a8b9506c3b5c7ac40d2c99e2d2845eae3c4cf16c70000f
-
-==============================================================================
-primeorder 0.13.6
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/primeorder/primeorder-0.13.6.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/elliptic-curves/tree/master/primeorder"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 8a87674755cec4feeaa77d7d0f55d25f0c018516fe838e2b0626fb8bc870129e
 
 ==============================================================================
 proc-macro-crate 3.5.0
@@ -3421,20 +3168,20 @@ LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e
 LICENSE-MIT: text 05fa1ba3228aab8d2bf637f286d7579ed76256c1dab3fa955c2489b920ffeb35
 
 ==============================================================================
-quinn-proto 0.11.18
+quinn-proto 0.11.19
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/quinn-proto/quinn-proto-0.11.18.crate
+Source: https://static.crates.io/crates/quinn-proto/quinn-proto-0.11.19.crate
 
 Repository: "https://github.com/quinn-rs/quinn"
 LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 LICENSE-MIT: text 05fa1ba3228aab8d2bf637f286d7579ed76256c1dab3fa955c2489b920ffeb35
 
 ==============================================================================
-quinn-udp 0.5.15
+quinn-udp 0.5.16
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/quinn-udp/quinn-udp-0.5.15.crate
+Source: https://static.crates.io/crates/quinn-udp/quinn-udp-0.5.16.crate
 
 Repository: "https://github.com/quinn-rs/quinn"
 LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
@@ -3710,17 +3457,6 @@ LICENSE-APACHE: text 5c3866f31ed28362d86aa475660b5bc4d8f064188261fbbfa421fab5da0
 LICENSE-MIT: text bde59a7e336fcb583f03ede4e7ae63fed99f1148dcee7a7717904d76f116cb84
 
 ==============================================================================
-rfc6979 0.4.0
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/rfc6979/rfc6979-0.4.0.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/signatures/tree/master/rfc6979"
-LICENSE-APACHE: text f330b45715b8c05aa21f1fe40c0060f98a3cb1c3858f586b821f4589546af337
-LICENSE-MIT: text d640976912a163b157d0b76d45379fe61d6cbeaeaa4ef27d82b4efae51d721f9
-
-==============================================================================
 ring 0.17.14
 Declared license: Apache-2.0 AND ISC
 Selected license: Apache-2.0 AND ISC
@@ -3733,17 +3469,6 @@ LICENSE-other-bits: text 07414b6c33f30acfd5e0dda512e77ddbeb9f8a37290568fd056a01a
 src/polyfill/once_cell/LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 src/polyfill/once_cell/LICENSE-MIT: text 740a360e4d9c99a258a4a870097a4641af896babd62ca7ab2a2c6de4d5ada151
 third_party/fiat/LICENSE: text f1954d2b51ee6ac825defdc6ee947930241269d40ad6082b9d9e758613ce7b61
-
-==============================================================================
-rsa 0.9.10
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/rsa/rsa-0.9.10.crate
-
-Published author metadata: ["RustCrypto Developers", "dignifiedquire <dignifiedquire@gmail.com>"]
-Repository: "https://github.com/RustCrypto/RSA"
-LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
-LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
 rust_decimal 1.43.0
@@ -3801,10 +3526,10 @@ LICENSE-ISC: text af6da3f3f6b4929e02f81fd890835fd6d70ffddae12a8d735c0d7f294ac5ff
 LICENSE-MIT: text a3320aa8d192a02cc2c9f31ebcceb861d71b737acdff1397d0d8a49361e86e73
 
 ==============================================================================
-rustls-native-certs 0.8.4
+rustls-native-certs 0.8.5
 Declared license: Apache-2.0 OR ISC OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/rustls-native-certs/rustls-native-certs-0.8.4.crate
+Source: https://static.crates.io/crates/rustls-native-certs/rustls-native-certs-0.8.5.crate
 
 Repository: "https://github.com/rustls/rustls-native-certs"
 LICENSE: text 29fbc81a3f88db204872696133ac1d8c23ddc227513568013c298ba37b9a3a4f
@@ -3823,25 +3548,25 @@ LICENSE-APACHE: text 430e912c26cec30cdf52f4367b6d15dd3f898d2a19db349a62a9f3095ca
 LICENSE-MIT: text c5e7f780f961f850c7ac6e80e29b6aa3e5c3a503677eb7b7a9826fc6d735eb2e
 
 ==============================================================================
-rustls-platform-verifier 0.7.0
+rustls-platform-verifier 0.7.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/rustls-platform-verifier/rustls-platform-verifier-0.7.0.crate
+Source: https://static.crates.io/crates/rustls-platform-verifier/rustls-platform-verifier-0.7.1.crate
 
 Repository: "https://github.com/rustls/rustls-platform-verifier"
 LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 LICENSE-MIT: text 6205904d553962d42fd62764787a5b635a1416d4b3794f4fc465ec36bfbf7ceb
 
 ==============================================================================
-rustls-platform-verifier-android 0.1.1
+rustls-platform-verifier-android 0.2.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/rustls-platform-verifier-android/rustls-platform-verifier-android-0.1.1.crate
+Source: https://static.crates.io/crates/rustls-platform-verifier-android/rustls-platform-verifier-android-0.2.0.crate
 
 Repository: "https://github.com/rustls/rustls-platform-verifier"
-MIT branch selected. Archive omits license files and VCS metadata. Its original package manifest and Rust source exactly match android-release-support version 0.1.1 in upstream release commit 996b1c903491641b17b3c9afb65d1352f6fc6b76. Its Maven payload is generated during releases and covered by the package MIT OR Apache-2.0 declaration. Preserve the shared repository MIT license.
+MIT branch selected. Archive omits license files; its VCS metadata records upstream commit 252e25161a91af476cbea620e29d277592d27ec7 at path android-release-support (release 0.7.1). Its original package manifest and Rust source exactly match that commit. The component's LICENSE-MIT there is a link to the shared repository MIT license, preserved here. Since release 0.7.1 the Maven payload is distributed from the upstream maven-archive branch and is absent from the published archive, which is covered by the package MIT OR Apache-2.0 declaration.
 
-legal/upstream/rustls-rustls-platform-verifier-996b1c903491-LICENSE-MIT: text 6205904d553962d42fd62764787a5b635a1416d4b3794f4fc465ec36bfbf7ceb
+legal/upstream/rustls-rustls-platform-verifier-252e25161a91-LICENSE-MIT: text 6205904d553962d42fd62764787a5b635a1416d4b3794f4fc465ec36bfbf7ceb
 
 ==============================================================================
 rustls-webpki 0.103.16
@@ -3887,30 +3612,30 @@ LICENSE-MIT: text 739620ea44ad8f99e96ea272e583b63a7d44a83a71250d7550b2544ea6b49f
 UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
 
 ==============================================================================
-schannel 0.1.29
+schannel 0.1.30
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/schannel/schannel-0.1.29.crate
+Source: https://static.crates.io/crates/schannel/schannel-0.1.30.crate
 
 Published author metadata: ["Steven Fackler <sfackler@gmail.com>", "Steffen Butzer <steffen.butzer@outlook.com>"]
 Repository: "https://github.com/steffengy/schannel-rs"
 LICENSE.md: text 1ecbb241444ad7feca24a4a99f13ffa757eef72e5f9eae08ba8d6ffb268c14fc
 
 ==============================================================================
-schemars 1.2.2
+schemars 1.2.3
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/schemars/schemars-1.2.2.crate
+Source: https://static.crates.io/crates/schemars/schemars-1.2.3.crate
 
 Published author metadata: ["Graham Esau <gesau@hotmail.co.uk>"]
 Repository: "https://github.com/GREsau/schemars"
 LICENSE: text 1ddb39b2b497012f9d13586caf7248ee26db26835258fd40291c491ce698c7ea
 
 ==============================================================================
-schemars_derive 1.2.2
+schemars_derive 1.2.3
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/schemars_derive/schemars_derive-1.2.2.crate
+Source: https://static.crates.io/crates/schemars_derive/schemars_derive-1.2.3.crate
 
 Published author metadata: ["Graham Esau <gesau@hotmail.co.uk>"]
 Repository: "https://github.com/GREsau/schemars"
@@ -3941,10 +3666,10 @@ legal/upstream/spdx-d46e94e2c78c-MIT-permission-terms.txt: text c435050845f96340
 Published package license and author metadata: text 7acc6890131f53b8213ec648898d95ab41f9fc3200bc5f20d6fe91f03030c8ba
 
 ==============================================================================
-sea-orm 2.0.3
+sea-orm 2.0.4
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/sea-orm/sea-orm-2.0.3.crate
+Source: https://static.crates.io/crates/sea-orm/sea-orm-2.0.4.crate
 
 Published author metadata: ["Chris Tsang <chris.2y3@outlook.com>"]
 Repository: "https://github.com/SeaQL/sea-orm"
@@ -3952,10 +3677,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text b937e4dc7e279159e5e61f9360ebb516fefb622791c445cdc88f504c4b58b019
 
 ==============================================================================
-sea-orm-arrow 2.0.0-rc.4
+sea-orm-arrow 2.0.0-rc.5
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/sea-orm-arrow/sea-orm-arrow-2.0.0-rc.4.crate
+Source: https://static.crates.io/crates/sea-orm-arrow/sea-orm-arrow-2.0.0-rc.5.crate
 
 Published author metadata: ["Chris Tsang <chris.2y3@outlook.com>"]
 Repository: "https://github.com/SeaQL/sea-orm"
@@ -3965,10 +3690,10 @@ legal/upstream/SeaQL-sea-orm-b194ee0c5eda-LICENSE-APACHE: text 954f335b8baf5e1a5
 legal/upstream/SeaQL-sea-orm-b194ee0c5eda-LICENSE-MIT: text b937e4dc7e279159e5e61f9360ebb516fefb622791c445cdc88f504c4b58b019
 
 ==============================================================================
-sea-orm-cli 2.0.3
+sea-orm-cli 2.0.4
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/sea-orm-cli/sea-orm-cli-2.0.3.crate
+Source: https://static.crates.io/crates/sea-orm-cli/sea-orm-cli-2.0.4.crate
 
 Published author metadata: ["Chris Tsang <chris.2y3@outlook.com>", "Billy Chan <ccw.billy.123@gmail.com>"]
 Repository: "https://github.com/SeaQL/sea-orm"
@@ -3978,10 +3703,10 @@ legal/upstream/SeaQL-sea-orm-63806d80434a-LICENSE-APACHE: text 954f335b8baf5e1a5
 legal/upstream/SeaQL-sea-orm-63806d80434a-LICENSE-MIT: text b937e4dc7e279159e5e61f9360ebb516fefb622791c445cdc88f504c4b58b019
 
 ==============================================================================
-sea-orm-macros 2.0.3
+sea-orm-macros 2.0.4
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/sea-orm-macros/sea-orm-macros-2.0.3.crate
+Source: https://static.crates.io/crates/sea-orm-macros/sea-orm-macros-2.0.4.crate
 
 Published author metadata: ["Billy Chan <ccw.billy.123@gmail.com>"]
 Repository: "https://github.com/SeaQL/sea-orm"
@@ -3992,10 +3717,10 @@ legal/upstream/SeaQL-sea-orm-63806d80434a-LICENSE-APACHE: text 954f335b8baf5e1a5
 legal/upstream/SeaQL-sea-orm-63806d80434a-LICENSE-MIT: text b937e4dc7e279159e5e61f9360ebb516fefb622791c445cdc88f504c4b58b019
 
 ==============================================================================
-sea-orm-migration 2.0.3
+sea-orm-migration 2.0.4
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/sea-orm-migration/sea-orm-migration-2.0.3.crate
+Source: https://static.crates.io/crates/sea-orm-migration/sea-orm-migration-2.0.4.crate
 
 Published author metadata: ["Billy Chan <ccw.billy.123@gmail.com>"]
 Repository: "https://github.com/SeaQL/sea-orm"
@@ -4063,17 +3788,6 @@ Repository: "https://github.com/SeaQL/sea-schema"
 MIT branch selected. Published VCS commit is unavailable upstream. Cargo.toml.orig and the sole shipped source file src/lib.rs exactly match sea-schema-derive 0.3.0 in sea-schema 0.16.2 release commit 7bf88ccc9583a2731ddcb3f0b18a98b9c5bf09ae; preserving the shared repository MIT license.
 
 legal/upstream/SeaQL-sea-schema-7bf88ccc9583-LICENSE-MIT: text 382b1ae2eb3b0eb5391c3c049e62c7170bd080906724f87c1c632d8a2967563d
-
-==============================================================================
-sec1 0.7.3
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/sec1/sec1-0.7.3.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats/tree/master/sec1"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text aaf07745e8e4cbe127d2b2ac206c8752ff7d336525c8bb9875ff64492cd73e48
 
 ==============================================================================
 security-framework 3.7.0
@@ -4153,12 +3867,11 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-serde_json 1.0.151
+serde_json 1.0.154
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/serde_json/serde_json-1.0.151.crate
+Source: https://static.crates.io/crates/serde_json/serde_json-1.0.154.crate
 
-Published author metadata: ["Erick Tryzelaar <erick.tryzelaar@gmail.com>", "David Tolnay <dtolnay@gmail.com>"]
 Repository: "https://github.com/serde-rs/json"
 LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e38179
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
@@ -4208,10 +3921,10 @@ LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130
 LICENSE-MIT: text 4031faf6212ee74481b2597dc84fb61568d6a732480c3efdf317f2ac83d330b4
 
 ==============================================================================
-sha2 0.11.0
+sha2 0.11.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/sha2/sha2-0.11.0.crate
+Source: https://static.crates.io/crates/sha2/sha2-0.11.1.crate
 
 Published author metadata: ["RustCrypto Developers"]
 Repository: "https://github.com/RustCrypto/hashes"
@@ -4336,10 +4049,10 @@ Repository: "https://github.com/tokio-rs/slab"
 LICENSE: text 12c7116c4425c559c9d7aed5cafbc1d4039286f17619ee2e6dd25f59728e679e
 
 ==============================================================================
-smallvec 1.16.1
+smallvec 1.16.3
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/smallvec/smallvec-1.16.1.crate
+Source: https://static.crates.io/crates/smallvec/smallvec-1.16.3.crate
 
 Published author metadata: ["The Servo Project Developers"]
 Repository: "https://github.com/servo/rust-smallvec"
@@ -4376,17 +4089,6 @@ Source: https://static.crates.io/crates/spin/spin-0.9.9.crate
 Published author metadata: ["Mathijs van de Nes <git@mathijs.vd-nes.nl>", "John Ericson <git@JohnEricson.me>", "Joshua Barretto <joshua.s.barretto@gmail.com>"]
 Repository: "https://github.com/mvdnes/spin-rs.git"
 LICENSE: text 6ac8711fb340c62ce0a4ecd463342d3fa0e8e70de697c863a2e1c0c53006003c
-
-==============================================================================
-spki 0.7.3
-Declared license: Apache-2.0 OR MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/spki/spki-0.7.3.crate
-
-Published author metadata: ["RustCrypto Developers"]
-Repository: "https://github.com/RustCrypto/formats/tree/master/spki"
-LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130937a4
-LICENSE-MIT: text 07ce2f16212bdab8e8bf9ddad7f37f1e16e2fdc57031dab901356a66348cdf00
 
 ==============================================================================
 sqlx 0.9.0
@@ -4554,10 +4256,10 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-syn 3.0.6
+syn 3.0.9
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/syn/syn-3.0.6.crate
+Source: https://static.crates.io/crates/syn/syn-3.0.9.crate
 
 Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
 Repository: "https://github.com/dtolnay/syn"
@@ -4619,10 +4321,10 @@ LICENSE-MIT: text 154c1af2b38e25e5c18613dfe352eed29b0863cb39e494007822cdeb39150a
 UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
 
 ==============================================================================
-thiserror 2.0.20
+thiserror 2.0.21
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/thiserror/thiserror-2.0.20.crate
+Source: https://static.crates.io/crates/thiserror/thiserror-2.0.21.crate
 
 Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
 Repository: "https://github.com/dtolnay/thiserror"
@@ -4630,10 +4332,10 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-thiserror-impl 2.0.20
+thiserror-impl 2.0.21
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/thiserror-impl/thiserror-impl-2.0.20.crate
+Source: https://static.crates.io/crates/thiserror-impl/thiserror-impl-2.0.21.crate
 
 Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
 Repository: "https://github.com/dtolnay/thiserror"
@@ -4739,10 +4441,10 @@ LICENSE-MIT.md: text bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e
 LICENSE-ZLIB.md: text 943f36fd309fb5ea67a82f577433f4ed3bc877e5b00f9b874e2f8b7f72bf0bdc
 
 ==============================================================================
-tokio 1.53.1
+tokio 1.54.1
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/tokio/tokio-1.53.1.crate
+Source: https://static.crates.io/crates/tokio/tokio-1.54.1.crate
 
 Published author metadata: ["Tokio Contributors <team@tokio.rs>"]
 Repository: "https://github.com/tokio-rs/tokio"
@@ -4759,10 +4461,10 @@ Repository: "https://github.com/tokio-rs/tokio"
 LICENSE: text c0fdcda1a4ffc5fd63c452e40ce25e54f2098669e3415033b228773eea24a871
 
 ==============================================================================
-tokio-rustls 0.26.5
+tokio-rustls 0.26.6
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/tokio-rustls/tokio-rustls-0.26.5.crate
+Source: https://static.crates.io/crates/tokio-rustls/tokio-rustls-0.26.6.crate
 
 Repository: "https://github.com/rustls/tokio-rustls"
 LICENSE-APACHE: text acddfb05f07ab0048f60a6080856befa9a37cd2f2e4aaef35bd3fe5cba145b62
@@ -4779,43 +4481,43 @@ Repository: "https://github.com/tokio-rs/tokio"
 LICENSE: text 3e1bef82aa0dfee4504ad211f7e4895153e3191db6ab179f94a7e20f990a0b67
 
 ==============================================================================
-tokio-util 0.7.19
+tokio-util 0.7.20
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/tokio-util/tokio-util-0.7.19.crate
+Source: https://static.crates.io/crates/tokio-util/tokio-util-0.7.20.crate
 
 Published author metadata: ["Tokio Contributors <team@tokio.rs>"]
 Repository: "https://github.com/tokio-rs/tokio"
 LICENSE: text 3e1bef82aa0dfee4504ad211f7e4895153e3191db6ab179f94a7e20f990a0b67
 
 ==============================================================================
-toml_datetime 1.1.1+spec-1.1.0
+toml_datetime 1.1.2+spec-1.1.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/toml_datetime/toml_datetime-1.1.1+spec-1.1.0.crate
+Source: https://static.crates.io/crates/toml_datetime/toml_datetime-1.1.2+spec-1.1.0.crate
 
 Repository: "https://github.com/toml-rs/toml"
-LICENSE-APACHE: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a
+LICENSE-APACHE: text 9b689eac99cd74074238eacc6355aa7f26971ad99fcef4a2fa0fdb1c80407a3a
 LICENSE-MIT: text 4498464c2864825d7bb4c83e2ac4e9dbb533d49964fbf218c24f8d44ee4e87a9
 
 ==============================================================================
-toml_edit 0.25.15+spec-1.1.0
+toml_edit 0.25.17+spec-1.1.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/toml_edit/toml_edit-0.25.15+spec-1.1.0.crate
+Source: https://static.crates.io/crates/toml_edit/toml_edit-0.25.17+spec-1.1.0.crate
 
 Repository: "https://github.com/toml-rs/toml"
-LICENSE-APACHE: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a
+LICENSE-APACHE: text 9b689eac99cd74074238eacc6355aa7f26971ad99fcef4a2fa0fdb1c80407a3a
 LICENSE-MIT: text 4498464c2864825d7bb4c83e2ac4e9dbb533d49964fbf218c24f8d44ee4e87a9
 
 ==============================================================================
-toml_parser 1.1.3+spec-1.1.0
+toml_parser 1.1.5+spec-1.1.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/toml_parser/toml_parser-1.1.3+spec-1.1.0.crate
+Source: https://static.crates.io/crates/toml_parser/toml_parser-1.1.5+spec-1.1.0.crate
 
 Repository: "https://github.com/toml-rs/toml"
-LICENSE-APACHE: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a
+LICENSE-APACHE: text 9b689eac99cd74074238eacc6355aa7f26971ad99fcef4a2fa0fdb1c80407a3a
 LICENSE-MIT: text 4498464c2864825d7bb4c83e2ac4e9dbb533d49964fbf218c24f8d44ee4e87a9
 
 ==============================================================================
@@ -4975,10 +4677,10 @@ LICENSE-APACHE: text 65dc2a869ff7fe71d6c062f9f0977b0274e109e0a407fa4eea257006390
 LICENSE-MIT: text 87ebb37988efc3285a41635c6a9fd38147e1e581b5f0556a284d5ab8fa5cdd4c
 
 ==============================================================================
-unicase 2.9.0
+unicase 2.10.0
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/unicase/unicase-2.9.0.crate
+Source: https://static.crates.io/crates/unicase/unicase-2.10.0.crate
 
 Published author metadata: ["Sean McArthur <sean@seanmonstar.com>"]
 Repository: "https://github.com/seanmonstar/unicase"
@@ -4998,10 +4700,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 033a9383ff21d1e4811d98dd2e0081b0ba0d9c9a31d6c7ba9e63e3488479bf29
 
 ==============================================================================
-unicode-ident 1.0.26
+unicode-ident 1.0.27
 Declared license: (MIT OR Apache-2.0) AND Unicode-3.0
 Selected license: MIT AND Unicode-3.0
-Source: https://static.crates.io/crates/unicode-ident/unicode-ident-1.0.26.crate
+Source: https://static.crates.io/crates/unicode-ident/unicode-ident-1.0.27.crate
 
 Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
 Repository: "https://github.com/dtolnay/unicode-ident"
@@ -5010,16 +4712,17 @@ LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c00856
 LICENSE-UNICODE: text 361d7912957842f2ce61c774b14afba41ae91df84882982e6f7e749e01c07c91
 
 ==============================================================================
-unicode-normalization 0.1.25
-Declared license: MIT OR Apache-2.0
-Selected license: MIT
-Source: https://static.crates.io/crates/unicode-normalization/unicode-normalization-0.1.25.crate
+unicode-normalization 0.1.26
+Declared license: (MIT OR Apache-2.0) AND Unicode-3.0
+Selected license: MIT AND Unicode-3.0
+Source: https://static.crates.io/crates/unicode-normalization/unicode-normalization-0.1.26.crate
 
 Published author metadata: ["kwantam <kwantam@gmail.com>", "Manish Goregaokar <manishsmail@gmail.com>"]
 Repository: "https://github.com/unicode-rs/unicode-normalization"
 COPYRIGHT: text 20cec30ad77804372faa6c82e5a1a4be426a75e32808a159ef646c2037649071
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 LICENSE-MIT: text 033a9383ff21d1e4811d98dd2e0081b0ba0d9c9a31d6c7ba9e63e3488479bf29
+LICENSE-UNICODE: text 361d7912957842f2ce61c774b14afba41ae91df84882982e6f7e749e01c07c91
 
 ==============================================================================
 unicode-properties 0.1.4
@@ -5093,6 +4796,16 @@ LICENSE-APACHE: text e8541ea93f027a6c2cf077362f74492bdf0bb8354f63029962d84f1c130
 LICENSE-MIT: text 5f934370168b8ded9168a3e5527fdd3c25fe04379135646595fbf40bf2434696
 
 ==============================================================================
+untrusted 0.7.1
+Declared license: ISC
+Selected license: ISC
+Source: https://static.crates.io/crates/untrusted/untrusted-0.7.1.crate
+
+Published author metadata: ["Brian Smith <brian@briansmith.org>"]
+Repository: "https://github.com/briansmith/untrusted"
+LICENSE.txt: text a1fff344297822d3e229f6943007694a29e6bede5b83349cb7c39117f4302e3c
+
+==============================================================================
 untrusted 0.9.0
 Declared license: ISC
 Selected license: ISC
@@ -5147,10 +4860,10 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text db2c904eb5685e69d3ea20f1f8187c8ed82b44077221fd99c4a68234739de941
 
 ==============================================================================
-uuid 1.26.1
+uuid 1.28.0
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/uuid/uuid-1.26.1.crate
+Source: https://static.crates.io/crates/uuid/uuid-1.28.0.crate
 
 Published author metadata: ["Ashley Mannix<ashleymannix@live.com.au>", "Dylan DPC<dylan.dpc@gmail.com>", "Hunar Roop Kahlon<hunar.roop@gmail.com>"]
 Repository: "https://github.com/uuid-rs/uuid"
@@ -5214,10 +4927,10 @@ LICENSE-MIT: text 154c1af2b38e25e5c18613dfe352eed29b0863cb39e494007822cdeb39150a
 UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
 
 ==============================================================================
-want 0.3.1
+want 0.3.2
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/want/want-0.3.1.crate
+Source: https://static.crates.io/crates/want/want-0.3.2.crate
 
 Published author metadata: ["Sean McArthur <sean@seanmonstar.com>"]
 Repository: "https://github.com/seanmonstar/want"
@@ -5247,10 +4960,10 @@ LICENSE-Apache-2.0_WITH_LLVM-exception: text 2f213ec6b1355dc841dc489c9e7ce1dddd0
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-wasm-bindgen 0.2.128
+wasm-bindgen 0.2.129
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/wasm-bindgen/wasm-bindgen-0.2.128.crate
+Source: https://static.crates.io/crates/wasm-bindgen/wasm-bindgen-0.2.129.crate
 
 Published author metadata: ["The wasm-bindgen Developers"]
 Repository: "https://github.com/wasm-bindgen/wasm-bindgen"
@@ -5258,10 +4971,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
 
 ==============================================================================
-wasm-bindgen-futures 0.4.78
+wasm-bindgen-futures 0.4.79
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/wasm-bindgen-futures/wasm-bindgen-futures-0.4.78.crate
+Source: https://static.crates.io/crates/wasm-bindgen-futures/wasm-bindgen-futures-0.4.79.crate
 
 Published author metadata: ["The wasm-bindgen Developers"]
 Repository: "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures"
@@ -5269,10 +4982,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
 
 ==============================================================================
-wasm-bindgen-macro 0.2.128
+wasm-bindgen-macro 0.2.129
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/wasm-bindgen-macro/wasm-bindgen-macro-0.2.128.crate
+Source: https://static.crates.io/crates/wasm-bindgen-macro/wasm-bindgen-macro-0.2.129.crate
 
 Published author metadata: ["The wasm-bindgen Developers"]
 Repository: "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro"
@@ -5280,10 +4993,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
 
 ==============================================================================
-wasm-bindgen-macro-support 0.2.128
+wasm-bindgen-macro-support 0.2.129
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/wasm-bindgen-macro-support/wasm-bindgen-macro-support-0.2.128.crate
+Source: https://static.crates.io/crates/wasm-bindgen-macro-support/wasm-bindgen-macro-support-0.2.129.crate
 
 Published author metadata: ["The wasm-bindgen Developers"]
 Repository: "https://github.com/wasm-bindgen/wasm-bindgen/tree/main/crates/macro-support"
@@ -5291,10 +5004,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
 
 ==============================================================================
-wasm-bindgen-shared 0.2.128
+wasm-bindgen-shared 0.2.129
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/wasm-bindgen-shared/wasm-bindgen-shared-0.2.128.crate
+Source: https://static.crates.io/crates/wasm-bindgen-shared/wasm-bindgen-shared-0.2.129.crate
 
 Published author metadata: ["The wasm-bindgen Developers"]
 Repository: "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared"
@@ -5313,10 +5026,10 @@ LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-web-sys 0.3.105
+web-sys 0.3.106
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
-Source: https://static.crates.io/crates/web-sys/web-sys-0.3.105.crate
+Source: https://static.crates.io/crates/web-sys/web-sys-0.3.106.crate
 
 Published author metadata: ["The wasm-bindgen Developers"]
 Repository: "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys"
@@ -5707,10 +5420,10 @@ Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-zerocopy 0.8.57
+zerocopy 0.8.63
 Declared license: BSD-2-Clause OR Apache-2.0 OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/zerocopy/zerocopy-0.8.57.crate
+Source: https://static.crates.io/crates/zerocopy/zerocopy-0.8.63.crate
 
 Repository: "https://github.com/google/zerocopy"
 LICENSE-APACHE: text 98ed0ad9db8a72957b9c45941fe2ed31933a3beacbd193e662df483d0643a13d
@@ -5718,10 +5431,10 @@ LICENSE-BSD: text 47248d1ec833e0771ddacb65f2cf9978785f4a9976b5b0b69d1e33c60a50be
 LICENSE-MIT: text a03d4daa4f46496a592dbf6734f5ee16ed52f1eb7a56ae4648d609ebf0efd0b7
 
 ==============================================================================
-zerocopy-derive 0.8.57
+zerocopy-derive 0.8.63
 Declared license: BSD-2-Clause OR Apache-2.0 OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/zerocopy-derive/zerocopy-derive-0.8.57.crate
+Source: https://static.crates.io/crates/zerocopy-derive/zerocopy-derive-0.8.63.crate
 
 Repository: "https://github.com/google/zerocopy"
 LICENSE-APACHE: text 98ed0ad9db8a72957b9c45941fe2ed31933a3beacbd193e662df483d0643a13d
@@ -5749,10 +5462,10 @@ Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-zeroize 1.9.0
+zeroize 1.9.1
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/zeroize/zeroize-1.9.0.crate
+Source: https://static.crates.io/crates/zeroize/zeroize-1.9.1.crate
 
 Published author metadata: ["The RustCrypto Project Developers"]
 Repository: "https://github.com/RustCrypto/utils"
@@ -5840,10 +5553,10 @@ Repository: "https://github.com/gyscos/zstd-rs"
 LICENSE: text 769153f04f135a5bc87cd68f6dcf5168ad3c136749616e8dbd9b78b0199e0b18
 
 ==============================================================================
-zstd-sys 2.1.0+zstd.1.5.7
+zstd-sys 2.1.2+zstd.1.5.7
 Declared license: BSD-3-Clause
 Selected license: BSD-3-Clause
-Source: https://static.crates.io/crates/zstd-sys/zstd-sys-2.1.0+zstd.1.5.7.crate
+Source: https://static.crates.io/crates/zstd-sys/zstd-sys-2.1.2+zstd.1.5.7.crate
 
 Published author metadata: ["Alexandre Bury <alexandre.bury@gmail.com>"]
 Repository: "https://github.com/gyscos/zstd-rs"
@@ -5895,16 +5608,6 @@ Copyright (c) 2015 The Rust Project Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
---- text 045a1c4f9aa0a307b3a4a153e9646adc7ceb5c6c5c27c272b4486b92f96438a8 ---
-Copyright (c) 2020-2022 The RustCrypto Project Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text 053bd85296345c1ac5067d84548e512f9f8e5e9e06d0583dc49120ddbb3d06dd ---
-Copyright (c) 2021 The RustCrypto Project Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text 05f344491a7d18e1a3188acbddf6f921284cb192e49d16391128d453000468ff ---
 Copyright (c) 2014-2026 Sean McArthur
 
@@ -5936,11 +5639,6 @@ SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
 OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
---- text 07ce2f16212bdab8e8bf9ddad7f37f1e16e2fdc57031dab901356a66348cdf00 ---
-Copyright (c) 2021-2023 The RustCrypto Project Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text 08728d1c12d66320bd53177c8c026f2191e0a2e14fe0f3c143dcf49d3cd476d1 ---
 The auto-generated bindings are under the 3-clause BSD license:
@@ -5983,12 +5681,6 @@ Copyright (c) The rust-url developers
 
 --- text 0f1d575cfca3c627f4678f5730c3904c164f5ef8ef551697b5aa12beba8a0f77 ---
 Copyright (c) 2017 arc-swap developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text 0fa917c28568f1dc5a58d947b5b586d4426bbae594afc096dc1288af5970cf9d ---
-Copyright (c) 2014 Steve "Sc00bz" Thomas (steve at tobtu dot com)
-Copyright (c) 2022 The RustCrypto Project Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -7914,13 +7606,6 @@ Copyright (c) 2019 The Crossbeam Project Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
---- text 5abb4b606ff4cbadaf5523189091b44dba35c96138e19b87b76539c7bb59e4d7 ---
-The MIT License (MIT)
-
-Copyright (c) 2015-2020 the fiat-crypto authors (see the AUTHORS file).
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text 5c3866f31ed28362d86aa475660b5bc4d8f064188261fbbfa421fab5da09198c ---
 [Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
 
@@ -8207,11 +7892,6 @@ Copyright (c) 2015 Alice Maz
 The MIT License (MIT)
 
 Copyright (c) 2014 Mathijs van de Nes
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text 6b118915d98a1411a19001b2e77010ce4333fa8245e2d5839c119968e096f232 ---
-Copyright (c) 2020-2023 The RustCrypto Project Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -8732,12 +8412,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
---- text 79697635de7275c58e2f250f12e2a4addba33e919e61f127331f48068d36fd99 ---
-Copyright (c) 2014 Steve "Sc00bz" Thomas (steve at tobtu dot com)
-Copyright (c) 2021-2025 The RustCrypto Project Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text 7a8093fb4a93f23e2bc9081b53b6187ea14a1c9303e513184726d8cdcbfa418a ---
 Copyright (c) 2013-2025 The rust-url developers
 
@@ -9018,105 +8692,10 @@ Copyright (c) 2022 Ibraheem Ahmed
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
---- text 82771e440a2341f400e5fd3691e876745a9d0daee5371371d93bdb668ed2e706 ---
-Copyright (c) 2016-2021 isis agora lovecruft. All rights reserved.
-Copyright (c) 2016-2021 Henry de Valence. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
-TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-========================================================================
-
-Portions of curve25519-dalek were originally derived from Adam Langley's
-Go ed25519 implementation, found at <https://github.com/agl/ed25519/>,
-under the following licence:
-
-========================================================================
-
-Copyright (c) 2012 The Go Authors. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-   * Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-   * Redistributions in binary form must reproduce the above
-copyright notice, this list of conditions and the following disclaimer
-in the documentation and/or other materials provided with the
-distribution.
-   * Neither the name of Google Inc. nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
-OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 --- text 82d2cc0ccece30bbaa33b475a66519ccf2b7c14c67cac44f785b56c25d0f70a8 ---
 [Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
 
 Copyright (c) 2015-2022 Amod Malviya
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-	http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
---- text 8348c9fe2fb74122288d01b62b79a292b71cc6b561cdceb8f2d46cc196a31e49 ---
-[Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
-
-APPENDIX: How to apply the Apache License to your work.
-
-   To apply the Apache License to your work, attach the following
-   boilerplate notice, with the fields enclosed by brackets "[]"
-   replaced with your own identifying information. (Don't include
-   the brackets!)  The text should be enclosed in the appropriate
-   comment syntax for the file format. We also recommend that a
-   file or class name and description of purpose be included on the
-   same "printed page" as the copyright notice for easier
-   identification within third-party archives.
-
-Copyright 2018 The pin-utils authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -9191,11 +8770,6 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
---- text 8a87674755cec4feeaa77d7d0f55d25f0c018516fe838e2b0626fb8bc870129e ---
-Copyright (c) 2020-2023 RustCrypto Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text 8bc96fbaed0aa79bf488d8407938347b06276d5d6e94c7d516624f1b72a3b0cd ---
 MIT License
@@ -9478,11 +9052,6 @@ Copyright (c) 2015-2020 The rust-hex Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
---- text 9e0027807b0c548ac1df1bd85fe0d72da6665498b06ebf8a64d5cb841f39fcef ---
-Copyright (c) 2010 The Rust Project Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text 9f1b59f145a4184430c2aa487294e726f6b86095fadad30c7a864eb90fd310d5 ---
 {
   "name": "objc2-core-foundation",
@@ -9537,13 +9106,6 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
 AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
 OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
---- text a241ea2c0d6391f0f6646dc9acae77c83ee0bc6b1efa7dbd8397dd94644d4045 ---
-The MIT License (MIT)
-
-Copyright (c) 2017 Sean Bowe
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text a302dc760d97dc623f8549327a3db1793dd22efc5cce07ec583c278c50b4c3b7 ---
 Copyright (c) 2014 Sean McArthur
 
@@ -9584,11 +9146,6 @@ Copyright (c) 2017 Sergio Benitez
 
 --- text aaac889d0a4a18753c87911502e36f2e04185d0c8bab33b42895c8bcc2570cfd ---
 Copyright (c) 2017 tokio-jsonrpc developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text aaf07745e8e4cbe127d2b2ac206c8752ff7d336525c8bb9875ff64492cd73e48 ---
-Copyright (c) 2021-2022 The RustCrypto Project Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -10310,31 +9867,6 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 For more information, please refer to <http://unlicense.org/>
 
---- text cb320ccefaa5680ed9898cb3e956ab11e0b8fc3d7e89918d5129bc1c9121d4e9 ---
-The BSD 1-Clause License (BSD-1-Clause)
-
-Copyright (c) 2015-2020 the fiat-crypto authors (see the AUTHORS file)
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-    1. Redistributions of source code must retain the above copyright
-       notice, this list of conditions and the following disclaimer.
-
-THIS SOFTWARE IS PROVIDED BY the fiat-crypto authors "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
-THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL Berkeley Software Design,
-Inc. BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 --- text cc367a7134c2b07d995a2f8dea591094a1d100e49c68513f729fdf3eaf580a21 ---
 Copyright 2018 Developers of the Rand project
 Copyright (c) 2014 The Rust Project Developers
@@ -10479,36 +10011,6 @@ Copyright (c) 2018 Tom Kaitchuck
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
---- text d2778eb7f5d0322fd866e3fe0a67000a2e4fddd9ace29b43069095d78272d7af ---
-Copyright (c) 2017-2019 isis agora lovecruft. All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are
-met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
-TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 --- text d30183ec6610abca89d6095d5f1dc56ea50248a1001cbb4549fadc3a582f6f9a ---
 # Community Data License Agreement - Permissive - Version 2.0
 
@@ -10572,11 +10074,6 @@ agreement.
 of Data, including for example machine learning models and models'
 insights.
 
---- text d640976912a163b157d0b76d45379fe61d6cbeaeaa4ef27d82b4efae51d721f9 ---
-Copyright (c) 2018-2022 RustCrypto Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text d82ceb8cbd004a2d4834085c557d55459f528e30268d95159ee1e4030a693a6e ---
 [Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
 
@@ -10605,15 +10102,6 @@ Copyright (c) 2018-2022 RustCrypto Developers
    See the License for the specific language governing permissions and
    limitations under the License.
 
---- text d9b4bc5257686af9ff0e11953d5f909d533bca543795b1d926f667d3c3f42273 ---
-SPDX-License-Identifier: MIT OR Apache-2.0 OR BSD-1-Clause
-
-Fiat Cryptography is licensed under the MIT License <LICENSE-MIT> or
-<http://opensource.org/licenses/MIT>, the Apache License, Version 2.0
-<LICENSE-APACHE> or <http://www.apache.org/licenses/LICENSE-2.0>, or
-the BSD 1-Clause License <LICENSE-BSD-1> or
-<https://spdx.org/licenses/BSD-1-Clause.html>, at your option.
-
 --- text da6604db16c0e6f84d6f59847f236910d450d25381d272f26d1d0e6315d7c0d2 ---
 Copyright (c) 2020 Project Developers
 
@@ -10631,16 +10119,6 @@ MIT OR Apache-2.0
 Copyright (c) 2016 Joe Wilm
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text db7c42bff1020a8b24483d64562b228ab8aeee376ad29a77c84fded3142e8cf5 ---
-{
-  "name": "objc2",
-  "version": "0.6.4",
-  "license": "MIT",
-  "authors": [
-    "Mads Marquart <mads@marquart.dk>"
-  ]
-}
 
 --- text dc08c5cf03ec0697c576cacfd00b330ec595916626dd0567792e70382eff600f ---
 Apache License
@@ -10953,6 +10431,16 @@ Copyright 2017-2023 Eira Fransham.
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text e3678ecaf4f13f6141a71758115e611f67e26236b2be1228f7453808e3fbcecb ---
+{
+  "name": "objc2",
+  "version": "0.6.5",
+  "license": "MIT",
+  "authors": [
+    "Mads Marquart <mads@marquart.dk>"
+  ]
+}
+
 --- text e40488cf301b57a46678f95ddcc9aeeb435c42cc0477814edc4d07f51b08dcd9 ---
 MIT License
 
@@ -10992,11 +10480,6 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
---- text e768d9875925100c3f72e0bb125813323829393f0e2ae5ac6b69ca5861aa2e16 ---
-Copyright (c) 2018 The pin-utils authors
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text e77516076342cfdd1164e68a95f7f34cf4194f20885376440eb8933d112cd6f3 ---
 MIT License
@@ -11074,11 +10557,6 @@ Copyright (c) 2023 The BigDecimal-rs Contributors
 --- text e915669a595b11a200873df8286561881b0e04932f6412a585db6297ba0bc97c ---
 This work is derived in part from the `linked-hash-map` crate, Copyright (c)
 2015 The Rust Project Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text ea3358adfd416b24a0a71fd783f35510248af23db80d4ca11dd997b63a283ea9 ---
-Copyright (c) 2020-2022 RustCrypto Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -11683,11 +11161,6 @@ objc2-xc-test = { path = "framework-crates/objc2-xc-test" }
 objc2-xc-ui-automation = { path = "framework-crates/objc2-xc-ui-automation" }
 objc2-itunes-library = { path = "framework-crates/objc2-itunes-library" }
 
---- text ee25a6da6cea276fd9179763b0e05d7123d616dd55d64a44694e604a4f4731a6 ---
-Copyright (c) 2020-2021 RustCrypto Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
 --- text efbbbcefb4b8588630bec285cd7372a4dc3eb208a6c457d4313f62cb10f87aa3 ---
 SPDX-License-Identifier: ISC AND (Apache-2.0 OR ISC)
 
@@ -11850,34 +11323,6 @@ AUTHORS: (ordered alphabetically)
         Tom Gundersen <teg@jklm.no>
         Trevor Gross <tmgross@umich.edu>
 
---- text f330b45715b8c05aa21f1fe40c0060f98a3cb1c3858f586b821f4589546af337 ---
-[Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
-
-APPENDIX: How to apply the Apache License to your work.
-
-   To apply the Apache License to your work, attach the following
-   boilerplate notice, with the fields enclosed by brackets "[]"
-   replaced with your own identifying information. (Don't include
-   the brackets!)  The text should be enclosed in the appropriate
-   comment syntax for the file format. We also recommend that a
-   file or class name and description of purpose be included on the
-   same "printed page" as the copyright notice for easier
-   identification within third-party archives.
-
-Copyright 2018-2022 RustCrypto Developers
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-	http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
 --- text f47894ff9c86dc7e364e3c161a13b4b7414da6192b91d0eccf0161f944f753e5 ---
 Copyright (c) 2017 http-rs authors
 
@@ -11892,22 +11337,6 @@ Copyright (c) 2017 h2 authors
 Copyright (c) 2018-2019 Sean McArthur
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text f98a51ab06f4771e0707c5a2c9b23ad837862e51623ac35cd1cd667477144926 ---
-Copyrights in the "group" library are retained by their contributors. No
-copyright assignment is required to contribute to the "group" library.
-
-The "group" library is licensed under either of
-
- * Apache License, Version 2.0, (see ./LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license (see ./LICENSE-MIT or http://opensource.org/licenses/MIT)
-
-at your option.
-
-Unless you explicitly state otherwise, any contribution intentionally
-submitted for inclusion in the work by you, as defined in the Apache-2.0
-license, shall be dual licensed as above, without any additional terms or
-conditions.
 
 --- text fd270b8c59ed37680ea2106f920afe52ebc4d276d2377283f8b13276b36c09bd ---
 The MIT License (MIT)

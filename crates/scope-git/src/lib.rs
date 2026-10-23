@@ -8,7 +8,7 @@ pub use projection_identity::{
     projection_head_oid,
 };
 #[cfg(feature = "storage")]
-pub use snapshot::{StoredGitPush, prepare_git_push};
+pub use snapshot::{PreparedGitPush, prepare_git_push};
 pub use tree_path::{GitTreePath, GitTreePathError};
 
 use scope_domain::content::SourceBlob;

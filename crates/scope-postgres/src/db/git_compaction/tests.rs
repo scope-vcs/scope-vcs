@@ -2,69 +2,82 @@ use super::*;
 use crate::db::{MetadataStore, TestDatabaseTarget};
 use crate::error::PostgresErrorKind;
 use crate::job_trace::test_support::queued_by;
-use scope_domain::repository::git::{GitSegmentRef, GitSegmentUploadState};
-use sea_orm::{ActiveModelTrait, IntoActiveModel};
+use scope_domain::repository::git::{
+    GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef, GitSegmentUploadState,
+};
 
 const COMPACTION_REPO_ID: &str = "repo_compaction";
 
-fn span(first_sequence: u64, last_sequence: u64, geometric_tier: u32) -> GitPackSpan {
-    GitPackSpan {
-        first_sequence,
-        last_sequence,
-        geometric_tier,
-        base_oid: (first_sequence > 1).then(|| format!("head-{}", first_sequence - 1)),
+fn main_pack(first_sequence: u64, last_sequence: u64) -> GitPoolPack {
+    let segment_id = format!("segment-{first_sequence}-{last_sequence}");
+    GitPoolPack {
+        id: segment_id.clone(),
+        owner: GitPoolPackOwner::Main {
+            first_sequence,
+            last_sequence,
+        },
         head_oid: format!("head-{last_sequence}"),
-        segment: GitSegmentRef {
-            segment_id: format!("segment-{first_sequence}-{last_sequence}"),
+        prerequisites: (first_sequence > 1)
+            .then(|| format!("head-{}", first_sequence - 1))
+            .into_iter()
+            .collect(),
+        storage: GitPoolPackStorage::Segment(GitSegmentRef {
+            segment_id,
             sha256: format!("{first_sequence:032x}{last_sequence:032x}"),
             plaintext_bytes: 1,
             encoding_version: 2,
-        },
+        }),
     }
 }
 
-fn replacement_span(segment_id: &str, digest: char) -> GitPackSpan {
-    GitPackSpan {
-        segment: GitSegmentRef {
+fn replacement_pack(segment_id: &str, digest: char) -> GitPoolPack {
+    GitPoolPack {
+        id: segment_id.to_string(),
+        storage: GitPoolPackStorage::Segment(GitSegmentRef {
             segment_id: segment_id.to_string(),
             sha256: digest.to_string().repeat(64),
             plaintext_bytes: 2,
             encoding_version: 2,
-        },
-        ..span(3, 4, 1)
+        }),
+        ..main_pack(3, 4)
     }
 }
 
-async fn persist_span(store: &MetadataStore, repo_id: &str, span: &GitPackSpan, published: bool) {
+fn segment_of(pack: &GitPoolPack) -> &GitSegmentRef {
+    pack.storage.segment().unwrap()
+}
+
+async fn persist_pack(store: &MetadataStore, repo_id: &str, pack: &GitPoolPack, published: bool) {
+    let segment = segment_of(pack);
     let repositories = store.repositories();
     repositories
         .begin_git_segment_upload(
             repo_id,
-            &span.segment.segment_id,
-            &format!("git/segments/v2/{repo_id}/{}", span.segment.segment_id),
-            span.segment.encoding_version,
+            &segment.segment_id,
+            &format!("git/segments/v2/{repo_id}/{}", segment.segment_id),
+            segment.encoding_version,
             1,
         )
         .await
         .unwrap();
     repositories
-        .mark_git_segment_upload_ready(&span.segment, 2, 2)
+        .mark_git_segment_upload_ready(segment, 2, 2)
         .await
         .unwrap();
     if published {
-        entities::git_pack_span::Model::from_domain(repo_id, span)
-            .unwrap()
-            .into_active_model()
-            .insert(store.db.as_ref())
-            .await
-            .unwrap();
-        publish_git_segment(store.db.as_ref(), repo_id, &span.segment, 3)
+        register_git_pool_pack(store.db.as_ref(), repo_id, pack, 3)
             .await
             .unwrap();
     }
 }
 
-async fn seed_compaction_repo(store: &MetadataStore) -> [GitPackSpan; 3] {
+async fn main_layout(store: &MetadataStore) -> Vec<GitPoolPack> {
+    load_main_pool_packs(store.db.as_ref(), COMPACTION_REPO_ID)
+        .await
+        .unwrap()
+}
+
+async fn seed_compaction_repo(store: &MetadataStore) -> [GitPoolPack; 3] {
     store
         .db
         .execute_unprepared(
@@ -90,9 +103,9 @@ async fn seed_compaction_repo(store: &MetadataStore) -> [GitPackSpan; 3] {
         )
         .await
         .unwrap();
-    let initial = [span(1, 2, 1), span(3, 3, 0), span(4, 4, 0)];
-    for span in &initial {
-        persist_span(store, COMPACTION_REPO_ID, span, true).await;
+    let initial = [main_pack(1, 2), main_pack(3, 3), main_pack(4, 4)];
+    for pack in &initial {
+        persist_pack(store, COMPACTION_REPO_ID, pack, true).await;
     }
     initial
 }
@@ -129,31 +142,7 @@ async fn seed_scheduled_repo(store: &MetadataStore) {
         )
         .await
         .unwrap();
-    let span = span(1, 1, 0);
-    let repositories = store.repositories();
-    repositories
-        .begin_git_segment_upload(
-            "scheduler/repo",
-            &span.segment.segment_id,
-            &format!("git/segments/v2/scheduler/repo/{}", span.segment.segment_id),
-            span.segment.encoding_version,
-            1,
-        )
-        .await
-        .unwrap();
-    repositories
-        .mark_git_segment_upload_ready(&span.segment, 2, 2)
-        .await
-        .unwrap();
-    entities::git_pack_span::Model::from_domain("scheduler/repo", &span)
-        .unwrap()
-        .into_active_model()
-        .insert(store.db.as_ref())
-        .await
-        .unwrap();
-    publish_git_segment(store.db.as_ref(), "scheduler/repo", &span.segment, 3)
-        .await
-        .unwrap();
+    persist_pack(store, "scheduler/repo", &main_pack(1, 1), true).await;
 }
 
 #[tokio::test]
@@ -356,14 +345,14 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
     assert_eq!(
         candidate
             .plan
-            .selected_spans()
+            .selected_packs()
             .iter()
-            .map(|span| (span.first_sequence, span.last_sequence))
+            .map(|pack| pack.owner.main_sequences().unwrap())
             .collect::<Vec<_>>(),
         [(3, 3), (4, 4)]
     );
-    let appended = span(5, 5, 0);
-    persist_span(&store, COMPACTION_REPO_ID, &appended, true).await;
+    let appended = main_pack(5, 5);
+    persist_pack(&store, COMPACTION_REPO_ID, &appended, true).await;
     store
         .db
         .execute_unprepared(
@@ -374,11 +363,11 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
         .await
         .unwrap();
 
-    let replacement = span(3, 4, 1);
-    persist_span(&store, COMPACTION_REPO_ID, &replacement, false).await;
+    let replacement = main_pack(3, 4);
+    persist_pack(&store, COMPACTION_REPO_ID, &replacement, false).await;
     let applied = store
         .jobs()
-        .replace_git_pack_spans_with_compaction(
+        .replace_main_pool_packs_with_compaction(
             COMPACTION_REPO_ID,
             &candidate.plan,
             replacement.clone(),
@@ -388,29 +377,27 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
         .unwrap();
     assert!(applied);
 
-    let layout = load_git_pack_spans(store.db.as_ref(), COMPACTION_REPO_ID)
-        .await
-        .unwrap();
+    let layout = main_layout(&store).await;
     assert_eq!(
         layout,
         [initial[0].clone(), replacement.clone(), appended.clone()]
     );
     assert_eq!(
-        segment_state(&store, &initial[0].segment.segment_id).await,
+        segment_state(&store, &initial[0].id).await,
         GitSegmentUploadState::Published
     );
     for selected in &initial[1..] {
         assert_eq!(
-            segment_state(&store, &selected.segment.segment_id).await,
+            segment_state(&store, &selected.id).await,
             GitSegmentUploadState::Deleting
         );
     }
     assert_eq!(
-        segment_state(&store, &replacement.segment.segment_id).await,
+        segment_state(&store, &replacement.id).await,
         GitSegmentUploadState::Published
     );
     assert_eq!(
-        segment_state(&store, &appended.segment.segment_id).await,
+        segment_state(&store, &appended.id).await,
         GitSegmentUploadState::Published
     );
     let head = entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
@@ -442,12 +429,12 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
         .unwrap()
         .plan;
 
-    let winning_replacement = replacement_span("segment-winning-3-4", 'a');
-    persist_span(&store, COMPACTION_REPO_ID, &winning_replacement, false).await;
+    let winning_replacement = replacement_pack("segment-winning-3-4", 'a');
+    persist_pack(&store, COMPACTION_REPO_ID, &winning_replacement, false).await;
     assert!(
         store
             .jobs()
-            .replace_git_pack_spans_with_compaction(
+            .replace_main_pool_packs_with_compaction(
                 COMPACTION_REPO_ID,
                 &stale_plan,
                 winning_replacement.clone(),
@@ -456,21 +443,19 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
             .await
             .unwrap()
     );
-    let winning_layout = load_git_pack_spans(store.db.as_ref(), COMPACTION_REPO_ID)
-        .await
-        .unwrap();
+    let winning_layout = main_layout(&store).await;
     let winning_head = entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
         .one(store.db.as_ref())
         .await
         .unwrap()
         .unwrap();
 
-    let stale_replacement = replacement_span("segment-stale-3-4", 'b');
-    persist_span(&store, COMPACTION_REPO_ID, &stale_replacement, false).await;
+    let stale_replacement = replacement_pack("segment-stale-3-4", 'b');
+    persist_pack(&store, COMPACTION_REPO_ID, &stale_replacement, false).await;
     assert!(
         !store
             .jobs()
-            .replace_git_pack_spans_with_compaction(
+            .replace_main_pool_packs_with_compaction(
                 COMPACTION_REPO_ID,
                 &stale_plan,
                 stale_replacement.clone(),
@@ -480,12 +465,7 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
             .unwrap()
     );
 
-    assert_eq!(
-        load_git_pack_spans(store.db.as_ref(), COMPACTION_REPO_ID)
-            .await
-            .unwrap(),
-        winning_layout
-    );
+    assert_eq!(main_layout(&store).await, winning_layout);
     let head = entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
         .one(store.db.as_ref())
         .await
@@ -493,15 +473,15 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
         .unwrap();
     assert_eq!(head, winning_head);
     assert_eq!(
-        segment_state(&store, &stale_replacement.segment.segment_id).await,
+        segment_state(&store, &stale_replacement.id).await,
         GitSegmentUploadState::Deleting
     );
     assert_eq!(
-        segment_state(&store, &winning_replacement.segment.segment_id).await,
+        segment_state(&store, &winning_replacement.id).await,
         GitSegmentUploadState::Published
     );
     assert_eq!(
-        segment_state(&store, &initial[0].segment.segment_id).await,
+        segment_state(&store, &initial[0].id).await,
         GitSegmentUploadState::Published
     );
 }
@@ -527,26 +507,24 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
     store
         .db
         .execute_unprepared(
-            "UPDATE scope_git_segment_uploads
-             SET plaintext_bytes = plaintext_bytes + 1
-             WHERE segment_id = 'segment-3-3'",
+            "UPDATE scope_git_pool_packs
+             SET segment_plaintext_bytes = segment_plaintext_bytes + 1
+             WHERE id = 'segment-3-3'",
         )
         .await
         .unwrap();
-    let current_layout = load_git_pack_spans(store.db.as_ref(), COMPACTION_REPO_ID)
-        .await
-        .unwrap();
-    validate_git_pack_layout(&current_layout).unwrap();
+    let current_layout = main_layout(&store).await;
+    GitCompactionPlan::select(&current_layout, u64::MAX).unwrap();
     assert_eq!(
         current_layout
             .iter()
-            .map(|span| (span.first_sequence, span.last_sequence))
+            .map(|pack| pack.owner.main_sequences().unwrap())
             .collect::<Vec<_>>(),
         [(1, 2), (3, 3), (4, 4)]
     );
     assert_eq!(
-        current_layout[1].segment.plaintext_bytes,
-        initial[1].segment.plaintext_bytes + 1
+        current_layout[1].storage.stored_bytes(),
+        initial[1].storage.stored_bytes() + 1
     );
     let current_head = entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
         .one(store.db.as_ref())
@@ -554,12 +532,12 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
         .unwrap()
         .unwrap();
 
-    let unused_replacement = replacement_span("segment-metadata-stale-3-4", 'c');
-    persist_span(&store, COMPACTION_REPO_ID, &unused_replacement, false).await;
+    let unused_replacement = replacement_pack("segment-metadata-stale-3-4", 'c');
+    persist_pack(&store, COMPACTION_REPO_ID, &unused_replacement, false).await;
     assert!(
         !store
             .jobs()
-            .replace_git_pack_spans_with_compaction(
+            .replace_main_pool_packs_with_compaction(
                 COMPACTION_REPO_ID,
                 &stale_plan,
                 unused_replacement.clone(),
@@ -569,12 +547,7 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
             .unwrap()
     );
 
-    assert_eq!(
-        load_git_pack_spans(store.db.as_ref(), COMPACTION_REPO_ID)
-            .await
-            .unwrap(),
-        current_layout
-    );
+    assert_eq!(main_layout(&store).await, current_layout);
     assert_eq!(
         entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
             .one(store.db.as_ref())
@@ -584,12 +557,12 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
         current_head
     );
     assert_eq!(
-        segment_state(&store, &unused_replacement.segment.segment_id).await,
+        segment_state(&store, &unused_replacement.id).await,
         GitSegmentUploadState::Deleting
     );
     for selected in &initial[1..] {
         assert_eq!(
-            segment_state(&store, &selected.segment.segment_id).await,
+            segment_state(&store, &selected.id).await,
             GitSegmentUploadState::Published
         );
     }
@@ -623,19 +596,19 @@ async fn adapter_preserves_compaction_validation_diagnostics() {
         .candidate
         .unwrap()
         .plan;
-    let wrong_head = GitPackSpan {
+    let wrong_head = GitPoolPack {
         head_oid: "wrong-head".to_string(),
-        ..span(3, 4, 1)
+        ..main_pack(3, 4)
     };
     let error = store
         .jobs()
-        .replace_git_pack_spans_with_compaction(COMPACTION_REPO_ID, &plan, wrong_head, 11)
+        .replace_main_pool_packs_with_compaction(COMPACTION_REPO_ID, &plan, wrong_head, 11)
         .await
         .unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::Internal);
     assert_eq!(
         error.message,
-        "Git compaction replacement must cover exactly the selected pack spans"
+        "Git compaction replacement must cover exactly the selected main packs"
     );
 }
 

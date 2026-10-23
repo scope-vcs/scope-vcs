@@ -2,6 +2,9 @@ use super::{
     RepositoryStore, acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
     entities,
+    git_compaction::schedule_git_compaction,
+    git_segments::register_git_pool_pack,
+    github_pushes::queue_main_publication,
     landing_files::apply_repository_landing_file_mutation,
     push_triggers::enqueue_push_main_trigger_evaluation,
     repository_from_model,
@@ -15,7 +18,7 @@ use std::{collections::BTreeMap, fmt};
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
-    scope_domain::repository::{Repository, repo_id},
+    scope_domain::repository::{Repository, git::GitPoolPack, repo_id},
     scope_domain::runs::catalog::RepositoryWorkflowCatalog,
     scope_domain::views::ViewId,
     scope_domain::{error::DomainError, landing_file::RepositoryLandingFileMutation},
@@ -53,6 +56,7 @@ impl From<PostgresError> for RepositoryMutationError {
 pub struct RepositoryMutationResult<R> {
     pub result: R,
     pub completed_landed_requests: usize,
+    pub queued_main_publication: bool,
 }
 
 pub struct RepositoryMutation<R> {
@@ -62,6 +66,7 @@ pub struct RepositoryMutation<R> {
     pub landing_file_mutation: RepositoryLandingFileMutation,
     pub workflow_catalog: Option<RepositoryWorkflowCatalog>,
     pub landed_requests: Option<LandedRequestCompletion>,
+    pub main_pack: Option<GitPoolPack>,
 }
 
 impl<R> RepositoryMutation<R> {
@@ -73,6 +78,7 @@ impl<R> RepositoryMutation<R> {
             landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
             workflow_catalog: None,
             landed_requests: None,
+            main_pack: None,
         }
     }
 
@@ -89,6 +95,7 @@ impl<R> RepositoryMutation<R> {
             landing_file_mutation,
             workflow_catalog: Some(workflow_catalog),
             landed_requests: None,
+            main_pack: None,
         }
     }
 }
@@ -166,7 +173,24 @@ where
             .verify_source(&repo.record.id, &head.head_oid, head.change_version)
             .map_err(PostgresError::internal)?;
     }
+    let advanced_head = repo.git_head.as_ref().filter(|head| {
+        before.git_head.as_ref().map(|head| head.frontier()) != Some(head.frontier())
+    });
+    match (advanced_head, &mutation.main_pack) {
+        (None, None) => {}
+        (Some(head), Some(pack)) if pack.head_oid == head.head_oid => {}
+        _ => {
+            return Err(PostgresError::internal_message(
+                "a repository mutation must register exactly one main pack for each new Git head",
+            )
+            .into());
+        }
+    }
     save_repository_delta(&tx, &before, &repo, now_unix).await?;
+    if let (Some(pack), Some(head)) = (&mutation.main_pack, &repo.git_head) {
+        register_git_pool_pack(&tx, &repo.record.id, pack, now_unix).await?;
+        schedule_git_compaction(&tx, &repo.record.id, head.push_sequence, now_unix).await?;
+    }
     apply_repository_landing_file_mutation(&tx, &repo.record.id, mutation.landing_file_mutation)
         .await?;
     if let Some(catalog) = &mutation.workflow_catalog {
@@ -176,15 +200,7 @@ where
         let head = repo.git_head.as_ref().ok_or_else(|| {
             PostgresError::internal_message("push trigger evaluation requires an accepted Git head")
         })?;
-        enqueue_push_main_trigger_evaluation(
-            &tx,
-            &repo.record.id,
-            head,
-            &repo.git_pack_spans,
-            &input,
-            now_unix,
-        )
-        .await?;
+        enqueue_push_main_trigger_evaluation(&tx, &repo.record.id, head, &input, now_unix).await?;
     }
     let completed_landed_requests = if let Some(completion) = mutation.landed_requests {
         let head = repo.git_head.as_ref().ok_or_else(|| {
@@ -194,10 +210,20 @@ where
     } else {
         0
     };
+    let changed_main = repo.git_head.as_ref().filter(|head| {
+        before.git_head.as_ref().map(|before| &before.head_oid) != Some(&head.head_oid)
+    });
+    let queued_main_publication = match changed_main {
+        Some(head) => {
+            queue_main_publication(&tx, &repo.record.id, &head.head_oid, now_unix).await?
+        }
+        None => false,
+    };
     queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects, now_unix).await?;
     tx.commit().await.map_err(PostgresError::internal)?;
     Ok(RepositoryMutationResult {
         result: mutation.result,
         completed_landed_requests,
+        queued_main_publication,
     })
 }

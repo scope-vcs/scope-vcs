@@ -40,6 +40,8 @@ pub(super) async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
 #[tokio::test]
 async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
     let bridged = BRIDGED_LEDGER.lines().collect::<Vec<_>>();
+    let (_target, db, _lease) = isolated_database().await;
+    baseline_database(&db).await;
     for ledger in [
         vec!["m0001_initial_schema", "m0042_request_media"],
         vec![BASELINE, "m9999_unknown"],
@@ -47,8 +49,6 @@ async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
         bridged[..bridged.len() - 1].to_vec(),
         [bridged.as_slice(), &[BASELINE]].concat(),
     ] {
-        let (_target, db, _lease) = isolated_database().await;
-        baseline_database(&db).await;
         replace_ledger(&db, &ledger).await;
         let before = representative_business_snapshot(&db).await;
         let sequence = sequence_state(&db).await;
@@ -87,35 +87,81 @@ async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
 
 #[tokio::test]
 async fn preflight_refuses_baseline_schema_drift_without_changing_the_ledger() {
-    for drift in [
-        "ALTER TABLE scope_users ALTER COLUMN handle DROP NOT NULL",
-        "DROP INDEX idx_scope_runs_history",
-        "DROP INDEX idx_scope_run_attempts_expiring; CREATE INDEX idx_scope_run_attempts_expiring ON scope_run_attempts (lease_expires_at_unix, id) WHERE state = 'running'",
-        "ALTER TABLE scope_repositories DROP CONSTRAINT scope_repositories_pkey CASCADE",
-        "ALTER TABLE scope_git_heads DROP CONSTRAINT scope_git_head_values, ADD CONSTRAINT scope_git_head_values CHECK (push_sequence >= 5 AND change_version >= 0)",
-        "ALTER SEQUENCE scope_run_creation_sequence INCREMENT BY 2",
-        "ALTER SEQUENCE scope_run_creation_sequence OWNED BY NONE",
-        "CREATE VIEW unknown_view AS SELECT id FROM scope_users",
-        "CREATE TABLE unknown_table (id text)",
-        "CREATE FUNCTION unknown_function() RETURNS int LANGUAGE SQL AS 'SELECT 1'",
+    let (_target, db, _lease) = isolated_database().await;
+    baseline_database(&db).await;
+    let drift = "ALTER TABLE scope_users ALTER COLUMN handle DROP NOT NULL";
+    db.execute_unprepared(drift).await.unwrap();
+    let ledger = applied_versions(&db).await;
+    let before = representative_business_snapshot(&db).await;
+
+    let error = migrations::preflight(&db, Default::default())
+        .await
+        .unwrap_err();
+
+    assert!(
+        error.to_string().contains("schema drift"),
+        "{drift}: {error}"
+    );
+    assert_eq!(applied_versions(&db).await, ledger);
+    assert_eq!(representative_business_snapshot(&db).await, before);
+}
+
+#[tokio::test]
+async fn the_baseline_schema_inventory_detects_each_kind_of_drift() {
+    let (_target, db, _lease) = isolated_database().await;
+    baseline_database(&db).await;
+    let baseline = inventory_after(&db, "").await;
+
+    for (drift, category) in [
+        (
+            "ALTER TABLE scope_users ALTER COLUMN handle DROP NOT NULL",
+            "columns",
+        ),
+        ("DROP INDEX idx_scope_runs_history", "indexes"),
+        (
+            "DROP INDEX idx_scope_run_attempts_expiring; CREATE INDEX idx_scope_run_attempts_expiring ON scope_run_attempts (lease_expires_at_unix, id) WHERE state = 'running'",
+            "expressions",
+        ),
+        (
+            "ALTER TABLE scope_repositories DROP CONSTRAINT scope_repositories_pkey CASCADE",
+            "constraints",
+        ),
+        (
+            "ALTER TABLE scope_git_heads DROP CONSTRAINT scope_git_head_values, ADD CONSTRAINT scope_git_head_values CHECK (push_sequence >= 5 AND change_version >= 0)",
+            "expressions",
+        ),
+        (
+            "ALTER SEQUENCE scope_run_creation_sequence INCREMENT BY 2",
+            "sequences",
+        ),
+        (
+            "ALTER SEQUENCE scope_run_creation_sequence OWNED BY NONE",
+            "sequences",
+        ),
+        (
+            "CREATE VIEW unknown_view AS SELECT id FROM scope_users",
+            "relations",
+        ),
+        ("CREATE TABLE unknown_table (id text)", "relations"),
+        (
+            "CREATE FUNCTION unknown_function() RETURNS int LANGUAGE SQL AS 'SELECT 1'",
+            "functions",
+        ),
     ] {
-        let (_target, db, _lease) = isolated_database().await;
-        baseline_database(&db).await;
-        db.execute_unprepared(drift).await.unwrap();
-        let ledger = applied_versions(&db).await;
-        let before = representative_business_snapshot(&db).await;
-
-        let error = migrations::preflight(&db, Default::default())
-            .await
-            .unwrap_err();
-
-        assert!(
-            error.to_string().contains("schema drift"),
-            "{drift}: {error}"
-        );
-        assert_eq!(applied_versions(&db).await, ledger);
-        assert_eq!(representative_business_snapshot(&db).await, before);
+        let drifted = inventory_after(&db, drift).await;
+        assert_ne!(drifted[category], baseline[category], "{drift}");
     }
+    assert_eq!(inventory_after(&db, "").await, baseline);
+}
+
+async fn inventory_after(db: &DatabaseConnection, drift: &str) -> serde_json::Value {
+    use sea_orm::TransactionTrait;
+
+    let tx = db.begin().await.unwrap();
+    tx.execute_unprepared(drift).await.unwrap();
+    let inventory = migrations::schema_inventory(&tx).await.unwrap();
+    tx.rollback().await.unwrap();
+    inventory
 }
 
 #[tokio::test]
@@ -139,9 +185,13 @@ async fn preflight_checks_the_baseline_schema_with_writers_online_without_changi
     let (target, db, _lease) = isolated_database().await;
     baseline_database(&db).await;
     let database_url = target.schema_database_url();
-    let writer = crate::db::connect_writer_database(&database_url, database_url.parse().unwrap())
-        .await
-        .unwrap();
+    let writer = crate::db::connect_writer_database(
+        &database_url,
+        database_url.parse().unwrap(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
+    )
+    .await
+    .unwrap();
     let before = representative_business_snapshot(&db).await;
     let sequence = sequence_state(&db).await;
     let plan = migrations::plan(db.as_ref()).await.unwrap();

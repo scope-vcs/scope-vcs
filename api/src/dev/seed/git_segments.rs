@@ -1,6 +1,6 @@
 use crate::error::ApiError;
 use scope_domain::repository::git::{
-    GitHead, GitPackSpan, GitSegmentUpload, GitSegmentUploadState,
+    GitHead, GitPoolPack, GitPoolPackStorage, GitSegmentUpload, GitSegmentUploadState,
 };
 use std::{
     io::Write,
@@ -8,11 +8,27 @@ use std::{
     process::{Command, Stdio},
 };
 
+pub(super) struct SeedMainPack {
+    pack: GitPoolPack,
+    upload: GitSegmentUpload,
+}
+
+impl SeedMainPack {
+    pub(super) fn add_to(self, catalog: &mut scope_postgres::db::CatalogFixture) {
+        catalog
+            .main_pool_packs
+            .entry(self.upload.repository_id.clone())
+            .or_default()
+            .push(self.pack);
+        catalog.git_segment_uploads.push(self.upload);
+    }
+}
+
 pub(super) fn store_seed_git_pack(
     git_segment_store: &scope_storage::GitSegmentStore,
     repository_id: &str,
     repo_path: &Path,
-) -> Result<(GitHead, GitPackSpan, GitSegmentUpload), ApiError> {
+) -> Result<(GitHead, SeedMainPack), ApiError> {
     let head_oid = super::seed_git_head(repo_path)?;
     let mut child = Command::new("git")
         .arg("-C")
@@ -54,12 +70,8 @@ pub(super) fn store_seed_git_pack(
     .join()
     .map_err(|_| ApiError::internal_message("seed Git segment upload thread panicked"))?
     .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
-    let stored = scope_git::prepare_git_push(
-        staged.segment.clone(),
-        head_oid,
-        None,
-        scope_git::GitStorageLimits::default(),
-    )?;
+    let prepared =
+        scope_git::prepare_git_push(head_oid, None, scope_git::GitStorageLimits::default())?;
     let upload = GitSegmentUpload {
         segment_id: staged.segment.segment_id.clone(),
         repository_id,
@@ -72,7 +84,14 @@ pub(super) fn store_seed_git_pack(
         created_at_unix: 1_800_000_000,
         updated_at_unix: 1_800_000_000,
     };
-    Ok((stored.head, stored.pack_span, upload))
+    let pack = GitPoolPack {
+        id: staged.segment.segment_id.clone(),
+        owner: prepared.owner,
+        head_oid: prepared.head.head_oid.clone(),
+        prerequisites: prepared.prerequisites,
+        storage: GitPoolPackStorage::Segment(staged.segment),
+    };
+    Ok((prepared.head, SeedMainPack { pack, upload }))
 }
 
 #[cfg(test)]

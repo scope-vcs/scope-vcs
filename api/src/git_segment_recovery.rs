@@ -31,9 +31,7 @@ async fn recover_stale_git_segments(state: &AppState) -> Result<(), ApiError> {
                     .await?
             }
             GitSegmentUploadState::Deleting => true,
-            GitSegmentUploadState::Published
-            | GitSegmentUploadState::Retained
-            | GitSegmentUploadState::Deleted => false,
+            GitSegmentUploadState::Published | GitSegmentUploadState::Deleted => false,
         };
         if !may_delete {
             skipped += 1;

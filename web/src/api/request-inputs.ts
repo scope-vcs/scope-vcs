@@ -1,6 +1,7 @@
 import { parseRepoParams, parseRepoViewInput } from './repo-params'
 import { parseFilePath } from './file-path-input'
 import type { ApproveRequestChecksInput, RequestParams } from './types'
+import type { RequestDiscussionLineRange } from './types.generated'
 import type { RequestActionInput } from '../features/requests/request-actions-api'
 import type {
   AuthorizeRequestAutoMergeInput,
@@ -93,16 +94,19 @@ export function parseLoadRequestRevisionDiffInput(input: unknown) {
   }
 }
 
+function optionalFlag(value: unknown, name: string) {
+  if (value !== undefined && typeof value !== 'boolean') throw new Error(`${name} must be a boolean.`)
+  return value
+}
+
 export function parseLoadDiscussionsInput(input: unknown): LoadDiscussionsInput {
   const data = object(input)
-  if (data.include_revision_anchor !== undefined && typeof data.include_revision_anchor !== 'boolean') {
-    throw new Error('include_revision_anchor must be a boolean.')
-  }
   return {
     ...parseLoadRequestRevisionsInput(data),
     discussion_id: optionalId(data.discussion_id, 'discussion_id'),
     cursor: data.cursor === undefined ? undefined : text(data.cursor, 'cursor', 4096),
-    include_revision_anchor: data.include_revision_anchor,
+    include_carried_line_anchors: optionalFlag(data.include_carried_line_anchors, 'include_carried_line_anchors'),
+    include_revision_anchor: optionalFlag(data.include_revision_anchor, 'include_revision_anchor'),
     limit: data.limit === undefined ? undefined : position(data.limit, 'limit', 1, 100),
   }
 }
@@ -142,7 +146,19 @@ export function parseCreateDiscussionInput(input: unknown): CreateDiscussionInpu
       revision_id: id(anchor.revision_id, 'revision_id'),
       commit_oid: anchor.commit_oid === null ? null : id(anchor.commit_oid, 'commit_oid'),
       path: anchor.path === null ? null : parseFilePath(anchor.path),
+      lines: anchor.lines === null ? null : parseLineRange(object(anchor.lines)),
     },
+  }
+}
+
+function parseLineRange(lines: Record<string, unknown>): RequestDiscussionLineRange {
+  const side = lines.side
+  if (side !== 'old' && side !== 'new') throw new Error('side must be old or new.')
+  const start = position(lines.start_line, 'start_line', 1, 0xffff_ffff)
+  return {
+    side,
+    start_line: start,
+    end_line: position(lines.end_line, 'end_line', start, 0xffff_ffff),
   }
 }
 

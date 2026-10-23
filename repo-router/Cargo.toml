@@ -10,10 +10,11 @@ scope_service_runtime = { workspace = true }
 anyhow.workspace = true
 axum.workspace = true
 reqwest = { workspace = true, features = ["rustls", "stream"] }
-sha2.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing.workspace = true
 
 [dev-dependencies]
+scope_service_runtime = { workspace = true, features = ["test-support"] }
+tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = "0.1.17"
 tower = { workspace = true, features = ["util"] }

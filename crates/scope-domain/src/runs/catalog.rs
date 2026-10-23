@@ -3,7 +3,7 @@ use super::{
     workflow::{error::WorkflowError, identity::WorkflowPath},
 };
 use crate::{
-    content::{SourceBlob, is_supported_git_file_mode},
+    content::{SourceBlob, is_regular_git_file_mode},
     content_ref::{ContentRef, git_blob_oid},
 };
 use sha2::{Digest, Sha256};
@@ -135,7 +135,7 @@ impl RepositoryWorkflowFile {
         if !is_git_oid(&self.oid) {
             return Err(RepositoryWorkflowCatalogError::InvalidGitObjectId { path });
         }
-        if !is_supported_git_file_mode(&self.git_file_mode) {
+        if !is_regular_git_file_mode(&self.git_file_mode) {
             return Err(RepositoryWorkflowCatalogError::UnsupportedGitFileMode {
                 path,
                 mode: self.git_file_mode.clone(),

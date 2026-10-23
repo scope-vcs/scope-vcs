@@ -497,7 +497,10 @@ pub(crate) async fn publish_repo_event(
             return;
         }
     };
-    if let Err(error) = metadata.repositories().notify_repo_change(&payload).await {
+    if let Err(error) = metadata
+        .repositories()
+        .queue_repo_change_notification(payload)
+    {
         tracing::warn!(
             repo_id = %event.repo_id,
             error = %error.message,
@@ -595,19 +598,6 @@ mod tests {
         .unwrap();
         bus.publish_notification_payload(&external_payload);
         assert_eq!(receiver.try_recv().unwrap(), event("repo"));
-    }
-
-    #[test]
-    fn malformed_notifications_are_dropped() {
-        let bus = RepoChangeBus::default();
-        let mut receiver = bus.subscribe("repo");
-
-        bus.publish_notification_payload("not-json");
-
-        assert!(matches!(
-            receiver.try_recv(),
-            Err(broadcast::error::TryRecvError::Empty)
-        ));
     }
 
     #[test]

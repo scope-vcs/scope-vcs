@@ -1,5 +1,5 @@
 use crate::{
-    content::{SourceBlob, is_supported_git_file_mode},
+    content::{SourceBlob, is_regular_git_file_mode},
     content_ref::ContentRef,
     error::DomainError,
 };
@@ -57,7 +57,7 @@ impl RepositoryLandingFile {
                 "repository landing file has an invalid Git object ID",
             ));
         }
-        if !is_supported_git_file_mode(&self.git_file_mode) {
+        if !is_regular_git_file_mode(&self.git_file_mode) {
             return Err(DomainError::invariant_violation(
                 "repository landing file has an unsupported Git mode",
             ));

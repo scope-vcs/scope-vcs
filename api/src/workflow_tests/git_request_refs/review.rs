@@ -111,15 +111,6 @@ async fn open_revision_stays_open_and_publishes_refresh() {
     assert!(request_events.iter().any(|event| {
         event.request_id == REQUEST_ID && event.kind == RequestEventKind::RevisionPushed
     }));
-    let store_repo =
-        crate::git::storage::request_ref_store_repo_path(&state, &test_repo_incarnation());
-    let stored_head = git_stdout_text(
-        &store_repo,
-        &["rev-parse", REQUEST_REF],
-        "read invalidating request ref",
-    )
-    .unwrap();
-    assert_eq!(stored_head.trim(), after.head_oid);
     assert!(events.try_recv().is_ok());
 }
 

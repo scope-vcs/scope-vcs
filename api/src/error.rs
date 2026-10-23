@@ -3,7 +3,9 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use scope_api_contract::{ErrorCode, ErrorFields, ErrorResponse};
+use scope_api_contract::{
+    CAPACITY_EXHAUSTED_MESSAGE, ErrorCode, ErrorFields, ErrorResponse, SERVICE_UNAVAILABLE_MESSAGE,
+};
 
 pub(crate) use scope_service_runtime::http::ErrorKind;
 
@@ -50,7 +52,7 @@ impl ApiError {
     pub(crate) fn infrastructure_unavailable(diagnostic: impl Into<String>) -> Self {
         Self::from_diagnostic(
             ErrorKind::ServiceUnavailable,
-            SERVICE_UNAVAILABLE_PUBLIC_MESSAGE,
+            SERVICE_UNAVAILABLE_MESSAGE,
             diagnostic,
         )
     }
@@ -69,7 +71,7 @@ impl ApiError {
     fn capacity_exhausted(diagnostic: impl Into<String>) -> Self {
         Self::from_diagnostic(
             ErrorKind::TooManyRequests,
-            CAPACITY_EXHAUSTED_PUBLIC_MESSAGE,
+            CAPACITY_EXHAUSTED_MESSAGE,
             diagnostic,
         )
     }
@@ -290,10 +292,6 @@ impl IntoResponse for ApiError {
 }
 
 const INTERNAL_PUBLIC_MESSAGE: &str = scope_service_runtime::http::INTERNAL_MESSAGE;
-const SERVICE_UNAVAILABLE_PUBLIC_MESSAGE: &str =
-    "Scope is temporarily unavailable; retry with bounded backoff.";
-const CAPACITY_EXHAUSTED_PUBLIC_MESSAGE: &str =
-    "Scope is temporarily at capacity; retry with bounded backoff.";
 
 fn new_error_reference() -> Option<String> {
     let mut bytes = [0_u8; 16];
@@ -404,7 +402,7 @@ mod tests {
             assert_eq!(
                 error.message,
                 if unavailable {
-                    SERVICE_UNAVAILABLE_PUBLIC_MESSAGE
+                    SERVICE_UNAVAILABLE_MESSAGE
                 } else {
                     INTERNAL_PUBLIC_MESSAGE
                 }

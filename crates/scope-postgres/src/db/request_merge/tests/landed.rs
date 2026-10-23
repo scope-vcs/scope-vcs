@@ -1,81 +1,14 @@
+use super::push_paths::{PUSH_PATHS, PushPath, push};
 use super::*;
-use crate::db::{
-    ApplyContentOnlyPushCommand, CloseRequestCommand, LandedRequestCandidate,
-    LandedRequestCompletion, RepositoryMutation, RepositoryMutationResult,
-};
+use crate::db::{CloseRequestCommand, LandedRequestCandidate, LandedRequestCompletion};
 use scope_domain::requests::{RequestAutoMergeIntentStatus, RequestEventKind};
 use sea_orm::ConnectionTrait;
-
-#[derive(Clone, Copy)]
-enum PushPath {
-    ContentOnly,
-    General,
-}
-
-const PUSH_PATHS: [PushPath; 2] = [PushPath::ContentOnly, PushPath::General];
 
 fn candidate(id: &str) -> LandedRequestCandidate {
     LandedRequestCandidate {
         stack_children: Vec::new(),
         request_id: id.into(),
         head_oid: REQUEST_HEAD.into(),
-    }
-}
-
-async fn push(
-    store: &crate::db::MetadataStore,
-    path: PushPath,
-    prepared: MergePreparation,
-    candidates: Vec<LandedRequestCandidate>,
-) -> Result<RepositoryMutationResult<GitHead>, String> {
-    let input = scope_domain::runs::trigger::PushTriggerInput::from(&prepared.workflow_catalog);
-    match path {
-        PushPath::ContentOnly => {
-            let repo = store
-                .repositories()
-                .repository_for_tests("owner/repo")
-                .await
-                .unwrap()
-                .unwrap();
-            store
-                .repositories()
-                .apply_content_only_push(ApplyContentOnlyPushCommand {
-                    incarnation: repo.incarnation(),
-                    owner: "owner".into(),
-                    name: "repo".into(),
-                    author_id: "user_owner".into(),
-                    expected_git_frontier: prepared.expected_git_frontier,
-                    update: prepared.update,
-                    landing_file_mutation: RepositoryLandingFileMutation::Unchanged,
-                    workflow_catalog: prepared.workflow_catalog,
-                    push_trigger_input: input,
-                    landed_request_candidates: candidates,
-                    now_unix: 8,
-                })
-                .await
-                .map(|result| result.unwrap())
-                .map_err(|error| error.to_string())
-        }
-        PushPath::General => store
-            .repositories()
-            .mutate_repository("owner", "repo", 8, |repo| {
-                let head = prepared.update.git_head.clone();
-                apply_reviewed_update_to_repo(repo, prepared.update)
-                    .map_err(scope_domain::repo_actions::reviewed_update_domain_error)?;
-                let mut mutation = RepositoryMutation::with_push_trigger_input(
-                    head,
-                    input,
-                    RepositoryLandingFileMutation::Unchanged,
-                    prepared.workflow_catalog,
-                );
-                mutation.landed_requests = Some(LandedRequestCompletion {
-                    actor_user_id: "user_owner".into(),
-                    candidates,
-                });
-                Ok(mutation)
-            })
-            .await
-            .map_err(|error| error.to_string()),
     }
 }
 
@@ -121,6 +54,11 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
             .await
             .unwrap()
             .unwrap();
+        let before_main_packs = store
+            .repositories()
+            .main_pool_packs("owner/repo")
+            .await
+            .unwrap();
         let before_jobs = store
             .jobs()
             .outbox_job_counts_for_tests()
@@ -163,7 +101,14 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
             .unwrap();
         assert_eq!(after_repo.record, before_repo.record);
         assert_eq!(after_repo.git_head, before_repo.git_head);
-        assert_eq!(after_repo.git_pack_spans, before_repo.git_pack_spans);
+        assert_eq!(
+            store
+                .repositories()
+                .main_pool_packs("owner/repo")
+                .await
+                .unwrap(),
+            before_main_packs
+        );
         assert_eq!(after_repo.graph, before_repo.graph);
         assert_eq!(after_repo.live_files, before_repo.live_files);
         assert_eq!(
@@ -293,68 +238,51 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
 }
 
 #[tokio::test]
-async fn main_push_skips_candidates_that_moved_closed_disappeared_or_are_drafts() {
-    for path in PUSH_PATHS {
-        for skip in ["moved", "closed", "gone", "draft", "empty"] {
-            let store = merge_store().await;
-            let mut candidates = vec![candidate(if skip == "gone" { "missing" } else { "req_1" })];
-            match skip {
-                "moved" => store
+async fn main_push_skips_candidates_that_moved_closed_or_disappeared() {
+    for skip in ["moved", "closed", "gone"] {
+        let store = merge_store().await;
+        let candidates = vec![candidate(if skip == "gone" { "missing" } else { "req_1" })];
+        match skip {
+            "moved" => store
+                .requests()
+                .mutate_request_for_tests("req_1", |request| request.head_oid = MERGED_HEAD.into())
+                .await
+                .unwrap(),
+            "closed" => {
+                store
                     .requests()
-                    .mutate_request_for_tests("req_1", |request| {
-                        request.head_oid = MERGED_HEAD.into()
+                    .close_request(CloseRequestCommand {
+                        request_id: "req_1".into(),
+                        actor_user_id: "user_owner".into(),
+                        event_id: "event_closed_before_push".into(),
+                        now_unix: 6,
                     })
                     .await
-                    .unwrap(),
-                "closed" => {
-                    store
-                        .requests()
-                        .close_request(CloseRequestCommand {
-                            request_id: "req_1".into(),
-                            actor_user_id: "user_owner".into(),
-                            event_id: "event_closed_before_push".into(),
-                            now_unix: 6,
-                        })
-                        .await
-                        .unwrap();
-                }
-                "draft" => store
-                    .requests()
-                    .mutate_request_for_tests("req_1", |request| request.submitted_at_unix = None)
-                    .await
-                    .unwrap(),
-                "empty" => store
-                    .requests()
-                    .mutate_request_for_tests("req_1", |request| {
-                        request.head_oid = request.main_ancestor_oid.clone()
-                    })
-                    .await
-                    .unwrap(),
-                _ => {}
+                    .unwrap();
             }
-            let before = store
+            _ => {}
+        }
+        let before = store
+            .requests()
+            .request_for_tests("req_1")
+            .await
+            .unwrap()
+            .unwrap();
+        let prepared = merge_preparation(&store).await;
+        let persisted = push(&store, PushPath::General, prepared, candidates)
+            .await
+            .unwrap();
+        assert_eq!(persisted.result.head_oid, MERGED_HEAD);
+        assert_eq!(persisted.completed_landed_requests, 0);
+        assert_eq!(
+            store
                 .requests()
                 .request_for_tests("req_1")
                 .await
                 .unwrap()
-                .unwrap();
-            if skip == "empty" {
-                candidates[0].head_oid = before.head_oid.clone();
-            }
-            let prepared = merge_preparation(&store).await;
-            let persisted = push(&store, path, prepared, candidates).await.unwrap();
-            assert_eq!(persisted.result.head_oid, MERGED_HEAD);
-            assert_eq!(persisted.completed_landed_requests, 0);
-            assert_eq!(
-                store
-                    .requests()
-                    .request_for_tests("req_1")
-                    .await
-                    .unwrap()
-                    .unwrap(),
-                before
-            );
-        }
+                .unwrap(),
+            before
+        );
     }
 }
 

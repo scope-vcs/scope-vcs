@@ -95,3 +95,95 @@ async fn read_view_cache_keeps_draft_visibility_separate() {
         .is_err()
     );
 }
+
+struct SnapshotReadFails {
+    snapshot_key: String,
+    readable: Arc<dyn ObjectStore>,
+}
+
+#[async_trait::async_trait]
+impl ObjectStore for SnapshotReadFails {
+    async fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), scope_storage::ObjectStoreError> {
+        self.readable.put(key, bytes).await
+    }
+
+    async fn read_to(
+        &self,
+        key: &str,
+        max_bytes: u64,
+        output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
+    ) -> Result<u64, scope_storage::ObjectStoreError> {
+        if key == self.snapshot_key {
+            return Err(scope_storage::ObjectStoreError::service_unavailable(
+                "snapshot read failed for test",
+            ));
+        }
+        self.readable.read_to(key, max_bytes, output).await
+    }
+
+    async fn delete(&self, key: &str) -> Result<(), scope_storage::ObjectStoreError> {
+        self.readable.delete(key).await
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn read_view_omits_an_unreadable_request_snapshot_until_storage_recovers() {
+    let mut state = test_state_with_request().await;
+    let (_source, _remote, _server, head) =
+        request_checkout(&state, "read-view-unreadable-snapshot").await;
+    let snapshot = stored_request(&state, REQUEST_ID)
+        .await
+        .git_snapshot
+        .unwrap();
+    for entry in fs::read_dir(state.repository_engine.cache_root()).unwrap() {
+        let path = entry.unwrap().path();
+        if path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("read-view-")
+        {
+            fs::remove_dir_all(path).unwrap();
+        }
+    }
+    let readable = state.object_store.clone();
+    state.object_store = Arc::new(SnapshotReadFails {
+        snapshot_key: scope_storage::object_key(&snapshot),
+        readable: readable.clone(),
+    });
+    let author = &authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
+    let read = |state: AppState| async move {
+        git_upload_pack_repo_for_request(
+            &state,
+            author,
+            TEST_REPO_OWNER,
+            TEST_REPO_NAME,
+            &ViewId::public(),
+        )
+        .await
+        .unwrap()
+    };
+
+    let degraded = read(state.clone()).await;
+    assert!(
+        git_stdout_text(
+            degraded.as_ref(),
+            &["rev-parse", "--verify", REQUEST_REF],
+            "omitted request ref"
+        )
+        .is_err()
+    );
+
+    state.object_store = readable;
+    let recovered = read(state).await;
+    assert_eq!(
+        git_stdout_text(
+            recovered.as_ref(),
+            &["rev-parse", REQUEST_REF],
+            "restored request ref"
+        )
+        .unwrap()
+        .trim(),
+        head
+    );
+}

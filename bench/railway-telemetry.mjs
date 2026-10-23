@@ -115,7 +115,7 @@ async function railwayLogs(service, environment, since, until, lines, filter = n
   return parseJsonLines(await railway(args));
 }
 
-export function railwayMetricArgs(service, environment, since, until = null) {
+function railwayMetricArgs(service, environment, since, until = null) {
   const args = [
     'metrics',
     '--service', service,
@@ -168,7 +168,8 @@ export function compactionFields(message) {
     'target_sequence',
     'scheduler_attempts',
     'scheduler_queue_delay_ms',
-    'source_span_count',
+    'source_pack_count',
+    'inline_source_count',
     'source_pack_bytes',
     'compacted_bytes',
     'candidate_query_ms',

@@ -4,7 +4,7 @@ import {
   SamplingDecision,
   type Sampler,
   type SamplingResult,
-} from '@opentelemetry/sdk-trace-node'
+} from '@opentelemetry/sdk-trace'
 
 class ServerRequestSampler implements Sampler {
   shouldSample(...[, , , kind]: Parameters<Sampler['shouldSample']>): SamplingResult {

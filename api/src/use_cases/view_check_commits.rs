@@ -105,7 +105,7 @@ impl CheckStaging {
         request: &Request,
         revision: &RequestRevision,
     ) -> Result<Self, ApiError> {
-        let (Some(head), spans) = state
+        let Some(head) = state
             .metadata
             .repositories()
             .repository_content_source(incarnation)
@@ -115,7 +115,7 @@ impl CheckStaging {
         };
         let canonical = state
             .repository_engine
-            .materialize_repository(state, incarnation, &head, &spans)
+            .materialize_repository(state, incarnation, &head)
             .await?;
         let staging = Self {
             path: receive_pack_staging_repo_path(state, incarnation)?,

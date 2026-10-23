@@ -3,19 +3,16 @@ use crate::{
     git::content::source_content_bytes,
     http::responses::{ReviewFileContentResponse, ReviewFileDiffResponse},
     state::AppState,
+    use_cases::request_diff_file::MAX_RENDERED_TEXT_BYTES,
 };
 use scope_domain::history::FileChangeKind;
 use scope_domain::{
-    content::SourceBlob,
-    repository::RepositoryIncarnation,
-    repository::git::{GitHead, GitPackSpan},
+    content::SourceBlob, repository::RepositoryIncarnation, repository::git::GitHead,
 };
-
-pub(crate) const MAX_RENDERED_TEXT_BYTES: usize = 1024 * 1024;
 
 pub(crate) async fn review_file_diff_response_for_blobs(
     state: &AppState,
-    git_source: Option<(RepositoryIncarnation, &GitHead, &[GitPackSpan])>,
+    git_source: Option<(RepositoryIncarnation, &GitHead)>,
     path: String,
     kind: FileChangeKind,
     old_content: Option<&SourceBlob>,
@@ -46,7 +43,7 @@ pub(crate) async fn review_file_diff_response_for_blobs(
 pub(crate) async fn review_content_response_for_blob(
     state: &AppState,
     blob: &SourceBlob,
-    git_source: Option<(RepositoryIncarnation, &GitHead, &[GitPackSpan])>,
+    git_source: Option<(RepositoryIncarnation, &GitHead)>,
 ) -> Result<ReviewFileContentResponse, ApiError> {
     if blob.size_bytes > MAX_RENDERED_TEXT_BYTES as u64 {
         return Ok(binary_content_response(&blob.git_oid, blob.size_bytes));

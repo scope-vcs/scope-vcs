@@ -1,3 +1,4 @@
+use super::main_pool::{forget_main_pool_packs, main_pool_packs};
 use super::*;
 use scope_domain::landing_file::{RepositoryLandingFile, RepositoryLandingFileMutation};
 use scope_domain::views::ViewId;
@@ -34,19 +35,7 @@ async fn readme_html_uses_postgres_when_git_cache_and_pack_objects_are_absent() 
         readme.as_bytes()
     );
 
-    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
-        .await
-        .unwrap();
-    for span in &repo.git_pack_spans {
-        state
-            .git_segment_store
-            .delete_remote(&scope_storage::segment_object_key(
-                TEST_REPO_ID,
-                &span.segment.segment_id,
-            ))
-            .await
-            .unwrap();
-    }
+    forget_main_pool_packs(&state).await;
     let cache_path = state
         .repository_engine
         .repository_path(&test_repo_incarnation());
@@ -103,6 +92,7 @@ async fn landing_snapshot_failure_rolls_back_the_repository_transaction() {
     let before = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
+    let main_packs_before = main_pool_packs(&state).await;
     let jobs_before = state
         .metadata
         .jobs()
@@ -126,7 +116,7 @@ async fn landing_snapshot_failure_rolls_back_the_repository_transaction() {
         .unwrap();
     assert_eq!(after.record.change_version, before.record.change_version);
     assert_eq!(after.git_head, before.git_head);
-    assert_eq!(after.git_pack_spans, before.git_pack_spans);
+    assert_eq!(main_pool_packs(&state).await, main_packs_before);
     assert!(
         !after
             .live_files

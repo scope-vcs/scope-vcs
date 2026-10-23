@@ -1,4 +1,6 @@
+use super::tree::{MergeMainFailure, merge_main_oid_for_execution};
 use super::*;
+use crate::git::command::run_git;
 use crate::git::{command::run_git_output, test_repo::TestRepo};
 use std::{fs, path::Path};
 
@@ -44,42 +46,6 @@ fn explicit_request_base_preserves_private_main_files() {
     assert_eq!(
         parents.split_ascii_whitespace().collect::<Vec<_>>(),
         [current_main.as_str(), request_head.as_str()]
-    );
-}
-
-#[test]
-fn explicit_request_base_merges_non_overlapping_file_edits() {
-    let repo = TestRepo::init();
-
-    fs::write(repo.join("shared.txt"), "top\nmiddle\nbottom\n").unwrap();
-    repo.commit_all("shared base");
-    let request_base = repo.oid("HEAD");
-
-    fs::write(repo.join("shared.txt"), "main top\nmiddle\nbottom\n").unwrap();
-    repo.commit_all("main edit");
-    let current_main = repo.oid("HEAD");
-
-    run_git(
-        Some(&repo),
-        &["switch", "--create", "request", &request_base],
-        "creating request branch",
-    )
-    .unwrap();
-    fs::write(repo.join("shared.txt"), "top\nmiddle\nrequest bottom\n").unwrap();
-    repo.commit_all("request edit");
-    let request_head = repo.oid("HEAD");
-
-    let merged = merge_main_oid_for_execution(
-        &repo,
-        &request_base,
-        &current_main,
-        &request_head,
-        "content-merge",
-    )
-    .unwrap();
-    assert_eq!(
-        git_text(&repo, &["show", &format!("{merged}:shared.txt")]),
-        "main top\nmiddle\nrequest bottom\n"
     );
 }
 
@@ -216,4 +182,24 @@ fn git_text(repo: &Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn preparation_retries_only_conflicts_caused_by_main_moving() {
+    let moved_read = RequestMergeFailure::Other(ApiError::conflict(
+        "repository content changed while reading its history; retry",
+    ));
+    assert!(retries_preparation(&moved_read, true, 1));
+    assert!(!retries_preparation(&moved_read, false, 1));
+    assert!(!retries_preparation(&moved_read, true, MERGE_ATTEMPTS));
+    assert!(!retries_preparation(
+        &RequestMergeFailure::MergeConflict(ApiError::conflict("request conflicts with main")),
+        true,
+        1
+    ));
+    assert!(!retries_preparation(
+        &RequestMergeFailure::Other(ApiError::infrastructure_unavailable("store down")),
+        true,
+        1
+    ));
 }

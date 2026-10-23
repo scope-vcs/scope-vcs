@@ -34,9 +34,7 @@ use scope_domain::{
         RepositoryCollaboration, RepositoryInvite, RepositoryMember, RepositoryMemberPermissions,
     },
     repository::credentials::{FirstPushToken, GitPushToken},
-    repository::git::{
-        GitHead, GitPackSpan, GitSegmentRef, GitSegmentUpload, GitSegmentUploadState,
-    },
+    repository::git::{GitHead, GitSegmentUpload},
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
 use scope_domain::{
@@ -66,17 +64,16 @@ pub struct RepositoryFacts {
     pub first_push_token: Option<FirstPushToken>,
     pub git_push_token: Option<GitPushToken>,
     pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
 }
 
 mod auth;
 mod collaboration;
+mod github_accounts;
 mod history;
 mod jobs;
 mod read_models;
 mod repositories;
 mod request_auto_merge;
-pub mod request_ref_cleanup_job;
 mod requests;
 mod runs;
 
@@ -87,6 +84,7 @@ pub use auth::{
 pub use collaboration::{
     repository_invite, repository_invite_email, repository_invite_link, repository_member,
 };
+pub use github_accounts::{AuthorColumns, discussion_author, github_account};
 pub use history::{
     file_change, live_file, logical_commit, object_reference, visibility_change,
     visibility_change_set,
@@ -97,7 +95,7 @@ pub use jobs::{
 };
 pub use read_models::{projection_file, projection_read_model};
 pub use repositories::{
-    git_head, git_pack_span, git_segment_upload, repository, repository_first_push_token,
+    git_head, git_segment_upload, repository, repository_first_push_token,
     repository_git_push_token, repository_landing_file, repository_workflow_catalog,
     repository_workflow_file,
 };
@@ -179,7 +177,7 @@ mod tests {
         assert!(projection_file::Model::live("owner/repo", mismatched_oid).is_err());
 
         let mut unsupported_mode = content;
-        unsupported_mode.blob.git_file_mode = "120000".to_string();
+        unsupported_mode.blob.git_file_mode = "160000".to_string();
         assert!(projection_file::Model::live("owner/repo", unsupported_mode).is_err());
     }
 

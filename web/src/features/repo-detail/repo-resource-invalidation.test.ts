@@ -7,6 +7,7 @@ import { requestActivityIdentity, requestActivityResource } from '../requests/re
 import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
 import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
+import { requestDiscussionReferenceIdentity, requestDiscussionReferenceResource } from '../requests/request-changes-discussion-references'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
 import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
@@ -80,6 +81,19 @@ test('request changes target one request and leave latest repository activity re
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'two')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
+})
+
+test('a request state change, such as a pushed revision, refreshes only that request\'s discussion references', () => {
+  requestDiscussionReferenceResource.clear()
+  const page = { discussions: [], next_cursor: null, snapshot_version: 1 }
+  const pushed = requestDiscussionReferenceIdentity('viewer-a', 'one', 'latest')
+  const sibling = requestDiscussionReferenceIdentity('viewer-a', 'two', 'latest')
+  const otherViewer = requestDiscussionReferenceIdentity('viewer-b', 'one', 'latest')
+  for (const identity of [pushed, sibling, otherViewer]) requestDiscussionReferenceResource.write(identity, page)
+  invalidateRepoResources('viewer-a', event({ RequestStateChanged: { request_id: 'one', view: 'public' } }))
+  assert.equal(requestDiscussionReferenceResource.getSnapshot(pushed).stale, true)
+  assert.equal(requestDiscussionReferenceResource.getSnapshot(sibling).stale, false)
+  assert.equal(requestDiscussionReferenceResource.getSnapshot(otherViewer).stale, false)
 })
 
 test('dependency completion invalidates only the retained dependency report', () => {

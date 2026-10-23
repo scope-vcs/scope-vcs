@@ -1,6 +1,6 @@
 use super::{
     GeneratedIdKind, JobStore, acquire_aggregate_lock, decode_json, generated_ids::generate_id,
-    git_segments::load_git_pack_spans,
+    git_segments::load_main_pool_packs,
 };
 use crate::{error::PostgresError, job_trace::QueuedTrace};
 use scope_domain::{
@@ -11,7 +11,7 @@ use scope_domain::{
     },
     policy::ScopePath,
     repo_config::RepoConfig,
-    repository::{Repository, RepositoryIncarnation, git::GitHead, git::GitPackSpan},
+    repository::{Repository, RepositoryIncarnation, git::GitHead, git::GitPoolPack},
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IsolationLevel, QueryFilter,
@@ -37,7 +37,7 @@ pub struct DependencyAnalysisClaim {
     pub content_version: u64,
     pub change_version: u64,
     pub git_head: GitHead,
-    pub git_pack_spans: Vec<GitPackSpan>,
+    pub main_packs: Vec<GitPoolPack>,
     pub analyzer_version: String,
     pub lease_generation: String,
     pub files: Vec<DependencySnapshotFile>,
@@ -193,7 +193,7 @@ impl JobStore {
                 "change_version",
                 "repository change version",
             )?,
-            git_pack_spans: load_git_pack_spans(&tx, &repo_id).await?,
+            main_packs: load_main_pool_packs(&tx, &repo_id).await?,
             git_head: head,
             analyzer_version,
             lease_generation,

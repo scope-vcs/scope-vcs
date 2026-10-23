@@ -243,7 +243,7 @@ function operationFor(name, context) {
   throw new Error(`unsupported workload: ${name}`);
 }
 
-export function rotating(items) {
+function rotating(items) {
   let index = 0;
   return () => items[index++ % items.length];
 }
@@ -516,7 +516,7 @@ async function pushCurrentHead(config, fixture, started = performance.now(), rou
   const intent = await apiJson(config, `${repoPath(fixture)}/push-intents`, {
     endpoint,
     method: 'POST',
-    body: { head_oid: head, base_config_hash: repoConfig.config_hash, config: proposedConfig },
+    body: { head_oid: head, base_config_hash: repoConfig.config_hash, config: proposedConfig, view: remoteView(fixture.pushRemotePath) },
   });
   const destination = pushRemoteUrl(config, endpoint, fixture);
   return command(
@@ -632,7 +632,7 @@ async function apiRead(config, path, started = performance.now(), fixture = null
   }
 }
 
-export function abortTimeoutMs(value) {
+function abortTimeoutMs(value) {
   return Math.max(1, Math.ceil(value));
 }
 
@@ -642,6 +642,12 @@ async function deleteRepository(config, fixture) {
     method: 'DELETE',
     timeoutMs: config.cleanupTimeoutMs,
   });
+}
+
+export function remoteView(remotePath) {
+  const [, git, view] = remotePath.split('/');
+  if (git !== 'git' || !view) throw new Error(`push remote path has no view: ${remotePath}`);
+  return view;
 }
 
 function repoPath(fixture) { return `/v1/repos/${encodeURIComponent(fixture.owner)}/${encodeURIComponent(fixture.repo)}`; }

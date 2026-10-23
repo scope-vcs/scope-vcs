@@ -15,7 +15,7 @@ pub(crate) async fn native_commit_details(
         return Ok(BTreeMap::new());
     }
     let deadline = Instant::now() + state.runtime_budgets.git_command_timeout();
-    let (head, spans) = state
+    let head = state
         .metadata
         .repositories()
         .repository_content_source(incarnation)
@@ -24,7 +24,7 @@ pub(crate) async fn native_commit_details(
         .ok_or_else(|| ApiError::internal_message("native history has no canonical Git source"))?;
     let repo = state
         .repository_engine
-        .materialize_repository(state, incarnation, &head, &spans)
+        .materialize_repository(state, incarnation, &head)
         .await?;
     let permit = state.runtime_budgets.try_git_materialization()?;
     let commits = commits.to_vec();

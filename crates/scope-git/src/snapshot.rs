@@ -1,40 +1,32 @@
 use crate::{GitSnapshotError, GitStorageLimits};
-use scope_domain::repository::git::{GitHead, GitPackSpan, GitSegmentRef};
-use scope_storage::ensure_object_size;
+use scope_domain::repository::git::{GitHead, GitPoolPackOwner};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StoredGitPush {
+pub struct PreparedGitPush {
     pub head: GitHead,
-    pub pack_span: GitPackSpan,
+    pub owner: GitPoolPackOwner,
+    pub prerequisites: Vec<String>,
 }
 
 pub fn prepare_git_push(
-    segment: GitSegmentRef,
     head_oid: String,
     previous: Option<&GitHead>,
     storage_limits: GitStorageLimits,
-) -> Result<StoredGitPush, GitSnapshotError> {
-    ensure_object_size(
-        "write",
-        "Git pack",
-        usize::try_from(segment.plaintext_bytes).unwrap_or(usize::MAX),
-        storage_limits.max_object_bytes(),
-    )?;
+) -> Result<PreparedGitPush, GitSnapshotError> {
     let sequence = storage_limits.next_push_sequence(previous.map(|head| head.push_sequence))?;
-    Ok(StoredGitPush {
+    Ok(PreparedGitPush {
         head: GitHead::new(
-            head_oid.clone(),
+            head_oid,
             sequence,
             previous.map_or(1, |head| head.change_version.saturating_add(1)),
         ),
-        pack_span: GitPackSpan {
+        owner: GitPoolPackOwner::Main {
             first_sequence: sequence,
             last_sequence: sequence,
-            geometric_tier: 0,
-            base_oid: previous.map(|head| head.head_oid.clone()),
-            head_oid,
-            segment,
         },
+        prerequisites: previous
+            .map(|head| vec![head.head_oid.clone()])
+            .unwrap_or_default(),
     })
 }
 
@@ -42,59 +34,56 @@ pub fn prepare_git_push(
 mod tests {
     use super::*;
 
-    fn segment() -> GitSegmentRef {
-        GitSegmentRef {
-            segment_id: "segment-5".to_string(),
-            sha256: "pack-sha".to_string(),
-            plaintext_bytes: 4,
-            encoding_version: 2,
-        }
-    }
-
     #[test]
-    fn push_preparation_separates_snapshot_identity_from_pack_layout() {
+    fn a_push_packs_the_next_sequence_on_top_of_the_previous_head() {
         let previous = GitHead::new("head-1".to_string(), 4, 9);
 
-        let stored = prepare_git_push(
-            segment(),
+        let prepared = prepare_git_push(
             "head-2".to_string(),
             Some(&previous),
             GitStorageLimits::new(4096).unwrap(),
         )
         .unwrap();
 
-        assert_eq!(stored.head.push_sequence, 5);
-        assert_eq!(stored.head.change_version, 10);
-        assert_eq!(stored.pack_span.first_sequence, 5);
-        assert_eq!(stored.pack_span.last_sequence, 5);
-        assert_eq!(stored.pack_span.base_oid.as_deref(), Some("head-1"));
-        assert_eq!(stored.pack_span.head_oid, "head-2");
-        assert_eq!(stored.pack_span.segment, segment());
+        assert_eq!(prepared.head, GitHead::new("head-2".to_string(), 5, 10));
+        assert_eq!(
+            prepared.owner,
+            GitPoolPackOwner::Main {
+                first_sequence: 5,
+                last_sequence: 5,
+            }
+        );
+        assert_eq!(prepared.prerequisites, ["head-1"]);
 
         let first = prepare_git_push(
-            segment(),
             "head-1".to_string(),
             None,
             GitStorageLimits::new(4096).unwrap(),
         )
         .unwrap();
 
-        assert_eq!(first.head.push_sequence, 1);
-        assert_eq!(first.head.change_version, 1);
-        assert_eq!(first.pack_span.first_sequence, 1);
-        assert_eq!(first.pack_span.base_oid, None);
+        assert_eq!(first.head, GitHead::new("head-1".to_string(), 1, 1));
+        assert_eq!(
+            first.owner,
+            GitPoolPackOwner::Main {
+                first_sequence: 1,
+                last_sequence: 1,
+            }
+        );
+        assert!(first.prerequisites.is_empty());
     }
 
     #[test]
-    fn preparation_rejects_segment_larger_than_storage_limit() {
+    fn preparation_rejects_a_sequence_overflow() {
+        let previous = GitHead::new("head".to_string(), u64::MAX, 1);
+
         let error = prepare_git_push(
-            segment(),
-            "head".to_string(),
-            None,
-            GitStorageLimits::new(3).unwrap(),
+            "next".to_string(),
+            Some(&previous),
+            GitStorageLimits::default(),
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("exceeds 3 bytes"));
+        assert_eq!(error.to_string(), "Git push sequence overflow");
     }
 }

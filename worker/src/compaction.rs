@@ -1,5 +1,5 @@
 use crate::git_repo::{CompactionPackMetrics, build_compacted_pack};
-use scope_domain::repository::git::GitPackSpan;
+use scope_domain::repository::git::GitPoolPack;
 use scope_git::GitStorageLimits;
 use scope_git_process::ProcessError;
 use scope_postgres::db::{GitCompactionClaim, MetadataStore};
@@ -31,6 +31,27 @@ pub(crate) enum CompactionOutcome {
 }
 
 pub(crate) async fn run(
+    metadata: MetadataStore,
+    segment_store: Arc<GitSegmentStore>,
+    settings: WorkerSettings,
+    health: WorkerHealth,
+) -> anyhow::Result<()> {
+    let mut compactors = tokio::task::JoinSet::new();
+    for _ in 0..settings.git_compaction_concurrency {
+        compactors.spawn(compact_until_shutdown(
+            metadata.clone(),
+            Arc::clone(&segment_store),
+            settings.clone(),
+            health.clone(),
+        ));
+    }
+    while let Some(compactor) = compactors.join_next().await {
+        compactor??;
+    }
+    Ok(())
+}
+
+async fn compact_until_shutdown(
     metadata: MetadataStore,
     segment_store: Arc<GitSegmentStore>,
     settings: WorkerSettings,
@@ -164,7 +185,7 @@ async fn compact_claimed(
     let data_dir = settings.data_dir.clone();
     let mut build = tokio::spawn(
         async move {
-            build_compacted_span(
+            build_replacement(
                 build_store,
                 &build_candidate,
                 build_reservation,
@@ -335,7 +356,7 @@ async fn compact_claimed(
     let persist_started = Instant::now();
     let persisted = metadata
         .jobs()
-        .replace_git_pack_spans_with_compaction(
+        .replace_main_pool_packs_with_compaction(
             repository_id,
             &candidate.plan,
             built.replacement,
@@ -367,7 +388,7 @@ async fn compact_claimed(
                 cleanup_retired_local_segments(
                     segment_store.as_ref(),
                     repository_id,
-                    candidate.plan.selected_spans(),
+                    candidate.plan.selected_packs(),
                 )
                 .await;
             } else if let Err(error) = discard_upload(
@@ -455,9 +476,10 @@ fn log_compaction_attempt(
         target_sequence = claim.target_sequence,
         scheduler_attempts = claim.attempts,
         scheduler_queue_delay_ms = claim.queue_delay_ms,
-        source_span_count = metrics.pack.source_span_count,
+        source_pack_count = metrics.pack.source_pack_count,
         source_pack_bytes = metrics.pack.source_pack_bytes,
         compacted_bytes = metrics.pack.compacted_bytes,
+        inline_source_count = metrics.pack.inline_source_count,
         local_restore_count = metrics.pack.local_restore_count,
         remote_restore_count = metrics.pack.remote_restore_count,
         candidate_query_ms,
@@ -468,9 +490,9 @@ fn log_compaction_attempt(
         pack_ms = metrics.pack.pack_ms,
         verify_ms = metrics.pack.verify_ms,
         pack_total_ms = metrics.pack.total_ms,
-        local_write_and_fsync_ms = metrics
+        local_write_ms = metrics
             .ingest
-            .local_write_and_fsync
+            .local_write
             .as_millis(),
         remote_upload_ms = metrics
             .ingest
@@ -552,7 +574,7 @@ async fn discard_upload(
 }
 
 struct BuiltCompaction {
-    replacement: GitPackSpan,
+    replacement: GitPoolPack,
     staged: StagedGitSegment,
     metrics: CompactionMetrics,
 }
@@ -565,23 +587,23 @@ struct CompactionMetrics {
 async fn cleanup_retired_local_segments(
     segment_store: &GitSegmentStore,
     repository_id: &str,
-    spans: &[GitPackSpan],
+    packs: &[GitPoolPack],
 ) {
-    for span in spans {
+    for segment in packs.iter().filter_map(|pack| pack.storage.segment()) {
         if let Err(error) = segment_store
-            .cleanup_local(repository_id, &span.segment.segment_id)
+            .cleanup_local(repository_id, &segment.segment_id)
             .await
         {
             tracing::warn!(
                 error = %error,
-                segment_id = span.segment.segment_id,
+                segment_id = segment.segment_id,
                 "failed to remove retired local Git segment"
             );
         }
     }
 }
 
-async fn build_compacted_span(
+async fn build_replacement(
     segment_store: Arc<GitSegmentStore>,
     candidate: &scope_postgres::db::GitCompactionCandidate,
     reservation: GitSegmentReservation,

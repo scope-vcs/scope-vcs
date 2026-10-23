@@ -3,14 +3,16 @@ use std::time::Duration;
 
 const BACKEND_ENV: &str = "SCOPE_REPO_ROUTER_BACKEND";
 const READ_REPLICAS_ENV: &str = "SCOPE_REPO_ROUTER_READ_REPLICAS";
+const WRITE_REPLICAS_ENV: &str = "SCOPE_REPO_ROUTER_WRITE_REPLICAS";
 
 const DEFAULT_DNS_REFRESH_MILLIS: u64 = 1_000;
 const DEFAULT_DNS_MAX_STALE_MILLIS: u64 = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MILLIS: u64 = 2_000;
 const DEFAULT_READ_TIMEOUT_MILLIS: u64 = 60_000;
 const DEFAULT_READ_REPLICAS: usize = 1;
+const DEFAULT_WRITE_REPLICAS: usize = 1;
 const UPLOAD_PACK_REPLAY_MAX_BYTES: usize = 64 * 1024 * 1024;
-const UPLOAD_PACK_REPLAY_SLOTS: usize = 4;
+const UPLOAD_PACK_REPLAY_BUDGET_BYTES: usize = 4 * UPLOAD_PACK_REPLAY_MAX_BYTES;
 const INCOMING_BODY_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug)]
@@ -21,8 +23,9 @@ pub struct RouterConfig {
     pub connect_timeout: Duration,
     pub read_timeout: Duration,
     pub read_replicas: usize,
+    pub write_replicas: usize,
     pub upload_pack_replay_max_bytes: usize,
-    pub upload_pack_replay_slots: usize,
+    pub upload_pack_replay_budget_bytes: usize,
     pub incoming_body_timeout: Duration,
 }
 
@@ -40,7 +43,8 @@ impl RouterConfig {
             connect_timeout: Duration::from_millis(DEFAULT_CONNECT_TIMEOUT_MILLIS),
             read_timeout: Duration::from_millis(DEFAULT_READ_TIMEOUT_MILLIS),
             read_replicas: positive_usize_from_env(READ_REPLICAS_ENV, DEFAULT_READ_REPLICAS)?,
-            upload_pack_replay_slots: UPLOAD_PACK_REPLAY_SLOTS,
+            write_replicas: positive_usize_from_env(WRITE_REPLICAS_ENV, DEFAULT_WRITE_REPLICAS)?,
+            upload_pack_replay_budget_bytes: UPLOAD_PACK_REPLAY_BUDGET_BYTES,
             incoming_body_timeout: INCOMING_BODY_TIMEOUT,
             upload_pack_replay_max_bytes: UPLOAD_PACK_REPLAY_MAX_BYTES,
         })

@@ -11,6 +11,8 @@ node --test .github/scripts/check-source-size.test.mjs
 node .github/scripts/check-source-size.mjs
 node --test .github/scripts/check-comments.test.mjs
 node .github/scripts/check-comments.mjs
+node --test .github/scripts/check-test-waits.test.mjs
+node .github/scripts/check-test-waits.mjs
 node --test .github/scripts/check-rust-boundaries.test.mjs
 node .github/scripts/check-rust-boundaries.mjs
 node .github/scripts/check-rust-toolchain-sync.mjs

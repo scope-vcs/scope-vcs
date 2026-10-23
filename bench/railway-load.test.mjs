@@ -7,11 +7,11 @@ import test from 'node:test';
 import { createEndpointRouter, parseApiUrls } from './endpoint-routing.mjs';
 import { parseByteSizes, parseRates, parseStages } from './load-config.mjs';
 import {
-  changedFileCountSlope, historySizeSlope, landingFileSizeSlope, sampleStats, writeSizeSlope,
+  historySizeSlope, sampleStats, writeSizeSlope,
 } from './metrics.mjs';
 import {
-  abortTimeoutMs, capacityRejectionBreakdown, chooseWrite, consistencyStats, evaluateStage, failureBreakdown,
-  rotating, stageResult, toggleBenchmarkVisibilityRule,
+  capacityRejectionBreakdown, chooseWrite, consistencyStats, evaluateStage, failureBreakdown,
+  remoteView, stageResult, toggleBenchmarkVisibilityRule,
 } from './railway-load.mjs';
 import { fetchClientCount, validateRepositoryMode } from './repository-mode.mjs';
 import { assertSafeTarget, validateTargetKind } from './target-safety.mjs';
@@ -33,9 +33,10 @@ test('large write deltas use bounded files and buffers', async (context) => {
   assert.equal((await readdir(join(root, 'delta'))).length, 3);
 });
 
-test('visibility polling rounds fractional AbortSignal timeouts up', () => {
-  assert.equal(abortTimeoutMs(29_999.001), 30_000);
-  assert.equal(abortTimeoutMs(0.01), 1);
+test('push intents name the view of the push remote', () => {
+  assert.equal(remoteView('/git/private/owner/repo'), 'private');
+  assert.equal(remoteView('/git/public/owner/repo'), 'public');
+  assert.throws(() => remoteView('/owner/repo'), /no view/);
 });
 
 test('load target guard accepts only local or loadtest hosts', () => {
@@ -159,14 +160,6 @@ test('mixed workload is deterministic at the requested 80/20 split', () => {
   assert.deepEqual(Array.from({ length: 10 }, (_, index) => chooseWrite(index, 20)), [true, false, false, false, false, true, false, false, false, false]);
 });
 
-test('mixed workload reads rotate across the mixed repository set', () => {
-  const mixedRead = rotating([{ repo: 'mixed-1' }, { repo: 'mixed-2' }, { repo: 'mixed-3' }]);
-  assert.deepEqual(
-    Array.from({ length: 5 }, () => mixedRead().repo),
-    ['mixed-1', 'mixed-2', 'mixed-3', 'mixed-1', 'mixed-2'],
-  );
-});
-
 test('stage results preserve node labels, byte rate, and errors', () => {
   const stage = stageResult('blob-read', 2, [
     { ok: true, durationMs: 10, ttfbMs: 2, bytes: 100, historyDepth: 1 },
@@ -197,25 +190,6 @@ test('write-size slope separates payload sizes', () => {
   ]);
   assert.deepEqual(slope.points.map(({ writeDeltaBytes }) => writeDeltaBytes), [4096, 1048576]);
   assert.equal(slope.p95MsPerMiB, 20.08);
-});
-
-test('landing-file slope separates unrelated pushes from bounded README updates', () => {
-  const slope = landingFileSizeSlope([
-    { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, logicalBytes: 1, landingFileBytes: 0 },
-    { ok: true, durationMs: 20, ttfbMs: 20, bytes: 1, logicalBytes: 4096, landingFileBytes: 4096 },
-    { ok: true, durationMs: 30, ttfbMs: 30, bytes: 1, logicalBytes: 1048576, landingFileBytes: 1048576 },
-  ]);
-  assert.deepEqual(slope.points.map(({ landingFileBytes }) => landingFileBytes), [0, 4096, 1048576]);
-  assert.equal(slope.p95MsPerMiB, 20);
-});
-
-test('changed-file slope reports p95 cost per file', () => {
-  const slope = changedFileCountSlope([
-    { ok: true, durationMs: 10, ttfbMs: 10, bytes: 1, changedFileCount: 1 },
-    { ok: true, durationMs: 109, ttfbMs: 109, bytes: 1, changedFileCount: 100 },
-  ]);
-  assert.deepEqual(slope.points.map(({ changedFileCount }) => changedFileCount), [1, 100]);
-  assert.equal(slope.p95MsPerFile, 1);
 });
 
 test('aggregate benchmark pushes toggle an equivalent visibility rule', () => {

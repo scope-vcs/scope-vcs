@@ -44,52 +44,6 @@ fn write_projection_tree(
 }
 
 #[test]
-fn generated_projection_matches_canonical_head_identity() {
-    let root = std::env::temp_dir().join(format!(
-        "scope-generated-projection-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
-    let projection = Projection {
-        repo_id: "repo".to_string(),
-        view_key: ViewId::public(),
-        commits: vec![ProjectedCommit {
-            projected_id: "generated-base".to_string(),
-            logical_commit_id: "logical-base".to_string(),
-            visibility_change_set_id: None,
-            parent_projected_id: None,
-            author: Some("owner".to_string()),
-            message: "base".to_string(),
-            changes: vec![projected_change("/README.md", "base\n")],
-            materialization: ProjectionMaterialization::Generate,
-        }],
-    };
-
-    let repo = projection_bare_repo_with_loader(
-        &root,
-        None,
-        &labels(&projection),
-        &projection,
-        None,
-        None,
-        |blob| Ok(blob.sha256.as_bytes().to_vec()),
-    )
-    .unwrap();
-
-    assert_eq!(
-        git_object_field(&repo, "refs/heads/main", "%H").unwrap(),
-        scope_git::projection_head_oid(&projection)
-            .unwrap()
-            .expect("non-empty projection has a head")
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
     let root = std::env::temp_dir().join(format!(
         "scope-quoted-projection-path-{}-{}",
@@ -375,7 +329,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
             engine.lease_derived(repo.clone()).unwrap(),
             &request(hidden_oid),
             RuntimeBudgets::default_git_command_timeout(),
-            budgets.try_upload_pack().unwrap(),
+            budgets.admit_upload_pack().await.unwrap(),
         )
         .await
         .unwrap_err();
@@ -394,7 +348,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(repo.clone()).unwrap(),
         shallow_request.as_bytes(),
         RuntimeBudgets::default_git_command_timeout(),
-        budgets.try_upload_pack().unwrap(),
+        budgets.admit_upload_pack().await.unwrap(),
     )
     .await
     .unwrap_err();
@@ -415,7 +369,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(repo.clone()).unwrap(),
         &have_request(&private_oid),
         RuntimeBudgets::default_git_command_timeout(),
-        budgets.try_upload_pack().unwrap(),
+        budgets.admit_upload_pack().await.unwrap(),
     )
     .await
     .unwrap();
@@ -428,7 +382,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(repo.clone()).unwrap(),
         &unknown_have,
         RuntimeBudgets::default_git_command_timeout(),
-        budgets.try_upload_pack().unwrap(),
+        budgets.admit_upload_pack().await.unwrap(),
     )
     .await
     .unwrap();
@@ -442,7 +396,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         engine.lease_derived(repo.clone()).unwrap(),
         &request(&native_oid),
         RuntimeBudgets::default_git_command_timeout(),
-        budgets.try_upload_pack().unwrap(),
+        budgets.admit_upload_pack().await.unwrap(),
     )
     .await
     .unwrap();
@@ -463,9 +417,10 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         changes: vec![projected_change("/request.txt", "after native\n")],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&extended), &extended)
-        .unwrap()
-        .unwrap();
+    let prefix =
+        cached_projection_prefix(&engine, &incarnation, &labels(&extended), &extended, None)
+            .unwrap()
+            .unwrap();
     assert_eq!(prefix.commits, projection.commits.len());
     let extended_repo = projection_bare_repo_with_loader(
         &cache,
@@ -736,9 +691,15 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
         changes: vec![projected_change("/file-0.txt", "appended\n")],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
-        .unwrap()
-        .unwrap();
+    let prefix = cached_projection_prefix(
+        &engine,
+        &incarnation,
+        &labels(&projection),
+        &projection,
+        None,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(prefix.commits, 20);
     loaded.set(0);
     bytes.set(0);
@@ -798,9 +759,15 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
         changes: vec![mode_change],
         materialization: ProjectionMaterialization::Generate,
     });
-    let prefix = cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
-        .unwrap()
-        .unwrap();
+    let prefix = cached_projection_prefix(
+        &engine,
+        &incarnation,
+        &labels(&projection),
+        &projection,
+        None,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(prefix.commits, 21);
     let mode_only = projection_bare_repo_with_loader(
         root.path(),
@@ -821,9 +788,15 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
 
     projection.commits[0].changes.remove(1);
     assert!(
-        cached_projection_prefix(&engine, &incarnation, &labels(&projection), &projection)
-            .unwrap()
-            .is_none()
+        cached_projection_prefix(
+            &engine,
+            &incarnation,
+            &labels(&projection),
+            &projection,
+            None
+        )
+        .unwrap()
+        .is_none()
     );
     let rewritten = projection_bare_repo_with_loader(
         root.path(),
@@ -843,7 +816,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     );
     let other = RepositoryIncarnation::new("owner/repo", "repoi_recreated").unwrap();
     assert!(
-        cached_projection_prefix(&engine, &other, &labels(&projection), &projection)
+        cached_projection_prefix(&engine, &other, &labels(&projection), &projection, None)
             .unwrap()
             .is_none()
     );
@@ -854,8 +827,10 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
     let root = tempfile::tempdir().unwrap();
     let mut executable = projected_change("/bin/run", "#!/bin/sh\n");
     executable.new_content.as_mut().unwrap().git_file_mode = "100755".into();
+    let mut link = projected_change("/bin/latest", "run");
+    link.new_content.as_mut().unwrap().git_file_mode = "120000".into();
     let changes = vec![
-        vec![projected_change("/path", "original"), executable],
+        vec![projected_change("/path", "original"), executable, link],
         vec![
             ProjectedChange {
                 path: ScopePath::parse("/path").unwrap(),

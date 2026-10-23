@@ -6,10 +6,8 @@ const IDENTITY_DIGEST: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 #[tokio::test]
 async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
+    let store = migrated_store();
+    let db = Arc::clone(&store.db);
     db.execute_unprepared(&format!(
         "
         INSERT INTO scope_users (id, handle, email, email_verified)

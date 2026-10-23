@@ -9,30 +9,25 @@ use crate::{
 use scope_domain::{
     policy::ScopePath,
     projection::Projection,
-    repository::{
-        Repository, RepositoryIncarnation,
-        git::{GitHead, GitPackSpan},
-    },
+    repository::{Repository, RepositoryIncarnation, git::GitHead},
     requests::PathHistory,
     views::{ViewId, Views},
 };
-use scope_postgres::db::{GitPushContext, GitReadSource};
+use scope_postgres::db::{GitPushState, GitReadSource};
 
 #[derive(Clone, Debug)]
 pub(crate) struct RepositoryGit {
     pub(crate) incarnation: RepositoryIncarnation,
     pub(crate) content_version: u64,
     pub(crate) git_head: Option<GitHead>,
-    pub(crate) git_pack_spans: Vec<GitPackSpan>,
 }
 
 impl RepositoryGit {
-    pub(crate) fn of_push_context(context: &GitPushContext) -> Self {
+    pub(crate) fn of_push_state(context: &GitPushState) -> Self {
         Self {
             incarnation: context.incarnation.clone(),
             content_version: context.content_version,
             git_head: context.git_head.clone(),
-            git_pack_spans: context.git_pack_spans.clone(),
         }
     }
 
@@ -41,7 +36,6 @@ impl RepositoryGit {
             incarnation: source.context.incarnation(),
             content_version: source.context.record.content_version,
             git_head: source.git_head,
-            git_pack_spans: source.git_pack_spans,
         }
     }
 
@@ -58,7 +52,6 @@ impl RepositoryGit {
             incarnation: incarnation.clone(),
             content_version: git.content_version,
             git_head: git.git_head,
-            git_pack_spans: git.git_pack_spans,
         })
     }
 
@@ -67,7 +60,6 @@ impl RepositoryGit {
             incarnation: repo.incarnation(),
             content_version: repo.record.content_version,
             git_head: repo.git_head.clone(),
-            git_pack_spans: repo.git_pack_spans.clone(),
         }
     }
 
@@ -134,7 +126,6 @@ impl RepositoryGit {
             views,
             &projection,
             self.git_head.as_ref(),
-            &self.git_pack_spans,
         )
         .await
     }

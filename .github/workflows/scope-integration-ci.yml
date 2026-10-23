@@ -63,11 +63,7 @@ jobs:
         run: node dev/check-git-version.mjs
 
       - name: Install media codecs
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends ffmpeg libheif-examples
-          ffprobe -version
-          heif-convert --version
+        uses: ./.github/actions/install-media-codecs
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88

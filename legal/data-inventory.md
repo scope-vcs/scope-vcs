@@ -5,6 +5,14 @@ This inventory is the maintainer-facing source for the
 collecting new personal data, adds a service provider, or changes a retention
 period.
 
+Location analytics update prepared October 21, 2026, for a future release. This
+inventory describes the planned data flow below; it does not record production
+activation. The current privacy policy took effect October 13, 2026. Before
+activation, verify PostHog's IP discard and location filtering settings, deliver
+advance notice to account holders by email or in the product, and publish the
+release's effective date in the privacy policy. Merging this change does not
+activate collection.
+
 ## Data
 
 | Data | Stored in | Retention | Deleted by |
@@ -17,13 +25,26 @@ period.
 | Repository invitations, invited email | `scope_repository_invites`, invite email delivery rows; sent through Resend | 30 days after acceptance, revocation or expiry | Invite retention pass |
 | Workflow runs and logs | Postgres, repository object storage; executed on AWS runners | 30 days after the run finishes | `api/src/run_retention.rs` |
 | Database recovery sets | AWS S3 `scope-recovery-*`, SSE-S3 encrypted | 42 days | S3 lifecycle in `deploy/aws/recovery/storage.yaml` |
-| Product analytics events | PostHog US project, through the web `/e` proxy and backend transport | PostHog project retention | PostHog; events are keyed by opaque `scope_usr_…` IDs that become unlinkable once the user row is deleted |
+| Product analytics events, including country, region and city after location analytics activation | PostHog US project, through the web `/e` proxy and backend transport | PostHog project retention, including retained approximate location | PostHog; signed-in events use opaque `scope_usr_…` IDs associated with Scope accounts; account deletion removes the user row but does not itself delete retained PostHog events |
+| Browser visitor IP for planned approximate location enrichment | Passed temporarily through the web `/e` proxy from trusted hosting proxy headers to PostHog US; not retained as an analytics event property | Only for location enrichment; raw IP discarded from stored events, with latitude, longitude and postal codes removed | PostHog ingestion settings and location filtering, verified before activation |
 | Server logs: request method, path, timing, errors; Railway HTTP logs also record client IP addresses | Railway logs | Railway log retention | Railway |
 | Application logs and request traces: service log lines, which can include repository names, file paths and error details; spans with internal IDs, routes and timing | PostHog US project, sent by each service over OpenTelemetry | PostHog log and trace retention, 14 days by default | PostHog |
 
 The analytics collection contract, including excluded fields, is in
-[docs/product-analytics.md](../docs/product-analytics.md). What services export
-as logs and traces is in [docs/observability.md](../docs/observability.md).
+[docs/product-analytics.md](../docs/product-analytics.md). Planned location
+analytics measures where visitors use Scope at country, region and city level
+to guide product improvements. It uses IP-based estimates, not browser GPS or
+device location access. Backend events keep GeoIP enrichment disabled.
+Railway's operational HTTP logs continue to include client IP addresses under
+Railway's retention policy. Until location analytics is activated, the web
+analytics proxy removes visitor IP addresses before forwarding to PostHog.
+
+Analytics identifiers are pseudonymous. Signed-out events use a fresh random ID
+held in page memory. Signed-in events use the internal Scope user ID, and events
+captured before sign-in within the same page can be linked to it. Approximate
+location will follow the same association and retention as those events.
+
+What services export as logs and traces is in [docs/observability.md](../docs/observability.md).
 
 ## Browser storage
 
@@ -35,8 +56,9 @@ as logs and traces is in [docs/observability.md](../docs/observability.md).
 | Attachment drafts in `sessionStorage` | Unsent attachments in the current tab | No, user-requested |
 | `web/src/lib/home-flash.ts` values in `sessionStorage` | One-time notices shown after a redirect, cleared on read | No, strictly necessary |
 
-Analytics IDs live in page memory only. Adding any analytics or tracking storage
-requires a consent mechanism first.
+Analytics IDs live in page memory only. Browser analytics, including planned
+location collection, stops when Do Not Track or Global Privacy Control is set.
+Adding any analytics or tracking storage requires a consent mechanism first.
 
 ## Service providers
 
@@ -45,7 +67,7 @@ requires a consent mechanism first.
 | Clerk | Authentication | US |
 | Railway | Hosting, Postgres, object storage, logs | US |
 | Amazon Web Services | Workflow runners, recovery backups, audit logs | us-east-1 |
-| PostHog | Product analytics, application logs and traces | US |
+| PostHog | Product analytics, planned approximate location enrichment, application logs and traces | US |
 | Resend | Invitation email | US |
 
 Vercel hosts DNS for scopevcs.com and receives no user data.

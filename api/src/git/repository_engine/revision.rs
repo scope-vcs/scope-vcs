@@ -1,13 +1,13 @@
 use super::RepositoryEngine;
 use crate::{
     error::ApiError,
-    git::{cache::GitRepoHandle, command::run_git},
+    git::{
+        cache::GitRepoHandle,
+        command::{run_git, run_git_output},
+    },
     state::AppState,
 };
-use scope_domain::repository::{
-    RepositoryIncarnation,
-    git::{GitHead, GitPackSpan},
-};
+use scope_domain::repository::{RepositoryIncarnation, git::GitHead};
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{fs, path::Path, sync::Arc};
 
@@ -22,11 +22,10 @@ impl RepositoryEngine {
         state: &AppState,
         incarnation: &RepositoryIncarnation,
         head: &GitHead,
-        pack_spans: &[GitPackSpan],
     ) -> Result<GitRevision, ApiError> {
         Ok(GitRevision {
             repository: self
-                .materialize_repository(state, incarnation, head, pack_spans)
+                .materialize_repository(state, incarnation, head)
                 .await?,
             head_oid: head.head_oid.clone(),
         })
@@ -34,6 +33,13 @@ impl RepositoryEngine {
 }
 
 impl GitRevision {
+    pub(crate) fn pinned_to(self, head_oid: &str) -> Self {
+        Self {
+            head_oid: head_oid.to_string(),
+            ..self
+        }
+    }
+
     pub(crate) fn create_view(&self, path: &Path) -> Result<(), ApiError> {
         run_git(
             None,
@@ -52,6 +58,20 @@ impl GitRevision {
             format!("{}\n", objects.display()),
         )
         .map_err(ApiError::internal)?;
+        let commit = format!("{}^{{commit}}", self.head_oid);
+        if !run_git_output(
+            Some(path),
+            &["cat-file", "-e", &commit],
+            "checking pinned Git revision",
+        )?
+        .status
+        .success()
+        {
+            return Err(ApiError::internal_message(format!(
+                "Git revision {} is not in the repository's accepted history",
+                self.head_oid
+            )));
+        }
         run_git(
             Some(path),
             &[

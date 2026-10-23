@@ -247,6 +247,35 @@ pub(crate) fn request_commit_changes(
     }
     Ok(output.stdout)
 }
+pub(crate) fn request_range_path_changes(
+    raw_repo: &FsPath,
+    base_oid: Option<&str>,
+    head_oid: &str,
+    path: &ScopePath,
+) -> Result<Vec<u8>, ApiError> {
+    let mut args = vec![
+        "--literal-pathspecs",
+        "diff-tree",
+        "--root",
+        "--no-commit-id",
+        "-r",
+        "--raw",
+        "-z",
+        "--no-renames",
+        "--abbrev=64",
+    ];
+    args.extend(base_oid);
+    args.extend([head_oid, "--", path.as_str().trim_start_matches('/')]);
+    let output = run_git_output(Some(raw_repo), &args, "reading request path changes")?;
+    if !output.status.success() {
+        return Err(ApiError::infrastructure_unavailable(format!(
+            "reading request path changes: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(output.stdout)
+}
+
 pub(crate) fn request_revision_commit_oids(
     raw_repo: &FsPath,
     comparison: &RequestComparison,

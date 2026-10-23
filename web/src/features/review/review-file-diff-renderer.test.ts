@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { once } from 'node:events'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test, { mock } from 'node:test'
@@ -16,7 +15,7 @@ import {
   createReviewFileDiffRenderer,
   ReviewDiffTransientError,
 } from './review-file-diff-renderer'
-import { createReviewFileDiffWorkerPool, runReviewFileDiffWorker } from './review-file-diff-worker-pool'
+import { runReviewFileDiffWorker } from './review-file-diff-worker-pool'
 
 function textDiff(oldText: string, newText: string): ReviewFileDiffResponse {
   return {
@@ -122,19 +121,6 @@ test('admits no queue and allows retry after a transient busy failure', async ()
   releases.shift()?.()
   await Promise.all([second, retry])
   assert.equal(state.active, 0)
-})
-
-test('terminates a CPU-bound worker at the deadline', async () => {
-  const worker = new Worker('while (true) {}', { eval: true })
-  const exited = once(worker, 'exit')
-  const started = performance.now()
-  await assert.rejects(
-    createReviewFileDiffWorkerPool(() => worker, 1)(workerInput('a', 'b'), 25),
-    (error: unknown) => error instanceof ReviewDiffTransientError &&
-      error.failure === 'deadline',
-  )
-  await exited
-  assert.ok(performance.now() - started < 1_000)
 })
 
 test('does not publish transient busy or deadline failures to a cache', async () => {

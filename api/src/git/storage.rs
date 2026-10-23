@@ -31,13 +31,13 @@ pub(crate) fn receive_pack_staging_repo_prefix(incarnation: &RepositoryIncarnati
     repository_storage_key(incarnation)
 }
 
-pub(crate) fn request_ref_store_repo_path(
+pub(crate) fn request_objects_root(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
 ) -> PathBuf {
     git_repo_storage_root(state)
-        .join("git-request-refs")
-        .join(format!("{}.git", repository_storage_key(incarnation)))
+        .join("git-request-objects")
+        .join(repository_storage_key(incarnation))
 }
 
 pub(crate) fn repository_storage_key(incarnation: &RepositoryIncarnation) -> String {
@@ -68,7 +68,7 @@ pub(crate) fn delete_repo_storage(
             "repository Git cache is still in use",
         ));
     }
-    remove_dir_if_exists(&request_ref_store_repo_path(state, &cleanup.incarnation))?;
+    remove_dir_if_exists(&request_objects_root(state, &cleanup.incarnation))?;
 
     let rx_root = git_repo_storage_root(state).join("git-rx");
     let prefix = receive_pack_staging_repo_prefix(&cleanup.incarnation);

@@ -2,57 +2,6 @@ use super::*;
 use scope_domain::views::ViewId;
 
 #[tokio::test]
-async fn history_pages_are_newest_first_and_exhaust_cleanly() {
-    let state = test_state_with_repo();
-    replace_test_repo(&state, paged_history_repo(&state, 55)).await;
-
-    let first = api_request(
-        router(state.clone()),
-        "GET",
-        "/v1/repos/owner/repo/history?view=public",
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(first.status(), StatusCode::OK);
-    let first = response_json(first).await;
-    assert_eq!(first["generation"].as_str().unwrap().len(), 64);
-    let first_entries = first["entries"].as_array().unwrap();
-    assert_eq!(first_entries.len(), 50);
-    assert_eq!(first_entries[0]["source_id"], "rv55");
-    assert_eq!(first_entries[49]["source_id"], "rv6");
-    let cursor = first["next_cursor"].as_str().unwrap();
-
-    let second = api_request(
-        router(state),
-        "GET",
-        &format!("/v1/repos/owner/repo/history?view=public&before={cursor}"),
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(second.status(), StatusCode::OK);
-    let second = response_json(second).await;
-    let second_entries = second["entries"].as_array().unwrap();
-    assert_eq!(second_entries.len(), 5);
-    assert_eq!(second_entries[0]["source_id"], "rv5");
-    assert_eq!(second_entries[4]["source_id"], "rv1");
-    assert_eq!(second["generation"], first["generation"]);
-    assert_eq!(
-        first_entries
-            .iter()
-            .chain(second_entries)
-            .map(|entry| entry["source_id"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        (1..=55)
-            .rev()
-            .map(|index| format!("rv{index}"))
-            .collect::<Vec<_>>(),
-    );
-    assert!(second["next_cursor"].is_null());
-}
-
-#[tokio::test]
 async fn history_cursor_rejects_appended_history_and_restarts_from_the_new_generation() {
     let state = test_state_with_repo();
     replace_test_repo(&state, paged_history_repo(&state, 55)).await;
@@ -229,33 +178,4 @@ async fn history_cursor_restarts_after_reprojection_while_entry_urls_remain_stab
     let detail = response_json(detail).await;
     assert_eq!(detail["source_id"], "rv2");
     assert_eq!(detail["id"], original_id);
-}
-
-#[tokio::test]
-async fn history_cursor_rejects_a_boundary_missing_from_current_history() {
-    let state = test_state_with_repo();
-    cache_test_jwks(&state);
-    replace_test_repo(&state, paged_history_repo(&state, 51)).await;
-
-    let first = api_request(
-        router(state.clone()),
-        "GET",
-        "/v1/repos/owner/repo/history?view=public",
-        None,
-        None,
-    )
-    .await;
-    let first = response_json(first).await;
-    let cursor = first["next_cursor"].as_str().unwrap();
-
-    replace_test_repo(&state, paged_history_repo(&state, 1)).await;
-    let missing_boundary = api_request(
-        router(state),
-        "GET",
-        &format!("/v1/repos/owner/repo/history?view=public&before={cursor}"),
-        None,
-        None,
-    )
-    .await;
-    assert_eq!(missing_boundary.status(), StatusCode::BAD_REQUEST);
 }

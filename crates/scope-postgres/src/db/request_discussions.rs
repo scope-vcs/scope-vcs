@@ -4,8 +4,8 @@ use super::request_discussion_commands::{
 };
 use super::{
     RequestStore,
-    auth::load_users_by_ids,
     request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
+    request_discussion_actors::{DiscussionActorIds, RequestDiscussionActors},
     request_discussion_rows::{
         DiscussionPageFilter, RequestDiscussionReplyReadModel,
         RequestDiscussionReplyReferenceReadModel, changed_discussions_for_request,
@@ -26,7 +26,6 @@ use sea_orm::TransactionTrait;
 use std::collections::BTreeMap;
 use {
     crate::error::PostgresError,
-    scope_domain::account::UserAccount,
     scope_domain::requests::{
         CreateRequestDiscussionInput, CreateRequestDiscussionMutation,
         CreateRequestDiscussionReplyInput, CreateRequestDiscussionReplyMutation,
@@ -52,7 +51,7 @@ pub struct RequestDiscussionReadModel {
 #[derive(Clone, Debug)]
 pub struct RequestDiscussionReadBatch {
     pub discussions: Vec<RequestDiscussionReadModel>,
-    pub users: BTreeMap<String, UserAccount>,
+    pub actors: RequestDiscussionActors,
 }
 
 #[derive(Clone, Debug)]
@@ -65,14 +64,12 @@ pub struct RequestDiscussionsPageQuery<'a> {
     pub anchor_revision_id: Option<&'a str>,
     pub anchor_commit_oid: Option<&'a str>,
     pub include_revision_anchor: bool,
+    pub include_carried_line_anchors: bool,
     pub limit: u64,
 }
 
-pub type DiscussionWithUsers = (RequestDiscussionReadModel, BTreeMap<String, UserAccount>);
-pub type ReplyWithUsers = (
-    RequestDiscussionReplyReadModel,
-    BTreeMap<String, UserAccount>,
-);
+pub type DiscussionWithActors = (RequestDiscussionReadModel, RequestDiscussionActors);
+pub type ReplyWithActors = (RequestDiscussionReplyReadModel, RequestDiscussionActors);
 
 impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision_window"))]
@@ -100,6 +97,7 @@ impl RequestStore {
                 revision_id: query.anchor_revision_id,
                 commit_oid: query.anchor_commit_oid,
                 include_revision_anchor: query.include_revision_anchor,
+                include_carried_line_anchors: query.include_carried_line_anchors,
             },
             query.limit,
         )
@@ -114,7 +112,7 @@ impl RequestStore {
         request_id: &str,
         discussion_id: &str,
         viewer_user_id: Option<&str>,
-    ) -> Result<Option<DiscussionWithUsers>, PostgresError> {
+    ) -> Result<Option<DiscussionWithActors>, PostgresError> {
         let discussion = match discussion_by_id(self.db.as_ref(), discussion_id).await? {
             Some(discussion) if discussion.request_id == request_id => discussion,
             _ => return Ok(None),
@@ -125,7 +123,7 @@ impl RequestStore {
         Ok(batch
             .discussions
             .pop()
-            .map(|discussion| (discussion, batch.users)))
+            .map(|discussion| (discussion, batch.actors)))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "changed_request_discussions"))]
@@ -169,16 +167,11 @@ impl RequestStore {
             Some(_) => unread_content_counts(self.db.as_ref(), &discussions, &read_states).await?,
             None => BTreeMap::new(),
         };
-        let mut user_ids = discussions
-            .iter()
-            .flat_map(|discussion| {
-                [
-                    discussion.author_user_id.clone(),
-                    discussion.resolved_by_user_id.clone(),
-                ]
-            })
-            .flatten()
-            .collect::<Vec<_>>();
+        let mut actor_ids = DiscussionActorIds::default();
+        for discussion in &discussions {
+            actor_ids.author(&discussion.author);
+            actor_ids.resolver(discussion.resolved_by.as_ref());
+        }
         let mut models = Vec::with_capacity(discussions.len());
         for discussion in discussions {
             let anchor_revision_position = discussion
@@ -198,17 +191,9 @@ impl RequestStore {
                 .transpose()?;
             let (reply_count, latest_replies) =
                 previews.get(&discussion.id).cloned().unwrap_or_default();
-            user_ids.extend(latest_replies.iter().flat_map(|model| {
-                [
-                    model.reply.author_user_id.clone(),
-                    model
-                        .reply_to
-                        .as_ref()
-                        .and_then(|target| target.author_user_id.clone()),
-                ]
-                .into_iter()
-                .flatten()
-            }));
+            for model in &latest_replies {
+                reply_actor_ids(&mut actor_ids, model);
+            }
             let read_through_position = read_states
                 .get(&discussion.id)
                 .map(|state| state.read_through_position)
@@ -223,10 +208,9 @@ impl RequestStore {
                 unread_count,
             });
         }
-        let users = load_users_by_ids(self.db.as_ref(), user_ids).await?;
         Ok(RequestDiscussionReadBatch {
             discussions: models,
-            users,
+            actors: actor_ids.load(self.db.as_ref()).await?,
         })
     }
 
@@ -239,28 +223,17 @@ impl RequestStore {
     ) -> Result<
         (
             Vec<RequestDiscussionReplyReadModel>,
-            BTreeMap<String, UserAccount>,
+            RequestDiscussionActors,
         ),
         PostgresError,
     > {
         let replies =
             replies_for_discussion(self.db.as_ref(), discussion_id, before_position, limit).await?;
-        let users = load_users_by_ids(
-            self.db.as_ref(),
-            replies.iter().flat_map(|model| {
-                [
-                    model.reply.author_user_id.clone(),
-                    model
-                        .reply_to
-                        .as_ref()
-                        .and_then(|target| target.author_user_id.clone()),
-                ]
-                .into_iter()
-                .flatten()
-            }),
-        )
-        .await?;
-        Ok((replies, users))
+        let mut actor_ids = DiscussionActorIds::default();
+        for model in &replies {
+            reply_actor_ids(&mut actor_ids, model);
+        }
+        Ok((replies, actor_ids.load(self.db.as_ref()).await?))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_discussion_reply"))]
@@ -268,7 +241,7 @@ impl RequestStore {
         &self,
         discussion_id: &str,
         reply_id: &str,
-    ) -> Result<Option<ReplyWithUsers>, PostgresError> {
+    ) -> Result<Option<ReplyWithActors>, PostgresError> {
         let Some(reply) = reply_by_id(self.db.as_ref(), reply_id).await? else {
             return Ok(None);
         };
@@ -284,13 +257,7 @@ impl RequestStore {
     pub async fn request_discussion_reply_read_model(
         &self,
         reply: scope_domain::requests::RequestDiscussionReply,
-    ) -> Result<
-        (
-            RequestDiscussionReplyReadModel,
-            BTreeMap<String, UserAccount>,
-        ),
-        PostgresError,
-    > {
+    ) -> Result<ReplyWithActors, PostgresError> {
         let reply_to = match reply.reply_to_reply_id.as_deref() {
             Some(reply_id) => {
                 let target = reply_by_id(self.db.as_ref(), reply_id)
@@ -310,25 +277,16 @@ impl RequestStore {
                 Some(RequestDiscussionReplyReferenceReadModel {
                     id: target.id,
                     position: target.position,
-                    author_user_id: target.author_user_id,
+                    author: target.author,
                     body_markdown: target.body_markdown,
                 })
             }
             None => None,
         };
-        let users = load_users_by_ids(
-            self.db.as_ref(),
-            [
-                reply.author_user_id.clone(),
-                reply_to
-                    .as_ref()
-                    .and_then(|target| target.author_user_id.clone()),
-            ]
-            .into_iter()
-            .flatten(),
-        )
-        .await?;
-        Ok((RequestDiscussionReplyReadModel { reply, reply_to }, users))
+        let model = RequestDiscussionReplyReadModel { reply, reply_to };
+        let mut actor_ids = DiscussionActorIds::default();
+        reply_actor_ids(&mut actor_ids, &model);
+        Ok((model, actor_ids.load(self.db.as_ref()).await?))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision"))]
@@ -705,7 +663,14 @@ impl RequestStore {
     }
 }
 
-async fn monotonic_read_state<C>(
+fn reply_actor_ids(actor_ids: &mut DiscussionActorIds, model: &RequestDiscussionReplyReadModel) {
+    actor_ids.author(&model.reply.author);
+    if let Some(target) = &model.reply_to {
+        actor_ids.author(&target.author);
+    }
+}
+
+pub(super) async fn monotonic_read_state<C>(
     conn: &C,
     discussion: &RequestDiscussion,
     user_id: &str,

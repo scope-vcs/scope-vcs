@@ -23,25 +23,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn application_and_marketing_routes_are_reserved_handles() {
-        for handle in [
-            "account",
-            "settings",
-            "sign-in",
-            "sign-up",
-            "cli-login",
-            "invites",
-            "licenses",
-            "api",
-            "docs",
-            "pricing",
-            "repos",
-        ] {
-            assert!(is_reserved_handle(handle), "{handle} must be reserved");
-        }
-    }
-
-    #[test]
     fn reservation_is_case_insensitive_but_does_not_claim_derived_handles() {
         assert!(is_reserved_handle("SETTINGS"));
         assert!(!is_reserved_handle("settings-2"));

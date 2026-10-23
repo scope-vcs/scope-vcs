@@ -194,7 +194,7 @@ pub(crate) async fn restore_current_main(
     incarnation: &RepositoryIncarnation,
     staging_repo: &Path,
 ) -> Result<String, ApiError> {
-    let (head, spans) = state
+    let head = state
         .metadata
         .repositories()
         .repository_content_source(incarnation)
@@ -202,7 +202,7 @@ pub(crate) async fn restore_current_main(
     let head = head.ok_or_else(|| ApiError::conflict("repository has no accepted main"))?;
     let source = state
         .repository_engine
-        .materialize_repository(state, incarnation, &head, &spans)
+        .materialize_repository(state, incarnation, &head)
         .await?;
     let main = head.head_oid.clone();
     let path = staging_repo.to_path_buf();

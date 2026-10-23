@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { discussion, discussionPage } from './request-discussion-test-fixtures'
+import { discussionAuthorUserId } from './request-discussion-author'
 import {
   appendDiscussionPage,
   applyDiscussionChanges,
@@ -320,13 +321,13 @@ test('client id collisions from another author preserve the optimistic row', () 
   })
   const otherAuthor = {
     ...discussion('server-1', 6),
-    author: { handle: 'river', id: 'user-river' },
+    author: { kind: 'user' as const, handle: 'river', id: 'user-river' },
     client_discussion_id: 'client-1',
   }
   const changed = applyDiscussionChanges(pending, [otherAuthor], 6)
 
   assert.equal(changed.byId.get('client-1')?.pending, 'sending')
-  assert.equal(changed.byId.get('server-1')?.author?.id, 'user-river')
+  assert.equal(discussionAuthorUserId(changed.byId.get('server-1')?.author ?? null), 'user-river')
   assert.deepEqual(changed.order, ['server-1', 'client-1'])
 })
 

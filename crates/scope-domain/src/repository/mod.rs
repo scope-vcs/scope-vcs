@@ -14,7 +14,7 @@ use crate::{
     repository::{
         collaboration::{RepositoryCollaboration, RepositoryMember},
         credentials::{FirstPushToken, GitPushToken},
-        git::{GitHead, GitPackSpan},
+        git::GitHead,
     },
     views::{ViewId, Views},
     visibility_changes::VisibilityChangeSet,
@@ -91,7 +91,6 @@ pub struct Repository {
     pub visibility_change_sets: Vec<VisibilityChangeSet>,
     pub live_files: BTreeMap<ScopePath, SourceBlob>,
     pub git_head: Option<GitHead>,
-    pub git_pack_spans: Vec<GitPackSpan>,
     pub collaboration: RepositoryCollaboration,
 }
 
@@ -133,7 +132,6 @@ impl Repository {
             visibility_change_sets: Vec::new(),
             live_files: BTreeMap::new(),
             git_head: None,
-            git_pack_spans: Vec::new(),
             collaboration: RepositoryCollaboration::default(),
         })
     }

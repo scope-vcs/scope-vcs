@@ -1,4 +1,8 @@
 use super::*;
+use crate::use_cases::git_receive::{
+    RequestRefSeeding,
+    request_ref::{RequestPusher, RequestStagingKind, prepare_request_staging_repo},
+};
 use scope_domain::views::ViewId;
 
 #[derive(Clone, Copy)]
@@ -328,4 +332,112 @@ fn populate_test_live_files(repo: &mut Repository) {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn a_full_view_push_reaches_every_advertised_request_head() {
+    let state = test_state_with_repo();
+    cache_test_jwks(&state);
+    state
+        .metadata
+        .repositories()
+        .replace_repository_for_tests(privacy_repo(&state, PrivacyHistory::Mixed))
+        .await
+        .unwrap();
+    state
+        .metadata
+        .auth()
+        .insert_user_for_tests(test_user(public_user_id(), "public", PUBLIC_EMAIL))
+        .await
+        .unwrap();
+    start_request_for_author(&state, test_owner_id(), RequestActorRole::Owner).await;
+    let owner = test_owner_id();
+    let context = state
+        .metadata
+        .repositories()
+        .git_push_state(TEST_REPO_OWNER, TEST_REPO_NAME, &owner)
+        .await
+        .unwrap()
+        .unwrap();
+    let git = crate::git::repository_git::RepositoryGit::of_push_state(&context);
+    let full_repo = git
+        .view_repo(&state, context.repo_config.views(), &ViewId::private())
+        .await
+        .unwrap();
+    let full_head = git_stdout_text(&full_repo, &["rev-parse", "refs/heads/main"], "full head")
+        .unwrap()
+        .trim()
+        .to_string();
+    let public_head = stored_request(&state, REQUEST_ID).await.head_oid;
+    assert_ne!(full_head, public_head);
+    state
+        .metadata
+        .requests()
+        .start_request(StartRequestInput {
+            id: "req_other".into(),
+            repo_id: TEST_REPO_ID.into(),
+            name: "other".into(),
+            author_user_id: owner.clone(),
+            author_role: RequestActorRole::Owner,
+            author_view: ViewId::private(),
+            view: ViewId::private(),
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: full_head.clone(),
+            },
+            main_ancestor_oid: full_head,
+            title: None,
+            event_id: "start_other".into(),
+            now_unix: 3,
+        })
+        .await
+        .unwrap();
+    let advertised = prepare_request_staging_repo(
+        &state,
+        &context.incarnation,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        RequestPusher {
+            actor_user_id: &owner,
+            address_view: &ViewId::private(),
+        },
+        RequestStagingKind::RequestRefsOnly,
+        RequestRefSeeding::Advertise,
+    )
+    .await
+    .unwrap();
+    assert!(
+        advertised
+            .seeded
+            .advertised
+            .iter()
+            .any(|(name, oid)| name == REQUEST_REF && oid == &public_head)
+    );
+    fs::remove_dir_all(advertised.path).unwrap();
+    let pushed = prepare_request_staging_repo(
+        &state,
+        &context.incarnation,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        RequestPusher {
+            actor_user_id: &owner,
+            address_view: &ViewId::private(),
+        },
+        RequestStagingKind::RequestRefsOnly,
+        RequestRefSeeding::Pushed(&["refs/heads/other".into()]),
+    )
+    .await
+    .unwrap();
+    let present = run_git_output(
+        Some(&pushed.path),
+        &["cat-file", "-e", &format!("{public_head}^{{commit}}")],
+        "check advertised object",
+    )
+    .unwrap()
+    .status
+    .success();
+    fs::remove_dir_all(pushed.path).unwrap();
+    assert!(
+        present,
+        "advertised public request head {public_head} is absent from the full-view receive repository"
+    );
 }

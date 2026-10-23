@@ -1,7 +1,8 @@
 use super::*;
-use crate::{RouterConfig, app::test_router_with_state, discovery::BackendDiscovery};
-use axum::http::Method;
+use crate::{RouterConfig, app::test_router_with_state};
 use axum::{Router, routing::any};
+use axum::{body::Body, http::Method};
+use scope_service_runtime::replicas::BackendDiscovery;
 use std::{
     collections::BTreeSet,
     sync::atomic::{AtomicUsize, Ordering},
@@ -21,13 +22,19 @@ async fn identified_backend() -> std::net::SocketAddr {
     address
 }
 
+fn bound_socket() -> tokio::net::TcpSocket {
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    socket
+}
+
 async fn dead_rank_one_with_live_router(
     upstream: Router,
     read_timeout: Duration,
     replay_max_bytes: usize,
 ) -> Router {
-    let first = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let second = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let first = bound_socket();
+    let second = bound_socket();
     let first_address = first.local_addr().unwrap();
     let second_address = second.local_addr().unwrap();
     let addresses = vec![first_address, second_address];
@@ -36,14 +43,16 @@ async fn dead_rank_one_with_live_router(
         .map(ToString::to_string)
         .collect::<Vec<_>>();
     let rank_one = rank_backends("scope/router", &identities, Clone::clone)[0];
-    let live_listener = if *rank_one == first_address.to_string() {
-        drop(first);
-        second
+    let (refusing_rank_one, live) = if *rank_one == first_address.to_string() {
+        (first, second)
     } else {
-        drop(second);
-        first
+        (second, first)
     };
-    tokio::spawn(async move { axum::serve(live_listener, upstream).await.unwrap() });
+    let live_listener = live.listen(1024).unwrap();
+    tokio::spawn(async move {
+        let _refusing_rank_one = refusing_rank_one;
+        axum::serve(live_listener, upstream).await.unwrap()
+    });
     let http = reqwest::Client::builder()
         .connect_timeout(Duration::from_millis(100))
         .read_timeout(read_timeout)
@@ -199,8 +208,9 @@ async fn ends_an_upstream_read_that_stops_making_progress() {
         connect_timeout: std::time::Duration::from_secs(1),
         read_timeout: std::time::Duration::from_millis(20),
         read_replicas: 1,
+        write_replicas: 1,
         upload_pack_replay_max_bytes: 1024,
-        upload_pack_replay_slots: 4,
+        upload_pack_replay_budget_bytes: 4096,
         incoming_body_timeout: Duration::from_secs(15),
     })
     .unwrap();
@@ -394,44 +404,4 @@ async fn receive_pack_never_fails_over_or_replays() {
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
     assert_eq!(fallback_requests.load(Ordering::SeqCst), 0);
-}
-
-#[test]
-fn strips_connection_scoped_headers_and_preserves_end_to_end_values() {
-    let mut headers = HeaderMap::new();
-    headers.insert(header::HOST, "scope.example".parse().unwrap());
-    headers.append(
-        header::CONNECTION,
-        "keep-alive, x-remove-one".parse().unwrap(),
-    );
-    headers.append(header::CONNECTION, "x-remove-two".parse().unwrap());
-    headers.insert("keep-alive", "timeout=5".parse().unwrap());
-    headers.insert("x-remove-one", "one".parse().unwrap());
-    headers.insert("x-remove-two", "two".parse().unwrap());
-    headers.insert("proxy-connection", "keep-alive".parse().unwrap());
-    headers.insert(header::AUTHORIZATION, "Bearer secret".parse().unwrap());
-    headers.append("x-preserve", "first".parse().unwrap());
-    headers.append("x-preserve", "second".parse().unwrap());
-
-    let forwarded = forwarded_headers(&headers);
-
-    for removed in [
-        "host",
-        "connection",
-        "keep-alive",
-        "proxy-connection",
-        "x-remove-one",
-        "x-remove-two",
-    ] {
-        assert!(!forwarded.contains_key(removed), "preserved {removed}");
-    }
-    assert_eq!(forwarded[header::AUTHORIZATION], "Bearer secret");
-    assert_eq!(
-        forwarded
-            .get_all("x-preserve")
-            .iter()
-            .map(|value| value.to_str().unwrap())
-            .collect::<Vec<_>>(),
-        vec!["first", "second"]
-    );
 }

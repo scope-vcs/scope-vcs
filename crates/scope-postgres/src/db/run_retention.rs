@@ -2,8 +2,7 @@ use super::integer_columns;
 use super::{
     RunStore, acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows, entities,
-    git_segments::release_git_segment_references, locks::acquire_shared_aggregate_lock,
-    request_auto_merge::request_id_for_check_run,
+    locks::acquire_shared_aggregate_lock, request_auto_merge::request_id_for_check_run,
 };
 use crate::error::PostgresError;
 use scope_domain::{content::SourceBlob, runs::run::RunState};
@@ -114,9 +113,6 @@ impl RunStore {
             .exec(&tx)
             .await?;
         delete_run_source_references(&tx, &run_ids).await?;
-        for run_id in &run_ids {
-            release_git_segment_references(&tx, "run_source", run_id, now_unix).await?;
-        }
         entities::run::Entity::delete_many()
             .filter(entities::run::Column::Id.is_in(run_ids))
             .exec(&tx)

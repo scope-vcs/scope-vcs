@@ -2,14 +2,15 @@ use crate::{
     config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
-        command::run_git, repository_git::RepositoryGit, request_refs::REQUEST_REF_COMMIT_ERROR,
-        storage::receive_pack_staging_repo_path,
+        cache::GitRepoHandle, command::run_git_output, repository_git::RepositoryGit,
+        request_refs::REQUEST_REF_COMMIT_ERROR, storage::receive_pack_staging_repo_path,
     },
     persistence::ensure_private_dir,
     state::AppState,
 };
 use scope_domain::repository::{RepoLifecycleState, RepositoryIncarnation};
 use scope_git::DEFAULT_GIT_BRANCH;
+use scope_postgres::db::GitPushState;
 use std::{
     fs,
     path::{Path as FsPath, PathBuf},
@@ -33,87 +34,163 @@ fn initialize_first_push_staging_repo(
     if let Some(parent) = repo_root.parent() {
         ensure_private_dir(parent)?;
     }
-    run_git(
-        None,
-        &["init", "--bare", repo_root.to_string_lossy().as_ref()],
-        "initializing receive-pack staging repo",
-    )?;
-    run_git(
-        Some(&repo_root),
-        &["config", "http.receivepack", "true"],
-        "enabling receive-pack",
-    )?;
-    run_git(
-        Some(&repo_root),
-        &[
-            "symbolic-ref",
-            "HEAD",
-            &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
-        ],
-        "setting receive-pack default branch",
-    )?;
+    create_receive_pack_staging_repo(&repo_root, None)?;
     install_first_push_pre_receive_hook(&repo_root)?;
     Ok(repo_root)
 }
 
+pub(crate) struct ReceivePackStagingRepo {
+    pub(crate) path: PathBuf,
+    pub(crate) seed: GitRepoHandle,
+}
+
 pub(crate) async fn ensure_ready_receive_pack_staging_repo(
     state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    owner: &str,
-    repo_name: &str,
-    author_id: &str,
-) -> Result<PathBuf, ApiError> {
-    let repo = state
-        .metadata
-        .repositories()
-        .git_push_context(owner, repo_name, author_id)
-        .await?
-        .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
+    repo: &GitPushState,
+) -> Result<ReceivePackStagingRepo, ApiError> {
     if repo.lifecycle_state != RepoLifecycleState::Ready {
         return Err(ApiError::conflict("repo must be ready before push"));
     }
-    if repo.incarnation != *incarnation {
-        return Err(ApiError::conflict(
-            "repository was recreated during push preparation",
-        ));
-    }
-    let seed_repo = if let Some(head) = repo.git_head.as_ref() {
+    let incarnation = &repo.incarnation;
+    let seed = if let Some(head) = repo.git_head.as_ref() {
         state
             .repository_engine
-            .materialize_repository(state, incarnation, head, &repo.git_pack_spans)
+            .materialize_repository(state, incarnation, head)
             .await?
     } else {
-        RepositoryGit::of_push_context(&repo)
+        RepositoryGit::of_push_state(repo)
             .view_repo(state, repo.repo_config.views(), &repo.access.view)
             .await?
     };
+    let known_head = repo.git_head.as_ref().map(|head| head.head_oid.clone());
     let state = state.clone();
     let incarnation = incarnation.clone();
     crate::git::blocking::run(move || {
-        let repo_root = receive_pack_staging_repo_path(&state, &incarnation)?;
-        if let Some(parent) = repo_root.parent() {
-            ensure_private_dir(parent)?;
+        let repo_root = staging_repo_from_seed(&state, &incarnation, &seed, known_head)?;
+        if let Err(error) = install_ready_pre_receive_hook(&repo_root) {
+            let _ = fs::remove_dir_all(&repo_root);
+            return Err(error);
         }
-        run_git(
-            None,
-            &[
-                "clone",
-                "--bare",
-                "--local",
-                seed_repo.to_string_lossy().as_ref(),
-                repo_root.to_string_lossy().as_ref(),
-            ],
-            "cloning receive-pack staging repo",
-        )?;
-        run_git(
-            Some(&repo_root),
-            &["config", "http.receivepack", "true"],
-            "enabling receive-pack",
-        )?;
-        install_ready_pre_receive_hook(&repo_root)?;
-        Ok(repo_root)
+        Ok(ReceivePackStagingRepo {
+            path: repo_root,
+            seed,
+        })
     })
     .await
+}
+
+struct StagingSeed<'a> {
+    repo: &'a FsPath,
+    main_head: Option<&'a str>,
+}
+
+const RECEIVE_PACK_STAGING_CONFIG: &str = "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n[http]\n\treceivepack = true\n[receive]\n\tunpackLimit = 1\n";
+
+fn create_receive_pack_staging_repo(
+    repo_root: &FsPath,
+    seed: Option<StagingSeed<'_>>,
+) -> Result<(), ApiError> {
+    fs::create_dir(repo_root).map_err(ApiError::internal)?;
+    for directory in [
+        "objects/pack",
+        "objects/info",
+        "refs/heads",
+        "refs/tags",
+        "hooks",
+    ] {
+        fs::create_dir_all(repo_root.join(directory)).map_err(ApiError::internal)?;
+    }
+    fs::write(
+        repo_root.join("HEAD"),
+        format!("ref: refs/heads/{DEFAULT_GIT_BRANCH}\n"),
+    )
+    .map_err(ApiError::internal)?;
+    fs::write(repo_root.join("config"), RECEIVE_PACK_STAGING_CONFIG).map_err(ApiError::internal)?;
+    let Some(seed) = seed else {
+        return Ok(());
+    };
+    let seed_objects = fs::canonicalize(seed.repo.join("objects")).map_err(ApiError::internal)?;
+    fs::write(
+        repo_root.join("objects/info/alternates"),
+        format!("{}\n", seed_objects.display()),
+    )
+    .map_err(ApiError::internal)?;
+    if let Some(main_head) = seed.main_head {
+        fs::write(
+            repo_root.join("refs/heads").join(DEFAULT_GIT_BRANCH),
+            format!("{main_head}\n"),
+        )
+        .map_err(ApiError::internal)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn create_seeded_receive_pack_staging_repo(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    seed: &FsPath,
+) -> Result<PathBuf, ApiError> {
+    staging_repo_from_seed(state, incarnation, seed, None)
+}
+
+fn staging_repo_from_seed(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    seed: &FsPath,
+    known_head: Option<String>,
+) -> Result<PathBuf, ApiError> {
+    let main_head = match known_head {
+        Some(head) => Some(head),
+        None => seed_main_head(seed)?,
+    };
+    let repo_root = receive_pack_staging_repo_path(state, incarnation)?;
+    if let Some(parent) = repo_root.parent() {
+        ensure_private_dir(parent)?;
+    }
+    if let Err(error) = create_receive_pack_staging_repo(
+        &repo_root,
+        Some(StagingSeed {
+            repo: seed,
+            main_head: main_head.as_deref(),
+        }),
+    ) {
+        let _ = fs::remove_dir_all(&repo_root);
+        return Err(error);
+    }
+    Ok(repo_root)
+}
+
+pub(crate) fn add_receive_pack_alternate(
+    repo_root: &FsPath,
+    objects: &FsPath,
+) -> Result<(), ApiError> {
+    let objects = fs::canonicalize(objects).map_err(ApiError::internal)?;
+    let alternates = repo_root.join("objects/info/alternates");
+    let mut lines = fs::read_to_string(&alternates).unwrap_or_default();
+    if lines.lines().any(|line| FsPath::new(line) == objects) {
+        return Ok(());
+    }
+    lines.push_str(&format!("{}\n", objects.display()));
+    fs::write(alternates, lines).map_err(ApiError::internal)
+}
+
+fn seed_main_head(seed: &FsPath) -> Result<Option<String>, ApiError> {
+    let output = run_git_output(
+        Some(seed),
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
+        ],
+        "reading the receive-pack seed head",
+    )?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    String::from_utf8(output.stdout)
+        .map(|head| Some(head.trim().to_string()))
+        .map_err(ApiError::internal)
 }
 
 pub(crate) fn install_first_push_pre_receive_hook(repo_root: &FsPath) -> Result<(), ApiError> {

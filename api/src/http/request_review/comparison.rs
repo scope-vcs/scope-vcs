@@ -67,11 +67,6 @@ pub(super) fn unavailable_comparison(
     }
 }
 
-pub(super) struct ComparisonFileSelection<'a> {
-    pub(super) limit: usize,
-    pub(super) path: Option<&'a str>,
-}
-
 pub(super) fn inspect_comparison(
     raw_repo: &FsPath,
     repo: &RepositoryReadPolicy,
@@ -79,7 +74,7 @@ pub(super) fn inspect_comparison(
     revision: &RequestRevision,
     mode: RequestComparisonMode,
     selected_commit: Option<&str>,
-    files: ComparisonFileSelection<'_>,
+    file_limit: usize,
 ) -> Result<RequestComparisonResponse, ApiError> {
     let comparison = resolve_comparison(raw_repo, revision, access, mode, selected_commit)?;
     let identity = comparison.identity();
@@ -94,7 +89,7 @@ pub(super) fn inspect_comparison(
         access,
         base_oid.as_deref(),
         &identity.head_oid,
-        files,
+        file_limit,
     )?;
     Ok(RequestComparisonResponse {
         revision_id: revision.id.clone(),
@@ -137,63 +132,20 @@ pub(crate) async fn get_request_revision_file_diff(
         .request_revision(&request.id, &revision_id)
         .await?
         .ok_or_else(|| ApiError::not_found("request revision not found"))?;
-    let path = normalized_path(&input.path)?;
-    let inspected_path = path.clone();
-    let incarnation = repo.context.incarnation();
-    let inspection_state = state.clone();
-    let (file, old_content, new_content) = with_request_revision_store_repo(
+    let path = normalized_scope_path(&input.path)?;
+    let diff = request_diff_file_response(
         &state,
-        &incarnation,
+        repo,
         &request,
         &revision,
-        move |raw_repo, revision| {
-            let mut repo = repo;
-            repo.policy = crate::use_cases::request_inspection_policy::resolve_paths(
-                &inspection_state,
-                &repo,
-                &access.view,
-                std::collections::BTreeSet::from([ScopePath::parse(format!("/{inspected_path}"))
-                    .map_err(ApiError::bad_request)?]),
-            )?;
-            let comparison = inspect_comparison(
-                raw_repo,
-                &repo,
-                &access,
-                revision,
-                mode,
-                None,
-                ComparisonFileSelection {
-                    limit: 1,
-                    path: Some(&inspected_path),
-                },
-            )?;
-            let file = comparison
-                .files
-                .into_iter()
-                .find(|file| file.path == inspected_path)
-                .ok_or_else(|| ApiError::not_found("request revision file not found"))?;
-            let old_content = file
-                .old_oid
-                .as_deref()
-                .map(|oid| git_blob_content(raw_repo, oid))
-                .transpose()?;
-            let new_content = file
-                .new_oid
-                .as_deref()
-                .map(|oid| git_blob_content(raw_repo, oid))
-                .transpose()?;
-            Ok((file, old_content, new_content))
+        match mode {
+            RequestComparisonMode::Push => RequestDiffRange::Push,
+            _ => RequestDiffRange::Request,
         },
+        path,
     )
     .await?;
-    Ok(Json(ReviewFileDiffResponse {
-        path,
-        kind: file.kind,
-        old_mode: file.old_mode,
-        new_mode: file.new_mode,
-        old_content,
-        new_content,
-    }))
+    Ok(Json(diff))
 }
 
 #[cfg(test)]

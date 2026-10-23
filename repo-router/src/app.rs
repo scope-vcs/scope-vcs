@@ -1,10 +1,6 @@
-use crate::{
-    RouterConfig,
-    backend_selection::BackendSelector,
-    discovery::{BackendDiscovery, DiscoveryFreshness},
-    proxy,
-};
+use crate::{RouterConfig, backend_selection::BackendSelector, proxy};
 use axum::{Router, routing::get};
+use scope_service_runtime::replicas::{BackendDiscovery, DiscoveryFreshness};
 use std::sync::Arc;
 
 pub(crate) struct RouterState {
@@ -15,18 +11,22 @@ pub(crate) struct RouterState {
 }
 
 pub fn router(config: RouterConfig) -> anyhow::Result<Router> {
-    let discovery = BackendDiscovery::new(&config);
+    let discovery = BackendDiscovery::new(
+        &config.backend_authority,
+        config.dns_refresh,
+        config.dns_max_stale,
+    );
     let http = reqwest::Client::builder()
         .connect_timeout(config.connect_timeout)
         .read_timeout(config.read_timeout)
         .build()?;
-    let selector = BackendSelector::new(config.read_replicas);
+    let selector = BackendSelector::new(config.read_replicas, config.write_replicas);
     Ok(router_with_state(RouterState {
         discovery,
         http,
         selector,
         replay: crate::replay::ReplayBuffer::new(
-            config.upload_pack_replay_slots,
+            config.upload_pack_replay_budget_bytes,
             config.upload_pack_replay_max_bytes,
             config.incoming_body_timeout,
         )?,
@@ -76,9 +76,9 @@ pub(crate) fn test_router_with_state(
     router_with_state(RouterState {
         discovery,
         http,
-        selector: BackendSelector::new(read_replicas),
+        selector: BackendSelector::new(read_replicas, 1),
         replay: crate::replay::ReplayBuffer::new(
-            4,
+            4 * upload_pack_replay_max_bytes,
             upload_pack_replay_max_bytes,
             std::time::Duration::from_secs(15),
         )

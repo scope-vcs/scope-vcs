@@ -672,7 +672,7 @@ async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_r
         "snapshot should require its base instead of carrying main: {header}"
     );
 
-    fs::remove_dir_all(crate::git::storage::request_ref_store_repo_path(
+    fs::remove_dir_all(crate::git::storage::request_objects_root(
         &state,
         &test_repo_incarnation(),
     ))

@@ -11,9 +11,12 @@ use scope_api_contract::routes::{
 use scope_postgres::db::RecordRequestChecksCommand;
 use std::sync::atomic::Ordering;
 
+mod carrier_pull_requests;
 mod native_runs_list;
 mod public;
 mod public_repositories;
+mod review_bot_gate;
+mod review_imports;
 mod run_page;
 
 pub(in crate::workflow_tests) const REQUIRED_CHECK: &str = "ci / test";
@@ -514,6 +517,26 @@ async fn a_merge_reads_stale_green_checks_again_and_refuses_when_github_cannot_a
     assert_eq!(
         request.checks().await["mergeability"]["status"],
         "ChecksFailed"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_merge_asks_github_before_refusing_checks_saved_as_pending() {
+    let request = owner_request("github-checks-pending-merge", &[REQUIRED_CHECK]).await;
+    let (state, fake, head) = (&request.state, &request.fake, request.head());
+    push_pass(state, unix_now()).await;
+    assert_eq!(
+        request.checks().await["mergeability"]["status"],
+        "ChecksPending"
+    );
+    fake.report_check_runs(
+        &head,
+        vec![check_run(1, REQUIRED_CHECK, &head, Some("success"))],
+    );
+
+    assert_eq!(
+        expect_json(merge(state, &request.request_id).await, StatusCode::OK).await["request"]["state"],
+        "Merged"
     );
 }
 

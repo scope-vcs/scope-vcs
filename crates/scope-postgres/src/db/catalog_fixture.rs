@@ -3,7 +3,11 @@ use scope_domain::{
     content::SourceBlob,
     landing_file::RepositoryLandingFile,
     repo_actions::RepoStorageCleanup,
-    repository::{CatalogError, Repository, git::GitSegmentUpload, repo_id},
+    repository::{
+        CatalogError, Repository,
+        git::{GitPoolPack, GitSegmentUpload},
+        repo_id,
+    },
     requests::{
         Request, RequestDiscussion, RequestDiscussionReadState, RequestDiscussionReply,
         RequestEvent, RequestRevision,
@@ -21,6 +25,7 @@ pub struct CatalogFixture {
     pub repository_landing_files: BTreeMap<String, RepositoryLandingFile>,
     pub repository_workflow_catalogs: BTreeMap<String, RepositoryWorkflowCatalog>,
     pub git_segment_uploads: Vec<GitSegmentUpload>,
+    pub main_pool_packs: BTreeMap<String, Vec<GitPoolPack>>,
     pub requests: BTreeMap<String, Request>,
     pub request_revisions: BTreeMap<String, RequestRevision>,
     pub request_discussions: BTreeMap<String, RequestDiscussion>,

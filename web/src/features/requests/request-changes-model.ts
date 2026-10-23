@@ -1,6 +1,6 @@
 import { displayRouteFilePath } from '../../lib/route-file'
 import type { CommitDetail, CommitSummary } from '@/api/types'
-import type { RequestRevisionListResponse, ViewId } from '@/api/types.generated'
+import type { RequestComparisonMode, RequestRevisionListResponse, ViewId } from '@/api/types.generated'
 import type { RequestDiscussion } from './request-discussion-types'
 
 type RequestChangeSelection = {
@@ -103,16 +103,27 @@ export function missingRequestCommitFileError(
     : 'This file is not part of the selected commit.'
 }
 
+export function latestRequestRevision(revisions: RequestRevisionListResponse['revisions']) {
+  return revisions.reduce<RequestRevisionListResponse['revisions'][number] | null>(
+    (latest, revision) => !latest || revision.position > latest.position ? revision : latest,
+    null,
+  )
+}
+
 export function discussionsForRequestComparison(
   discussions: RequestDiscussion[],
   revision: RequestRevisionListResponse['revisions'][number] | null,
+  mode: RequestComparisonMode,
   commitOid: string | null,
 ) {
   if (!revision) return []
   return discussions
     .filter((discussion) => {
       const anchor = discussion.anchor
-      if (!anchor || anchor.revision_id !== revision.id) return false
+      if (!anchor) return false
+      if (anchor.revision_id !== revision.id) {
+        return mode === 'request' && anchor.latest?.revision_id === revision.id
+      }
       if (!commitOid) return anchor.commit_oid === null
       if (anchor.commit_oid) return anchor.commit_oid === commitOid
       return commitOid === revision.commits.at(-1)?.oid
