@@ -375,25 +375,33 @@ async fn a_replica_with_queued_merges_yields_the_merge_turn_to_a_waiting_replica
 async fn a_merge_received_by_any_replica_is_committed_by_the_repository_owner() {
     let names = ["routed", "owner-unreachable"];
     let landing = DisjointRequests::open("routed-merge", &names).await;
-    let owner = landing.state.replica_for_tests();
-    let (owner_origin, _owner_server) = spawn_test_server(&owner).await;
-    let routed_to = |address: std::net::SocketAddr| {
+    let routing_to = |address: std::net::SocketAddr| {
+        Some(std::sync::Arc::new(
+            crate::http::merge_routing::MergeRouting::fixed(vec![address]),
+        ))
+    };
+    let routed_to = |address| {
         router(AppState {
-            merge_routing: Some(std::sync::Arc::new(
-                crate::http::merge_routing::MergeRouting::fixed(vec![address]),
-            )),
+            merge_routing: routing_to(address),
             ..landing.state.clone()
         })
     };
+    let owner_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let owner_address = owner_listener.local_addr().unwrap();
+    let owner = AppState {
+        merge_routing: routing_to(owner_address),
+        ..landing.state.replica_for_tests()
+    };
+    let _owner_server = TestServer(tokio::spawn({
+        let app = router(owner.clone());
+        async move { axum::serve(owner_listener, app).await.unwrap() }
+    }));
     let admin = landing.state.metadata.admin();
 
     let held = admin.lock_aggregates_for_tests().await.unwrap();
     let routed = commit_blocked_behind_held_lock(
         &landing.state,
-        landing.merge_on(
-            routed_to(owner_origin.trim_start_matches("http://").parse().unwrap()),
-            &landing.request_ids[0],
-        ),
+        landing.merge_on(routed_to(owner_address), &landing.request_ids[0]),
     )
     .await;
     assert_eq!(owner.merge_committer.submitted(TEST_REPO_ID), 1);

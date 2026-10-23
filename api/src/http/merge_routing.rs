@@ -1,12 +1,13 @@
 use crate::{error::ApiError, state::AppState};
 use axum::{
     body::{Body, Bytes},
-    extract::{Request, State},
+    extract::{Path, Request, State},
     http::{HeaderValue, request::Parts},
     middleware::Next,
     response::{IntoResponse, Response},
 };
 use scope_api_contract::routes;
+use scope_domain::repository::repo_id;
 use scope_service_runtime::{
     outbound_http::send_traced,
     proxy::{forwarded_headers, proxied_response},
@@ -20,6 +21,7 @@ const PRIVATE_DOMAIN_ENV: &str = "RAILWAY_PRIVATE_DOMAIN";
 const DISCOVERY_REFRESH: Duration = Duration::from_secs(1);
 const DISCOVERY_MAX_STALE: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub(crate) struct MergeRouting {
     replicas: BackendDiscovery,
@@ -49,6 +51,7 @@ impl MergeRouting {
             replicas,
             http: reqwest::Client::builder()
                 .connect_timeout(CONNECT_TIMEOUT)
+                .timeout(RESPONSE_TIMEOUT)
                 .build()?,
         })
     }
@@ -71,6 +74,7 @@ impl MergeRouting {
 
 pub(crate) async fn route_to_owner(
     State(state): State<AppState>,
+    Path((owner_name, repo_name, _)): Path<(String, String, String)>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -80,9 +84,7 @@ pub(crate) async fn route_to_owner(
     if request.headers().contains_key(ROUTED_HEADER) {
         return next.run(request).await;
     }
-    let Some(repository) = repository_key(request.uri().path()) else {
-        return next.run(request).await;
-    };
+    let repository = repo_id(&owner_name, &repo_name);
     let (parts, body) = request.into_parts();
     let body = match axum::body::to_bytes(body, MAX_MERGE_BODY_BYTES).await {
         Ok(body) => body,
@@ -126,11 +128,4 @@ async fn forward(
         routes::REPO_REQUEST_MERGE,
     )
     .await
-}
-
-fn repository_key(path: &str) -> Option<String> {
-    let mut segments = path.strip_prefix("/v1/repos/")?.split('/');
-    let owner = segments.next().filter(|owner| !owner.is_empty())?;
-    let repository = segments.next().filter(|name| !name.is_empty())?;
-    Some(format!("{owner}/{repository}"))
 }
