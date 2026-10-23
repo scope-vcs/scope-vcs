@@ -227,7 +227,10 @@ pub use request_media::{
     RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
     ValidateRequestAttachmentSourceCommand,
 };
-pub use request_merge::{LandedRequestCandidate, LandedRequestCompletion};
+pub use request_merge::{
+    LandedRequestCandidate, LandedRequestCompletion, MergeRequestContentMutation,
+    MergeRequestContentsOutcome,
+};
 pub use request_queue::{
     RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
 };

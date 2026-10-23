@@ -1,5 +1,7 @@
 use super::super::main_pool::main_pool_packs;
 use super::*;
+use std::time::Duration;
+use tokio::task::JoinHandle;
 
 struct DisjointRequests {
     state: AppState,
@@ -12,6 +14,18 @@ struct DisjointRequests {
 
 impl DisjointRequests {
     async fn open(label: &str, names: &[&str]) -> Self {
+        let files = names
+            .iter()
+            .map(|name| (*name, format!("{name}.txt")))
+            .collect::<Vec<_>>();
+        let files = files
+            .iter()
+            .map(|(name, file)| (*name, file.as_str()))
+            .collect::<Vec<_>>();
+        Self::open_with_files(label, &files).await
+    }
+
+    async fn open_with_files(label: &str, requests: &[(&str, &str)]) -> Self {
         let (state, source, base_head) =
             super::super::push_intent_completion::published_git_fixture(label).await;
         let app = router(state.clone());
@@ -21,7 +35,7 @@ impl DisjointRequests {
         configure_bearer_header(&source, &remote, &bearer);
 
         let mut request_ids = Vec::new();
-        for name in names {
+        for (name, file) in requests {
             let started = api_request(
                 app.clone(),
                 "POST",
@@ -45,8 +59,8 @@ impl DisjointRequests {
                 &source,
                 &remote,
                 &format!("refs/heads/{name}"),
-                &format!("{name}.txt"),
-                "landed work\n",
+                file,
+                &format!("{name} work\n"),
                 name,
             )
             .unwrap();
@@ -86,7 +100,7 @@ impl DisjointRequests {
                 live_file_content(&self.state, &format!("/{name}.txt"))
                     .await
                     .as_deref(),
-                Some("landed work\n")
+                Some(format!("{name} work\n").as_str())
             );
         }
         let sequences = main_pool_packs(&self.state)
@@ -115,25 +129,45 @@ async fn concurrent_merges_of_disjoint_requests_all_land() {
     landing.assert_all_landed(&names, merged).await;
 }
 
+impl DisjointRequests {
+    async fn queue_behind_held_turn(&self, request_ids: &[String]) -> Vec<JoinHandle<Response>> {
+        let committer = self.state.merge_committer.clone();
+        let mut merges = Vec::new();
+        for (queued, id) in request_ids.iter().enumerate() {
+            merges.push(tokio::spawn(self.merge(id)));
+            tokio::time::timeout(Duration::from_secs(60), async {
+                while committer.queued(TEST_REPO_ID) <= queued {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .expect("every merge must queue behind the held merge turn");
+        }
+        merges
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_merge_waits_for_the_earlier_merge_to_commit_and_then_lands() {
-    let names = ["left", "right"];
-    let landing = DisjointRequests::open("same-main-landing", &names).await;
+async fn merges_queued_on_one_replica_commit_in_one_transaction() {
+    let names = ["left", "middle", "right"];
+    let landing = DisjointRequests::open("batched-landing", &names).await;
     let admin = landing.state.metadata.admin();
+    let repositories = landing.state.metadata.repositories();
+    let turn = repositories.acquire_merge_turn(TEST_REPO_ID).await.unwrap();
     let held = admin.lock_aggregates_for_tests().await.unwrap();
 
-    let merges = landing
-        .request_ids
-        .iter()
-        .map(|id| tokio::spawn(landing.merge(id)))
-        .collect::<Vec<_>>();
-    tokio::time::timeout(std::time::Duration::from_secs(60), async {
-        while admin.lock_waiters_for_tests().await.unwrap() < 2 {
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let merges = landing.queue_behind_held_turn(&landing.request_ids).await;
+    turn.release().await;
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while landing.state.merge_committer.queued(TEST_REPO_ID) > 0
+            || admin.lock_waiters_for_tests().await.unwrap() < 1
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
     })
     .await
-    .expect("one merge must wait to commit while the other waits for its turn");
+    .expect("the committer must take every queued merge into one waiting transaction");
+    assert_eq!(admin.lock_waiters_for_tests().await.unwrap(), 1);
     held.rollback().await.unwrap();
 
     let mut merged = Vec::new();
@@ -141,4 +175,92 @@ async fn a_merge_waits_for_the_earlier_merge_to_commit_and_then_lands() {
         merged.push(merge.await.unwrap());
     }
     landing.assert_all_landed(&names, merged).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_conflicting_merge_fails_alone_and_the_rest_of_its_batch_lands() {
+    let landing = DisjointRequests::open_with_files(
+        "batched-conflict",
+        &[
+            ("left", "left.txt"),
+            ("first-claim", "claimed.txt"),
+            ("second-claim", "claimed.txt"),
+            ("right", "right.txt"),
+        ],
+    )
+    .await;
+    let turn = landing
+        .state
+        .metadata
+        .repositories()
+        .acquire_merge_turn(TEST_REPO_ID)
+        .await
+        .unwrap();
+    let merges = landing.queue_behind_held_turn(&landing.request_ids).await;
+    turn.release().await;
+
+    let mut merged = Vec::new();
+    for merge in merges {
+        merged.push(merge.await.unwrap());
+    }
+    let second_claim = merged.remove(2);
+    assert_eq!(second_claim.status(), StatusCode::CONFLICT);
+    for merged in merged {
+        assert_eq!(
+            expect_json(merged, StatusCode::OK).await["request"]["state"],
+            "Merged"
+        );
+    }
+    assert_eq!(
+        live_file_content(&landing.state, "/claimed.txt")
+            .await
+            .as_deref(),
+        Some("first-claim work\n")
+    );
+    for name in ["left", "right"] {
+        assert_eq!(
+            live_file_content(&landing.state, &format!("/{name}.txt"))
+                .await
+                .as_deref(),
+            Some(format!("{name} work\n").as_str())
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_merge_whose_caller_disconnected_still_announces_its_change() {
+    let landing = DisjointRequests::open("disconnected-merge", &["left"]).await;
+    let mut events = landing.state.repo_events.subscribe(TEST_REPO_ID);
+    let turn = landing
+        .state
+        .metadata
+        .repositories()
+        .acquire_merge_turn(TEST_REPO_ID)
+        .await
+        .unwrap();
+    let caller = landing
+        .queue_behind_held_turn(&landing.request_ids)
+        .await
+        .pop()
+        .unwrap();
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    turn.release().await;
+
+    tokio::time::timeout(Duration::from_secs(30), events.recv())
+        .await
+        .expect("the landed merge must announce its repository change")
+        .unwrap();
+    assert_eq!(
+        landing
+            .state
+            .metadata
+            .requests()
+            .request_by_id(&landing.request_ids[0])
+            .await
+            .unwrap()
+            .unwrap()
+            .state(),
+        scope_domain::requests::RequestState::Merged
+    );
 }
