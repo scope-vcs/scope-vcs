@@ -2,7 +2,7 @@
   "lockfiles": {
     "Cargo.lock": "53d4d28c6300385009f4be695abfce68903349a3da0f0854b43b51d032a2f1b7",
     "cli/Cargo.lock": "3fc6d65e4df4fa7c4c3db81067731c35c7b5402f085f6bdee018a8cb7f3ce51c",
-    "web/pnpm-lock.yaml": "d33f672cf35ee46fe334434f785af6d6d723dae32adad2a04c8c7dbe16fc9df5",
+    "web/pnpm-lock.yaml": "6bd3f42042263bab61d00a6688468460e4b5fec13724e1413e103b8d78f93797",
     "dependency-analyzer/package-lock.json": "c4376d39618232d12efce2cd942800a994e6bfdbe94e368c09e515b439057e92"
   },
   "inputs": {
@@ -54,7 +54,7 @@
   "artifacts": {
     "legal/third-party-rust.txt": "0249ece2e1c3d81a4dd7215ce4c92c45defd37f9a5ba8a52b16dc6a2389c35c7",
     "legal/third-party-dependency-analyzer.txt": "f3fdbea60eaef99e21f1b61878dd83dc9059d91e4c75ec8c10910f46fd5cb77d",
-    "web/public/third-party-licenses.txt": "92c3dc2ac68795afb56cb26bc91852aa80361459e864355c47385b656966819e",
+    "web/public/third-party-licenses.txt": "4b13caee61ef13ddb156b26fa932d7e20aafce8340b9550423af3be2d140f268",
     "web/public/LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "web/public/NOTICE.txt": "0d30174ea34f0f7fbf7839cb5aa93a1e9b3d1a7166ed43ed88c6d64396a748a4"
   },
@@ -1066,7 +1066,7 @@
     {"ecosystem": "web", "name": "xmlbuilder2", "version": "4.0.3", "url": "https://registry.npmjs.org/xmlbuilder2/-/xmlbuilder2-4.0.3.tgz", "integrity": "sha512-bx8Q1STctnNaaDymWnkfQLKofs0mGNN7rLLapJlGuV3VlvegD7Ls4ggMjE3aUSWItCCzU0PEv45lI87iSigiCA==", "lockfiles": ["web/pnpm-lock.yaml"], "license": "MIT", "authors": "Ozgur Ozcitak <oozcitak@gmail.com>", "repository": {"type": "https", "url": "https://github.com/oozcitak/xmlbuilder2.git"}, "archive_sha256": "ec05eccfe8c35a04ff19eddf30eeb3f96fc66f5dbe0f094e7c26a52fb69c2bdf", "documents": [{"path": "LICENSE.txt", "sha256": "05affe7628defe07716fc2159a1f5e137b51381de0f33b5ae77f36108736a628"}], "selected_license": "MIT"},
     {"ecosystem": "web", "name": "yallist", "version": "3.1.1", "url": "https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz", "integrity": "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==", "lockfiles": ["web/pnpm-lock.yaml"], "license": "ISC", "authors": "Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me/)", "repository": {"type": "git", "url": "git+https://github.com/isaacs/yallist.git"}, "archive_sha256": "50f14ae6cfe8360cb2259ba3e93305e069036f13251d69d3cbee9e1d4775ca04", "documents": [{"path": "LICENSE", "sha256": "4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b"}], "selected_license": "ISC"},
     {"ecosystem": "web", "name": "yaml", "version": "2.9.0", "url": "https://registry.npmjs.org/yaml/-/yaml-2.9.0.tgz", "integrity": "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==", "lockfiles": ["web/pnpm-lock.yaml"], "license": "ISC", "authors": "Eemeli Aro <eemeli@gmail.com>", "repository": "github:eemeli/yaml", "archive_sha256": "008fa204cb1ba700e0272ba045abbf09a6ffe63456e8146ba97cac6c2ad1ef91", "documents": [{"path": "LICENSE", "sha256": "5bba27375d93e9119f76c1015f7672cf9ad5f70952296e0842fb2243d6376869"}], "selected_license": "ISC"},
-    {"ecosystem": "web", "name": "zod", "version": "4.6.5", "url": "https://registry.npmjs.org/zod/-/zod-4.6.5.tgz", "integrity": "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==", "lockfiles": ["web/pnpm-lock.yaml"], "license": "MIT", "authors": "Colin McDonnell <zod@colinhacks.com>", "repository": {"type": "git", "url": "git+https://github.com/colinhacks/zod.git"}, "archive_sha256": "a78c0c533de30dc1c4afc259ac43ac06e390cb0da8d2e32eae355301b50b36fc", "documents": [{"path": "LICENSE", "sha256": "3f1189b28e3866e0d979968d466b78f813f76827cfdca1fbb124cc0a5c8841f8"}], "selected_license": "MIT"},
+    {"ecosystem": "web", "name": "zod", "version": "4.6.7", "url": "https://registry.npmjs.org/zod/-/zod-4.6.7.tgz", "integrity": "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==", "lockfiles": ["web/pnpm-lock.yaml"], "license": "MIT", "authors": "Colin McDonnell <zod@colinhacks.com>", "repository": {"type": "git", "url": "git+https://github.com/colinhacks/zod.git"}, "archive_sha256": "84efd155bed93270286e793fc951be270b536cbd5b0eeb111f0fa3967201d698", "documents": [{"path": "LICENSE", "sha256": "3f1189b28e3866e0d979968d466b78f813f76827cfdca1fbb124cc0a5c8841f8"}], "selected_license": "MIT"},
     {"ecosystem": "web", "name": "zwitch", "version": "2.0.4", "url": "https://registry.npmjs.org/zwitch/-/zwitch-2.0.4.tgz", "integrity": "sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==", "lockfiles": ["web/pnpm-lock.yaml"], "license": "MIT", "authors": "Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)", "repository": "wooorm/zwitch", "archive_sha256": "2c162e000f5fb5a816987d6f8ad7aad295203f777a5992d514ae4660778a51a4", "documents": [{"path": "license", "sha256": "ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d"}], "selected_license": "MIT"}
   ]
 }
