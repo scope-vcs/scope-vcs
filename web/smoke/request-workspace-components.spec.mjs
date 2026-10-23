@@ -387,7 +387,7 @@ test('stack context preserves actionable children and row order when parents are
   const { page, base, errors } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests', base).href)
   const node = { id: 'parent', name: 'parent', title: 'Safe parent', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
-  const row = (id, parent, group = 'needs_you') => ({ request: { id, title: `Actionable ${id}`, stack_parent: parent, stack_depth: 2 }, author: { handle: 'adam' }, attention: { group, reason: 'authored', can_set_aside: true }, attention_at_unix: 1790000000 })
+  const row = (id, parent, group = 'needs_you') => ({ request: { id, title: `Actionable ${id}`, stack_parent: parent, stack_depth: 2 }, author: { handle: 'adam' }, attention: { group, reason: 'authored', can_set_aside: true }, attention_at_unix: 1790000000, next_step: 'review' })
   const parent = { kind: 'available', request: node }
   const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
   const requests = [row('child', parent), row('sibling', parent), row('opaque', { kind: 'unavailable' })]
@@ -440,6 +440,115 @@ test('stack context preserves actionable children and row order when parents are
   assert.deepEqual(errors, [])
 })
 
+const stackHintItems = (hint) => hint.locator('li').evaluateAll((items) => items.map((item) => [
+  item.querySelector('.request-workspace-rail-hint-title').textContent,
+  item.querySelector('[data-step]')?.dataset.step,
+  item.querySelector('.request-workspace-rail-hint-step-slot').title,
+  item.querySelector('.request-workspace-rail-hint-age')?.textContent ?? null,
+  Number(item.style.getPropertyValue('--stack-depth')),
+  item.hasAttribute('data-hovered'),
+]))
+
+test('the collapsed rail shows a request\'s whole stack on hover while the stack is expanded', async (t) => {
+  const { page, base, errors, railClosed } = await workspacePage(t)
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const node = { id: 'base', name: 'base', title: 'Stacked base', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
+  const row = (id, parent, extra = {}) => ({
+    request: { id, title: `Stacked ${id}`, stack_parent: parent && { kind: 'available', request: { ...node, id: parent, title: `Stacked ${parent}` } }, stack_depth: 1 },
+    author: { handle: 'adam' },
+    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention_at_unix: 1790000000,
+    next_step: 'review',
+    ...extra,
+  })
+  const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  const requests = [row('base', null), row('first', 'base'), row('ready', 'first', { next_step: 'merge' }), row('plain', null)]
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { active: { ...empty, requests }, unclaimed: empty, set_aside: empty, done: empty })
+  await page.locator('[data-request-id="ready"]').waitFor()
+  await page.keyboard.press('[')
+  await railClosed()
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 88)
+  const avatar = page.locator('[data-request-id="ready"] .request-workspace-row-avatar')
+  await avatar.hover()
+  const hint = page.locator('.request-workspace-rail-hint')
+  assert.deepEqual(await stackHintItems(hint), [
+    ['Stacked base', 'review', 'Your request', null, 0, false],
+    ['Stacked first', 'review', 'Your request', null, 1, false],
+    ['Stacked ready', 'merge', 'Ready to merge', 'Sep 21', 2, true],
+  ])
+  const title = await hint.locator('li[data-hovered] .request-workspace-rail-hint-title').boundingBox()
+  const target = await avatar.boundingBox()
+  assert(Math.abs(title.y + title.height / 2 - (target.y + target.height / 2)) < 1, 'the hovered request lines up with its avatar')
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-rail-expanded-hint.png` })
+  const baseLink = hint.getByRole('link', { name: /^Stacked base/, includeHidden: true })
+  const destination = await baseLink.boundingBox()
+  const handle = await page.locator('.request-workspace-resize-handle').boundingBox()
+  const avatarCenter = target.y + target.height / 2
+  const crossedHandle = []
+  for (let x = target.x + target.width / 2; x <= destination.x + 20; x += 1) {
+    await page.mouse.move(x, avatarCenter)
+    if (await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.classList.contains('request-workspace-resize-handle'), [x, avatarCenter])) crossedHandle.push(x)
+  }
+  assert(crossedHandle.length > 0 && crossedHandle.every((x) => Math.abs(x - handle.x) < 8), 'the path to the hint crosses the resize handle')
+  await page.mouse.move(destination.x + 20, destination.y + destination.height / 2, { steps: 12 })
+  assert.equal(await hint.locator('li[data-hovered] .request-workspace-rail-hint-title').textContent(), 'Stacked ready')
+  await page.mouse.down()
+  await page.mouse.up()
+  await page.waitForURL(/\/requests\/base$/)
+  await hint.waitFor({ state: 'detached' })
+  assert.equal(await page.locator('.request-workspace-sidebar').getAttribute('data-state'), 'closed')
+  assert.equal(await page.locator('[data-request-id="base"] .request-workspace-row-link').getAttribute('aria-current'), 'page')
+
+  await avatar.hover()
+  await page.mouse.move(700, 400, { steps: 8 })
+  await hint.waitFor({ state: 'detached' })
+  await page.locator('[data-request-id="plain"] .request-workspace-row-avatar').hover()
+  assert.deepEqual(await stackHintItems(hint), [['Stacked plain', 'review', 'Your request', 'Sep 21', 0, true]])
+  assert.equal(await hint.locator('a').count(), 0)
+  assert.equal(await hint.evaluate((node) => getComputedStyle(node).pointerEvents), 'none')
+  assert.deepEqual(errors, [])
+})
+
+test('a stack taller than the window stays inside it and scrolls to every request', async (t) => {
+  const { page, base, errors, railClosed } = await workspacePage(t)
+  await page.setViewportSize({ width: 1280, height: 360 })
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const node = { name: 'node', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
+  const ids = Array.from({ length: 16 }, (_, index) => `layer-${index}`)
+  const requests = ids.map((id, index) => ({
+    request: { id, title: `Layer ${index}`, stack_parent: index > 0 && { kind: 'available', request: { ...node, id: ids[index - 1], title: `Layer ${index - 1}` } }, stack_depth: 1 },
+    author: { handle: 'adam' },
+    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention_at_unix: 1790000000,
+    next_step: 'review',
+  }))
+  const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { active: { ...empty, requests }, unclaimed: empty, set_aside: empty, done: empty })
+  await page.locator('[data-request-id="layer-0"]').waitFor()
+  await page.keyboard.press('[')
+  await railClosed()
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 88)
+  const avatar = page.locator('[data-request-id="layer-0"] .request-workspace-row-avatar')
+  await avatar.hover()
+  const hint = page.locator('.request-workspace-rail-hint')
+  assert.equal(await hint.locator('li').count(), 16)
+  const placement = await hint.evaluate((node) => ({ ...node.getBoundingClientRect().toJSON(), scrollable: node.scrollHeight > node.clientHeight }))
+  assert(placement.top >= 8 && placement.bottom <= 352 && placement.scrollable, 'the hint fits the window and scrolls')
+  const target = await avatar.boundingBox()
+  await page.mouse.move(placement.left + 60, target.y + target.height / 2, { steps: 20 })
+  await page.mouse.wheel(0, 2000)
+  const last = hint.getByRole('link', { name: /^Layer 15/, includeHidden: true })
+  await page.waitForFunction(() => {
+    const hint = document.querySelector('.request-workspace-rail-hint')
+    return hint.scrollTop + hint.clientHeight >= hint.scrollHeight - 1
+  })
+  const destination = await last.boundingBox()
+  assert(destination.y + destination.height <= 352, 'the last request scrolls into the window')
+  await page.mouse.click(destination.x + 40, destination.y + destination.height / 2)
+  await page.waitForURL(/\/requests\/layer-15$/)
+  assert.deepEqual(errors, [])
+})
+
 test('stacks fold behind their base request and show their details only on hover', async (t) => {
   const { page, base, errors } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests', base).href)
@@ -449,6 +558,7 @@ test('stacks fold behind their base request and show their details only on hover
     author: { handle: 'adam' },
     attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
     attention_at_unix: 1790000000,
+    next_step: 'review',
     ...extra,
   })
   const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
@@ -508,6 +618,17 @@ test('stacks fold behind their base request and show their details only on hover
   assert.equal(await baseRow.isVisible(), true)
   assert.equal(await baseRow.locator('.request-workspace-row-avatar').evaluate((node) => getComputedStyle(node).outlineStyle), 'solid')
   assert.equal(await page.locator('.request-workspace-rail-more').textContent(), '+2')
+  await baseRow.locator('.request-workspace-row-avatar').hover()
+  const stackHint = page.locator('.request-workspace-rail-hint')
+  assert.deepEqual(await stackHintItems(stackHint), [
+    ['Stacked base', 'review', 'Your request', 'Sep 21', 0, true],
+    ['Stacked first', 'review', 'Your request', null, 1, false],
+    ['Stacked ready', 'merge', 'Ready to merge', null, 2, false],
+  ])
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-rail-hint.png` })
+  await page.mouse.move(1200, 800)
+  await stackHint.waitFor({ state: 'detached' })
+  await baseRow.hover()
 
   await page.keyboard.press('[')
   await baseRow.getByRole('button', { name: 'Expand 2 stacked requests' }).click()
