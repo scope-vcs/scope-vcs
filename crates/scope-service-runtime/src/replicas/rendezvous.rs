@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 
-pub(crate) fn rank_backends<'a, T>(
+pub fn rank_backends<'a, T>(
     repository: &str,
     backends: &'a [T],
     identity: impl Fn(&T) -> String,

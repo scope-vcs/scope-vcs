@@ -1,10 +1,6 @@
-use crate::{
-    RouterConfig,
-    backend_selection::BackendSelector,
-    discovery::{BackendDiscovery, DiscoveryFreshness},
-    proxy,
-};
+use crate::{RouterConfig, backend_selection::BackendSelector, proxy};
 use axum::{Router, routing::get};
+use scope_service_runtime::replicas::{BackendDiscovery, DiscoveryFreshness};
 use std::sync::Arc;
 
 pub(crate) struct RouterState {
@@ -15,7 +11,11 @@ pub(crate) struct RouterState {
 }
 
 pub fn router(config: RouterConfig) -> anyhow::Result<Router> {
-    let discovery = BackendDiscovery::new(&config);
+    let discovery = BackendDiscovery::new(
+        &config.backend_authority,
+        config.dns_refresh,
+        config.dns_max_stale,
+    );
     let http = reqwest::Client::builder()
         .connect_timeout(config.connect_timeout)
         .read_timeout(config.read_timeout)

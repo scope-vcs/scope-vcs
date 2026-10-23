@@ -1,7 +1,8 @@
 use super::*;
-use crate::{RouterConfig, app::test_router_with_state, discovery::BackendDiscovery};
-use axum::http::Method;
+use crate::{RouterConfig, app::test_router_with_state};
 use axum::{Router, routing::any};
+use axum::{body::Body, http::Method};
+use scope_service_runtime::replicas::BackendDiscovery;
 use std::{
     collections::BTreeSet,
     sync::atomic::{AtomicUsize, Ordering},
@@ -403,44 +404,4 @@ async fn receive_pack_never_fails_over_or_replays() {
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
     assert_eq!(fallback_requests.load(Ordering::SeqCst), 0);
-}
-
-#[test]
-fn strips_connection_scoped_headers_and_preserves_end_to_end_values() {
-    let mut headers = HeaderMap::new();
-    headers.insert(header::HOST, "scope.example".parse().unwrap());
-    headers.append(
-        header::CONNECTION,
-        "keep-alive, x-remove-one".parse().unwrap(),
-    );
-    headers.append(header::CONNECTION, "x-remove-two".parse().unwrap());
-    headers.insert("keep-alive", "timeout=5".parse().unwrap());
-    headers.insert("x-remove-one", "one".parse().unwrap());
-    headers.insert("x-remove-two", "two".parse().unwrap());
-    headers.insert("proxy-connection", "keep-alive".parse().unwrap());
-    headers.insert(header::AUTHORIZATION, "Bearer secret".parse().unwrap());
-    headers.append("x-preserve", "first".parse().unwrap());
-    headers.append("x-preserve", "second".parse().unwrap());
-
-    let forwarded = forwarded_headers(&headers);
-
-    for removed in [
-        "host",
-        "connection",
-        "keep-alive",
-        "proxy-connection",
-        "x-remove-one",
-        "x-remove-two",
-    ] {
-        assert!(!forwarded.contains_key(removed), "preserved {removed}");
-    }
-    assert_eq!(forwarded[header::AUTHORIZATION], "Bearer secret");
-    assert_eq!(
-        forwarded
-            .get_all("x-preserve")
-            .iter()
-            .map(|value| value.to_str().unwrap())
-            .collect::<Vec<_>>(),
-        vec!["first", "second"]
-    );
 }

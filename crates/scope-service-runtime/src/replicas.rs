@@ -1,4 +1,6 @@
-use crate::RouterConfig;
+mod rendezvous;
+
+pub use rendezvous::rank_backends;
 use std::{
     future::Future,
     net::SocketAddr,
@@ -15,25 +17,25 @@ type ResolveFuture =
 type Resolver = dyn Fn(Arc<str>) -> ResolveFuture + Send + Sync;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Backend {
-    pub(crate) address: SocketAddr,
+pub struct Backend {
+    pub address: SocketAddr,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DiscoveryFreshness {
+pub enum DiscoveryFreshness {
     Fresh,
     Stale,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct DiscoveredBackends {
-    pub(crate) backends: Vec<Backend>,
-    pub(crate) freshness: DiscoveryFreshness,
-    pub(crate) age: Duration,
+pub struct DiscoveredBackends {
+    pub backends: Vec<Backend>,
+    pub freshness: DiscoveryFreshness,
+    pub age: Duration,
 }
 
 #[derive(Clone)]
-pub(crate) struct BackendDiscovery {
+pub struct BackendDiscovery {
     authority: Arc<str>,
     refresh_after: Duration,
     max_stale_age: Duration,
@@ -75,21 +77,31 @@ struct Snapshot {
 }
 
 impl BackendDiscovery {
-    pub fn new(config: &RouterConfig) -> Self {
-        Self::with_resolver(config, Arc::new(system_resolver))
+    pub fn new(authority: &str, refresh_after: Duration, max_stale_age: Duration) -> Self {
+        Self::with_resolver(
+            authority,
+            refresh_after,
+            max_stale_age,
+            Arc::new(system_resolver),
+        )
     }
 
-    fn with_resolver(config: &RouterConfig, resolver: Arc<Resolver>) -> Self {
+    fn with_resolver(
+        authority: &str,
+        refresh_after: Duration,
+        max_stale_age: Duration,
+        resolver: Arc<Resolver>,
+    ) -> Self {
         Self {
-            authority: Arc::from(config.backend_authority.as_str()),
-            refresh_after: config.dns_refresh,
-            max_stale_age: config.dns_max_stale,
+            authority: Arc::from(authority),
+            refresh_after,
+            max_stale_age,
             resolver,
             state: Arc::new(DiscoveryState::default()),
         }
     }
 
-    pub(crate) async fn backends(&self) -> anyhow::Result<DiscoveredBackends> {
+    pub async fn backends(&self) -> anyhow::Result<DiscoveredBackends> {
         loop {
             let refreshed = self.state.refreshed.notified();
             tokio::pin!(refreshed);
@@ -170,8 +182,8 @@ impl BackendDiscovery {
         }).abort_handle()
     }
 
-    #[cfg(test)]
-    pub(crate) fn fixed(backends: Vec<SocketAddr>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixed(backends: Vec<SocketAddr>) -> Self {
         Self::fixed_with_age(
             backends,
             Duration::from_secs(3600),
@@ -181,8 +193,8 @@ impl BackendDiscovery {
         )
     }
 
-    #[cfg(test)]
-    pub(crate) fn fixed_with_age(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fixed_with_age(
         backends: Vec<SocketAddr>,
         refresh_after: Duration,
         max_stale_age: Duration,
@@ -253,21 +265,6 @@ mod tests {
         },
     };
 
-    fn config() -> RouterConfig {
-        RouterConfig {
-            backend_authority: "scripted.invalid:8080".into(),
-            dns_refresh: Duration::from_secs(10),
-            dns_max_stale: Duration::from_secs(30),
-            connect_timeout: Duration::from_secs(1),
-            read_timeout: Duration::from_secs(1),
-            read_replicas: 1,
-            write_replicas: 1,
-            upload_pack_replay_max_bytes: 1024,
-            upload_pack_replay_budget_bytes: 4096,
-            incoming_body_timeout: Duration::from_secs(15),
-        }
-    }
-
     fn scripted(outcomes: Vec<Result<Vec<SocketAddr>, &str>>) -> BackendDiscovery {
         let outcomes = Arc::new(Mutex::new(
             outcomes
@@ -283,7 +280,12 @@ mod tests {
                 .expect("scripted resolver outcome");
             Box::pin(async move { outcome.map_err(anyhow::Error::msg) }) as ResolveFuture
         });
-        BackendDiscovery::with_resolver(&config(), resolver)
+        BackendDiscovery::with_resolver(
+            "scripted.invalid:8080",
+            Duration::from_secs(10),
+            Duration::from_secs(30),
+            resolver,
+        )
     }
 
     async fn age_snapshot(discovery: &BackendDiscovery, age: Duration) {
@@ -399,7 +401,12 @@ mod tests {
                 }
             }) as ResolveFuture
         });
-        let discovery = BackendDiscovery::with_resolver(&config(), resolver);
+        let discovery = BackendDiscovery::with_resolver(
+            "scripted.invalid:8080",
+            Duration::from_secs(10),
+            Duration::from_secs(30),
+            resolver,
+        );
         discovery.backends().await.unwrap();
         age_snapshot(&discovery, Duration::from_secs(11)).await;
         assert_eq!(
@@ -443,7 +450,12 @@ mod tests {
                 ])
             }) as ResolveFuture
         });
-        let discovery = BackendDiscovery::with_resolver(&config(), resolver);
+        let discovery = BackendDiscovery::with_resolver(
+            "scripted.invalid:8080",
+            Duration::from_secs(10),
+            Duration::from_secs(30),
+            resolver,
+        );
         discovery.backends().await.unwrap();
         age_snapshot(&discovery, Duration::from_secs(11)).await;
         let mut readers = tokio::task::JoinSet::new();
@@ -477,7 +489,12 @@ mod tests {
     async fn initial_resolver_timeout_is_unavailable_and_rate_limited() {
         let resolver =
             Arc::new(move |_authority: Arc<str>| Box::pin(std::future::pending()) as ResolveFuture);
-        let discovery = BackendDiscovery::with_resolver(&config(), resolver);
+        let discovery = BackendDiscovery::with_resolver(
+            "scripted.invalid:8080",
+            Duration::from_secs(10),
+            Duration::from_secs(30),
+            resolver,
+        );
         let error = tokio::time::timeout(
             RESOLVE_TIMEOUT + Duration::from_secs(1),
             discovery.backends(),
@@ -509,7 +526,12 @@ mod tests {
                 std::future::pending().await
             }) as ResolveFuture
         });
-        let discovery = BackendDiscovery::with_resolver(&config(), resolver);
+        let discovery = BackendDiscovery::with_resolver(
+            "scripted.invalid:8080",
+            Duration::from_secs(10),
+            Duration::from_secs(30),
+            resolver,
+        );
         {
             let mut cached = discovery.state.cached.lock().unwrap();
             cached.snapshot = Some(Snapshot {
