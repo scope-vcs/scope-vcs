@@ -9,6 +9,7 @@ use crate::{
     },
     git::repository_engine::RepositoryEngine,
     github::GitHubApp,
+    http::merge_routing::MergeRouting,
     invite_mailer::InviteMailer,
     media_grants::MediaGrantIssuer,
     repo_events::RepoChangeBus,
@@ -45,6 +46,7 @@ pub struct AppState {
     pub(crate) push_intent_signing_key: Arc<[u8]>,
     pub(crate) repository_engine: Arc<RepositoryEngine>,
     pub(crate) git_public_url: Arc<str>,
+    pub(crate) merge_routing: Option<Arc<MergeRouting>>,
     #[cfg(test)]
     pub(crate) test_object_backend: Arc<scope_storage::MemoryBackend>,
 }
@@ -64,6 +66,7 @@ struct Integrations {
     github: Option<Arc<GitHubApp>>,
     invite_mailer: InviteMailer,
     dispatch_broker_token: Option<Arc<str>>,
+    merge_routing: Option<Arc<MergeRouting>>,
 }
 
 impl Integrations {
@@ -74,6 +77,7 @@ impl Integrations {
             github: GitHubApp::from_env()?.map(Arc::new),
             invite_mailer: InviteMailer::from_env(),
             dispatch_broker_token: non_empty_env(SCOPE_DISPATCH_BROKER_TOKEN_ENV).map(Arc::from),
+            merge_routing: MergeRouting::from_env()?.map(Arc::new),
         })
     }
 
@@ -92,6 +96,7 @@ impl Integrations {
             github: None,
             invite_mailer: InviteMailer::Recording(Default::default()),
             dispatch_broker_token: None,
+            merge_routing: None,
         }
     }
 }
@@ -167,6 +172,7 @@ impl AppState {
             push_intent_signing_key: storage.push_intent_signing_key,
             repository_engine: storage.repository_engine,
             git_public_url: Arc::from(git_public_url),
+            merge_routing: integrations.merge_routing,
             #[cfg(test)]
             test_object_backend: storage.test_object_backend,
         }
@@ -209,6 +215,7 @@ impl AppState {
         )
         .unwrap();
         Self {
+            merge_committer: Arc::default(),
             data_dir: Arc::new(data_dir),
             git_segment_store,
             repository_engine,

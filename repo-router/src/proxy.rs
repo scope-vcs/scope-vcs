@@ -1,18 +1,20 @@
 use crate::{
     app::RouterState,
     backend_selection::{GitRequestKind, GitRequestPhase},
-    discovery::{Backend, DiscoveryFreshness},
-    rendezvous::rank_backends,
     repository_path::repository_key,
 };
 use axum::{
-    body::{Body, Bytes},
+    body::Bytes,
     extract::{Request, State},
-    http::{HeaderMap, HeaderName, Method, StatusCode, header},
+    http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
 };
-use scope_service_runtime::outbound_http::send_traced;
-use std::{collections::HashSet, sync::Arc};
+use scope_service_runtime::{
+    outbound_http::send_traced,
+    proxy::{forwarded_headers, proxied_response},
+    replicas::{Backend, DiscoveryFreshness, rank_backends},
+};
+use std::sync::Arc;
 
 const ROUTER_RESPONSE_HEADER: &str = "x-scope-git-router";
 
@@ -209,50 +211,12 @@ fn route_telemetry(
 }
 
 fn upstream_response(upstream: reqwest::Response) -> Response {
-    let status = upstream.status();
-    let headers = forwarded_headers(upstream.headers());
-    let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
-    *response.status_mut() = status;
-    *response.headers_mut() = headers;
+    let mut response = proxied_response(upstream);
     response.headers_mut().insert(
         ROUTER_RESPONSE_HEADER,
         "1".parse().expect("static header value"),
     );
     response
-}
-
-fn forwarded_headers(headers: &HeaderMap) -> HeaderMap {
-    let connection_headers = headers
-        .get_all(header::CONNECTION)
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .flat_map(|value| {
-            value
-                .split(',')
-                .filter_map(|name| HeaderName::from_bytes(name.trim().as_bytes()).ok())
-        })
-        .collect::<HashSet<_>>();
-    headers
-        .iter()
-        .filter(|(name, _)| !is_hop_by_hop(name) && !connection_headers.contains(*name))
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect()
-}
-
-fn is_hop_by_hop(name: &HeaderName) -> bool {
-    matches!(
-        name.as_str(),
-        "connection"
-            | "keep-alive"
-            | "proxy-authenticate"
-            | "proxy-authorization"
-            | "proxy-connection"
-            | "te"
-            | "trailer"
-            | "transfer-encoding"
-            | "upgrade"
-            | "host"
-    )
 }
 
 fn upstream_unavailable(repository: &str, error: impl std::fmt::Display) -> Response {

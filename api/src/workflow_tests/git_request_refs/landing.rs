@@ -79,7 +79,14 @@ impl DisjointRequests {
     }
 
     fn merge(&self, request_id: &str) -> impl std::future::Future<Output = Response> + 'static {
-        let app = self.app.clone();
+        self.merge_on(self.app.clone(), request_id)
+    }
+
+    fn merge_on(
+        &self,
+        app: axum::Router,
+        request_id: &str,
+    ) -> impl std::future::Future<Output = Response> + 'static {
         let bearer = self.bearer.clone();
         let route = scope_api_contract::routes::repo_request_merge(
             TEST_REPO_OWNER,
@@ -361,5 +368,52 @@ async fn a_replica_with_queued_merges_yields_the_merge_turn_to_a_waiting_replica
 
     landing
         .assert_all_landed(&names, vec![first.await.unwrap(), second.await.unwrap()])
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_merge_received_by_any_replica_is_committed_by_the_repository_owner() {
+    let names = ["routed", "owner-unreachable"];
+    let landing = DisjointRequests::open("routed-merge", &names).await;
+    let owner = landing.state.replica_for_tests();
+    let (owner_origin, _owner_server) = spawn_test_server(&owner).await;
+    let routed_to = |address: std::net::SocketAddr| {
+        router(AppState {
+            merge_routing: Some(std::sync::Arc::new(
+                crate::http::merge_routing::MergeRouting::fixed(vec![address]),
+            )),
+            ..landing.state.clone()
+        })
+    };
+    let admin = landing.state.metadata.admin();
+
+    let held = admin.lock_aggregates_for_tests().await.unwrap();
+    let routed = commit_blocked_behind_held_lock(
+        &landing.state,
+        landing.merge_on(
+            routed_to(owner_origin.trim_start_matches("http://").parse().unwrap()),
+            &landing.request_ids[0],
+        ),
+    )
+    .await;
+    assert_eq!(owner.merge_committer.submitted(TEST_REPO_ID), 1);
+    assert_eq!(landing.state.merge_committer.submitted(TEST_REPO_ID), 0);
+    held.rollback().await.unwrap();
+    let routed = routed.await.unwrap();
+
+    let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let unreachable = closed.local_addr().unwrap();
+    drop(closed);
+    let held = admin.lock_aggregates_for_tests().await.unwrap();
+    let local = commit_blocked_behind_held_lock(
+        &landing.state,
+        landing.merge_on(routed_to(unreachable), &landing.request_ids[1]),
+    )
+    .await;
+    assert_eq!(landing.state.merge_committer.submitted(TEST_REPO_ID), 1);
+    held.rollback().await.unwrap();
+
+    landing
+        .assert_all_landed(&names, vec![routed, local.await.unwrap()])
         .await;
 }
