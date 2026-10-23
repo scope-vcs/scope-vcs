@@ -1,17 +1,23 @@
 name: Install media codecs
-description: Install ffmpeg and libheif from packages cached per runner image, saving them for later runs.
+description: Install ffmpeg and libheif from packages cached per runner image and package set, saving them for later runs.
 runs:
   using: composite
   steps:
-    - id: runner-image
+    - id: plan
       shell: bash
-      run: echo "version=${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+      run: |
+        sudo apt-get update
+        packages=$(apt-get install --simulate --no-install-recommends ffmpeg libheif-examples | grep '^Inst' | sort | sha256sum | cut -c1-16)
+        prefix="media-codec-debs-${ImageOS:?}-${ImageVersion:?}-"
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        echo "key=$prefix$packages" >> "$GITHUB_OUTPUT"
 
     - id: restore
       uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ~/.cache/media-codec-debs
-        key: media-codec-debs-${{ steps.runner-image.outputs.version }}
+        key: ${{ steps.plan.outputs.key }}
+        restore-keys: ${{ steps.plan.outputs.prefix }}
 
     - shell: bash
       run: |
@@ -20,8 +26,10 @@ runs:
         if compgen -G "$packages/*.deb" > /dev/null; then
           sudo cp "$packages"/*.deb /var/cache/apt/archives/
         fi
-        sudo apt-get update
         sudo apt-get install --yes --no-install-recommends ffmpeg libheif-examples
+        sudo apt-get autoclean
+        rm -rf "$packages"
+        mkdir -p "$packages"
         if compgen -G "/var/cache/apt/archives/*.deb" > /dev/null; then
           cp /var/cache/apt/archives/*.deb "$packages"/
         fi
@@ -32,4 +40,4 @@ runs:
       uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ~/.cache/media-codec-debs
-        key: media-codec-debs-${{ steps.runner-image.outputs.version }}
+        key: ${{ steps.plan.outputs.key }}
