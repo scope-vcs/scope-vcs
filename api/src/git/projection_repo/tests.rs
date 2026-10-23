@@ -827,8 +827,10 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
     let root = tempfile::tempdir().unwrap();
     let mut executable = projected_change("/bin/run", "#!/bin/sh\n");
     executable.new_content.as_mut().unwrap().git_file_mode = "100755".into();
+    let mut link = projected_change("/bin/latest", "run");
+    link.new_content.as_mut().unwrap().git_file_mode = "120000".into();
     let changes = vec![
-        vec![projected_change("/path", "original"), executable],
+        vec![projected_change("/path", "original"), executable, link],
         vec![
             ProjectedChange {
                 path: ScopePath::parse("/path").unwrap(),

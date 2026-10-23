@@ -112,6 +112,7 @@ async fn git_backed_file_content_reads_no_commit_history() {
         "git-backed-file-content",
         "hello\n",
         Some(("script.sh", "#!/bin/sh\necho hi\n")),
+        None,
     )
     .await;
     run_git(
