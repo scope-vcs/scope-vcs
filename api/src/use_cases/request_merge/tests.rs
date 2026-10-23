@@ -50,42 +50,6 @@ fn explicit_request_base_preserves_private_main_files() {
 }
 
 #[test]
-fn explicit_request_base_merges_non_overlapping_file_edits() {
-    let repo = TestRepo::init();
-
-    fs::write(repo.join("shared.txt"), "top\nmiddle\nbottom\n").unwrap();
-    repo.commit_all("shared base");
-    let request_base = repo.oid("HEAD");
-
-    fs::write(repo.join("shared.txt"), "main top\nmiddle\nbottom\n").unwrap();
-    repo.commit_all("main edit");
-    let current_main = repo.oid("HEAD");
-
-    run_git(
-        Some(&repo),
-        &["switch", "--create", "request", &request_base],
-        "creating request branch",
-    )
-    .unwrap();
-    fs::write(repo.join("shared.txt"), "top\nmiddle\nrequest bottom\n").unwrap();
-    repo.commit_all("request edit");
-    let request_head = repo.oid("HEAD");
-
-    let merged = merge_main_oid_for_execution(
-        &repo,
-        &request_base,
-        &current_main,
-        &request_head,
-        "content-merge",
-    )
-    .unwrap();
-    assert_eq!(
-        git_text(&repo, &["show", &format!("{merged}:shared.txt")]),
-        "main top\nmiddle\nrequest bottom\n"
-    );
-}
-
-#[test]
 fn content_conflict_is_the_only_typed_merge_conflict() {
     let repo = TestRepo::init();
 

@@ -102,7 +102,10 @@ pub(crate) fn detail_response(
                 .cloned()
                 .map(super::requests::request_invitee_response)
                 .collect(),
-            checks,
+            super::responses::RequestGateOutcomes {
+                checks,
+                reviews: snapshot.reviews_outcome(),
+            },
             snapshot.repository.record.lifecycle_state,
         )?,
     })

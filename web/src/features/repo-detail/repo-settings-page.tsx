@@ -3,7 +3,11 @@ import type {
   RepoInviteInput,
   DeleteRepoMemberInput,
   RepoParams,
+  SetRepoGitHubMainPublicationInput,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubReviewBotsInput,
+  SetRepoGitHubReviewBotPullRequestsInput,
+  SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
   UpdateRepoMemberInput,
   UpdateRepoMetadataInput,
@@ -55,7 +59,11 @@ export function RepoSettingsPage({
   disconnectGitHub,
   github,
   params,
+  setGitHubMainPublication,
   setGitHubRequiredChecks,
+  setGitHubReviewBots,
+  setGitHubReviewBotPullRequests,
+  setGitHubReviewRequestComment,
   setGitHubRunImportCount,
   startGitHubAuthorization,
   startGitHubRunImport,
@@ -79,8 +87,20 @@ export function RepoSettingsPage({
   disconnectGitHub: (params: RepoParams) => Promise<GitHubConnectionResponse>
   github: GitHubConnectionResponse | null
   params: RepoParams
+  setGitHubMainPublication: (
+    input: SetRepoGitHubMainPublicationInput,
+  ) => Promise<GitHubConnectionResponse>
   setGitHubRequiredChecks: (
     input: SetRepoGitHubRequiredChecksInput,
+  ) => Promise<GitHubConnectionResponse>
+  setGitHubReviewBots: (
+    input: SetRepoGitHubReviewBotsInput,
+  ) => Promise<GitHubConnectionResponse>
+  setGitHubReviewBotPullRequests: (
+    input: SetRepoGitHubReviewBotPullRequestsInput,
+  ) => Promise<GitHubConnectionResponse>
+  setGitHubReviewRequestComment: (
+    input: SetRepoGitHubReviewRequestCommentInput,
   ) => Promise<GitHubConnectionResponse>
   setGitHubRunImportCount: (
     input: SetRepoGitHubRunImportCountInput,
@@ -187,7 +207,11 @@ export function RepoSettingsPage({
           confirmPublic={() => confirmPublicGitHub(params)}
           disconnect={() => disconnectGitHub(params)}
           github={github}
+          setMainPublication={(enabled) => setGitHubMainPublication({ ...params, enabled })}
           setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
+          setReviewBots={(bots) => setGitHubReviewBots({ ...params, bots })}
+          setReviewBotPullRequests={(enabled) => setGitHubReviewBotPullRequests({ ...params, enabled })}
+          setReviewRequestComment={(comment) => setGitHubReviewRequestComment({ ...params, comment })}
           setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}
           startAuthorization={() => startGitHubAuthorization(params)}
           startRunImport={() => startGitHubRunImport(params)}

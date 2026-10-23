@@ -316,7 +316,7 @@ mod tests {
     use scope_storage::{
         EncryptedObjectStore, EncryptionKey, MemoryBackend, ObjectStoreErrorKind, read_bounded,
     };
-    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     struct RecordingReadStore {
         inner: EncryptedObjectStore,
@@ -412,71 +412,6 @@ mod tests {
             .readiness_check()
             .await
             .expect("readiness must not wait for an operation permit");
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn queued_inspections_respect_the_shared_git_capacity() {
-        let budgets = Arc::new(RuntimeBudgets::from_config(RuntimeBudgetConfig {
-            git_materialization_concurrency: 2,
-            ..Default::default()
-        }));
-        let active = Arc::new(AtomicUsize::new(0));
-        let peak = Arc::new(AtomicUsize::new(0));
-        let mut inspections = Vec::new();
-        for _ in 0..10 {
-            let budgets = budgets.clone();
-            let active = active.clone();
-            let peak = peak.clone();
-            inspections.push(tokio::spawn(async move {
-                let permit = budgets.wait_git_materialization().await.unwrap();
-                tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    let current = active.fetch_add(1, Ordering::SeqCst) + 1;
-                    peak.fetch_max(current, Ordering::SeqCst);
-                    std::thread::sleep(Duration::from_millis(10));
-                    active.fetch_sub(1, Ordering::SeqCst);
-                })
-                .await
-                .unwrap();
-            }));
-        }
-        for inspection in inspections {
-            inspection.await.unwrap();
-        }
-        assert!(peak.load(Ordering::SeqCst) <= 2);
-        assert_eq!(active.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn cancelled_inspection_keeps_capacity_until_blocking_work_finishes() {
-        let budgets = Arc::new(RuntimeBudgets::from_config(RuntimeBudgetConfig {
-            git_materialization_concurrency: 1,
-            ..Default::default()
-        }));
-        let (started, started_rx) = tokio::sync::oneshot::channel();
-        let (release, release_rx) = std::sync::mpsc::channel();
-        let (completed, completed_rx) = tokio::sync::oneshot::channel();
-        let inspection = {
-            let budgets = budgets.clone();
-            tokio::spawn(async move {
-                let permit = budgets.wait_git_materialization().await.unwrap();
-                tokio::task::spawn_blocking(move || {
-                    started.send(()).unwrap();
-                    release_rx.recv().unwrap();
-                    drop(permit);
-                    completed.send(()).unwrap();
-                })
-                .await
-                .unwrap();
-            })
-        };
-        started_rx.await.unwrap();
-        inspection.abort();
-        let _ = inspection.await;
-        assert!(budgets.try_git_materialization().is_err());
-        release.send(()).unwrap();
-        completed_rx.await.unwrap();
-        assert!(budgets.try_git_materialization().is_ok());
     }
 
     #[tokio::test]

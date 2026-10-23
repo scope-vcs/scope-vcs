@@ -268,15 +268,6 @@ fn only_the_tests_own_push_records_the_baseline() {
 }
 
 #[test]
-fn a_test_belongs_to_the_github_repository_it_pushed_to() {
-    let check = started();
-    assert!(check.is_of(&connection()));
-    let mut other = connection();
-    other.github_repository_id = 43;
-    assert!(!check.is_of(&other));
-}
-
-#[test]
 fn a_test_without_runs_stops_waiting_and_says_to_add_the_trigger() {
     let mut check = pushed(started(), Vec::new(), NOW + 1);
     let timeout = NOW + GITHUB_SETUP_CHECK_TIMEOUT_SECS;

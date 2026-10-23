@@ -165,6 +165,9 @@ pub(crate) async fn persist_main_push(
         }
     {
         tracing::info!("committed focused content-only push transaction");
+        if git_head.queued_main_publication {
+            state.wakeups.github_pushes.notify_one();
+        }
         return Ok(PersistedGitPush {
             incarnation: incarnation.clone(),
             head: git_head.result,
@@ -263,6 +266,9 @@ pub(crate) async fn persist_main_push(
         database_commit_ms = transaction_started.elapsed().as_millis(),
         "committed reviewed push transaction"
     );
+    if git_head.queued_main_publication {
+        state.wakeups.github_pushes.notify_one();
+    }
     Ok(PersistedGitPush {
         incarnation: incarnation.clone(),
         head: git_head.result,

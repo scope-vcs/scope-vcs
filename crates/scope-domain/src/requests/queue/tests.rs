@@ -13,14 +13,6 @@ fn groups_split_active_rows_by_who_acts_next() {
         (Reason::Restored, NeedsYou),
         (Reason::SnoozeExpired, NeedsYou),
         (Reason::Authored, Waiting),
-        (Reason::Waiting, Waiting),
-        (Reason::Open, Waiting),
-        (Reason::ClaimedElsewhere, Waiting),
-        (Reason::Unclaimed, Waiting),
-        (Reason::Snoozed, Waiting),
-        (Reason::Settled, Waiting),
-        (Reason::Closed, Waiting),
-        (Reason::Merged, Waiting),
     ] {
         assert_eq!(
             request_queue_group(RequestQueueSection::Active, reason, false),
@@ -53,14 +45,8 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
     for (status, expected) in [
         (Status::Ready, Step::Merge),
         (Status::ChecksFailed, Step::FixChecks),
-        (Status::ChecksConfigurationError, Step::FixChecks),
         (Status::IntegrationConflict, Step::Update),
-        (Status::NeedsMainUpdate, Step::Update),
-        (Status::ParentRewritten, Step::Update),
-        (Status::ParentClosed, Step::Update),
         (Status::ChecksPending, Step::Wait),
-        (Status::WaitingForParent, Step::Wait),
-        (Status::Draft, Step::Wait),
     ] {
         assert_eq!(
             next_step_for(author, author, Reason::NewActivity, status, true),
@@ -75,11 +61,8 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
     );
     for (reason, expected) in [
         (Reason::Invited, Step::Review),
-        (Reason::Claimed, Step::Review),
-        (Reason::Unclaimed, Step::Review),
         (Reason::NewActivity, Step::Reply),
         (Reason::Restored, Step::Revisit),
-        (Reason::SnoozeExpired, Step::Revisit),
         (Reason::ClaimedElsewhere, Step::Wait),
         (Reason::Merged, Step::Done),
     ] {

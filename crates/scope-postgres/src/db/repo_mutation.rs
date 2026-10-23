@@ -4,6 +4,7 @@ use super::{
     entities,
     git_compaction::schedule_git_compaction,
     git_segments::register_git_pool_pack,
+    github_pushes::queue_main_publication,
     landing_files::apply_repository_landing_file_mutation,
     push_triggers::enqueue_push_main_trigger_evaluation,
     repository_from_model,
@@ -55,6 +56,7 @@ impl From<PostgresError> for RepositoryMutationError {
 pub struct RepositoryMutationResult<R> {
     pub result: R,
     pub completed_landed_requests: usize,
+    pub queued_main_publication: bool,
 }
 
 pub struct RepositoryMutation<R> {
@@ -208,10 +210,20 @@ where
     } else {
         0
     };
+    let changed_main = repo.git_head.as_ref().filter(|head| {
+        before.git_head.as_ref().map(|before| &before.head_oid) != Some(&head.head_oid)
+    });
+    let queued_main_publication = match changed_main {
+        Some(head) => {
+            queue_main_publication(&tx, &repo.record.id, &head.head_oid, now_unix).await?
+        }
+        None => false,
+    };
     queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects, now_unix).await?;
     tx.commit().await.map_err(PostgresError::internal)?;
     Ok(RepositoryMutationResult {
         result: mutation.result,
         completed_landed_requests,
+        queued_main_publication,
     })
 }

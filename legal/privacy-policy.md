@@ -1,6 +1,12 @@
 # Privacy policy
 
-Effective October 13, 2026
+Current policy effective October 13, 2026.
+
+Location analytics update prepared October 21, 2026. The planned collection
+described below is not active yet. It will take effect with a future release,
+only after Scope verifies the PostHog privacy settings and notifies account
+holders by email or in the product in advance. Scope will publish the effective
+date when that release is scheduled.
 
 Scope is a version control service at scopevcs.com, run by Adam Blumoff as an
 individual. This policy explains what personal data Scope handles, why, who
@@ -28,19 +34,35 @@ repositories.
 
 **Product analytics.** The website records page views, error types and
 performance measurements. The API records outcomes such as pushes, submitted
-requests and completed workflow runs. Events are keyed by a random internal ID,
-never by your name or email. They exclude names, email addresses, repository
+requests and completed workflow runs. Events use a random page-memory ID for
+signed-out visitors and an opaque internal user ID for signed-in users, never
+your name or email. Signed-in events can be associated with your Scope account.
+Events captured before sign-in in the same page can be linked to that user ID.
+These IDs are pseudonymous. Events exclude names, email addresses, repository
 names, source code, file paths, request titles and discussion content. The
 website keeps its analytics ID in page memory only. Nothing is written to
 cookies or browser storage for analytics. Browser analytics stops completely if
 your browser sends Do Not Track or Global Privacy Control.
 
+**Planned approximate location analytics.** After the update takes effect,
+Scope will use the IP address of browser analytics requests to estimate country,
+region and city. Scope's web proxy will temporarily send the visitor IP address
+provided by its trusted hosting proxy to PostHog in the United States. PostHog
+will derive the approximate location and discard the raw IP address from stored
+analytics events. Latitude, longitude and postal codes will also be removed.
+Scope will not request browser GPS or other device location access. Approximate
+location will be associated with the analytics IDs described above, including
+the internal user ID when signed in. Backend analytics events will continue to
+have IP-based location enrichment disabled. The browser analytics storage and
+Do Not Track and Global Privacy Control protections above will still apply.
+
 **Operational logs.** Scope's servers log request paths, timing and errors to
 operate and secure the service. These logs, and traces of how long each step of
 a request took, are sent to PostHog. Log lines can include repository names,
 file paths and error details. Railway, Scope's hosting provider, also records
-your IP address in its HTTP logs. The analytics proxy removes your IP address
-before events are sent to PostHog.
+your IP address in its HTTP logs. Until the planned location analytics update
+takes effect, the analytics proxy removes your IP address before events are sent
+to PostHog. The planned update does not change Railway's HTTP logging.
 
 Scope does not sell or share personal data for advertising, and does not use
 advertising cookies. The website stores only what it needs to work: Clerk's
@@ -54,7 +76,9 @@ attachment drafts and one-time notices.
   workflows, and sending the invitations you ask Scope to send. For users in
   the EU and UK, the legal basis is performance of a contract.
 - To keep the service secure and working, and to understand which features are
-  used so they can be improved. The legal basis is legitimate interest. You can
+  used so they can be improved. Once the planned update takes effect, this will
+  include understanding where visitors use Scope at an approximate country,
+  region and city level. The legal basis is legitimate interest. You can
   opt out of browser analytics with Do Not Track or Global Privacy Control.
 - To meet legal obligations, such as responding to valid legal requests.
 
@@ -68,7 +92,7 @@ job.
 | Clerk | Sign-in and account identity | United States |
 | Railway | Application hosting, database and file storage | United States |
 | Amazon Web Services | Workflow runners and encrypted database backups | United States |
-| PostHog | Product analytics, application logs and traces | United States |
+| PostHog | Product analytics, planned approximate location enrichment, application logs and traces | United States |
 | Resend | Sending invitation emails | United States |
 
 Scope stores data in the United States. If you use Scope from elsewhere, your
@@ -88,7 +112,8 @@ repositories are visible to everyone.
 | Database backups | 42 days |
 | Server and hosting logs, including IP addresses | Railway's log retention period |
 | Application logs and traces in PostHog | 14 days |
-| Analytics events | Deleted on the retention schedule of Scope's PostHog project |
+| Analytics events, including approximate location after activation | Deleted on the retention schedule of Scope's PostHog project |
+| Browser IP addresses sent for planned location enrichment | Processed temporarily by PostHog to derive location; discarded from stored analytics events |
 
 ## Deleting your account
 

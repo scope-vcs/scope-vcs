@@ -237,7 +237,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                   I’ll take this
                 </Button>
               ) : null}
-              <RequestCiApproval controller={checks} key={identity} requestViewName={requestViewName} />
+              <RequestCiApproval controller={checks} key={identity} />
               {canRelease ? (
                 <Button onClick={workspace?.release} size="sm" type="button" variant="secondary">
                   <UserRoundMinus />
@@ -286,7 +286,6 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
           checks={checks.checks}
           error={checks.error}
           params={params}
-          requestViewName={requestViewName}
         />
         <RequestDetailsProvider value={{
           actions: requestActions,

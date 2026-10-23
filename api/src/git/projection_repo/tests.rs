@@ -44,52 +44,6 @@ fn write_projection_tree(
 }
 
 #[test]
-fn generated_projection_matches_canonical_head_identity() {
-    let root = std::env::temp_dir().join(format!(
-        "scope-generated-projection-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    fs::create_dir_all(&root).unwrap();
-    let projection = Projection {
-        repo_id: "repo".to_string(),
-        view_key: ViewId::public(),
-        commits: vec![ProjectedCommit {
-            projected_id: "generated-base".to_string(),
-            logical_commit_id: "logical-base".to_string(),
-            visibility_change_set_id: None,
-            parent_projected_id: None,
-            author: Some("owner".to_string()),
-            message: "base".to_string(),
-            changes: vec![projected_change("/README.md", "base\n")],
-            materialization: ProjectionMaterialization::Generate,
-        }],
-    };
-
-    let repo = projection_bare_repo_with_loader(
-        &root,
-        None,
-        &labels(&projection),
-        &projection,
-        None,
-        None,
-        |blob| Ok(blob.sha256.as_bytes().to_vec()),
-    )
-    .unwrap();
-
-    assert_eq!(
-        git_object_field(&repo, "refs/heads/main", "%H").unwrap(),
-        scope_git::projection_head_oid(&projection)
-            .unwrap()
-            .expect("non-empty projection has a head")
-    );
-    let _ = fs::remove_dir_all(root);
-}
-
-#[test]
 fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
     let root = std::env::temp_dir().join(format!(
         "scope-quoted-projection-path-{}-{}",

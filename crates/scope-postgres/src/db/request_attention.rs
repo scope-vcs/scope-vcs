@@ -7,7 +7,8 @@ use crate::error::PostgresError;
 use scope_domain::requests::{
     ApplyRequestAttentionInput, Request, RequestAttention, RequestAttentionAction, RequestClaim,
     RequestQueueClassification, RequestQueueFacts, apply_request_attention_action,
-    classify_request_queue_item, reactivate_request_attention,
+    classify_request_queue_item, reactivate_author_attention_for_github_review,
+    reactivate_request_attention,
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QuerySelect,
@@ -150,6 +151,17 @@ pub(super) async fn reactivate_attention_for_activity<C: ConnectionTrait>(
 ) -> Result<(), PostgresError> {
     update_attentions(conn, request_id, |state| {
         reactivate_request_attention(state, actor_user_id, activity_version, now_unix)
+    })
+    .await
+}
+
+pub(super) async fn reactivate_author_attention_for_github_activity<C: ConnectionTrait>(
+    conn: &C,
+    request: &Request,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    update_attentions(conn, &request.id, |state| {
+        reactivate_author_attention_for_github_review(state, request, now_unix)
     })
     .await
 }

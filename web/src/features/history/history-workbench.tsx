@@ -13,11 +13,13 @@ import type {
 } from '@/features/history/history-state'
 import { History } from 'lucide-react'
 import type { ReactNode } from 'react'
+import type { ReviewDiffAnnotations } from '@/features/review/review-file-diff-drawer'
 
 export function HistoryWorkbench({
   commitContext,
   commitState,
   commits,
+  diffAnnotations,
   diffIdentity,
   emptyDescription,
   emptyTitle,
@@ -33,6 +35,7 @@ export function HistoryWorkbench({
   commitContext?: ReactNode
   commitState: CommitDetailState
   commits: CommitSummary[]
+  diffAnnotations?: ReviewDiffAnnotations
   diffIdentity: string | null
   emptyDescription: string
   emptyTitle: string
@@ -73,6 +76,7 @@ export function HistoryWorkbench({
           <CommitDetailPanel
             commitContext={commitContext}
             commitState={commitState}
+            diffAnnotations={diffAnnotations}
             diffIdentity={diffIdentity}
             diffScrollTop={readHistoryDiffScroll(diffIdentity)}
             fileDiffState={fileDiffState}

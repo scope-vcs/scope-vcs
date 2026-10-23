@@ -5,7 +5,7 @@ async fn live_file_rules_move_from_the_repository_policy_onto_their_files() {
     let (_target, db, _lease) = isolated_database().await;
     let previous_count = migrations::Migrator::migrations()
         .iter()
-        .position(|migration| migration.name() == "m0092_live_file_views")
+        .position(|migration| migration.name() == "m0098_live_file_views")
         .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await
