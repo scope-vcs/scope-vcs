@@ -211,7 +211,52 @@ Run `railway-telemetry.mjs` for the same interval. Its report separates capacity
 
 The benchmark does not fake CAS or WAL behavior with a SQL-only microbenchmark. Such a test omits pack durability, object-store calls, serialization, recovery, and read visibility. It cannot select the production protocol honestly. Deploy callable production variants, run this black-box suite, then delete the losing variants.
 
-## 3. Collect Railway evidence
+## 3. One repository, many agents
+
+`agent-load.mjs` measures a single repository under many concurrent agents, each working on its own request branch. It applies the same loadtest target guard as `railway-load.mjs` and refuses any non-local hostname without a `loadtest` label.
+
+The run:
+
+1. Creates one repository and seeds `main` through a push intent, or reuses `SCOPE_AGENT_REPO`, which is cloned and never deleted.
+2. Starts one request per agent and builds a chain of commits per agent in a local bare repository that borrows the base clone's objects. Each commit adds one random file of `SCOPE_AGENT_DELTA_BYTES` under `agents/<branch>/`.
+3. In `push` mode, runs each stage by having the first `concurrency` agents push their next commit with `--force-with-lease` until the stage time ends. After a failed push it reads the remote ref and resumes from what the server holds.
+4. In `merge` mode, pushes one commit per agent, submits every request, then merges a batch of `SCOPE_AGENT_MERGES_PER_STAGE` requests, or the stage's concurrency if larger, at that concurrency. `SCOPE_AGENT_COUNT` must cover every stage's batch, sending each request's pushed head as `expected_head_oid`.
+5. Deletes the repository it created and removes all local clones.
+
+Requests created in a reused `SCOPE_AGENT_REPO` stay there. Use a distinct `SCOPE_BENCH_RUN_LABEL` for every run against the same repository so request branch names do not collide.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SCOPE_BENCH_API_URL`, `SCOPE_BENCH_AUTH_TOKEN` | required | API origin and bearer token |
+| `SCOPE_BENCH_GIT_URL` | API origin | Separate Git router origin |
+| `SCOPE_AGENT_MODE` | `push` | `push` or `merge` |
+| `SCOPE_AGENT_STAGES` | `1,8,32,128` | Concurrency stages |
+| `SCOPE_AGENT_STAGE_SECONDS` | `30` | Push stage duration; merge stages run one batch |
+| `SCOPE_AGENT_COUNT` | largest stage | Agents and requests to prepare; push mode needs at least the largest stage |
+| `SCOPE_AGENT_COMMITS` | `40` | Prepared commits per agent |
+| `SCOPE_AGENT_DELTA_BYTES` | `4096` | Random bytes in each agent commit's file |
+| `SCOPE_AGENT_MERGES_PER_STAGE` | `40` | Minimum requests merged in each merge stage |
+| `SCOPE_AGENT_PREP_CONCURRENCY` | `16` | Parallel agent preparation, setup pushes, and submits. A failed setup push is retried up to 5 times with backoff before its agent is dropped |
+| `SCOPE_AGENT_REPO` | create one | Existing `owner/name` to use and keep |
+| `SCOPE_AGENT_SEED_FILES` | `1` | Files in the seed commit. One file is 64 KiB; more files are 64 bytes each, spread over directories of at most 1000 entries |
+| `SCOPE_BENCH_RUN_LABEL` | `unlabeled` | Names the report and agent branches |
+
+Push 128 agents against a repository with a 90,000-file tree:
+
+```bash
+SCOPE_BENCH_API_URL=https://scope-api-loadtest.up.railway.app \
+SCOPE_BENCH_AUTH_TOKEN=scope_cli_... \
+SCOPE_AGENT_SEED_FILES=90000 \
+SCOPE_AGENT_STAGES=1,8,32,128 \
+SCOPE_BENCH_RUN_LABEL=agents-tree-90k \
+node bench/agent-load.mjs
+```
+
+Measure landing instead of pushing by adding `SCOPE_AGENT_MODE=merge`.
+
+Each stage prints one JSON line and is written to `.tmp/bench/agent-load/<label>.json` with `concurrency`, `ok`, `perSec`, `errorRate`, `p50`, `p95`, `p99`, and HTTP error classes in `errors`. Latencies are milliseconds over successful operations. A push stage also reports `exhaustedAgents`, the number of agents that used all prepared commits before the stage ended; raise `SCOPE_AGENT_COMMITS` when it is not zero.
+
+## 4. Collect Railway evidence
 
 Collect logs and Railway CPU and memory metrics over the matching load window:
 
