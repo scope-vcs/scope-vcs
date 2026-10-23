@@ -2,6 +2,8 @@ import type {
   RequestCheckResponse,
   RequestChecksResponse,
   RequestGitHubPullRequestResponse,
+  RequestReviewBotResponse,
+  RequestReviewBotState,
 } from '@/api/types.generated'
 import { githubRunResult } from '../runs/github-run-status'
 import { runJobPanelId } from '../runs/run-job-ids'
@@ -130,6 +132,17 @@ export function requestPullRequestView(
         note: error ? { text: error, failed: true } : null,
       }
   }
+}
+
+const REVIEW_BOT_STATES = {
+  not_started: { label: 'Not started', tone: 'inert' },
+  working: { label: 'Reviewing', tone: 'running' },
+  commented: { label: 'Finished with comments', tone: 'waiting' },
+  clear: { label: 'Finished, nothing found', tone: 'success' },
+} as const satisfies Record<RequestReviewBotState, { label: string; tone: RunTone }>
+
+export function requestReviewBotRows(bots: RequestReviewBotResponse[]) {
+  return bots.map((bot) => ({ login: bot.login, required: bot.required, ...REVIEW_BOT_STATES[bot.state] }))
 }
 
 type RequestCheckGroup =

@@ -1,4 +1,5 @@
 use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
+use scope_postgres::db::DEFAULT_METADATA_POOL_MAX_CONNECTIONS;
 use scope_storage::{
     GitSegmentStoreConfig,
     config::{nonempty_env, required_env},
@@ -12,6 +13,7 @@ const SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_CHUNK_BYTES";
 const SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES";
 const SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV: &str = "SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY";
 const CLOUD_RUN_MAX_CONCURRENCY_ENV: &str = "SCOPE_CLOUD_RUN_MAX_CONCURRENCY";
+const SCOPE_GIT_COMPACTION_CONCURRENCY_ENV: &str = "SCOPE_GIT_COMPACTION_CONCURRENCY";
 const DISPATCH_BROKER_FUNCTION_ARN_ENV: &str = "SCOPE_DISPATCH_BROKER_FUNCTION_ARN";
 const DEFAULT_HEALTH_PORT: u16 = 8081;
 
@@ -28,6 +30,7 @@ pub(crate) struct WorkerSettings {
     pub(crate) git_storage_limits: GitStorageLimits,
     pub(crate) git_segment_store: GitSegmentStoreConfig,
     pub(crate) data_dir: PathBuf,
+    pub(crate) git_compaction_concurrency: usize,
     pub(crate) execution: Option<CloudExecutionSettings>,
 }
 
@@ -40,6 +43,11 @@ pub(crate) struct CloudExecutionSettings {
 }
 
 impl WorkerSettings {
+    pub(crate) fn metadata_max_connections(&self) -> u32 {
+        DEFAULT_METADATA_POOL_MAX_CONNECTIONS
+            .saturating_add(u32::try_from(self.git_compaction_concurrency).unwrap_or(u32::MAX))
+    }
+
     pub(crate) fn from_env() -> anyhow::Result<Self> {
         let database_url = required_env(DATABASE_URL_ENV)?;
         let health_port = match nonempty_env("PORT") {
@@ -69,6 +77,10 @@ impl WorkerSettings {
             SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV,
             git_segment_store.channel_capacity,
         )?;
+        let git_compaction_concurrency = parse_usize_env(SCOPE_GIT_COMPACTION_CONCURRENCY_ENV, 1)?;
+        if git_compaction_concurrency == 0 {
+            anyhow::bail!("{SCOPE_GIT_COMPACTION_CONCURRENCY_ENV} must be at least 1");
+        }
         Ok(Self {
             database_url,
             health_port,
@@ -76,6 +88,7 @@ impl WorkerSettings {
             git_storage_limits,
             git_segment_store,
             data_dir,
+            git_compaction_concurrency,
             execution: cloud_execution_from_env()?,
         })
     }

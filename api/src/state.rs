@@ -4,11 +4,12 @@ use crate::{
     background_work::BackgroundWakeups,
     clerk_users::ClerkUsers,
     config::{
-        SCOPE_DISPATCH_BROKER_TOKEN_ENV, database_url_from_env, git_public_url_from_env,
-        non_empty_env,
+        SCOPE_DISPATCH_BROKER_TOKEN_ENV, database_max_connections_from_env, database_url_from_env,
+        git_public_url_from_env, non_empty_env,
     },
     git::repository_engine::RepositoryEngine,
     github::GitHubApp,
+    http::merge_routing::MergeRouting,
     invite_mailer::InviteMailer,
     media_grants::MediaGrantIssuer,
     repo_events::RepoChangeBus,
@@ -27,6 +28,7 @@ use std::{path::PathBuf, sync::Arc};
 #[derive(Clone)]
 pub struct AppState {
     pub(crate) wakeups: Arc<BackgroundWakeups>,
+    pub(crate) merge_committer: Arc<crate::use_cases::request_merge::MergeCommitter>,
     pub(crate) clerk_users: ClerkUsers,
     pub(crate) github: Option<Arc<GitHubApp>>,
     pub(crate) invite_mailer: InviteMailer,
@@ -44,6 +46,7 @@ pub struct AppState {
     pub(crate) push_intent_signing_key: Arc<[u8]>,
     pub(crate) repository_engine: Arc<RepositoryEngine>,
     pub(crate) git_public_url: Arc<str>,
+    pub(crate) merge_routing: Option<Arc<MergeRouting>>,
     #[cfg(test)]
     pub(crate) test_object_backend: Arc<scope_storage::MemoryBackend>,
 }
@@ -63,6 +66,7 @@ struct Integrations {
     github: Option<Arc<GitHubApp>>,
     invite_mailer: InviteMailer,
     dispatch_broker_token: Option<Arc<str>>,
+    merge_routing: Option<Arc<MergeRouting>>,
 }
 
 impl Integrations {
@@ -73,6 +77,7 @@ impl Integrations {
             github: GitHubApp::from_env()?.map(Arc::new),
             invite_mailer: InviteMailer::from_env(),
             dispatch_broker_token: non_empty_env(SCOPE_DISPATCH_BROKER_TOKEN_ENV).map(Arc::from),
+            merge_routing: MergeRouting::from_env()?.map(Arc::new),
         })
     }
 
@@ -91,6 +96,7 @@ impl Integrations {
             github: None,
             invite_mailer: InviteMailer::Recording(Default::default()),
             dispatch_broker_token: None,
+            merge_routing: None,
         }
     }
 }
@@ -100,7 +106,11 @@ impl AppState {
         let git_public_url = git_public_url_from_env(None)?;
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
         storage.git_segment_store.cleanup_temporary().await?;
-        let metadata = MetadataStore::connect(database_url_from_env()?).await?;
+        let metadata = MetadataStore::connect_with_max_connections(
+            database_url_from_env()?,
+            database_max_connections_from_env()?,
+        )
+        .await?;
         let state = Self::connect(AppServices {
             storage,
             metadata,
@@ -144,6 +154,7 @@ impl AppState {
         } = services;
         Self {
             wakeups: Arc::default(),
+            merge_committer: Arc::default(),
             clerk_users: integrations.clerk_users,
             github: integrations.github,
             invite_mailer: integrations.invite_mailer,
@@ -161,6 +172,7 @@ impl AppState {
             push_intent_signing_key: storage.push_intent_signing_key,
             repository_engine: storage.repository_engine,
             git_public_url: Arc::from(git_public_url),
+            merge_routing: integrations.merge_routing,
             #[cfg(test)]
             test_object_backend: storage.test_object_backend,
         }
@@ -186,6 +198,29 @@ impl AppState {
             Integrations::for_tests(),
             RepoChangeBus::default(),
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replica_for_tests(&self) -> Self {
+        let data_dir = crate::persistence::test_data_dir();
+        let git_segment_store = Arc::new(
+            self.git_segment_store
+                .with_local_root(data_dir.join("git-segments"))
+                .unwrap(),
+        );
+        let repository_engine = crate::git::repository_engine::RepositoryEngine::new(
+            data_dir.join("git-cache"),
+            crate::config::DEFAULT_GIT_CACHE_MAX_BYTES,
+            git_segment_store.clone(),
+        )
+        .unwrap();
+        Self {
+            merge_committer: Arc::default(),
+            data_dir: Arc::new(data_dir),
+            git_segment_store,
+            repository_engine,
+            ..self.clone()
+        }
     }
 }
 

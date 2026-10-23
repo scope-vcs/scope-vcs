@@ -210,6 +210,7 @@ fn show_request_status(
                 stack_navigation: detail.stack_navigation,
                 activity: None,
                 auto_merge: None,
+                review_bots: None,
             })),
             human_lines,
         ));

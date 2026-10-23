@@ -1,5 +1,9 @@
 use crate::{duration_ms, elapsed_ms};
-use scope_domain::repository::{RepositoryIncarnation, git_compaction::GitCompactionPlan};
+use scope_domain::repository::{
+    RepositoryIncarnation,
+    git::{GitPoolPack, GitPoolPackStorage},
+    git_compaction::GitCompactionPlan,
+};
 use scope_git::GitStorageLimits;
 use scope_git_process::{
     ProcessCancellation, ProcessError, ProcessLimits, StreamingProcessError,
@@ -30,9 +34,10 @@ pub(crate) struct CompactedPack {
 }
 
 pub(crate) struct CompactionPackMetrics {
-    pub(crate) source_span_count: usize,
+    pub(crate) source_pack_count: usize,
     pub(crate) source_pack_bytes: usize,
     pub(crate) compacted_bytes: usize,
+    pub(crate) inline_source_count: usize,
     pub(crate) local_restore_count: usize,
     pub(crate) remote_restore_count: usize,
     pub(crate) init_ms: u64,
@@ -68,34 +73,42 @@ pub(crate) async fn build_compacted_pack(
     let mut download = Duration::ZERO;
     let mut index = Duration::ZERO;
     let mut source_pack_bytes = 0usize;
+    let mut inline_source_count = 0usize;
     let mut local_restore_count = 0usize;
     let mut remote_restore_count = 0usize;
-    for span in plan.selected_spans() {
-        if span.segment.plaintext_bytes
-            > u64::try_from(storage_limits.max_object_bytes()).unwrap_or(u64::MAX)
-        {
+    for pack in plan.selected_packs() {
+        let bytes = pack.storage.stored_bytes();
+        if bytes > u64::try_from(storage_limits.max_object_bytes()).unwrap_or(u64::MAX) {
             return Err(anyhow::anyhow!(
-                "Git segment {} exceeds the configured object byte limit",
-                span.segment.segment_id
+                "Git pool pack {} exceeds the configured object byte limit",
+                pack.id
             ));
         }
         let index_started = Instant::now();
-        let restore = index_verified_git_segment(
+        match index_pool_pack(
             Arc::clone(&segment_store),
             incarnation,
-            &span.segment,
+            pack,
             &repo.path,
             timeout,
         )
-        .await?;
-        match restore.source {
-            GitSegmentRestoreSource::Local => local_restore_count += 1,
-            GitSegmentRestoreSource::Remote => remote_restore_count += 1,
+        .await?
+        {
+            Some(restore) => {
+                match restore.source {
+                    GitSegmentRestoreSource::Local => local_restore_count += 1,
+                    GitSegmentRestoreSource::Remote => remote_restore_count += 1,
+                }
+                download += restore.total;
+                index += index_started.elapsed().saturating_sub(restore.total);
+            }
+            None => {
+                inline_source_count += 1;
+                index += index_started.elapsed();
+            }
         }
-        download += restore.total;
-        index += index_started.elapsed().saturating_sub(restore.total);
-        let bytes = usize::try_from(span.segment.plaintext_bytes).unwrap_or(usize::MAX);
-        source_pack_bytes = source_pack_bytes.saturating_add(bytes);
+        source_pack_bytes =
+            source_pack_bytes.saturating_add(usize::try_from(bytes).unwrap_or(usize::MAX));
     }
     let enumerate_started = Instant::now();
     let object_ids = enumerate_object_ids(&repo.path, timeout, storage_limits.max_object_bytes())?;
@@ -124,9 +137,10 @@ pub(crate) async fn build_compacted_pack(
     let compacted_bytes = usize::try_from(staged.segment.plaintext_bytes).unwrap_or(usize::MAX);
     Ok(CompactedPack {
         metrics: CompactionPackMetrics {
-            source_span_count: plan.selected_spans().len(),
+            source_pack_count: plan.selected_packs().len(),
             source_pack_bytes,
             compacted_bytes,
+            inline_source_count,
             local_restore_count,
             remote_restore_count,
             init_ms,
@@ -139,6 +153,33 @@ pub(crate) async fn build_compacted_pack(
         },
         staged,
     })
+}
+
+async fn index_pool_pack(
+    segment_store: Arc<GitSegmentStore>,
+    incarnation: &RepositoryIncarnation,
+    pack: &GitPoolPack,
+    repo: &Path,
+    timeout: Duration,
+) -> anyhow::Result<Option<GitSegmentRestoreTimings>> {
+    match &pack.storage {
+        GitPoolPackStorage::Segment(segment) => {
+            index_verified_git_segment(segment_store, incarnation, segment, repo, timeout)
+                .await
+                .map(Some)
+        }
+        GitPoolPackStorage::Inline { sealed } => {
+            let bytes = segment_store
+                .open_inline_pack(incarnation.repository_id(), &pack.id, sealed)
+                .await
+                .map_err(anyhow::Error::new)?;
+            let repo = repo.to_path_buf();
+            tokio::task::spawn_blocking(move || index_pack_bytes(&repo, bytes, timeout, 64 * 1024))
+                .await
+                .map_err(|error| anyhow::anyhow!("Git index-pack task failed: {error}"))??;
+            Ok(None)
+        }
+    }
 }
 
 async fn index_verified_git_segment(
@@ -166,7 +207,24 @@ fn index_pack_file(
     timeout: Duration,
     max_stdout_bytes: usize,
 ) -> anyhow::Result<()> {
-    let input = fs::File::open(pack_path)?;
+    index_pack_input(repo, fs::File::open(pack_path)?, timeout, max_stdout_bytes)
+}
+
+pub(crate) fn index_pack_bytes(
+    repo: &Path,
+    pack: Vec<u8>,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+) -> anyhow::Result<()> {
+    index_pack_input(repo, std::io::Cursor::new(pack), timeout, max_stdout_bytes)
+}
+
+fn index_pack_input(
+    repo: &Path,
+    input: impl std::io::Read + Send + 'static,
+    timeout: Duration,
+    max_stdout_bytes: usize,
+) -> anyhow::Result<()> {
     let mut command = Command::new("git");
     command
         .arg("--git-dir")

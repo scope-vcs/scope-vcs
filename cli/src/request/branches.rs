@@ -276,6 +276,7 @@ pub(super) fn push_request_branch(
         stack_navigation: detail.stack_navigation,
         activity: None,
         auto_merge: None,
+        review_bots: None,
     };
     Ok(RequestCommandOutcome::new(
         "request.push",

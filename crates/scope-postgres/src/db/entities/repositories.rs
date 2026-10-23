@@ -46,7 +46,10 @@ pub mod repository {
                     "repository content version",
                 )?,
                 repo_config: encode_json(&repo.repo_config)?,
-                policy: encode_json(&repo.policy)?,
+                policy: encode_json(&crate::db::history_rows::policy_without_file_rules(
+                    &repo.policy,
+                    &repo.live_files,
+                ))?,
             })
         }
 
@@ -76,12 +79,11 @@ pub mod repository {
                 repo_config: decode_json(self.repo_config)?,
                 first_push_token: facts.first_push_token,
                 git_push_token: facts.git_push_token,
-                policy: decode_json::<Policy>(self.policy)?,
+                policy: decode_json::<Policy>(self.policy)?.join_rules(history.live_files.rules),
                 graph: history.graph,
                 visibility_change_sets: history.visibility_change_sets,
-                live_files: history.live_files,
+                live_files: history.live_files.files,
                 git_head: facts.git_head,
-                git_pack_spans: facts.git_pack_spans,
                 collaboration,
             })
         }
@@ -321,69 +323,6 @@ pub mod git_head {
     }
 }
 
-pub mod git_pack_span {
-    use super::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "scope_git_segments")]
-    pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub repo_id: String,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub first_sequence: i64,
-        pub last_sequence: i64,
-        pub geometric_tier: i32,
-        pub base_oid: Option<String>,
-        pub head_oid: String,
-        pub segment_id: String,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-
-    impl Model {
-        pub fn from_domain(repo_id: &str, span: &GitPackSpan) -> Result<Self, PostgresError> {
-            Ok(Self {
-                repo_id: repo_id.to_string(),
-                first_sequence: u64_to_i64(span.first_sequence, "Git pack span first sequence")?,
-                last_sequence: u64_to_i64(span.last_sequence, "Git pack span last sequence")?,
-                geometric_tier: u32_to_i32(span.geometric_tier, "Git pack span geometric tier")?,
-                base_oid: span.base_oid.clone(),
-                head_oid: span.head_oid.clone(),
-                segment_id: span.segment.segment_id.clone(),
-            })
-        }
-
-        pub fn try_into_domain(self, segment: GitSegmentRef) -> Result<GitPackSpan, PostgresError> {
-            if self.segment_id != segment.segment_id {
-                return Err(PostgresError::internal_message(
-                    "Git pack span resolved the wrong segment",
-                ));
-            }
-            let span = GitPackSpan {
-                first_sequence: i64_to_u64(self.first_sequence, "Git pack span first sequence")?,
-                last_sequence: i64_to_u64(self.last_sequence, "Git pack span last sequence")?,
-                geometric_tier: i32_to_u32(self.geometric_tier, "Git pack span geometric tier")?,
-                base_oid: self.base_oid,
-                head_oid: self.head_oid.clone(),
-                segment,
-            };
-            let expected_tier = span
-                .expected_geometric_tier()
-                .map_err(|error| PostgresError::internal_message(error.to_string()))?;
-            if span.geometric_tier != expected_tier {
-                return Err(PostgresError::internal_message(format!(
-                    "Git pack span {}..{} has geometric tier {}, expected {expected_tier}",
-                    span.first_sequence, span.last_sequence, span.geometric_tier
-                )));
-            }
-            Ok(span)
-        }
-    }
-}
-
 pub mod git_segment_upload {
     use super::*;
 
@@ -466,37 +405,6 @@ pub mod git_segment_upload {
                 updated_at_unix: i64_to_u64(
                     self.updated_at_unix,
                     "Git segment upload update time",
-                )?,
-            })
-        }
-
-        pub fn ready_segment_ref(&self) -> Result<GitSegmentRef, PostgresError> {
-            let state = decode_enum::<GitSegmentUploadState>(self.state.clone())?;
-            if !matches!(
-                state,
-                GitSegmentUploadState::Ready
-                    | GitSegmentUploadState::Published
-                    | GitSegmentUploadState::Retained
-            ) {
-                return Err(PostgresError::internal_message(format!(
-                    "Git segment {} is not ready for repository publication",
-                    self.segment_id
-                )));
-            }
-            Ok(GitSegmentRef {
-                segment_id: self.segment_id.clone(),
-                sha256: self.sha256.clone().ok_or_else(|| {
-                    PostgresError::internal_message("ready Git segment has no SHA-256 digest")
-                })?,
-                plaintext_bytes: i64_to_u64(
-                    self.plaintext_bytes.ok_or_else(|| {
-                        PostgresError::internal_message("ready Git segment has no plaintext size")
-                    })?,
-                    "Git segment plaintext size",
-                )?,
-                encoding_version: i32_to_u32(
-                    self.encoding_version,
-                    "Git segment encoding version",
                 )?,
             })
         }

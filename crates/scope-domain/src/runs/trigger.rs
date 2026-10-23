@@ -43,6 +43,10 @@ impl PushTriggerInput {
             configuration_error,
         })
     }
+
+    pub fn requires_evaluation(&self) -> bool {
+        !self.workflows.is_empty() || self.configuration_error.is_some()
+    }
 }
 
 impl From<&RepositoryWorkflowCatalog> for PushTriggerInput {
@@ -93,6 +97,24 @@ pub struct PushTriggerEvaluation {
 }
 
 impl PushTriggerEvaluation {
+    pub fn for_push(
+        repository_id: impl Into<String>,
+        change_version: u64,
+        input: &PushTriggerInput,
+        now_unix: u64,
+    ) -> Result<Self, DomainError> {
+        let mut evaluation = Self::pending(
+            repository_id,
+            change_version,
+            input.head_oid.clone(),
+            now_unix,
+        )?;
+        if !input.requires_evaluation() {
+            evaluation.succeed(Vec::new(), now_unix)?;
+        }
+        Ok(evaluation)
+    }
+
     pub fn pending(
         repository_id: impl Into<String>,
         change_version: u64,
@@ -196,6 +218,29 @@ mod tests {
     use crate::runs::catalog::RepositoryWorkflowCatalog;
 
     const HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn a_push_without_workflows_settles_with_no_checks_and_others_wait_for_evaluation() {
+        let without_workflows = PushTriggerInput::new(HEAD, Vec::new(), None).unwrap();
+        let settled = PushTriggerEvaluation::for_push("repo-1", 4, &without_workflows, 9).unwrap();
+        assert_eq!(settled.state, PushTriggerEvaluationState::Succeeded);
+        assert!(settled.checks.is_empty());
+        assert_eq!(settled.completed_at_unix, Some(9));
+
+        let workflow = PushWorkflowFile {
+            path: "/.scope/runs/checks.yml".to_string(),
+            bytes: b"workflow".to_vec(),
+        };
+        let with_workflow = PushTriggerInput::new(HEAD, vec![workflow], None).unwrap();
+        let rejected =
+            PushTriggerInput::new(HEAD, Vec::new(), Some("too many workflows".to_string()))
+                .unwrap();
+        for input in [with_workflow, rejected] {
+            let evaluation = PushTriggerEvaluation::for_push("repo-1", 4, &input, 9).unwrap();
+            assert_eq!(evaluation.state, PushTriggerEvaluationState::Pending);
+            assert_eq!(evaluation.completed_at_unix, None);
+        }
+    }
 
     #[test]
     fn push_input_preserves_catalog_capture_errors() {

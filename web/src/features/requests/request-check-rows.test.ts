@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
-import { requestCheckGroups, requestChecksSummary, requestPullRequestView } from './request-check-rows'
+import {
+  requestCheckGroups,
+  requestChecksSummary,
+  requestPullRequestView,
+  requestReviewBotRows,
+} from './request-check-rows'
 
 type GitHubCheck = Extract<RequestCheckResponse, { provider: 'github' }>
 
@@ -193,4 +198,21 @@ test('a carrier pull request links to GitHub once it has a number and explains f
     url: null,
     note: { text: 'Accept the permission', failed: true },
   })
+})
+
+test('review bots keep their listed order and say where each is on the latest head', () => {
+  assert.deepEqual(
+    requestReviewBotRows([
+      { login: 'greptile-apps[bot]', required: true, state: 'working' },
+      { login: 'chatgpt-codex-connector[bot]', required: false, state: 'commented' },
+      { login: 'octo-reviewer[bot]', required: true, state: 'clear' },
+      { login: 'lint-bot[bot]', required: false, state: 'not_started' },
+    ]),
+    [
+      { login: 'greptile-apps[bot]', required: true, label: 'Reviewing', tone: 'running' },
+      { login: 'chatgpt-codex-connector[bot]', required: false, label: 'Finished with comments', tone: 'waiting' },
+      { login: 'octo-reviewer[bot]', required: true, label: 'Finished, nothing found', tone: 'success' },
+      { login: 'lint-bot[bot]', required: false, label: 'Not started', tone: 'inert' },
+    ],
+  )
 })

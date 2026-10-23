@@ -1,6 +1,6 @@
 use crate::{
     GitOid, RequestCheckEvaluationState, RequestChecksOutcome, RequestMergeabilityResponse,
-    RunState, wire::wire_enum,
+    RequestReviewBotState, RunState, wire::wire_enum,
 };
 use scope_domain::requests::{
     GitHubCheckConclusion as DomainGitHubCheckConclusion,
@@ -129,6 +129,17 @@ pub struct RequestGitHubPullRequestResponse {
     pub error: Option<String>,
 }
 
+/// A review bot listed for the repository and how far it got with the
+/// request's current head.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestReviewBotResponse {
+    pub login: String,
+    /// Whether the request waits for this bot to finish its head before it can merge.
+    pub required: bool,
+    pub state: RequestReviewBotState,
+}
+
 /// Starts the checks of the head the maintainer reviewed. A newer head is
 /// refused, because approving runs its code.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -159,6 +170,13 @@ pub struct RequestChecksResponse {
     /// Set when the repository opens pull requests for review bots and this
     /// request has one, or Scope is opening one.
     pub github_pull_request: Option<RequestGitHubPullRequestResponse>,
+    /// The repository's review bots, in their listed order, for full-view
+    /// requests; empty when none is listed or the request is narrower.
+    pub review_bots: Vec<RequestReviewBotResponse>,
+    /// Whether required review bots hold the merge. They do only while the
+    /// repository opens pull requests for review bots, since a bot can only
+    /// review a request through that pull request.
+    pub review_bots_enforced: bool,
     /// Whether approving would run workflow files this request changes. Only
     /// worked out for a viewer who can approve GitHub checks.
     pub changes_github_workflows: bool,

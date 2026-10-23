@@ -108,7 +108,6 @@ async fn public_git_read_view_physically_excludes_private_objects() {
         repo.repo_config.views(),
         &projection,
         repo.git_head.as_ref(),
-        &repo.git_pack_spans,
     )
     .await
     .unwrap();

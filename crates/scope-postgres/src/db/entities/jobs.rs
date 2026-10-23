@@ -69,7 +69,6 @@ pub mod outbox_job {
             job_kind: &str,
             repo_id: &str,
             head: &scope_domain::repository::git::GitHead,
-            pack_spans: &[scope_domain::repository::git::GitPackSpan],
             input: &scope_domain::runs::trigger::PushTriggerInput,
             now: u64,
         ) -> Result<Self, PostgresError> {
@@ -84,7 +83,6 @@ pub mod outbox_job {
                 payload: encode_json(&serde_json::json!({
                     "workflow_schema_version": PUSH_MAIN_TRIGGER_WORKFLOW_SCHEMA_VERSION,
                     "head": head,
-                    "pack_spans": pack_spans,
                     "input": input,
                 }))?,
                 state: "ready".to_string(),

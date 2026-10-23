@@ -1,7 +1,7 @@
 use crate::{
     error::ApiError,
     git::{
-        command::{run_git, run_git_output},
+        command::run_git_output,
         request_merge_tree::{MergedTree, merge_request_tree},
     },
 };
@@ -25,16 +25,6 @@ pub(super) fn merge_main_oid_for_execution(
     request_head_oid: &str,
     request_name: &str,
 ) -> Result<String, MergeMainFailure> {
-    run_git(
-        Some(repo),
-        &["config", "user.name", "Scope"],
-        "configuring request merge author",
-    )?;
-    run_git(
-        Some(repo),
-        &["config", "user.email", "merge@scope.local"],
-        "configuring request merge email",
-    )?;
     let tree_oid =
         match merge_request_tree(repo, request_base_oid, current_main_oid, request_head_oid)? {
             MergedTree::Clean(tree_oid) => tree_oid,
@@ -48,6 +38,10 @@ pub(super) fn merge_main_oid_for_execution(
     let commit = run_git_output(
         Some(repo),
         &[
+            "-c",
+            "user.name=Scope",
+            "-c",
+            "user.email=merge@scope.local",
             "commit-tree",
             &tree_oid,
             "-p",

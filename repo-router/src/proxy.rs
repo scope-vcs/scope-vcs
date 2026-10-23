@@ -1,18 +1,20 @@
 use crate::{
     app::RouterState,
-    backend_selection::GitRequestKind,
-    discovery::{Backend, DiscoveryFreshness},
-    rendezvous::rank_backends,
+    backend_selection::{GitRequestKind, GitRequestPhase},
     repository_path::repository_key,
 };
 use axum::{
-    body::{Body, Bytes},
+    body::Bytes,
     extract::{Request, State},
-    http::{HeaderMap, HeaderName, Method, StatusCode, header},
+    http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Response},
 };
-use scope_service_runtime::outbound_http::send_traced;
-use std::{collections::HashSet, sync::Arc};
+use scope_service_runtime::{
+    outbound_http::send_traced,
+    proxy::{forwarded_headers, proxied_response},
+    replicas::{Backend, DiscoveryFreshness, rank_backends},
+};
+use std::sync::Arc;
 
 const ROUTER_RESPONSE_HEADER: &str = "x-scope-git-router";
 
@@ -49,7 +51,10 @@ pub(crate) async fn repository_request(
     let ranked = rank_backends(&repository, &discovery.backends, |backend| {
         backend.address.to_string()
     });
-    let candidate_ranks = state.selector.candidate_indices(kind, ranked.len());
+    let candidate_ranks =
+        state
+            .selector
+            .candidate_indices(kind, GitRequestPhase::of(request.method()), ranked.len());
     if candidate_ranks.is_empty() {
         return upstream_unavailable(&repository, "no API replicas are available");
     }
@@ -78,7 +83,7 @@ pub(crate) async fn repository_request(
             };
             forward_upload_pack(&state, &route, &candidate_ranks, upstream_request, body).await
         }
-        GitRequestKind::PrimaryOnly => {
+        GitRequestKind::ReceivePack | GitRequestKind::PrimaryOnly => {
             let rank = candidate_ranks[0];
             let backend = route.backend(rank);
             route_telemetry(&route, kind, backend, rank, 1, 1, &upstream_request.method);
@@ -206,50 +211,12 @@ fn route_telemetry(
 }
 
 fn upstream_response(upstream: reqwest::Response) -> Response {
-    let status = upstream.status();
-    let headers = forwarded_headers(upstream.headers());
-    let mut response = Response::new(Body::from_stream(upstream.bytes_stream()));
-    *response.status_mut() = status;
-    *response.headers_mut() = headers;
+    let mut response = proxied_response(upstream);
     response.headers_mut().insert(
         ROUTER_RESPONSE_HEADER,
         "1".parse().expect("static header value"),
     );
     response
-}
-
-fn forwarded_headers(headers: &HeaderMap) -> HeaderMap {
-    let connection_headers = headers
-        .get_all(header::CONNECTION)
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .flat_map(|value| {
-            value
-                .split(',')
-                .filter_map(|name| HeaderName::from_bytes(name.trim().as_bytes()).ok())
-        })
-        .collect::<HashSet<_>>();
-    headers
-        .iter()
-        .filter(|(name, _)| !is_hop_by_hop(name) && !connection_headers.contains(*name))
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect()
-}
-
-fn is_hop_by_hop(name: &HeaderName) -> bool {
-    matches!(
-        name.as_str(),
-        "connection"
-            | "keep-alive"
-            | "proxy-authenticate"
-            | "proxy-authorization"
-            | "proxy-connection"
-            | "te"
-            | "trailer"
-            | "transfer-encoding"
-            | "upgrade"
-            | "host"
-    )
 }
 
 fn upstream_unavailable(repository: &str, error: impl std::fmt::Display) -> Response {

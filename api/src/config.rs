@@ -7,6 +7,7 @@ pub const SCOPE_APP_ORIGIN_ENV: &str = "SCOPE_APP_ORIGIN";
 pub const SCOPE_API_PUBLIC_URL_ENV: &str = "SCOPE_API_PUBLIC_URL";
 pub const SCOPE_GIT_PUBLIC_URL_ENV: &str = "SCOPE_GIT_PUBLIC_URL";
 pub const DATABASE_URL_ENV: &str = "DATABASE_URL";
+pub const SCOPE_DATABASE_MAX_CONNECTIONS_ENV: &str = "SCOPE_DATABASE_MAX_CONNECTIONS";
 pub const SCOPE_REPO_ROOT_ENV: &str = "SCOPE_REPO_ROOT";
 pub const SCOPE_DATA_DIR_ENV: &str = "SCOPE_DATA_DIR";
 pub const SCOPE_OBJECT_ENCRYPTION_KEY_ENV: &str = "SCOPE_OBJECT_ENCRYPTION_KEY";
@@ -37,7 +38,6 @@ pub const DEFAULT_GIT_CACHE_MAX_BYTES: usize = 10 * 1024 * 1024 * 1024;
 pub const AWAITING_FIRST_PUSH_GIT_ERROR: &str = "repo is awaiting its first push";
 pub const MAX_RECEIVE_PACK_BYTES: usize = 512 * 1024 * 1024;
 pub const MAX_UPLOAD_PACK_BYTES: usize = 64 * 1024 * 1024;
-pub const MAX_PENDING_IMPORT_FILES: usize = 10_000;
 pub const MAX_PENDING_IMPORT_BLOB_BYTES: usize = 25 * 1024 * 1024;
 
 pub fn database_url_from_env() -> anyhow::Result<String> {
@@ -102,7 +102,24 @@ pub fn git_segment_store_config_from_env(
     Ok(config)
 }
 
-fn parse_usize_env(name: &str, default: usize) -> anyhow::Result<usize> {
+pub fn database_max_connections_from_env() -> anyhow::Result<u32> {
+    let value = parse_positive_usize_env(
+        SCOPE_DATABASE_MAX_CONNECTIONS_ENV,
+        scope_postgres::db::DEFAULT_METADATA_POOL_MAX_CONNECTIONS as usize,
+    )?;
+    u32::try_from(value)
+        .map_err(|_| anyhow::anyhow!("{SCOPE_DATABASE_MAX_CONNECTIONS_ENV} is too large"))
+}
+
+pub(crate) fn parse_positive_usize_env(name: &str, default: usize) -> anyhow::Result<usize> {
+    let value = parse_usize_env(name, default)?;
+    if value == 0 {
+        anyhow::bail!("{name} must be greater than zero");
+    }
+    Ok(value)
+}
+
+pub(crate) fn parse_usize_env(name: &str, default: usize) -> anyhow::Result<usize> {
     match std::env::var(name) {
         Ok(value) if !value.trim().is_empty() => value
             .parse::<usize>()

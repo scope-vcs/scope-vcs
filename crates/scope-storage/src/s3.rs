@@ -82,6 +82,8 @@ fn is_retryable_get_error(error: &GetObjectSdkError) -> bool {
         }
         SdkError::ServiceError(error) => {
             matches!(error.raw().status().as_u16(), 429 | 500 | 502 | 503 | 504)
+                || aws_sdk_s3::error::ProvideErrorMetadata::code(error.err())
+                    == Some("RequestCanceled")
         }
         _ => false,
     }
@@ -377,6 +379,10 @@ mod tests {
         )));
         assert!(is_retryable_get_error(&service_error("SlowDown", 429)));
         assert!(is_retryable_get_error(&service_error("InternalError", 500)));
+        assert!(is_retryable_get_error(&service_error(
+            "RequestCanceled",
+            400
+        )));
         assert!(!is_retryable_get_error(
             &service_error("AccessDenied", 403,)
         ));

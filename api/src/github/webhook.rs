@@ -1,10 +1,16 @@
 use super::{GitHubApp, InstallationStatus};
 use crate::error::ApiError;
 use hmac::{Hmac, KeyInit, Mac};
-use scope_domain::{github_connection::GitHubInstallationChange, requests::GitHubBranch};
+use scope_domain::{
+    github_connection::GitHubInstallationChange,
+    requests::{CodexReviewState, GitHubBranch},
+};
 use serde::Deserialize;
 use sha2::Sha256;
 use std::collections::BTreeSet;
+
+mod reviews;
+pub(crate) use reviews::GitHubReviewDelivery;
 
 pub(crate) const GITHUB_SIGNATURE_HEADER: &str = "x-hub-signature-256";
 pub(crate) const GITHUB_EVENT_HEADER: &str = "x-github-event";
@@ -39,19 +45,28 @@ pub(crate) enum GitHubWebhookEvent {
     RepositoryVisibilityChanged {
         github_repository_id: u64,
     },
+    ReviewActivity(GitHubReviewDelivery),
     PullRequestChanged {
         github_repository_id: u64,
         request_id: String,
+    },
+    ReviewStateCommented {
+        github_repository_id: u64,
+        number: u64,
     },
     Ignored,
 }
 
 impl GitHubWebhookEvent {
     pub(crate) fn parse(event: &str, body: &[u8]) -> Result<Self, ApiError> {
+        if reviews::EVENTS.contains(&event) {
+            return Ok(reviews::parse(event, body)?.map_or(Self::Ignored, Self::ReviewActivity));
+        }
         if !matches!(
             event,
             "repository"
                 | "pull_request"
+                | "issue_comment"
                 | "check_run"
                 | "check_suite"
                 | "workflow_run"
@@ -100,6 +115,26 @@ impl GitHubWebhookEvent {
                     }
                     _ => Self::Ignored,
                 },
+                _ => Self::Ignored,
+            },
+            "issue_comment" => match (
+                required(payload.action.as_deref(), "action")?,
+                payload.repository,
+                payload.issue,
+                payload.comment,
+            ) {
+                ("created" | "edited", Some(repository), Some(issue), Some(comment))
+                    if issue.pull_request.is_some()
+                        && comment
+                            .body
+                            .as_deref()
+                            .is_some_and(CodexReviewState::appears_in) =>
+                {
+                    Self::ReviewStateCommented {
+                        github_repository_id: repository.id,
+                        number: issue.number,
+                    }
+                }
                 _ => Self::Ignored,
             },
             "check_run" | "check_suite" | "workflow_run" => {
@@ -195,6 +230,19 @@ struct Payload {
     workflow_run: Option<ChecksSubject>,
     workflow_job: Option<Id>,
     pull_request: Option<PullRequestSubject>,
+    issue: Option<IssueSubject>,
+    comment: Option<CommentSubject>,
+}
+
+#[derive(Deserialize)]
+struct IssueSubject {
+    number: u64,
+    pull_request: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct CommentSubject {
+    body: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -382,17 +430,39 @@ mod tests {
                 "{action} {head} {head_repository}"
             );
         }
-        for event in [
-            "pull_request_review",
-            "pull_request_review_comment",
-            "pull_request_review_thread",
-            "issue_comment",
-        ] {
+    }
+
+    #[test]
+    fn codex_state_comments_on_pull_requests_name_the_pull_request_to_reconcile() {
+        let state = "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 {\"code_review\":{\"commit_sha\":\"1196d9ca\",\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":\"running\"}} -->\n## Codex Review Summary";
+        let parse = |action: &str, pull_request: bool, body: &str| {
+            let mut issue = serde_json::json!({ "number": 727 });
+            if pull_request {
+                issue["pull_request"] = serde_json::json!({ "url": "https://api.github.com/x" });
+            }
+            let body = serde_json::json!({
+                "action": action,
+                "repository": { "id": 42 },
+                "issue": issue,
+                "comment": { "body": body },
+            });
+            GitHubWebhookEvent::parse("issue_comment", body.to_string().as_bytes()).unwrap()
+        };
+        for action in ["created", "edited"] {
             assert_eq!(
-                GitHubWebhookEvent::parse(event, b"{}").unwrap(),
-                GitHubWebhookEvent::Ignored
+                parse(action, true, state),
+                GitHubWebhookEvent::ReviewStateCommented {
+                    github_repository_id: 42,
+                    number: 727,
+                }
             );
         }
+        assert_eq!(parse("deleted", true, state), GitHubWebhookEvent::Ignored);
+        assert_eq!(parse("created", false, state), GitHubWebhookEvent::Ignored);
+        assert_eq!(
+            parse("created", true, "Looks good to me"),
+            GitHubWebhookEvent::Ignored
+        );
     }
 
     #[test]

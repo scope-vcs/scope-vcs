@@ -98,16 +98,9 @@ async fn land(store: &MetadataStore, request: &Request, child: &Request, main: &
         .mutate_repository("owner", "repo", now, |repo| {
             repo.record.change_version += 1;
             repo.record.content_version += 1;
-            let push_sequence = repo
-                .git_head
-                .as_ref()
-                .map_or(1, |head| head.push_sequence + 1);
-            repo.git_head = Some(scope_domain::repository::git::GitHead::new(
-                main.to_string(),
-                push_sequence,
-                repo.record.change_version,
-            ));
+            let main_pack = super::advance_main(repo, main);
             let mut mutation = crate::db::RepositoryMutation::new(());
+            mutation.main_pack = Some(main_pack);
             mutation.landed_requests = Some(crate::db::request_merge::LandedRequestCompletion {
                 actor_user_id: "user_owner".into(),
                 candidates: vec![crate::db::request_merge::LandedRequestCandidate {

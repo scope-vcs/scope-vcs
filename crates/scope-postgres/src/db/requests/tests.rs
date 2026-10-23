@@ -510,26 +510,73 @@ async fn close_draft_request_deletes_request_and_events() {
             .await
             .unwrap();
     assert!(initial_references.contains(&snapshot_refs[0]));
+    let pool_segment = scope_domain::repository::git::GitSegmentRef {
+        segment_id: "pool-draft".to_string(),
+        sha256: "e".repeat(64),
+        plaintext_bytes: 10,
+        encoding_version: 2,
+    };
+    let pool_pack = scope_domain::repository::git::GitPoolPack {
+        id: "pool-draft".to_string(),
+        owner: scope_domain::repository::git::GitPoolPackOwner::Request {
+            request_id: "req_1".to_string(),
+        },
+        head_oid: "head-2".to_string(),
+        prerequisites: vec!["head".to_string()],
+        storage: scope_domain::repository::git::GitPoolPackStorage::Segment(pool_segment.clone()),
+    };
+    store
+        .repositories()
+        .begin_git_segment_upload("owner/repo", "pool-draft", "git/pool-draft", 2, 3)
+        .await
+        .unwrap();
+    store
+        .repositories()
+        .mark_git_segment_upload_ready(&pool_segment, 12, 3)
+        .await
+        .unwrap();
     store
         .requests()
-        .record_request_revision(RecordRequestRevisionInput {
-            new_base: None,
-            new_base_stack_depth: None,
-            request_id: "req_1".to_string(),
-            actor_user_id: "user_public".to_string(),
-            actor_can_edit: false,
-            expected_old_head_oid: Some("head".to_string()),
-            new_head_oid: "head-2".to_string(),
-            git_snapshot: source_blob("head-2"),
-            git_facts: RequestRevisionGitFacts {
-                contains_old_head: true,
-                contained_main_oid: None,
-                contained_main_descends_from_base: false,
+        .record_pushed_request_revision(
+            RecordRequestRevisionInput {
+                new_base: None,
+                new_base_stack_depth: None,
+                request_id: "req_1".to_string(),
+                actor_user_id: "user_public".to_string(),
+                actor_can_edit: false,
+                expected_old_head_oid: Some("head".to_string()),
+                new_head_oid: "head-2".to_string(),
+                git_snapshot: source_blob("head-2"),
+                git_facts: RequestRevisionGitFacts {
+                    contains_old_head: true,
+                    contained_main_oid: None,
+                    contained_main_descends_from_base: false,
+                },
+                event_id: "event_revision".to_string(),
+                body: None,
+                now_unix: 4,
             },
-            event_id: "event_revision".to_string(),
-            body: None,
-            now_unix: 4,
-        })
+            store
+                .requests()
+                .request_for_tests("req_1")
+                .await
+                .unwrap()
+                .unwrap()
+                .base_version,
+            None,
+            Vec::new(),
+            super::PushedRevisionObjects {
+                object_generation: store
+                    .repositories()
+                    .repository_for_tests("owner/repo")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .repo_config
+                    .object_generation(),
+                pool_pack: Some(pool_pack.clone()),
+            },
+        )
         .await
         .unwrap();
     store
@@ -588,17 +635,6 @@ async fn close_draft_request_deletes_request_and_events() {
             .unwrap()
             .is_empty()
     );
-    let ref_cleanup = store
-        .cleanup()
-        .pending_request_ref_cleanups(None)
-        .await
-        .unwrap();
-    assert_eq!(ref_cleanup.len(), 1);
-    assert_eq!(ref_cleanup[0].request_id, "req_1");
-    assert_eq!(ref_cleanup[0].request_name, "fix-parser");
-    assert_eq!(ref_cleanup[0].head_oid, "head-2");
-    assert_eq!(ref_cleanup[0].incarnation.repository_id(), "owner/repo");
-    assert_eq!(ref_cleanup[0].incarnation.incarnation_id(), "repoi_test");
     let pending_blobs = store
         .cleanup()
         .pending_source_blob_cleanups_for_tests()
@@ -625,6 +661,19 @@ async fn close_draft_request_deletes_request_and_events() {
             .iter()
             .all(|reference| !referenced.contains(reference))
     );
+    let pool_upload_state = sea_orm::ConnectionTrait::query_one_raw(
+        store.db.as_ref(),
+        sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT state FROM scope_git_segment_uploads WHERE segment_id = 'pool-draft'",
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .try_get::<String>("", "state")
+    .unwrap();
+    assert_eq!(pool_upload_state, "deleting");
 }
 
 #[tokio::test]
@@ -742,7 +791,7 @@ async fn create_test_reply(
         .unwrap();
 }
 
-fn public_start_input() -> StartRequestInput {
+pub(crate) fn public_start_input() -> StartRequestInput {
     StartRequestInput {
         id: "req_1".to_string(),
         repo_id: "owner/repo".to_string(),
@@ -761,7 +810,7 @@ fn public_start_input() -> StartRequestInput {
     }
 }
 
-fn public_upload_input() -> RecordWorkingRequestUploadInput {
+pub(crate) fn public_upload_input() -> RecordWorkingRequestUploadInput {
     RecordWorkingRequestUploadInput {
         request_id: "req_1".to_string(),
         actor_user_id: "user_public".to_string(),
@@ -790,3 +839,4 @@ mod authorization_locks;
 mod draft_count;
 mod open_counts;
 mod replay_authorization;
+mod revision_locks;

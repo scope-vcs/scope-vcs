@@ -65,12 +65,9 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
         .mutate_repository("owner", "repo", 15, |repo| {
             repo.record.change_version += 1;
             repo.record.content_version += 1;
-            repo.git_head = Some(scope_domain::repository::git::GitHead::new(
-                child.head_oid.clone(),
-                1,
-                repo.record.change_version,
-            ));
+            let main_pack = super::advance_main(repo, &child.head_oid);
             let mut mutation = crate::db::RepositoryMutation::new(());
+            mutation.main_pack = Some(main_pack);
             mutation.landed_requests = Some(
                 super::super::super::request_merge::LandedRequestCompletion {
                     actor_user_id: "user_owner".into(),

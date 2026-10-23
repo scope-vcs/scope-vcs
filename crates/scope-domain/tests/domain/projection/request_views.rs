@@ -80,6 +80,7 @@ fn merge(
         ),
         origin,
     )
+    .map(drop)
 }
 
 #[test]

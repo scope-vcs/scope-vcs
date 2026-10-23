@@ -1,3 +1,6 @@
+use super::github_accounts::{
+    AuthorColumns, author_columns, discussion_author, discussion_resolver, resolver_columns,
+};
 use super::*;
 use scope_domain::requests::{
     CheckCommitBase, Request, RequestActorRole, RequestAttention, RequestAttentionReason,
@@ -281,6 +284,9 @@ pub mod request_discussion {
         pub created_at_unix: i64,
         pub resolved_at_unix: Option<i64>,
         pub resolved_by_user_id: Option<String>,
+        pub author_github_user_id: Option<i64>,
+        pub source_url: Option<String>,
+        pub resolved_by_github_user_id: Option<i64>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -291,6 +297,9 @@ pub mod request_discussion {
     impl Model {
         pub fn from_domain(value: &RequestDiscussion) -> Result<Self, PostgresError> {
             let lines = value.anchor.as_ref().and_then(|anchor| anchor.lines);
+            let author = author_columns(&value.author)?;
+            let (resolved_by_user_id, resolved_by_github_user_id) =
+                resolver_columns(value.resolved_by.as_ref())?;
             Ok(Self {
                 id: value.id.clone(),
                 request_id: value.request_id.clone(),
@@ -299,7 +308,7 @@ pub mod request_discussion {
                     value.last_activity_position,
                     "discussion last activity position",
                 )?,
-                author_user_id: value.author_user_id.clone(),
+                author_user_id: author.user_id,
                 body_markdown: value.body_markdown.clone(),
                 revision_id: value
                     .anchor
@@ -328,7 +337,10 @@ pub mod request_discussion {
                     value.resolved_at_unix,
                     "discussion resolution time",
                 )?,
-                resolved_by_user_id: value.resolved_by_user_id.clone(),
+                resolved_by_user_id,
+                author_github_user_id: author.github_user_id,
+                source_url: author.source_url,
+                resolved_by_github_user_id,
             })
         }
 
@@ -356,7 +368,11 @@ pub mod request_discussion {
                     self.last_activity_position,
                     "discussion last activity position",
                 )?,
-                author_user_id: self.author_user_id,
+                author: discussion_author(AuthorColumns {
+                    user_id: self.author_user_id,
+                    github_user_id: self.author_github_user_id,
+                    source_url: self.source_url,
+                })?,
                 body_markdown: self.body_markdown,
                 anchor,
                 status: decode_enum::<RequestDiscussionStatus>(self.status)?,
@@ -366,7 +382,10 @@ pub mod request_discussion {
                     self.resolved_at_unix,
                     "discussion resolution time",
                 )?,
-                resolved_by_user_id: self.resolved_by_user_id,
+                resolved_by: discussion_resolver(
+                    self.resolved_by_user_id,
+                    self.resolved_by_github_user_id,
+                )?,
             })
         }
     }
@@ -408,6 +427,8 @@ pub mod request_discussion_reply {
         pub reply_to_reply_id: Option<String>,
         pub client_reply_id: String,
         pub created_at_unix: i64,
+        pub author_github_user_id: Option<i64>,
+        pub source_url: Option<String>,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -417,11 +438,12 @@ pub mod request_discussion_reply {
 
     impl Model {
         pub fn from_domain(value: &RequestDiscussionReply) -> Result<Self, PostgresError> {
+            let author = author_columns(&value.author)?;
             Ok(Self {
                 id: value.id.clone(),
                 discussion_id: value.discussion_id.clone(),
                 position: u64_to_i64(value.position, "discussion reply position")?,
-                author_user_id: value.author_user_id.clone(),
+                author_user_id: author.user_id,
                 body_markdown: value.body_markdown.clone(),
                 reply_to_reply_id: value.reply_to_reply_id.clone(),
                 client_reply_id: value.client_reply_id.clone(),
@@ -429,6 +451,8 @@ pub mod request_discussion_reply {
                     value.created_at_unix,
                     "discussion reply creation time",
                 )?,
+                author_github_user_id: author.github_user_id,
+                source_url: author.source_url,
             })
         }
 
@@ -437,7 +461,11 @@ pub mod request_discussion_reply {
                 id: self.id,
                 discussion_id: self.discussion_id,
                 position: i64_to_u64(self.position, "discussion reply position")?,
-                author_user_id: self.author_user_id,
+                author: discussion_author(AuthorColumns {
+                    user_id: self.author_user_id,
+                    github_user_id: self.author_github_user_id,
+                    source_url: self.source_url,
+                })?,
                 body_markdown: self.body_markdown,
                 reply_to_reply_id: self.reply_to_reply_id,
                 client_reply_id: self.client_reply_id,

@@ -279,7 +279,7 @@ function optimisticDiscussion({
 }): RequestDiscussionView {
   const position = Number.MAX_SAFE_INTEGER
   return {
-    author: actor,
+    author: { kind: 'user', id: actor.id, handle: actor.handle },
     anchor: null,
     body_markdown: body,
     client_discussion_id: clientDiscussionId,

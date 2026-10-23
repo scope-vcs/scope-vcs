@@ -128,8 +128,8 @@ impl RepositoryStore {
             self.db.as_ref(),
             segment_id,
             "state IN ('uploading', 'ready') AND NOT EXISTS (
-                SELECT 1 FROM scope_git_segments spans
-                WHERE spans.segment_id = scope_git_segment_uploads.segment_id
+                SELECT 1 FROM scope_git_pool_packs packs
+                WHERE packs.segment_id = scope_git_segment_uploads.segment_id
             )",
             "deleting",
             now_unix,
@@ -244,7 +244,7 @@ pub(super) fn require_one_transition(
     }
 }
 
-pub(super) fn require_text(value: &str, field: &str) -> Result<(), PostgresError> {
+fn require_text(value: &str, field: &str) -> Result<(), PostgresError> {
     if value.trim().is_empty() {
         Err(PostgresError::internal_message(format!(
             "{field} is required"

@@ -1240,10 +1240,10 @@ LICENSE-APACHE: text fd7d8f1fe049992c00b619e8274cdb3566542bdb45cbf85426790ee1f7c
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-ctutils 0.4.3
+ctutils 0.4.4
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/ctutils/ctutils-0.4.3.crate
+Source: https://static.crates.io/crates/ctutils/ctutils-0.4.4.crate
 
 Published author metadata: ["RustCrypto Developers"]
 Repository: "https://github.com/RustCrypto/utils"

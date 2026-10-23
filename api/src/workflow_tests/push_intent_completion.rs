@@ -182,11 +182,10 @@ async fn incremental_git_pack_layout_restores_after_cache_loss() {
     assert_eq!(head.push_sequence, first_snapshot.push_sequence + 1);
 
     let restored = TempGitRepo(unique_test_path("segment-restore"));
-    crate::git::restore::restore_git_pack_spans(
+    crate::git::restore::restore_main_head(
         &state,
         &stored.incarnation(),
         stored.git_head.as_ref().unwrap(),
-        &stored.git_pack_spans,
         &restored,
     )
     .await

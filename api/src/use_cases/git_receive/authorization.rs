@@ -14,7 +14,7 @@ use scope_domain::{
     repository::{RepoLifecycleState, access::MainPushMode},
     views::ViewId,
 };
-use scope_postgres::db::{GitPushContext, GitPushCredentials};
+use scope_postgres::db::{GitPushCredentials, GitPushState};
 
 pub(crate) async fn authorize(
     state: &AppState,
@@ -41,7 +41,7 @@ pub(crate) async fn authorize(
                     views.display_name(views.full())
                 )));
             }
-            authorize_scope_token(repo, secret, push_intent)
+            authorize_scope_token(state, owner, repo_name, repo, secret, push_intent).await
         }
         ReceivePackAuthorization::ScopeUser(user) => {
             if let Some(secret) = push_intent_secret
@@ -49,7 +49,7 @@ pub(crate) async fn authorize(
                 && let Some(context) = state
                     .metadata
                     .repositories()
-                    .git_push_context(owner, repo_name, &user.id)
+                    .git_push_state(owner, repo_name, &user.id)
                     .await?
                 && let Some(access) = main_push_access(&context, view, &user.id, &push_intent)?
             {
@@ -60,7 +60,10 @@ pub(crate) async fn authorize(
     }
 }
 
-fn authorize_scope_token(
+async fn authorize_scope_token(
+    state: &AppState,
+    owner: &str,
+    repo_name: &str,
     repo: GitPushCredentials,
     secret: String,
     push_intent: ValidatedPushIntent,
@@ -86,10 +89,17 @@ fn authorize_scope_token(
                 let author_id = authorize_git_push_token_for_repo(&repo, &secret)
                     .map_err(git_credential_error)?;
                 push_intent.ensure_repo_user(&repo.record.id, &author_id)?;
+                let context = state
+                    .metadata
+                    .repositories()
+                    .git_push_state(owner, repo_name, &author_id)
+                    .await?
+                    .filter(|context| context.incarnation == repo.record.incarnation())
+                    .ok_or_else(invalid_git_credentials)?;
                 Ok(ReceivePackAccess::ReadyMember {
                     author_id,
-                    incarnation: repo.record.incarnation(),
                     push_intent,
+                    context: Box::new(context),
                 })
             }
             InitialPushCredential::FirstPushToken { .. } => Err(invalid_git_credentials()),
@@ -98,7 +108,7 @@ fn authorize_scope_token(
 }
 
 fn main_push_access(
-    context: &GitPushContext,
+    context: &GitPushState,
     view: &ViewId,
     author_id: &str,
     push_intent: &ValidatedPushIntent,
@@ -111,8 +121,8 @@ fn main_push_access(
         MainPushMode::Ready if view == views.full() && push_intent.through_view().is_none() => {
             ReceivePackAccess::ReadyMember {
                 author_id: author_id.to_string(),
-                incarnation: context.incarnation.clone(),
                 push_intent: push_intent.clone(),
+                context: Box::new(context.clone()),
             }
         }
         MainPushMode::ThroughView(pusher_view)

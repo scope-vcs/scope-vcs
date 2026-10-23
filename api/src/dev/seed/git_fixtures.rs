@@ -12,7 +12,7 @@ pub(super) fn git_pack_state(
     repository_id: &str,
     label: &str,
     commits: &[SeedGitCommit<'_>],
-) -> Result<(GitHead, GitPackSpan, GitSegmentUpload), ApiError> {
+) -> Result<(GitHead, SeedMainPack), ApiError> {
     with_seed_git_repo(label, |repo_path| {
         apply_seed_commits(repo_path, commits)?;
         store_seed_git_pack(git_segment_store, repository_id, repo_path)
@@ -25,7 +25,7 @@ pub(super) fn update_demo_git_snapshot(
     repository_id: &str,
     initial: SeedGitCommit<'_>,
     accepted: SeedGitCommit<'_>,
-) -> Result<(GitHead, GitPackSpan, SeedRequestGallery, GitSegmentUpload), ApiError> {
+) -> Result<(GitHead, SeedRequestGallery, SeedMainPack), ApiError> {
     with_seed_git_repo("update-demo-live", |repo_path| {
         apply_seed_commits(repo_path, &[initial])?;
         let initial_oid = seed_git_head(repo_path)?;
@@ -96,7 +96,7 @@ pub(super) fn update_demo_git_snapshot(
             },
             &main_oid,
         )?;
-        let (main_head, main_pack_span, segment_upload) =
+        let (main_head, main_pack) =
             store_seed_git_pack(git_segment_store, repository_id, repo_path)?;
         let working_snapshot = store_seed_bundle(
             object_store,
@@ -213,7 +213,7 @@ pub(super) fn update_demo_git_snapshot(
                 now_unix: 1_800_000_500,
             },
         ];
-        Ok((main_head, main_pack_span, gallery, segment_upload))
+        Ok((main_head, gallery, main_pack))
     })
 }
 

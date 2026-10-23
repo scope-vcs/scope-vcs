@@ -5,6 +5,7 @@ import type {
   RepoParams,
   SetRepoGitHubMainPublicationInput,
   SetRepoGitHubRequiredChecksInput,
+  SetRepoGitHubReviewBotsInput,
   SetRepoGitHubReviewBotPullRequestsInput,
   SetRepoGitHubReviewRequestCommentInput,
   SetRepoGitHubRunImportCountInput,
@@ -60,6 +61,7 @@ export function RepoSettingsPage({
   params,
   setGitHubMainPublication,
   setGitHubRequiredChecks,
+  setGitHubReviewBots,
   setGitHubReviewBotPullRequests,
   setGitHubReviewRequestComment,
   setGitHubRunImportCount,
@@ -90,6 +92,9 @@ export function RepoSettingsPage({
   ) => Promise<GitHubConnectionResponse>
   setGitHubRequiredChecks: (
     input: SetRepoGitHubRequiredChecksInput,
+  ) => Promise<GitHubConnectionResponse>
+  setGitHubReviewBots: (
+    input: SetRepoGitHubReviewBotsInput,
   ) => Promise<GitHubConnectionResponse>
   setGitHubReviewBotPullRequests: (
     input: SetRepoGitHubReviewBotPullRequestsInput,
@@ -204,6 +209,7 @@ export function RepoSettingsPage({
           github={github}
           setMainPublication={(enabled) => setGitHubMainPublication({ ...params, enabled })}
           setRequiredChecks={(names) => setGitHubRequiredChecks({ ...params, names })}
+          setReviewBots={(bots) => setGitHubReviewBots({ ...params, bots })}
           setReviewBotPullRequests={(enabled) => setGitHubReviewBotPullRequests({ ...params, enabled })}
           setReviewRequestComment={(comment) => setGitHubReviewRequestComment({ ...params, comment })}
           setRunImportCount={(count) => setGitHubRunImportCount({ ...params, count })}

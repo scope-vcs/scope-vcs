@@ -174,7 +174,7 @@ pub(crate) async fn get_repo_config(
     let repo = state
         .metadata
         .repositories()
-        .git_push_context(&owner, &repo_name, &user.id)
+        .git_push_state(&owner, &repo_name, &user.id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
     if repo.access.actor == RepositoryActor::Public {
@@ -207,7 +207,7 @@ pub(crate) async fn create_push_intent(
     let repo = state
         .metadata
         .repositories()
-        .git_push_context(&owner, &repo_name, &user.id)
+        .git_push_state(&owner, &repo_name, &user.id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
     let view: ViewId = input.view.clone().into();
@@ -276,7 +276,7 @@ async fn create_canonical_push_intent(
     owner: &str,
     repo_name: &str,
     user_id: &str,
-    repo: scope_postgres::db::GitPushContext,
+    repo: scope_postgres::db::GitPushState,
     head_oid: String,
     input: CreatePushIntentRequest,
 ) -> Result<Json<CreatePushIntentResponse>, ApiError> {
@@ -342,7 +342,7 @@ async fn apply_reviewed_config_before_push(
     state: &AppState,
     owner: &str,
     repo_name: &str,
-    observed: &scope_postgres::db::GitPushContext,
+    observed: &scope_postgres::db::GitPushState,
     user_id: &str,
     config: scope_domain::repo_config::RepoConfig,
 ) -> Result<(), ApiError> {
@@ -400,7 +400,7 @@ async fn apply_reviewed_config_before_push(
         let repo = state
             .metadata
             .repositories()
-            .git_push_context(owner, repo_name, user_id)
+            .git_push_state(owner, repo_name, user_id)
             .await?
             .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
         state
@@ -590,7 +590,7 @@ pub(crate) async fn get_file_content(
             &projected.projected.blob,
             git.git_head
                 .as_ref()
-                .map(|head| (git.incarnation.clone(), head, git.git_pack_spans.as_slice())),
+                .map(|head| (git.incarnation.clone(), head)),
         )
         .instrument(span)
         .await?

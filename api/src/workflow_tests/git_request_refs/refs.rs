@@ -115,7 +115,7 @@ async fn public_request_receive_pack_requires_current_repo_read() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn draft_request_ref_push_replaces_snapshot_without_touching_main() {
     let state = test_state_with_request().await;
-    let (source, permissioned_remote, _server, first_request_head) =
+    let (source, permissioned_remote, _server, _) =
         request_checkout(&state, "request-ref-push").await;
     let before_event_count = request_event_count(&state).await;
     push_change(
@@ -144,22 +144,6 @@ async fn draft_request_ref_push_replaces_snapshot_without_touching_main() {
     .await
     .unwrap();
     assert_eq!(request_event_count(&state).await, before_event_count + 1);
-    let store_repo =
-        crate::git::storage::request_ref_store_repo_path(&state, &test_repo_incarnation());
-    let stored_head = git_stdout_text(&store_repo, &["rev-parse", REQUEST_REF], "read request ref")
-        .unwrap()
-        .trim()
-        .to_string();
-    assert_eq!(stored_head, request_head);
-    run_git(
-        Some(&store_repo),
-        &["update-ref", REQUEST_REF, &first_request_head],
-        "simulate stale request ref cache",
-    )
-    .unwrap();
-    let staging_repo = assert_restored_request_head(&state, &request_head).await;
-    let _ = fs::remove_dir_all(staging_repo);
-    fs::remove_dir_all(&store_repo).unwrap();
     let staging_repo = assert_restored_request_head(&state, &request_head).await;
     let _ = fs::remove_dir_all(staging_repo);
 }
@@ -177,7 +161,7 @@ async fn request_ref_completion_cannot_cross_repository_recreation() {
             incarnation: test_repo_incarnation(),
             view: scope_domain::views::ViewId::public(),
         },
-        false,
+        git_receive_use_case::RequestRefSeeding::Pushed(&[REQUEST_REF.to_string()]),
     )
     .await
     .unwrap();
@@ -264,7 +248,7 @@ async fn request_ref_completion_cannot_cross_repository_recreation() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn failed_request_snapshot_put_rolls_back_the_request_ref_cache() {
+async fn failed_request_snapshot_put_leaves_the_request_unchanged() {
     let mut state = test_state_with_request().await;
     let (source, _permissioned_remote, server, accepted_head) =
         request_checkout(&state, "request-ref-put-failure").await;
@@ -298,18 +282,6 @@ async fn failed_request_snapshot_put_rolls_back_the_request_ref_cache() {
     assert!(!output.status.success());
     assert_eq!(
         stored_request(&state, REQUEST_ID).await.head_oid,
-        accepted_head
-    );
-    let store_repo =
-        crate::git::storage::request_ref_store_repo_path(&state, &test_repo_incarnation());
-    assert_eq!(
-        git_stdout_text(
-            &store_repo,
-            &["rev-parse", REQUEST_REF],
-            "read rolled-back request ref"
-        )
-        .unwrap()
-        .trim(),
         accepted_head
     );
 }
@@ -835,4 +807,41 @@ async fn public_actor_cannot_push_private_request_after_membership_loss() {
         stored_request(&state, PRIVATE_REQUEST_ID).await.head_oid,
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     );
+}
+
+#[tokio::test]
+async fn restricted_view_push_staging_borrows_no_objects() {
+    let state = test_state_with_request().await;
+    crate::git::request_refs::request_object_repos(
+        &state,
+        &test_repo_incarnation(),
+        &find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+            .await
+            .unwrap()
+            .repo_config
+            .object_generation(),
+        &public_user_id(),
+    )
+    .unwrap();
+    let preparation = git_receive_use_case::prepare(
+        &state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        ReceivePackAccess::RequestContributor {
+            author_id: public_user_id(),
+            incarnation: test_repo_incarnation(),
+            view: ViewId::public(),
+        },
+        git_receive_use_case::RequestRefSeeding::Pushed(&[REQUEST_REF.to_string()]),
+    )
+    .await
+    .unwrap();
+
+    let alternates = fs::read_to_string(preparation.staging_repo.join("objects/info/alternates"))
+        .unwrap_or_default();
+    assert!(
+        alternates.trim().is_empty(),
+        "a public-view push must only see objects its view can reach: {alternates}"
+    );
+    let _ = fs::remove_dir_all(&preparation.staging_repo);
 }

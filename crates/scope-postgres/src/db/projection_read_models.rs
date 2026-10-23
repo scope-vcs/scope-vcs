@@ -1,5 +1,7 @@
 use super::{entities, integer_columns::u64_to_i64};
-use sea_orm::{ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+};
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -27,11 +29,14 @@ pub(super) async fn repository_views<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
 ) -> Result<Views, PostgresError> {
-    let row = entities::repository::Entity::find_by_id(repo_id.to_string())
+    let repo_config = entities::repository::Entity::find_by_id(repo_id.to_string())
+        .select_only()
+        .column(entities::repository::Column::RepoConfig)
+        .into_tuple::<serde_json::Value>()
         .one(conn)
         .await?
         .ok_or_else(|| PostgresError::internal_message("repository is missing"))?;
-    let config: RepoConfig = super::decode_json(row.repo_config)?;
+    let config: RepoConfig = super::decode_json(repo_config)?;
     Ok(config.views)
 }
 

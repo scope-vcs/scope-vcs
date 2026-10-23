@@ -8,25 +8,32 @@ use sqlx::{AssertSqlSafe, Connection as _, PgConnection};
 use std::sync::Arc;
 
 const WRITER_FENCE_KEY: &str = "scope:metadata-writers";
+pub const DEFAULT_METADATA_POOL_MAX_CONNECTIONS: u32 = 10;
 
-pub(super) async fn connect_postgres_store(database_url: String) -> anyhow::Result<MetadataStore> {
+pub(super) async fn connect_postgres_store(
+    database_url: String,
+    max_connections: u32,
+) -> anyhow::Result<MetadataStore> {
     let options = database_url.parse()?;
-    connect_postgres_store_with_options(database_url, options).await
+    connect_postgres_store_with_options(database_url, options, max_connections).await
 }
 
 pub(super) async fn connect_postgres_store_with_options(
     database_url: String,
     connection_options: sqlx::postgres::PgConnectOptions,
+    max_connections: u32,
 ) -> anyhow::Result<MetadataStore> {
     let database_url = Arc::<str>::from(database_url);
-    let db = connect_writer_database(&database_url, connection_options).await?;
+    let db = connect_writer_database(&database_url, connection_options, max_connections).await?;
     if let Err(error) = crate::migrations::assert_exact_state(&db).await {
         db.close().await?;
         return Err(error.into());
     }
     Ok(MetadataStore {
         db: Arc::new(db),
+        merge_turn_sessions: super::merge_turns::MergeTurnSessions::new(Arc::clone(&database_url)),
         postgres_database_url: Some(database_url),
+        repo_change_notifier: Default::default(),
         #[cfg(any(test, feature = "test-support"))]
         _test_schema: None,
     })
@@ -99,9 +106,11 @@ impl ExclusiveWriterFence {
 pub(super) async fn connect_writer_database(
     database_url: &str,
     connection_options: sqlx::postgres::PgConnectOptions,
+    max_connections: u32,
 ) -> anyhow::Result<DatabaseConnection> {
     let mut options = ConnectOptions::new(database_url.to_string());
     options.min_connections(1);
+    options.max_connections(max_connections);
     let fence_statement = writer_fence_statement("pg_advisory_lock_shared");
     let pool = options
         .sqlx_pool_options()

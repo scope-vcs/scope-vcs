@@ -1,7 +1,7 @@
 use super::{
     BackendError, ENCODING_VERSION, GitSegmentRestoreSource, GitSegmentRestoreTimings,
     GitSegmentStore, GitStorageError, StagedGitSegment, VerifiedGitPack, is_hex_id_32,
-    random_hex_id, segment_object_key, sync_directory,
+    random_hex_id, segment_object_key,
 };
 use crate::{
     cache::{VerifiedPackCache, VerifiedPackFlight, VerifiedPackPin},
@@ -169,9 +169,6 @@ impl GitSegmentStore {
         let pin = self
             .install_verified_pack(staged.local_pack_path(), &path, &staged.segment)
             .await?;
-        sync_directory(parent)
-            .await
-            .map_err(GitStorageError::Local)?;
         Ok(VerifiedGitPack::new(
             path,
             local_timings(started, staged.segment.plaintext_bytes),
@@ -293,14 +290,10 @@ impl GitSegmentStore {
         let timings = self
             .restore_to(incarnation.repository_id(), segment, &mut output)
             .await?;
-        output.sync_all().await.map_err(GitStorageError::Local)?;
         drop(output);
         let pin = self
             .install_verified_pack(&temp_path, &path, segment)
             .await?;
-        sync_directory(parent)
-            .await
-            .map_err(GitStorageError::Local)?;
         Ok((timings, pin))
     }
 }

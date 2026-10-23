@@ -4,10 +4,7 @@ use crate::{
         command::{git_is_ancestor, run_git},
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
-        request_refs::{
-            RequestRefUpdate, acquire_request_ref_update_lock_async, persist_request_ref_to_store,
-            rollback_request_ref,
-        },
+        request_refs::{RequestObjectSharing, RequestRefUpdate, persist_request_ref},
     },
     persistence::unix_now,
     persistence_ids::generate_prefixed_id,
@@ -26,7 +23,7 @@ use scope_domain::{
     views::ViewId,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_postgres::db::GitPushContext;
+use scope_postgres::db::GitPushState;
 use std::{collections::BTreeMap, path::Path};
 
 pub(super) struct ViewMainPush {
@@ -59,7 +56,7 @@ pub(super) async fn complete_view_main_push(
             "repository changed after receive-pack; retry the push",
         ));
     }
-    let git = RepositoryGit::of_push_context(&context);
+    let git = RepositoryGit::of_push_state(&context);
     let views = context.repo_config.views();
     let view_main_oid = ensure_request_ref_is_view_safe(
         RequestView::new(&git, views, &push.view),
@@ -132,16 +129,14 @@ pub(super) async fn complete_view_main_push(
         })
         .await?;
     }
-    let update_lock =
-        acquire_request_ref_update_lock_async(state, &push.incarnation, &update.request_ref)
-            .await?;
-    let persisted = persist_request_ref_to_store(
+    let persisted = persist_request_ref(
         state,
         &git,
         &context.repo_config,
         staging_repo,
         &request,
         &update,
+        RequestObjectSharing::Private,
     )
     .await?;
     let mutation = state
@@ -169,25 +164,10 @@ pub(super) async fn complete_view_main_push(
         .await;
     let mutation = match mutation {
         Ok(MainPushRequestOutcome::Started(mutation)) => {
-            drop(update_lock);
             persisted.fence.release().await;
             mutation
         }
         outcome => {
-            let rollback_state = state.clone();
-            let incarnation = push.incarnation.clone();
-            let request_ref = update.request_ref.clone();
-            crate::git::blocking::run(move || {
-                let _update_lock = update_lock;
-                rollback_request_ref(
-                    &rollback_state,
-                    &incarnation,
-                    &request_ref,
-                    persisted.previous_head,
-                );
-                Ok(())
-            })
-            .await?;
             crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
                 state,
                 std::slice::from_ref(&persisted.git_snapshot),
@@ -247,7 +227,7 @@ struct ProvisionalMainPush<'a> {
 
 async fn provisional_request(
     state: &AppState,
-    context: &GitPushContext,
+    context: &GitPushState,
     push: &ViewMainPush,
     provisional: ProvisionalMainPush<'_>,
 ) -> Result<Option<Request>, ApiError> {

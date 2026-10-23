@@ -3,55 +3,54 @@ use super::segment_upload::{
     best_effort_delete_git_segment_identity, best_effort_delete_staged_git_segment,
 };
 use crate::{
-    config::{MAX_PENDING_IMPORT_BLOB_BYTES, MAX_PENDING_IMPORT_FILES},
     error::ApiError,
-    git::command::{
-        git_process_output, git_ref_listing, git_stdout_text, prepare_git_subprocess,
-        record_git_exit, remaining_git_time, run_git, run_git_output, run_git_output_until,
-        truncated_git_stderr,
+    git::{
+        command::{
+            git_ref_listing, git_stdout_text, prepare_git_subprocess, record_git_exit, run_git,
+            truncated_git_stderr,
+        },
+        pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
     },
-    runtime_budgets::RuntimeBudgets,
     state::AppState,
 };
-use scope_domain::content::{SourceBlob, is_supported_git_file_mode};
-use scope_domain::repository::git::GitHead;
-use scope_domain::{
-    policy::ScopePath,
-    repo_control::{RepoControlPath, classify_repo_control_path},
-};
+use scope_domain::content::SourceBlob;
+use scope_domain::repository::git::{GitHead, GitPoolPackStorage};
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_git::{GitTreePath, StoredGitPush, prepare_git_push};
+use scope_git::{PreparedGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_storage::{ContentObjectKind, content_object_for_bytes};
 use scope_storage::{GitStorageError, StagedGitSegment};
 use std::{path::Path as FsPath, process::Command, time::Instant};
 
-pub(super) fn pushed_commit_time(staging_repo: &FsPath, head_oid: &str) -> Result<i64, ApiError> {
-    git_stdout_text(
-        staging_repo,
-        &["log", "-1", "--format=%ct", head_oid],
-        "reading pushed commit time",
-    )?
-    .trim()
-    .parse()
-    .map_err(|_| ApiError::internal_message("invalid pushed Git commit time"))
+pub(super) struct PushedCommit {
+    pub(super) message: String,
+    pub(super) committed_at_unix: i64,
 }
 
-pub(super) fn pushed_commit_message(
+pub(super) fn pushed_commit(
     staging_repo: &FsPath,
     head_oid: &str,
-) -> Result<String, ApiError> {
-    let message = git_stdout_text(
+) -> Result<PushedCommit, ApiError> {
+    let output = git_stdout_text(
         staging_repo,
-        &["log", "-1", "--format=%B", head_oid],
-        "reading pushed commit message",
+        &["log", "-1", "--format=%ct%n%B", head_oid],
+        "reading pushed commit",
     )?;
-    let message = message.trim_end_matches(&['\r', '\n'][..]).to_string();
-    if message.trim().is_empty() {
-        Ok(format!("Push to {DEFAULT_GIT_BRANCH}"))
+    let (committed_at, message) = output.split_once('\n').unwrap_or((output.as_str(), ""));
+    let committed_at_unix = committed_at
+        .trim()
+        .parse()
+        .map_err(|_| ApiError::internal_message("invalid pushed Git commit time"))?;
+    let message = message.trim_end_matches(&['\r', '\n'][..]);
+    let message = if message.trim().is_empty() {
+        format!("Push to {DEFAULT_GIT_BRANCH}")
     } else {
-        Ok(message)
-    }
+        message.to_string()
+    };
+    Ok(PushedCommit {
+        message,
+        committed_at_unix,
+    })
 }
 
 pub(crate) fn git_refs(staging_repo: &FsPath) -> Result<Vec<(String, String)>, ApiError> {
@@ -74,292 +73,28 @@ pub(super) fn describe_refs(refs: &[(String, String)]) -> String {
         .join(", ")
 }
 
-pub(super) fn git_tree_entries(
-    staging_repo: &FsPath,
-    head_oid: &str,
-) -> Result<Vec<GitTreeFile>, ApiError> {
-    git_tree_entries_for_path(staging_repo, head_oid, None, true, None)
-}
-
-pub(super) fn git_tree_entries_under(
-    staging_repo: &FsPath,
-    head_oid: &str,
-    path: &str,
-) -> Result<Vec<GitTreeFile>, ApiError> {
-    git_tree_entries_for_path(staging_repo, head_oid, Some(path), false, None)
-}
-
-fn git_tree_entries_for_path(
-    staging_repo: &FsPath,
-    head_oid: &str,
-    path: Option<&str>,
-    enforce_import_limits: bool,
-    deadline: Option<Instant>,
-) -> Result<Vec<GitTreeFile>, ApiError> {
-    let mut args = vec!["ls-tree", "-rz", "-r", "-l", head_oid];
-    if let Some(path) = path {
-        args.extend(["--", path]);
-    }
-    let output = match deadline {
-        Some(deadline) => {
-            run_git_output_until(Some(staging_repo), &args, "reading pushed tree", deadline)?
-        }
-        None => run_git_output(Some(staging_repo), &args, "reading pushed tree")?,
-    };
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading pushed tree: {}",
-            truncated_git_stderr(&output.stderr).trim()
-        )));
-    }
-    let mut pending_files = Vec::new();
-    for raw in output.stdout.split(|byte| *byte == 0) {
-        if raw.is_empty() {
-            continue;
-        }
-        if enforce_import_limits && pending_files.len() >= MAX_PENDING_IMPORT_FILES {
-            return Err(ApiError::bad_request(format!(
-                "pending import exceeds {MAX_PENDING_IMPORT_FILES} files"
-            )));
-        }
-        let entry = std::str::from_utf8(raw).map_err(ApiError::bad_request)?;
-        let Some((metadata, path)) = entry.split_once('\t') else {
-            return Err(ApiError::internal_message("invalid git tree entry"));
-        };
-        let mut fields = metadata.split_whitespace();
-        let mode = fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("tree entry is missing mode"))?;
-        let kind = fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("tree entry is missing type"))?;
-        let oid = fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("tree entry is missing oid"))?;
-        if kind != "blob" {
-            return Err(ApiError::bad_request(format!(
-                "unsupported Git tree entry {path}: {kind}"
-            )));
-        }
-        let size = fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("tree entry is missing size"))?;
-        let path = validate_pushed_file_path(path)?;
-        if !is_supported_git_file_mode(mode) {
-            return Err(ApiError::bad_request(format!(
-                "unsupported Git file mode {path}: {mode}"
-            )));
-        }
-        let blob_size = size
-            .parse::<u64>()
-            .map_err(|_| ApiError::internal_message("invalid Git blob size"))?;
-        if enforce_import_limits && blob_size > MAX_PENDING_IMPORT_BLOB_BYTES as u64 {
-            return Err(ApiError::bad_request(format!(
-                "blob {path} is larger than {MAX_PENDING_IMPORT_BLOB_BYTES} bytes"
-            )));
-        }
-        pending_files.push(GitTreeFile {
-            path,
-            mode: mode.to_string(),
-            oid: oid.to_string(),
-            size_bytes: blob_size,
-        });
-    }
-
-    Ok(pending_files)
-}
-
-pub(crate) fn git_changed_tree_entries(
-    staging_repo: &FsPath,
-    base_oid: Option<&str>,
-    head_oid: &str,
-) -> Result<Vec<(ScopePath, Option<GitTreeFile>)>, ApiError> {
-    git_changed_tree_entries_until(
-        staging_repo,
-        base_oid,
-        head_oid,
-        Instant::now() + RuntimeBudgets::default_git_command_timeout(),
-    )
-}
-
-pub(crate) fn git_changed_tree_entries_until(
-    staging_repo: &FsPath,
-    base_oid: Option<&str>,
-    head_oid: &str,
-    deadline: Instant,
-) -> Result<Vec<(ScopePath, Option<GitTreeFile>)>, ApiError> {
-    let Some(base_oid) = base_oid else {
-        return git_tree_entries_for_path(staging_repo, head_oid, None, true, Some(deadline))?
-            .into_iter()
-            .map(|entry| Ok((entry.path.to_scope_path(), Some(entry))))
-            .collect();
-    };
-    let output = run_git_output_until(
-        Some(staging_repo),
-        &[
-            "diff-tree",
-            "--no-commit-id",
-            "--raw",
-            "-r",
-            "-z",
-            "--no-renames",
-            base_oid,
-            head_oid,
-        ],
-        "reading pushed Git delta",
-        deadline,
-    )?;
-    if !output.status.success() {
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "reading pushed Git delta: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-
-    let mut fields = output.stdout.split(|byte| *byte == 0);
-    let mut pending = Vec::new();
-    while let Some(header) = fields.next() {
-        if header.is_empty() {
-            continue;
-        }
-        let path = fields
-            .next()
-            .ok_or_else(|| ApiError::internal_message("Git delta is missing a path"))?;
-        let header = std::str::from_utf8(header).map_err(ApiError::bad_request)?;
-        let path = std::str::from_utf8(path).map_err(ApiError::bad_request)?;
-        let path = validate_pushed_file_path(path)?;
-        let values = header.split_whitespace().collect::<Vec<_>>();
-        if values.len() != 5 || !values[0].starts_with(':') {
-            return Err(ApiError::internal_message("invalid Git delta record"));
-        }
-        let new_mode = values[1];
-        let new_oid = values[3];
-        let status = values[4];
-        let scope_path = path.to_scope_path();
-        if status == "D" {
-            pending.push((scope_path, None));
-            continue;
-        }
-        if !is_supported_git_file_mode(new_mode) {
-            return Err(ApiError::bad_request(format!(
-                "unsupported Git file mode {path}: {new_mode}"
-            )));
-        }
-        pending.push((
-            scope_path,
-            Some(GitTreeFile {
-                path,
-                mode: new_mode.to_string(),
-                oid: new_oid.to_string(),
-                size_bytes: 0,
-            }),
-        ));
-    }
-
-    let requested_oids = pending
-        .iter()
-        .filter_map(|(_, entry)| entry.as_ref().map(|entry| entry.oid.as_str()))
-        .map(|oid| format!("{oid}\n"))
-        .collect::<String>();
-    if !requested_oids.is_empty() {
-        let output = git_process_output(
-            Command::new("git").current_dir(staging_repo).args([
-                "cat-file",
-                "--batch-check=%(objectname) %(objecttype) %(objectsize)",
-            ]),
-            Some(requested_oids.into_bytes()),
-            ProcessLimits::new(remaining_git_time(deadline)?),
-        )?;
-        if !output.status.success() {
-            return Err(ApiError::infrastructure_unavailable(format!(
-                "reading pushed blob sizes: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            )));
-        }
-        let size_output = String::from_utf8(output.stdout).map_err(ApiError::bad_request)?;
-        let mut sizes = size_output.lines().map(|line| {
-            let values = line.split_whitespace().collect::<Vec<_>>();
-            if values.len() != 3 || values[1] != "blob" {
-                return Err(ApiError::bad_request("pushed path is not a Git blob"));
-            }
-            values[2]
-                .parse::<u64>()
-                .map_err(|_| ApiError::internal_message("invalid Git blob size"))
-        });
-        for (_, entry) in &mut pending {
-            if let Some(entry) = entry {
-                entry.size_bytes = sizes
-                    .next()
-                    .ok_or_else(|| ApiError::internal_message("missing Git blob size"))??;
-                if entry.size_bytes > MAX_PENDING_IMPORT_BLOB_BYTES as u64 {
-                    return Err(ApiError::bad_request(format!(
-                        "blob {} is larger than {MAX_PENDING_IMPORT_BLOB_BYTES} bytes",
-                        entry.path
-                    )));
-                }
-            }
-        }
-    }
-    if pending.len() > MAX_PENDING_IMPORT_FILES {
-        return Err(ApiError::bad_request(format!(
-            "pending import exceeds {MAX_PENDING_IMPORT_FILES} files"
-        )));
-    }
-    Ok(pending)
-}
-
-pub(crate) fn validate_pushed_tree(staging_repo: &FsPath, head_oid: &str) -> Result<(), ApiError> {
-    git_tree_entries(staging_repo, head_oid)?;
-    Ok(())
-}
-
-pub(crate) fn validate_pushed_commit_range(
-    staging_repo: &FsPath,
-    base_oid: Option<&str>,
-    head_oid: &str,
-) -> Result<(), ApiError> {
-    validate_pushed_tree(staging_repo, head_oid)?;
-    let mut args = vec!["rev-list", "--reverse", head_oid];
-    let excluded_base = base_oid.map(|oid| format!("^{oid}"));
-    if let Some(excluded_base) = excluded_base.as_deref() {
-        args.push(excluded_base);
-    }
-    let commits = git_stdout_text(staging_repo, &args, "reading pushed commit range")?;
-    for commit_oid in commits.lines() {
-        if commit_oid != head_oid {
-            git_tree_entries(staging_repo, commit_oid)?;
-        }
-    }
-    Ok(())
-}
-
 pub(crate) struct StagedGitPush {
-    pub(crate) stored: StoredGitPush,
-    pub(crate) staged_segment: StagedGitSegment,
-    pub(crate) upload_heartbeat: GitSegmentUploadHeartbeat,
+    pub(crate) head: GitHead,
+    pub(crate) pack: StagedPoolPack,
 }
 
-pub(crate) async fn git_push_from_repo(
+pub(crate) struct StagedGitPack {
+    pub(crate) staged_segment: StagedGitSegment,
+    pub(crate) _upload_heartbeat: GitSegmentUploadHeartbeat,
+}
+
+pub(crate) async fn stage_git_pack(
     state: &AppState,
     repository_id: &str,
     repo: &FsPath,
-    previous: Option<&GitHead>,
-) -> Result<StagedGitPush, ApiError> {
-    let _ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
+    revisions: &[String],
+) -> Result<StagedGitPack, ApiError> {
+    let ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
     let storage_limits = state.runtime_budgets.git_storage_limits();
-    let path = repo.to_path_buf();
-    let (head_oid, ingest_permit) = crate::git::blocking::run(move || {
-        let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
-        let head = git_stdout_text(&path, &["rev-parse", &refname], "reading pushed Git head")?;
-        Ok((head.trim().to_string(), _ingest_permit))
-    })
-    .await?;
-    let mut revisions = format!("{head_oid}\n");
-    if let Some(previous) = previous {
-        revisions.push('^');
-        revisions.push_str(&previous.head_oid);
-        revisions.push('\n');
-    }
+    let revisions = revisions
+        .iter()
+        .map(|revision| format!("{revision}\n"))
+        .collect::<String>();
     let mut command = Command::new("git");
     command
         .current_dir(repo)
@@ -368,8 +103,6 @@ pub(crate) async fn git_push_from_repo(
     let (reservation, upload_heartbeat) = begin_git_segment_upload(state, repository_id).await?;
     let segment_id = reservation.segment_id.clone();
     let object_key = reservation.object_key.clone();
-
-    let pack_started = Instant::now();
     let segment_store = state.git_segment_store.clone();
     let repository_id_for_ingest = repository_id.to_string();
     let timeout = state.runtime_budgets.git_command_timeout();
@@ -414,7 +147,6 @@ pub(crate) async fn git_push_from_repo(
             return Err(ApiError::internal(error));
         }
     };
-    let pack_elapsed = pack_started.elapsed();
     let output = match output {
         Ok(output) => output,
         Err(error) => {
@@ -452,13 +184,6 @@ pub(crate) async fn git_push_from_repo(
     };
     let staged_segment = output.value;
     if !output.status.success() {
-        tracing::info!(
-            incremental = previous.is_some(),
-            pack_us = pack_elapsed.as_micros(),
-            pack_bytes = staged_segment.segment.plaintext_bytes,
-            success = false,
-            "Git push pack timing"
-        );
         best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
         return Err(ApiError::infrastructure_unavailable(format!(
             "creating incremental Git pack: {}",
@@ -478,50 +203,55 @@ pub(crate) async fn git_push_from_repo(
         best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
         return Err(error.into());
     }
+    Ok(StagedGitPack {
+        staged_segment,
+        _upload_heartbeat: upload_heartbeat,
+    })
+}
 
-    let pack_bytes = staged_segment.segment.plaintext_bytes;
-    let store_started = Instant::now();
-    let stored = match prepare_git_push(
-        staged_segment.segment.clone(),
-        head_oid,
+pub(crate) async fn git_push_from_repo(
+    state: &AppState,
+    repository_id: &str,
+    repo: &FsPath,
+    previous: Option<&GitHead>,
+) -> Result<StagedGitPush, ApiError> {
+    let path = repo.to_path_buf();
+    let head_oid = crate::git::blocking::run(move || {
+        let refname = format!("refs/heads/{DEFAULT_GIT_BRANCH}");
+        let head = git_stdout_text(&path, &["rev-parse", &refname], "reading pushed Git head")?;
+        Ok(head.trim().to_string())
+    })
+    .await?;
+    let PreparedGitPush {
+        head,
+        owner,
+        prerequisites,
+    } = prepare_git_push(
+        head_oid.clone(),
         previous,
-        storage_limits,
-    ) {
-        Ok(prepared) => prepared,
-        Err(error) => {
-            best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
-            return Err(error.into());
-        }
-    };
-    let timings = &staged_segment.timings;
-    tracing::info!(
-        phase = "complete",
+        state.runtime_budgets.git_storage_limits(),
+    )?;
+    let pack_started = Instant::now();
+    let pack = stage_pool_pack(
+        state,
         repository_id,
-        segment_id = staged_segment.segment.segment_id,
-        success = true,
-        duration_us = timings.total.as_micros(),
-        local_write_and_fsync_us = timings.local_write_and_fsync.as_micros(),
-        remote_upload_us = timings.remote_upload.as_micros(),
-        uploaded_parts = timings.uploaded_parts,
-        bytes = timings.plaintext_bytes,
-        blocked_us = timings.fanout_blocked.as_micros(),
-        configured_buffer_capacity_bytes =
-            timings.chunk_bytes.saturating_mul(timings.channel_capacity),
-        "Git segment ingest telemetry"
-    );
+        repo,
+        PoolPackRevision {
+            owner,
+            head_oid,
+            prerequisites,
+        },
+    )
+    .await?;
     tracing::info!(
         incremental = previous.is_some(),
-        pack_us = pack_elapsed.as_micros(),
-        store_us = store_started.elapsed().as_micros(),
-        pack_bytes,
+        pack_us = pack_started.elapsed().as_micros(),
+        inline = matches!(pack.pack.storage, GitPoolPackStorage::Inline { .. }),
+        pack_bytes = pack.pack.storage.stored_bytes(),
         success = true,
         "Git push pack timing"
     );
-    Ok(StagedGitPush {
-        stored,
-        staged_segment,
-        upload_heartbeat,
-    })
+    Ok(StagedGitPush { head, pack })
 }
 
 pub(crate) fn git_snapshot_from_ref(
@@ -553,99 +283,4 @@ fn random_bundle_id() -> Result<String, ApiError> {
         ApiError::internal_message(format!("Git snapshot bundle id generation failed: {error}"))
     })?;
     Ok(format!("{}-{}", std::process::id(), hex::encode(bytes)))
-}
-
-#[derive(Debug)]
-pub(crate) struct GitTreeFile {
-    pub(crate) path: GitTreePath,
-    pub(crate) mode: String,
-    pub(crate) oid: String,
-    pub(crate) size_bytes: u64,
-}
-
-pub(crate) fn validate_pushed_file_path(path: &str) -> Result<GitTreePath, ApiError> {
-    let path = GitTreePath::parse(path).map_err(ApiError::bad_request)?;
-    let scope_path = path.to_scope_path();
-    if matches!(
-        classify_repo_control_path(&scope_path),
-        Some(RepoControlPath::Forbidden)
-    ) {
-        return Err(ApiError::bad_request(format!(
-            "Scope control path {:?} is not a supported tracked control file",
-            path.as_str()
-        )));
-    }
-
-    Ok(path)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::{
-        fs,
-        time::{SystemTime, UNIX_EPOCH},
-    };
-
-    #[test]
-    fn workflow_tree_listing_is_scoped_to_the_runs_directory() {
-        let root = std::env::temp_dir().join(format!(
-            "scope-workflow-tree-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(root.join(".scope/runs")).unwrap();
-        run_git(Some(&root), &["init", "-q"], "initializing test repository").unwrap();
-        fs::write(root.join("README.md"), "unrelated\n").unwrap();
-        fs::write(root.join(".scope/runs/test.yml"), "name: Test\n").unwrap();
-        run_git(Some(&root), &["add", "."], "staging test repository").unwrap();
-        run_git(
-            Some(&root),
-            &[
-                "-c",
-                "user.name=Scope Tests",
-                "-c",
-                "user.email=scope@example.com",
-                "commit",
-                "-qm",
-                "test",
-            ],
-            "committing test repository",
-        )
-        .unwrap();
-        let head = git_stdout_text(&root, &["rev-parse", "HEAD"], "reading test head")
-            .unwrap()
-            .trim()
-            .to_string();
-
-        let entries = git_tree_entries_under(&root, &head, ".scope/runs").unwrap();
-
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].path.as_str(), ".scope/runs/test.yml");
-
-        let invalid = git_tree_entries_under(&root, "invalid-object", ".scope/runs").unwrap_err();
-        assert_eq!(
-            invalid.status(),
-            axum::http::StatusCode::SERVICE_UNAVAILABLE
-        );
-        let subtree =
-            git_stdout_text(&root, &["rev-parse", "HEAD:.scope/runs"], "reading subtree").unwrap();
-        let subtree = subtree.trim();
-        fs::remove_file(
-            root.join(".git/objects")
-                .join(&subtree[..2])
-                .join(&subtree[2..]),
-        )
-        .unwrap();
-        let missing = git_tree_entries_under(&root, &head, ".scope/runs").unwrap_err();
-        assert_eq!(
-            missing.status(),
-            axum::http::StatusCode::SERVICE_UNAVAILABLE
-        );
-        assert!(git_tree_entries(&root, &head).is_err());
-        fs::remove_dir_all(root).unwrap();
-    }
 }

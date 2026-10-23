@@ -2,6 +2,8 @@ use crate::{error::ApiError, state::AppState};
 use scope_storage::{ENCODING_VERSION, GitSegmentReservation, StagedGitSegment};
 use std::time::Duration;
 
+const GIT_SEGMENT_UPLOAD_HEARTBEAT: Duration = Duration::from_secs(60);
+
 pub(super) enum RemoteCleanup {
     Attempt,
     Deferred,
@@ -15,7 +17,10 @@ impl GitSegmentUploadHeartbeat {
     pub(crate) fn start(state: &AppState, segment_id: String) -> Self {
         let metadata = state.metadata.clone();
         let task = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            let mut interval = tokio::time::interval_at(
+                tokio::time::Instant::now() + GIT_SEGMENT_UPLOAD_HEARTBEAT,
+                GIT_SEGMENT_UPLOAD_HEARTBEAT,
+            );
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 interval.tick().await;

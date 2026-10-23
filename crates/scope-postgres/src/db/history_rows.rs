@@ -4,7 +4,7 @@ use super::object_references::insert_object_reference;
 use crate::error::PostgresError;
 use scope_domain::content::SourceBlob;
 use scope_domain::{
-    policy::ScopePath,
+    policy::{Policy, ScopePath},
     projection::{FileChange, LogicalCommit, Projection, SourceGraph, project_graph},
     views::{ViewId, Views, ViewsTransition},
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
@@ -13,17 +13,24 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
     QueryOrder,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const PERSISTENCE_BATCH_SIZE: usize = 500;
 
 mod appended;
+mod live_files;
 pub(crate) use appended::{history_position_matches, load_repository_history_after};
+pub(crate) use live_files::{
+    LiveFileRow, file_rules, load_live_file_rules, load_live_files_at, policy_without_file_rules,
+    save_live_files,
+};
+pub use live_files::{LiveFiles, insert_repository_live_files};
+use live_files::{load_repositories_live_files, replace_live_files};
 
 pub struct RepositoryHistory {
     pub graph: SourceGraph,
     pub visibility_change_sets: Vec<VisibilityChangeSet>,
-    pub live_files: BTreeMap<ScopePath, SourceBlob>,
+    pub live_files: LiveFiles,
 }
 
 #[derive(Clone, Debug)]
@@ -57,6 +64,8 @@ pub struct RepositoryHistoryDelta<'a> {
     pub after_visibility_change_sets: &'a [VisibilityChangeSet],
     pub before_live_files: &'a BTreeMap<ScopePath, SourceBlob>,
     pub after_live_files: &'a BTreeMap<ScopePath, SourceBlob>,
+    pub before_policy: &'a Policy,
+    pub after_policy: &'a Policy,
     pub history_rewritten: bool,
 }
 
@@ -74,6 +83,8 @@ where
         after_visibility_change_sets,
         before_live_files,
         after_live_files,
+        before_policy,
+        after_policy,
         history_rewritten,
     } = delta;
     let commits_are_append_only = after_graph.commits.len() >= before_graph.commits.len()
@@ -123,21 +134,46 @@ where
         )
         .await?;
     }
-    if commits_rewritten || after_graph.commits.len() != before_graph.commits.len() + 1 {
+    let changed_paths = if commits_rewritten
+        || after_graph.commits.len() != before_graph.commits.len() + 1
+    {
         if before_live_files != after_live_files {
-            replace_live_files(conn, &after_graph.repo_id, after_live_files).await?;
+            replace_live_files(conn, &after_graph.repo_id, after_live_files, after_policy).await?;
+            return Ok(());
         }
-    } else if let Some(commit) = after_graph.commits.last() {
-        save_live_files(
-            conn,
-            &after_graph.repo_id,
-            commit
-                .changes
-                .iter()
-                .map(|change| (&change.path, after_live_files.get(&change.path))),
-        )
-        .await?;
+        BTreeSet::new()
+    } else {
+        after_graph
+            .commits
+            .last()
+            .into_iter()
+            .flat_map(|commit| commit.changes.iter().map(|change| &change.path))
+            .collect()
+    };
+    let after_rules = file_rules(after_policy.rules());
+    let mut paths = changed_paths;
+    if before_policy != after_policy {
+        let before_rules = file_rules(before_policy.rules());
+        paths.extend(
+            after_live_files
+                .keys()
+                .filter(|path| before_rules.get(path) != after_rules.get(path)),
+        );
     }
+    save_live_files(
+        conn,
+        &after_graph.repo_id,
+        paths.into_iter().map(|path| {
+            (
+                path,
+                after_live_files.get(path).map(|content| LiveFileRow {
+                    content,
+                    view: after_rules.get(path).copied(),
+                }),
+            )
+        }),
+    )
+    .await?;
     Ok(())
 }
 
@@ -214,38 +250,22 @@ pub async fn load_repository_histories<C>(
 where
     C: ConnectionTrait,
 {
-    let mut histories = load_repository_projection_sources(conn, repo_ids)
+    let mut live_files = load_repositories_live_files(conn, repo_ids).await?;
+    Ok(load_repository_projection_sources(conn, repo_ids)
         .await?
         .into_iter()
         .map(|(repo_id, source)| {
+            let live_files = live_files.remove(&repo_id).unwrap_or_default();
             (
                 repo_id,
                 RepositoryHistory {
                     graph: source.graph,
                     visibility_change_sets: source.visibility_change_sets,
-                    live_files: BTreeMap::new(),
+                    live_files,
                 },
             )
         })
-        .collect::<BTreeMap<_, _>>();
-    if repo_ids.is_empty() {
-        return Ok(histories);
-    }
-    for row in entities::live_file::Entity::find()
-        .filter(entities::live_file::Column::RepoId.is_in(repo_ids.to_vec()))
-        .order_by_asc(entities::live_file::Column::RepoId)
-        .order_by_asc(entities::live_file::Column::Path)
-        .all(conn)
-        .await?
-    {
-        if let Some(history) = histories.get_mut(&row.repo_id) {
-            history.live_files.insert(
-                ScopePath::parse(row.path).map_err(PostgresError::internal)?,
-                serde_json::from_value(row.content).map_err(PostgresError::internal)?,
-            );
-        }
-    }
-    Ok(histories)
+        .collect())
 }
 
 pub(super) async fn load_repository_projection_sources<C>(
@@ -343,79 +363,6 @@ where
         }
     }
     Ok(sources)
-}
-
-pub async fn insert_repository_live_files<C>(
-    conn: &C,
-    repo_id: &str,
-    live_files: &BTreeMap<ScopePath, SourceBlob>,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    save_live_files(
-        conn,
-        repo_id,
-        live_files
-            .iter()
-            .map(|(path, content)| (path, Some(content))),
-    )
-    .await
-}
-
-async fn replace_live_files<C>(
-    conn: &C,
-    repo_id: &str,
-    live_files: &BTreeMap<ScopePath, SourceBlob>,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    entities::live_file::Entity::delete_many()
-        .filter(entities::live_file::Column::RepoId.eq(repo_id.to_string()))
-        .exec(conn)
-        .await?;
-    insert_repository_live_files(conn, repo_id, live_files).await
-}
-
-pub(super) async fn save_live_files<'a, C, I>(
-    conn: &C,
-    repo_id: &str,
-    files: I,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-    I: IntoIterator<Item = (&'a ScopePath, Option<&'a SourceBlob>)>,
-{
-    let files = files.into_iter().collect::<Vec<_>>();
-    let rows = files
-        .iter()
-        .filter_map(|(path, content)| content.map(|content| (*path, content)))
-        .map(|(path, content)| {
-            Ok(entities::live_file::Model {
-                repo_id: repo_id.to_string(),
-                path: path.as_str().to_string(),
-                content: serde_json::to_value(content).map_err(PostgresError::internal)?,
-            }
-            .into_active_model())
-        })
-        .collect::<Result<Vec<_>, PostgresError>>()?;
-    for batch in files.chunks(PERSISTENCE_BATCH_SIZE) {
-        entities::live_file::Entity::delete_many()
-            .filter(entities::live_file::Column::RepoId.eq(repo_id.to_string()))
-            .filter(
-                entities::live_file::Column::Path
-                    .is_in(batch.iter().map(|(path, _)| path.as_str().to_string())),
-            )
-            .exec(conn)
-            .await?;
-    }
-    for batch in rows.chunks(PERSISTENCE_BATCH_SIZE) {
-        entities::live_file::Entity::insert_many(batch.iter().cloned())
-            .exec(conn)
-            .await?;
-    }
-    Ok(())
 }
 
 async fn replace_commits<C>(conn: &C, graph: &SourceGraph) -> Result<(), PostgresError>

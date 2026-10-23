@@ -6,7 +6,11 @@ pub(crate) mod content;
 mod credentials;
 pub(crate) mod http_backend;
 pub(crate) mod import;
+pub(crate) mod pool_install;
+pub(crate) mod pool_pack;
 pub(crate) mod projection_repo;
+mod receive_pack;
+pub(crate) mod receive_protocol;
 pub(crate) mod repository_engine;
 pub(crate) mod repository_git;
 pub(crate) mod request_commit;
@@ -28,7 +32,7 @@ use crate::{
     error::ApiError,
     git::{http_backend::*, upload::*},
     state::AppState,
-    use_cases::git_receive::{self, ReceivePackAccess},
+    use_cases::git_receive::{self, ReceivePackAccess, RequestRefSeeding},
 };
 use axum::{
     Json,
@@ -41,6 +45,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use flate2::read::GzDecoder;
+use receive_protocol::{advertise_additional_refs, read_receive_pack_commands};
 use scope_domain::views::ViewId;
 use serde::Deserialize;
 use std::{
@@ -48,7 +53,7 @@ use std::{
     io::Read,
     ops::Deref,
     path::{Path as FsPath, PathBuf},
-    time::Instant,
+    time::{Duration, Instant},
 };
 use tracing::Instrument as _;
 
@@ -159,7 +164,7 @@ pub(crate) async fn git_info_refs(
                 Ok(access) => access,
                 Err(error) => return git_error_response(error),
             };
-            let permit = match state.runtime_budgets.try_receive_pack() {
+            let permit = match state.runtime_budgets.admit_receive_pack().await {
                 Ok(permit) => permit,
                 Err(error) => return git_error_response(error),
             };
@@ -177,7 +182,7 @@ pub(crate) async fn git_info_refs(
             }
         }
         Some(GIT_UPLOAD_PACK) => {
-            let permit = match state.runtime_budgets.try_upload_pack() {
+            let permit = match state.runtime_budgets.admit_upload_pack().await {
                 Ok(permit) => permit,
                 Err(error) => return git_advertisement_error(error.into_public_message()),
             };
@@ -244,7 +249,12 @@ pub(crate) async fn git_receive_pack(
         Ok(access) => access,
         Err(error) => return git_error_response(error),
     };
-    let permit = match state.runtime_budgets.try_receive_pack() {
+    let probe_deadline = state.runtime_budgets.git_command_timeout();
+    let request = match answer_receive_pack_probe(request, probe_deadline).await {
+        ReceivePackProbe::Answered(response) => return response,
+        ReceivePackProbe::Upload(request) => request,
+    };
+    let permit = match state.runtime_budgets.admit_receive_pack().await {
         Ok(permit) => permit,
         Err(error) => return git_error_response(error),
     };
@@ -260,6 +270,41 @@ pub(crate) async fn git_receive_pack(
                 "Git receive operation failed: {error}"
             )))
         })
+}
+
+const RECEIVE_PACK_PROBE_BODY: &[u8] = b"0000";
+
+enum ReceivePackProbe {
+    Answered(Response),
+    Upload(Request),
+}
+
+async fn answer_receive_pack_probe(request: Request, deadline: Duration) -> ReceivePackProbe {
+    let probe_length = request
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim() == "4");
+    if !probe_length || request.headers().contains_key(CONTENT_ENCODING) {
+        return ReceivePackProbe::Upload(request);
+    }
+    let (parts, body) = request.into_parts();
+    let Ok(read) =
+        tokio::time::timeout(deadline, to_bytes(body, RECEIVE_PACK_PROBE_BODY.len())).await
+    else {
+        return ReceivePackProbe::Answered(git_error_response(
+            ApiError::infrastructure_unavailable("git request upload timed out"),
+        ));
+    };
+    match read {
+        Ok(bytes) if bytes.as_ref() == RECEIVE_PACK_PROBE_BODY => ReceivePackProbe::Answered(
+            git_response("application/x-git-receive-pack-result", Vec::new()),
+        ),
+        Ok(bytes) => ReceivePackProbe::Upload(Request::from_parts(parts, Body::from(bytes))),
+        Err(error) => ReceivePackProbe::Answered(git_error_response(ApiError::bad_request(
+            format!("invalid Git receive-pack body: {error}"),
+        ))),
+    }
 }
 
 async fn receive_pack_request(
@@ -333,7 +378,7 @@ pub(crate) async fn git_upload_pack_rpc(
         Ok(view) => view,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
-    let permit = match state.runtime_budgets.try_upload_pack() {
+    let permit = match state.runtime_budgets.admit_upload_pack().await {
         Ok(permit) => permit,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
@@ -427,10 +472,17 @@ pub(crate) async fn handle_git_receive_pack(
     content_type: Option<String>,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
-    let preparation = git_receive::prepare(state, owner, repo_name, access, true).await?;
+    let preparation = git_receive::prepare(
+        state,
+        owner,
+        repo_name,
+        access,
+        RequestRefSeeding::Advertise,
+    )
+    .await?;
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo);
-    let cgi = git_http_backend(
+    let mut cgi = git_http_backend(
         &staging_repo,
         method,
         "info/refs",
@@ -439,6 +491,9 @@ pub(crate) async fn handle_git_receive_pack(
         content_type,
         &remote_user,
     )?;
+    if cgi.status.is_success() {
+        cgi.body = advertise_additional_refs(&cgi.body, &preparation.advertised_request_refs)?;
+    }
     Ok(cgi.into_response())
 }
 
@@ -458,19 +513,37 @@ async fn handle_git_receive_pack_body(
     >,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
-    let mut preparation = git_receive::prepare(state, owner, repo_name, access, false).await?;
+    let commands =
+        read_receive_pack_commands(input.body, state.runtime_budgets.git_command_timeout()).await?;
+    let mut preparation = git_receive::prepare(
+        state,
+        owner,
+        repo_name,
+        access,
+        RequestRefSeeding::Pushed(&commands.refs),
+    )
+    .await?;
     preparation.base_publication = base_publication;
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo.clone());
     let receive_started_at = Instant::now();
-    let cgi = git_http_backend_streaming(
-        &staging_repo,
-        "git-receive-pack",
-        input.body,
-        input.content_length,
-        MAX_RECEIVE_PACK_BYTES,
-        input.content_type,
-        &remote_user,
+    let cgi = receive_pack::receive_pack(
+        state,
+        receive_pack::ReceivePackRun {
+            staging_repo: &staging_repo,
+            content_length: input.content_length,
+            max_bytes: MAX_RECEIVE_PACK_BYTES,
+            content_type: input.content_type,
+            remote_user: &remote_user,
+        },
+        commands.body,
+        preparation
+            .deferred_request_objects
+            .as_ref()
+            .map(|requests| receive_pack::DeferredObjects {
+                requests,
+                refs_before: preparation.refs_before.as_deref(),
+            }),
     )
     .await?;
     let receive_elapsed = receive_started_at.elapsed();

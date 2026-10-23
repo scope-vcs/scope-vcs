@@ -1,13 +1,15 @@
 use crate::{
     error::ApiError,
     git::{
+        cache::GitRepoHandle,
         repository_git::RepositoryGit,
         request_refs::{
-            RequestRefUpdate, acquire_request_ref_update_lock_async, attach_visible_request_refs,
+            DeferredRequestObjects, RequestObjectSharing, RequestRefUpdate,
+            attach_request_refs_from_pool, attach_visible_request_refs,
             create_request_receive_pack_staging_repo, install_request_receive_pack_hook,
-            persist_request_ref_to_store, request_view_bases, rollback_request_ref,
+            persist_request_ref, request_view_bases, retain_staged_pool_pack,
         },
-        staging::install_ready_pre_receive_hook,
+        staging::{create_seeded_receive_pack_staging_repo, install_ready_pre_receive_hook},
         storage::remove_dir_if_exists,
     },
     persistence::unix_now,
@@ -17,17 +19,41 @@ use crate::{
 use scope_domain::{
     repository::{RepoLifecycleState, access::RepositoryAccess},
     requests::{
-        RecordRequestRevisionInput, Request, RequestCheckReviewer, RequestViewer, request_policy,
+        RecordRequestRevisionInput, Request, RequestCheckReviewer, RequestViewer,
+        canonical_request_ref, request_policy,
     },
     views::{ViewId, Views},
 };
-use scope_postgres::db::GitPushContext;
+use scope_git::DEFAULT_GIT_BRANCH;
+use scope_postgres::db::{GitPushState, PushedRevisionObjects};
 use scope_product_analytics::ProductEvent;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 pub(crate) enum RequestStagingKind {
     RequestRefsOnly,
     WithViewMain,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum RequestRefSeeding<'a> {
+    Advertise,
+    Pushed(&'a [String]),
+}
+
+pub(crate) struct RequestStagingRepo {
+    pub(crate) path: PathBuf,
+    pub(crate) seed: GitRepoHandle,
+    pub(crate) seeded: SeededRequestRefs,
+    pub(crate) object_generation: String,
+}
+
+#[derive(Default)]
+pub(crate) struct SeededRequestRefs {
+    pub(crate) advertised: Vec<(String, String)>,
+    pub(crate) deferred_objects: Option<DeferredRequestObjects>,
 }
 
 pub(super) async fn actor_has_open_editable_request(
@@ -59,15 +85,24 @@ pub(super) async fn actor_has_open_editable_request(
     Ok(false)
 }
 
+pub(crate) struct RequestPusher<'a> {
+    pub(crate) actor_user_id: &'a str,
+    pub(crate) address_view: &'a ViewId,
+}
+
 pub(crate) async fn prepare_request_staging_repo(
     state: &AppState,
     incarnation: &scope_domain::repository::RepositoryIncarnation,
     owner: &str,
     repo_name: &str,
-    actor_user_id: &str,
-    address_view: &ViewId,
+    pusher: RequestPusher<'_>,
     kind: RequestStagingKind,
-) -> Result<PathBuf, ApiError> {
+    seeding: RequestRefSeeding<'_>,
+) -> Result<RequestStagingRepo, ApiError> {
+    let RequestPusher {
+        actor_user_id,
+        address_view,
+    } = pusher;
     let context = git_push_context(state, owner, repo_name, actor_user_id).await?;
     if context.incarnation != *incarnation {
         return Err(ApiError::conflict(
@@ -108,13 +143,13 @@ pub(crate) async fn prepare_request_staging_repo(
         )));
     }
 
-    let git = RepositoryGit::of_push_context(&context);
+    let git = RepositoryGit::of_push_state(&context);
     let seeds_canonical_main = address_view == views.full() && access.reads_full_view(views);
     let seed_repo = match (seeds_canonical_main, git.git_head.as_ref()) {
         (true, Some(head)) => {
             state
                 .repository_engine
-                .materialize_repository(state, &git.incarnation, head, &git.git_pack_spans)
+                .materialize_repository(state, &git.incarnation, head)
                 .await?
         }
         _ => git.view_repo(state, views, address_view).await?,
@@ -122,8 +157,13 @@ pub(crate) async fn prepare_request_staging_repo(
     let staging_repo = {
         let state = state.clone();
         let incarnation = incarnation.clone();
+        let seed_path = seed_repo.to_path_buf();
         crate::git::blocking::run(move || {
-            create_request_receive_pack_staging_repo(&state, &incarnation, &seed_repo)
+            if seeds_canonical_main {
+                create_seeded_receive_pack_staging_repo(&state, &incarnation, &seed_path)
+            } else {
+                create_request_receive_pack_staging_repo(&state, &incarnation, &seed_path)
+            }
         })
         .await?
     };
@@ -134,13 +174,18 @@ pub(crate) async fn prepare_request_staging_repo(
         address_view,
         &staging_repo,
         candidates,
+        seeding,
     )
     .await;
     let path = staging_repo.clone();
-    crate::git::blocking::run(move || {
-        let result = seeded.and_then(|()| match kind {
-            RequestStagingKind::RequestRefsOnly => install_request_receive_pack_hook(&path),
-            RequestStagingKind::WithViewMain => install_ready_pre_receive_hook(&path),
+    let seeded = crate::git::blocking::run(move || {
+        let result = seeded.and_then(|seeded| match kind {
+            RequestStagingKind::RequestRefsOnly => {
+                install_request_receive_pack_hook(&path).map(|()| seeded)
+            }
+            RequestStagingKind::WithViewMain => {
+                install_ready_pre_receive_hook(&path).map(|()| seeded)
+            }
         });
         if result.is_err() {
             let _ = remove_dir_if_exists(&path);
@@ -148,17 +193,21 @@ pub(crate) async fn prepare_request_staging_repo(
         result
     })
     .await?;
-    Ok(staging_repo)
+    Ok(RequestStagingRepo {
+        path: staging_repo,
+        seed: seed_repo,
+        seeded,
+        object_generation: context.repo_config.object_generation(),
+    })
 }
 
 pub(super) async fn seed_editable_request_refs(
     state: &AppState,
-    owner: &str,
-    repo_name: &str,
+    context: &GitPushState,
     actor_user_id: &str,
     staging_repo: &Path,
-) -> Result<(), ApiError> {
-    let context = git_push_context(state, owner, repo_name, actor_user_id).await?;
+    seeding: RequestRefSeeding<'_>,
+) -> Result<SeededRequestRefs, ApiError> {
     let candidates = state
         .metadata
         .requests()
@@ -166,23 +215,25 @@ pub(super) async fn seed_editable_request_refs(
         .await?;
     seed_editable_request_refs_for_repo(
         state,
-        &context,
+        context,
         actor_user_id,
         context.repo_config.views().full(),
         staging_repo,
         candidates,
+        seeding,
     )
     .await
 }
 
 async fn seed_editable_request_refs_for_repo(
     state: &AppState,
-    context: &GitPushContext,
+    context: &GitPushState,
     actor_user_id: &str,
     address_view: &ViewId,
     staging_repo: &Path,
     candidates: Vec<(Request, bool)>,
-) -> Result<(), ApiError> {
+    seeding: RequestRefSeeding<'_>,
+) -> Result<SeededRequestRefs, ApiError> {
     let views = context.repo_config.views();
     let access = &context.access;
     let requests = candidates
@@ -199,14 +250,89 @@ async fn seed_editable_request_refs_for_repo(
         })
         .map(|(request, _)| request)
         .collect::<Vec<_>>();
-    let git = RepositoryGit::of_push_context(context);
-    let view_bases = request_view_bases(state, &git, views, &requests, address_view).await?;
-    let state = state.clone();
-    let staging_repo = staging_repo.to_path_buf();
-    crate::git::blocking::run(move || {
-        attach_visible_request_refs(&state, &requests, &staging_repo, &view_bases)
+    let reads_every_request = address_view == views.full() && access.reads_full_view(views);
+    let (objects_for, refs_for) = match seeding {
+        RequestRefSeeding::Advertise => {
+            return Ok(SeededRequestRefs {
+                advertised: requests
+                    .into_iter()
+                    .map(|request| (canonical_request_ref(&request.name), request.head_oid))
+                    .collect(),
+                deferred_objects: None,
+            });
+        }
+        RequestRefSeeding::Pushed(_) if !reads_every_request => (Vec::new(), requests),
+        RequestRefSeeding::Pushed(refs) => {
+            let attached = if refs
+                .iter()
+                .any(|refname| refname.strip_prefix("refs/heads/") == Some(DEFAULT_GIT_BRANCH))
+            {
+                BTreeSet::new()
+            } else {
+                pushed_request_ids_with_bases(&requests, refs)
+            };
+            requests
+                .into_iter()
+                .partition(|request| !attached.contains(&request.id))
+        }
+    };
+    let git = RepositoryGit::of_push_state(context);
+    let view_bases = request_view_bases(state, &git, views, &refs_for, address_view).await?;
+    let attached = if reads_every_request {
+        attach_request_refs_from_pool(
+            state,
+            &context.incarnation,
+            &context.repo_config,
+            actor_user_id,
+            (objects_for, refs_for),
+            staging_repo,
+            view_bases,
+        )
+        .await?
+    } else {
+        let state = state.clone();
+        let staging_path = staging_repo.to_path_buf();
+        crate::git::blocking::run(move || {
+            attach_visible_request_refs(&state, &refs_for, &staging_path, &view_bases)
+        })
+        .await?;
+        return Ok(SeededRequestRefs::default());
+    };
+    let unreachable = attached.unreachable;
+    if !unreachable.is_empty() {
+        let view_bases = request_view_bases(state, &git, views, &unreachable, address_view).await?;
+        let state = state.clone();
+        let staging_path = staging_repo.to_path_buf();
+        crate::git::blocking::run(move || {
+            attach_visible_request_refs(&state, &unreachable, &staging_path, &view_bases)
+        })
+        .await?;
+    }
+    Ok(SeededRequestRefs {
+        advertised: Vec::new(),
+        deferred_objects: attached.deferred,
     })
-    .await
+}
+
+fn pushed_request_ids_with_bases(requests: &[Request], pushed_refs: &[String]) -> BTreeSet<String> {
+    let mut selected = requests
+        .iter()
+        .filter(|request| pushed_refs.contains(&canonical_request_ref(&request.name)))
+        .map(|request| request.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut pending = selected.iter().cloned().collect::<Vec<_>>();
+    while let Some(id) = pending.pop() {
+        let parent = requests
+            .iter()
+            .find(|request| request.id == id)
+            .and_then(|request| request.base.parent_request_id());
+        if let Some(parent) = parent
+            && selected.insert(parent.to_string())
+        {
+            pending.push(parent.to_string());
+        }
+    }
+    selected
 }
 
 pub(super) async fn git_push_context(
@@ -214,13 +340,18 @@ pub(super) async fn git_push_context(
     owner: &str,
     repo_name: &str,
     actor_user_id: &str,
-) -> Result<GitPushContext, ApiError> {
+) -> Result<GitPushState, ApiError> {
     state
         .metadata
         .repositories()
-        .git_push_context(owner, repo_name, actor_user_id)
+        .git_push_state(owner, repo_name, actor_user_id)
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))
+}
+
+pub(super) struct RequestRevisionStaging<'a> {
+    pub(super) repo: &'a Path,
+    pub(super) object_generation: String,
 }
 
 #[tracing::instrument(skip_all, name = "use_case.git_receive.request_revision")]
@@ -229,12 +360,16 @@ pub(super) async fn persist_request_ref_revision(
     owner: &str,
     repo_name: &str,
     access: &super::ReceivePackAccess,
-    staging_repo: &Path,
+    staging: RequestRevisionStaging<'_>,
     update: RequestRefUpdate,
     base_publication: Option<
         crate::use_cases::request_base_publication::RequestBasePublicationHeaders,
     >,
 ) -> Result<(), ApiError> {
+    let RequestRevisionStaging {
+        repo: staging_repo,
+        object_generation,
+    } = staging;
     let expected_incarnation = access.incarnation();
     let actor_user_id = access.author_id();
     let address_view = access.request_ref_view();
@@ -247,15 +382,13 @@ pub(super) async fn persist_request_ref_revision(
         &update.request_name,
     )
     .await?;
-    let git = RepositoryGit::of_push_context(&context);
+    let git = RepositoryGit::of_push_state(&context);
     let incarnation = git.incarnation.clone();
     if &incarnation != expected_incarnation {
         return Err(ApiError::conflict(
             "repository changed after receive-pack; retry the push",
         ));
     }
-    let update_lock =
-        acquire_request_ref_update_lock_async(state, &incarnation, &update.request_ref).await?;
     let (publication, parent_facts) =
         crate::use_cases::request_base_publication::prepare_request_base_publication(
             state,
@@ -286,13 +419,22 @@ pub(super) async fn persist_request_ref_revision(
         .old_head_oid
         .clone()
         .or_else(|| Some(request.head_oid.clone()));
-    let persisted = persist_request_ref_to_store(
+    let views = context.repo_config.views();
+    let sharing = if address_view.unwrap_or(views.full()) == views.full()
+        && context.access.reads_full_view(views)
+    {
+        RequestObjectSharing::Pool
+    } else {
+        RequestObjectSharing::Private
+    };
+    let persisted = persist_request_ref(
         state,
         &git,
         &context.repo_config,
         staging_repo,
         &published_request,
         &update,
+        sharing,
     )
     .await?;
     let expected_base_version = publication
@@ -303,7 +445,7 @@ pub(super) async fn persist_request_ref_revision(
     let mutation = state
         .metadata
         .requests()
-        .record_request_revision_with_stack(
+        .record_pushed_request_revision(
             RecordRequestRevisionInput {
                 request_id: request.id.clone(),
                 actor_user_id: actor_user_id.to_string(),
@@ -321,11 +463,17 @@ pub(super) async fn persist_request_ref_revision(
             expected_base_version,
             parent_facts,
             child_facts,
+            PushedRevisionObjects {
+                object_generation: object_generation.clone(),
+                pool_pack: persisted
+                    .pool_pack
+                    .as_ref()
+                    .map(|pool_pack| pool_pack.pack.clone()),
+            },
         )
         .await;
     match mutation {
         Ok(mutation) => {
-            let _update_lock = update_lock;
             state
                 .product_analytics
                 .capture(ProductEvent::request_revised(
@@ -338,6 +486,17 @@ pub(super) async fn persist_request_ref_revision(
                 .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised)
                 .await;
             persisted.fence.release().await;
+            if let Some(pool_pack) = persisted.pool_pack {
+                retain_staged_pool_pack(
+                    state,
+                    &incarnation,
+                    (&context.repo_config, &object_generation),
+                    actor_user_id,
+                    &mutation.request,
+                    pool_pack,
+                )
+                .await;
+            }
             crate::use_cases::request_checks::best_effort_evaluate_request_checks(
                 state,
                 &git,
@@ -354,20 +513,9 @@ pub(super) async fn persist_request_ref_revision(
             .await;
         }
         Err(error) => {
-            let rollback_state = state.clone();
-            let rollback_incarnation = incarnation.clone();
-            let request_ref = update.request_ref.clone();
-            crate::git::blocking::run(move || {
-                let _update_lock = update_lock;
-                rollback_request_ref(
-                    &rollback_state,
-                    &rollback_incarnation,
-                    &request_ref,
-                    persisted.previous_head,
-                );
-                Ok(())
-            })
-            .await?;
+            if let Some(pool_pack) = persisted.pool_pack {
+                pool_pack.discard(state, incarnation.repository_id()).await;
+            }
             crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
                 state,
                 std::slice::from_ref(&persisted.git_snapshot),
@@ -387,7 +535,7 @@ async fn ensure_request_ref_update_allowed(
     actor_user_id: &str,
     address_view: Option<&ViewId>,
     request_name: &str,
-) -> Result<(GitPushContext, Request), ApiError> {
+) -> Result<(GitPushState, Request), ApiError> {
     let context = git_push_context(state, owner, repo_name, actor_user_id).await?;
     let access = context.access.clone();
     let views = context.repo_config.views();

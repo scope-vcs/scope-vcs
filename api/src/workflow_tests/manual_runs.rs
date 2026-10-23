@@ -196,9 +196,8 @@ async fn known_manual_source_is_pinned_once_and_replay_survives_catalog_changes(
     assert_eq!(first["status"], "queued");
     let run_id = first["run"]["id"].as_str().unwrap();
     let run = state.metadata.runs().run(run_id).await.unwrap().unwrap();
-    let (_, pinned_head, pinned_spans) = run.source.logical_git_head().unwrap();
+    let (_, pinned_head) = run.source.logical_git_head().unwrap();
     assert_eq!(pinned_head, &head);
-    assert_eq!(pinned_spans, repo.git_pack_spans);
     assert_eq!(run.workflow.path().as_str(), "/.scope/runs/test.yml");
     fs::write(
         checkout.join(".scope/runs/test.yml"),

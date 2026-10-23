@@ -7,8 +7,14 @@ mod view_main_push;
 use crate::{
     error::ApiError,
     git::{
+        cache::GitRepoHandle,
         import::PreparedReceivePackUpdate,
-        request_refs::{non_request_refs_changed, receive_pack_refs, request_ref_update_from_refs},
+        pool_pack::StagedPoolPack,
+        repository_engine::PushedPack,
+        request_refs::{
+            DeferredRequestObjects, non_request_refs_changed, receive_pack_refs,
+            request_ref_update_from_refs,
+        },
         staging::{
             ensure_first_push_receive_pack_staging_repo, ensure_ready_receive_pack_staging_repo,
         },
@@ -18,8 +24,10 @@ use crate::{
     state::AppState,
 };
 pub(crate) use authorization::authorize;
-use request_ref::RequestStagingKind;
+pub(crate) use request_ref::RequestRefSeeding;
+use request_ref::{RequestStagingKind, SeededRequestRefs};
 use scope_domain::{repository::RepositoryIncarnation, views::ViewId};
+use scope_postgres::db::GitPushState;
 use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -34,8 +42,8 @@ pub(crate) enum ReceivePackAccess {
     },
     ReadyMember {
         author_id: String,
-        incarnation: RepositoryIncarnation,
         push_intent: ValidatedPushIntent,
+        context: Box<GitPushState>,
     },
     ViewMainPusher {
         author_id: String,
@@ -62,8 +70,8 @@ impl ReceivePackAccess {
 
     pub(crate) fn incarnation(&self) -> &RepositoryIncarnation {
         match self {
+            Self::ReadyMember { context, .. } => &context.incarnation,
             Self::FirstPush { incarnation, .. }
-            | Self::ReadyMember { incarnation, .. }
             | Self::ViewMainPusher { incarnation, .. }
             | Self::RequestContributor { incarnation, .. } => incarnation,
         }
@@ -80,7 +88,11 @@ impl ReceivePackAccess {
 pub(crate) struct ReceivePreparation {
     pub(crate) access: ReceivePackAccess,
     pub(crate) staging_repo: PathBuf,
+    _staging_seed: Option<GitRepoHandle>,
     pub(crate) refs_before: Option<Vec<(String, String)>>,
+    pub(crate) advertised_request_refs: Vec<(String, String)>,
+    pub(crate) deferred_request_objects: Option<DeferredRequestObjects>,
+    pub(crate) object_generation: Option<String>,
     pub(crate) base_publication:
         Option<crate::use_cases::request_base_publication::RequestBasePublicationHeaders>,
 }
@@ -99,62 +111,74 @@ pub(crate) async fn prepare(
     owner: &str,
     repo_name: &str,
     access: ReceivePackAccess,
-    advertisement_only: bool,
+    seeding: RequestRefSeeding<'_>,
 ) -> Result<ReceivePreparation, ApiError> {
     let incarnation = access.incarnation().clone();
-    let staging_repo = match &access {
-        ReceivePackAccess::FirstPush { .. } => {
-            ensure_first_push_receive_pack_staging_repo(state, &incarnation).await?
-        }
-        ReceivePackAccess::ReadyMember { author_id, .. } => {
-            let staging = ensure_ready_receive_pack_staging_repo(
+    let (staging_repo, staging_seed, seeded, object_generation) = match &access {
+        ReceivePackAccess::FirstPush { .. } => (
+            ensure_first_push_receive_pack_staging_repo(state, &incarnation).await?,
+            None,
+            SeededRequestRefs::default(),
+            None,
+        ),
+        ReceivePackAccess::ReadyMember {
+            author_id, context, ..
+        } => {
+            let staging = ensure_ready_receive_pack_staging_repo(state, context).await?;
+            match request_ref::seed_editable_request_refs(
                 state,
-                &incarnation,
-                owner,
-                repo_name,
+                context,
                 author_id,
-            )
-            .await?;
-            if let Err(error) = request_ref::seed_editable_request_refs(
-                state, owner, repo_name, author_id, &staging,
+                &staging.path,
+                seeding,
             )
             .await
             {
-                let _ = crate::git::storage::remove_dir_if_exists(&staging);
-                return Err(error);
+                Ok(seeded) => (
+                    staging.path,
+                    Some(staging.seed),
+                    seeded,
+                    Some(context.repo_config.object_generation()),
+                ),
+                Err(error) => {
+                    let _ = crate::git::storage::remove_dir_if_exists(&staging.path);
+                    return Err(error);
+                }
             }
-            staging
         }
         ReceivePackAccess::ViewMainPusher {
             author_id, view, ..
-        } => {
-            request_ref::prepare_request_staging_repo(
-                state,
-                &incarnation,
-                owner,
-                repo_name,
-                author_id,
-                view,
-                RequestStagingKind::WithViewMain,
-            )
-            .await?
         }
-        ReceivePackAccess::RequestContributor {
+        | ReceivePackAccess::RequestContributor {
             author_id, view, ..
         } => {
-            request_ref::prepare_request_staging_repo(
+            let kind = if matches!(&access, ReceivePackAccess::ViewMainPusher { .. }) {
+                RequestStagingKind::WithViewMain
+            } else {
+                RequestStagingKind::RequestRefsOnly
+            };
+            let staging = request_ref::prepare_request_staging_repo(
                 state,
                 &incarnation,
                 owner,
                 repo_name,
-                author_id,
-                view,
-                RequestStagingKind::RequestRefsOnly,
+                request_ref::RequestPusher {
+                    actor_user_id: author_id,
+                    address_view: view,
+                },
+                kind,
+                seeding,
             )
-            .await?
+            .await?;
+            (
+                staging.path,
+                Some(staging.seed),
+                staging.seeded,
+                Some(staging.object_generation),
+            )
         }
     };
-    let refs_before = if advertisement_only {
+    let refs_before = if matches!(seeding, RequestRefSeeding::Advertise) {
         None
     } else {
         let path = staging_repo.clone();
@@ -169,7 +193,11 @@ pub(crate) async fn prepare(
     Ok(ReceivePreparation {
         access,
         staging_repo,
+        _staging_seed: staging_seed,
         refs_before,
+        advertised_request_refs: seeded.advertised,
+        deferred_request_objects: seeded.deferred_objects,
+        object_generation,
         base_publication: None,
     })
 }
@@ -244,12 +272,18 @@ async fn complete_inner(
                 "request refs cannot be pushed during first push",
             ));
         }
+        let object_generation = preparation.object_generation.ok_or_else(|| {
+            ApiError::internal_message("request revision staging has no object generation")
+        })?;
         request_ref::persist_request_ref_revision(
             state,
             owner,
             repo_name,
             &preparation.access,
-            staging_repo,
+            request_ref::RequestRevisionStaging {
+                repo: staging_repo,
+                object_generation,
+            },
             update,
             preparation.base_publication,
         )
@@ -354,13 +388,10 @@ async fn complete_main_push(
         {
             Ok(candidates) => candidates,
             Err(error) => {
-                main_push::cleanup_failed_persist(
-                    state,
-                    incarnation.repository_id(),
-                    &prepared.staged_segment,
-                    prepared.write_lease,
-                )
-                .await;
+                prepared
+                    .staged_pack
+                    .discard(state, incarnation.repository_id())
+                    .await;
                 return Err(error);
             }
         }
@@ -434,55 +465,28 @@ async fn complete_main_push(
         repo_name,
         &author_id,
         &committed_incarnation,
-        &persisted.staged_segment,
+        &persisted.staged_pack,
         &committed_git_head,
     )
     .await;
-    if let Err(error) = state
-        .git_segment_store
-        .delete_local(&persisted.staged_segment)
-        .await
-    {
-        tracing::warn!(
-            owner,
-            repo = repo_name,
-            segment_id = persisted.staged_segment.segment.segment_id,
-            error = %error,
-            "published Git segment local staging cleanup failed"
-        );
-    }
-    persisted.write_lease.release().await;
+    persisted.staged_pack.finish(state).await;
     Ok(())
 }
 
-async fn best_effort_sync_cache(
+pub(crate) async fn best_effort_sync_cache(
     state: &AppState,
     owner: &str,
     repo_name: &str,
     author_id: &str,
     committed_incarnation: &RepositoryIncarnation,
-    staged_segment: &scope_storage::StagedGitSegment,
+    staged_pack: &StagedPoolPack,
     committed_git_head: &scope_domain::repository::git::GitHead,
 ) {
-    let retained_pack = match state
-        .git_segment_store
-        .promote_verified_pack(committed_incarnation, staged_segment)
-        .await
-    {
-        Ok(pack) => Some(pack),
-        Err(error) => {
-            tracing::warn!(error = %error, "push committed but verified pack retention failed");
-            None
-        }
-    };
-    let local_pack = retained_pack
-        .as_ref()
-        .map_or_else(|| staged_segment.local_pack_path(), |pack| pack.path())
-        .to_path_buf();
+    let local_pack = staged_pack.retain_local(state, committed_incarnation).await;
     match state
         .metadata
         .repositories()
-        .git_push_context(owner, repo_name, author_id)
+        .git_push_state(owner, repo_name, author_id)
         .await
     {
         Ok(Some(repo)) => {
@@ -492,22 +496,18 @@ async fn best_effort_sync_cache(
                     .as_ref()
                     .is_some_and(|head| head.frontier() == committed_git_head.frontier());
             let sync_result = if is_still_current {
-                let engine = state.repository_engine.clone();
-                let incarnation = committed_incarnation.clone();
-                let local_pack = local_pack.to_path_buf();
-                let head_oid = committed_git_head.head_oid.clone();
-                let push_sequence = committed_git_head.push_sequence;
-                tokio::task::spawn_blocking(move || {
-                    let _retained_pack = retained_pack;
-                    engine.sync_after_push(&incarnation, &local_pack, &head_oid, push_sequence)
-                })
-                .await
-                .map_err(|error| {
-                    ApiError::internal_message(format!(
-                        "repository Git cache synchronization task failed: {error}"
-                    ))
-                })
-                .and_then(|result| result)
+                state
+                    .repository_engine
+                    .sync_after_push(
+                        state,
+                        committed_incarnation,
+                        PushedPack {
+                            path: local_pack.path(),
+                            prerequisites: &staged_pack.pack.prerequisites,
+                        },
+                        committed_git_head,
+                    )
+                    .await
             } else {
                 Ok(())
             };

@@ -50,22 +50,6 @@ fn request_ref_diff_rejects_delete_and_tracks_name() {
 }
 
 #[test]
-fn request_ref_store_head_must_match_advertised_old_head() {
-    ensure_request_ref_store_head_matches_push(None, None).unwrap();
-    ensure_request_ref_store_head_matches_push(Some("a"), Some("a")).unwrap();
-
-    let create_error = ensure_request_ref_store_head_matches_push(Some("a"), None).unwrap_err();
-    assert!(create_error.public_message().contains("fetch and retry"));
-
-    let update_error =
-        ensure_request_ref_store_head_matches_push(Some("b"), Some("a")).unwrap_err();
-    assert!(update_error.public_message().contains("fetch and retry"));
-
-    let missing_error = ensure_request_ref_store_head_matches_push(None, Some("a")).unwrap_err();
-    assert!(missing_error.public_message().contains("fetch and retry"));
-}
-
-#[test]
 fn request_ref_head_must_be_commit_object_not_annotated_tag() {
     let repo = TestRepo::init();
     run_git(

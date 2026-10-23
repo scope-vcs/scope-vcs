@@ -30,7 +30,8 @@ use scope_domain::requests::{
     REQUEST_ACTIVITY_PAGE_MAX_EVENTS, RequestLinePosition, RequestViewer, request_policy,
 };
 use serde::Deserialize;
-use std::collections::BTreeMap;
+
+mod authors;
 
 const DEFAULT_DISCUSSION_LIMIT: usize = 25;
 const MAX_DISCUSSION_LIMIT: usize = 100;
@@ -157,7 +158,7 @@ pub(crate) async fn list_discussions(
         repo: &repo,
         through_position: snapshot_version,
     };
-    let discussions = discussion_summaries(&projection, discussions, &batch.users).await?;
+    let discussions = discussion_summaries(&projection, discussions, &batch.actors).await?;
     Ok(Json(RequestDiscussionPageResponse {
         discussions,
         next_cursor,
@@ -218,7 +219,7 @@ pub(crate) async fn list_replies(
                 "reply and before cannot be used together",
             ));
         }
-        let Some((reply, users)) = state
+        let Some((reply, actors)) = state
             .metadata
             .requests()
             .request_discussion_reply(&discussion_id, reply_id)
@@ -230,7 +231,7 @@ pub(crate) async fn list_replies(
             }));
         };
         return Ok(Json(RequestDiscussionRepliesPageResponse {
-            replies: vec![reply_response(reply, &users)?],
+            replies: vec![reply_response(reply, &actors)?],
             next_before_position: None,
         }));
     }
@@ -238,7 +239,7 @@ pub(crate) async fn list_replies(
         .limit
         .unwrap_or(DEFAULT_REPLY_LIMIT)
         .clamp(1, MAX_REPLY_LIMIT);
-    let (mut replies, users) = state
+    let (mut replies, actors) = state
         .metadata
         .requests()
         .request_discussion_replies(&discussion_id, query.before, limit + 1)
@@ -252,7 +253,7 @@ pub(crate) async fn list_replies(
         .flatten();
     let replies = replies
         .into_iter()
-        .map(|reply| reply_response(reply, &users))
+        .map(|reply| reply_response(reply, &actors))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Json(RequestDiscussionRepliesPageResponse {
         replies,
@@ -409,7 +410,7 @@ pub(crate) async fn changed_discussions(
         repo: &repo,
         through_position: request.activity_version,
     };
-    let discussions = discussion_summaries(&projection, batch.discussions, &batch.users).await?;
+    let discussions = discussion_summaries(&projection, batch.discussions, &batch.actors).await?;
     Ok(Json(RequestDiscussionChangesResponse {
         discussions,
         through_position,
@@ -537,14 +538,14 @@ fn mutation_discussion_response(
             .get(&result.discussion.discussion.id),
         result.discussion.anchor_revision_position,
     )?;
-    discussion_summary(result.discussion, &result.users, anchor)
+    discussion_summary(result.discussion, &result.actors, anchor)
 }
 
 fn reply_mutation_response(
     result: ReplyMutationResult,
 ) -> Result<RequestDiscussionReplyMutationResponse, ApiError> {
     let discussion = mutation_discussion_response(result.discussion)?;
-    let reply = reply_response(result.reply, &result.reply_users)?;
+    let reply = reply_response(result.reply, &result.reply_actors)?;
     Ok(RequestDiscussionReplyMutationResponse { discussion, reply })
 }
 
@@ -564,7 +565,7 @@ async fn ensure_discussion_in_request(
 
 fn discussion_summary(
     model: scope_postgres::db::RequestDiscussionReadModel,
-    users: &BTreeMap<String, scope_domain::account::UserAccount>,
+    actors: &scope_postgres::db::RequestDiscussionActors,
     anchor: Option<RequestDiscussionAnchor>,
 ) -> Result<RequestDiscussionSummaryResponse, ApiError> {
     Ok(RequestDiscussionSummaryResponse {
@@ -573,7 +574,7 @@ fn discussion_summary(
         client_discussion_id: model.discussion.client_discussion_id,
         opened_position: model.discussion.opened_position,
         last_activity_position: model.discussion.last_activity_position,
-        author: recorded_actor_response(model.discussion.author_user_id.as_deref(), users)?,
+        author: authors::author_response(&model.discussion.author, actors)?,
         body_markdown: model.discussion.body_markdown,
         anchor,
         status: model.discussion.status.into(),
@@ -583,16 +584,11 @@ fn discussion_summary(
         latest_replies: model
             .latest_replies
             .into_iter()
-            .map(|reply| reply_response(reply, users))
+            .map(|reply| reply_response(reply, actors))
             .collect::<Result<Vec<_>, _>>()?,
         created_at_unix: model.discussion.created_at_unix,
         resolved_at_unix: model.discussion.resolved_at_unix,
-        resolved_by: model
-            .discussion
-            .resolved_by_user_id
-            .as_deref()
-            .map(|id| request_actor_summary_response(id, users))
-            .transpose()?,
+        resolved_by: authors::resolver_response(model.discussion.resolved_by.as_ref(), actors)?,
     })
 }
 
@@ -606,7 +602,7 @@ struct DiscussionProjection<'a> {
 async fn discussion_summaries(
     projection: &DiscussionProjection<'_>,
     models: Vec<scope_postgres::db::RequestDiscussionReadModel>,
-    users: &BTreeMap<String, scope_domain::account::UserAccount>,
+    actors: &scope_postgres::db::RequestDiscussionActors,
 ) -> Result<Vec<RequestDiscussionSummaryResponse>, ApiError> {
     let projections: AnchorProjections = request_anchor_projection::project_anchors(
         projection.state,
@@ -623,7 +619,7 @@ async fn discussion_summaries(
             projections.get(&model.discussion.id),
             model.anchor_revision_position,
         )?;
-        summaries.push(discussion_summary(model, users, anchor)?);
+        summaries.push(discussion_summary(model, actors, anchor)?);
     }
     Ok(summaries)
 }
@@ -678,7 +674,7 @@ fn discussion_anchor_response(
 
 fn reply_response(
     model: scope_postgres::db::RequestDiscussionReplyReadModel,
-    users: &BTreeMap<String, scope_domain::account::UserAccount>,
+    actors: &scope_postgres::db::RequestDiscussionActors,
 ) -> Result<RequestDiscussionReplyResponse, ApiError> {
     let reply_to = model
         .reply_to
@@ -686,7 +682,7 @@ fn reply_response(
             Ok::<_, ApiError>(RequestDiscussionReplyReferenceResponse {
                 id: target.id,
                 position: target.position,
-                author: recorded_actor_response(target.author_user_id.as_deref(), users)?,
+                author: authors::author_response(&target.author, actors)?,
                 body_markdown: target.body_markdown,
             })
         })
@@ -696,7 +692,7 @@ fn reply_response(
         id: reply.id,
         discussion_id: reply.discussion_id,
         position: reply.position,
-        author: recorded_actor_response(reply.author_user_id.as_deref(), users)?,
+        author: authors::author_response(&reply.author, actors)?,
         body_markdown: reply.body_markdown,
         reply_to,
         created_at_unix: reply.created_at_unix,

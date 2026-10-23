@@ -1,5 +1,5 @@
 use super::*;
-use scope_domain::repository::git::GitPackSpan;
+use scope_domain::repository::git::GitPoolPackOwner;
 use scope_storage::{EncryptionKey, GitSegmentStoreConfig, MemoryBackend};
 use std::io::Cursor;
 
@@ -96,25 +96,57 @@ fn make_pack_with_extra_objects(
     .unwrap()
 }
 
-async fn span(
+async fn segment_pack(
     store: &GitSegmentStore,
     repository_id: &str,
     sequences: (u64, u64),
-    tier: u32,
     boundary: (Option<String>, String),
     pack: Vec<u8>,
-) -> GitPackSpan {
+) -> GitPoolPack {
     let staged = store
         .ingest_blocking_reader(repository_id, Cursor::new(pack), u64::MAX)
         .await
         .unwrap();
-    GitPackSpan {
-        first_sequence: sequences.0,
-        last_sequence: sequences.1,
-        geometric_tier: tier,
-        base_oid: boundary.0,
-        head_oid: boundary.1,
-        segment: staged.segment,
+    main_pack(
+        staged.segment.segment_id.clone(),
+        sequences,
+        boundary,
+        GitPoolPackStorage::Segment(staged.segment),
+    )
+}
+
+fn inline_pack(
+    store: &GitSegmentStore,
+    repository_id: &str,
+    sequences: (u64, u64),
+    boundary: (Option<String>, String),
+    pack: Vec<u8>,
+) -> GitPoolPack {
+    let id = format!("inline-{}-{}", sequences.0, sequences.1);
+    let sealed = store.seal_inline_pack(repository_id, &id, pack).unwrap();
+    main_pack(
+        id,
+        sequences,
+        boundary,
+        GitPoolPackStorage::Inline { sealed },
+    )
+}
+
+fn main_pack(
+    id: String,
+    (first_sequence, last_sequence): (u64, u64),
+    (base_oid, head_oid): (Option<String>, String),
+    storage: GitPoolPackStorage,
+) -> GitPoolPack {
+    GitPoolPack {
+        id,
+        owner: GitPoolPackOwner::Main {
+            first_sequence,
+            last_sequence,
+        },
+        head_oid,
+        prerequisites: base_oid.into_iter().collect(),
+        storage,
     }
 }
 
@@ -201,43 +233,34 @@ async fn compaction_preserves_the_selected_packs_exact_object_set() {
     let repository_id = "owner/repo";
     let incarnation = RepositoryIncarnation::new(repository_id, "repoi_compaction").unwrap();
     let store = segment_store(&temp.path().join("segments"));
-    let predecessor = span(
+    let predecessor = segment_pack(
         store.as_ref(),
         repository_id,
         (1, 2),
-        1,
         (None, head_2.clone()),
         predecessor_pack,
     )
     .await;
-    let selected = vec![
-        span(
-            store.as_ref(),
-            repository_id,
-            (3, 3),
-            0,
-            (Some(head_2.clone()), head_3.clone()),
-            first_selected_pack,
-        )
-        .await,
-        span(
-            store.as_ref(),
-            repository_id,
-            (4, 4),
-            0,
-            (Some(head_3.clone()), head_4.clone()),
-            second_selected_pack,
-        )
-        .await,
-    ];
-    for selected_span in &selected {
-        store
-            .cleanup_local(repository_id, &selected_span.segment.segment_id)
-            .await
-            .unwrap();
-    }
-    let mut layout = vec![predecessor];
-    layout.extend(selected);
+    let segment_selected = segment_pack(
+        store.as_ref(),
+        repository_id,
+        (3, 3),
+        (Some(head_2.clone()), head_3.clone()),
+        first_selected_pack,
+    )
+    .await;
+    store
+        .cleanup_local(repository_id, &segment_selected.id)
+        .await
+        .unwrap();
+    let inline_selected = inline_pack(
+        store.as_ref(),
+        repository_id,
+        (4, 4),
+        (Some(head_3.clone()), head_4.clone()),
+        second_selected_pack,
+    );
+    let layout = vec![predecessor, segment_selected, inline_selected];
     let plan = GitCompactionPlan::select(&layout, u64::MAX)
         .unwrap()
         .unwrap();
@@ -255,7 +278,8 @@ async fn compaction_preserves_the_selected_packs_exact_object_set() {
     .await
     .unwrap();
     assert_eq!(compacted.metrics.local_restore_count, 0);
-    assert_eq!(compacted.metrics.remote_restore_count, 2);
+    assert_eq!(compacted.metrics.remote_restore_count, 1);
+    assert_eq!(compacted.metrics.inline_source_count, 1);
     let compacted_bytes = fs::read(compacted.staged.local_pack_path()).unwrap();
 
     let result = TemporaryGitRepo::new(temp.path()).unwrap();

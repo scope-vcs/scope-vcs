@@ -4820,10 +4820,10 @@ Repository: "github:eemeli/yaml"
 LICENSE: text cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c
 
 ==============================================================================
-zod 4.6.5
+zod 4.6.7
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/zod/-/zod-4.6.5.tgz
+Source: https://registry.npmjs.org/zod/-/zod-4.6.7.tgz
 
 Published author metadata: "Colin McDonnell <zod@colinhacks.com>"
 Repository: {"type": "git", "url": "git+https://github.com/colinhacks/zod.git"}

@@ -11,7 +11,7 @@ import {
 } from './metrics.mjs';
 import {
   capacityRejectionBreakdown, chooseWrite, consistencyStats, evaluateStage, failureBreakdown,
-  stageResult, toggleBenchmarkVisibilityRule,
+  remoteView, stageResult, toggleBenchmarkVisibilityRule,
 } from './railway-load.mjs';
 import { fetchClientCount, validateRepositoryMode } from './repository-mode.mjs';
 import { assertSafeTarget, validateTargetKind } from './target-safety.mjs';
@@ -31,6 +31,12 @@ test('large write deltas use bounded files and buffers', async (context) => {
     [16, 16, 3],
   );
   assert.equal((await readdir(join(root, 'delta'))).length, 3);
+});
+
+test('push intents name the view of the push remote', () => {
+  assert.equal(remoteView('/git/private/owner/repo'), 'private');
+  assert.equal(remoteView('/git/public/owner/repo'), 'public');
+  assert.throws(() => remoteView('/owner/repo'), /no view/);
 });
 
 test('load target guard accepts only local or loadtest hosts', () => {

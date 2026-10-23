@@ -22,6 +22,7 @@ mod entities;
 mod fast_push;
 mod generated_ids;
 mod git_compaction;
+mod git_heads;
 mod git_push_reads;
 mod git_segments;
 mod git_transport_reads;
@@ -31,6 +32,9 @@ mod github_pull_requests;
 mod github_pushes;
 mod github_read_queue;
 mod github_required_checks;
+mod github_review_bot_statuses;
+mod github_review_bots;
+mod github_review_imports;
 mod github_run_imports;
 mod github_setup_checks;
 mod github_workflow_job_log_reads;
@@ -48,6 +52,7 @@ mod locks;
 mod main_push_requests;
 mod maintenance;
 mod manual_runs;
+mod merge_turns;
 #[cfg(test)]
 mod migration_tests;
 mod native_runs;
@@ -73,6 +78,7 @@ mod request_auto_merge;
 mod request_check_commits;
 mod request_check_recovery;
 mod request_checks;
+mod request_discussion_actors;
 mod request_discussion_commands;
 mod request_discussion_rows;
 mod request_discussions;
@@ -92,6 +98,7 @@ pub use request_navigation::RequestChildrenPage;
 mod request_state;
 mod request_submission_transactions;
 mod requests;
+pub use requests::PushedRevisionObjects;
 mod run_admission;
 mod run_attempt_mutations;
 mod run_attempt_persistence;
@@ -130,7 +137,8 @@ pub use cli_auth_results::{
 };
 use connection::begin_metadata_read_snapshot;
 pub use connection::{
-    ExclusiveWriterFence, terminate_metadata_writer_sessions, verify_writer_fence_available,
+    DEFAULT_METADATA_POOL_MAX_CONNECTIONS, ExclusiveWriterFence,
+    terminate_metadata_writer_sessions, verify_writer_fence_available,
 };
 #[cfg(test)]
 use connection::{connect_postgres_store, connect_writer_database};
@@ -141,13 +149,19 @@ pub use dependency_analysis::{
 pub use fast_push::ApplyContentOnlyPushCommand;
 use generated_ids::GeneratedIdKind;
 pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
-pub use git_push_reads::{GitPushContext, GitPushCredentials};
-pub use git_segments::RepositoryGitWriteLease;
+pub use git_push_reads::{GitPushCredentials, GitPushState};
+pub use git_segments::{ListedMainPoolPack, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
 pub use github_pushes::GitHubPushStanding;
 pub use github_read_queue::GitHubJobOutcome;
+pub use github_review_bot_statuses::GitHubReviewBotReconcile;
+pub use github_review_imports::{
+    GitHubImportedComment, GitHubReviewImport, GitHubReviewImportFinish, GitHubReviewImportJob,
+    GitHubThreadTransition, ImportGitHubReviewCommand, QueueGitHubReviewImport,
+    TransitionGitHubDiscussionCommand,
+};
 pub use github_setup_checks::GitHubSetupCheckRead;
 pub use github_workflow_job_log_reads::GitHubJobLogReadJob;
 pub use github_workflow_runs::{
@@ -165,6 +179,7 @@ pub use maintenance::{
     apply_maintenance_migrations, migration_plan, migration_preflight,
     repository_workflow_catalogs_for_maintenance, verify_schema,
 };
+pub use merge_turns::RepositoryMergeTurn;
 pub use native_runs::{NativeRunsAccountListing, NativeRunsAddition, NativeRunsWithdrawal};
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
 pub use repo_collaboration::{
@@ -188,6 +203,7 @@ pub use request_check_commits::RebuildCheckCommitCommand;
 pub use request_checks::{
     ApproveRequestChecksCommand, RecordRequestChecksCommand, RequestChecksMutation,
 };
+pub use request_discussion_actors::RequestDiscussionActors;
 pub use request_discussion_commands::{
     CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
     ReopenAndReplyToRequestDiscussionCommand, TransitionRequestDiscussionCommand,
@@ -211,7 +227,10 @@ pub use request_media::{
     RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
     ValidateRequestAttachmentSourceCommand,
 };
-pub use request_merge::{LandedRequestCandidate, LandedRequestCompletion};
+pub use request_merge::{
+    LandedRequestCandidate, LandedRequestCompletion, MergeRequestContentMutation,
+    MergeRequestContentsOutcome,
+};
 pub use request_queue::{
     RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
 };

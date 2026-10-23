@@ -1,7 +1,7 @@
 use super::merge_gate::{evaluate_request_merge, evaluate_request_readiness};
 use super::{
-    Request, RequestChecksOutcome, RequestMergeSubject, RequestMergeabilityStatus, RequestState,
-    RequestViewer,
+    Request, RequestChecksOutcome, RequestMergeSubject, RequestMergeabilityStatus,
+    RequestReviewsOutcome, RequestState, RequestViewer,
 };
 use crate::error::DomainError;
 use crate::repository::RepoLifecycleState;
@@ -73,13 +73,22 @@ pub fn request_queue_next_step(
     viewer: &RequestViewer<'_>,
     views: &Views,
     checks: RequestChecksOutcome,
+    reviews: RequestReviewsOutcome,
     repository_lifecycle: RepoLifecycleState,
     reason: RequestAttentionReason,
 ) -> RequestQueueNextStep {
-    let readiness = evaluate_request_readiness(repository_lifecycle, subject, checks).status;
-    let viewer_can_merge =
-        evaluate_request_merge(repository_lifecycle, subject, viewer, views, checks).status
-            == RequestMergeabilityStatus::Ready;
+    let readiness =
+        evaluate_request_readiness(repository_lifecycle, subject, checks, reviews).status;
+    let viewer_can_merge = evaluate_request_merge(
+        repository_lifecycle,
+        subject,
+        viewer,
+        views,
+        checks,
+        reviews,
+    )
+    .status
+        == RequestMergeabilityStatus::Ready;
     next_step_for(
         subject.author_user_id,
         viewer.user_id,
@@ -102,9 +111,9 @@ fn next_step_for(
         return match readiness {
             Status::Ready if viewer_can_merge => RequestQueueNextStep::Merge,
             Status::Ready => RequestQueueNextStep::Wait,
-            Status::ChecksFailed | Status::ChecksConfigurationError => {
-                RequestQueueNextStep::FixChecks
-            }
+            Status::ChecksFailed
+            | Status::ChecksConfigurationError
+            | Status::ReviewFindingsOpen => RequestQueueNextStep::FixChecks,
             Status::IntegrationConflict
             | Status::NeedsMainUpdate
             | Status::ParentRewritten
@@ -117,6 +126,7 @@ fn next_step_for(
             | Status::ChecksNotEvaluated
             | Status::ChecksAwaitingApproval
             | Status::ChecksPending
+            | Status::ReviewsPending
             | Status::WaitingForParent
             | Status::AncestorBlocked => RequestQueueNextStep::Wait,
         };

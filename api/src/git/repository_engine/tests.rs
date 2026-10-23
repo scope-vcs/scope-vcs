@@ -147,6 +147,34 @@ struct IncrementalPushFixture {
     second_pack: PathBuf,
 }
 
+impl IncrementalPushFixture {
+    fn link_first(
+        &self,
+        engine: &RepositoryEngine,
+        repo: &RepositoryIncarnation,
+    ) -> Result<PushedPackLink, ApiError> {
+        engine.link_pushed_pack(
+            repo,
+            &self.first_pack,
+            &[],
+            &GitHead::new(self.first_head.clone(), 1, 1),
+        )
+    }
+
+    fn link_second(
+        &self,
+        engine: &RepositoryEngine,
+        repo: &RepositoryIncarnation,
+    ) -> Result<PushedPackLink, ApiError> {
+        engine.link_pushed_pack(
+            repo,
+            &self.second_pack,
+            std::slice::from_ref(&self.first_head),
+            &GitHead::new(self.second_head.clone(), 2, 2),
+        )
+    }
+}
+
 fn incremental_push_fixture(engine: &RepositoryEngine) -> IncrementalPushFixture {
     let root = engine.cache_root();
     let work = root.join("work");
@@ -227,23 +255,33 @@ fn write_revision_pack(repo: &Path, destination: &Path, revisions: String) {
 }
 
 #[test]
-fn missing_cache_is_not_seeded_from_an_incremental_push() {
+fn an_incremental_pack_without_its_prerequisite_defers_to_pool_catch_up() {
     let engine = test_engine("repository-engine-missing-incremental-base");
     let root = engine.cache_root().to_path_buf();
     let fixture = incremental_push_fixture(&engine);
     let repo = incarnation("owner/repo");
-    let error = engine
-        .sync_after_push(&repo, &fixture.second_pack, &fixture.second_head, 2)
-        .unwrap_err();
 
+    assert_eq!(
+        fixture.link_second(&engine, &repo).unwrap(),
+        PushedPackLink::MissingPrerequisites
+    );
     let replica = engine.repository_path(&repo);
     assert!(!replica.exists());
     assert_eq!(engine.cache.applied_sequence(&repo, &replica), None);
-    assert!(
-        error
-            .operator_diagnostic()
-            .contains("incremental Git segment cannot seed a missing repository cache")
+
+    let other = incarnation("owner/other");
+    let other_replica = engine.repository_path(&other);
+    run_git(
+        None,
+        &["init", "--bare", other_replica.to_string_lossy().as_ref()],
+        "init stale replica",
+    )
+    .unwrap();
+    assert_eq!(
+        fixture.link_second(&engine, &other).unwrap(),
+        PushedPackLink::MissingPrerequisites
     );
+    assert_eq!(engine.cache.applied_sequence(&other, &other_replica), None);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -254,15 +292,18 @@ fn delayed_post_push_sync_cannot_regress_a_newer_replica() {
     let fixture = incremental_push_fixture(&engine);
     let repo = incarnation("owner/repo");
 
-    engine
-        .sync_after_push(&repo, &fixture.first_pack, &fixture.first_head, 1)
-        .unwrap();
-    engine
-        .sync_after_push(&repo, &fixture.second_pack, &fixture.second_head, 2)
-        .unwrap();
-    engine
-        .sync_after_push(&repo, &fixture.first_pack, &fixture.first_head, 1)
-        .unwrap();
+    assert_eq!(
+        fixture.link_first(&engine, &repo).unwrap(),
+        PushedPackLink::Linked
+    );
+    assert_eq!(
+        fixture.link_second(&engine, &repo).unwrap(),
+        PushedPackLink::Linked
+    );
+    assert_eq!(
+        fixture.link_first(&engine, &repo).unwrap(),
+        PushedPackLink::Linked
+    );
 
     let replica = engine.repository_path(&repo);
     assert_eq!(git_head(&replica), fixture.second_head);
@@ -279,12 +320,10 @@ fn separate_engines_do_not_reuse_a_predecessor_incarnation_cache() {
     let predecessor = RepositoryIncarnation::new("owner/repo", "repoi_predecessor").unwrap();
     let recreated = RepositoryIncarnation::new("owner/repo", "repoi_recreated").unwrap();
 
-    predecessor_engine
-        .sync_after_push(&predecessor, &fixture.first_pack, &fixture.first_head, 1)
+    fixture
+        .link_first(&predecessor_engine, &predecessor)
         .unwrap();
-    recreated_engine
-        .sync_after_push(&recreated, &fixture.first_pack, &fixture.first_head, 1)
-        .unwrap();
+    fixture.link_first(&recreated_engine, &recreated).unwrap();
 
     let predecessor_path = predecessor_engine.repository_path(&predecessor);
     let recreated_path = recreated_engine.repository_path(&recreated);

@@ -257,13 +257,13 @@ async fn build_accepted_source_bundle(
     max_bytes: usize,
 ) -> Result<(), ApiError> {
     operation::supervise(async move {
-        let (_, head, pack_spans) = source.logical_git_head().ok_or_else(|| {
+        let (_, head) = source.logical_git_head().ok_or_else(|| {
             ApiError::internal_message("run source does not contain a materializable Git head")
         })?;
-        let revision = state
-            .repository_engine
-            .materialize_revision(&state, &incarnation, head, pack_spans)
-            .await?;
+        let revision = current_main_revision(&state, &incarnation)
+            .await?
+            .ok_or_else(|| ApiError::internal_message("run repository has no accepted Git head"))?
+            .pinned_to(&head.head_oid);
         let owner = operation::RunSourceOperation::new(&state)?;
         let bytes = materialize_owned_git_head_bundle(
             &state,
@@ -311,19 +311,14 @@ async fn build_request_source_bundle(
             ApiError::internal_message(format!("request snapshot inspection task failed: {error}"))
         })??;
         let revision = if needs_base {
-            let (main_head, spans) = state
-                .metadata
-                .repositories()
-                .repository_content_source(&incarnation)
-                .await?;
-            let main_head = main_head.ok_or_else(|| {
-                ApiError::infrastructure_unavailable("request snapshot needs an unavailable base")
-            })?;
             Some(
-                state
-                    .repository_engine
-                    .materialize_revision(&state, &incarnation, &main_head, &spans)
-                    .await?,
+                current_main_revision(&state, &incarnation)
+                    .await?
+                    .ok_or_else(|| {
+                        ApiError::infrastructure_unavailable(
+                            "request snapshot needs an unavailable base",
+                        )
+                    })?,
             )
         } else {
             None
@@ -345,6 +340,25 @@ async fn build_request_source_bundle(
         publish_source_bundle(&state, &owner, bundle, path).await
     })
     .await
+}
+
+async fn current_main_revision(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+) -> Result<Option<GitRevision>, ApiError> {
+    let head = state
+        .metadata
+        .repositories()
+        .repository_content_source(incarnation)
+        .await?;
+    let Some(head) = head else {
+        return Ok(None);
+    };
+    state
+        .repository_engine
+        .materialize_revision(state, incarnation, &head)
+        .await
+        .map(Some)
 }
 
 async fn publish_source_bundle(

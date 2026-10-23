@@ -7,6 +7,7 @@ import type {
   GitHubSetupRequest,
   SetGitHubMainPublicationRequest,
   SetGitHubRequiredChecksRequest,
+  SetGitHubReviewBotsRequest,
   SetGitHubReviewBotPullRequestsRequest,
   SetGitHubReviewRequestCommentRequest,
   SetGitHubRunImportCountRequest,
@@ -152,6 +153,8 @@ export type ConnectRepoGitHubInput = RepoParams & ConnectGitHubRepositoryRequest
 export type ApproveRequestChecksInput = RequestParams & ApproveRequestChecksRequest
 
 export type SetRepoGitHubRequiredChecksInput = RepoParams & SetGitHubRequiredChecksRequest
+
+export type SetRepoGitHubReviewBotsInput = RepoParams & SetGitHubReviewBotsRequest
 
 export type SetRepoGitHubRunImportCountInput = RepoParams & SetGitHubRunImportCountRequest
 

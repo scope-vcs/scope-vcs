@@ -1,5 +1,6 @@
 use scope_domain::{
     account::SessionIdentity as DomainSessionIdentity,
+    github_account::GitHubAccountType as DomainGitHubAccountType,
     history::{FileChangeKind as DomainFileChangeKind, HistoryEntryKind as DomainHistoryEntryKind},
     repository::RepoLifecycleState as DomainRepoLifecycleState,
     repository::access::RepositoryActor as DomainRepositoryActor,
@@ -9,6 +10,7 @@ use scope_domain::{
     },
     repository::credentials::FirstPushTokenStatus as DomainFirstPushTokenStatus,
     requests::{
+        GitHubReviewBotState as DomainGitHubReviewBotState,
         RequestActorRole as DomainRequestActorRole,
         RequestAttentionReason as DomainRequestAttentionReason,
         RequestAttentionState as DomainRequestAttentionState,
@@ -220,7 +222,24 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
     ChecksPending,
     ChecksFailed,
     ChecksConfigurationError,
+    ReviewsPending,
+    ReviewFindingsOpen,
 });
+wire_enum!(
+    /// How far a review bot got with the request's current head: `working`
+    /// once it reacted with eyes, `commented` once it reviewed that head,
+    /// `clear` once it approved the pull request with a thumbs up after the
+    /// head was pushed, and for bots that publish a review state, once every
+    /// review they report completed that head.
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    RequestReviewBotState => DomainGitHubReviewBotState {
+        NotStarted,
+        Working,
+        Commented,
+        Clear,
+    }
+);
 wire_enum!(
     #[serde(rename_all = "kebab-case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
@@ -278,6 +297,12 @@ wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
     RequestDiffSide => DomainRequestDiffSide { Old, New }
+);
+
+wire_enum!(
+    #[serde(rename_all = "snake_case")]
+    #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
+    GitHubAccountType => DomainGitHubAccountType { User, Bot, Organization }
 );
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

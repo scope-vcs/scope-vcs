@@ -40,9 +40,12 @@ async fn the_bridge_replaces_the_previous_ledger_after_verifying_the_schema() {
         "{startup_error}"
     );
     assert!(
-        connect_postgres_store(target.schema_database_url())
-            .await
-            .is_err()
+        connect_postgres_store(
+            target.schema_database_url(),
+            crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
+        )
+        .await
+        .is_err()
     );
     assert_eq!(
         migrations::preflight(&db, Default::default())
@@ -67,9 +70,12 @@ async fn the_bridge_replaces_the_previous_ledger_after_verifying_the_schema() {
             .unwrap(),
         completed
     );
-    connect_postgres_store(target.schema_database_url())
-        .await
-        .unwrap();
+    connect_postgres_store(
+        target.schema_database_url(),
+        crate::db::connection::DEFAULT_METADATA_POOL_MAX_CONNECTIONS,
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

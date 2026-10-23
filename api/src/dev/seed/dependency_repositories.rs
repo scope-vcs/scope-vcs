@@ -228,7 +228,7 @@ pub(super) fn seed_dependency_repositories(
     object_store: &SeedObjects,
     git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
-) -> Result<Vec<(Repository, GitSegmentUpload)>, ApiError> {
+) -> Result<Vec<(Repository, SeedMainPack)>, ApiError> {
     DEPENDENCY_REPOSITORIES
         .iter()
         .map(|fixture| {
@@ -249,7 +249,7 @@ fn dependency_repository(
     owner: &UserAccount,
     name: &str,
     files: &[SeedFile],
-) -> Result<(Repository, GitSegmentUpload), ApiError> {
+) -> Result<(Repository, SeedMainPack), ApiError> {
     let mut repository = repo(owner, name, ViewId::public())?;
     repository
         .policy
@@ -289,7 +289,7 @@ fn dependency_repository(
         .iter()
         .map(|file| (file.path, file.content))
         .collect::<Vec<_>>();
-    let (head, pack_span, upload) = git_pack_state(
+    let (head, main_pack) = git_pack_state(
         git_segment_store,
         &repository.record.id,
         name,
@@ -299,8 +299,7 @@ fn dependency_repository(
         }],
     )?;
     repository.git_head = Some(head);
-    repository.git_pack_spans.push(pack_span);
-    Ok((repository, upload))
+    Ok((repository, main_pack))
 }
 
 #[cfg(test)]

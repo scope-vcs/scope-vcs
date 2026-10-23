@@ -114,7 +114,7 @@ pub(crate) async fn publish(
                 let push_context = state
                     .metadata
                     .repositories()
-                    .git_push_context(&owner, &repo_name, &actor.id)
+                    .git_push_state(&owner, &repo_name, &actor.id)
                     .await?
                     .ok_or_else(|| ApiError::not_found("repo not found"))?;
                 let repo_config = push_context.repo_config;

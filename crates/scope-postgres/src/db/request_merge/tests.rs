@@ -1,4 +1,6 @@
+mod file_rules;
 mod landed;
+mod push_paths;
 
 use crate::db::{
     AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand,
@@ -15,7 +17,7 @@ use scope_domain::{
     landing_file::RepositoryLandingFileMutation,
     policy::ScopePath,
     repository::{
-        git::{GitHead, GitPackSpan},
+        git::{GitHead, GitPoolPack, GitPoolPackOwner, GitPoolPackStorage},
         updates::RequestMergeOrigin,
     },
     requests::{
@@ -245,7 +247,6 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         "/.scope/RULES.md",
         source_blob("rules-content"),
     );
-    stage_segment(&store, &initial_update.git_pack_span.segment).await;
     apply_reviewed_update_to_repo(&mut repo, initial_update).unwrap();
     store
         .repositories()
@@ -372,7 +373,6 @@ async fn merge_preparation(store: &super::super::MetadataStore) -> MergePreparat
         "/README.md",
         source_blob("merged-content"),
     );
-    stage_segment(store, &update.git_pack_span.segment).await;
     let workflow_catalog = RepositoryWorkflowCatalog::captured(
         "owner/repo",
         MERGED_HEAD,
@@ -388,27 +388,6 @@ async fn merge_preparation(store: &super::super::MetadataStore) -> MergePreparat
     }
 }
 
-async fn stage_segment(
-    store: &super::super::MetadataStore,
-    segment: &scope_domain::repository::git::GitSegmentRef,
-) {
-    let repositories = store.repositories();
-    repositories
-        .begin_git_segment_upload(
-            "owner/repo",
-            &segment.segment_id,
-            &format!("git/segments/v2/owner/repo/{}", segment.segment_id),
-            segment.encoding_version,
-            1,
-        )
-        .await
-        .unwrap();
-    repositories
-        .mark_git_segment_upload_ready(segment, 2, 2)
-        .await
-        .unwrap();
-}
-
 fn reviewed_update(
     repo: &scope_domain::repository::Repository,
     head_oid: &str,
@@ -417,12 +396,6 @@ fn reviewed_update(
     path: &str,
     content: SourceBlob,
 ) -> ReviewedUpdateInput {
-    let segment = scope_domain::repository::git::GitSegmentRef {
-        segment_id: format!("segment-{head_oid}"),
-        sha256: "c".repeat(64),
-        plaintext_bytes: 1,
-        encoding_version: 2,
-    };
     ReviewedUpdateInput {
         occurred_at_unix: None,
         branch: "refs/heads/main".to_string(),
@@ -433,13 +406,17 @@ fn reviewed_update(
             sequence,
             repo.record.change_version + 1,
         ),
-        git_pack_span: GitPackSpan {
-            first_sequence: sequence,
-            last_sequence: sequence,
-            geometric_tier: 0,
-            base_oid: base_oid.map(str::to_string),
+        main_pack: GitPoolPack {
+            id: format!("main-pack-{head_oid}"),
+            owner: GitPoolPackOwner::Main {
+                first_sequence: sequence,
+                last_sequence: sequence,
+            },
             head_oid: head_oid.to_string(),
-            segment,
+            prerequisites: base_oid.map(str::to_string).into_iter().collect(),
+            storage: GitPoolPackStorage::Inline {
+                sealed: head_oid.as_bytes().to_vec(),
+            },
         },
         changes: vec![ReviewedContentChange {
             path: ScopePath::parse(path).unwrap(),
@@ -683,4 +660,81 @@ async fn final_merge_fences_check_reads_and_rejects_expiry_while_publication_wai
             if expires { BASE_HEAD } else { MERGED_HEAD }
         );
     }
+}
+
+#[tokio::test]
+async fn a_batched_merge_whose_checks_expire_before_the_batch_commits_does_not_land() {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+    let store = merge_store_with_github(true).await;
+    apply_github_result(&store, true).await;
+    let prepared = merge_preparation(&store).await;
+    let mut fresh = merge_command(&store, "user_owner", prepared).await;
+    fresh.now_unix = GITHUB_READ_AT + GITHUB_CHECK_MERGE_FRESHNESS_SECS - 3;
+    store
+        .requests()
+        .start_request(scope_domain::requests::StartRequestInput {
+            id: "req_2".to_string(),
+            name: "slow-neighbor".to_string(),
+            event_id: "event_started_req_2".to_string(),
+            ..crate::db::requests::tests::public_start_input()
+        })
+        .await
+        .unwrap();
+    let mut neighbor = fresh.clone();
+    neighbor.request_id = "req_2".to_string();
+    neighbor.merged_event_id = "event_merged_req_2".to_string();
+
+    let held = store.db.begin().await.unwrap();
+    let holder_pid: i32 = held
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT pg_backend_pid() AS pid",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "pid")
+        .unwrap();
+    super::super::acquire_aggregate_lock(&held, "request", "req_2")
+        .await
+        .unwrap();
+    let merge_store = store.clone();
+    let batch = tokio::spawn(async move {
+        merge_store
+            .requests()
+            .merge_request_contents(vec![fresh, neighbor])
+            .await
+    });
+    super::super::locks::wait_for_transaction_waiter(&store, holder_pid).await;
+    tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+    held.commit().await.unwrap();
+
+    let outcome = batch.await.unwrap().unwrap();
+    assert!(outcome.landed.is_empty());
+    assert_eq!(
+        outcome.rejected.unwrap().kind,
+        crate::error::PostgresErrorKind::Conflict
+    );
+    assert_eq!(
+        store
+            .requests()
+            .request_for_tests("req_1")
+            .await
+            .unwrap()
+            .unwrap()
+            .state(),
+        RequestState::Open
+    );
+    assert_eq!(
+        store
+            .repositories()
+            .repository_for_tests("owner/repo")
+            .await
+            .unwrap()
+            .unwrap()
+            .git_head
+            .unwrap()
+            .head_oid,
+        BASE_HEAD
+    );
 }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::repo_events::RepoChangeKind;
 use scope_domain::{
+    account::UserAccount,
     repository::RepoLifecycleState,
     requests::{RequestActorRole, StartRequestInput},
     views::ViewId,

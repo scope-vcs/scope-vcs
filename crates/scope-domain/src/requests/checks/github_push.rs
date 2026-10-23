@@ -97,6 +97,13 @@ pub struct GitHubPush {
     pub updated_at_unix: u64,
 }
 
+impl GitHubPush {
+    pub fn delivered_at(&self, head_oid: &str) -> Option<u64> {
+        (self.state == GitHubPushState::Succeeded && self.target_oid.as_deref() == Some(head_oid))
+            .then_some(self.updated_at_unix)
+    }
+}
+
 pub fn github_push_retry_at(push: &GitHubPush, now_unix: u64) -> Option<u64> {
     if push.branch == GitHubBranch::SetupCheck && push.target_oid.is_some() {
         return None;

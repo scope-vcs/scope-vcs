@@ -50,6 +50,17 @@ pub fn cli_session_summary_from_model(
 
 const CLI_SESSION_ACTIVITY_INTERVAL_SECONDS: u64 = 60;
 
+pub(super) fn cli_session_use_is_stale(
+    last_used_at_unix: Option<i64>,
+    now_unix: u64,
+) -> Result<bool, PostgresError> {
+    let threshold = u64_to_i64(
+        now_unix.saturating_sub(CLI_SESSION_ACTIVITY_INTERVAL_SECONDS),
+        "CLI session activity threshold",
+    )?;
+    Ok(last_used_at_unix.is_none_or(|last_used| last_used <= threshold))
+}
+
 pub(super) async fn record_cli_session_use<C: ConnectionTrait>(
     conn: &C,
     session_id: &str,
