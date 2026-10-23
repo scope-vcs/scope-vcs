@@ -174,7 +174,7 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     FAKE_RAILWAY_STATE="$state" \
     FAKE_RAILWAY_TRACE="$trace" \
     FAKE_UPLOAD_ROOT="$test_dir" \
-    SCOPE_DEPLOYMENT_MANIFEST="$test_dir/services.json" \
+    SCOPE_DEPLOYMENT_MANIFEST="${FAKE_MANIFEST:-$test_dir/services.json}" \
     RAILWAY_PROJECT_ID="11111111-1111-4111-8111-111111111111" \
     RAILWAY_API_TOKEN="token-graphql" \
     RAILWAY_TOKEN="token-project" \
@@ -199,6 +199,7 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_DEPLOYMENT_EVIDENCE_PATH="$test_dir/$name-evidence.jsonl" \
     SCOPE_SERVICE_HEALTH_TIMEOUT_SECONDS=0 \
     SCOPE_SERVICE_HEALTH_POLL_SECONDS=0 \
+    SCOPE_PREDECESSOR_TEARDOWN_POLL_SECONDS=0 \
     GITHUB_SHA="$sha" \
     SCOPE_WRITER_FENCE_GRACE_SECONDS="0" \
     SCOPE_MAINTENANCE_BINARY="$m" \
@@ -251,228 +252,333 @@ assert_in_order() {
 no_closure='graphql stop|maintenance apply'
 no_mutation='graphql (stop|restart)|gate (enter|reclose)|up |maintenance apply'
 no_router_mutation='graphql (create-instance|configure-scale|stop|restart)|gate (enter|reclose|restore)|domain --|variable set|up |maintenance (apply|drain-writers|backfill-|cleanup-|scrub-)'
-
-jq '.releasePolicy.maintenanceEnabled = false' "$test_dir/services.json" > "$test_dir/disabled.json"
-mv "$test_dir/disabled.json" "$test_dir/services.json"
-run_cutover fail disabled-maintenance
-refute disabled-maintenance "$no_closure" "disabled maintenance policy must prevent closure"
-jq '.releasePolicy.maintenanceEnabled = true' "$test_dir/services.json" > "$test_dir/enabled.json"
-mv "$test_dir/enabled.json" "$test_dir/services.json"
-
-FAKE_MISSING_PREPARED_COMPONENT=run-worker run_cutover fail missing-prepared-worker
-refute missing-prepared-worker "$no_closure" "missing prepared artifacts must prevent closure"
-FAKE_SCHEMA_DRIFT=1 run_cutover fail schema-drift
-refute schema-drift "$no_closure" "baseline schema drift must prevent writer closure"
-FAKE_CHANGE_PLAN=1 run_cutover fail changed-plan
-refute changed-plan "$no_closure" "changed preclosure plan must prevent closure"
-
-for service in scope-media scope-media-worker; do
-  FAKE_HISTORY_FAILURE_SERVICE="$service" run_cutover fail "history-failure-$service"
-  refute "history-failure-$service" "$no_mutation" "failed deployment inventory must not authorize closure or activation"
-done
-FAKE_INITIAL_EXACT=1 FAKE_INITIAL_CLOSED=1 FAKE_NO_HISTORY=1 \
-  FAKE_HISTORY_FAILURE_SERVICE=scope-api run_cutover fail history-failure-bootstrap
-refute history-failure-bootstrap "$no_mutation" "failed deployment inventory must not authorize bootstrap"
-FAKE_INITIAL_EXACT=1 FAKE_STOPPED_MEDIA_SERVICE=scope-media \
-  FAKE_HISTORY_FAILURE_SERVICE=scope-media run_cutover fail history-failure-stopped-media
-refute history-failure-stopped-media "$no_mutation" "failed deployment inventory must not authorize bootstrap"
-
-run_cutover pass success
-assert_evidence_components success run-worker,media-api,media-worker,api,git-router,web
-refute success "--path-as-root" "maintenance activation must not upload a build context"
-assert_in_order success "$m plan" "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
-  "$m fence" "$m validate-workflow-catalogs" "$m apply" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
-
-FAKE_REQUIRE_PARALLEL_PAIR=1 run_cutover pass parallel-activation
-assert_evidence_components parallel-activation run-worker,media-api,media-worker,api,git-router,web
-assert_in_order parallel-activation "$m verify" "$up/media-api" "$up/run-worker" "$up/api" "$up/git-router"
-assert_in_order parallel-activation "$up/media-api" "$up/media-worker" "$up/api" "$up/web"
-
-FAKE_DELAY_REMOVE_UNTIL_ROUTER=1 run_cutover pass delayed-teardown
-assert_in_order delayed-teardown "$up/media-api" "$up/run-worker" "$up/api" "$up/git-router"
-
-SCOPE_DEPLOY_ROUTER=1 run_cutover pass migration-router-selected
-assert_count migration-router-selected 1 "$up/git-router "
-assert_in_order migration-router-selected "$m apply" "$up/api" "$up/git-router" "$up/web"
-
-FAKE_STALE_STOP_STATUS=1 run_cutover pass stale-stop-status
-assert_in_order stale-stop-status "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" "$m fence" "$m apply"
-
-FAKE_STUCK_FENCE=1 run_cutover pass draining-writer
-assert_count draining-writer 2 "$m fence" -x
-assert_in_order draining-writer "graphql stop scope-worker old-scope-worker" "$m fence" "$m drain-writers" "$m fence" \
-  "$m validate-workflow-catalogs" "$m apply"
-
-FAKE_FAIL_WORKFLOW_VALIDATION=1 run_cutover fail invalid-workflow-catalog
-assert_in_order invalid-workflow-catalog "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
-  "$m fence" "$m validate-workflow-catalogs"
-refute invalid-workflow-catalog "graphql restart " "gate replacement requires pinned forward recovery even before schema apply"
-refute invalid-workflow-catalog "$m apply" "invalid workflow catalogs must fail before migration"
-
-FAKE_DEGRADED_SERVICE=scope-worker run_cutover fail degraded
-refute degraded "graphql (stop|restart) |$m apply" "maintenance must not start from a degraded service"
-FAKE_DEGRADED_SERVICE=scope-media run_cutover fail degraded-media
-refute degraded-media "graphql (stop|restart) |$m apply" "maintenance must not start with a degraded media writer"
-FAKE_API_REGION=us-west2 run_cutover fail wrong-api-region
-refute wrong-api-region "graphql (stop|restart) |$m apply" "region drift must fail before maintenance starts"
-
-FAKE_DEGRADE_WORKER_AFTER_API_STOP=1 run_cutover fail degraded-during-shutdown
-assert_in_order degraded-during-shutdown "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
-  "$m fence" "$m apply" "$up/run-worker" "graphql stop scope-worker new-scope-worker"
-
-FAKE_CRASH_UP_SERVICE=scope-worker run_cutover fail crashed-worker
-assert_evidence_components crashed-worker ""
-[[ -f "$test_dir/crashed-worker-state/stopped-scope-worker" ]]
-assert_in_order crashed-worker "$m apply" "$up/run-worker" "graphql stop scope-media new-scope-media"
-
-FAKE_CRASH_UP_SERVICE=scope-media run_cutover fail crashed-media
-assert_evidence_components crashed-media ""
-[[ -f "$test_dir/crashed-media-state/stopped-scope-media" ]]
-assert_in_order crashed-media "$m apply" "$up/media-api"
-refute crashed-media "$up/run-worker|$up/api|graphql restart " "failed media deployment must leave all metadata writers closed"
-
-mkdir "$test_dir/evidence-promotion-evidence.jsonl"
-run_cutover fail evidence-promotion 2> "$test_dir/evidence-promotion-stderr"
-[[ -f "$test_dir/evidence-promotion-state/up-scope-media" ]]
-[[ -f "$test_dir/evidence-promotion-state/stopped-scope-media" ]]
-assert_in_order evidence-promotion "$m apply" "$up/media-api" "graphql stop scope-media new-scope-media" "$m fence"
-assert_count evidence-promotion 1 "graphql stop scope-media new-scope-media"
-assert_in_order evidence-promotion "$up/run-worker" "$up/api" "graphql stop scope-api new-scope-api"
-if compgen -G "$test_dir/evidence-promotion-evidence.jsonl.pending.*" > /dev/null; then
-  echo "failed evidence promotion must discard pending evidence" >&2
-  exit 1
-fi
-[[ -z "$(find "$test_dir/evidence-promotion-evidence.jsonl" -mindepth 1 -print -quit)" ]]
-grep -F "Cutover requires forward recovery; writers are closed. Rerun this workflow to finish the pinned deployment." \
-  "$test_dir/evidence-promotion-stderr"
-if grep -F "Failed to re-close metadata writers after the cutover." "$test_dir/evidence-promotion-stderr"; then
-  echo "evidence promotion recovery must report successful writer closure" >&2
-  exit 1
-fi
-
-FAKE_FAIL_APPLY=rollback run_cutover fail rollback
-assert_in_order rollback "$m apply" "$m plan"
-refute rollback 'graphql restart|up ' "removed predecessors must not be restarted after gate replacement"
-FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover pass rollback
-assert_in_order rollback "$m plan" "$m apply" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
-
-FAKE_FAIL_APPLY=committed-error FAKE_FAIL_RECOVERY_PLAN=1 run_cutover fail unknown
-refute unknown "graphql restart " "unknown migration state must not restore old deployments"
-refute unknown "$up/api" "unknown migration state must not deploy new binaries"
-
-FAKE_INITIAL_EXACT=1 run_cutover pass rolling
-assert_in_order rolling "$m plan" "$m verify" "$up/run-worker" "$up/api"
-refute rolling "graphql (stop|restart) |maintenance (backfill-|cleanup-)" \
-  "exact-schema deployment must stay on the rolling path without repeating migration data work"
-
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_API=0 run_cutover pass rolling-worker
-assert_evidence_components rolling-worker run-worker
-assert_in_order rolling-worker "$m verify" "$up/run-worker"
-refute rolling-worker "$up/api" "worker-only deployment must not deploy the API"
-
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_API=0 FAKE_SKIP_UP_SERVICE=scope-worker \
-  SCOPE_SUCCESSFUL_DEPLOYMENTS="{$(receipt run-worker new-scope-worker),$router_receipt}" \
-  run_cutover fail carried-worker-drift
-assert_evidence_components carried-worker-drift ""
-refute carried-worker-drift "graphql restart scope-worker" \
-  "a skipped deploy with drifted active identity must not restart the carried deployment"
-
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_API=0 FAKE_UNHEALTHY_AFTER_UP_SERVICE=scope-worker \
-  run_cutover fail rolling-worker-unhealthy
-assert_evidence_components rolling-worker-unhealthy ""
-
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 run_cutover pass rolling-api
-assert_in_order rolling-api "$m verify" "$up/api"
-refute rolling-api "$up/run-worker" "API-only deployment must not deploy run-worker"
-
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 FAKE_UNHEALTHY_AFTER_UP_SERVICE=scope-api \
-  run_cutover fail rolling-api-unhealthy
-assert_evidence_components rolling-api-unhealthy ""
-
 scope_args="--project 11111111-1111-4111-8111-111111111111 --environment 22222222-2222-4222-8222-222222222222"
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 SCOPE_DEPLOY_ROUTER=1 FAKE_ROUTER_CONFIGURED=0 FAKE_ROUTER_INSTANCE_EXISTS=0 \
-  run_cutover pass router-bootstrap
-assert_evidence_components router-bootstrap git-router,api
-assert_in_order router-bootstrap \
-  "graphql create-instance scope-repo-router" \
-  "domain $scope_args --service scope-repo-router --port 8080 --json" \
-  "variable set $scope_args --service scope-api --skip-deploys SCOPE_GIT_PUBLIC_URL=https://scope-repo-router-production.test" \
-  "variable set $scope_args --service scope-repo-router --skip-deploys SCOPE_REPO_ROUTER_BACKEND=scope-api.railway.internal:8080 SCOPE_REPO_ROUTER_READ_REPLICAS=1" \
-  "graphql configure-scale scope-repo-router" \
-  "$m plan" "$up/git-router" "$up/api"
 
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 FAKE_ROUTER_CONFIGURED=0 FAKE_ROUTER_INSTANCE_EXISTS=0 \
-  run_cutover fail router-instance-refused
-refute router-instance-refused "$no_router_mutation" \
-  "an absent git-router instance without a selected git-router must fail before mutation"
+disabled_maintenance() {
+  jq '.releasePolicy.maintenanceEnabled = false' "$test_dir/services.json" > "$test_dir/disabled-services.json"
+  FAKE_MANIFEST="$test_dir/disabled-services.json" run_cutover fail disabled-maintenance
+  refute disabled-maintenance "$no_closure" "disabled maintenance policy must prevent closure"
+}
 
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 FAKE_ROUTER_CONFIGURED=0 run_cutover fail router-drift-refused
-refute router-drift-refused "variable set|up |maintenance apply" "git-router drift without a selected git-router must fail before mutation"
+missing_prepared_worker() {
+  FAKE_MISSING_PREPARED_COMPONENT=run-worker run_cutover fail missing-prepared-worker
+  refute missing-prepared-worker "$no_closure" "missing prepared artifacts must prevent closure"
+}
 
-FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 SCOPE_DEPLOY_ROUTER=1 FAKE_ROUTER_DOMAIN_STATE=invalid \
-  run_cutover fail router-domain-invalid
-refute router-domain-invalid "$no_router_mutation" "an invalid git-router domain must fail before mutation"
+schema_drift() {
+  FAKE_SCHEMA_DRIFT=1 run_cutover fail schema-drift
+  refute schema-drift "$no_closure" "baseline schema drift must prevent writer closure"
+}
 
-SCOPE_DEPLOY_WORKER=0 run_cutover pass maintenance-forces-all
-assert_in_order maintenance-forces-all "$m apply" "$up/media-api" "$up/run-worker" "$up/api"
+changed_plan() {
+  FAKE_CHANGE_PLAN=1 run_cutover fail changed-plan
+  refute changed-plan "$no_closure" "changed preclosure plan must prevent closure"
+}
 
-FAKE_INITIAL_EXACT=1 FAKE_FAIL_FIRST_PLAN=1 run_cutover pass transient-plan
-assert_count transient-plan 2 "$m plan" -x
+history_failure_media() {
+  FAKE_HISTORY_FAILURE_SERVICE=scope-media run_cutover fail history-failure-scope-media
+  refute history-failure-scope-media "$no_mutation" "failed deployment inventory must not authorize closure or activation"
+}
 
-FAKE_FAIL_UP_SERVICE=scope-worker run_cutover fail interrupted
-FAKE_RECOVER_CLOSED_CUTOVER=1 SCOPE_SUCCESSFUL_DEPLOYMENTS="{$(receipt media-api new-scope-media),$router_receipt}" \
-  run_cutover pass interrupted
-assert_evidence_components interrupted run-worker,media-api,media-worker,api,git-router,web
-assert_in_order interrupted "$m plan" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
-refute interrupted "$m apply" "post-commit recovery must not reapply migrations"
+history_failure_bootstrap() {
+  FAKE_INITIAL_EXACT=1 FAKE_INITIAL_CLOSED=1 FAKE_NO_HISTORY=1 \
+    FAKE_HISTORY_FAILURE_SERVICE=scope-api run_cutover fail history-failure-bootstrap
+  refute history-failure-bootstrap "$no_mutation" "failed deployment inventory must not authorize bootstrap"
+}
 
-FAKE_INITIAL_EXACT=1 FAKE_INITIAL_CLOSED=1 run_cutover fail intentionally-closed
-refute intentionally-closed "$up/api" "an ordinary deployment must not reopen intentionally closed writers"
+history_failure_stopped_media() {
+  FAKE_INITIAL_EXACT=1 FAKE_STOPPED_MEDIA_SERVICE=scope-media \
+    FAKE_HISTORY_FAILURE_SERVICE=scope-media run_cutover fail history-failure-stopped-media
+  refute history-failure-stopped-media "$no_mutation" "failed deployment inventory must not authorize bootstrap"
+}
 
-FAKE_INITIAL_EXACT=1 FAKE_INITIAL_CLOSED=1 FAKE_NO_HISTORY=1 run_cutover pass bootstrap
-assert_in_order bootstrap "$m plan" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
+success() {
+  run_cutover pass success
+  assert_evidence_components success run-worker,media-api,media-worker,api,git-router,web
+  refute success "--path-as-root" "maintenance activation must not upload a build context"
+  assert_in_order success "$m plan" "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
+    "$m fence" "$m validate-workflow-catalogs" "$m apply" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
+}
 
-FAKE_INITIAL_EXACT=1 FAKE_INITIAL_CLOSED=1 FAKE_NO_HISTORY=1 SCOPE_DEPLOY_ROUTER=1 run_cutover pass bootstrap-router-selected
-assert_count bootstrap-router-selected 1 "$up/git-router "
-assert_in_order bootstrap-router-selected "$m verify" "$up/api" "$up/git-router" "$up/web"
+parallel_activation() {
+  FAKE_REQUIRE_PARALLEL_PAIR=1 run_cutover pass parallel-activation
+  assert_evidence_components parallel-activation run-worker,media-api,media-worker,api,git-router,web
+  assert_in_order parallel-activation "$m verify" "$up/media-api" "$up/run-worker" "$up/api" "$up/git-router"
+  assert_in_order parallel-activation "$up/media-api" "$up/media-worker" "$up/api" "$up/web"
+}
 
-FAKE_FAIL_UP_SERVICE=scope-api run_cutover fail partial-reopen
-assert_evidence_components partial-reopen ""
-assert_in_order partial-reopen "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
-  "$up/media-api" "$up/run-worker" "$up/api" "graphql stop scope-media new-scope-media" "graphql stop scope-worker new-scope-worker"
-assert_count partial-reopen 1 "graphql stop scope-api old-scope-api"
-assert_count partial-reopen 2 "gate reclose scope-api"
+delayed_teardown() {
+  FAKE_DELAY_REMOVE_UNTIL_ROUTER=1 run_cutover pass delayed-teardown
+  assert_in_order delayed-teardown "$up/media-api" "$up/run-worker" "$up/api" "$up/git-router"
+}
 
-FAKE_LOST_UP_RESPONSE_SERVICE=scope-media run_cutover fail lost-activation-response
-assert_evidence_components lost-activation-response ""
-[[ -f "$test_dir/lost-activation-response-state/up-scope-media" ]]
-[[ -f "$test_dir/lost-activation-response-state/stopped-scope-media" ]]
-assert_in_order lost-activation-response "$up/media-api" "graphql stop scope-media new-scope-media"
-FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover pass lost-activation-response
-assert_evidence_components lost-activation-response run-worker,media-api,media-worker,api,git-router,web
+migration_router_selected() {
+  SCOPE_DEPLOY_ROUTER=1 run_cutover pass migration-router-selected
+  assert_count migration-router-selected 1 "$up/git-router "
+  assert_in_order migration-router-selected "$m apply" "$up/api" "$up/git-router" "$up/web"
+}
 
-FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-api run_cutover fail denied-api
-assert_in_order denied-api "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker"
-refute denied-api 'graphql stop .* gate-' "failure cleanup must preserve serving gate deployments"
-refute denied-api "$m apply" "a denied API shutdown must fail before migration without attempting rollback mutations"
+stale_stop_status() {
+  FAKE_STALE_STOP_STATUS=1 run_cutover pass stale-stop-status
+  assert_in_order stale-stop-status "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" "$m fence" "$m apply"
+}
 
-FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-worker run_cutover fail denied-worker
-assert_in_order denied-worker "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker"
-refute denied-worker "graphql restart scope-worker" "a run-worker shutdown denial must not restore a run-worker that was never closed"
+draining_writer() {
+  FAKE_STUCK_FENCE=1 run_cutover pass draining-writer
+  assert_count draining-writer 2 "$m fence" -x
+  assert_in_order draining-writer "graphql stop scope-worker old-scope-worker" "$m fence" "$m drain-writers" "$m fence" \
+    "$m validate-workflow-catalogs" "$m apply"
+}
 
-FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-media-worker run_cutover fail denied-media-worker
-assert_in_order denied-media-worker "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
-  "graphql stop scope-media-worker old-scope-media-worker"
-refute denied-media-worker "graphql restart scope-media-worker" \
-  "a media-worker shutdown denial must not restore a media-worker deployment that was never closed"
+invalid_workflow_catalog() {
+  FAKE_FAIL_WORKFLOW_VALIDATION=1 run_cutover fail invalid-workflow-catalog
+  assert_in_order invalid-workflow-catalog "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
+    "$m fence" "$m validate-workflow-catalogs"
+  refute invalid-workflow-catalog "graphql restart " "gate replacement requires pinned forward recovery even before schema apply"
+  refute invalid-workflow-catalog "$m apply" "invalid workflow catalogs must fail before migration"
+}
 
-FAKE_KILL_CUTOVER_PHASE=apply run_cutover fail killed-after-commit
-[[ "$(jq -r '.statuses["1"][0].description' "$test_dir/killed-after-commit-state/journal.json")" == "cutover:applying" ]]
-run_cutover fail killed-after-commit
-refute killed-after-commit 'graphql (stop|restart)|up |maintenance' "ordinary deployment must stop at the durable unresolved-cutover guard"
-FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover pass killed-after-commit
-assert_in_order killed-after-commit "gate reclose scope-api" "graphql stop scope-worker" "$m plan" "$m verify" \
-  "$up/media-api" "$up/run-worker" "$up/api"
-refute killed-after-commit "$m apply" "recovery after committed transaction must not reapply migrations"
+degraded() {
+  FAKE_DEGRADED_SERVICE=scope-worker run_cutover fail degraded
+  refute degraded "graphql (stop|restart) |$m apply" "maintenance must not start from a degraded service"
+}
 
-echo "backend deployment cutover tests passed"
+degraded_media() {
+  FAKE_DEGRADED_SERVICE=scope-media run_cutover fail degraded-media
+  refute degraded-media "graphql (stop|restart) |$m apply" "maintenance must not start with a degraded media writer"
+}
+
+wrong_api_region() {
+  FAKE_API_REGION=us-west2 run_cutover fail wrong-api-region
+  refute wrong-api-region "graphql (stop|restart) |$m apply" "region drift must fail before maintenance starts"
+}
+
+degraded_during_shutdown() {
+  FAKE_DEGRADE_WORKER_AFTER_API_STOP=1 run_cutover fail degraded-during-shutdown
+  assert_in_order degraded-during-shutdown "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
+    "$m fence" "$m apply" "$up/run-worker" "graphql stop scope-worker new-scope-worker"
+}
+
+crashed_worker() {
+  FAKE_CRASH_UP_SERVICE=scope-worker run_cutover fail crashed-worker
+  assert_evidence_components crashed-worker ""
+  [[ -f "$test_dir/crashed-worker-state/stopped-scope-worker" ]]
+  assert_in_order crashed-worker "$m apply" "$up/run-worker" "graphql stop scope-media new-scope-media"
+}
+
+evidence_promotion() {
+  mkdir "$test_dir/evidence-promotion-evidence.jsonl"
+  run_cutover fail evidence-promotion 2> "$test_dir/evidence-promotion-stderr"
+  [[ -f "$test_dir/evidence-promotion-state/up-scope-media" ]]
+  [[ -f "$test_dir/evidence-promotion-state/stopped-scope-media" ]]
+  assert_in_order evidence-promotion "$m apply" "$up/media-api" "graphql stop scope-media new-scope-media" "$m fence"
+  assert_count evidence-promotion 1 "graphql stop scope-media new-scope-media"
+  assert_in_order evidence-promotion "$up/run-worker" "$up/api" "graphql stop scope-api new-scope-api"
+  if compgen -G "$test_dir/evidence-promotion-evidence.jsonl.pending.*" > /dev/null; then
+    echo "failed evidence promotion must discard pending evidence" >&2
+    exit 1
+  fi
+  [[ -z "$(find "$test_dir/evidence-promotion-evidence.jsonl" -mindepth 1 -print -quit)" ]]
+  grep -F "Cutover requires forward recovery; writers are closed. Rerun this workflow to finish the pinned deployment." \
+    "$test_dir/evidence-promotion-stderr"
+  if grep -F "Failed to re-close metadata writers after the cutover." "$test_dir/evidence-promotion-stderr"; then
+    echo "evidence promotion recovery must report successful writer closure" >&2
+    exit 1
+  fi
+}
+
+rollback() {
+  FAKE_FAIL_APPLY=rollback run_cutover fail rollback
+  assert_in_order rollback "$m apply" "$m plan"
+  refute rollback 'graphql restart|up ' "removed predecessors must not be restarted after gate replacement"
+  FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover pass rollback
+  assert_in_order rollback "$m plan" "$m apply" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
+}
+
+unknown() {
+  FAKE_FAIL_APPLY=committed-error FAKE_FAIL_RECOVERY_PLAN=1 run_cutover fail unknown
+  refute unknown "graphql restart " "unknown migration state must not restore old deployments"
+  refute unknown "$up/api" "unknown migration state must not deploy new binaries"
+}
+
+rolling() {
+  FAKE_INITIAL_EXACT=1 run_cutover pass rolling
+  assert_in_order rolling "$m plan" "$m verify" "$up/run-worker" "$up/api"
+  refute rolling "graphql (stop|restart) |maintenance (backfill-|cleanup-)" \
+    "exact-schema deployment must stay on the rolling path without repeating migration data work"
+}
+
+rolling_worker() {
+  FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_API=0 run_cutover pass rolling-worker
+  assert_evidence_components rolling-worker run-worker
+  assert_in_order rolling-worker "$m verify" "$up/run-worker"
+  refute rolling-worker "$up/api" "worker-only deployment must not deploy the API"
+}
+
+carried_worker_drift() {
+  FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_API=0 FAKE_SKIP_UP_SERVICE=scope-worker \
+    SCOPE_SUCCESSFUL_DEPLOYMENTS="{$(receipt run-worker new-scope-worker),$router_receipt}" \
+    run_cutover fail carried-worker-drift
+  assert_evidence_components carried-worker-drift ""
+  refute carried-worker-drift "graphql restart scope-worker" \
+    "a skipped deploy with drifted active identity must not restart the carried deployment"
+}
+
+rolling_worker_unhealthy() {
+  FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_API=0 FAKE_UNHEALTHY_AFTER_UP_SERVICE=scope-worker \
+    run_cutover fail rolling-worker-unhealthy
+  assert_evidence_components rolling-worker-unhealthy ""
+}
+
+router_bootstrap() {
+  FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 SCOPE_DEPLOY_ROUTER=1 FAKE_ROUTER_CONFIGURED=0 FAKE_ROUTER_INSTANCE_EXISTS=0 \
+    run_cutover pass router-bootstrap
+  assert_evidence_components router-bootstrap git-router,api
+  assert_in_order router-bootstrap \
+    "graphql create-instance scope-repo-router" \
+    "domain $scope_args --service scope-repo-router --port 8080 --json" \
+    "variable set $scope_args --service scope-api --skip-deploys SCOPE_GIT_PUBLIC_URL=https://scope-repo-router-production.test" \
+    "variable set $scope_args --service scope-repo-router --skip-deploys SCOPE_REPO_ROUTER_BACKEND=scope-api.railway.internal:8080 SCOPE_REPO_ROUTER_READ_REPLICAS=1" \
+    "graphql configure-scale scope-repo-router" \
+    "$m plan" "$up/git-router" "$up/api"
+}
+
+router_instance_refused() {
+  FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 FAKE_ROUTER_CONFIGURED=0 FAKE_ROUTER_INSTANCE_EXISTS=0 \
+    run_cutover fail router-instance-refused
+  refute router-instance-refused "$no_router_mutation" \
+    "an absent git-router instance without a selected git-router must fail before mutation"
+}
+
+router_drift_refused() {
+  FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 FAKE_ROUTER_CONFIGURED=0 run_cutover fail router-drift-refused
+  refute router-drift-refused "variable set|up |maintenance apply" "git-router drift without a selected git-router must fail before mutation"
+}
+
+router_domain_invalid() {
+  FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WORKER=0 SCOPE_DEPLOY_ROUTER=1 FAKE_ROUTER_DOMAIN_STATE=invalid \
+    run_cutover fail router-domain-invalid
+  refute router-domain-invalid "$no_router_mutation" "an invalid git-router domain must fail before mutation"
+}
+
+maintenance_forces_all() {
+  SCOPE_DEPLOY_WORKER=0 run_cutover pass maintenance-forces-all
+  assert_in_order maintenance-forces-all "$m apply" "$up/media-api" "$up/run-worker" "$up/api"
+}
+
+transient_plan() {
+  FAKE_INITIAL_EXACT=1 FAKE_FAIL_FIRST_PLAN=1 run_cutover pass transient-plan
+  assert_count transient-plan 2 "$m plan" -x
+}
+
+interrupted() {
+  FAKE_FAIL_UP_SERVICE=scope-worker run_cutover fail interrupted
+  FAKE_RECOVER_CLOSED_CUTOVER=1 SCOPE_SUCCESSFUL_DEPLOYMENTS="{$(receipt media-api new-scope-media),$router_receipt}" \
+    run_cutover pass interrupted
+  assert_evidence_components interrupted run-worker,media-api,media-worker,api,git-router,web
+  assert_in_order interrupted "$m plan" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
+  refute interrupted "$m apply" "post-commit recovery must not reapply migrations"
+}
+
+intentionally_closed() {
+  FAKE_INITIAL_EXACT=1 FAKE_INITIAL_CLOSED=1 run_cutover fail intentionally-closed
+  refute intentionally-closed "$up/api" "an ordinary deployment must not reopen intentionally closed writers"
+}
+
+bootstrap() {
+  FAKE_INITIAL_EXACT=1 FAKE_INITIAL_CLOSED=1 FAKE_NO_HISTORY=1 run_cutover pass bootstrap
+  assert_in_order bootstrap "$m plan" "$m verify" "$up/media-api" "$up/run-worker" "$up/api"
+}
+
+partial_reopen() {
+  FAKE_FAIL_UP_SERVICE=scope-api run_cutover fail partial-reopen
+  assert_evidence_components partial-reopen ""
+  assert_in_order partial-reopen "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
+    "$up/media-api" "$up/run-worker" "$up/api" "graphql stop scope-media new-scope-media" "graphql stop scope-worker new-scope-worker"
+  assert_count partial-reopen 1 "graphql stop scope-api old-scope-api"
+  assert_count partial-reopen 2 "gate reclose scope-api"
+}
+
+lost_activation_response() {
+  FAKE_LOST_UP_RESPONSE_SERVICE=scope-media run_cutover fail lost-activation-response
+  assert_evidence_components lost-activation-response ""
+  [[ -f "$test_dir/lost-activation-response-state/up-scope-media" ]]
+  [[ -f "$test_dir/lost-activation-response-state/stopped-scope-media" ]]
+  assert_in_order lost-activation-response "$up/media-api" "graphql stop scope-media new-scope-media"
+  refute lost-activation-response "$up/run-worker|$up/api|graphql restart " "failed media deployment must leave all metadata writers closed"
+  FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover pass lost-activation-response
+  assert_evidence_components lost-activation-response run-worker,media-api,media-worker,api,git-router,web
+}
+
+denied_api() {
+  FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-api run_cutover fail denied-api
+  assert_in_order denied-api "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker"
+  refute denied-api 'graphql stop .* gate-' "failure cleanup must preserve serving gate deployments"
+  refute denied-api "$m apply" "a denied API shutdown must fail before migration without attempting rollback mutations"
+}
+
+denied_worker() {
+  FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-worker run_cutover fail denied-worker
+  assert_in_order denied-worker "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker"
+  refute denied-worker "graphql restart scope-worker" "a run-worker shutdown denial must not restore a run-worker that was never closed"
+}
+
+denied_media_worker() {
+  FAKE_DENY_DEPLOYMENT_ACTION_SERVICE=scope-media-worker run_cutover fail denied-media-worker
+  assert_in_order denied-media-worker "graphql stop scope-api old-scope-api" "graphql stop scope-worker old-scope-worker" \
+    "graphql stop scope-media-worker old-scope-media-worker"
+  refute denied-media-worker "graphql restart scope-media-worker" \
+    "a media-worker shutdown denial must not restore a media-worker deployment that was never closed"
+}
+
+killed_after_commit() {
+  FAKE_KILL_CUTOVER_PHASE=apply run_cutover fail killed-after-commit
+  [[ "$(jq -r '.statuses["1"][0].description' "$test_dir/killed-after-commit-state/journal.json")" == "cutover:applying" ]]
+  run_cutover fail killed-after-commit
+  refute killed-after-commit 'graphql (stop|restart)|up |maintenance' "ordinary deployment must stop at the durable unresolved-cutover guard"
+  FAKE_RECOVER_CLOSED_CUTOVER=1 run_cutover pass killed-after-commit
+  assert_in_order killed-after-commit "gate reclose scope-api" "graphql stop scope-worker" "$m plan" "$m verify" \
+    "$up/media-api" "$up/run-worker" "$up/api"
+  refute killed-after-commit "$m apply" "recovery after committed transaction must not reapply migrations"
+}
+
+scenarios=(
+  disabled_maintenance missing_prepared_worker schema_drift changed_plan
+  history_failure_media history_failure_bootstrap history_failure_stopped_media
+  success parallel_activation delayed_teardown migration_router_selected stale_stop_status
+  draining_writer invalid_workflow_catalog degraded degraded_media wrong_api_region
+  degraded_during_shutdown crashed_worker evidence_promotion rollback unknown
+  rolling rolling_worker carried_worker_drift rolling_worker_unhealthy
+  router_bootstrap router_instance_refused router_drift_refused router_domain_invalid
+  maintenance_forces_all transient_plan interrupted intentionally_closed bootstrap
+  partial_reopen lost_activation_response denied_api denied_worker denied_media_worker
+  killed_after_commit
+)
+
+declare -A running=()
+failed=()
+
+collect_scenario() {
+  local pid status
+  if wait -n -p pid; then status=0; else status=$?; fi
+  if [[ "$status" != 0 ]]; then
+    failed+=("${running[$pid]}")
+    printf '%s failed with exit %s:\n' "${running[$pid]}" "$status" >&2
+    cat "$test_dir/${running[$pid]}.log" >&2
+  fi
+  unset "running[$pid]"
+}
+
+jobs_limit="${SCOPE_CUTOVER_TEST_JOBS:-$(nproc)}"
+for scenario in "${scenarios[@]}"; do
+  while (( ${#running[@]} >= jobs_limit )); do collect_scenario; done
+  (trap - EXIT; "$scenario") > "$test_dir/$scenario.log" 2>&1 &
+  running[$!]="$scenario"
+done
+while (( ${#running[@]} > 0 )); do collect_scenario; done
+
+if (( ${#failed[@]} > 0 )); then
+  echo "backend deployment cutover scenarios failed: ${failed[*]}" >&2
+  exit 1
+fi
+echo "backend deployment cutover tests passed (${#scenarios[@]} scenarios)"

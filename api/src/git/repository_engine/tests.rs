@@ -29,22 +29,6 @@ fn incarnation(repository_id: &str) -> RepositoryIncarnation {
 }
 
 #[test]
-fn materialization_outcome_distinguishes_hits_waits_and_builds() {
-    assert_eq!(materialization_outcome(true, false), "hit");
-    assert_eq!(materialization_outcome(false, false), "wait");
-    assert_eq!(materialization_outcome(false, true), "build");
-    assert_eq!(build_path_name(MATERIALIZATION_PATH_HIT), None);
-    assert_eq!(
-        build_path_name(MATERIALIZATION_PATH_CATCH_UP),
-        Some("catch_up")
-    );
-    assert_eq!(
-        build_path_name(MATERIALIZATION_PATH_RESTORE),
-        Some("restore")
-    );
-}
-
-#[test]
 fn same_repository_operations_are_serialized() {
     let engine = test_engine("repository-engine-serial");
     let root = engine.cache_root().to_path_buf();

@@ -5,7 +5,7 @@ pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
-        "m0094_head_only_run_sources"
+        "m0100_head_only_run_sources"
     }
 }
 

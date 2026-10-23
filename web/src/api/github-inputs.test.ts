@@ -4,6 +4,7 @@ import {
   parseConnectRepoGitHubInput,
   parseRepoGitHubAuthorizeInput,
   parseRepoGitHubWorkflowRunsInput,
+  parseSetRepoGitHubReviewBotsInput,
   parseSetRepoGitHubRunImportCountInput,
 } from './github-inputs'
 
@@ -40,4 +41,15 @@ test('a page of GitHub runs names its workflow and cursor only when given', () =
     { owner: 'owner', repo: 'repo', workflow: 'ci / test', after: '10.7' },
   )
   assert.throws(() => parseRepoGitHubWorkflowRunsInput({ owner: 'owner', repo: 'repo', workflow: '' }))
+})
+
+test('saving review bots carries each login with whether it is required', () => {
+  const repo = { owner: 'owner', repo: 'repo' }
+  assert.deepEqual(
+    parseSetRepoGitHubReviewBotsInput({ ...repo, bots: [{ login: 'greptile-apps[bot]', required: true, extra: 1 }] }),
+    { ...repo, bots: [{ login: 'greptile-apps[bot]', required: true }] },
+  )
+  for (const bot of [{ login: 'greptile-apps[bot]' }, { login: 'greptile-apps[bot]', required: 'yes' }, null]) {
+    assert.throws(() => parseSetRepoGitHubReviewBotsInput({ ...repo, bots: [bot] }), /list of GitHub logins/)
+  }
 })

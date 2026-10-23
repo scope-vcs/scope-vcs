@@ -75,6 +75,7 @@ class LocalProcessTests(unittest.TestCase):
         (root / "dev").mkdir(parents=True)
         shutil.copy(ROOT / "dev/scope-dev", root / "dev/scope-dev")
         shutil.copy(ROOT / "dev/dotenv.sh", root / "dev/dotenv.sh")
+        shutil.copy(ROOT / "dev/local-stack.sh", root / "dev/local-stack.sh")
         shutil.copy(HELPER, root / "dev/local-process.py")
         return root
 

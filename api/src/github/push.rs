@@ -9,6 +9,12 @@ use std::{path::Path, process::Command, time::Duration};
 
 const PUSH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
+pub(crate) enum GitHubPublishFailure {
+    Diverged,
+    Refused(String),
+    Failed(String),
+}
+
 pub(crate) struct GitHubPushRemote {
     url: String,
     authorization: String,
@@ -32,6 +38,26 @@ impl GitHubApp {
 impl GitHubPushRemote {
     pub(crate) fn push(&self, repo: &Path, oid: &str, git_ref: &str) -> Result<(), String> {
         self.run(repo, &format!("{oid}:{git_ref}"))
+    }
+
+    pub(crate) fn publish(
+        &self,
+        repo: &Path,
+        oid: &str,
+        git_ref: &str,
+    ) -> Result<(), GitHubPublishFailure> {
+        let refspec = format!("{oid}:{git_ref}");
+        self.git(repo, &["push", "--porcelain", &self.url, &refspec])
+            .map_err(|error| {
+                let refused = format!("GitHub refused the push: {error}");
+                if error.contains("[rejected]") {
+                    GitHubPublishFailure::Diverged
+                } else if error.contains("[remote rejected]") {
+                    GitHubPublishFailure::Refused(refused)
+                } else {
+                    GitHubPublishFailure::Failed(refused)
+                }
+            })
     }
 
     pub(crate) fn delete(&self, git_ref: &str) -> Result<(), String> {

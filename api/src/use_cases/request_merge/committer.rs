@@ -408,6 +408,9 @@ async fn persist_batch(
     let mut landed_replies = Vec::new();
     for (mutation, persisted) in landed.into_iter().zip(persisting.by_ref()) {
         let command = &persisted.merge.submission.command;
+        if mutation.queued_main_publication {
+            state.wakeups.github_pushes.notify_one();
+        }
         crate::use_cases::git_receive::best_effort_sync_cache(
             state,
             &command.owner,

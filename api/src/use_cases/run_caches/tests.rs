@@ -54,7 +54,6 @@ struct FakeObjectStore {
     deletes: Arc<AtomicUsize>,
     active_deletes: Arc<AtomicUsize>,
     peak_deletes: Arc<AtomicUsize>,
-    fail_deletes: Arc<AtomicBool>,
     hang_deletes: Arc<AtomicBool>,
 }
 
@@ -190,11 +189,7 @@ async fn fake_object_request(
             store.peak_deletes.fetch_max(current, Ordering::SeqCst);
             tokio::time::sleep(Duration::from_millis(5)).await;
             store.active_deletes.fetch_sub(1, Ordering::SeqCst);
-            if store.fail_deletes.load(Ordering::SeqCst) {
-                StatusCode::FORBIDDEN
-            } else {
-                StatusCode::NO_CONTENT
-            }
+            StatusCode::NO_CONTENT
         }
         _ => StatusCode::METHOD_NOT_ALLOWED,
     };
@@ -447,30 +442,6 @@ async fn expired_uploads_drain_multiple_batches_with_bounded_deletions() {
 }
 
 #[tokio::test]
-async fn failed_uploads_wait_for_claim_expiry_before_retrying() {
-    let fixture = Fixture::new().await;
-    for index in 1..=101 {
-        fixture.upload(index, fixture.now - 3600, false).await;
-    }
-    fixture.objects.fail_deletes.store(true, Ordering::SeqCst);
-    reconcile_at(&fixture.state, fixture.now).await.unwrap();
-    assert_eq!(fixture.deletes(), 101);
-    fixture.objects.fail_deletes.store(false, Ordering::SeqCst);
-    reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS - 1)
-        .await
-        .unwrap();
-    assert_eq!(fixture.deletes(), 101);
-    reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS)
-        .await
-        .unwrap();
-    assert_eq!(fixture.deletes(), 202);
-    reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS * 2)
-        .await
-        .unwrap();
-    assert_eq!(fixture.deletes(), 202);
-}
-
-#[tokio::test]
 async fn object_deletions_drain_batches_without_shortening_reference_grace() {
     let fixture = Fixture::new().await;
     let old = fixture.now - 8 * 24 * 60 * 60;
@@ -520,6 +491,10 @@ async fn hung_upload_delete_is_bounded_and_retried_after_claim_expiry() {
     .unwrap();
     assert_eq!(fixture.deletes(), 1);
     fixture.objects.hang_deletes.store(false, Ordering::SeqCst);
+    reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS - 1)
+        .await
+        .unwrap();
+    assert_eq!(fixture.deletes(), 1);
     tokio::time::timeout(
         Duration::from_secs(3),
         reconcile_at(&fixture.state, fixture.now + RETRY_SECONDS),

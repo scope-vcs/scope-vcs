@@ -7,6 +7,7 @@ use scope_domain::{
     github_run_import::{GitHubRunImport, GitHubRunImportState},
     github_setup_check::{GitHubSetupCheck, GitHubSetupCheckState},
     github_workflow_jobs::GitHubWorkflowJob,
+    requests::{GitHubPush, GitHubPushState},
 };
 use scope_postgres::db::{GitHubConnectionRead, GitHubSetupCheckRead, GitHubWorkflowRunRead};
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,9 @@ response_enum!(GitHubRunImportStateResponse => GitHubRunImportState {
 response_enum!(GitHubSetupCheckStateResponse => GitHubSetupCheckState {
     Pushing, Waiting, Finished, Failed,
 });
+response_enum!(GitHubMainPushStateResponse => GitHubPushState {
+    Queued, Running, Succeeded, Failed,
+});
 response_enum!(GitHubDisconnectReasonResponse => GitHubDisconnectReason {
     AppUninstalled, InstallationSuspended, RepositoryRemoved,
 });
@@ -50,9 +54,14 @@ pub(crate) struct GitHubConnectionResponse {
     pub(crate) connection: Option<GitHubConnectionDetailsResponse>,
     /// The check names GitHub must pass before a request merges.
     pub(crate) required_checks: Vec<String>,
+    /// GitHub accounts whose reviews Scope imports without asking GitHub whether they can write; cleared on disconnect.
+    pub(crate) review_bots: Vec<GitHubReviewBotResponse>,
     /// Whether the viewer may confirm that a public GitHub repository
     /// receives what Scope pushes, private requests included.
     pub(crate) can_confirm_public: bool,
+    /// Whether the viewer may turn on publishing main: a maintainer who reads
+    /// the full view and can change file visibility.
+    pub(crate) can_publish_main: bool,
     /// The latest connection test, while the repository has a link.
     pub(crate) setup_check: Option<GitHubSetupCheckResponse>,
     /// How many of GitHub's most recent workflow runs connecting imports.
@@ -198,6 +207,45 @@ pub(crate) struct SetGitHubRunImportCountRequest {
     pub(crate) count: u32,
 }
 
+/// A GitHub account listed as a review bot.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubReviewBotResponse {
+    pub(crate) login: String,
+    /// Whether requests wait for this bot to finish their latest commit before they can merge.
+    pub(crate) required: bool,
+}
+
+/// The whole list of review bots, replacing the stored one; at most 20 distinct GitHub logins such as `greptile-apps[bot]`.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubReviewBotsRequest {
+    pub(crate) bots: Vec<GitHubReviewBotRequest>,
+}
+
+/// A GitHub login to list as a review bot.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubReviewBotRequest {
+    pub(crate) login: String,
+    /// Whether requests wait for this bot to finish their latest commit before they can merge.
+    pub(crate) required: bool,
+}
+
+/// Turns review bot pull requests on or off for the repository.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubReviewBotPullRequestsRequest {
+    pub(crate) enabled: bool,
+}
+
+/// The comment Scope posts on review bot pull requests. Empty posts none.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubReviewRequestCommentRequest {
+    pub(crate) comment: String,
+}
+
 /// The whole list of required check names, replacing the stored one.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -220,6 +268,40 @@ pub(crate) struct GitHubConnectionDetailsResponse {
     /// False while a repository that became public waits for a maintainer to
     /// confirm; private requests are not sent there meanwhile.
     pub(crate) public_confirmed: bool,
+    /// Whether Scope opens a GitHub pull request for each submitted
+    /// full-view request so review bots on GitHub review it.
+    pub(crate) open_review_bot_pull_requests: bool,
+    /// Posted on that pull request when Scope opens it and after each new
+    /// head Scope pushes there.
+    pub(crate) review_request_comment: Option<String>,
+    pub(crate) main_publication: GitHubMainPublicationResponse,
+}
+
+/// Publishing Scope's main to the linked GitHub repository's main.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubMainPublicationResponse {
+    /// Whether every change to Scope main is pushed to GitHub main, never forced.
+    pub(crate) enabled: bool,
+    /// The latest push of main to this GitHub repository.
+    pub(crate) latest: Option<GitHubMainPushResponse>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct GitHubMainPushResponse {
+    pub(crate) state: GitHubMainPushStateResponse,
+    pub(crate) commit_oid: String,
+    /// Why the latest attempt failed. A queued push with an error tries again.
+    pub(crate) error: Option<String>,
+    pub(crate) updated_at_unix: u64,
+}
+
+/// Turns publishing Scope main to GitHub on or off.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
+pub(crate) struct SetGitHubMainPublicationRequest {
+    pub(crate) enabled: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -352,7 +434,10 @@ pub(crate) fn github_workflow_job_response(job: GitHubWorkflowJob) -> GitHubWork
 pub(crate) struct GitHubConnectionParts {
     pub(crate) read: Option<GitHubConnectionRead>,
     pub(crate) required_checks: Vec<String>,
+    pub(crate) review_bots: Vec<scope_domain::github_review_bots::GitHubReviewBot>,
     pub(crate) can_confirm_public: bool,
+    pub(crate) can_publish_main: bool,
+    pub(crate) main_push: Option<GitHubPush>,
     pub(crate) setup_check: Option<GitHubSetupCheckRead>,
     pub(crate) run_import_count: u32,
     pub(crate) run_import: Option<GitHubRunImport>,
@@ -373,6 +458,9 @@ pub(crate) fn github_connection_response(
     let run_import = parts
         .run_import
         .filter(|import| linked(import.github_repository_id));
+    let main_push = parts
+        .main_push
+        .filter(|push| linked(push.destination.github_repository_id));
     let connection = read.map(|read| {
         let connection = read.connection;
         let (public_on_github, public_confirmed) = match connection.visibility {
@@ -382,8 +470,14 @@ pub(crate) fn github_connection_response(
         GitHubConnectionDetailsResponse {
             public_on_github,
             public_confirmed,
+            main_publication: GitHubMainPublicationResponse {
+                enabled: connection.publishes_main,
+                latest: main_push.map(github_main_push_response),
+            },
             github_url: format!("https://github.com/{}", connection.github_full_name),
             github_full_name: connection.github_full_name,
+            open_review_bot_pull_requests: connection.review_bots.open_pull_requests,
+            review_request_comment: connection.review_bots.review_request_comment,
             connected_by: connection
                 .connected_by
                 .zip(read.connected_by_handle)
@@ -405,9 +499,27 @@ pub(crate) fn github_connection_response(
         setup_check: setup_check.map(github_setup_check_response),
         connection,
         required_checks: parts.required_checks,
+        review_bots: parts
+            .review_bots
+            .into_iter()
+            .map(|bot| GitHubReviewBotResponse {
+                login: bot.login.as_str().to_string(),
+                required: bot.required,
+            })
+            .collect(),
         can_confirm_public: parts.can_confirm_public,
+        can_publish_main: parts.can_publish_main,
         run_import_count: parts.run_import_count,
         run_import: run_import.map(github_run_import_response),
+    }
+}
+
+fn github_main_push_response(push: GitHubPush) -> GitHubMainPushResponse {
+    GitHubMainPushResponse {
+        state: push.state.into(),
+        commit_oid: push.target_oid.unwrap_or_default(),
+        error: push.last_error,
+        updated_at_unix: push.updated_at_unix,
     }
 }
 

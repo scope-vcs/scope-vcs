@@ -1,7 +1,7 @@
 import type { RequestQueueNextStep } from '@/api/types.generated'
 import { AlarmClock, Check, Eye, Hourglass, MessageSquare, RefreshCw, X, type LucideIcon } from 'lucide-react'
 import type { CSSProperties } from 'react'
-import { actorHues } from './request-discussion-byline'
+import { actorHues } from './request-discussion-avatar'
 
 const NEXT_STEP_ICONS: Record<Exclude<RequestQueueNextStep, 'done'>, LucideIcon> = {
   review: Eye,

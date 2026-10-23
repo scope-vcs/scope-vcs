@@ -2,10 +2,8 @@ use super::*;
 
 #[tokio::test]
 async fn a_github_repository_is_connected_once_and_links_follow_their_owners() {
-    let (_target, db, _lease) = isolated_database().await;
-    migrations::apply_in_maintenance(db.as_ref(), Default::default())
-        .await
-        .unwrap();
+    let store = migrated_store();
+    let db = Arc::clone(&store.db);
     db.execute_unprepared(
         r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);

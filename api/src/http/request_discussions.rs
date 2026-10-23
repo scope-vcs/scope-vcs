@@ -4,7 +4,7 @@ use crate::{
     http::{requests::*, responses::*},
     state::AppState,
     use_cases::{
-        request_anchor_visibility,
+        request_anchor_projection::{self, AnchorProjection, AnchorProjections},
         request_discussion_mutation::{
             self, CreateDiscussionCommand, CreateReplyCommand, DiscussionAnchorInput,
             DiscussionMutationResult, DiscussionTransition, MarkDiscussionReadCommand,
@@ -20,15 +20,18 @@ use axum::{
 use scope_api_contract::{
     CreateRequestDiscussionReplyRequest, CreateRequestDiscussionRequest, GitOid,
     MarkRequestDiscussionReadRequest, RequestActivityPageResponse, RequestDiscussionAnchor,
-    RequestDiscussionChangesResponse, RequestDiscussionMutationResponse,
-    RequestDiscussionPageResponse, RequestDiscussionReadResponse,
-    RequestDiscussionRepliesPageResponse, RequestDiscussionReplyMutationResponse,
-    RequestDiscussionReplyReferenceResponse, RequestDiscussionReplyResponse,
-    RequestDiscussionSummaryResponse,
+    RequestDiscussionChangesResponse, RequestDiscussionLatestPosition, RequestDiscussionLineRange,
+    RequestDiscussionMutationResponse, RequestDiscussionPageResponse,
+    RequestDiscussionReadResponse, RequestDiscussionRepliesPageResponse,
+    RequestDiscussionReplyMutationResponse, RequestDiscussionReplyReferenceResponse,
+    RequestDiscussionReplyResponse, RequestDiscussionSummaryResponse,
 };
-use scope_domain::requests::{REQUEST_ACTIVITY_PAGE_MAX_EVENTS, RequestViewer, request_policy};
+use scope_domain::requests::{
+    REQUEST_ACTIVITY_PAGE_MAX_EVENTS, RequestLinePosition, RequestViewer, request_policy,
+};
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
+
+mod authors;
 
 const DEFAULT_DISCUSSION_LIMIT: usize = 25;
 const MAX_DISCUSSION_LIMIT: usize = 100;
@@ -43,6 +46,7 @@ pub(crate) struct DiscussionListQuery {
     revision: Option<String>,
     commit: Option<String>,
     include_revision_anchor: Option<bool>,
+    include_carried_line_anchors: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,6 +110,16 @@ pub(crate) async fn list_discussions(
         .as_ref()
         .map(|cursor| cursor.snapshot_version)
         .unwrap_or(request.activity_version);
+    let include_carried_line_anchors = match query.revision.as_deref() {
+        Some(revision_id)
+            if query.include_carried_line_anchors == Some(true) && commit_oid.is_none() =>
+        {
+            request_anchor_projection::latest_revision_through(&state, &request, snapshot_version)
+                .await
+                .is_some_and(|latest| latest.id == revision_id)
+        }
+        _ => false,
+    };
     let batch = state
         .metadata
         .requests()
@@ -120,6 +134,7 @@ pub(crate) async fn list_discussions(
             anchor_revision_id: query.revision.as_deref(),
             anchor_commit_oid: commit_oid.as_deref(),
             include_revision_anchor: query.include_revision_anchor.unwrap_or(false),
+            include_carried_line_anchors,
             limit: (limit + 1) as u64,
         })
         .await?;
@@ -141,8 +156,9 @@ pub(crate) async fn list_discussions(
         state: &state,
         request: &request,
         repo: &repo,
+        through_position: snapshot_version,
     };
-    let discussions = discussion_summaries(&projection, discussions, &batch.users).await?;
+    let discussions = discussion_summaries(&projection, discussions, &batch.actors).await?;
     Ok(Json(RequestDiscussionPageResponse {
         discussions,
         next_cursor,
@@ -170,6 +186,7 @@ pub(crate) async fn create_discussion(
                 revision_id: anchor.revision_id,
                 commit_oid: anchor.commit_oid,
                 path: anchor.path,
+                lines: anchor.lines,
             }),
         },
     )
@@ -202,7 +219,7 @@ pub(crate) async fn list_replies(
                 "reply and before cannot be used together",
             ));
         }
-        let Some((reply, users)) = state
+        let Some((reply, actors)) = state
             .metadata
             .requests()
             .request_discussion_reply(&discussion_id, reply_id)
@@ -214,7 +231,7 @@ pub(crate) async fn list_replies(
             }));
         };
         return Ok(Json(RequestDiscussionRepliesPageResponse {
-            replies: vec![reply_response(reply, &users)?],
+            replies: vec![reply_response(reply, &actors)?],
             next_before_position: None,
         }));
     }
@@ -222,7 +239,7 @@ pub(crate) async fn list_replies(
         .limit
         .unwrap_or(DEFAULT_REPLY_LIMIT)
         .clamp(1, MAX_REPLY_LIMIT);
-    let (mut replies, users) = state
+    let (mut replies, actors) = state
         .metadata
         .requests()
         .request_discussion_replies(&discussion_id, query.before, limit + 1)
@@ -236,7 +253,7 @@ pub(crate) async fn list_replies(
         .flatten();
     let replies = replies
         .into_iter()
-        .map(|reply| reply_response(reply, &users))
+        .map(|reply| reply_response(reply, &actors))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Json(RequestDiscussionRepliesPageResponse {
         replies,
@@ -391,8 +408,9 @@ pub(crate) async fn changed_discussions(
         state: &state,
         request: &request,
         repo: &repo,
+        through_position: request.activity_version,
     };
-    let discussions = discussion_summaries(&projection, batch.discussions, &batch.users).await?;
+    let discussions = discussion_summaries(&projection, batch.discussions, &batch.actors).await?;
     Ok(Json(RequestDiscussionChangesResponse {
         discussions,
         through_position,
@@ -515,17 +533,19 @@ fn mutation_discussion_response(
 ) -> Result<RequestDiscussionSummaryResponse, ApiError> {
     let anchor = discussion_anchor_response(
         result.discussion.discussion.anchor.clone(),
-        &result.visible_anchor_commits,
+        result
+            .anchor_projections
+            .get(&result.discussion.discussion.id),
         result.discussion.anchor_revision_position,
     )?;
-    discussion_summary(result.discussion, &result.users, anchor)
+    discussion_summary(result.discussion, &result.actors, anchor)
 }
 
 fn reply_mutation_response(
     result: ReplyMutationResult,
 ) -> Result<RequestDiscussionReplyMutationResponse, ApiError> {
     let discussion = mutation_discussion_response(result.discussion)?;
-    let reply = reply_response(result.reply, &result.reply_users)?;
+    let reply = reply_response(result.reply, &result.reply_actors)?;
     Ok(RequestDiscussionReplyMutationResponse { discussion, reply })
 }
 
@@ -545,7 +565,7 @@ async fn ensure_discussion_in_request(
 
 fn discussion_summary(
     model: scope_postgres::db::RequestDiscussionReadModel,
-    users: &BTreeMap<String, scope_domain::account::UserAccount>,
+    actors: &scope_postgres::db::RequestDiscussionActors,
     anchor: Option<RequestDiscussionAnchor>,
 ) -> Result<RequestDiscussionSummaryResponse, ApiError> {
     Ok(RequestDiscussionSummaryResponse {
@@ -554,7 +574,7 @@ fn discussion_summary(
         client_discussion_id: model.discussion.client_discussion_id,
         opened_position: model.discussion.opened_position,
         last_activity_position: model.discussion.last_activity_position,
-        author: recorded_actor_response(model.discussion.author_user_id.as_deref(), users)?,
+        author: authors::author_response(&model.discussion.author, actors)?,
         body_markdown: model.discussion.body_markdown,
         anchor,
         status: model.discussion.status.into(),
@@ -564,16 +584,11 @@ fn discussion_summary(
         latest_replies: model
             .latest_replies
             .into_iter()
-            .map(|reply| reply_response(reply, users))
+            .map(|reply| reply_response(reply, actors))
             .collect::<Result<Vec<_>, _>>()?,
         created_at_unix: model.discussion.created_at_unix,
         resolved_at_unix: model.discussion.resolved_at_unix,
-        resolved_by: model
-            .discussion
-            .resolved_by_user_id
-            .as_deref()
-            .map(|id| request_actor_summary_response(id, users))
-            .transpose()?,
+        resolved_by: authors::resolver_response(model.discussion.resolved_by.as_ref(), actors)?,
     })
 }
 
@@ -581,47 +596,41 @@ struct DiscussionProjection<'a> {
     state: &'a AppState,
     request: &'a scope_domain::requests::Request,
     repo: &'a scope_domain::repository::access::RepositoryAccessContext,
+    through_position: u64,
 }
 
 async fn discussion_summaries(
     projection: &DiscussionProjection<'_>,
     models: Vec<scope_postgres::db::RequestDiscussionReadModel>,
-    users: &BTreeMap<String, scope_domain::account::UserAccount>,
+    actors: &scope_postgres::db::RequestDiscussionActors,
 ) -> Result<Vec<RequestDiscussionSummaryResponse>, ApiError> {
-    let visibility = request_anchor_visibility::visible_commits(
+    let projections: AnchorProjections = request_anchor_projection::project_anchors(
         projection.state,
         projection.repo,
         projection.request,
-        models
-            .iter()
-            .filter_map(|model| model.discussion.anchor.as_ref()),
+        projection.through_position,
+        models.iter().map(|model| &model.discussion),
     )
     .await;
     let mut summaries = Vec::with_capacity(models.len());
     for model in models {
         let anchor = discussion_anchor_response(
             model.discussion.anchor.clone(),
-            &visibility,
+            projections.get(&model.discussion.id),
             model.anchor_revision_position,
         )?;
-        summaries.push(discussion_summary(model, users, anchor)?);
+        summaries.push(discussion_summary(model, actors, anchor)?);
     }
     Ok(summaries)
 }
 
 fn discussion_anchor_response(
     anchor: Option<scope_domain::requests::RequestDiscussionAnchor>,
-    visible_commits: &BTreeSet<(String, String)>,
+    projection: Option<&AnchorProjection>,
     revision_position: Option<u64>,
 ) -> Result<Option<RequestDiscussionAnchor>, ApiError> {
     let Some(anchor) = anchor else {
         return Ok(None);
-    };
-    let commit_context_is_visible = match anchor.commit_oid.as_deref() {
-        None => anchor.path.is_none(),
-        Some(commit_oid) => {
-            visible_commits.contains(&(anchor.revision_id.clone(), commit_oid.to_string()))
-        }
     };
     let revision_position = revision_position.ok_or_else(|| {
         ApiError::internal_message(format!(
@@ -629,34 +638,43 @@ fn discussion_anchor_response(
             anchor.revision_id
         ))
     })?;
-    Ok(Some(project_discussion_anchor(
-        anchor,
-        revision_position,
-        commit_context_is_visible,
-    )))
-}
-
-fn project_discussion_anchor(
-    anchor: scope_domain::requests::RequestDiscussionAnchor,
-    revision_position: u64,
-    commit_context_is_visible: bool,
-) -> RequestDiscussionAnchor {
-    RequestDiscussionAnchor {
+    let projection = projection.filter(|projection| projection.context_visible);
+    let latest = projection
+        .and_then(|projection| projection.latest.as_ref())
+        .map(|latest| match latest.position {
+            RequestLinePosition::Mapped(range) => RequestDiscussionLatestPosition::Mapped {
+                revision_id: latest.revision_id.clone(),
+                start_line: range.start_line(),
+                end_line: range.end_line(),
+            },
+            RequestLinePosition::Outdated => RequestDiscussionLatestPosition::Outdated {
+                revision_id: latest.revision_id.clone(),
+            },
+        });
+    let visible = projection.is_some();
+    Ok(Some(RequestDiscussionAnchor {
         revision_id: anchor.revision_id,
         revision_position,
-        commit_oid: commit_context_is_visible
-            .then_some(anchor.commit_oid)
-            .flatten(),
-        path: commit_context_is_visible
-            .then_some(anchor.path)
-            .flatten()
+        commit_oid: anchor.commit_oid.filter(|_| visible),
+        path: anchor
+            .path
+            .filter(|_| visible)
             .map(|path| path.as_str().to_string()),
-    }
+        lines: anchor
+            .lines
+            .filter(|_| visible)
+            .map(|lines| RequestDiscussionLineRange {
+                side: lines.side.into(),
+                start_line: lines.range.start_line(),
+                end_line: lines.range.end_line(),
+            }),
+        latest,
+    }))
 }
 
 fn reply_response(
     model: scope_postgres::db::RequestDiscussionReplyReadModel,
-    users: &BTreeMap<String, scope_domain::account::UserAccount>,
+    actors: &scope_postgres::db::RequestDiscussionActors,
 ) -> Result<RequestDiscussionReplyResponse, ApiError> {
     let reply_to = model
         .reply_to
@@ -664,7 +682,7 @@ fn reply_response(
             Ok::<_, ApiError>(RequestDiscussionReplyReferenceResponse {
                 id: target.id,
                 position: target.position,
-                author: recorded_actor_response(target.author_user_id.as_deref(), users)?,
+                author: authors::author_response(&target.author, actors)?,
                 body_markdown: target.body_markdown,
             })
         })
@@ -674,7 +692,7 @@ fn reply_response(
         id: reply.id,
         discussion_id: reply.discussion_id,
         position: reply.position,
-        author: recorded_actor_response(reply.author_user_id.as_deref(), users)?,
+        author: authors::author_response(&reply.author, actors)?,
         body_markdown: reply.body_markdown,
         reply_to,
         created_at_unix: reply.created_at_unix,
@@ -712,23 +730,4 @@ fn parse_discussion_cursor(value: &str) -> Result<DiscussionCursor, ApiError> {
 
 fn encode_discussion_cursor(snapshot_version: u64, position: u64, id: &str) -> String {
     format!("{snapshot_version}:{position}:{id}")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use scope_domain::requests::RequestDiscussionAnchor as DomainDiscussionAnchor;
-
-    #[test]
-    fn discussion_anchor_rejects_an_unknown_revision() {
-        let anchor = DomainDiscussionAnchor {
-            revision_id: "missing".to_string(),
-            commit_oid: None,
-            path: None,
-        };
-
-        let error = discussion_anchor_response(Some(anchor), &BTreeSet::new(), None).unwrap_err();
-
-        assert!(format!("{error:?}").contains("unknown revision"));
-    }
 }

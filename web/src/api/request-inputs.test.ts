@@ -36,6 +36,8 @@ test('pagination and booleans reject coercion, overflow, and invalid bounds', ()
   assert.equal(parsers.parseLoadDiscussionChangesInput({ ...request, after: 0 }).after, 0)
   assert.equal(parsers.parseLoadDiscussionsInput({ ...request, limit: 100, include_revision_anchor: false }).limit, 100)
   assert.throws(() => parsers.parseLoadDiscussionsInput({ ...request, include_revision_anchor: 'false' }))
+  assert.equal(parsers.parseLoadDiscussionsInput({ ...request, include_carried_line_anchors: true }).include_carried_line_anchors, true)
+  assert.throws(() => parsers.parseLoadDiscussionsInput({ ...request, include_carried_line_anchors: 'true' }))
   assert.throws(() => parsers.parseLoadRepliesInput({ ...discussion, before: -1 }))
   assert.throws(() => parsers.parseMarkDiscussionReadInput({ ...discussion, through_position: '1' }))
   assert.throws(() => parsers.parseLoadDiscussionsInput({ ...request, cursor: {} }))
@@ -140,8 +142,13 @@ test('discussion and reply payloads validate identifiers, anchors, and body byte
   for (const patch of [{ body_markdown: 'é'.repeat(32769) }, { body_markdown: ' ' }, { anchor: {} }, { client_discussion_id: 'x'.repeat(129) }]) {
     assert.throws(() => parsers.parseCreateDiscussionInput({ ...create, ...patch }))
   }
-  const anchored = { ...create, anchor: { revision_id: 'rev', commit_oid: null, path: null } }
+  const anchored = { ...create, anchor: { revision_id: 'rev', commit_oid: null, path: null, lines: null } }
   assert.deepEqual(parsers.parseCreateDiscussionInput(anchored), anchored)
+  const lined = { ...create, anchor: { revision_id: 'rev', commit_oid: null, path: 'src/lib.rs', lines: { side: 'new', start_line: 7, end_line: 9 } } }
+  assert.deepEqual(parsers.parseCreateDiscussionInput(lined), lined)
+  for (const lines of [{ side: 'both', start_line: 1, end_line: 1 }, { side: 'old', start_line: 0, end_line: 1 }, { side: 'new', start_line: 5, end_line: 4 }]) {
+    assert.throws(() => parsers.parseCreateDiscussionInput({ ...lined, anchor: { ...lined.anchor, lines } }))
+  }
   const reply = {
     ...discussion,
     body_markdown: 'reply',

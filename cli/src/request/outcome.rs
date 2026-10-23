@@ -69,6 +69,8 @@ pub(super) struct DetailResult {
     pub(super) activity: Option<RequestActivityPageResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) auto_merge: Option<crate::api::RequestAutoMergeResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) review_bots: Option<Vec<crate::api::RequestReviewBotResponse>>,
 }
 
 #[derive(Serialize)]

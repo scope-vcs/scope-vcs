@@ -5,7 +5,7 @@ async fn run_and_trigger_sources_keep_only_their_head_and_retained_segments_are_
     let (_target, db, _lease) = isolated_database().await;
     let previous_count = migrations::Migrator::migrations()
         .iter()
-        .position(|migration| migration.name() == "m0094_head_only_run_sources")
+        .position(|migration| migration.name() == "m0100_head_only_run_sources")
         .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await

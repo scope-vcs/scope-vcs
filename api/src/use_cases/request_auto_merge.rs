@@ -159,6 +159,11 @@ async fn reconcile_claim(
                 checks.evaluation.as_ref(),
                 &checks.results,
             ),
+            reviews: state
+                .metadata
+                .requests()
+                .request_reviews_outcome(&request, &context.views)
+                .await?,
         },
     );
     match request_auto_merge_readiness(gate) {

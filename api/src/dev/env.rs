@@ -1,6 +1,6 @@
 use crate::config::{
-    CLERK_AUTHORIZED_PARTIES_ENV, CLERK_ISSUER_ENV, DATABASE_URL_ENV, LOCAL_API_ORIGIN,
-    LOCAL_APP_ORIGIN, SCOPE_API_PUBLIC_URL_ENV, SCOPE_APP_ORIGIN_ENV, non_empty_env,
+    CLERK_AUTHORIZED_PARTIES_ENV, CLERK_ISSUER_ENV, DATABASE_URL_ENV, SCOPE_API_PUBLIC_URL_ENV,
+    SCOPE_APP_ORIGIN_ENV, non_empty_env,
 };
 use crate::env_guard::{require_exact, required};
 use crate::seed_user::DevSeedUser;
@@ -63,16 +63,8 @@ fn validate_snapshot(snapshot: &DevEnvSnapshot) -> anyhow::Result<LocalDevSettin
         snapshot.scope_env.as_deref(),
         LOCAL_SCOPE_ENV,
     )?;
-    require_exact(
-        SCOPE_APP_ORIGIN_ENV,
-        snapshot.app_origin.as_deref(),
-        LOCAL_APP_ORIGIN,
-    )?;
-    require_exact(
-        SCOPE_API_PUBLIC_URL_ENV,
-        snapshot.api_public_url.as_deref(),
-        LOCAL_API_ORIGIN,
-    )?;
+    let app_origin = require_localhost_origin(SCOPE_APP_ORIGIN_ENV, &snapshot.app_origin)?;
+    require_localhost_origin(SCOPE_API_PUBLIC_URL_ENV, &snapshot.api_public_url)?;
 
     if snapshot.railway_environment_name.is_some() || snapshot.railway_project_id.is_some() {
         anyhow::bail!("{SCOPE_ENV_ENV}=local cannot run with Railway environment variables");
@@ -85,15 +77,28 @@ fn validate_snapshot(snapshot: &DevEnvSnapshot) -> anyhow::Result<LocalDevSettin
     validate_local_clerk_issuer(clerk_issuer)?;
 
     if let Some(authorized_parties) = snapshot.clerk_authorized_parties.as_deref()
-        && !configured_list_contains(authorized_parties, LOCAL_APP_ORIGIN)
+        && !configured_list_contains(authorized_parties, app_origin)
     {
-        anyhow::bail!("{CLERK_AUTHORIZED_PARTIES_ENV} must include {LOCAL_APP_ORIGIN}");
+        anyhow::bail!("{CLERK_AUTHORIZED_PARTIES_ENV} must include {app_origin}");
     }
 
     Ok(LocalDevSettings {
         database,
         seed_user: dev_seed_user(snapshot)?,
     })
+}
+
+fn require_localhost_origin<'a>(name: &str, value: &'a Option<String>) -> anyhow::Result<&'a str> {
+    let origin = required(name, value)?;
+    let is_localhost_origin = url::Url::parse(origin).is_ok_and(|url| {
+        url.scheme() == "http"
+            && url.host_str() == Some("localhost")
+            && url.origin().ascii_serialization() == origin
+    });
+    if !is_localhost_origin {
+        anyhow::bail!("{name} must be an http://localhost:<port> origin in local dev");
+    }
+    Ok(origin)
 }
 
 fn validate_local_clerk_issuer(issuer: &str) -> anyhow::Result<()> {
@@ -171,6 +176,7 @@ fn normalize_handle(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{LOCAL_API_ORIGIN, LOCAL_APP_ORIGIN};
 
     #[test]
     fn local_runtime_accepts_safe_postgres_config() {
@@ -230,6 +236,43 @@ mod tests {
         let error =
             validate_local_database_url("postgres://scope:scope@localhost/postgres").unwrap_err();
         assert!(error.to_string().contains("local/dev database"));
+    }
+
+    #[test]
+    fn local_runtime_accepts_any_localhost_port_and_rejects_other_origins() {
+        let settings = validate_snapshot(&DevEnvSnapshot {
+            app_origin: Some("http://localhost:3010".to_string()),
+            api_public_url: Some("http://localhost:8090".to_string()),
+            clerk_authorized_parties: Some("http://localhost:3010".to_string()),
+            ..local_snapshot()
+        });
+        assert!(settings.is_ok());
+
+        for (mutate, expected) in [
+            (
+                (|snapshot: &mut DevEnvSnapshot| {
+                    snapshot.app_origin = Some("https://scopevcs.com".to_string())
+                }) as fn(&mut DevEnvSnapshot),
+                SCOPE_APP_ORIGIN_ENV,
+            ),
+            (
+                |snapshot| snapshot.api_public_url = Some("http://localhost:8080/v1".to_string()),
+                SCOPE_API_PUBLIC_URL_ENV,
+            ),
+            (
+                |snapshot| snapshot.api_public_url = Some("http://127.0.0.2:8080".to_string()),
+                SCOPE_API_PUBLIC_URL_ENV,
+            ),
+            (
+                |snapshot| snapshot.app_origin = Some("http://localhost:3010".to_string()),
+                CLERK_AUTHORIZED_PARTIES_ENV,
+            ),
+        ] {
+            let mut snapshot = local_snapshot();
+            mutate(&mut snapshot);
+            let error = validate_snapshot(&snapshot).unwrap_err().to_string();
+            assert!(error.contains(expected), "{error}");
+        }
     }
 
     #[test]
