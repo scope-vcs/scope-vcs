@@ -14,6 +14,7 @@ use crate::{
     runtime_budgets::RuntimeBudgets,
     state::AppState,
 };
+use scope_domain::content::is_regular_git_file_mode;
 use scope_domain::landing_file::{
     MAX_REPOSITORY_LANDING_FILE_BYTES, REPOSITORY_LANDING_FILE_PATH, RepositoryLandingFile,
     RepositoryLandingFileMutation,
@@ -348,7 +349,9 @@ fn repository_landing_file_mutation(
     let Some(entry) = entry else {
         return Ok(RepositoryLandingFileMutation::Delete);
     };
-    if entry.size_bytes > MAX_REPOSITORY_LANDING_FILE_BYTES as u64 {
+    if entry.size_bytes > MAX_REPOSITORY_LANDING_FILE_BYTES as u64
+        || !is_regular_git_file_mode(&entry.mode)
+    {
         return Ok(RepositoryLandingFileMutation::Delete);
     }
 
@@ -395,6 +398,11 @@ pub(crate) fn read_repository_workflow_files(
         if entry.size_bytes > MAX_WORKFLOW_DEFINITION_BYTES as u64 {
             return Ok(ReadWorkflowFiles::Rejected(format!(
                 "workflow {path} exceeds {MAX_WORKFLOW_DEFINITION_BYTES} bytes"
+            )));
+        }
+        if !is_regular_git_file_mode(&entry.mode) {
+            return Ok(ReadWorkflowFiles::Rejected(format!(
+                "workflow {path} must be a regular file"
             )));
         }
     }

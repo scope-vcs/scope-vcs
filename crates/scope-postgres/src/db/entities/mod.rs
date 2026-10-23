@@ -177,7 +177,7 @@ mod tests {
         assert!(projection_file::Model::live("owner/repo", mismatched_oid).is_err());
 
         let mut unsupported_mode = content;
-        unsupported_mode.blob.git_file_mode = "120000".to_string();
+        unsupported_mode.blob.git_file_mode = "160000".to_string();
         assert!(projection_file::Model::live("owner/repo", unsupported_mode).is_err());
     }
 

@@ -1,5 +1,5 @@
 use scope_domain::{
-    content::{SourceBlob, is_supported_git_file_mode},
+    content::{SYMLINK_GIT_FILE_MODE, SourceBlob, is_supported_git_file_mode},
     content_ref::ContentRef,
     repository::git::{GitPoolPack, GitPoolPackStorage},
 };
@@ -43,7 +43,8 @@ pub(super) async fn materialize(
     cancellation: ProcessCancellation,
 ) -> anyhow::Result<Snapshot> {
     check_cancellation(&cancellation)?;
-    validate_files(&claim.files)?;
+    let files = files_without_symlinks(&claim.files);
+    validate_files(&files)?;
     let scratch = data_dir.join("dependency-checks");
     fs::create_dir_all(&scratch)?;
     let directory = tempfile::Builder::new()
@@ -53,7 +54,7 @@ pub(super) async fn materialize(
     fs::create_dir(&source)?;
     let snapshot = Snapshot { directory, source };
     let bare = snapshot.directory.path().join("git");
-    if validate_git_restore(&claim.files, &claim.main_packs)? {
+    if validate_git_restore(&files, &claim.main_packs)? {
         let deadline = Instant::now() + GIT_TIMEOUT;
         git(
             None,
@@ -76,7 +77,6 @@ pub(super) async fn materialize(
             .await?;
         }
     }
-    let files = claim.files.clone();
     let blocking_cancellation = cancellation.clone();
     let (snapshot, stored) = tokio::task::spawn_blocking(move || {
         let stored = write_files(&snapshot.source, &bare, &files, &blocking_cancellation)?;
@@ -176,6 +176,14 @@ fn remaining_git_time(deadline: Instant) -> anyhow::Result<Duration> {
         .checked_duration_since(Instant::now())
         .filter(|remaining| !remaining.is_zero())
         .ok_or_else(|| anyhow::anyhow!("dependency snapshot Git restoration timed out"))
+}
+
+fn files_without_symlinks(files: &[DependencySnapshotFile]) -> Vec<DependencySnapshotFile> {
+    files
+        .iter()
+        .filter(|file| file.blob.git_file_mode != SYMLINK_GIT_FILE_MODE)
+        .cloned()
+        .collect()
 }
 
 fn validate_files(files: &[DependencySnapshotFile]) -> anyhow::Result<()> {
@@ -455,10 +463,20 @@ mod tests {
 
     #[test]
     fn snapshot_validation_rejects_unsupported_modes_and_each_resource_limit() {
-        for mode in ["040000", "120000", "160000"] {
+        for mode in ["040000", "160000"] {
             let unsupported_mode = snapshot_file("src/main.ts", 1, mode);
             assert!(validate_files(&[unsupported_mode]).is_err());
         }
+        let kept = files_without_symlinks(&[
+            snapshot_file("src/link.ts", 12, SYMLINK_GIT_FILE_MODE),
+            snapshot_file("src/main.ts", 1, "100644"),
+        ]);
+        assert_eq!(
+            kept.iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
+            ["/src/main.ts"]
+        );
 
         let too_many = vec![snapshot_file("asset.bin", 0, "100644"); MAX_FILES + 1];
         assert!(validate_files(&too_many[..MAX_FILES]).is_ok());
