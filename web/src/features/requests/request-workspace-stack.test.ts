@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestQueueItemResponse, RequestStackParentResponse } from '../../api/types.generated'
-import { foldStackedRequestRows, stackRequestRows } from './request-workspace-stack'
+import { foldStackedRequestRows, requestStackMembers, stackRequestRows } from './request-workspace-stack'
 
 function row(id: string, parent: string | 'unavailable' | null = null) {
   const stack_parent: RequestStackParentResponse | null =
@@ -83,4 +83,21 @@ test('folding a stack hides its requests and reports them on the parent', () => 
   assert.deepEqual(visible(['first']), [['parent', []], ['first', ['nested']], ['second', []], ['plain', []]])
   assert.deepEqual(visible(['parent', 'first']), [['parent', ['first', 'nested', 'second']], ['plain', []]])
   assert.deepEqual(visible(['nested', 'plain']), visible([]))
+})
+
+test('every request in a stack reports the whole stack with depths from its top, folded or not', () => {
+  const stacked = stackRequestRows([row('parent'), row('plain'), row('first', 'parent'), row('nested', 'first'), row('second', 'parent')])
+  const members = (id: string) => requestStackMembers(stacked, id).map(({ row, depth }) => [row.item.request.id, depth])
+  const stack = [['parent', 0], ['first', 1], ['nested', 2], ['second', 1]]
+  assert.deepEqual(members('parent'), stack)
+  assert.deepEqual(members('nested'), stack)
+  assert.deepEqual(members('plain'), [])
+  assert.deepEqual(members('missing'), [])
+})
+
+test('requests whose shared parent is outside the list form one stack starting at depth zero', () => {
+  const stacked = stackRequestRows([row('child', 'hidden'), row('plain'), row('sibling', 'hidden'), row('opaque', 'unavailable')])
+  const members = (id: string) => requestStackMembers(stacked, id).map(({ row, depth }) => [row.item.request.id, depth])
+  assert.deepEqual(members('sibling'), [['child', 0], ['sibling', 0]])
+  assert.deepEqual(members('opaque'), [])
 })

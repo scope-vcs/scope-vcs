@@ -198,22 +198,6 @@
   }
 }
 
-.request-workspace-rail-hint {
-  position: fixed;
-  z-index: 50;
-  max-width: 16rem;
-  padding: 6px 9px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--popover);
-  box-shadow: var(--shadow-pop);
-  color: var(--popover-foreground);
-  font-size: 12px;
-  line-height: 1.4;
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-
 .request-workspace-rail-more {
   width: 34px;
   height: 22px;

@@ -23,7 +23,6 @@ export function RequestRailMarker({
   unread: boolean
 }) {
   const { hue, accent, angle } = actorHues(handle)
-  const StepIcon = nextStep === 'done' ? null : NEXT_STEP_ICONS[nextStep]
   return (
     <span
       aria-hidden="true"
@@ -33,12 +32,18 @@ export function RequestRailMarker({
       <span className="request-rail-marker-face">
         <span className="request-rail-marker-initial">{handle.slice(0, 1)}</span>
       </span>
-      {StepIcon && (
-        <span className="request-rail-marker-step" data-step={nextStep}>
-          <StepIcon />
-        </span>
-      )}
+      <RequestNextStepIcon className="request-rail-marker-step" nextStep={nextStep} />
       {unread && <span className="request-workspace-row-unread" />}
+    </span>
+  )
+}
+
+export function RequestNextStepIcon({ className, nextStep }: { className: string; nextStep: RequestQueueNextStep }) {
+  if (nextStep === 'done') return null
+  const StepIcon = NEXT_STEP_ICONS[nextStep]
+  return (
+    <span className={className} data-step={nextStep}>
+      <StepIcon />
     </span>
   )
 }

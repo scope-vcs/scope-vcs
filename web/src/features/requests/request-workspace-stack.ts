@@ -13,7 +13,9 @@ export type RequestStackPlacement = {
 
 type StackRow = { item: RequestQueueItemResponse }
 
-export type StackedRequestRow<T> = { row: T; placement: RequestStackPlacement; descendants: T[] }
+export type StackedRequestRow<T> = { row: T; placement: RequestStackPlacement; descendants: T[]; stack: number }
+
+export type RequestStackMember<T> = { row: T; depth: number }
 
 export type VisibleStackedRequestRow<T> = StackedRequestRow<T> & { folded: T[] }
 
@@ -45,7 +47,8 @@ export function stackRequestRows<T extends StackRow>(rows: T[]): StackedRequestR
   }
   const placed: StackedRequestRow<T>[] = []
   const seen = new Set<StackNode<T>>()
-  const visit = (node: StackNode<T>, depth: number, guides: RequestStackGuide[], elbow: RequestStackPlacement['elbow'], last: boolean) => {
+  let stacks = 0
+  const visit = (node: StackNode<T>, stack: number, depth: number, guides: RequestStackGuide[], elbow: RequestStackPlacement['elbow'], last: boolean) => {
     if (seen.has(node)) return
     seen.add(node)
     const indented = depth <= REQUEST_STACK_MAX_INDENT
@@ -56,17 +59,17 @@ export function stackRequestRows<T extends StackRow>(rows: T[]): StackedRequestR
       elbow: indented ? elbow : 'chain',
       children: node.children.length > 0,
     } as const
-    const entry = node.row && { row: node.row, placement, descendants: [] as T[] }
+    const entry = node.row && { row: node.row, placement, descendants: [] as T[], stack }
     if (entry) placed.push(entry)
     const start = placed.length
     node.children.forEach((child, index) =>
-      visit(child, depth + 1, own, node.row ? 'parent' : 'elsewhere', index === node.children.length - 1),
+      visit(child, stack, depth + 1, own, node.row ? 'parent' : 'elsewhere', index === node.children.length - 1),
     )
     if (entry) entry.descendants = placed.slice(start).map(({ row }) => row)
   }
-  sortByFirst(roots).forEach((root) => visit(root, 0, [], null, true))
+  sortByFirst(roots).forEach((root) => visit(root, stacks++, 0, [], null, true))
   for (const node of nodes.values()) {
-    if (node.row && !seen.has(node)) visit(node, 0, [], null, true)
+    if (node.row && !seen.has(node)) visit(node, stacks++, 0, [], null, true)
   }
   return placed
 }
@@ -83,6 +86,17 @@ export function foldStackedRequestRows<T extends StackRow>(
     index += folded.length
   }
   return visible
+}
+
+export function requestStackMembers<T extends StackRow>(
+  rows: StackedRequestRow<T>[],
+  requestId: string,
+): RequestStackMember<T>[] {
+  const stack = rows.find(({ row }) => row.item.request.id === requestId)?.stack
+  const members = rows.filter((entry) => entry.stack === stack)
+  if (members.length < 2) return []
+  const top = Math.min(...members.map(({ placement }) => placement.depth))
+  return members.map(({ row, placement }) => ({ row, depth: placement.depth - top }))
 }
 
 function sortByFirst<T>(nodes: StackNode<T>[]): StackNode<T>[] {

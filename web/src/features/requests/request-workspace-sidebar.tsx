@@ -1,5 +1,6 @@
 import type { RepoParams } from '@/api/types'
 import type {
+  RequestQueueItemResponse,
   RequestQueuePageResponse,
   RequestQueueSection,
 } from '@/api/types.generated'
@@ -8,7 +9,6 @@ import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { cn } from '@/lib/utils'
 import { ChevronRight, CircleCheck, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { createPortal } from 'react-dom'
 import {
   useCallback,
   useEffect,
@@ -35,11 +35,13 @@ import {
   requestAttentionLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
-import { foldStackedRequestRows, stackRequestRows } from './request-workspace-stack'
+import { RequestRailHint, type RailHint, type RailHintRequest } from './request-workspace-rail-hint'
+import { foldStackedRequestRows, requestStackMembers, stackRequestRows } from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
 
 const RAIL_AVATARS = 6
+const RAIL_HINT_GRACE_MS = 250
 
 const FOLDED_LABELS = {
   needs_you: 'need you',
@@ -98,6 +100,8 @@ export function RequestWorkspaceSidebar({
   const [closing, setClosing] = useState(false)
   const [hint, setHint] = useState<{ key: string; left: number; top: number; now: number } | null>(null)
   const [foldedStacks, setFoldedStacks] = useState<ReadonlySet<string>>(new Set())
+  const hintClosing = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(hintClosing.current), [])
   const state = collapsed ? (open ? 'open' : 'closed') : 'pinned'
   const openRail = useCallback(() => {
     setOpen(true)
@@ -163,10 +167,28 @@ export function RequestWorkspaceSidebar({
     if ((state === 'closed' || closing) && !target.closest('a, button')) openRail()
     else if (state === 'open' && target.closest('a')) close()
   }
+  function keepHint() {
+    window.clearTimeout(hintClosing.current)
+  }
+  function leaveHint() {
+    keepHint()
+    if (hinted && 'stack' in hinted && hinted.stack)
+      hintClosing.current = window.setTimeout(() => setHint(null), RAIL_HINT_GRACE_MS)
+    else setHint(null)
+  }
   function showHint(event: ReactPointerEvent | FocusEvent) {
-    const target = (event.target as Element).closest<HTMLElement>(
-      '[data-rail-hint], .request-workspace-row[data-rail]',
-    )
+    keepHint()
+    const over = event.target as Element
+    if (over.closest('.request-workspace-rail-hint')) return
+    const target = over.closest<HTMLElement>('[data-rail-hint], .request-workspace-row[data-rail]')
+    const travelingToStack =
+      'pointerType' in event &&
+      hinted !== undefined &&
+      'stack' in hinted &&
+      hinted.stack &&
+      target?.dataset.requestId !== undefined &&
+      !over.closest('.request-workspace-row-avatar')
+    if (travelingToStack) return
     const anchor = target?.dataset.railHint ? target : target?.querySelector('.request-workspace-row-avatar')
     const key = target?.dataset.railHint ?? target?.dataset.requestId
     if (state !== 'closed' || !key || !anchor) return setHint(null)
@@ -243,7 +265,8 @@ export function RequestWorkspaceSidebar({
       }),
     ),
   ]
-  const railed = foldStackedRequestRows(stackRequestRows(needsYou), foldedStacks)
+  const stackedNeedsYou = stackRequestRows(needsYou)
+  const railed = foldStackedRequestRows(stackedNeedsYou, foldedStacks)
     .filter(
       ({ row, folded }, index) =>
         index < RAIL_AVATARS || [row, ...folded].some(({ item }) => item.request.id === selectedId),
@@ -257,7 +280,7 @@ export function RequestWorkspaceSidebar({
     .filter(({ count }) => count > 0)
   const folded = foldedGroups.reduce((total, { count }) => total + count, 0)
   const hinted = hint && state === 'closed' ? railHint(hint.key, hint.now) : undefined
-  function railHint(key: string, now: number) {
+  function railHint(key: string, now: number): RailHint | undefined {
     if (key === 'needs-you') {
       const count = activeCount(needsYou.length)
       return {
@@ -272,11 +295,18 @@ export function RequestWorkspaceSidebar({
       }
     const row = allRows.find((row) => row.item.request.id === key)
     if (!row) return undefined
-    const label = REQUEST_MERGE_STEP_LABELS[row.item.next_step] ?? requestAttentionLabel(row.item, true)
-    return {
-      title: row.item.request.title,
-      details: [`${label} · ${requestAgeLabel(row.item.attention_at_unix, now, true)}`],
-    }
+    const line = (item: RequestQueueItemResponse, depth: number): RailHintRequest => ({
+      id: item.request.id,
+      title: item.request.title,
+      nextStep: item.next_step,
+      status: railHintStatus(item),
+      age: item.request.id === key ? requestAgeLabel(item.attention_at_unix, now, true) : undefined,
+      depth,
+      hovered: item.request.id === key,
+    })
+    const stack = requestStackMembers(stackedNeedsYou, key)
+    if (stack.length) return { requests: stack.map(({ row, depth }) => line(row.item, depth)), stack: true }
+    return { requests: [line(row.item, 0)], stack: false }
   }
   return (
     <aside
@@ -284,30 +314,18 @@ export function RequestWorkspaceSidebar({
       className="request-workspace-sidebar"
       data-closing={closing || undefined}
       data-state={state}
-      onBlur={() => setHint(null)}
+      onBlur={(event) => {
+        if (!(event.relatedTarget as Element | null)?.closest('.request-workspace-rail-hint')) setHint(null)
+      }}
       onClick={click}
       onFocus={showHint}
-      onPointerLeave={() => setHint(null)}
+      onPointerLeave={leaveHint}
       onPointerOver={showHint}
       ref={aside}
     >
-      {hint &&
-        hinted &&
-        createPortal(
-          <div
-            aria-hidden="true"
-            className="request-workspace-rail-hint"
-            style={{ left: hint.left, top: hint.top }}
-          >
-            <span className="block font-medium">{hinted.title}</span>
-            {hinted.details.map((detail) => (
-              <span className="block text-muted-foreground" key={detail}>
-                {detail}
-              </span>
-            ))}
-          </div>,
-          document.body,
-        )}
+      {hint && hinted && (
+        <RequestRailHint hint={hinted} key={hint.key} left={hint.left} params={params} top={hint.top} />
+      )}
       <div className="request-workspace-sidebar-inner">
         <div className="request-workspace-sidebar-tools">
           <NavigationSearch
@@ -440,6 +458,10 @@ export function RequestWorkspaceSidebar({
       </div>
     </aside>
   )
+}
+
+function railHintStatus(item: RequestQueueItemResponse) {
+  return REQUEST_MERGE_STEP_LABELS[item.next_step] ?? requestAttentionLabel(item, true)
 }
 
 function groupRows(rows: QueueRow[]) {
