@@ -10,7 +10,7 @@ use scope_api_contract::routes;
 use scope_domain::repository::repo_id;
 use scope_service_runtime::{
     outbound_http::send_traced,
-    proxy::{forwarded_headers, proxied_response},
+    proxy::forwarded_headers,
     replicas::{Backend, BackendDiscovery, rank_backends},
 };
 use std::{net::SocketAddr, time::Duration};
@@ -94,7 +94,7 @@ pub(crate) async fn route_to_owner(
         return next.run(Request::from_parts(parts, Body::from(body))).await;
     };
     match forward(routing, owner, &parts, body.clone()).await {
-        Ok(response) => proxied_response(response),
+        Ok(response) => response,
         Err(error) if error.is_connect() => {
             tracing::warn!(%repository, %owner, %error, "merge owner unreachable; merging locally");
             next.run(Request::from_parts(parts, Body::from(body))).await
@@ -112,14 +112,14 @@ async fn forward(
     owner: SocketAddr,
     parts: &Parts,
     body: Bytes,
-) -> reqwest::Result<reqwest::Response> {
+) -> reqwest::Result<Response> {
     let path = parts
         .uri
         .path_and_query()
         .map_or_else(|| parts.uri.path(), |path| path.as_str());
     let mut headers = forwarded_headers(&parts.headers);
     headers.insert(ROUTED_HEADER, HeaderValue::from_static("1"));
-    send_traced(
+    let upstream = send_traced(
         routing
             .http
             .request(parts.method.clone(), format!("http://{owner}{path}"))
@@ -127,5 +127,46 @@ async fn forward(
             .body(body),
         routes::REPO_REQUEST_MERGE,
     )
-    .await
+    .await?;
+    let status = upstream.status();
+    let headers = forwarded_headers(upstream.headers());
+    let mut response = Response::new(Body::from(upstream.bytes().await?));
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
+    Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn an_owner_that_fails_mid_response_is_reported_as_unfinished() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let owner = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 1024];
+            let _ = socket.read(&mut request).await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 64\r\n\r\n{\"request\"")
+                .await
+                .unwrap();
+        });
+        let (parts, ()) = Request::post("/v1/repos/owner/repo/requests/r/merge")
+            .body(())
+            .unwrap()
+            .into_parts();
+
+        let forwarded = forward(
+            &MergeRouting::fixed(Vec::new()),
+            owner,
+            &parts,
+            Bytes::new(),
+        )
+        .await;
+
+        assert!(forwarded.is_err_and(|error| !error.is_connect()));
+    }
 }
