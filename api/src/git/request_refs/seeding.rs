@@ -227,7 +227,8 @@ fn restore_request_objects(
         snapshot,
         prerequisites_from,
         "restoring request objects",
-    );
+    )
+    .and_then(|stored| stored.map_err(ApiError::from));
     if present_commits(target_repo, std::iter::once(request.head_oid.as_str()))?
         .contains(&request.head_oid)
     {

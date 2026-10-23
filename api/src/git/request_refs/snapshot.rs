@@ -1,55 +1,15 @@
 use super::request_ref_oid_is_commit;
 use crate::{error::ApiError, git::command::run_git, state::AppState};
 use scope_domain::content::SourceBlob;
-use scope_storage::{ObjectStore, ObjectStoreError, ObjectStoreErrorKind, write_source_blob_to};
+use scope_storage::{ObjectStore, ObjectStoreError, write_source_blob_to};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
     fs,
     path::Path as FsPath,
-    sync::{
-        Mutex, PoisonError,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{Duration, Instant},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 static SNAPSHOT_DOWNLOAD: AtomicU64 = AtomicU64::new(1);
-const UNREADABLE_RECORD_RETENTION: Duration = Duration::from_secs(10 * 60);
-
-#[derive(Default)]
-pub(crate) struct UnreadableSnapshots {
-    failed_at: Mutex<HashMap<String, Instant>>,
-}
-
-impl UnreadableSnapshots {
-    fn record(&self, snapshot: &SourceBlob, error: &ObjectStoreError) {
-        if !matches!(
-            error.kind,
-            ObjectStoreErrorKind::ServiceUnavailable
-                | ObjectStoreErrorKind::NotFound
-                | ObjectStoreErrorKind::Integrity
-        ) {
-            return;
-        }
-        let now = Instant::now();
-        let mut failed_at = self
-            .failed_at
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        failed_at.retain(|_, at| now.duration_since(*at) < UNREADABLE_RECORD_RETENTION);
-        failed_at.insert(snapshot.sha256.clone(), now);
-    }
-
-    pub(crate) fn failed_since(&self, snapshot: &SourceBlob, since: Instant) -> bool {
-        self.failed_at
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&snapshot.sha256)
-            .is_some_and(|at| *at >= since)
-    }
-}
-
 pub(super) fn fetch_snapshot_into(
     state: &AppState,
     repo: &FsPath,
@@ -57,7 +17,7 @@ pub(super) fn fetch_snapshot_into(
     snapshot: &SourceBlob,
     base_repo: Option<&FsPath>,
     action: &str,
-) -> Result<(), ApiError> {
+) -> Result<Result<(), ObjectStoreError>, ApiError> {
     fetch_snapshot_into_ref(
         state,
         repo,
@@ -83,7 +43,7 @@ pub(super) fn fetch_snapshot_into_ref(
     snapshot: &SourceBlob,
     base_repo: Option<&FsPath>,
     action: &str,
-) -> Result<(), ApiError> {
+) -> Result<Result<(), ObjectStoreError>, ApiError> {
     let bundle_path = repo.with_extension(format!(
         "snapshot-{}-{}-{}.bundle.tmp",
         hex::encode(
@@ -93,17 +53,15 @@ pub(super) fn fetch_snapshot_into_ref(
         std::process::id(),
         SNAPSHOT_DOWNLOAD.fetch_add(1, Ordering::Relaxed),
     ));
-    let result = download_snapshot(state.object_store.as_ref(), snapshot, &bundle_path)
-        .and_then(|stored| {
-            stored.map_err(|error| {
-                state
-                    .repository_engine
-                    .unreadable_snapshots()
-                    .record(snapshot, &error);
-                ApiError::from(error)
-            })
-        })
-        .and_then(|()| fetch_bundle_into_ref(repo, bundle_ref, &bundle_path, base_repo, action));
+    let result =
+        download_snapshot(state.object_store.as_ref(), snapshot, &bundle_path).and_then(|stored| {
+            match stored {
+                Ok(()) => {
+                    fetch_bundle_into_ref(repo, bundle_ref, &bundle_path, base_repo, action).map(Ok)
+                }
+                Err(error) => Ok(Err(error)),
+            }
+        });
     let _ = fs::remove_file(&bundle_path);
     result
 }
