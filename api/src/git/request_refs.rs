@@ -44,6 +44,7 @@ pub(crate) use pool::retain_staged_pool_pack;
 pub(crate) use pool::{RequestObjectRepos, request_object_repos};
 pub(crate) use revision::with_request_revision_store_repo;
 pub(crate) use seeding::{DeferredRequestObjects, attach_request_refs_from_pool};
+pub(crate) use snapshot::UnreadableSnapshots;
 #[cfg(test)]
 use snapshot::bundle_prerequisites;
 use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};

@@ -105,7 +105,8 @@ where
                                 state_for_build.object_store.as_ref(),
                                 &revision_for_build.git_snapshot,
                                 bundle,
-                            )
+                            )?
+                            .map_err(ApiError::from)
                         },
                     )
                 })

@@ -1,4 +1,6 @@
-use scope_api_contract::{ErrorCode, ErrorResponse};
+use scope_api_contract::{
+    CAPACITY_EXHAUSTED_MESSAGE, ErrorCode, ErrorResponse, SERVICE_UNAVAILABLE_MESSAGE,
+};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,34 +74,8 @@ impl CliError {
                 .any(|line| line.starts_with("remote:") && line.contains("permission denied"))
         {
             ErrorCode::Forbidden
-        } else if [
-            "requested url returned error: 429",
-            "requested url returned error: 502",
-            "requested url returned error: 503",
-            "requested url returned error: 504",
-            "could not resolve host:",
-            "could not resolve proxy:",
-            "failed to connect to ",
-            "timed out",
-            "timeout was reached",
-            "connection timeout",
-            "connection refused",
-            "connection reset",
-            "connection was reset",
-            "operation too slow.",
-            "empty reply from server",
-        ]
-        .iter()
-        .any(|pattern| {
-            diagnostic
-                .split(['\r', '\n'])
-                .filter(|line| !line.starts_with("remote:"))
-                .any(|line| line.contains(pattern))
-        }) && !diagnostic.contains("fatal: remote error:")
-            && !diagnostic.contains("[remote rejected]")
-            && !diagnostic
-                .split(['\r', '\n'])
-                .any(|line| line.starts_with("remote: error:"))
+        } else if reports_temporary_server_failure(&diagnostic)
+            || reports_transport_failure(&diagnostic)
         {
             ErrorCode::ServiceUnavailable
         } else {
@@ -199,6 +175,48 @@ impl fmt::Display for CliError {
 
 impl std::error::Error for CliError {}
 
+fn reports_temporary_server_failure(diagnostic: &str) -> bool {
+    [SERVICE_UNAVAILABLE_MESSAGE, CAPACITY_EXHAUSTED_MESSAGE]
+        .iter()
+        .any(|message| {
+            diagnostic.contains(&format!(
+                "fatal: remote error: {}",
+                message.to_ascii_lowercase()
+            ))
+        })
+}
+
+fn reports_transport_failure(diagnostic: &str) -> bool {
+    [
+        "requested url returned error: 429",
+        "requested url returned error: 502",
+        "requested url returned error: 503",
+        "requested url returned error: 504",
+        "could not resolve host:",
+        "could not resolve proxy:",
+        "failed to connect to ",
+        "timed out",
+        "timeout was reached",
+        "connection timeout",
+        "connection refused",
+        "connection reset",
+        "connection was reset",
+        "operation too slow.",
+        "empty reply from server",
+    ]
+    .iter()
+    .any(|pattern| {
+        diagnostic
+            .split(['\r', '\n'])
+            .filter(|line| !line.starts_with("remote:"))
+            .any(|line| line.contains(pattern))
+    }) && !diagnostic.contains("fatal: remote error:")
+        && !diagnostic.contains("[remote rejected]")
+        && !diagnostic
+            .split(['\r', '\n'])
+            .any(|line| line.starts_with("remote: error:"))
+}
+
 pub fn exit_code(error: &anyhow::Error) -> u8 {
     if let Some(error) = error.downcast_ref::<CliError>() {
         return error.exit_category() as u8;
@@ -220,11 +238,8 @@ pub fn response(error: &anyhow::Error) -> ErrorResponse {
         .downcast_ref::<reqwest::Error>()
         .is_some_and(|error| error.is_connect() || error.is_timeout())
     {
-        return ErrorResponse::new(
-            ErrorCode::ServiceUnavailable,
-            "Scope is temporarily unavailable; retry with bounded backoff",
-        )
-        .retryable();
+        return ErrorResponse::new(ErrorCode::ServiceUnavailable, SERVICE_UNAVAILABLE_MESSAGE)
+            .retryable();
     }
     ErrorResponse::new(ErrorCode::Internal, format!("{error:#}"))
 }
@@ -272,7 +287,14 @@ mod tests {
             "fatal: unable to access 'https://fixture.invalid/': Operation too slow. Less than 1 bytes/sec transferred the last 1 seconds",
             "remote: Enumerating objects: 10, done.\nerror: RPC failed; curl 56 Recv failure: Connection reset by peer",
             "remote: Checking objects...\rerror: RPC failed; curl 56 Recv failure: Connection reset by peer\n",
-        ] {
+        ]
+        .map(str::to_string)
+        .into_iter()
+        .chain(
+            [SERVICE_UNAVAILABLE_MESSAGE, CAPACITY_EXHAUSTED_MESSAGE]
+                .map(|message| format!("fatal: remote error: {message} (reference: err_0123)")),
+        ) {
+            let diagnostic = diagnostic.as_str();
             let error: anyhow::Error =
                 CliError::git_failure("fetch failed", diagnostic, GitRetrySafety::Idempotent)
                     .into();

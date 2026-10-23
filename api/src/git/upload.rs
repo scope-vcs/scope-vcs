@@ -154,6 +154,51 @@ async fn git_read_view_repo(
     view_bases: RequestViewBases,
     requests: &[Request],
 ) -> Result<GitRepoHandle, ApiError> {
+    let started = Instant::now();
+    let unreadable = state.repository_engine.unreadable_snapshots();
+    let mut attached = requests.to_vec();
+    loop {
+        let error = match build_git_read_view(
+            state,
+            incarnation,
+            base_repo.share()?,
+            share_request_view_bases(&view_bases)?,
+            &attached,
+        )
+        .await
+        {
+            Ok(read_view) => return Ok(read_view),
+            Err(error) => error,
+        };
+        let (omitted, readable): (Vec<_>, Vec<_>) = attached.into_iter().partition(|request| {
+            request
+                .git_snapshot
+                .as_ref()
+                .is_some_and(|snapshot| unreadable.failed_since(snapshot, started))
+        });
+        if omitted.is_empty() {
+            return Err(error);
+        }
+        for request in &omitted {
+            tracing::warn!(
+                repository_id = incarnation.repository_id(),
+                request_id = request.id,
+                request_name = request.name,
+                error = %error.operator_diagnostic(),
+                "omitting request whose snapshot is unreadable from Git read view"
+            );
+        }
+        attached = readable;
+    }
+}
+
+async fn build_git_read_view(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    base_repo: GitRepoHandle,
+    view_bases: RequestViewBases,
+    requests: &[Request],
+) -> Result<GitRepoHandle, ApiError> {
     if requests.is_empty() {
         return Ok(base_repo);
     }

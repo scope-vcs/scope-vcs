@@ -13,6 +13,7 @@ use crate::{
         },
         command::run_git,
         pool_install::{install_main_head, present_commits},
+        request_refs::UnreadableSnapshots,
         restore::{
             advance_head_and_verify, install_verified_git_pack, restore_main_head,
             run_timed_git_restore_phase,
@@ -53,6 +54,7 @@ pub(crate) struct RepositoryEngine {
     cache: Arc<RepositoryGitCache>,
     materializations: Arc<GitDerivedCacheCoordinator>,
     packs: Arc<scope_storage::GitSegmentStore>,
+    unreadable_snapshots: UnreadableSnapshots,
     max_bytes: u64,
 }
 
@@ -66,6 +68,7 @@ impl RepositoryEngine {
             cache: RepositoryGitCache::new(root, max_bytes)?,
             materializations: Arc::new(GitDerivedCacheCoordinator::default()),
             packs,
+            unreadable_snapshots: UnreadableSnapshots::default(),
             max_bytes: max_bytes as u64,
         }))
     }
@@ -93,6 +96,10 @@ impl RepositoryEngine {
             .map_err(|error| ApiError::internal_message(error.to_string()))?;
         self.cache
             .prune_to(self.max_bytes.saturating_sub(pack_bytes.retained_bytes))
+    }
+
+    pub(crate) fn unreadable_snapshots(&self) -> &UnreadableSnapshots {
+        &self.unreadable_snapshots
     }
 
     pub(crate) fn cache_root(&self) -> &Path {
