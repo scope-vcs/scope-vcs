@@ -5,7 +5,11 @@ import type {
   ConnectGitHubRepositoryRequest,
   GitHubAuthorizeRequest,
   GitHubSetupRequest,
+  SetGitHubMainPublicationRequest,
   SetGitHubRequiredChecksRequest,
+  SetGitHubReviewBotsRequest,
+  SetGitHubReviewBotPullRequestsRequest,
+  SetGitHubReviewRequestCommentRequest,
   SetGitHubRunImportCountRequest,
   HistoryEntryFileDiffRequest,
   HistoryEntryRequest,
@@ -150,7 +154,15 @@ export type ApproveRequestChecksInput = RequestParams & ApproveRequestChecksRequ
 
 export type SetRepoGitHubRequiredChecksInput = RepoParams & SetGitHubRequiredChecksRequest
 
+export type SetRepoGitHubReviewBotsInput = RepoParams & SetGitHubReviewBotsRequest
+
 export type SetRepoGitHubRunImportCountInput = RepoParams & SetGitHubRunImportCountRequest
+
+export type SetRepoGitHubReviewBotPullRequestsInput = RepoParams & SetGitHubReviewBotPullRequestsRequest
+
+export type SetRepoGitHubReviewRequestCommentInput = RepoParams & SetGitHubReviewRequestCommentRequest
+
+export type SetRepoGitHubMainPublicationInput = RepoParams & SetGitHubMainPublicationRequest
 
 export type RepoGitHubWorkflowRunsInput = RepoParams & {
   workflow?: string

@@ -28,7 +28,7 @@ use std::{
 mod index;
 mod preflight;
 use index::ProjectionIndex;
-pub(crate) use preflight::verify_and_restore_projection;
+pub(crate) use preflight::VerifiedProjections;
 
 const PROJECTION_CACHE_SEMANTICS_VERSION: &str = "shared-projection-labels-v4-head-oid-alternates";
 static PROJECTION_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
@@ -92,7 +92,7 @@ fn projection_bare_repo_with_loader(
         git_command_output(
             Command::new("git")
                 .args(["clone", "--bare", "--local"])
-                .arg(prefix.repo.as_ref())
+                .arg(&prefix.repo)
                 .arg(&temp_path),
             None,
         )?;
@@ -443,6 +443,7 @@ pub(crate) async fn projection_bare_repo_for_state(
                         &incarnation_for_build,
                         &labels,
                         &projection_for_build,
+                        None,
                     )?;
                     let canonical_path = canonical_for_build.as_deref();
                     projection_bare_repo_with_loader(
@@ -584,7 +585,8 @@ pub(crate) fn projection_cache_key_for_head(
 }
 
 struct ProjectionPrefix {
-    repo: GitRepoHandle,
+    repo: PathBuf,
+    _lease: Option<GitRepoHandle>,
     commits: usize,
 }
 
@@ -593,6 +595,7 @@ fn cached_projection_prefix(
     incarnation: &RepositoryIncarnation,
     labels: &[ViewId],
     projection: &Projection,
+    verified_root: Option<&FsPath>,
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
     let keys = projection_cache_keys(Some(incarnation), projection, labels)?;
     for count in (1..projection.commits.len()).rev() {
@@ -604,14 +607,25 @@ fn cached_projection_prefix(
         {
             continue;
         }
-        let path = engine.cache_root().join(format!("{}.git", keys[count]));
+        let name = format!("{}.git", keys[count]);
+        if let Some(root) = verified_root
+            && projection_cache_is_ready(&root.join(&name))
+        {
+            return Ok(Some(ProjectionPrefix {
+                repo: root.join(name),
+                _lease: None,
+                commits: count,
+            }));
+        }
+        let path = engine.cache_root().join(name);
         if !projection_cache_is_ready(&path) {
             continue;
         }
         let repo = engine.lease_derived(path)?;
         if projection_cache_is_ready(&repo) {
             return Ok(Some(ProjectionPrefix {
-                repo,
+                repo: repo.to_path_buf(),
+                _lease: Some(repo),
                 commits: count,
             }));
         }

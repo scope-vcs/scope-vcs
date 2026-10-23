@@ -86,6 +86,11 @@ pub(super) async fn ensure_checks_cleared(
         viewer: &viewer,
         views: &context.views,
         checks,
+        reviews: state
+            .metadata
+            .requests()
+            .request_reviews_outcome(request, &context.views)
+            .await?,
     });
     if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
         return Err(

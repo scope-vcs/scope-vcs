@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestCheckResponse, RequestChecksResponse } from '@/api/types.generated'
-import { requestCheckGroups, requestChecksSummary } from './request-check-rows'
+import {
+  requestCheckGroups,
+  requestChecksSummary,
+  requestPullRequestView,
+  requestReviewBotRows,
+} from './request-check-rows'
 
 type GitHubCheck = Extract<RequestCheckResponse, { provider: 'github' }>
 
@@ -168,4 +173,46 @@ test('jobs group by their actual workflow run, independently of job paths or sha
   assert.deepEqual(unassigned?.jobs.map((job) => job.name), ['validate / missing'])
   const native = groups.find((group) => group.kind === 'native')
   assert.equal(native?.row.name, 'Native')
+})
+
+test('a carrier pull request links to GitHub once it has a number and explains failures', () => {
+  const url = 'https://github.com/o/r/pull/5'
+  assert.equal(requestPullRequestView(null), null)
+  assert.deepEqual(requestPullRequestView({ state: 'open', number: 5, url, error: null }), {
+    text: 'Pull request #5 on GitHub',
+    url,
+    note: null,
+  })
+  assert.deepEqual(requestPullRequestView({ state: 'opening', number: null, url: null, error: 'GitHub was down' }), {
+    text: 'Opening a pull request on GitHub',
+    url: null,
+    note: { text: 'The last attempt failed: GitHub was down', failed: false },
+  })
+  assert.deepEqual(requestPullRequestView({ state: 'closed_on_github', number: 5, url, error: null }), {
+    text: 'Pull request #5 on GitHub · closed on GitHub',
+    url,
+    note: null,
+  })
+  assert.deepEqual(requestPullRequestView({ state: 'failed', number: null, url: null, error: 'Accept the permission' }), {
+    text: 'Scope couldn’t open a pull request on GitHub',
+    url: null,
+    note: { text: 'Accept the permission', failed: true },
+  })
+})
+
+test('review bots keep their listed order and say where each is on the latest head', () => {
+  assert.deepEqual(
+    requestReviewBotRows([
+      { login: 'greptile-apps[bot]', required: true, state: 'working' },
+      { login: 'chatgpt-codex-connector[bot]', required: false, state: 'commented' },
+      { login: 'octo-reviewer[bot]', required: true, state: 'clear' },
+      { login: 'lint-bot[bot]', required: false, state: 'not_started' },
+    ]),
+    [
+      { login: 'greptile-apps[bot]', required: true, label: 'Reviewing', tone: 'running' },
+      { login: 'chatgpt-codex-connector[bot]', required: false, label: 'Finished with comments', tone: 'waiting' },
+      { login: 'octo-reviewer[bot]', required: true, label: 'Finished, nothing found', tone: 'success' },
+      { login: 'lint-bot[bot]', required: false, label: 'Not started', tone: 'inert' },
+    ],
+  )
 })

@@ -231,6 +231,20 @@ impl RequestStore {
             .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "latest_request_revision_through"))]
+    pub async fn latest_request_revision_through(
+        &self,
+        request_id: &str,
+        through_position: u64,
+    ) -> Result<Option<RequestRevision>, PostgresError> {
+        super::request_revision_rows::latest_revision_through(
+            self.db.as_ref(),
+            request_id,
+            through_position,
+        )
+        .await
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision_with_head"))]
     pub async fn request_revision_with_head(
         &self,

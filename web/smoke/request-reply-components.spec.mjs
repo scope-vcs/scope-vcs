@@ -27,3 +27,27 @@ test('a reply resent with a different quote is a new attempt', async (t) => {
   assert.notEqual(resent.client_reply_id, failed.client_reply_id)
   assert.deepEqual(errors, [])
 })
+
+test('each imported GitHub reply links to its own comment and fits narrow screens', async (t) => {
+  const { base, errors, page } = await openFixture(t, 'request-reply', { aliases: [fixtureClerk], timeout: 30_000, tailwind: true })
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+  const links = page.getByRole('link', { name: /^via GitHub/ })
+  await links.first().waitFor()
+  assert.deepEqual(
+    await links.evaluateAll((anchors) => anchors.map((anchor) => [anchor.getAttribute('aria-label'), anchor.getAttribute('href')])),
+    [
+      ["via GitHub: greptile-apps[bot]'s comment 201", 'https://github.com/octo/demo/pull/1#discussion_r201'],
+      ["via GitHub: greptile-apps[bot]'s comment 202", 'https://github.com/octo/demo/pull/1#discussion_r202'],
+    ],
+  )
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const link of await links.all()) {
+      const bounds = await link.boundingBox()
+      assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width, `source link fits at ${width}`)
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    assert(overflow <= 0, `thread does not scroll sideways at ${width}`)
+  }
+  assert.deepEqual(errors, [])
+})

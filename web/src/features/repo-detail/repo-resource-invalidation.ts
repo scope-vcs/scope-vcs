@@ -6,7 +6,7 @@ import { invalidateRequestQueues } from '../requests/request-queue-cache'
 import { requestChangesResource } from '../requests/request-changes-resource'
 import { refreshRequestState, requestStateResource } from '../requests/request-state-resource'
 import { requestRatingsResource } from '../requests/request-ratings-resource'
-import { requestDiscussionReferenceResource } from '../requests/request-changes-discussion-references'
+import { refreshRequestDiscussionReferences, requestDiscussionReferenceResource } from '../requests/request-changes-discussion-references'
 import type { RepoChangeEvent } from '../../api/types.generated'
 import { requestActivityIdentity, requestActivityResource } from '../requests/request-activity-resource'
 import { requestAttachmentResource, requestAttachmentResourceIdentity } from '../requests/request-attachment-resource'
@@ -71,6 +71,7 @@ export function invalidateRepoResources(
     requestRatingsResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
   } else if (typeof event.kind === 'object' && 'RequestStateChanged' in event.kind) {
     refreshRequestState(scope, event.kind.RequestStateChanged.request_id)
+    refreshRequestDiscussionReferences(scope, event.kind.RequestStateChanged.request_id)
     if (!summaryPending) invalidateRequestQueues(scope)
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)
@@ -86,7 +87,7 @@ export function invalidateRepoResources(
     const timeline = event.kind.RequestTimelineChanged
     invalidateRequestQueues(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0${timeline.request_id}\0`))
-    requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0${timeline.request_id}\0`))
+    refreshRequestDiscussionReferences(scope, timeline.request_id)
     requestActivityResource.invalidate(requestActivityIdentity(scope, timeline.request_id))
     refreshRequestState(scope, timeline.request_id)
     requestRatingsResource.invalidate(`${scope}\0${timeline.request_id}`)

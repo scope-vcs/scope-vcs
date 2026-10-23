@@ -1,11 +1,12 @@
 import { EmptyState, PanelState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
 import { useRef, useState, type ReactNode } from 'react'
-import { ReviewFileDiffDrawer } from '../review/review-file-diff-drawer'
+import { ReviewFileDiffDrawer, type ReviewDiffAnnotations } from '../review/review-file-diff-drawer'
 import type { CommitFileDiffState } from './history-state'
 import type { CommitFileResponse } from '@/api/types.generated'
 
 export type ChangedFilesProps = {
+  diffAnnotations?: ReviewDiffAnnotations
   diffIdentity: string | null
   diffScrollTop: number
   fileDiffState: CommitFileDiffState
@@ -30,7 +31,7 @@ export function useChangedFileNavigation(onCloseDiff: () => void, initiallyOpen 
 const DIFF_PANE_CLASS = 'h-[70vh] min-h-[340px] max-h-[720px] min-w-0 overflow-hidden'
 
 export function ChangedFilesWorkbench({
-  diffIdentity, diffScrollTop, fileDiffState, onDiffScroll, onRetryDiff,
+  diffAnnotations, diffIdentity, diffScrollTop, fileDiffState, onDiffScroll, onRetryDiff,
   selectedFilePath, navigation, navigationLabel, navigator, toolbar, diffActions, diffContext,
   emptyFilesMessage, emptyPreviewMessage,
 }: Omit<ChangedFilesProps, 'onCloseDiff' | 'onSelectFile'> & {
@@ -48,6 +49,7 @@ export function ChangedFilesWorkbench({
     <div className={DIFF_PANE_CLASS}>
       <ReviewFileDiffDrawer
         actions={diffActions}
+        annotations={diffAnnotations}
         cacheKey={diffIdentity}
         context={diffContext}
         diff={fileDiffState.diff}

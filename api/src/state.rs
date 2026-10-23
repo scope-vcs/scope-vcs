@@ -27,6 +27,7 @@ use std::{path::PathBuf, sync::Arc};
 #[derive(Clone)]
 pub struct AppState {
     pub(crate) wakeups: Arc<BackgroundWakeups>,
+    pub(crate) merge_committer: Arc<crate::use_cases::request_merge::MergeCommitter>,
     pub(crate) clerk_users: ClerkUsers,
     pub(crate) github: Option<Arc<GitHubApp>>,
     pub(crate) invite_mailer: InviteMailer,
@@ -148,6 +149,7 @@ impl AppState {
         } = services;
         Self {
             wakeups: Arc::default(),
+            merge_committer: Arc::default(),
             clerk_users: integrations.clerk_users,
             github: integrations.github,
             invite_mailer: integrations.invite_mailer,

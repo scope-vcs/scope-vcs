@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict'
 import { createServer, type RequestListener } from 'node:http'
-import { gzipSync, gunzipSync } from 'node:zlib'
+import { gzipSync } from 'node:zlib'
 import test from 'node:test'
 import { proxyAnalyticsCapture } from './analytics-proxy'
 
 const ignoreDelivery = () => {}
+const config = { environment: 'test' as const, token: 'phc_fixture', release: null }
+const payload = JSON.stringify({
+  event: '$pageview', uuid: 'event-id',
+  properties: { distinct_id: 'visitor', route_name: 'home' },
+})
 
-test('forwards a compressed SDK batch and required query without application headers', async () => {
-  const payload = gzipSync(JSON.stringify({ batch: [{ event: 'pageview' }] }))
+test('forwards a sanitized browser event without application headers or query overrides', async () => {
   let received: Request | undefined
   const observations: unknown[] = []
 
@@ -17,15 +21,14 @@ test('forwards a compressed SDK batch and required query without application hea
       body: payload,
       headers: {
         authorization: 'Bearer application-secret',
-        'content-encoding': 'gzip',
-        'content-type': 'application/octet-stream',
+        'content-type': 'application/json',
         cookie: '__session=application-secret',
         referer: 'https://scopevcs.com/private?token=secret',
         'x-forwarded-for': '203.0.113.10',
       },
       method: 'POST',
     },
-  ), {
+  ), config, {
     fetchUpstream: async (input, init) => {
       received = new Request(input, init)
       return new Response('{"status":1}', {
@@ -40,15 +43,21 @@ test('forwards a compressed SDK batch and required query without application hea
   assert.equal(response.headers.get('cache-control'), 'no-store')
   assert.equal(response.headers.get('x-internal'), null)
   assert.ok(received)
-  assert.equal(received.url, 'https://us.i.posthog.com/e/?ip=1&_=123')
+  assert.equal(received.url, 'https://us.i.posthog.com/e/')
   assert.equal(received.headers.get('authorization'), null)
   assert.equal(received.headers.get('cookie'), null)
   assert.equal(received.headers.get('referer'), null)
   assert.equal(received.headers.get('x-forwarded-for'), null)
-  assert.equal(received.headers.get('content-encoding'), 'gzip')
+  assert.equal(received.headers.get('content-encoding'), null)
   assert.deepEqual(
-    JSON.parse(gunzipSync(Buffer.from(await received.arrayBuffer())).toString()),
-    { batch: [{ event: 'pageview' }] },
+    await received.json(),
+    {
+      event: '$pageview', uuid: 'event-id', properties: {
+        distinct_id: 'visitor', route_name: 'home', $current_url: 'https://test.scopevcs.com/',
+        $host: 'test.scopevcs.com', $pathname: '/', $geoip_disable: true,
+        token: 'phc_fixture', environment: 'test', release: null, source: 'browser',
+      },
+    },
   )
   assert.equal(observations.length, 1)
   const observation = observations[0] as { durationMs: number; status: number }
@@ -68,8 +77,8 @@ test('decodes a real compressed upstream response without stale transport header
   }, async (stubUrl) => {
     const response = await proxyAnalyticsCapture(new Request(
       'https://test.scopevcs.com/e/e/',
-      { body: '{}', method: 'POST' },
-    ), {
+      { body: payload, method: 'POST' },
+    ), config, {
       fetchUpstream: (input, init) => {
         assert.equal(input.toString(), 'https://us.i.posthog.com/e/')
         return fetch(stubUrl, init)
@@ -89,8 +98,8 @@ test('returns the upstream status without retrying', async () => {
   let attempts = 0
   const response = await proxyAnalyticsCapture(new Request(
     'https://test.scopevcs.com/e/e/',
-    { body: '{}', method: 'POST' },
-  ), {
+    { body: payload, method: 'POST' },
+  ), config, {
     fetchUpstream: async () => {
       attempts += 1
       return new Response('rate limited', { status: 429 })
@@ -106,8 +115,8 @@ test('returns the upstream status without retrying', async () => {
 test('maps an upstream transport failure without exposing its error', async () => {
   const response = await proxyAnalyticsCapture(new Request(
     'https://test.scopevcs.com/e/e/',
-    { body: '{}', method: 'POST' },
-  ), {
+    { body: payload, method: 'POST' },
+  ), config, {
     fetchUpstream: async () => {
       throw new Error('stub secret')
     },
@@ -126,7 +135,7 @@ test('rejects an oversized capture before contacting the upstream', async () => 
       body: new Uint8Array(1024 * 1024 + 1),
       method: 'POST',
     },
-  ), {
+  ), config, {
     fetchUpstream: async () => {
       contacted = true
       return new Response(null, { status: 204 })
@@ -154,7 +163,7 @@ test('times out and cancels a stalled incoming body before contacting the upstre
       method: 'POST',
       duplex: 'half',
     } as RequestInit & { duplex: 'half' },
-  ), {
+  ), config, {
     fetchUpstream: async () => {
       contacted = true
       return new Response(null, { status: 204 })
@@ -176,8 +185,8 @@ test('keeps the timeout active while reading the upstream response body', async 
   }, async (stubUrl) => {
     const response = await proxyAnalyticsCapture(new Request(
       'https://test.scopevcs.com/e/e/',
-      { body: '{}', method: 'POST' },
-    ), {
+      { body: payload, method: 'POST' },
+    ), config, {
       fetchUpstream: (_input, init) => fetch(stubUrl, init),
       observeDelivery: ignoreDelivery,
       timeoutMs: 20,

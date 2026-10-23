@@ -28,9 +28,13 @@ mod git_segments;
 mod git_transport_reads;
 mod github_check_runs;
 mod github_connections;
+mod github_pull_requests;
 mod github_pushes;
 mod github_read_queue;
 mod github_required_checks;
+mod github_review_bot_statuses;
+mod github_review_bots;
+mod github_review_imports;
 mod github_run_imports;
 mod github_setup_checks;
 mod github_workflow_job_log_reads;
@@ -74,6 +78,7 @@ mod request_auto_merge;
 mod request_check_commits;
 mod request_check_recovery;
 mod request_checks;
+mod request_discussion_actors;
 mod request_discussion_commands;
 mod request_discussion_rows;
 mod request_discussions;
@@ -151,6 +156,12 @@ pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
 pub use github_pushes::GitHubPushStanding;
 pub use github_read_queue::GitHubJobOutcome;
+pub use github_review_bot_statuses::GitHubReviewBotReconcile;
+pub use github_review_imports::{
+    GitHubImportedComment, GitHubReviewImport, GitHubReviewImportFinish, GitHubReviewImportJob,
+    GitHubThreadTransition, ImportGitHubReviewCommand, QueueGitHubReviewImport,
+    TransitionGitHubDiscussionCommand,
+};
 pub use github_setup_checks::GitHubSetupCheckRead;
 pub use github_workflow_job_log_reads::GitHubJobLogReadJob;
 pub use github_workflow_runs::{
@@ -192,6 +203,7 @@ pub use request_check_commits::RebuildCheckCommitCommand;
 pub use request_checks::{
     ApproveRequestChecksCommand, RecordRequestChecksCommand, RequestChecksMutation,
 };
+pub use request_discussion_actors::RequestDiscussionActors;
 pub use request_discussion_commands::{
     CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
     ReopenAndReplyToRequestDiscussionCommand, TransitionRequestDiscussionCommand,
@@ -215,7 +227,10 @@ pub use request_media::{
     RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
     ValidateRequestAttachmentSourceCommand,
 };
-pub use request_merge::{LandedRequestCandidate, LandedRequestCompletion};
+pub use request_merge::{
+    LandedRequestCandidate, LandedRequestCompletion, MergeRequestContentMutation,
+    MergeRequestContentsOutcome,
+};
 pub use request_queue::{
     RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,
 };

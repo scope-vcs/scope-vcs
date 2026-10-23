@@ -9,8 +9,14 @@
   "m0089_contribution_request_stacks.rs": "a8185ebde19d4e200685a4f4d31c543a8908e2c4e922870b4511a7c4182090f5",
   "m0090_job_traceparents.rs": "9cffcf57835e07b8b9b137cd8e944546b464eed058e65bee5656ad91c8be63c7",
   "m0091_media_reconcile_once.rs": "1c224b97a65c01509665baeea150cbee32ce1bbc04fda1cfa5b8068fe3ad5582",
-  "m0092_live_file_views.rs": "2ab55d87d1bee4a894e3b63838d739a0ba94a6fcf1c278fef9dea960b4a6a7ce",
-  "m0093_request_object_pool.rs": "39e6b1165004fddb15e39360f0767195d2e3420fdcc55f89e444a0d34775899f",
-  "m0094_head_only_run_sources.rs": "b2ef0cd1baeb02e01596fa93c13f9dd48b1e65f778d633655d0d21922df53572",
-  "m0095_main_pool_packs.rs": "c45dfe57fa1cc5a9879f982ff7db35dee11e8f163e36ac43bb7605403c0a24ce"
+  "m0092_request_discussion_line_anchors.rs": "f59a749d8de0ac832a4cecd33afae01ec8f836a19ef19ea52457bfc1eb30b628",
+  "m0093_github_main_publication.rs": "7d8bdac99d1b4a41022c65cdc7e9912e0e9f31845973e30fce6cd4dfea561a5e",
+  "m0094_github_carrier_pull_requests.rs": "b1debdcb9ae5223bd7c62a3c744ccb32b8043acaa81b67d2db119a559d7e417c",
+  "m0095_github_review_imports.rs": "74884f4a564bca01d18dce3acaa972f308b828a79082e533e903501e1084aec1",
+  "m0096_github_review_bot_gate.rs": "880ba485d46fa39b895c590a7f3c525740d227cb99cb832b7d68891c77c54d99",
+  "m0097_review_bot_status_carriers.rs": "6a6a45aa7f60089b27cc37e0cf98d3d178f233f5fcca9213a8585d6ee7cac03e",
+  "m0098_live_file_views.rs": "dd7125bd6023969cb6e98aeee05bf5eb207519e637770312cfdb400b46e3875a",
+  "m0099_request_object_pool.rs": "88a03760e148467c76ae8a39dec687a59aefbedc3cf964152463c82ea64219d9",
+  "m0100_head_only_run_sources.rs": "dcf33e2c943e05173da844dc2dd4a991b95ae92c8790b9cdf097822e7973c7db",
+  "m0101_main_pool_packs.rs": "42399f744d5d948cbe09594bf09cf66cab2ce76e3f59bd6273d5a23da2dd12e7"
 }

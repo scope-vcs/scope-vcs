@@ -28,13 +28,15 @@ import { MessageSquare } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import {
-  discussionReferenceQuery,
+  comparisonDiscussionReferenceQuery,
   loadMoreRequestDiscussionReferences,
   openRequestDiscussionReferences,
+  refreshRequestDiscussionReferences,
   requestDiscussionReferenceIdentity,
   requestDiscussionReferenceResource,
 } from './request-changes-discussion-references'
 import type { LoadDiscussionsInput } from './request-discussion-api'
+import { type CreateLineDiscussion, useLineDiscussionAnnotations } from './request-changes-line-discussions-view'
 import {
   discussionsForRequestComparison,
   missingRequestCommitFileError,
@@ -70,6 +72,8 @@ type DiscussionReferenceState = {
 
 export function RequestChangesWorkbench({
   accessScope,
+  canOpenDiscussion,
+  createDiscussion,
   view,
   initialDiscussionReferences,
   loadDiff,
@@ -81,6 +85,8 @@ export function RequestChangesWorkbench({
   search,
 }: {
   accessScope: string | null
+  canOpenDiscussion: boolean
+  createDiscussion: CreateLineDiscussion
   view: ViewId
   initialDiscussionReferences: RequestChangesDiscussionReferences
   loadDiff: (
@@ -112,15 +118,42 @@ export function RequestChangesWorkbench({
     loadDiscussions,
     params,
     revision: model.selectedRevision,
+    revisions: revisions.revisions,
   })
   const references = useMemo(
     () => discussionsForRequestComparison(
       discussionReferences.discussions,
       model.selectedRevision,
+      model.mode,
       model.selectedCommitOid,
     ),
-    [discussionReferences.discussions, model.selectedCommitOid, model.selectedRevision],
+    [discussionReferences.discussions, model.mode, model.selectedCommitOid, model.selectedRevision],
   )
+  const selectedRevisionId = model.selectedRevision?.id ?? null
+  const lineComparison = useMemo(
+    () => selectedRevisionId && model.selectedFilePath
+      ? {
+          commitOid: model.selectedCommitOid,
+          mode: model.mode,
+          path: model.selectedFilePath,
+          revisionId: selectedRevisionId,
+        }
+      : null,
+    [model.mode, model.selectedCommitOid, model.selectedFilePath, selectedRevisionId],
+  )
+  const requestId = params.request_id
+  const refreshReferences = useCallback(() => {
+    if (accessScope) refreshRequestDiscussionReferences(accessScope, requestId)
+  }, [accessScope, requestId])
+  const diffAnnotations = useLineDiscussionAnnotations({
+    canOpenDiscussion,
+    comparison: lineComparison,
+    createDiscussion,
+    diff: model.fileDiffState.diff,
+    discussions: discussionReferences.discussions,
+    onCreated: refreshReferences,
+    params,
+  })
   const commitContext = useMemo(
     () => model.selectedRevision ? (
       <RequestRevisionContext
@@ -161,6 +194,7 @@ export function RequestChangesWorkbench({
         commitContext={commitContext}
         commitState={model.commitState}
         commits={model.commits}
+        diffAnnotations={diffAnnotations}
         diffIdentity={model.diffIdentity}
         emptyDescription={emptyDescription}
         emptyTitle={emptyTitle}
@@ -194,6 +228,7 @@ function useRequestDiscussionReferences({
   loadDiscussions,
   params,
   revision,
+  revisions,
 }: {
   accessScope: string | null
   commitOid: string | null
@@ -202,9 +237,10 @@ function useRequestDiscussionReferences({
   loadDiscussions: (input: LoadDiscussionsInput) => Promise<RequestDiscussionPage>
   params: { owner: string; repo: string; request_id: string }
   revision: RequestRevisionListResponse['revisions'][number] | null
+  revisions: RequestRevisionListResponse['revisions']
 }): DiscussionReferenceState {
-  const query = revision && (comparison !== 'commit' || commitOid)
-    ? discussionReferenceQuery(params, revision, commitOid)
+  const query = revision
+    ? comparisonDiscussionReferenceQuery(params, revisions, revision, comparison, commitOid)
     : null
   const identity = query && accessScope
     ? requestDiscussionReferenceIdentity(accessScope, params.request_id, query.key)
@@ -453,6 +489,9 @@ function RequestRevisionContext({
               <MessageSquare className="size-3.5 shrink-0" />
               <span className="truncate">{compactDiscussionSummary(discussion.body_markdown)}</span>
               <span className="ml-auto shrink-0 text-muted-foreground">
+                {discussion.anchor?.latest?.kind === 'outdated' && discussion.anchor.latest.revision_id === revision.id
+                  ? 'Outdated · '
+                  : null}
                 {discussion.status === 'Resolved' ? 'Resolved' : 'Open'}
               </span>
             </Link>

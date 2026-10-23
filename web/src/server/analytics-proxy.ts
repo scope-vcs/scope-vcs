@@ -1,4 +1,9 @@
 import { serverLog } from './log'
+import { isIP } from 'node:net'
+import { sanitizeCapture } from '../analytics/privacy'
+import type { CaptureResult } from '../analytics/types'
+import type { AnalyticsRuntimeConfig } from '../analytics/config'
+import { publicRequestOrigin } from './public-origin'
 
 const POSTHOG_CAPTURE_UPSTREAM = 'https://us.i.posthog.com/e/'
 const MAX_REQUEST_BYTES = 1024 * 1024
@@ -14,6 +19,7 @@ export type AnalyticsProxyOptions = {
   fetchUpstream?: FetchAnalyticsUpstream
   observeDelivery?: (observation: AnalyticsDeliveryObservation) => void
   timeoutMs?: number
+  runtime?: Readonly<Record<string, string | undefined>>
 }
 
 type AnalyticsDeliveryObservation = {
@@ -23,6 +29,7 @@ type AnalyticsDeliveryObservation = {
 
 export async function proxyAnalyticsCapture(
   request: Request,
+  config: AnalyticsRuntimeConfig,
   options: AnalyticsProxyOptions = {},
 ) {
   const startedAt = performance.now()
@@ -37,6 +44,9 @@ export async function proxyAnalyticsCapture(
   const contentLength = request.headers.get('content-length')
   if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > MAX_REQUEST_BYTES) {
     return finish(proxyResponse('Analytics request is too large.', 413))
+  }
+  if (request.headers.has('content-encoding')) {
+    return finish(proxyResponse('Unsupported analytics encoding.', 415))
   }
 
   const controller = new AbortController()
@@ -55,14 +65,17 @@ export async function proxyAnalyticsCapture(
     }
     if (!body) return finish(proxyResponse('Analytics request is too large.', 413))
 
-    const sourceUrl = new URL(request.url)
-    const upstreamUrl = new URL(POSTHOG_CAPTURE_UPSTREAM)
-    upstreamUrl.search = sourceUrl.search
+    const runtime = options.runtime ?? process.env
+    const clientIp = analyticsClientIp(request, runtime)
+    const capture = prepareCapture(body, publicRequestOrigin(request.url, runtime.RAILWAY_ENVIRONMENT_ID), config, clientIp)
+    if (!capture) return finish(proxyResponse('Invalid analytics event.', 400))
+    const headers = new Headers({ 'content-type': 'application/json' })
+    if (clientIp) headers.set('x-forwarded-for', clientIp)
 
     try {
-      const upstream = await fetchUpstream(upstreamUrl, {
-        body: body.buffer,
-        headers: captureHeaders(request.headers),
+      const upstream = await fetchUpstream(POSTHOG_CAPTURE_UPSTREAM, {
+        body: JSON.stringify(capture),
+        headers,
         method: 'POST',
         redirect: 'manual',
         signal: controller.signal,
@@ -93,13 +106,56 @@ function observeDelivery(
   } catch {}
 }
 
-function captureHeaders(headers: Headers) {
-  const forwarded = new Headers()
-  for (const name of ['content-encoding', 'content-type']) {
-    const value = headers.get(name)
-    if (value) forwarded.set(name, value)
+function analyticsClientIp(request: Request, runtime: NonNullable<AnalyticsProxyOptions['runtime']>) {
+  if (
+    runtime.SCOPE_ANALYTICS_GEOIP !== 'enabled'
+    || !runtime.RAILWAY_ENVIRONMENT_ID
+    || request.headers.get('sec-gpc') === '1'
+    || request.headers.get('dnt') === '1'
+  ) return null
+
+  const address = request.headers.get('x-real-ip')?.trim()
+  return address && isIP(address) ? address : null
+}
+
+function prepareCapture(
+  body: Uint8Array,
+  origin: string,
+  config: AnalyticsRuntimeConfig,
+  clientIp: string | null,
+) {
+  try {
+    const capture: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body))
+    if (
+      !capture || typeof capture !== 'object'
+      || !('event' in capture) || typeof capture.event !== 'string'
+      || !('uuid' in capture) || typeof capture.uuid !== 'string'
+      || !('properties' in capture) || !capture.properties
+      || typeof capture.properties !== 'object' || Array.isArray(capture.properties)
+      || !('distinct_id' in capture.properties)
+      || typeof capture.properties.distinct_id !== 'string'
+      || !capture.properties.distinct_id
+    ) return null
+
+    const event: CaptureResult = {
+      event: capture.event,
+      uuid: capture.uuid,
+      properties: capture.properties as CaptureResult['properties'],
+      ...('timestamp' in capture && typeof capture.timestamp === 'string'
+        ? { timestamp: capture.timestamp } : {}),
+    }
+    const sanitized = sanitizeCapture(event, origin)
+    if (!sanitized) return null
+    sanitized.properties.token = config.token
+    sanitized.properties.environment = config.environment
+    sanitized.properties.release = config.release
+    sanitized.properties.source = 'browser'
+    sanitized.properties.$geoip_disable = !clientIp
+    if (clientIp) sanitized.properties.$ip = clientIp
+    return sanitized
+  } catch {
+    return null
   }
-  return forwarded
 }
 
 async function upstreamResponse(upstream: Response, signal: AbortSignal) {

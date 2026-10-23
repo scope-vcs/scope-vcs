@@ -70,6 +70,48 @@ test('request CI states its count once, names workflows only when several share 
   await page.evaluate(() => window.showState('no-checks'))
   await checks.waitFor({ state: 'hidden' })
   assert.equal(await page.getByText(/CI passed|No CI required/).count(), 0)
+  await page.evaluate(() => window.showPullRequest({ state: 'opening', number: null, url: null, error: 'GitHub answered 502' }))
+  await checks.getByText('Opening a pull request on GitHub', { exact: true }).waitFor()
+  await checks.getByText('The last attempt failed: GitHub answered 502', { exact: true }).waitFor()
+  assert.equal(await checks.getByRole('link').count(), 0)
+  await page.evaluate(() => window.showPullRequest({ state: 'open', number: 12, url: 'https://github.com/octo/demo/pull/12', error: null }))
+  const pullRequest = checks.getByRole('link', { name: 'Pull request #12 on GitHub', exact: true })
+  assert.equal(await pullRequest.getAttribute('href'), 'https://github.com/octo/demo/pull/12')
+  assert.equal(await pullRequest.getAttribute('target'), '_blank')
+  assert.equal(await checks.getByText('The last attempt failed', { exact: false }).count(), 0)
+  await page.evaluate(() => window.showPullRequest({ state: 'failed', number: 12, url: 'https://github.com/octo/demo/pull/12', error: 'The Scope GitHub App may not open pull requests in this GitHub repository.' }))
+  await checks.getByRole('link', { name: 'Pull request #12 on GitHub is out of step', exact: true }).waitFor()
+  await checks.getByText('The Scope GitHub App may not open pull requests in this GitHub repository.', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await checks.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-pull-request.png` })
+  }
+  await page.evaluate(() => window.showPullRequest(null))
+  await checks.waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.showReviewBots([
+    { login: 'greptile-apps[bot]', required: true, state: 'working' },
+    { login: 'chatgpt-codex-connector[bot]', required: false, state: 'commented' },
+    { login: 'octo-reviewer[bot]', required: true, state: 'clear' },
+    { login: 'lint-bot[bot]', required: false, state: 'not_started' },
+  ]))
+  assert.deepEqual(
+    await checks.getByRole('list', { name: 'Review bots', exact: true }).getByRole('listitem').allTextContents(),
+    [
+      'greptile-apps[bot]requiredReviewing',
+      'chatgpt-codex-connector[bot]Finished with comments',
+      'octo-reviewer[bot]requiredFinished, nothing found',
+      'lint-bot[bot]Not started',
+    ],
+  )
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await checks.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-review-bots-narrow.png` })
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await checks.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}-ci-review-bots.png` })
+    await page.setViewportSize({ width: 320, height: 740 })
+  }
+  await page.evaluate(() => window.showReviewBots([]))
+  await checks.waitFor({ state: 'hidden' })
   await page.evaluate(() => window.showState(null))
   await checks.getByText('CI status is not available yet.', { exact: true }).waitFor()
   await page.evaluate(() => window.showState('configuration-error'))

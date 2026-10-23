@@ -1,4 +1,6 @@
+use super::tree::{MergeMainFailure, merge_main_oid_for_execution};
 use super::*;
+use crate::git::command::run_git;
 use crate::git::{command::run_git_output, test_repo::TestRepo};
 use std::{fs, path::Path};
 

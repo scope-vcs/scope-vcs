@@ -1,6 +1,5 @@
 use super::*;
 use crate::runtime_budgets::RuntimeBudgets;
-use crate::use_cases::request_revision_inspection::request_commit_membership_facts;
 use scope_domain::policy::Policy;
 use scope_domain::views::{ViewId, Views};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
@@ -31,7 +30,7 @@ pub(super) fn inspect_comparison_files(
     access: &RepositoryAccess,
     base_oid: Option<&str>,
     head_oid: &str,
-    selection: comparison::ComparisonFileSelection<'_>,
+    file_limit: usize,
 ) -> Result<(Vec<CommitFileResponse>, bool), ApiError> {
     let mut command = Command::new("git");
     command.arg("-C").arg(raw_repo).args([
@@ -49,9 +48,6 @@ pub(super) fn inspect_comparison_files(
         command.arg(base_oid);
     }
     command.arg(head_oid).arg("--");
-    if let Some(path) = selection.path {
-        command.arg(path);
-    }
     let git_span = crate::git::command::prepare_git_subprocess(&mut command)?;
     let _entered = git_span.enter();
     let policy = policy.clone();
@@ -71,7 +67,7 @@ pub(super) fn inspect_comparison_files(
                 let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
                     ApiError::internal_message("request comparison diff is missing a path")
                 })?;
-                if path.truncated || files.len() == selection.limit {
+                if path.truncated || files.len() == file_limit {
                     incomplete = true;
                     continue;
                 }
@@ -101,44 +97,6 @@ pub(super) fn inspect_comparison_files(
         )));
     }
     Ok(output.value)
-}
-
-pub(super) fn request_revision_commit_files(
-    raw_repo: &FsPath,
-    policy: &Policy,
-    views: &Views,
-    access: RepositoryAccess,
-    revision: &RequestRevision,
-    commit_oid: &str,
-) -> Result<InspectedRequestCommitFiles, ApiError> {
-    let comparison = RequestComparison::push(revision, access.view.clone());
-    let membership =
-        request_commit_membership_facts(raw_repo, comparison.membership(), commit_oid)?;
-    if !comparison.membership().contains_commit(membership) {
-        return Err(ApiError::not_found("request revision commit not found"));
-    }
-    let identity = request_commit_identity(raw_repo, commit_oid)?;
-    let comparison = comparison.commit(
-        commit_oid.to_string(),
-        membership,
-        identity.parent_oids.first().cloned(),
-    )?;
-    let inspected = inspect_request_commit_with_identity(
-        raw_repo,
-        policy,
-        views,
-        access,
-        &comparison.identity().head_oid,
-        identity,
-    )?;
-    let commit = inspected
-        .commit
-        .ok_or_else(|| ApiError::not_found("request revision commit not found"))?;
-    Ok(InspectedRequestCommitFiles { commit })
-}
-
-pub(super) struct InspectedRequestCommitFiles {
-    pub(super) commit: RequestRevisionCommitResponse,
 }
 
 pub(super) fn inspect_request_commit(
