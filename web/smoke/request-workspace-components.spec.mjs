@@ -509,6 +509,46 @@ test('the collapsed rail shows a request\'s whole stack on hover while the stack
   assert.deepEqual(errors, [])
 })
 
+test('a stack taller than the window stays inside it and scrolls to every request', async (t) => {
+  const { page, base, errors, railClosed } = await workspacePage(t)
+  await page.setViewportSize({ width: 1280, height: 360 })
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const node = { name: 'node', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
+  const ids = Array.from({ length: 16 }, (_, index) => `layer-${index}`)
+  const requests = ids.map((id, index) => ({
+    request: { id, title: `Layer ${index}`, stack_parent: index > 0 && { kind: 'available', request: { ...node, id: ids[index - 1], title: `Layer ${index - 1}` } }, stack_depth: 1 },
+    author: { handle: 'adam' },
+    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention_at_unix: 1790000000,
+    next_step: 'review',
+  }))
+  const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { active: { ...empty, requests }, unclaimed: empty, set_aside: empty, done: empty })
+  await page.locator('[data-request-id="layer-0"]').waitFor()
+  await page.keyboard.press('[')
+  await railClosed()
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 88)
+  const avatar = page.locator('[data-request-id="layer-0"] .request-workspace-row-avatar')
+  await avatar.hover()
+  const hint = page.locator('.request-workspace-rail-hint')
+  assert.equal(await hint.locator('li').count(), 16)
+  const placement = await hint.evaluate((node) => ({ ...node.getBoundingClientRect().toJSON(), scrollable: node.scrollHeight > node.clientHeight }))
+  assert(placement.top >= 8 && placement.bottom <= 352 && placement.scrollable, 'the hint fits the window and scrolls')
+  const target = await avatar.boundingBox()
+  await page.mouse.move(placement.left + 60, target.y + target.height / 2, { steps: 20 })
+  await page.mouse.wheel(0, 2000)
+  const last = hint.getByRole('link', { name: /^Layer 15/, includeHidden: true })
+  await page.waitForFunction(() => {
+    const hint = document.querySelector('.request-workspace-rail-hint')
+    return hint.scrollTop + hint.clientHeight >= hint.scrollHeight - 1
+  })
+  const destination = await last.boundingBox()
+  assert(destination.y + destination.height <= 352, 'the last request scrolls into the window')
+  await page.mouse.click(destination.x + 40, destination.y + destination.height / 2)
+  await page.waitForURL(/\/requests\/layer-15$/)
+  assert.deepEqual(errors, [])
+})
+
 test('stacks fold behind their base request and show their details only on hover', async (t) => {
   const { page, base, errors } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests', base).href)

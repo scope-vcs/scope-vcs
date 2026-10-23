@@ -6,6 +6,8 @@ import { createPortal } from 'react-dom'
 import { RequestNextStepIcon } from './request-workspace-rail-marker'
 import './request-workspace-rail-hint.css'
 
+const RAIL_HINT_VIEWPORT_MARGIN = 8
+
 export type RailHintRequest = {
   id: string
   title: string
@@ -95,6 +97,11 @@ function RailHintRequestLine({ request }: { request: RailHintRequest }) {
 function alignHoveredRequest(hint: HTMLDivElement | null) {
   const title = hint?.querySelector('[data-hovered] .request-workspace-rail-hint-title')
   if (!hint || !title) return
-  const offset = title.getBoundingClientRect().top - hint.getBoundingClientRect().top
-  hint.style.setProperty('--hint-hovered-top', `${offset}px`)
+  const line = title.getBoundingClientRect()
+  const hovered = line.top - hint.getBoundingClientRect().top + line.height / 2
+  const anchor = hint.offsetTop
+  const highest = RAIL_HINT_VIEWPORT_MARGIN - anchor
+  const lowest = window.innerHeight - RAIL_HINT_VIEWPORT_MARGIN - hint.offsetHeight - anchor
+  hint.style.setProperty('--hint-shift', `${Math.max(highest, Math.min(-hovered, lowest))}px`)
+  hint.scrollTop = hovered - hint.clientHeight / 2
 }
