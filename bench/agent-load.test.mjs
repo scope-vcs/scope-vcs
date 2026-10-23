@@ -78,7 +78,8 @@ test('invalid configuration is rejected before any request is made', () => {
 });
 
 test('agent branch names are unique, bounded, and ref safe', () => {
-  assert.equal(agentBranchName('Run_1', 7), 'agent-run-1-7');
+  assert.match(agentBranchName('Run_1', 7), /^agent-run-1-[0-9a-f]{8}-7$/);
+  assert.notEqual(agentBranchName('run_1', 0), agentBranchName('run/1', 0));
   const longLabel = 'a-very-long-label-'.repeat(8);
   const names = Array.from({ length: 200 }, (_, index) => agentBranchName(longLabel, index));
   assert.equal(new Set(names).size, 200);

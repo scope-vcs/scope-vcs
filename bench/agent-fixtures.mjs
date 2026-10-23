@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { open } from 'node:fs/promises';
 
 const MAX_DIRECTORY_ENTRIES = 1000;
@@ -10,7 +10,8 @@ export function slug(value, maxLength = 60) {
 }
 
 export function agentBranchName(label, index) {
-  const suffix = `-${index}`;
+  const labelHash = createHash('sha256').update(label).digest('hex').slice(0, 8);
+  const suffix = `-${labelHash}-${index}`;
   return slug(`agent-${label}`, 60 - suffix.length) + suffix;
 }
 

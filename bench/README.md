@@ -236,7 +236,7 @@ Requests created in a reused `SCOPE_AGENT_REPO` stay there. Use a distinct `SCOP
 | `SCOPE_AGENT_COMMITS` | `40` | Prepared commits per agent |
 | `SCOPE_AGENT_DELTA_BYTES` | `4096` | Random bytes in each agent commit's file |
 | `SCOPE_AGENT_MERGES_PER_STAGE` | `40` | Minimum requests merged in each merge stage |
-| `SCOPE_AGENT_PREP_CONCURRENCY` | `16` | Parallel agent preparation, setup pushes, and submits |
+| `SCOPE_AGENT_PREP_CONCURRENCY` | `16` | Parallel agent preparation, setup pushes, and submits. A failed setup push is retried up to 5 times with backoff before its agent is dropped |
 | `SCOPE_AGENT_REPO` | create one | Existing `owner/name` to use and keep |
 | `SCOPE_AGENT_SEED_FILES` | `1` | Files in the seed commit. One file is 64 KiB; more files are 64 bytes each, spread over directories of at most 1000 entries |
 | `SCOPE_BENCH_RUN_LABEL` | `unlabeled` | Names the report and agent branches |

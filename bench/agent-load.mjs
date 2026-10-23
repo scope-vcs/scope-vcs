@@ -16,6 +16,8 @@ import { assertSafeTarget } from './target-safety.mjs';
 
 const COMMAND_TIMEOUT_MS = 300_000;
 const STAGE_PAUSE_MS = 5000;
+const SETUP_PUSH_ATTEMPTS = 5;
+const SETUP_PUSH_RETRY_MS = 500;
 const activeCommands = new Set();
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main();
@@ -206,9 +208,18 @@ async function runMergeStages(context, repository, agents, report) {
   const pushStarted = performance.now();
   const pushed = [];
   await mapConcurrent(agents, config.prepConcurrency, async (agent) => {
-    const result = await pushNext(repository, agent, config.token);
-    if (result.ok) pushed.push(agent);
-    else console.log(`push failed for ${agent.name}: ${result.error}`);
+    for (let attempt = 1; ; attempt += 1) {
+      const result = await pushNext(repository, agent, config.token);
+      if (result.ok || agent.next > 0) {
+        pushed.push(agent);
+        return;
+      }
+      if (attempt === SETUP_PUSH_ATTEMPTS) {
+        console.log(`push failed for ${agent.name} after ${attempt} attempts: ${result.error}`);
+        return;
+      }
+      await sleep(SETUP_PUSH_RETRY_MS * 2 ** (attempt - 1));
+    }
   });
   const submitStarted = performance.now();
   const ready = [];
