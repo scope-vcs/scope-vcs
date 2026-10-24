@@ -19,7 +19,7 @@ test("discards failed stdout and invalid JSON before returning the successful re
       assert.equal(options.timeout, 30_000);
       assert.equal(options.killSignal, "SIGKILL");
       attempts += 1;
-      if (attempts === 1) throw Object.assign(new Error("secret error"), { stdout: '{"secret":"partial' });
+      if (attempts === 1) throw Object.assign(new Error("secret error"), { status: 1, stdout: '{"secret":"partial' });
       if (attempts === 2) return '{"secret":"invalid';
       return '{"id":"project"}';
     },
@@ -30,8 +30,8 @@ test("discards failed stdout and invalid JSON before returning the successful re
   assert.equal(attempts, 3);
   assert.deepEqual(delays, [2_000, 2_000]);
   assert.deepEqual(reports, [
-    "Railway read failed; retrying (1/3)",
-    "Railway read failed; retrying (2/3)",
+    "Railway read failed (status: railway CLI exited with status 1); retrying (1/3)",
+    "Railway read failed (status: response was not JSON); retrying (2/3)",
   ]);
 });
 
@@ -43,12 +43,12 @@ test("bounds failures without exposing variable values or command errors", () =>
     execute() {
       attempts += 1;
       throw Object.assign(new Error("SECRET raw command failure"), {
-        stdout: '{"TOKEN":"SECRET"}', stderr: "SECRET diagnostics",
+        status: 1, stdout: '{"TOKEN":"SECRET","errors":[{"message":"SECRET"}]}', stderr: "SECRET diagnostics",
       });
     },
     pause: (delay) => delays.push(delay),
     report: (message) => reports.push(message),
-  }), { message: "Railway read failed after 3 attempts" });
+  }), { message: "Railway read failed after 3 attempts (variable list: railway CLI exited with status 1)" });
   assert.equal(attempts, 3);
   assert.deepEqual(delays, [2_000, 2_000]);
   assert.equal(reports.length, 2);
@@ -75,17 +75,30 @@ test("passes GraphQL variables through stdin on every attempt", () => {
   assert.equal(attempts, 2);
 });
 
-test("bounds GraphQL error responses even when they contain partial data", () => {
+test("names the query and Railway's redacted errors when every attempt is rejected", () => {
+  const query = "query Environments($projectId: String!) { project(id: $projectId) { id } }";
+  const input = JSON.stringify({ projectId: "project-SECRET" });
+  const rejected = JSON.stringify({ data: null, errors: [
+    { message: "Not Authorized", extensions: { code: "UNAUTHENTICATED" } },
+    { message: "Project project-SECRET not found" },
+  ] });
+  const partial = '{"data":{"project":{"id":"partial"}},"errors":[{"message":"Problem processing request"}]}';
   let attempts = 0;
-  assert.throws(() => readRailway(["api", "query { me { id } }"], {
+  const reports = [];
+  assert.throws(() => readRailway(["api", query, "--variables", "@-"], {
+    input,
     execute() {
       attempts += 1;
-      return '{"data":{"me":{"id":"partial"}},"errors":[{"message":"SECRET"}]}';
+      if (attempts === 1) return partial;
+      throw Object.assign(new Error("Command failed: railway api"), { status: 1, stdout: rejected });
     },
     pause: () => {},
-    report: () => {},
-  }), { message: "Railway read failed after 3 attempts" });
+    report: (message) => reports.push(message),
+  }), {
+    message: "Railway read failed after 3 attempts (Environments: UNAUTHENTICATED: Not Authorized; UNKNOWN: Project [redacted] not found)",
+  });
   assert.equal(attempts, 3);
+  assert.equal(reports[0], "Railway read failed (Environments: UNKNOWN: Problem processing request); retrying (1/3)");
 });
 
 test("rejects mutations, unapproved commands, and multiple operations before execution", () => {

@@ -31,7 +31,7 @@ function deploy(t, status, predecessors = [], failedPolls = [], component = "git
   mkdirSync(scripts, { recursive: true });
   mkdirSync(bin);
   if (defer) mkdirSync(join(root, 'predecessors'));
-  for (const name of ['railway-predecessor-teardown.mjs', 'railway-read.mjs']) {
+  for (const name of ['railway-predecessor-teardown.mjs', 'railway-read.mjs', 'railway-retry.mjs']) {
     writeFileSync(join(scripts, name), readFileSync(new URL(`./${name}`, import.meta.url)));
   }
   writeFileSync(join(scripts, "deployment-components.mjs"), readFileSync(new URL("./deployment-components.mjs", import.meta.url)));
