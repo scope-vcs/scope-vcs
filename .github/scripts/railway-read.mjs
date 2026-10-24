@@ -3,8 +3,10 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { describeProcessFailure, describeRailwayErrors, parseRailwayResponse } from "./railway-retry.mjs";
 
 const ATTEMPTS = 3;
+const READ_TIMEOUT_MS = 30_000;
 const FAILURE = "Railway read failed after 3 attempts";
 
 function singleQuery(query) {
@@ -43,6 +45,44 @@ function pauseSync(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+function readOperation(args) {
+  if (args[0] === "api") return args[1].match(/^query\s+(\w+)/)?.[1] ?? "query";
+  return args[0] === "status" ? "status" : `${args[0]} ${args[1]}`;
+}
+
+function sentVariables(input) {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return input;
+  }
+}
+
+function readOnce(args, input, variables, execute) {
+  const api = args[0] === "api";
+  let output;
+  try {
+    output = execute("railway", args, {
+      input,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: READ_TIMEOUT_MS,
+      killSignal: "SIGKILL",
+    });
+  } catch (error) {
+    const errors = api ? parseRailwayResponse(error?.stdout)?.errors : undefined;
+    return {
+      detail: errors?.length
+        ? describeRailwayErrors(errors, variables)
+        : describeProcessFailure(error, READ_TIMEOUT_MS),
+    };
+  }
+  const response = parseRailwayResponse(output);
+  if (!response) return { detail: "response was not JSON" };
+  if (api && response.errors?.length) return { detail: describeRailwayErrors(response.errors, variables) };
+  return { response };
+}
+
 export function readRailway(args, {
   input,
   execute = execFileSync,
@@ -50,22 +90,14 @@ export function readRailway(args, {
   report = (message) => console.error(message),
 } = {}) {
   validateRead(args, input);
-  for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-    try {
-      const result = JSON.parse(execute("railway", args, {
-        input,
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "pipe"],
-        timeout: 30_000,
-        killSignal: "SIGKILL",
-      }));
-      if (args[0] === "api" && result?.errors?.length) throw new Error(FAILURE);
-      return result;
-    } catch {
-      if (attempt === ATTEMPTS) throw new Error(FAILURE);
-      report(`Railway read failed; retrying (${attempt}/${ATTEMPTS})`);
-      pause(2_000);
-    }
+  const operation = readOperation(args);
+  const variables = sentVariables(input);
+  for (let attempt = 1; ; attempt += 1) {
+    const read = readOnce(args, input, variables, execute);
+    if (!("detail" in read)) return read.response;
+    if (attempt === ATTEMPTS) throw new Error(`${FAILURE} (${operation}: ${read.detail})`);
+    report(`Railway read failed (${operation}: ${read.detail}); retrying (${attempt}/${ATTEMPTS})`);
+    pause(2_000);
   }
 }
 
@@ -80,8 +112,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       ? readFileSync(0, "utf8")
       : undefined;
     process.stdout.write(`${JSON.stringify(readRailway(args, { input, pause: () => pauseSync(retryDelay) }))}\n`);
-  } catch {
-    console.error(FAILURE);
+  } catch (error) {
+    console.error(error.message);
     process.exitCode = 1;
   }
 }
