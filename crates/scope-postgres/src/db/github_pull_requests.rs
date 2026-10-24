@@ -2,8 +2,10 @@ use super::{
     RequestStore,
     entities::{decode_enum, encode_enum},
     github_connections::repository_github_connection,
+    github_pushes::acquire_github_push_lock,
     github_read_queue::{GitHubJobOutcome, prefixed_columns},
     integer_columns::{i32_to_u32, i64_to_u64, optional_i64_to_u64, u64_to_i64},
+    locks::acquire_shared_repository_lock,
     projection_read_models::repository_views,
     request_rows::request_by_id,
 };
@@ -139,6 +141,8 @@ impl RequestStore {
                 .into(),
         ]);
         let tx = self.db.begin().await?;
+        acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
+        acquire_github_push_lock(&tx, &progress.repo_id, &progress.branch()).await?;
         let finished = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,

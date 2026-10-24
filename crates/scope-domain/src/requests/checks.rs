@@ -39,6 +39,7 @@ pub use github_pull_request::{
 pub use github_push::{
     GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState,
     GitHubPushStatus, changes_github_workflows, github_push_retry_at, github_retry_at,
+    main_publication_contains_merge,
 };
 pub use planning::{GitHubRequestChecks, RequestCheckPlan};
 pub use reviewer::RequestCheckReviewer;

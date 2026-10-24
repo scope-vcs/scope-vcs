@@ -335,7 +335,9 @@ the description. Scope never opens a draft.
 
 A request gets a carrier only when its branch was pushed with the request's
 own head: an open request in the repository's full view, while the link is
-connected. A request tested through a check commit never gets one, because
+connected. A request submitted after its head already reached GitHub gets
+its carrier at submission, from the head that was pushed while it was a
+draft. A request tested through a check commit never gets one, because
 the diff against `main` would expose the private main it was built from. A
 request outside the anyone view gets one only while the GitHub repository
 may receive private requests. Scope asks GitHub for the repository's
@@ -373,7 +375,9 @@ leaves the pull request alone, and GitHub marks it merged once main with the
 request's commits arrives. While that carrier stays open, Scope also keeps
 the request branch on GitHub, because deleting the branch first would make
 GitHub close the pull request instead of marking it merged; the branch is
-deleted once GitHub reports the carrier closed or merged. The decisions live
+deleted once GitHub reports the carrier closed or merged, or once a later
+main publication that contains the merge succeeds (`main_publication_contains_merge`),
+so a missed webhook cannot leave the branch behind. The decisions live
 in `closes_carrier_pull_request` and `retains_request_branch_for_carrier` in
 `scope-domain` and read the connection and the carrier record when the
 request ends and whenever the carrier is observed again. Once a request has
@@ -482,6 +486,10 @@ one after 30 seconds, 2, 10, and 30 minutes, then gives up.
 Scope imports a review, review comment, reply, or thread resolution only
 from a listed review bot or from a GitHub user who can write to the
 repository; for a resolution the author is the account that resolved it.
+A delivery for a pull request other than the request's recorded carrier is
+ignored (`review_delivery_belongs_to_request`); in the moments between
+GitHub opening a replacement carrier and Scope recording its number, such
+deliveries are not kept.
 Maintainers list review bots by their GitHub bot login, which always ends in
 `[bot]` (for example `greptile-apps[bot]` or `chatgpt-codex-connector[bot]`,
 at most 20); a person's login is refused, since people come in through the

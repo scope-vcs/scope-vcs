@@ -1,5 +1,8 @@
 use super::*;
-use crate::db::{MetadataStore, requests::tests::postgres_store};
+use crate::db::{
+    MetadataStore, SubmitRequestCommand,
+    requests::tests::{postgres_store, public_upload_input},
+};
 use scope_domain::{
     github_connection::ConnectGitHubRepository,
     requests::{
@@ -17,7 +20,17 @@ pub(crate) fn oid(digit: char) -> String {
 }
 
 pub(crate) async fn submitted_full_view_request(store: &MetadataStore, id: &str) -> Request {
-    let mut request = store
+    let mut request = draft_full_view_request(store, id).await;
+    request.submitted_at_unix = Some(3);
+    request.updated_at_unix = 3;
+    crate::db::request_rows::save_request_row(store.db.as_ref(), &request)
+        .await
+        .unwrap();
+    request
+}
+
+async fn draft_full_view_request(store: &MetadataStore, id: &str) -> Request {
+    store
         .requests()
         .start_request(StartRequestInput {
             id: id.to_string(),
@@ -37,13 +50,32 @@ pub(crate) async fn submitted_full_view_request(store: &MetadataStore, id: &str)
         })
         .await
         .unwrap()
-        .request;
-    request.submitted_at_unix = Some(3);
-    request.updated_at_unix = 3;
-    crate::db::request_rows::save_request_row(store.db.as_ref(), &request)
+        .request
+}
+
+async fn uploaded_draft(store: &MetadataStore, id: &str) {
+    draft_full_view_request(store, id).await;
+    let mut upload = public_upload_input();
+    upload.request_id = id.to_string();
+    upload.actor_user_id = OWNER.to_string();
+    store
+        .requests()
+        .record_working_request_upload(upload)
         .await
         .unwrap();
-    request
+}
+
+async fn submit(store: &MetadataStore, id: &str, at: u64) {
+    store
+        .requests()
+        .submit_request(SubmitRequestCommand {
+            request_id: id.to_string(),
+            actor_user_id: OWNER.to_string(),
+            event_id: format!("event_submitted_{id}"),
+            now_unix: at,
+        })
+        .await
+        .unwrap();
 }
 
 pub(crate) async fn connect(store: &MetadataStore, open_pull_requests: bool) {
@@ -80,6 +112,27 @@ pub(crate) async fn connect_to(
 }
 
 pub(crate) async fn push_succeeds(store: &MetadataStore, request_id: &str, head: char, at: u64) {
+    queue_branch_push(
+        store,
+        &GitHubBranch::Request(request_id.to_string()),
+        head,
+        at,
+    )
+    .await;
+    let requests = store.requests();
+    let push = requests
+        .claim_due_github_pushes("push_claim", at, at + 100, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    requests
+        .finish_github_push(&push.id, "push_claim", GitHubJobOutcome::Succeeded(()), at)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+async fn queue_branch_push(store: &MetadataStore, branch: &GitHubBranch, head: char, at: u64) {
     let connection = store
         .repositories()
         .github_connection(REPO)
@@ -89,21 +142,32 @@ pub(crate) async fn push_succeeds(store: &MetadataStore, request_id: &str, head:
     crate::db::github_pushes::queue_github_push(
         store.db.as_ref(),
         REPO,
-        &GitHubBranch::Request(request_id.to_string()),
+        branch,
         Some(&oid(head)),
         &GitHubPushDestination::of(&connection),
         at,
     )
     .await
     .unwrap();
+}
+
+async fn main_publication_succeeds(store: &MetadataStore, main: char, at: u64) {
+    queue_branch_push(store, &GitHubBranch::Main, main, at).await;
     let requests = store.requests();
     let push = requests
-        .claim_due_github_pushes("push_claim", at, at + 100, 1)
+        .claim_due_github_pushes("main_claim", at, at + 100, 10)
         .await
         .unwrap()
-        .remove(0);
+        .into_iter()
+        .find(|push| push.branch == GitHubBranch::Main)
+        .unwrap();
     requests
-        .finish_github_push(&push.id, "push_claim", GitHubJobOutcome::Succeeded(()), at)
+        .finish_github_push(
+            &push.id,
+            "main_claim",
+            GitHubJobOutcome::Succeeded(()),
+            at + 1,
+        )
         .await
         .unwrap()
         .unwrap();
@@ -380,45 +444,49 @@ async fn request_branch_push(store: &MetadataStore) -> GitHubPush {
         .unwrap()
 }
 
+async fn merged_with_open_carrier(store: &MetadataStore, publishes_main: bool) {
+    connect(store, true).await;
+    if publishes_main {
+        store
+            .repositories()
+            .set_github_main_publication(REPO, OWNER, true, 1)
+            .await
+            .unwrap();
+    }
+    let mut request = submitted_full_view_request(store, "req_1").await;
+    push_succeeds(store, "req_1", 'a', 10).await;
+    let mut opened = claim(store, "claim_1", 10).await.remove(0);
+    opened.record_opened(
+        5,
+        "https://github.com/octo/checks-42/pull/5".into(),
+        "main".into(),
+        None,
+    );
+    store
+        .requests()
+        .finish_github_pull_request(&opened, "claim_1", GitHubJobOutcome::Succeeded(()), 11)
+        .await
+        .unwrap();
+
+    request.merged_at_unix = Some(20);
+    request.merged_by_user_id = Some(OWNER.into());
+    request.merged_head_oid = Some(request.head_oid.clone());
+    request.merged_main_oid = Some(oid('m'));
+    request.updated_at_unix = 20;
+    let tx = sea_orm::TransactionTrait::begin(store.db.as_ref())
+        .await
+        .unwrap();
+    crate::db::request_lifecycle_effects::persist_lifecycle_mutation(&tx, &request, &[])
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+}
+
 #[tokio::test]
 async fn a_merge_leaves_carrier_and_branch_to_github_only_when_main_is_published() {
     for publishes_main in [true, false] {
         let store = postgres_store();
-        connect(&store, true).await;
-        if publishes_main {
-            store
-                .repositories()
-                .set_github_main_publication(REPO, OWNER, true, 1)
-                .await
-                .unwrap();
-        }
-        let mut request = submitted_full_view_request(&store, "req_1").await;
-        push_succeeds(&store, "req_1", 'a', 10).await;
-        let mut opened = claim(&store, "claim_1", 10).await.remove(0);
-        opened.record_opened(
-            5,
-            "https://github.com/octo/checks-42/pull/5".into(),
-            "main".into(),
-            None,
-        );
-        store
-            .requests()
-            .finish_github_pull_request(&opened, "claim_1", GitHubJobOutcome::Succeeded(()), 11)
-            .await
-            .unwrap();
-
-        request.merged_at_unix = Some(20);
-        request.merged_by_user_id = Some(OWNER.into());
-        request.merged_head_oid = Some(request.head_oid.clone());
-        request.merged_main_oid = Some(oid('m'));
-        request.updated_at_unix = 20;
-        let tx = sea_orm::TransactionTrait::begin(store.db.as_ref())
-            .await
-            .unwrap();
-        crate::db::request_lifecycle_effects::persist_lifecycle_mutation(&tx, &request, &[])
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
+        merged_with_open_carrier(&store, publishes_main).await;
 
         let carrier = carrier(&store, "req_1").await.unwrap();
         if publishes_main {
@@ -461,4 +529,47 @@ async fn a_merge_leaves_carrier_and_branch_to_github_only_when_main_is_published
             assert_eq!(request_branch_push(&store).await.target_oid, None);
         }
     }
+}
+
+#[tokio::test]
+async fn a_main_publication_containing_the_merge_releases_the_branch_without_an_observation() {
+    let store = postgres_store();
+    merged_with_open_carrier(&store, true).await;
+    assert_eq!(request_branch_push(&store).await.target_oid, Some(oid('a')));
+
+    main_publication_succeeds(&store, 'x', 15).await;
+    assert_eq!(request_branch_push(&store).await.target_oid, Some(oid('a')));
+
+    main_publication_succeeds(&store, 'm', 22).await;
+    assert_eq!(request_branch_push(&store).await.target_oid, None);
+}
+
+#[tokio::test]
+async fn a_request_submitted_after_its_head_reached_github_gets_its_carrier_at_submission() {
+    let store = postgres_store();
+    connect(&store, true).await;
+    uploaded_draft(&store, "req_1").await;
+    push_succeeds(&store, "req_1", 'a', 10).await;
+    assert_eq!(carrier(&store, "req_1").await, None);
+    submit(&store, "req_1", 12).await;
+    let queued = carrier(&store, "req_1").await.unwrap();
+    assert_eq!(head_of(&queued), oid('a'));
+    assert_eq!(queued.job_state, GitHubPullRequestJobState::Queued);
+
+    uploaded_draft(&store, "req_2").await;
+    queue_branch_push(&store, &GitHubBranch::Request("req_2".into()), 'b', 13).await;
+    submit(&store, "req_2", 14).await;
+    assert_eq!(carrier(&store, "req_2").await, None);
+    let requests = store.requests();
+    let push = requests
+        .claim_due_github_pushes("push_claim", 15, 115, 1)
+        .await
+        .unwrap()
+        .remove(0);
+    requests
+        .finish_github_push(&push.id, "push_claim", GitHubJobOutcome::Succeeded(()), 15)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(head_of(&carrier(&store, "req_2").await.unwrap()), oid('b'));
 }

@@ -534,6 +534,7 @@ fn only_a_succeeded_push_of_the_head_says_when_it_reached_github() {
         state,
         attempts: 1,
         last_error: None,
+        created_at_unix: PUSHED_AT,
         updated_at_unix: PUSHED_AT,
     };
     assert_eq!(

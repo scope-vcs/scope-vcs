@@ -492,8 +492,49 @@ fn push(target_oid: &str, state: GitHubPushState, last_error: Option<&str>) -> G
         state,
         attempts: 1,
         last_error: last_error.map(str::to_string),
+        created_at_unix: 90,
         updated_at_unix: 100,
     }
+}
+
+#[test]
+fn a_main_publication_contains_a_merge_by_its_oid_or_by_being_queued_after_it() {
+    let main = |target_oid: &str, created_at_unix| GitHubPush {
+        branch: GitHubBranch::Main,
+        created_at_unix,
+        ..push(target_oid, GitHubPushState::Succeeded, None)
+    };
+    let mut merged = open_request();
+    merged.merged_at_unix = Some(20);
+    merged.merged_main_oid = Some("merged_main".into());
+
+    assert!(main_publication_contains_merge(
+        &merged,
+        &main("merged_main", 15)
+    ));
+    assert!(main_publication_contains_merge(&merged, &main("later", 21)));
+    assert!(!main_publication_contains_merge(
+        &merged,
+        &main("older", 15)
+    ));
+    assert!(!main_publication_contains_merge(&merged, &main("same", 20)));
+    assert!(!main_publication_contains_merge(
+        &merged,
+        &GitHubPush {
+            branch: GitHubBranch::Request("req_1".into()),
+            ..main("merged_main", 21)
+        }
+    ));
+    let mut closed = open_request();
+    closed.closed_at_unix = Some(20);
+    assert!(!main_publication_contains_merge(
+        &closed,
+        &main("later", 21)
+    ));
+    assert!(!main_publication_contains_merge(
+        &open_request(),
+        &main("later", 21)
+    ));
 }
 
 #[test]
