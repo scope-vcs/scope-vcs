@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 const directory = 'crates/scope-postgres/src/migrations';
 const lockPath = `${directory}/sources.lock.json`;
 export const migrationDigest = (contents) => createHash('sha256').update(contents).digest('hex');
-const isDefinition = (name) => /^m\d+_[a-z0-9_]+\.(rs|sql|txt)$/.test(name);
+const isDefinition = (name) => /^m\d+_[a-z0-9_]+\.(rs|sql)$/.test(name);
 export const retiredLockEntries = new Set([
   'baseline_ledger.txt', 'current_schema.sql', 'm0043_retire_git_manifests.rs',
   'm0044_request_attention.rs', 'm0045_dependency_analysis.rs',
@@ -26,7 +26,8 @@ export const retiredLockEntries = new Set([
   'm0074_history_path_indexes.rs', 'm0075_incremental_projection_read_models.rs',
   'm0076_view_ids.rs', 'm0077_custom_views.rs', 'm0078_repo_config_version.rs',
   'm0079_request_views.rs', 'm0080_github_workflow_job_reads.rs', 'm0081_github_job_log_reads.rs',
-  'm0082_github_workflow_run_list.rs', 'm0083_request_workflow_changes.rs'
+  'm0082_github_workflow_run_list.rs', 'm0083_request_workflow_changes.rs',
+  'm0084_bridged_ledger.txt'
 ]);
 
 export function checkMigrationSources(sources, locked, previous = {}) {

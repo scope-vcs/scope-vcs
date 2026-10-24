@@ -299,10 +299,9 @@ retention. Cleanup still understands retired manifest references so queued
 objects can be removed.
 
 Every database starts from the current schema baseline and advances through the
-numbered migrations after it; a ledger outside that prefix is refused. A
-database on the exact previous inventory adopts the baseline through a one-time
-maintenance bridge after its schema matches. The migration inventory, bridge,
-writer fence, schema comparison, and recovery steps are documented in
+numbered migrations after it; a ledger outside that prefix is refused. The
+migration inventory, writer fence, schema comparison, and recovery steps are
+documented in
 [the schema baseline runbook](operations/current-schema-baseline.md).
 
 ## Standalone CLI workspace
