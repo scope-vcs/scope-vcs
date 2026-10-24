@@ -586,12 +586,27 @@ async fn replace_catalog(
 #[cfg(any(test, feature = "test-support"))]
 fn run_test_future<R: Send + 'static>(future: impl Future<Output = R> + Send + 'static) -> R {
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let task = test_runtime().spawn(future);
     test_runtime().spawn(async move {
-        let _ = sender.send(future.await);
+        let _ = sender.send(task.await);
     });
-    receiver
+    match receiver
         .recv()
         .expect("test database runtime should not stop")
+    {
+        Ok(output) => output,
+        Err(error) => match error.try_into_panic() {
+            Ok(payload) => panic!(
+                "test database future panicked: {}",
+                payload
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                    .unwrap_or("non-string panic payload")
+            ),
+            Err(error) => panic!("test database future did not finish: {error}"),
+        },
+    }
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -843,6 +858,19 @@ mod tests {
     use super::*;
     #[cfg(feature = "local-dev")]
     use sea_orm::DatabaseBackend;
+
+    #[test]
+    fn run_test_future_reports_the_future_panic_message() {
+        let payload = std::panic::catch_unwind(|| {
+            run_test_future(async { panic!("future failed for its own reason") })
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            payload.downcast_ref::<String>().map(String::as_str),
+            Some("test database future panicked: future failed for its own reason")
+        );
+    }
 
     #[test]
     fn test_database_url_accepts_only_explicit_postgres_test_targets() {
