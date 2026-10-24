@@ -7,7 +7,7 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     github_setup_check::GitHubSetupCheck,
-    requests::{GitHubBranch, GitHubPush, GitHubPushDestination},
+    requests::{GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, Request},
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 
@@ -283,6 +283,59 @@ impl RequestStore {
         tx.commit().await?;
         Ok(Some(push))
     }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "terminal_requests_with_pushed_branches"))]
+    pub async fn terminal_requests_with_pushed_branches(
+        &self,
+        repo_id: &str,
+        github_repository_id: u64,
+    ) -> Result<Vec<Request>, PostgresError> {
+        let rows = self
+            .db
+            .query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT request.id FROM scope_requests request
+                  WHERE request.repo_id = $1
+                    AND (request.merged_at_unix IS NOT NULL OR request.closed_at_unix IS NOT NULL)
+                    AND (SELECT latest.kind = 'push' AND latest.github_repository_id = $2
+                           FROM scope_github_pushes latest
+                          WHERE latest.request_id = request.id
+                          ORDER BY latest.sequence DESC
+                          LIMIT 1)
+                  ORDER BY request.id",
+                [
+                    repo_id.into(),
+                    u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+                ],
+            ))
+            .await?;
+        let mut requests = Vec::with_capacity(rows.len());
+        for row in rows {
+            let request_id: String = row.try_get("", "id")?;
+            if let Some(request) =
+                super::request_rows::request_by_id(self.db.as_ref(), &request_id).await?
+            {
+                requests.push(request);
+            }
+        }
+        Ok(requests)
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "release_request_branches"))]
+    pub async fn release_request_branches(
+        &self,
+        repo_id: &str,
+        request_ids: &[String],
+        now_unix: u64,
+    ) -> Result<(), PostgresError> {
+        let tx = self.db.begin().await?;
+        super::locks::acquire_shared_repository_lock(&tx, repo_id).await?;
+        for request_id in request_ids {
+            queue_github_branch_deletion(&tx, repo_id, request_id, now_unix).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
 }
 
 pub(super) async fn queue_github_push<C: ConnectionTrait>(
@@ -304,7 +357,7 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
         GitHubBranch::Request(request_id) => Some(request_id.clone()),
         GitHubBranch::SetupCheck | GitHubBranch::Main => None,
     };
-    acquire_aggregate_lock(conn, "github-push", &format!("{repo_id}:{git_ref}")).await?;
+    acquire_github_push_lock(conn, repo_id, branch).await?;
     let now = u64_to_i64(now_unix, "GitHub push time")?;
     let sequence = conn
         .query_one_raw(Statement::from_sql_and_values(
@@ -358,6 +411,19 @@ pub(super) async fn queue_github_push<C: ConnectionTrait>(
     .map_err(PostgresError::internal)
 }
 
+pub(super) async fn acquire_github_push_lock<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    branch: &GitHubBranch,
+) -> Result<(), PostgresError> {
+    acquire_aggregate_lock(
+        conn,
+        "github-push",
+        &format!("{repo_id}:{}", branch.git_ref()),
+    )
+    .await
+}
+
 pub(super) async fn queue_github_branch_deletion<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -379,11 +445,11 @@ pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
     branch: &GitHubBranch,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    let Some(pushed) = PushRow::find_by_statement(Statement::from_sql_and_values(
+    let Some(latest) = PushRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(
             "SELECT {SELECT_PUSH} FROM scope_github_pushes
-              WHERE repo_id = $1 AND ref = $2 AND kind = 'push'
+              WHERE repo_id = $1 AND ref = $2
               ORDER BY sequence DESC
               LIMIT 1"
         ),
@@ -394,8 +460,13 @@ pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
     else {
         return Ok(());
     };
-    let pushed = pushed.into_domain()?;
-    queue_github_push(conn, repo_id, branch, None, &pushed.destination, now_unix).await?;
+    let latest = latest.into_domain()?;
+    let deletion_pending_or_done =
+        latest.target_oid.is_none() && latest.state != GitHubPushState::Failed;
+    if deletion_pending_or_done {
+        return Ok(());
+    }
+    queue_github_push(conn, repo_id, branch, None, &latest.destination, now_unix).await?;
     Ok(())
 }
 
@@ -570,6 +641,10 @@ async fn blocked_request_push(
     else {
         return Ok(false);
     };
+    let repo_id = row
+        .try_get::<String>("", "repo_id")
+        .map_err(PostgresError::internal)?;
+    super::locks::acquire_shared_repository_lock(tx, &repo_id).await?;
     let target = row
         .try_get::<Option<String>>("", "target_oid")
         .map_err(PostgresError::internal)?;
@@ -579,10 +654,6 @@ async fn blocked_request_push(
     let Some(request_id) = request_id.filter(|_| target.is_some()) else {
         return Ok(false);
     };
-    let repo_id = row
-        .try_get::<String>("", "repo_id")
-        .map_err(PostgresError::internal)?;
-    super::locks::acquire_shared_repository_lock(tx, &repo_id).await?;
     acquire_aggregate_lock(tx, "request", &request_id).await?;
     Ok(super::request_rows::request_by_id(tx, &request_id)
         .await?

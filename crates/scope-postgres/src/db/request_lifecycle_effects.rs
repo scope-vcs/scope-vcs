@@ -1,6 +1,6 @@
 use super::request_rows::{insert_request_event_row, request_event_by_id, save_request_row};
 use crate::error::PostgresError;
-use scope_domain::requests::{Request, RequestEvent};
+use scope_domain::requests::{Request, RequestEvent, retains_request_branch_for_carrier};
 use sea_orm::DatabaseTransaction;
 
 pub(super) async fn persist_lifecycle_mutation(
@@ -16,14 +16,19 @@ pub(super) async fn persist_lifecycle_mutation(
     save_request_row(tx, request).await?;
     if request.is_terminal() {
         super::request_invitees::delete_request_invitees(tx, &request.id).await?;
-        super::github_pushes::queue_github_branch_deletion(
-            tx,
-            &request.repo_id,
-            &request.id,
-            request.updated_at_unix,
-        )
-        .await?;
-        super::github_pull_requests::queue_carrier_close(tx, request).await?;
+        let connection =
+            super::github_connections::repository_github_connection(tx, &request.repo_id).await?;
+        let carrier = super::github_pull_requests::github_pull_request(tx, &request.id).await?;
+        if !retains_request_branch_for_carrier(request, connection.as_ref(), carrier.as_ref()) {
+            super::github_pushes::queue_github_branch_deletion(
+                tx,
+                &request.repo_id,
+                &request.id,
+                request.updated_at_unix,
+            )
+            .await?;
+        }
+        super::github_pull_requests::queue_carrier_close(tx, request, connection.as_ref()).await?;
         super::github_pull_requests::queue_carriers_after_parent_ended(
             tx,
             request,

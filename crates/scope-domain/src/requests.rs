@@ -59,8 +59,9 @@ pub use checks::{
     RequestCheckReviewer, RequestChecksOutcome, carrier_may_change, carrier_pull_request_intent,
     carrier_text_digest, carries_private_request, changes_github_workflows, check_commit_message,
     closes_carrier_pull_request, ensure_approving_reviewed_head, github_push_retry_at,
-    github_retry_at, may_carry_on_github, request_checks_message, request_checks_outcome,
-    request_head_awaits_evaluation, review_request_comment_body, review_request_marker,
+    github_retry_at, main_publication_contains_merge, may_carry_on_github, request_checks_message,
+    request_checks_outcome, request_head_awaits_evaluation, retains_request_branch_for_carrier,
+    review_delivery_belongs_to_request, review_request_comment_body, review_request_marker,
 };
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};

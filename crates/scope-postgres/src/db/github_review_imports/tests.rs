@@ -421,6 +421,76 @@ async fn queued_imports_survive_redelivery_and_threads_keep_their_latest_state()
     assert_eq!(remaining[0].attempts, 1);
 }
 
+#[tokio::test]
+async fn review_deliveries_are_queued_only_from_the_recorded_carrier() {
+    use crate::db::github_pull_requests::tests::{
+        claim, connect, push_succeeds, submitted_full_view_request,
+    };
+    let store = postgres_store();
+    connect(&store, true).await;
+    submitted_full_view_request(&store, "req_1").await;
+    push_succeeds(&store, "req_1", 'a', 10).await;
+    let job = |pull_number: u64, review_id: u64| QueueGitHubReviewImport {
+        request_id: "req_1".to_string(),
+        repo_id: "owner/repo".to_string(),
+        github_repository_id: 42,
+        pull_number,
+        subject: GitHubReviewImportSubject::Review { review_id },
+    };
+    let requests = store.requests();
+    assert!(
+        requests
+            .queue_github_review_import(&job(7, 1), &[], 10)
+            .await
+            .unwrap()
+    );
+
+    let mut opened = claim(&store, "claim_1", 10).await.remove(0);
+    opened.record_opened(
+        5,
+        "https://github.com/octo/checks-42/pull/5".into(),
+        "main".into(),
+        None,
+    );
+    requests
+        .finish_github_pull_request(
+            &opened,
+            "claim_1",
+            crate::db::GitHubJobOutcome::Succeeded(()),
+            11,
+        )
+        .await
+        .unwrap();
+    assert!(
+        !requests
+            .queue_github_review_import(&job(7, 2), &[], 12)
+            .await
+            .unwrap()
+    );
+    assert!(
+        requests
+            .queue_github_review_import(&job(5, 3), &[], 12)
+            .await
+            .unwrap()
+    );
+
+    let mut queued = requests
+        .claim_due_github_review_imports(12, 100, 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|job| (job.pull_number, job.subject))
+        .collect::<Vec<_>>();
+    queued.sort_by_key(|(pull_number, _)| *pull_number);
+    assert_eq!(
+        queued,
+        [
+            (5, GitHubReviewImportSubject::Review { review_id: 3 }),
+            (7, GitHubReviewImportSubject::Review { review_id: 1 }),
+        ]
+    );
+}
+
 fn thread_job(node_id: &str, github_account_id: u64) -> QueueGitHubReviewImport {
     QueueGitHubReviewImport {
         request_id: "req_1".to_string(),

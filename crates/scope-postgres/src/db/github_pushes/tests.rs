@@ -147,43 +147,76 @@ async fn a_push_queued_in_the_same_second_is_still_the_newer_one() {
 }
 
 #[tokio::test]
-async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed() {
+async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed_and_only_once() {
     let store = postgres_store();
+    let requests = store.requests();
     let db = store.db.as_ref();
     let t = now();
     queue_github_branch_deletion(db, REPO, "req_never_pushed", t)
         .await
         .unwrap();
     assert!(
-        crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_never_pushed")
+        crate::db::github_pushes::latest_github_push(db, "req_never_pushed")
             .await
             .unwrap()
             .is_none()
     );
 
     queue(db, "req_1", Some('a'), t).await;
+    let pushing = requests
+        .claim_due_github_pushes("push", t, t + 100, 10)
+        .await
+        .unwrap()
+        .remove(0);
     queue_github_branch_deletion(db, REPO, "req_1", t + 1)
         .await
         .unwrap();
-    let deletion = crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+    let deletion = crate::db::github_pushes::latest_github_push(db, "req_1")
         .await
         .unwrap()
         .unwrap();
     assert_eq!(deletion.target_oid, None);
     assert_eq!(deletion.destination, destination());
     assert_eq!(deletion.state, GitHubPushState::Queued);
+    requests
+        .finish_github_push(&pushing.id, "push", GitHubJobOutcome::Succeeded(()), t + 1)
+        .await
+        .unwrap()
+        .unwrap();
+
+    queue_github_branch_deletion(db, REPO, "req_1", t + 2)
+        .await
+        .unwrap();
+    let running = requests
+        .claim_due_github_pushes("claim", t + 2, t + 100, 10)
+        .await
+        .unwrap();
     assert_eq!(
-        store
-            .requests()
-            .claim_due_github_pushes("claim", t + 1, t + 100, 10)
-            .await
-            .unwrap(),
-        [GitHubPush {
-            state: GitHubPushState::Running,
-            attempts: 1,
-            ..deletion
-        }]
+        running
+            .iter()
+            .map(|push| (push.id.as_str(), push.target_oid.as_deref(), push.state))
+            .collect::<Vec<_>>(),
+        [(deletion.id.as_str(), None, GitHubPushState::Running)]
     );
+    requests
+        .finish_github_push(
+            &deletion.id,
+            "claim",
+            GitHubJobOutcome::Succeeded(()),
+            t + 3,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    queue_github_branch_deletion(db, REPO, "req_1", t + 4)
+        .await
+        .unwrap();
+    let latest = crate::db::github_pushes::latest_github_push(db, "req_1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(latest.id, deletion.id);
+    assert_eq!(latest.state, GitHubPushState::Succeeded);
 }
 
 #[tokio::test]

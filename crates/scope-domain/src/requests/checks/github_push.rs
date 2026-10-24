@@ -1,5 +1,8 @@
 use super::RequestCheckEvaluation;
-use crate::github_connection::GitHubConnection;
+use crate::{
+    github_connection::GitHubConnection,
+    requests::{Request, RequestState},
+};
 use serde::{Deserialize, Serialize};
 
 const REQUEST_BRANCH_PREFIX: &str = "scope/requests/";
@@ -101,6 +104,22 @@ impl GitHubPush {
     pub fn delivered_at(&self, head_oid: &str) -> Option<u64> {
         (self.state == GitHubPushState::Succeeded && self.target_oid.as_deref() == Some(head_oid))
             .then_some(self.updated_at_unix)
+    }
+
+    pub fn delivered_head(&self) -> Option<&str> {
+        (self.state == GitHubPushState::Succeeded)
+            .then_some(self.target_oid.as_deref())
+            .flatten()
+    }
+}
+
+pub fn main_publication_contains_merge<E>(
+    request: &Request,
+    published_main_contains: impl FnOnce(&str) -> Result<bool, E>,
+) -> Result<bool, E> {
+    match (request.state(), request.merged_main_oid.as_deref()) {
+        (RequestState::Merged, Some(merged_main_oid)) => published_main_contains(merged_main_oid),
+        _ => Ok(false),
     }
 }
 

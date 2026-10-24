@@ -154,6 +154,86 @@ fn closing_always_closes_the_carrier_and_merging_closes_it_unless_main_is_publis
     assert!(!carrier_may_change(&merged));
 }
 
+fn opened_carrier(state: GitHubPullRequestState) -> GitHubPullRequest {
+    let mut carrier = carrier(open_intent("main"));
+    carrier.record_opened(
+        5,
+        "https://github.com/octo/repo/pull/5".into(),
+        "main".into(),
+        None,
+    );
+    carrier.pull_request.as_mut().unwrap().state = state;
+    carrier
+}
+
+#[test]
+fn a_merged_requests_branch_waits_only_for_a_carrier_github_still_has_open() {
+    let publishing = GitHubConnection {
+        publishes_main: true,
+        ..connection()
+    };
+    let open = full_view_request();
+    let mut closed = open.clone();
+    closed.closed_at_unix = Some(30);
+    let mut merged = open.clone();
+    merged.merged_at_unix = Some(30);
+    let open_carrier = opened_carrier(GitHubPullRequestState::Open);
+
+    assert!(retains_request_branch_for_carrier(&open, None, None));
+    assert!(!retains_request_branch_for_carrier(
+        &closed,
+        Some(&publishing),
+        Some(&open_carrier)
+    ));
+    assert!(!retains_request_branch_for_carrier(
+        &merged,
+        Some(&connection()),
+        Some(&open_carrier)
+    ));
+    assert!(!retains_request_branch_for_carrier(
+        &merged,
+        None,
+        Some(&open_carrier)
+    ));
+    assert!(!retains_request_branch_for_carrier(
+        &merged,
+        Some(&publishing),
+        None
+    ));
+    assert!(!retains_request_branch_for_carrier(
+        &merged,
+        Some(&publishing),
+        Some(&carrier(open_intent("main")))
+    ));
+    assert!(retains_request_branch_for_carrier(
+        &merged,
+        Some(&publishing),
+        Some(&open_carrier)
+    ));
+    for ended in [
+        GitHubPullRequestState::ClosedOnGitHub,
+        GitHubPullRequestState::Closed,
+    ] {
+        assert!(!retains_request_branch_for_carrier(
+            &merged,
+            Some(&publishing),
+            Some(&opened_carrier(ended))
+        ));
+    }
+}
+
+#[test]
+fn a_review_belongs_to_the_request_unless_another_pull_request_number_is_recorded() {
+    let recorded = opened_carrier(GitHubPullRequestState::Open);
+    assert!(review_delivery_belongs_to_request(None, 7));
+    assert!(review_delivery_belongs_to_request(
+        Some(&carrier(open_intent("main"))),
+        7
+    ));
+    assert!(review_delivery_belongs_to_request(Some(&recorded), 5));
+    assert!(!review_delivery_belongs_to_request(Some(&recorded), 7));
+}
+
 fn settings(open_pull_requests: bool, comment: Option<&str>) -> GitHubReviewBotSettings {
     GitHubReviewBotSettings {
         open_pull_requests,

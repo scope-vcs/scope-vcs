@@ -497,6 +497,37 @@ fn push(target_oid: &str, state: GitHubPushState, last_error: Option<&str>) -> G
 }
 
 #[test]
+fn a_main_publication_contains_a_merge_only_when_its_commit_contains_the_merged_main() {
+    let mut merged = open_request();
+    merged.merged_at_unix = Some(20);
+    merged.merged_main_oid = Some("merged_main".into());
+    let published = |contained: &'static [&str]| {
+        move |merged_main: &str| Ok::<bool, &str>(contained.contains(&merged_main))
+    };
+
+    assert_eq!(
+        main_publication_contains_merge(&merged, published(&["older", "merged_main"])),
+        Ok(true)
+    );
+    assert_eq!(
+        main_publication_contains_merge(&merged, published(&["older"])),
+        Ok(false)
+    );
+    assert_eq!(
+        main_publication_contains_merge(&merged, |_| Err("history unavailable")),
+        Err("history unavailable")
+    );
+    let mut closed = open_request();
+    closed.closed_at_unix = Some(20);
+    for ended_elsewhere in [closed, open_request()] {
+        assert_eq!(
+            main_publication_contains_merge(&ended_elsewhere, |_| Err("asked")),
+            Ok(false)
+        );
+    }
+}
+
+#[test]
 fn a_pushed_commit_without_any_run_says_no_workflow_started_after_a_while() {
     let started =
         RequestCheckEvaluation::started(&context("req_1", HEAD), vec![github("ci")], 1).unwrap();
