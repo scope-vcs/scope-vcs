@@ -3,8 +3,8 @@ use crate::db::{MetadataStore, requests::tests::postgres_store};
 use scope_domain::{
     github_connection::ConnectGitHubRepository,
     requests::{
-        GitHubBranch, GitHubPullRequestJobState, GitHubPullRequestState, RequestActorRole,
-        RequestBase, StartRequestInput,
+        GitHubBranch, GitHubPullRequestJobState, GitHubPullRequestObservation,
+        GitHubPullRequestState, GitHubPush, RequestActorRole, RequestBase, StartRequestInput,
     },
     views::ViewId,
 };
@@ -256,7 +256,7 @@ async fn ending_a_request_turns_its_carrier_intent_into_a_close() {
 
     request.closed_at_unix = Some(20);
     request.updated_at_unix = 20;
-    queue_carrier_close(store.db.as_ref(), &request)
+    queue_carrier_close(store.db.as_ref(), &request, None)
         .await
         .unwrap();
     let closing = claim(&store, "claim_2", 20).await.remove(0);
@@ -373,8 +373,15 @@ async fn a_delivery_during_a_running_claim_runs_the_job_again_after_it() {
     assert_eq!(rereading.pull_request.unwrap().number, 5);
 }
 
+async fn request_branch_push(store: &MetadataStore) -> GitHubPush {
+    crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+        .await
+        .unwrap()
+        .unwrap()
+}
+
 #[tokio::test]
-async fn merging_leaves_the_carrier_to_github_when_main_is_published_and_closes_it_otherwise() {
+async fn a_merge_leaves_carrier_and_branch_to_github_only_when_main_is_published() {
     for publishes_main in [true, false] {
         let store = postgres_store();
         connect(&store, true).await;
@@ -420,8 +427,38 @@ async fn merging_leaves_the_carrier_to_github_when_main_is_published_and_closes_
                 "{carrier:?}"
             );
             assert!(claim(&store, "claim_2", 20).await.is_empty());
+            assert_eq!(request_branch_push(&store).await.target_oid, Some(oid('a')));
+
+            let requests = store.requests();
+            assert!(
+                requests
+                    .requeue_github_pull_request(42, "req_1", 30)
+                    .await
+                    .unwrap()
+            );
+            let mut merged_on_github = claim(&store, "claim_3", 30).await.remove(0);
+            merged_on_github.observe(GitHubPullRequestObservation {
+                number: 5,
+                url: "https://github.com/octo/checks-42/pull/5".into(),
+                base: "main".into(),
+                open: false,
+                closed_by_scope: false,
+            });
+            assert!(
+                requests
+                    .finish_github_pull_request(
+                        &merged_on_github,
+                        "claim_3",
+                        GitHubJobOutcome::Succeeded(()),
+                        31,
+                    )
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(request_branch_push(&store).await.target_oid, None);
         } else {
             assert_eq!(carrier.intent, GitHubPullRequestIntent::Close);
+            assert_eq!(request_branch_push(&store).await.target_oid, None);
         }
     }
 }

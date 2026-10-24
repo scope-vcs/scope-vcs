@@ -49,7 +49,7 @@ pub(crate) async fn queue_github_review_delivery(
     else {
         return Ok(());
     };
-    state
+    let accepted = state
         .metadata
         .requests()
         .queue_github_review_import(
@@ -64,7 +64,9 @@ pub(crate) async fn queue_github_review_delivery(
             now_unix,
         )
         .await?;
-    state.wakeups.github_review_imports.notify_one();
+    if accepted {
+        state.wakeups.github_review_imports.notify_one();
+    }
     Ok(())
 }
 

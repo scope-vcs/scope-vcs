@@ -160,6 +160,25 @@ pub fn closes_carrier_pull_request(
     }
 }
 
+pub fn retains_request_branch_for_carrier(
+    request: &Request,
+    connection: Option<&GitHubConnection>,
+    carrier: Option<&GitHubPullRequest>,
+) -> bool {
+    !request.is_terminal()
+        || (!closes_carrier_pull_request(request, connection)
+            && carrier.is_some_and(GitHubPullRequest::is_open_on_github))
+}
+
+pub fn review_delivery_belongs_to_request(
+    carrier: Option<&GitHubPullRequest>,
+    pull_number: u64,
+) -> bool {
+    carrier
+        .and_then(|carrier| carrier.pull_request.as_ref())
+        .is_none_or(|opened| opened.number == pull_number)
+}
+
 pub fn carrier_may_change(request: &Request) -> bool {
     request.state() == RequestState::Open
 }
@@ -167,6 +186,12 @@ pub fn carrier_may_change(request: &Request) -> bool {
 impl GitHubPullRequest {
     pub fn branch(&self) -> GitHubBranch {
         GitHubBranch::Request(self.request_id.clone())
+    }
+
+    pub fn is_open_on_github(&self) -> bool {
+        self.pull_request
+            .as_ref()
+            .is_some_and(|opened| opened.state == GitHubPullRequestState::Open)
     }
 
     pub fn next_step(

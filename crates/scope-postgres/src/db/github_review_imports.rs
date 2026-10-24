@@ -21,7 +21,7 @@ use scope_domain::{
         RequestDiscussion, RequestDiscussionAnchor, RequestDiscussionStatus,
         accepts_github_reviews, github_review_client_id, github_review_comment_client_id,
         github_review_id_from_client_id, import_github_discussion, import_github_reply,
-        transition_github_discussion,
+        review_delivery_belongs_to_request, transition_github_discussion,
     },
     views::Views,
 };
@@ -144,9 +144,15 @@ impl RequestStore {
         job: &QueueGitHubReviewImport,
         accounts: &[GitHubAccount],
         now_unix: u64,
-    ) -> Result<(), PostgresError> {
+    ) -> Result<bool, PostgresError> {
         let columns = subject_columns(&job.subject)?;
         let tx = self.db.begin().await?;
+        let carrier =
+            super::github_pull_requests::github_pull_request(&tx, &job.request_id).await?;
+        if !review_delivery_belongs_to_request(carrier.as_ref(), job.pull_number) {
+            tx.commit().await?;
+            return Ok(false);
+        }
         save_github_accounts(&tx, accounts, now_unix).await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -189,7 +195,7 @@ impl RequestStore {
         ))
         .await?;
         tx.commit().await?;
-        Ok(())
+        Ok(true)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_github_review_imports"))]

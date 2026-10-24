@@ -7,7 +7,7 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     github_setup_check::GitHubSetupCheck,
-    requests::{GitHubBranch, GitHubPush, GitHubPushDestination},
+    requests::{GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState},
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
 
@@ -379,11 +379,11 @@ pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
     branch: &GitHubBranch,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    let Some(pushed) = PushRow::find_by_statement(Statement::from_sql_and_values(
+    let Some(latest) = PushRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         format!(
             "SELECT {SELECT_PUSH} FROM scope_github_pushes
-              WHERE repo_id = $1 AND ref = $2 AND kind = 'push'
+              WHERE repo_id = $1 AND ref = $2
               ORDER BY sequence DESC
               LIMIT 1"
         ),
@@ -394,8 +394,13 @@ pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
     else {
         return Ok(());
     };
-    let pushed = pushed.into_domain()?;
-    queue_github_push(conn, repo_id, branch, None, &pushed.destination, now_unix).await?;
+    let latest = latest.into_domain()?;
+    let deletion_pending_or_done =
+        latest.target_oid.is_none() && latest.state != GitHubPushState::Failed;
+    if deletion_pending_or_done {
+        return Ok(());
+    }
+    queue_github_push(conn, repo_id, branch, None, &latest.destination, now_unix).await?;
     Ok(())
 }
 

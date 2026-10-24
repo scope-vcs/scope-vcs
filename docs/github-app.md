@@ -370,10 +370,15 @@ whose answer was lost is not posted twice.
 Closing the request closes its carrier. Merging it closes the carrier only
 while the repository does not publish main to GitHub; when it does, Scope
 leaves the pull request alone, and GitHub marks it merged once main with the
-request's commits arrives. The decision lives in
-`closes_carrier_pull_request` in `scope-domain` and reads the connection when
-the request ends. Once a request has ended, Scope no longer opens, retargets,
-rewrites or comments on its carrier. A close counts only when
+request's commits arrives. While that carrier stays open, Scope also keeps
+the request branch on GitHub, because deleting the branch first would make
+GitHub close the pull request instead of marking it merged; the branch is
+deleted once GitHub reports the carrier closed or merged. The decisions live
+in `closes_carrier_pull_request` and `retains_request_branch_for_carrier` in
+`scope-domain` and read the connection and the carrier record when the
+request ends and whenever the carrier is observed again. Once a request has
+ended, Scope no longer opens, retargets, rewrites or comments on its carrier.
+A close counts only when
 GitHub confirms it or reports the pull request already closed or merged; a
 pull request Scope cannot reach is an error that retries. A request that ends
 before Scope recorded its carrier's number, for example because GitHub's
