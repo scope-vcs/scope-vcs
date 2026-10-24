@@ -151,28 +151,6 @@ async fn queue_branch_push(store: &MetadataStore, branch: &GitHubBranch, head: c
     .unwrap();
 }
 
-async fn main_publication_succeeds(store: &MetadataStore, main: char, at: u64) {
-    queue_branch_push(store, &GitHubBranch::Main, main, at).await;
-    let requests = store.requests();
-    let push = requests
-        .claim_due_github_pushes("main_claim", at, at + 100, 10)
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|push| push.branch == GitHubBranch::Main)
-        .unwrap();
-    requests
-        .finish_github_push(
-            &push.id,
-            "main_claim",
-            GitHubJobOutcome::Succeeded(()),
-            at + 1,
-        )
-        .await
-        .unwrap()
-        .unwrap();
-}
-
 async fn carrier(store: &MetadataStore, request_id: &str) -> Option<GitHubPullRequest> {
     github_pull_request(store.db.as_ref(), request_id)
         .await
@@ -444,7 +422,7 @@ async fn request_branch_push(store: &MetadataStore) -> GitHubPush {
         .unwrap()
 }
 
-async fn merged_with_open_carrier(store: &MetadataStore, publishes_main: bool) {
+async fn connect_publishing(store: &MetadataStore, publishes_main: bool) {
     connect(store, true).await;
     if publishes_main {
         store
@@ -453,33 +431,60 @@ async fn merged_with_open_carrier(store: &MetadataStore, publishes_main: bool) {
             .await
             .unwrap();
     }
-    let mut request = submitted_full_view_request(store, "req_1").await;
-    push_succeeds(store, "req_1", 'a', 10).await;
-    let mut opened = claim(store, "claim_1", 10).await.remove(0);
+}
+
+async fn merged_with_open_carrier(store: &MetadataStore, publishes_main: bool) {
+    connect_publishing(store, publishes_main).await;
+    open_carrier_and_merge(store, "req_1", 5, 10).await;
+}
+
+async fn open_carrier_and_merge(store: &MetadataStore, id: &str, number: u64, at: u64) {
+    let mut request = submitted_full_view_request(store, id).await;
+    push_succeeds(store, id, 'a', at).await;
+    let mut opened = claim(store, &format!("claim_{id}"), at)
+        .await
+        .into_iter()
+        .find(|carrier| carrier.request_id == id)
+        .unwrap();
     opened.record_opened(
-        5,
-        "https://github.com/octo/checks-42/pull/5".into(),
+        number,
+        format!("https://github.com/octo/checks-42/pull/{number}"),
         "main".into(),
         None,
     );
     store
         .requests()
-        .finish_github_pull_request(&opened, "claim_1", GitHubJobOutcome::Succeeded(()), 11)
+        .finish_github_pull_request(
+            &opened,
+            &format!("claim_{id}"),
+            GitHubJobOutcome::Succeeded(()),
+            at + 1,
+        )
         .await
         .unwrap();
 
-    request.merged_at_unix = Some(20);
+    request.merged_at_unix = Some(at + 10);
     request.merged_by_user_id = Some(OWNER.into());
     request.merged_head_oid = Some(request.head_oid.clone());
     request.merged_main_oid = Some(oid('m'));
-    request.updated_at_unix = 20;
+    request.updated_at_unix = at + 10;
+    persist_ended(store, &request).await;
+}
+
+async fn persist_ended(store: &MetadataStore, request: &Request) {
     let tx = sea_orm::TransactionTrait::begin(store.db.as_ref())
         .await
         .unwrap();
-    crate::db::request_lifecycle_effects::persist_lifecycle_mutation(&tx, &request, &[])
+    crate::db::request_lifecycle_effects::persist_lifecycle_mutation(&tx, request, &[])
         .await
         .unwrap();
     tx.commit().await.unwrap();
+}
+
+async fn branch_push_of(store: &MetadataStore, request_id: &str) -> Option<GitHubPush> {
+    crate::db::github_pushes::latest_github_push(store.db.as_ref(), request_id)
+        .await
+        .unwrap()
 }
 
 #[tokio::test]
@@ -532,16 +537,91 @@ async fn a_merge_leaves_carrier_and_branch_to_github_only_when_main_is_published
 }
 
 #[tokio::test]
-async fn a_main_publication_containing_the_merge_releases_the_branch_without_an_observation() {
+async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_by_id() {
     let store = postgres_store();
     merged_with_open_carrier(&store, true).await;
-    assert_eq!(request_branch_push(&store).await.target_oid, Some(oid('a')));
+    submitted_full_view_request(&store, "req_open").await;
+    push_succeeds(&store, "req_open", 'b', 30).await;
+    let mut closed = submitted_full_view_request(&store, "req_closed").await;
+    push_succeeds(&store, "req_closed", 'c', 31).await;
+    closed.closed_at_unix = Some(32);
+    closed.updated_at_unix = 32;
+    persist_ended(&store, &closed).await;
+    let mut never_pushed = submitted_full_view_request(&store, "req_unpushed").await;
+    never_pushed.merged_at_unix = Some(33);
+    never_pushed.merged_by_user_id = Some(OWNER.into());
+    never_pushed.merged_head_oid = Some(never_pushed.head_oid.clone());
+    never_pushed.merged_main_oid = Some(oid('n'));
+    never_pushed.updated_at_unix = 33;
+    persist_ended(&store, &never_pushed).await;
+    assert_eq!(
+        branch_push_of(&store, "req_closed")
+            .await
+            .unwrap()
+            .target_oid,
+        None
+    );
 
-    main_publication_succeeds(&store, 'x', 15).await;
-    assert_eq!(request_branch_push(&store).await.target_oid, Some(oid('a')));
+    let requests = store.requests();
+    let listed = requests
+        .terminal_requests_with_pushed_branches(REPO)
+        .await
+        .unwrap();
+    assert_eq!(
+        listed
+            .iter()
+            .map(|request| (request.id.as_str(), request.merged_main_oid.clone()))
+            .collect::<Vec<_>>(),
+        [("req_1", Some(oid('m')))]
+    );
 
-    main_publication_succeeds(&store, 'm', 22).await;
+    requests
+        .release_request_branches(REPO, &["req_1".to_string()], 40)
+        .await
+        .unwrap();
     assert_eq!(request_branch_push(&store).await.target_oid, None);
+    assert!(
+        requests
+            .terminal_requests_with_pushed_branches(REPO)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        branch_push_of(&store, "req_open").await.unwrap().target_oid,
+        Some(oid('b'))
+    );
+}
+
+#[tokio::test]
+async fn one_release_queues_the_deletion_of_every_named_branch() {
+    let store = postgres_store();
+    connect_publishing(&store, true).await;
+    open_carrier_and_merge(&store, "req_1", 5, 10).await;
+    open_carrier_and_merge(&store, "req_2", 6, 30).await;
+    let requests = store.requests();
+    assert_eq!(
+        requests
+            .terminal_requests_with_pushed_branches(REPO)
+            .await
+            .unwrap()
+            .iter()
+            .map(|request| request.id.as_str())
+            .collect::<Vec<_>>(),
+        ["req_1", "req_2"]
+    );
+
+    requests
+        .release_request_branches(REPO, &["req_1".to_string(), "req_2".to_string()], 50)
+        .await
+        .unwrap();
+    for id in ["req_1", "req_2"] {
+        assert_eq!(
+            branch_push_of(&store, id).await.unwrap().target_oid,
+            None,
+            "{id}"
+        );
+    }
 }
 
 #[tokio::test]

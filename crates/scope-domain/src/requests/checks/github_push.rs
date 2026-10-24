@@ -1,5 +1,8 @@
 use super::RequestCheckEvaluation;
-use crate::{github_connection::GitHubConnection, requests::Request};
+use crate::{
+    github_connection::GitHubConnection,
+    requests::{Request, RequestState},
+};
 use serde::{Deserialize, Serialize};
 
 const REQUEST_BRANCH_PREFIX: &str = "scope/requests/";
@@ -94,7 +97,6 @@ pub struct GitHubPush {
     pub state: GitHubPushState,
     pub attempts: u32,
     pub last_error: Option<String>,
-    pub created_at_unix: u64,
     pub updated_at_unix: u64,
 }
 
@@ -111,12 +113,14 @@ impl GitHubPush {
     }
 }
 
-pub fn main_publication_contains_merge(request: &Request, push: &GitHubPush) -> bool {
-    push.branch == GitHubBranch::Main
-        && push.target_oid.is_some()
-        && request.merged_at_unix.is_some_and(|merged_at| {
-            request.merged_main_oid == push.target_oid || merged_at < push.created_at_unix
-        })
+pub fn main_publication_contains_merge<E>(
+    request: &Request,
+    published_main_contains: impl FnOnce(&str) -> Result<bool, E>,
+) -> Result<bool, E> {
+    match (request.state(), request.merged_main_oid.as_deref()) {
+        (RequestState::Merged, Some(merged_main_oid)) => published_main_contains(merged_main_oid),
+        _ => Ok(false),
+    }
 }
 
 pub fn github_push_retry_at(push: &GitHubPush, now_unix: u64) -> Option<u64> {

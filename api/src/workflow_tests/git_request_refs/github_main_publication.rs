@@ -3,6 +3,7 @@ use super::super::fake_github::{
 };
 use super::github_checks::{connect_github, owner_request, push_pass};
 use super::*;
+use crate::use_cases::github_pull_requests::run_due_github_pull_requests;
 use scope_api_contract::routes::repo_request_merge;
 use scope_domain::{
     github_connection::MAIN_WITHHELD_MESSAGE, requests::GITHUB_MAIN_DIVERGED_MESSAGE,
@@ -305,4 +306,46 @@ async fn main_is_not_published_to_a_github_repository_that_became_public_unconfi
 
     let refused = expect_json(set_publication(state, true).await, StatusCode::CONFLICT).await;
     assert_eq!(refused["message"], MAIN_WITHHELD_MESSAGE);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_published_main_containing_the_merge_deletes_the_branch_its_carrier_kept() {
+    let request = owner_request("github-main-publication-release", &[]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    state
+        .metadata
+        .repositories()
+        .set_github_review_bot_pull_requests(TEST_REPO_ID, &test_owner_id(), true, unix_now())
+        .await
+        .unwrap();
+    expect_json(set_publication(state, true).await, StatusCode::OK).await;
+    assert_eq!(push_pass(state, unix_now()).await, 2);
+    assert_eq!(
+        run_due_github_pull_requests(state, unix_now())
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(fake.pulls.pull(1)["state"], "open");
+
+    let merged = api_request(
+        router(state.clone()),
+        "POST",
+        &repo_request_merge(TEST_REPO_OWNER, TEST_REPO_NAME, &request.request_id),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    expect_json(merged, StatusCode::OK).await;
+    assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));
+
+    assert!(push_pass(state, unix_now()).await >= 1);
+    let latest = publication(state).await["latest"].clone();
+    assert_eq!(latest["state"], "succeeded");
+    assert_eq!(
+        fake.branch_head("main").as_deref(),
+        latest["commit_oid"].as_str()
+    );
+    push_pass(state, unix_now()).await;
+    assert_eq!(fake.branch_head(&request.branch()), None);
 }

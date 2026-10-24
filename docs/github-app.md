@@ -375,9 +375,10 @@ leaves the pull request alone, and GitHub marks it merged once main with the
 request's commits arrives. While that carrier stays open, Scope also keeps
 the request branch on GitHub, because deleting the branch first would make
 GitHub close the pull request instead of marking it merged; the branch is
-deleted once GitHub reports the carrier closed or merged, or once a later
-main publication that contains the merge succeeds (`main_publication_contains_merge`),
-so a missed webhook cannot leave the branch behind. The decisions live
+deleted once GitHub reports the carrier closed or merged, or once a main
+publication whose commit contains the merge succeeds
+(`main_publication_contains_merge`, answered from the repository's git
+history), so a missed webhook cannot leave the branch behind. The decisions live
 in `closes_carrier_pull_request` and `retains_request_branch_for_carrier` in
 `scope-domain` and read the connection and the carrier record when the
 request ends and whenever the carrier is observed again. Once a request has

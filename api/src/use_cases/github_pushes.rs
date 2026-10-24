@@ -1,4 +1,5 @@
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
+use crate::git::command::git_is_ancestor;
 use crate::{
     auth::tokens::random_token,
     error::ApiError,
@@ -9,6 +10,7 @@ use crate::{
     state::AppState,
     use_cases::view_check_commits::with_check_commit,
 };
+use scope_domain::requests::main_publication_contains_merge;
 use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
@@ -319,7 +321,40 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         if push.branch == GitHubBranch::SetupCheck {
             record_setup_check_baseline(state, &app, push).await?;
         }
-        return crate::git::blocking::run(move || Ok(push_when_current(repo.as_ref()))).await?;
+        let retained = if push.branch == GitHubBranch::Main {
+            requests
+                .terminal_requests_with_pushed_branches(&push.repo_id)
+                .await?
+        } else {
+            Vec::new()
+        };
+        let released = crate::git::blocking::run(move || {
+            if let Err(failure) = push_when_current(repo.as_ref()) {
+                return Ok(Err(failure));
+            }
+            let mut released = Vec::new();
+            for request in &retained {
+                let contained = main_publication_contains_merge(request, |merged_main_oid| {
+                    git_is_ancestor(
+                        repo.as_ref(),
+                        merged_main_oid,
+                        &expected_oid,
+                        "find the merges a published main contains",
+                    )
+                })?;
+                if contained {
+                    released.push(request.id.clone());
+                }
+            }
+            Ok(Ok(released))
+        })
+        .await??;
+        if !released.is_empty() {
+            requests
+                .release_request_branches(&push.repo_id, &released, unix_now()?)
+                .await?;
+        }
+        return Ok(());
     };
     let revision = requests
         .request_revision_with_head(&request.id, &evaluation.head_oid)
