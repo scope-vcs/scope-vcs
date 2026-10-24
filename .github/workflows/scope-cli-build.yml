@@ -59,6 +59,7 @@ jobs:
         run: |
           version="$(jq -er '.git.version' dev/tool-versions.json)"
           source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+          sudo bash .github/scripts/use-ubuntu-apt-sources.sh
           sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
           echo /opt/git/bin >> "$GITHUB_PATH"
 
@@ -100,6 +101,7 @@ jobs:
         run: |
           version="$(jq -er '.git.version' dev/tool-versions.json)"
           source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+          sudo bash .github/scripts/use-ubuntu-apt-sources.sh
           sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
           echo /opt/git/bin >> "$GITHUB_PATH"
 
@@ -146,6 +148,7 @@ jobs:
         run: |
           version="$(jq -er '.git.version' dev/tool-versions.json)"
           source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+          sudo bash .github/scripts/use-ubuntu-apt-sources.sh
           sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
           echo /opt/git/bin >> "$GITHUB_PATH"
 
