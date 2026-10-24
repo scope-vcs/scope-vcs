@@ -10,7 +10,7 @@ import { checkMigrationSources, migrationDigest } from './check-migration-immuta
 const name = 'm0085_add_example.rs';
 const baseline = 'm0084_current_schema_baseline.sql';
 const original = 'CREATE TABLE example (state text);';
-const sources = { [name]: original, [baseline]: original, 'm0084_bridged_ledger.txt': 'm0042\n' };
+const sources = { [name]: original, [baseline]: original };
 const locked = Object.fromEntries(Object.entries(sources).map(([path, contents]) => [path, migrationDigest(contents)]));
 
 test('unchanged definitions and appended migrations pass', () => {
@@ -47,7 +47,7 @@ test('new definitions must be locked and lock entries must identify migration de
 });
 
 test('only explicitly retired lock entries may disappear from the base lock', () => {
-  const squashed = ['baseline_ledger.txt', 'current_schema.sql', 'm0043_retire_git_manifests.rs', 'm0083_request_workflow_changes.rs'];
+  const squashed = ['baseline_ledger.txt', 'current_schema.sql', 'm0043_retire_git_manifests.rs', 'm0083_request_workflow_changes.rs', 'm0084_bridged_ledger.txt'];
   const base = { ...locked, ...Object.fromEntries(squashed.map((path) => [path, migrationDigest(path)])) };
   assert.deepEqual(checkMigrationSources(sources, locked, base), []);
   for (const path of squashed) {

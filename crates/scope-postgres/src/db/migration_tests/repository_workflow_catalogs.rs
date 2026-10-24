@@ -46,8 +46,9 @@ async fn insert_captured_catalog(db: &DatabaseConnection) {
 #[tokio::test]
 async fn maintenance_reads_catalogs_from_the_canonical_pre_migration_schema() {
     let (target, db, _lease) = isolated_database().await;
-    migrations::Migrator::up(db.as_ref(), None).await.unwrap();
-    replace_ledger(db.as_ref(), &BRIDGED_LEDGER.lines().collect::<Vec<_>>()).await;
+    migrations::Migrator::up(db.as_ref(), Some(1))
+        .await
+        .unwrap();
     insert_repository(db.as_ref()).await;
     let file = RepositoryWorkflowFile::from_content(
         "/.scope/runs/checks.yml",
@@ -69,7 +70,7 @@ async fn maintenance_reads_catalogs_from_the_canonical_pre_migration_schema() {
     let plan = migrations::plan(db.as_ref()).await.unwrap();
     assert_eq!(
         plan.pending[0].name,
-        migrations::Migrator::migrations()[0].name()
+        migrations::Migrator::migrations()[1].name()
     );
 }
 

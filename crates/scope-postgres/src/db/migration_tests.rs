@@ -7,7 +7,6 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement};
 use sea_orm_migration::MigratorTrait;
 use std::sync::Arc;
 
-mod baseline_bridge;
 mod cache_schema;
 mod current_schema_baseline;
 mod github_connections;
@@ -28,8 +27,6 @@ mod request_stacks;
 mod run_attempt_active_indexes;
 mod run_state_constraints;
 mod stack_auto_merge;
-
-const BRIDGED_LEDGER: &str = include_str!("../migrations/m0084_bridged_ledger.txt");
 
 pub(super) async fn isolated_database() -> (
     TestDatabaseTarget,

@@ -39,15 +39,21 @@ pub(super) async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
 
 #[tokio::test]
 async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
-    let bridged = BRIDGED_LEDGER.lines().collect::<Vec<_>>();
     let (_target, db, _lease) = isolated_database().await;
     baseline_database(&db).await;
     for ledger in [
         vec!["m0001_initial_schema", "m0042_request_media"],
         vec![BASELINE, "m9999_unknown"],
         vec!["m0042_current_schema_baseline"],
-        bridged[..bridged.len() - 1].to_vec(),
-        [bridged.as_slice(), &[BASELINE]].concat(),
+        vec![
+            "m0042_current_schema_baseline",
+            "m0083_request_workflow_changes",
+        ],
+        vec![
+            "m0042_current_schema_baseline",
+            "m0083_request_workflow_changes",
+            BASELINE,
+        ],
     ] {
         replace_ledger(&db, &ledger).await;
         let before = representative_business_snapshot(&db).await;
@@ -72,10 +78,6 @@ async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
                 error
                     .to_string()
                     .contains(&format!("found [{}]", ledger.join(", "))),
-                "{ledger:?}: {error}"
-            );
-            assert!(
-                error.to_string().contains("original-chain revision"),
                 "{ledger:?}: {error}"
             );
         }
