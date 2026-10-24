@@ -1,7 +1,7 @@
 use super::super::fake_github::{
     INSTALLATION_ID, InstallationState, WEBHOOK_SECRET, github_api, github_json, webhook,
 };
-use super::github_checks::{connect_github, owner_request, push_pass};
+use super::github_checks::{OwnerRequest, connect_github, owner_request, push_pass};
 use super::*;
 use crate::use_cases::github_pull_requests::run_due_github_pull_requests;
 use scope_api_contract::routes::repo_request_merge;
@@ -338,6 +338,7 @@ async fn a_published_main_containing_the_merge_deletes_the_branch_its_carrier_ke
     .await;
     expect_json(merged, StatusCode::OK).await;
     assert_eq!(fake.branch_head(&request.branch()), Some(request.head()));
+    assert!(branch_push_is_latest(&request).await);
 
     assert!(push_pass(state, unix_now()).await >= 1);
     let latest = publication(state).await["latest"].clone();
@@ -346,6 +347,18 @@ async fn a_published_main_containing_the_merge_deletes_the_branch_its_carrier_ke
         fake.branch_head("main").as_deref(),
         latest["commit_oid"].as_str()
     );
+    assert!(!branch_push_is_latest(&request).await);
     push_pass(state, unix_now()).await;
     assert_eq!(fake.branch_head(&request.branch()), None);
+}
+
+async fn branch_push_is_latest(request: &OwnerRequest) -> bool {
+    request
+        .state
+        .metadata
+        .requests()
+        .github_head_delivered_at(&request.request_id, &request.head())
+        .await
+        .unwrap()
+        .is_some()
 }

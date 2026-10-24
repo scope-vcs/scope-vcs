@@ -288,6 +288,7 @@ impl RequestStore {
     pub async fn terminal_requests_with_pushed_branches(
         &self,
         repo_id: &str,
+        github_repository_id: u64,
     ) -> Result<Vec<Request>, PostgresError> {
         let rows = self
             .db
@@ -296,12 +297,16 @@ impl RequestStore {
                 "SELECT request.id FROM scope_requests request
                   WHERE request.repo_id = $1
                     AND (request.merged_at_unix IS NOT NULL OR request.closed_at_unix IS NOT NULL)
-                    AND (SELECT latest.kind = 'push' FROM scope_github_pushes latest
+                    AND (SELECT latest.kind = 'push' AND latest.github_repository_id = $2
+                           FROM scope_github_pushes latest
                           WHERE latest.request_id = request.id
                           ORDER BY latest.sequence DESC
                           LIMIT 1)
                   ORDER BY request.id",
-                [repo_id.into()],
+                [
+                    repo_id.into(),
+                    u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+                ],
             ))
             .await?;
         let mut requests = Vec::with_capacity(rows.len());

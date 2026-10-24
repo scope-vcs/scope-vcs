@@ -323,7 +323,10 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
         }
         let retained = if push.branch == GitHubBranch::Main {
             requests
-                .terminal_requests_with_pushed_branches(&push.repo_id)
+                .terminal_requests_with_pushed_branches(
+                    &push.repo_id,
+                    push.destination.github_repository_id,
+                )
                 .await?
         } else {
             Vec::new()

@@ -561,10 +561,43 @@ async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_
             .target_oid,
         None
     );
+    let mut pushed_elsewhere = submitted_full_view_request(&store, "req_elsewhere").await;
+    crate::db::github_pushes::queue_github_push(
+        store.db.as_ref(),
+        REPO,
+        &GitHubBranch::Request("req_elsewhere".into()),
+        Some(&oid('e')),
+        &GitHubPushDestination {
+            installation_id: 7,
+            github_repository_id: 43,
+            github_full_name: "octo/checks-43".into(),
+        },
+        34,
+    )
+    .await
+    .unwrap();
+    pushed_elsewhere.merged_at_unix = Some(35);
+    pushed_elsewhere.merged_by_user_id = Some(OWNER.into());
+    pushed_elsewhere.merged_head_oid = Some(pushed_elsewhere.head_oid.clone());
+    pushed_elsewhere.merged_main_oid = Some(oid('m'));
+    pushed_elsewhere.updated_at_unix = 35;
+    crate::db::request_rows::save_request_row(store.db.as_ref(), &pushed_elsewhere)
+        .await
+        .unwrap();
 
     let requests = store.requests();
+    assert_eq!(
+        requests
+            .terminal_requests_with_pushed_branches(REPO, 43)
+            .await
+            .unwrap()
+            .iter()
+            .map(|request| request.id.as_str())
+            .collect::<Vec<_>>(),
+        ["req_elsewhere"]
+    );
     let listed = requests
-        .terminal_requests_with_pushed_branches(REPO)
+        .terminal_requests_with_pushed_branches(REPO, 42)
         .await
         .unwrap();
     assert_eq!(
@@ -582,7 +615,7 @@ async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_
     assert_eq!(request_branch_push(&store).await.target_oid, None);
     assert!(
         requests
-            .terminal_requests_with_pushed_branches(REPO)
+            .terminal_requests_with_pushed_branches(REPO, 42)
             .await
             .unwrap()
             .is_empty()
@@ -602,7 +635,7 @@ async fn one_release_queues_the_deletion_of_every_named_branch() {
     let requests = store.requests();
     assert_eq!(
         requests
-            .terminal_requests_with_pushed_branches(REPO)
+            .terminal_requests_with_pushed_branches(REPO, 42)
             .await
             .unwrap()
             .iter()
