@@ -3,6 +3,7 @@ use crate::use_cases::github_pull_requests::run_due_github_pull_requests;
 use scope_domain::requests::review_request_comment_body;
 
 const REVIEW_COMMENT: &str = "@bot review";
+const FAR_FUTURE_UNIX: u64 = 4_102_444_800;
 
 async fn opted_in_request(label: &str) -> OwnerRequest {
     let request = owner_request(label, &[REQUIRED_CHECK]).await;
@@ -243,7 +244,7 @@ async fn a_rate_limit_waits_for_its_reset_instead_of_failing() {
     );
     assert_eq!(pull_request_pass(state).await, 0);
     assert_eq!(
-        run_due_github_pull_requests(state, 4_102_444_800)
+        run_due_github_pull_requests(state, FAR_FUTURE_UNIX)
             .await
             .unwrap(),
         1
@@ -437,7 +438,12 @@ async fn turning_the_setting_off_fences_a_run_already_in_flight() {
         })
     }));
 
-    assert_eq!(pull_request_pass(state).await, 2);
+    assert_eq!(
+        run_due_github_pull_requests(state, FAR_FUTURE_UNIX)
+            .await
+            .unwrap(),
+        2
+    );
     assert!(fake.pulls.pulls.lock().unwrap().is_empty());
     assert!(comments(fake).is_empty());
     assert_eq!(pull_request_pass(state).await, 0);
