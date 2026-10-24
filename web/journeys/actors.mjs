@@ -16,6 +16,7 @@ const COLD_DEV_SERVER_TIMEOUT_MS = 120_000
 const CLERK_TEST_EMAIL_VERIFICATION_CODE = '424242'
 const CLERK_TOKEN_ATTEMPTS = 5
 const CLERK_TOKEN_RETRY_STEP_MS = 2_000
+const CLERK_SIGNED_OUT = 'You are signed out'
 
 export const collaborators = {
   contributor: { handle: 'river-contributor', email: 'river.contributor+clerk_test@example.com' },
@@ -117,6 +118,16 @@ async function clerkSessionToken(page) {
 }
 
 export async function signIn(browser, collaborator) {
+  try {
+    return await signInOnce(browser, collaborator)
+  } catch (error) {
+    if (!error.message.includes(CLERK_SIGNED_OUT)) throw error
+    console.error(`Clerk reported ${collaborator.email}'s new session as signed out; signing in again: ${error.message}`)
+    return signInOnce(browser, collaborator)
+  }
+}
+
+async function signInOnce(browser, collaborator) {
   const session = await newSession(browser)
   await session.page.goto(`${baseUrl}/`, { timeout: COLD_DEV_SERVER_TIMEOUT_MS })
   await session.page.waitForFunction(() => window.Clerk?.loaded, null, { timeout: COLD_DEV_SERVER_TIMEOUT_MS })
