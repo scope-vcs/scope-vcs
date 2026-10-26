@@ -1,8 +1,6 @@
-use crate::paths::is_resolution_config;
 use oxc_resolver::{FileMetadata, FileSystem, FileSystemOs, ResolveError};
 use std::{
     borrow::Cow,
-    collections::HashSet,
     io,
     path::{Path, PathBuf},
     sync::Arc,
@@ -15,19 +13,17 @@ const MODULE_EXTENSIONS: &[&str] = &[
 #[derive(Clone, Default)]
 pub(crate) struct SuffixFileSystem {
     suffixes: Arc<[String]>,
-    config_files: Arc<HashSet<PathBuf>>,
 }
 
 impl SuffixFileSystem {
-    pub(crate) fn new(suffixes: Vec<String>, config_files: HashSet<PathBuf>) -> Self {
+    pub(crate) fn new(suffixes: Vec<String>) -> Self {
         Self {
             suffixes: suffixes.into(),
-            config_files: Arc::new(config_files),
         }
     }
 
     pub(crate) fn locate<'a>(&self, path: &'a Path) -> Cow<'a, Path> {
-        if self.suffixes.is_empty() || self.config_files.contains(path) {
+        if self.suffixes.is_empty() {
             return Cow::Borrowed(path);
         }
         let Some((stem, extension)) = module_file_parts(path) else {
@@ -49,10 +45,7 @@ impl SuffixFileSystem {
         path: &Path,
         metadata: impl Fn(&Path) -> io::Result<FileMetadata>,
     ) -> io::Result<FileMetadata> {
-        if self.suffixes.is_empty()
-            || self.config_files.contains(path)
-            || module_file_parts(path).is_none()
-        {
+        if self.suffixes.is_empty() || module_file_parts(path).is_none() {
             return metadata(path);
         }
         let located = self.locate(path);
@@ -69,7 +62,7 @@ impl SuffixFileSystem {
 fn module_file_parts(path: &Path) -> Option<(&str, &str)> {
     let path = path.to_str()?;
     let name = path.rsplit(['/', '\\']).next()?;
-    if name == "package.json" || is_resolution_config(name) {
+    if name == "package.json" {
         return None;
     }
     let extension = MODULE_EXTENSIONS

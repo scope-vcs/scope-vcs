@@ -2398,6 +2398,7 @@ dependencies = [
  "oxc_span",
  "rayon",
  "scope-domain",
+ "serde",
  "serde_json",
 ]
 

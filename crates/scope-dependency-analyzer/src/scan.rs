@@ -226,7 +226,9 @@ impl<'a> Visit<'a> for ReferenceCollector {
     }
 
     fn visit_call_expression(&mut self, call: &CallExpression<'a>) {
-        if matches!(&call.callee, Expression::Identifier(callee) if callee.name == "require") {
+        if !call.optional
+            && matches!(&call.callee, Expression::Identifier(callee) if callee.name == "require")
+        {
             self.add_literal(
                 call.arguments.first().and_then(Argument::as_expression),
                 DependencyEdgeKind::Require,

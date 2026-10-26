@@ -5,15 +5,13 @@ use crate::{
     scan::Reference,
     snapshot::Inventory,
 };
-use oxc_resolver::{
-    ResolveOptions, ResolverGeneric, TsconfigDiscovery, TsconfigOptions, TsconfigReferences,
-};
+use oxc_resolver::{ResolveOptions, ResolverGeneric};
 use rayon::prelude::*;
 use scope_domain::dependency_analysis::{DependencyEdge, DependencyEdgeKind, DependencyGap};
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 type Resolver = ResolverGeneric<SuffixFileSystem>;
@@ -35,39 +33,84 @@ pub(crate) struct GroupResult {
     pub(crate) gaps: Vec<DependencyGap>,
 }
 
-struct Resolvers {
+struct Resolvers<'a> {
+    config: Option<&'a ResolutionConfig>,
     file_system: SuffixFileSystem,
     by_mode: [Resolver; 4],
 }
 
-impl Resolvers {
-    fn new(config: Option<&ResolutionConfig>) -> Self {
+impl<'a> Resolvers<'a> {
+    fn new(config: Option<&'a ResolutionConfig>) -> Self {
         let file_system = SuffixFileSystem::new(
             config
                 .map(|config| config.module_suffixes.clone())
                 .unwrap_or_default(),
-            config
-                .map(|config| config.config_files.clone())
-                .unwrap_or_default(),
         );
-        let options = |type_only: bool, require_mode: bool| {
-            resolve_options(
-                config.map(|config| config.config_file.as_path()),
-                type_only,
-                require_mode,
-            )
-        };
-        let base = Resolver::new_with_file_system(file_system.clone(), options(false, false));
+        let base =
+            Resolver::new_with_file_system(file_system.clone(), resolve_options(false, false));
         let by_mode = [
-            base.clone_with_options(options(false, true)),
-            base.clone_with_options(options(true, false)),
-            base.clone_with_options(options(true, true)),
+            base.clone_with_options(resolve_options(false, true)),
+            base.clone_with_options(resolve_options(true, false)),
+            base.clone_with_options(resolve_options(true, true)),
             base,
         ];
         Self {
+            config,
             file_system,
             by_mode,
         }
+    }
+
+    fn resolve(&self, resolver: &Resolver, directory: &Path, specifier: &str) -> Option<PathBuf> {
+        self.resolve_configured(resolver, directory, specifier)
+            .or_else(|| {
+                let config = self.config?;
+                if !specifier.starts_with('.') {
+                    return None;
+                }
+                config
+                    .root_dir_candidates(&resolve_lexically(directory, specifier))
+                    .into_iter()
+                    .find_map(|candidate| {
+                        self.resolve_configured(resolver, directory, candidate.to_str()?)
+                    })
+            })
+            .map(|resolved| self.file_system.locate(&resolved).into_owned())
+    }
+
+    fn resolve_configured(
+        &self,
+        resolver: &Resolver,
+        directory: &Path,
+        specifier: &str,
+    ) -> Option<PathBuf> {
+        let resolve = |specifier: &str| {
+            resolver
+                .resolve(directory, specifier)
+                .ok()
+                .map(|resolution| resolution.path().to_path_buf())
+        };
+        if let Some(config) = self.config {
+            let aliased = config
+                .alias_targets(specifier)
+                .and_then(|targets| targets.iter().find_map(|target| resolve(target)));
+            if aliased.is_some() {
+                return aliased;
+            }
+            if is_bare_specifier(specifier) {
+                let in_module_directory =
+                    config
+                        .module_directories
+                        .iter()
+                        .find_map(|module_directory| {
+                            resolve(module_directory.join(specifier).to_str()?)
+                        });
+                if in_module_directory.is_some() {
+                    return in_module_directory;
+                }
+            }
+        }
+        resolve(specifier)
     }
 
     fn for_reference(&self, kind: DependencyEdgeKind, common_js_source: bool) -> &Resolver {
@@ -86,11 +129,7 @@ impl Resolvers {
     }
 }
 
-fn resolve_options(
-    config_file: Option<&Path>,
-    type_only: bool,
-    require_mode: bool,
-) -> ResolveOptions {
+fn resolve_options(type_only: bool, require_mode: bool) -> ResolveOptions {
     let module_condition = if require_mode { "require" } else { "import" };
     let condition_names = if type_only {
         vec!["types", module_condition, "node", "default"]
@@ -103,12 +142,6 @@ fn resolve_options(
         vec!["module", "main"]
     };
     ResolveOptions {
-        tsconfig: config_file.map(|config_file| {
-            TsconfigDiscovery::Manual(TsconfigOptions {
-                config_file: config_file.to_path_buf(),
-                references: TsconfigReferences::Disabled,
-            })
-        }),
         condition_names: strings(&condition_names),
         exports_fields: vec![vec!["exports".into()]],
         imports_fields: vec![vec!["imports".into()]],
@@ -137,20 +170,12 @@ pub(crate) fn resolve_group(
     sources: &[String],
 ) -> GroupResult {
     let resolvers = Resolvers::new(config);
-    let path_patterns = config.map_or(&[][..], |config| &config.path_patterns);
     let results = sources
         .par_iter()
         .map(|source| {
             let mut result = GroupResult::default();
             for reference in context.references.get(source).into_iter().flatten() {
-                resolve_reference(
-                    context,
-                    &resolvers,
-                    path_patterns,
-                    source,
-                    reference,
-                    &mut result,
-                );
+                resolve_reference(context, &resolvers, source, reference, &mut result);
             }
             result
         })
@@ -167,7 +192,6 @@ pub(crate) fn resolve_group(
 fn resolve_reference(
     context: &GroupContext,
     resolvers: &Resolvers,
-    path_patterns: &[String],
     source: &str,
     reference: &Reference,
     result: &mut GroupResult,
@@ -178,9 +202,9 @@ fn resolve_reference(
     }
     let root = &context.inventory.root;
     let unclaimed_bare = is_bare_specifier(specifier)
-        && !path_patterns
-            .iter()
-            .any(|pattern| matches_path_pattern(pattern, specifier))
+        && !resolvers
+            .config
+            .is_some_and(|config| config.claims(specifier))
         && !context
             .internal_package_names
             .contains(package_name(specifier));
@@ -196,10 +220,8 @@ fn resolve_reference(
         });
     };
 
-    let resolution = resolvers
-        .for_reference(*kind, common_js_source)
-        .resolve(source_directory, specifier);
-    let Ok(resolution) = resolution else {
+    let resolver = resolvers.for_reference(*kind, common_js_source);
+    let Some(resolved_file) = resolvers.resolve(resolver, source_directory, specifier) else {
         if unclaimed_bare {
             return;
         }
@@ -215,7 +237,6 @@ fn resolve_reference(
         }
         return;
     };
-    let resolved_file = resolvers.file_system.locate(resolution.path());
     let Some(target_path) = repository_path(root, &resolved_file) else {
         if !unclaimed_bare {
             gap("resolved target escapes snapshot");
@@ -269,21 +290,4 @@ fn package_name(specifier: &str) -> &str {
         Some((index, _)) => &specifier[..index],
         None => specifier,
     }
-}
-
-fn matches_path_pattern(pattern: &str, specifier: &str) -> bool {
-    let parts = pattern.split('*').collect::<Vec<_>>();
-    let [first, middle @ .., last] = parts.as_slice() else {
-        return pattern == specifier;
-    };
-    let Some(mut rest) = specifier.strip_prefix(first) else {
-        return false;
-    };
-    for part in middle {
-        let Some(index) = rest.find(part) else {
-            return false;
-        };
-        rest = &rest[index + part.len()..];
-    }
-    rest.ends_with(last)
 }

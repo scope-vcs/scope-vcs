@@ -1,4 +1,5 @@
 mod config;
+mod jsonc;
 mod module_suffixes;
 mod paths;
 mod resolve;

@@ -382,6 +382,123 @@ fn uses_import_require_and_types_package_export_conditions() {
 }
 
 #[test]
+fn installed_extended_configs_never_reach_outside_the_snapshot() {
+    let parent = TempDir::new().unwrap();
+    let outside = parent.path().join("outside.json");
+    let redirect = parent.path().join("repo/redirect.ts");
+    write_files(
+        parent.path(),
+        &[
+            (
+                "outside.json",
+                &format!(
+                    r#"{{"compilerOptions":{{"paths":{{"@x":["{}"]}}}}}}"#,
+                    redirect.display()
+                ),
+            ),
+            ("repo/tsconfig.json", r#"{"extends":"base"}"#),
+            (
+                "repo/base.json",
+                r#"{"compilerOptions":{"paths":{"@x":["./value.ts"]}}}"#,
+            ),
+            (
+                "repo/node_modules/base/package.json",
+                r#"{"name":"base","exports":"./tsconfig.json"}"#,
+            ),
+            (
+                "repo/node_modules/base/tsconfig.json",
+                &format!(r#"{{"extends":"{}"}}"#, outside.display()),
+            ),
+            ("repo/entry.ts", "import { value } from '@x';\n"),
+            ("repo/value.ts", "export {};\n"),
+            ("repo/redirect.ts", "export {};\n"),
+        ],
+    );
+
+    let output = analyze(&parent.path().join("repo"));
+
+    assert_eq!(output.gaps, []);
+    assert_eq!(output.edges, [edge("entry.ts", "value.ts", Import)]);
+}
+
+#[test]
+fn config_fields_outside_module_resolution_keep_every_edge() {
+    let root = repository(&[
+        (
+            "tsconfig.json",
+            r#"{"include":"bad","files":"bad","compilerOptions":{"strict":"no","target":null,"paths":{"@x":["value.ts"]}}}"#,
+        ),
+        (
+            "entry.ts",
+            "import { value } from '@x'; import './value';\n",
+        ),
+        ("value.ts", "export const value = 1;\n"),
+    ]);
+
+    let output = analyze(root.path());
+
+    assert_eq!(output.gaps, []);
+    assert_eq!(
+        output.edges,
+        [
+            edge("entry.ts", "value.ts", Import),
+            edge("entry.ts", "value.ts", SideEffectImport),
+        ]
+    );
+}
+
+#[test]
+fn inherited_paths_without_base_url_resolve_from_the_consuming_config() {
+    let root = repository(&[
+        ("tsconfig.json", r#"{"extends":"./config/base.json"}"#),
+        (
+            "config/base.json",
+            r#"{"compilerOptions":{"paths":{"@x":["./value.ts"]}}}"#,
+        ),
+        ("config/value.ts", "export {};\n"),
+        ("value.ts", "export {};\n"),
+        ("entry.ts", "import '@x';\n"),
+    ]);
+
+    let output = analyze(root.path());
+
+    assert_eq!(output.gaps, []);
+    assert_eq!(
+        output.edges,
+        [edge("entry.ts", "value.ts", SideEffectImport)]
+    );
+}
+
+#[test]
+fn hash_comments_make_a_config_invalid_without_losing_relative_edges() {
+    let root = repository(&[
+        (
+            "tsconfig.json",
+            "{ # comment\n \"compilerOptions\":{\"paths\":{\"@x\":[\"value.ts\"]}}}",
+        ),
+        (
+            "entry.ts",
+            "import { value } from '@x'; import './value';\n",
+        ),
+        ("value.ts", "export const value = 1;\n"),
+    ]);
+
+    let output = analyze(root.path());
+
+    assert_eq!(
+        output.gaps,
+        [gap(
+            "tsconfig.json",
+            "invalid TypeScript config: malformed JSONC at tsconfig.json"
+        )]
+    );
+    assert_eq!(
+        output.edges,
+        [edge("entry.ts", "value.ts", SideEffectImport)]
+    );
+}
+
+#[test]
 fn rejects_path_aliases_that_point_outside_the_snapshot() {
     let root = repository(&[
         (
