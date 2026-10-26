@@ -5,6 +5,7 @@ use crate::{
     },
     display::terminal_text,
     execution,
+    git_repo::GitSnapshot,
     login::session_from_cache_or_browser,
     repository_views::repository_views,
 };
@@ -12,9 +13,11 @@ use anyhow::Result;
 use scope_domain::views::{ViewId, Views};
 
 pub(super) fn run(remote: Option<&str>, before: Option<&str>) -> Result<()> {
-    let repo = crate::context::discover_optional()?;
-    let target = crate::context::resolve_repository(repo.as_ref(), remote)?;
+    let checkout = crate::context::discover_optional()?
+        .map(|repo| GitSnapshot::read(&repo))
+        .transpose()?;
     let api_url = api_url()?;
+    let target = crate::context::resolve_repository(checkout.as_ref(), &api_url, remote)?;
     let client = http_client()?;
     let session = session_from_cache_or_browser(&client, &api_url)?;
     let api = ApiSession::new(&client, &api_url, &session.token);

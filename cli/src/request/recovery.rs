@@ -83,6 +83,7 @@ mod tests {
         )
         .unwrap();
         let context = RequestContext {
+            checkout: None,
             target,
             repo: serde_json::from_value(json!({
                 "id":"repo_one", "owner_handle":"owner", "name":"repo",

@@ -3,17 +3,16 @@ use crate::display::short_oid;
 use crate::{
     api::{api_url, get_repo, http_client},
     git_repo::{
-        GitRepo, branch_config_value, clear_scope_push_address, current_branch,
-        ensure_git_repo_ready, fetch_scope_remote_refs_with_bearer, git_remote_fetch_url, head_oid,
-        install_scope_fetch_auth, run_git_in_repo, scope_git_origin,
+        GitRepo, GitSnapshot, branch_config_value, clear_scope_push_address, current_branch,
+        ensure_git_repo_ready, fetch_scope_remote_refs_with_bearer, head_oid,
+        install_scope_fetch_auth, run_git_in_repo,
     },
-    git_transport::{ScopeRemote, select_scope_fetch_remote},
+    git_transport::ScopeRemote,
     login::session_from_cache_or_browser,
     push::DEFAULT_SCOPE_BRANCH,
     repo_config::{
-        WorktreeRepoConfigPresence, WorktreeRepoConfigSync, load_worktree_scope_repo_config,
-        load_worktree_scope_repo_config_base_hash, sync_missing_worktree_scope_repo_config,
-        worktree_scope_repo_config_presence,
+        WorktreeRepoConfigPresence, WorktreeRepoConfigSync, load_synced_worktree_scope_repo_config,
+        sync_missing_worktree_scope_repo_config, worktree_scope_repo_config_presence,
     },
     repository_views::reader_repo_config,
 };
@@ -27,9 +26,13 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
     let branch = current_branch(&repo)?;
     let previous_head = head_oid(&repo)?;
     let api_url = api_url()?;
-    let remote = select_scope_fetch_remote(&repo, &api_url, explicit_remote)?;
-    let git_origin = scope_git_origin(&repo, &api_url)?;
-    let target = ScopeRemote::parse(&git_origin, &remote, &git_remote_fetch_url(&repo, &remote)?)?;
+    let target = crate::context::select_scope_remote(
+        &GitSnapshot::read(&repo)?,
+        &api_url,
+        explicit_remote,
+        false,
+    )?;
+    let remote = target.remote.clone();
     let client = http_client()?;
     let session = session_from_cache_or_browser(&client, &api_url)?;
     let visibility_sync = sync_pull_visibility(
@@ -115,8 +118,7 @@ fn sync_pull_visibility(
     target: &ScopeRemote,
 ) -> anyhow::Result<WorktreeRepoConfigSync> {
     if worktree_scope_repo_config_presence(&repo.root)? == WorktreeRepoConfigPresence::Complete {
-        load_worktree_scope_repo_config(&repo.root)?;
-        load_worktree_scope_repo_config_base_hash(&repo.root)?;
+        load_synced_worktree_scope_repo_config(&repo.root)?;
         return Ok(WorktreeRepoConfigSync::Unchanged);
     }
     let summary = get_repo(api, &target.owner, &target.repo)?;

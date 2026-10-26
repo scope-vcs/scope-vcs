@@ -38,7 +38,7 @@ mod stack;
 use discussion::{DiscussionMutation, discussion_mutation};
 mod inspect;
 mod local;
-pub(crate) use local::{RequestComparison, resolve_request_comparison_ref};
+pub(crate) use local::{RequestComparison, RequestContext, resolve_request_comparison_ref};
 mod outcome;
 mod queue;
 mod recovery;
@@ -190,7 +190,7 @@ fn show_request_status(
 ) -> anyhow::Result<RequestCommandOutcome> {
     let context = load_context(git_repo, api, remote.as_deref())?;
     let mut human_lines = repo_access_lines(&context.repo);
-    if let Some(request_id) = maybe_request_id_for_context(git_repo, api, &context, request_id)? {
+    if let Some(request_id) = maybe_request_id_for_context(api, &context, request_id)? {
         let detail = get_request(
             api,
             &context.target.owner,
@@ -389,14 +389,11 @@ fn start_view(
     Ok(view)
 }
 
-pub fn inspect_current_request(
-    git_repo: &GitRepo,
+pub(crate) fn inspect_current_request(
     api: ApiSession<'_>,
-    remote: Option<&str>,
+    context: &RequestContext,
 ) -> anyhow::Result<Option<crate::api::RequestSummaryResponse>> {
-    let context = load_context(Some(git_repo), api, remote)?;
-    let Some(request_id) = maybe_request_id_for_context(Some(git_repo), api, &context, None)?
-    else {
+    let Some(request_id) = maybe_request_id_for_context(api, context, None)? else {
         return Ok(None);
     };
     Ok(Some(

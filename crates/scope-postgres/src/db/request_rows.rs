@@ -47,6 +47,7 @@ pub struct RequestListPageQuery<'a> {
     pub access: RepositoryAccess,
     pub views: &'a Views,
     pub after_id: Option<&'a str>,
+    pub name: Option<&'a str>,
     pub limit: u64,
 }
 
@@ -168,6 +169,9 @@ fn request_list_select(
         ));
     if let Some(after_id) = input.after_id {
         query = query.filter(entities::request::Column::Id.gt(after_id));
+    }
+    if let Some(name) = input.name {
+        query = query.filter(entities::request::Column::Name.eq(name));
     }
     query = query.filter(request_list_condition(&request_list_predicate(
         input.access.clone(),
@@ -586,6 +590,7 @@ mod request_list_tests {
             access: RepositoryAccess::public(),
             views: &Views::builtin(),
             after_id: None,
+            name: None,
             limit: 1,
         })
         .unwrap();

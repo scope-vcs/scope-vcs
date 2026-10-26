@@ -203,6 +203,32 @@ async fn request_list_pages_one_hundred_and_one_visible_rows_without_overlap() {
 }
 
 #[tokio::test]
+async fn request_list_name_filter_returns_only_the_visible_exact_match() {
+    let state = test_state_with_readme().await;
+    cache_test_jwks(&state);
+    create_owner_request(&state, "req_named", REQUEST_HEAD).await;
+    create_owner_request(&state, "req_named_other", REQUEST_HEAD).await;
+    let app = router(state);
+
+    for (name, bearer, expected) in [
+        ("req-named", Some(bearer_header()), vec!["req_named"]),
+        ("req-named", None, vec![]),
+        ("req-nam", Some(bearer_header()), vec![]),
+    ] {
+        let response = api_request(
+            app.clone(),
+            "GET",
+            &format!("/v1/repos/owner/repo/requests?name={name}"),
+            bearer.as_deref(),
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(request_ids(&response_json(response).await), expected);
+    }
+}
+
+#[tokio::test]
 async fn rejected_draft_merge_records_only_a_stable_failure() {
     let mut state = test_state_with_repo();
     cache_test_jwks(&state);

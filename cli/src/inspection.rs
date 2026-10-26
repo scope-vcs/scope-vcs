@@ -1,11 +1,15 @@
-use crate::api::ApiSession;
-use crate::{api, context, execution, git_repo::GitRepo};
+use crate::{
+    api, context, execution,
+    git_repo::{GitRepo, GitSnapshot},
+};
 use serde::Serialize;
-use std::{path::PathBuf, process::Command, time::Duration};
+use std::{path::PathBuf, process::Command};
 
 mod local;
+mod remote;
 mod visibility;
 use local::{compare_scope_ref, git_text, local_state};
+use remote::inspect_remote;
 use visibility::inspect_visibility;
 
 #[derive(Serialize)]
@@ -187,8 +191,11 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
         }
     };
     let checkout = if git_available {
-        match context::discover_optional() {
-            Ok(repo) => repo,
+        match context::discover_optional().and_then(|repo| {
+            repo.map(|repo| Ok((GitSnapshot::read(&repo)?, repo)))
+                .transpose()
+        }) {
+            Ok(checkout) => checkout,
             Err(error) => {
                 record(
                     &mut report,
@@ -203,8 +210,8 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
     } else {
         None
     };
-    if let Some(repo) = &checkout {
-        match local_state(repo) {
+    if let Some((snapshot, repo)) = &checkout {
+        match local_state(repo, snapshot) {
             Ok(local) => {
                 record(
                     &mut report,
@@ -245,7 +252,11 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
     let mut comparison_main_remote = None;
     let mut main_push_remote = None;
     let target = if valid_endpoint {
-        match context::resolve_repository(checkout.as_ref(), remote) {
+        match context::resolve_repository(
+            checkout.as_ref().map(|(snapshot, _)| snapshot),
+            &endpoint,
+            remote,
+        ) {
             Ok(target) => {
                 report.target = Some(format!("{}/{}", target.owner, target.repo));
                 record(
@@ -255,9 +266,9 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
                     format!("{}/{}", target.owner, target.repo),
                     None,
                 );
-                if let Some(repo) = &checkout {
+                if let Some((snapshot, repo)) = &checkout {
                     main_push_remote =
-                        context::select_scope_remote(repo, &endpoint, remote, true).ok();
+                        context::select_scope_remote(snapshot, &endpoint, remote, true).ok();
                     comparison_main_remote = Some(
                         main_push_remote
                             .as_ref()
@@ -290,20 +301,25 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
     } else if valid_endpoint {
         inspect_remote(
             &mut report,
-            checkout.as_ref(),
+            checkout.as_ref().map(|(snapshot, _)| snapshot),
             target.as_ref(),
             main_push_remote.as_ref(),
         );
     }
     let mut request_comparison_unavailable = false;
-    if let (Some(repo), Some(target), Some(main_remote), Some(local)) = (
+    if let (Some((snapshot, repo)), Some(target), Some(main_remote), Some(local)) = (
         checkout.as_ref(),
         target.as_ref(),
         comparison_main_remote.as_deref(),
         report.local.as_mut(),
-    ) && let Some(request_id) =
-        compare_scope_ref(local, repo, target, main_remote, report.request.as_ref())
-    {
+    ) && let Some(request_id) = compare_scope_ref(
+        local,
+        repo,
+        snapshot,
+        target,
+        main_remote,
+        report.request.as_ref(),
+    ) {
         request_comparison_unavailable = true;
         let branch = local.branch.clone().unwrap_or_else(|| "BRANCH".into());
         let reattach = format!("scope request checkout --request {request_id} --branch {branch}");
@@ -345,218 +361,6 @@ fn inspect(remote: Option<&str>, offline: bool) -> Report {
 
 fn main_push_target(remote: &crate::git_transport::ScopeRemote) -> String {
     format!("{}/main", remote.remote)
-}
-
-fn inspect_remote(
-    report: &mut Report,
-    checkout: Option<&GitRepo>,
-    target: Option<&crate::git_transport::ScopeRemote>,
-    main_push_remote: Option<&crate::git_transport::ScopeRemote>,
-) {
-    let endpoint = report.api_url.clone();
-    let token = match crate::auth::read_stored_session_token(&endpoint) {
-        Ok(Some(token)) => token,
-        Ok(None) => {
-            record(
-                report,
-                "authentication",
-                DiagnosticState::Problem,
-                "Not signed in".into(),
-                Some("Run scope login, or scope login --exchange-file PATH for automation".into()),
-            );
-            return;
-        }
-        Err(error) => {
-            record(
-                report,
-                "authentication",
-                DiagnosticState::Problem,
-                error.to_string(),
-                Some("Check that the credential store is available".into()),
-            );
-            return;
-        }
-    };
-    let client = match api::http_client_builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-    {
-        Ok(client) => client,
-        Err(error) => {
-            record(
-                report,
-                "remote",
-                DiagnosticState::Problem,
-                error.to_string(),
-                None,
-            );
-            return;
-        }
-    };
-    let session = ApiSession::new(&client, &endpoint, &token);
-    match api::validate_session_token(session) {
-        Ok(Some(user)) => {
-            record(
-                report,
-                "authentication",
-                DiagnosticState::Ok,
-                format!("Signed in as @{}", user.handle),
-                None,
-            );
-            report.account = Some(user);
-        }
-        Ok(None) => {
-            record(
-                report,
-                "authentication",
-                DiagnosticState::Problem,
-                "Saved session expired or was revoked".into(),
-                Some("Run scope login".into()),
-            );
-            return;
-        }
-        Err(error) => {
-            record(
-                report,
-                "remote",
-                DiagnosticState::Unavailable,
-                error.to_string(),
-                Some(
-                    "Retry when Scope is reachable; local state remains available with --offline"
-                        .into(),
-                ),
-            );
-            return;
-        }
-    }
-    let Some(target) = target else {
-        return;
-    };
-    let summary = match api::get_repo(session, &target.owner, &target.repo) {
-        Ok(summary) => summary,
-        Err(error) => {
-            record(
-                report,
-                "repository access",
-                DiagnosticState::Problem,
-                error.to_string(),
-                None,
-            );
-            return;
-        }
-    };
-    let reads_full_view = match crate::repository_views::reads_full_view(&summary) {
-        Ok(reads_full_view) => reads_full_view,
-        Err(error) => {
-            record(
-                report,
-                "repository views",
-                DiagnosticState::Problem,
-                format!("{error:#}"),
-                None,
-            );
-            false
-        }
-    };
-    if reads_full_view {
-        match api::get_repo_config(session, &target.owner, &target.repo) {
-            Ok(server) => {
-                if let Some(visibility) = report
-                    .local
-                    .as_mut()
-                    .and_then(|local| local.visibility.as_mut())
-                {
-                    visibility.server_changed = visibility
-                        .base_hash
-                        .as_ref()
-                        .map(|base| base != &server.config_hash);
-                    visibility.server_hash = Some(server.config_hash);
-                    if visibility.server_changed == Some(true) {
-                        record(report, "visibility_drift", DiagnosticState::Problem, "Server visibility changed since local setup/review".into(), Some("Inspect scope visibility show and resolve local edits before scope push --main".into()));
-                    }
-                }
-            }
-            Err(error) => record(
-                report,
-                "server visibility",
-                DiagnosticState::Unavailable,
-                error.to_string(),
-                None,
-            ),
-        }
-    }
-    report.main_push_target = main_push_remote
-        .filter(|push| {
-            crate::repository_views::repository_views(&summary.views).is_ok_and(|views| {
-                crate::push::pushes_main_through(
-                    &summary.access,
-                    summary.lifecycle_state,
-                    &views,
-                    &push.view,
-                )
-            })
-        })
-        .map(main_push_target);
-    report.repository = Some(summary);
-    if let Some(checkout) = checkout {
-        let remote = (!target.remote.is_empty()).then_some(target.remote.as_str());
-        match crate::request::inspect_current_request(checkout, session, remote) {
-            Ok(request) => report.request = request,
-            Err(error) => record(
-                report,
-                "request",
-                DiagnosticState::Unavailable,
-                error.to_string(),
-                None,
-            ),
-        }
-    }
-    if !reads_full_view {
-        record(
-            report,
-            "runs",
-            DiagnosticState::NotChecked,
-            "Workflow runs are available to repository maintainers".into(),
-            None,
-        );
-        return;
-    }
-    match api::run_history(session, &target.owner, &target.repo, None, None, 20, None) {
-        Ok(history) => {
-            let head = report
-                .request
-                .as_ref()
-                .map(|request| request.head_oid.as_str())
-                .or_else(|| {
-                    report
-                        .local
-                        .as_ref()
-                        .and_then(|local| local.head_oid.as_deref())
-                });
-            report.recent_matching_runs = history
-                .runs
-                .into_iter()
-                .filter(|run| head.is_none_or(|head| run.git_oid == head))
-                .collect();
-            record(
-                report,
-                "runs",
-                DiagnosticState::Ok,
-                format!(
-                    "{} matching runs in the 20 most recent repository runs",
-                    report.recent_matching_runs.len()
-                ),
-                None,
-            );
-        }
-        Err(error) => record(
-            report,
-            "runs",
-            DiagnosticState::Unavailable,
-            error.to_string(),
-            None,
-        ),
-    }
 }
 
 fn record(

@@ -40,6 +40,8 @@ mod changes;
 mod config;
 mod rebase;
 pub use rebase::*;
+mod snapshot;
+pub use snapshot::*;
 mod transport;
 pub use changes::*;
 pub use config::*;

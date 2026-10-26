@@ -1,4 +1,3 @@
-use crate::git_repo::GitRepo;
 use anyhow::{Context, bail};
 use reqwest::Url;
 use scope_domain::views::ViewId;
@@ -91,22 +90,6 @@ pub fn scope_path_origin(remote_url: &str) -> Option<String> {
         .map(|origin| origin.ascii_serialization())
 }
 
-pub fn select_scope_fetch_remote(
-    repo: &GitRepo,
-    api_url: &str,
-    explicit_remote: Option<&str>,
-) -> anyhow::Result<String> {
-    crate::context::select_remote(repo, api_url, explicit_remote, false)
-}
-
-pub fn select_scope_push_remote(
-    repo: &GitRepo,
-    api_url: &str,
-    explicit_remote: Option<&str>,
-) -> anyhow::Result<String> {
-    crate::context::select_remote(repo, api_url, explicit_remote, true)
-}
-
 fn redacted_url(url: &Url) -> String {
     let mut redacted = url.clone();
     if !redacted.username().is_empty() {
@@ -121,7 +104,25 @@ fn redacted_url(url: &Url) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::TempDir;
+    use crate::{
+        git_repo::{GitRepo, GitSnapshot},
+        test_support::TempDir,
+    };
+
+    fn selected_remote(
+        repo: &GitRepo,
+        api_url: &str,
+        explicit_remote: Option<&str>,
+        push: bool,
+    ) -> anyhow::Result<String> {
+        crate::context::select_scope_remote(
+            &GitSnapshot::read(repo)?,
+            api_url,
+            explicit_remote,
+            push,
+        )
+        .map(|target| target.remote)
+    }
 
     #[test]
     fn parses_the_view_from_the_remote_and_derives_every_view_address() {
@@ -203,7 +204,7 @@ mod tests {
         };
 
         assert_eq!(
-            select_scope_fetch_remote(&repo, "https://scope.example", None).unwrap(),
+            selected_remote(&repo, "https://scope.example", None, false).unwrap(),
             "origin"
         );
 
@@ -214,7 +215,7 @@ mod tests {
             "https://scope.example/git/private/adam/repo",
         ]);
         assert_eq!(
-            select_scope_fetch_remote(&repo, "https://scope.example", None).unwrap(),
+            selected_remote(&repo, "https://scope.example", None, false).unwrap(),
             "scope"
         );
     }
@@ -234,8 +235,8 @@ mod tests {
             root: dir.path().to_path_buf(),
         };
 
-        assert!(select_scope_push_remote(&repo, "https://scope.example", None).is_err());
-        assert!(select_scope_push_remote(&repo, "https://scope.example", Some("origin")).is_err());
+        assert!(selected_remote(&repo, "https://scope.example", None, true).is_err());
+        assert!(selected_remote(&repo, "https://scope.example", Some("origin"), true).is_err());
     }
 
     #[test]
@@ -253,11 +254,11 @@ mod tests {
         };
 
         assert_eq!(
-            select_scope_fetch_remote(&repo, "https://api.scope.example", None).unwrap(),
+            selected_remote(&repo, "https://api.scope.example", None, false).unwrap(),
             "origin"
         );
         assert_eq!(
-            select_scope_push_remote(&repo, "https://api.scope.example", None).unwrap(),
+            selected_remote(&repo, "https://api.scope.example", None, true).unwrap(),
             "origin"
         );
     }
@@ -290,7 +291,7 @@ mod tests {
         };
 
         assert_eq!(
-            select_scope_push_remote(&repo, "https://scope.example", None).unwrap(),
+            selected_remote(&repo, "https://scope.example", None, true).unwrap(),
             "upstream"
         );
     }
@@ -308,7 +309,7 @@ mod tests {
             root: dir.path().to_path_buf(),
         };
         assert_eq!(
-            select_scope_push_remote(&repo, "https://scope.example", None).unwrap(),
+            selected_remote(&repo, "https://scope.example", None, true).unwrap(),
             "origin"
         );
 
@@ -319,7 +320,7 @@ mod tests {
             "origin",
             "https://scope.example/git/private/adam/repo",
         ]);
-        let error = select_scope_push_remote(&repo, "https://scope.example", Some("origin"))
+        let error = selected_remote(&repo, "https://scope.example", Some("origin"), true)
             .unwrap_err()
             .to_string();
         assert!(

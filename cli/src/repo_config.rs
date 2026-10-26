@@ -113,8 +113,7 @@ pub fn sync_missing_worktree_scope_repo_config(
             bail!("Scope repo config state exists without a local visibility config");
         }
         WorktreeRepoConfigPresence::Complete => {
-            load_worktree_scope_repo_config(git_root)?;
-            load_worktree_scope_repo_config_base_hash(git_root)?;
+            load_synced_worktree_scope_repo_config(git_root)?;
             Ok(WorktreeRepoConfigSync::Unchanged)
         }
     }
@@ -148,8 +147,7 @@ fn discard_outdated_worktree_scope_repo_config(paths: &RepoStatePaths) -> anyhow
 }
 
 pub fn is_linked_worktree(git_root: &Path) -> anyhow::Result<bool> {
-    let git_dir = git_path(git_root, &["rev-parse", "--git-dir"])?;
-    let common_dir = git_path(git_root, &["rev-parse", "--git-common-dir"])?;
+    let [git_dir, common_dir] = git_paths(git_root, &["--git-dir", "--git-common-dir"])?;
     Ok(git_dir.canonicalize()? != common_dir.canonicalize()?)
 }
 
@@ -176,15 +174,38 @@ pub fn ensure_scope_repo_config_exists(git_root: &Path) -> anyhow::Result<bool> 
     }
 }
 
+pub struct SyncedWorktreeRepoConfig {
+    pub path: PathBuf,
+    pub config: RepoConfig,
+    pub base_hash: String,
+}
+
+pub fn load_synced_worktree_scope_repo_config(
+    git_root: &Path,
+) -> anyhow::Result<SyncedWorktreeRepoConfig> {
+    let paths = repo_state_paths(git_root)?;
+    Ok(SyncedWorktreeRepoConfig {
+        config: read_repo_config(&paths.config)?,
+        base_hash: read_repo_config_base_hash(&paths.state)?,
+        path: paths.config,
+    })
+}
+
 pub fn load_worktree_scope_repo_config(git_root: &Path) -> anyhow::Result<RepoConfig> {
-    let path = repo_config_path(git_root)?;
-    let bytes = fs::read(&path).context("read Scope repo config")?;
+    read_repo_config(&repo_config_path(git_root)?)
+}
+
+fn read_repo_config(path: &Path) -> anyhow::Result<RepoConfig> {
+    let bytes = fs::read(path).context("read Scope repo config")?;
     RepoConfig::parse_json(&bytes).context("parse Scope repo config")
 }
 
 pub fn load_worktree_scope_repo_config_base_hash(git_root: &Path) -> anyhow::Result<String> {
-    let path = repo_state_paths(git_root)?.state;
-    let bytes = fs::read(&path).context("read Scope repo config state; run scope pull")?;
+    read_repo_config_base_hash(&repo_state_paths(git_root)?.state)
+}
+
+fn read_repo_config_base_hash(path: &Path) -> anyhow::Result<String> {
+    let bytes = fs::read(path).context("read Scope repo config state; run scope pull")?;
     let state: WorktreeRepoConfigState =
         serde_json::from_slice(&bytes).context("parse Scope repo config state")?;
     if state.kind != REPO_CONFIG_STATE_KIND {
@@ -257,7 +278,7 @@ fn default_repo_config_json() -> String {
 }
 
 fn repo_state_paths(git_root: &Path) -> anyhow::Result<RepoStatePaths> {
-    let directory = git_path(git_root, &["rev-parse", "--git-path", "scope"])?;
+    let [directory] = git_paths(git_root, &["--git-path", "scope"])?;
     Ok(RepoStatePaths {
         config: directory.join(REPO_CONFIG_FILE),
         state: directory.join(REPO_CONFIG_STATE_FILE),
@@ -265,9 +286,10 @@ fn repo_state_paths(git_root: &Path) -> anyhow::Result<RepoStatePaths> {
     })
 }
 
-fn git_path(git_root: &Path, args: &[&str]) -> anyhow::Result<PathBuf> {
+fn git_paths<const N: usize>(git_root: &Path, args: &[&str]) -> anyhow::Result<[PathBuf; N]> {
     let output = Command::new("git")
         .current_dir(git_root)
+        .arg("rev-parse")
         .args(args)
         .output()
         .context("resolve Git state path")?;
@@ -277,19 +299,19 @@ fn git_path(git_root: &Path, args: &[&str]) -> anyhow::Result<PathBuf> {
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
-    let value = String::from_utf8(output.stdout)
-        .context("Git state path is not UTF-8")?
-        .trim_end_matches(['\r', '\n'])
-        .to_string();
-    if value.is_empty() {
-        bail!("Git state path could not be determined");
-    }
-    let path = PathBuf::from(value);
-    if path.is_absolute() {
-        Ok(path)
-    } else {
-        Ok(git_root.join(path))
-    }
+    let values = String::from_utf8(output.stdout).context("Git state path is not UTF-8")?;
+    let paths = values
+        .lines()
+        .map(|value| {
+            if value.is_empty() {
+                bail!("Git state path could not be determined");
+            }
+            Ok(git_root.join(value))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    paths
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Git state path could not be determined"))
 }
 
 fn state_file_exists(path: &Path, label: &str) -> anyhow::Result<bool> {

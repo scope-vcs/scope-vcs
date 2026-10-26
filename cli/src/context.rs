@@ -1,9 +1,6 @@
 use crate::{
     error::CliError,
-    git_repo::{
-        GitRepo, branch_config_value, current_branch, git_remote_fetch_url, git_remote_names,
-        git_remote_push_url, scope_api_url_from_git_config, scope_git_origin,
-    },
+    git_repo::{GitRepo, GitSnapshot, scope_api_url_from_git_config},
     git_transport::{DEFAULT_SCOPE_REMOTE, ScopeRemote, scope_path_origin},
 };
 use anyhow::Context;
@@ -79,35 +76,27 @@ fn discover_at(cwd: &std::path::Path) -> anyhow::Result<Option<GitRepo>> {
 }
 
 pub fn resolve_repository(
-    repo: Option<&GitRepo>,
+    checkout: Option<&GitSnapshot>,
+    api_url: &str,
     explicit_remote: Option<&str>,
 ) -> anyhow::Result<ScopeRemote> {
     resolve(
-        repo,
-        &crate::api::api_url()?,
+        checkout,
+        api_url,
         explicit_remote,
         explicit_repository(),
         false,
     )
 }
 
-pub(crate) fn select_remote(
-    repo: &GitRepo,
-    api_url: &str,
-    explicit_remote: Option<&str>,
-    push: bool,
-) -> anyhow::Result<String> {
-    select_scope_remote(repo, api_url, explicit_remote, push).map(|target| target.remote)
-}
-
 pub(crate) fn select_scope_remote(
-    repo: &GitRepo,
+    checkout: &GitSnapshot,
     api_url: &str,
     explicit_remote: Option<&str>,
     push: bool,
 ) -> anyhow::Result<ScopeRemote> {
     let target = resolve(
-        Some(repo),
+        Some(checkout),
         api_url,
         explicit_remote,
         explicit_repository(),
@@ -123,7 +112,7 @@ pub(crate) fn select_scope_remote(
 }
 
 fn resolve(
-    repo: Option<&GitRepo>,
+    checkout: Option<&GitSnapshot>,
     api_url: &str,
     explicit_remote: Option<&str>,
     explicit_repo: Option<&str>,
@@ -134,7 +123,7 @@ fn resolve(
         .map(crate::clone::parse_repo_spec)
         .transpose()?;
     let remote_arg = explicit_remote.map(str::trim).filter(|s| !s.is_empty());
-    let Some(repo) = repo else {
+    let Some(checkout) = checkout else {
         if remote_arg.is_some() {
             return Err(CliError::usage(
                 "--remote requires a Git checkout; use --repo owner/repo outside a checkout",
@@ -146,16 +135,16 @@ fn resolve(
         })?;
         return target_for_repository(api_url, &selected.owner, &selected.repo);
     };
-    if let Some(stored_api) = scope_api_url_from_git_config(&repo.root)?
+    if let Some(stored_api) = checkout.scope_api_url()
         && stored_api.trim_end_matches('/') != api_url.trim_end_matches('/')
     {
         return Err(CliError::usage("the selected API endpoint conflicts with this checkout's scope.apiUrl; use the matching checkout or correct its environment configuration").into());
     }
-    let origin = scope_git_origin(repo, api_url)?;
+    let origin = checkout.scope_git_origin(api_url)?;
     let load = |name: &str, validate_push: bool| -> anyhow::Result<ScopeRemote> {
-        let fetch = ScopeRemote::parse(&origin, name, &git_remote_fetch_url(repo, name)?)?;
+        let fetch = ScopeRemote::parse(&origin, name, checkout.remote_fetch_url(name)?)?;
         let target = if validate_push {
-            let push = ScopeRemote::parse(&origin, name, &git_remote_push_url(repo, name)?)?;
+            let push = ScopeRemote::parse(&origin, name, checkout.remote_push_url(name)?)?;
             if (fetch.owner.as_str(), fetch.repo.as_str())
                 != (push.owner.as_str(), push.repo.as_str())
             {
@@ -190,20 +179,20 @@ fn resolve(
         return load(remote, push);
     }
     if selected.is_none()
-        && let Ok(branch) = current_branch(repo)
+        && let Some(branch) = checkout.branch()
     {
-        if let Some(remote) = branch_config_value(repo, &branch, "scopeRequestRemote")? {
-            return load(&remote, push);
+        if let Some(remote) = checkout.branch_config_value(branch, "scopeRequestRemote") {
+            return load(remote, push);
         }
-        if let Some(remote) = branch_config_value(repo, &branch, "remote")?
-            && load(&remote, false).is_ok()
+        if let Some(remote) = checkout.branch_config_value(branch, "remote")
+            && load(remote, false).is_ok()
         {
-            return load(&remote, push);
+            return load(remote, push);
         }
     }
-    let mut candidates = git_remote_names(repo)?
-        .into_iter()
-        .filter_map(|name| load(&name, false).ok())
+    let mut candidates = checkout
+        .remote_names()
+        .filter_map(|name| load(name, false).ok())
         .collect::<Vec<_>>();
     if candidates.is_empty() {
         if let Some(selected) = selected
@@ -211,8 +200,8 @@ fn resolve(
         {
             return target_for_repository(api_url, &selected.owner, &selected.repo);
         }
-        for name in git_remote_names(repo)? {
-            if let Some(found) = scope_path_origin(&git_remote_fetch_url(repo, &name)?) {
+        for name in checkout.remote_names() {
+            if let Some(found) = scope_path_origin(checkout.remote_fetch_url(name)?) {
                 return Err(CliError::usage(format!(
                     "remote {name} is a Scope remote at {found}, but this CLI is using {origin}. If Scope moved, run git remote set-url {name} with the new address, then scope login. To keep using {found}, run git config scope.apiUrl {found}"
                 ))
@@ -280,6 +269,10 @@ mod tests {
         (dir, repo)
     }
 
+    fn snapshot(repo: &GitRepo) -> GitSnapshot {
+        GitSnapshot::read(repo).unwrap()
+    }
+
     #[test]
     fn endpoint_discovery_distinguishes_no_checkout_from_broken_config() {
         let outside = crate::test_support::TempDir::new("endpoint-outside");
@@ -328,8 +321,14 @@ mod tests {
             "https://scope.example/git/private/owner/two",
         ]);
         for push in [false, true] {
-            let error =
-                resolve(Some(&repo), "https://scope.example", None, None, push).unwrap_err();
+            let error = resolve(
+                Some(&snapshot(&repo)),
+                "https://scope.example",
+                None,
+                None,
+                push,
+            )
+            .unwrap_err();
             assert!(error.to_string().contains("multiple Scope repositories"));
             assert_eq!(crate::error::exit_code(&error), 2);
         }
@@ -350,9 +349,15 @@ mod tests {
             "scope",
             "https://token@old.scope.example/git/private/owner/repo",
         ]);
-        let error = resolve(Some(&repo), "https://api.scope.example", None, None, false)
-            .unwrap_err()
-            .to_string();
+        let error = resolve(
+            Some(&snapshot(&repo)),
+            "https://api.scope.example",
+            None,
+            None,
+            false,
+        )
+        .unwrap_err()
+        .to_string();
         assert!(error.contains("remote scope is a Scope remote at https://old.scope.example"));
         assert!(error.contains("git config scope.apiUrl https://old.scope.example"));
         assert!(!error.contains("token"));
@@ -375,14 +380,20 @@ mod tests {
         ]);
         dir.run_git(["config", "branch.main.remote", "origin"]);
         assert_eq!(
-            resolve(Some(&repo), "https://scope.example", None, None, false)
-                .unwrap()
-                .repo,
+            resolve(
+                Some(&snapshot(&repo)),
+                "https://scope.example",
+                None,
+                None,
+                false
+            )
+            .unwrap()
+            .repo,
             "two"
         );
         assert_eq!(
             resolve(
-                Some(&repo),
+                Some(&snapshot(&repo)),
                 "https://scope.example",
                 None,
                 Some("owner/one"),
@@ -394,7 +405,7 @@ mod tests {
         );
         assert!(
             resolve(
-                Some(&repo),
+                Some(&snapshot(&repo)),
                 "https://scope.example",
                 Some("origin"),
                 Some("owner/one"),
@@ -441,7 +452,7 @@ mod tests {
         ]);
         assert!(
             resolve(
-                Some(&repo),
+                Some(&snapshot(&repo)),
                 "https://api.production.example",
                 None,
                 None,
@@ -451,7 +462,7 @@ mod tests {
         );
         assert!(
             resolve(
-                Some(&repo),
+                Some(&snapshot(&repo)),
                 "https://api.staging.example",
                 None,
                 None,

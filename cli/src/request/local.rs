@@ -1,10 +1,10 @@
 use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
-    api::{RepoSummaryResponse, RequestSummaryResponse, get_repo, list_requests},
+    api::{RepoSummaryResponse, RequestSummaryResponse, get_repo, request_named},
     error::CliError,
     git_repo::{
-        GitRepo, StaleRefLease, branch_config_value, current_branch,
+        GitRepo, GitSnapshot, StaleRefLease, branch_config_value, current_branch,
         fetch_scope_remote_with_bearer, git_output_in_repo, push_head_to_ref_with_bearer,
         run_git_in_repo, scope_remote_head_oid, set_branch_config_value, try_run_git_in_repo,
     },
@@ -23,10 +23,27 @@ const REQUEST_OWNER_KEY: &str = "scopeRequestOwner";
 const REQUEST_REPO_KEY: &str = "scopeRequestRepo";
 const REQUEST_VIEW_KEY: &str = "scopeRequestView";
 
-pub(super) struct RequestContext {
+pub(crate) struct RequestContext {
+    pub(super) checkout: Option<GitSnapshot>,
     pub(super) target: ScopeRemote,
     pub(super) repo: RepoSummaryResponse,
     pub(super) views: Views,
+}
+
+impl RequestContext {
+    pub(crate) fn new(
+        checkout: Option<GitSnapshot>,
+        target: ScopeRemote,
+        repo: RepoSummaryResponse,
+    ) -> anyhow::Result<Self> {
+        let views = repository_views(&repo.views)?;
+        Ok(Self {
+            checkout,
+            target,
+            repo,
+            views,
+        })
+    }
 }
 
 pub(super) fn load_context(
@@ -34,14 +51,10 @@ pub(super) fn load_context(
     api: ApiSession<'_>,
     remote: Option<&str>,
 ) -> anyhow::Result<RequestContext> {
-    let target = crate::context::resolve_repository(git_repo, remote)?;
+    let checkout = git_repo.map(GitSnapshot::read).transpose()?;
+    let target = crate::context::resolve_repository(checkout.as_ref(), api.base_url, remote)?;
     let repo = get_repo(api, &target.owner, &target.repo)?;
-    let views = repository_views(&repo.views)?;
-    Ok(RequestContext {
-        target,
-        repo,
-        views,
-    })
+    RequestContext::new(checkout, target, repo)
 }
 
 pub(super) fn load_context_and_request_id(
@@ -51,7 +64,7 @@ pub(super) fn load_context_and_request_id(
     request_id: Option<String>,
 ) -> anyhow::Result<(RequestContext, String)> {
     let context = load_context(git_repo, api, remote.as_deref())?;
-    let request_id = request_id_for_context(git_repo, api, &context, request_id)?;
+    let request_id = request_id_for_context(api, &context, request_id)?;
     Ok((context, request_id))
 }
 
@@ -176,27 +189,29 @@ fn git_is_ancestor(git_repo: &GitRepo, ancestor: &str, descendant: &str) -> anyh
 }
 
 pub(super) fn attached_request_id(
-    git_repo: &GitRepo,
     branch: &str,
     context: &RequestContext,
 ) -> anyhow::Result<String> {
-    let attachment = request_attachment(git_repo, branch)?.ok_or_else(|| CliError::usage("restack requires a branch attached to a Scope request; use scope request checkout first"))?;
+    let attachment = context
+        .checkout
+        .as_ref()
+        .and_then(|checkout| request_attachment(checkout, branch))
+        .ok_or_else(|| CliError::usage("restack requires a branch attached to a Scope request; use scope request checkout first"))?;
     validate_stored_request_target(&attachment, context)?;
-    if attachment.remote.as_deref() != Some(context.target.remote.as_str()) {
+    if attachment.remote != Some(context.target.remote.as_str()) {
         return Err(
             CliError::usage("the branch is attached through a different Scope remote").into(),
         );
     }
-    Ok(attachment.id)
+    Ok(attachment.id.to_string())
 }
 
 pub(super) fn request_id_for_context(
-    git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
     context: &RequestContext,
     request_id: Option<String>,
 ) -> anyhow::Result<String> {
-    maybe_request_id_for_context(git_repo, api, context, request_id)?.ok_or_else(|| {
+    maybe_request_id_for_context(api, context, request_id)?.ok_or_else(|| {
         crate::error::CliError::usage(
             "select a visible request with --request <name-or-id>, or check out its branch",
         )
@@ -205,7 +220,6 @@ pub(super) fn request_id_for_context(
 }
 
 pub(super) fn maybe_request_id_for_context(
-    git_repo: Option<&GitRepo>,
     api: ApiSession<'_>,
     context: &RequestContext,
     request_id: Option<String>,
@@ -219,50 +233,34 @@ pub(super) fn maybe_request_id_for_context(
     }
     let request_name = if let Some(request_name) = explicit {
         request_name
-    } else if let Some(git_repo) = git_repo {
-        let branch = match current_branch(git_repo) {
-            Ok(branch) => branch,
-            Err(_) => return Ok(None),
+    } else if let Some(checkout) = &context.checkout {
+        let Some(branch) = checkout.branch() else {
+            return Ok(None);
         };
-        if let Some(attachment) = request_attachment(git_repo, &branch)? {
+        if let Some(attachment) = request_attachment(checkout, branch) {
             validate_stored_request_target(&attachment, context)?;
-            return Ok(Some(attachment.id));
+            return Ok(Some(attachment.id.to_string()));
         }
-        let tracking_remote = branch_config_value(git_repo, &branch, "remote")?;
-        let merge_ref = branch_config_value(git_repo, &branch, "merge")?;
         inferred_request_name(
             branch,
             &context.target.remote,
-            tracking_remote.as_deref(),
-            merge_ref.as_deref(),
+            checkout.branch_config_value(branch, "remote"),
+            checkout.branch_config_value(branch, "merge"),
         )
     } else {
         return Ok(None);
     };
-    let mut cursor = None;
-    loop {
-        let page = list_requests(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            cursor.as_deref(),
-        )?;
-        if let Some(request) = page
-            .requests
-            .into_iter()
-            .find(|request| request.name == request_name)
-        {
-            return Ok(Some(request.id));
-        }
-        let Some(next_cursor) = page.next_cursor else {
-            return Ok(None);
-        };
-        cursor = Some(next_cursor);
-    }
+    Ok(request_named(
+        api,
+        &context.target.owner,
+        &context.target.repo,
+        &request_name,
+    )?
+    .map(|request| request.id))
 }
 
 fn inferred_request_name(
-    branch: String,
+    branch: &str,
     selected_remote: &str,
     tracking_remote: Option<&str>,
     merge_ref: Option<&str>,
@@ -273,31 +271,29 @@ fn inferred_request_name(
     {
         return request_name.to_string();
     }
-    branch
+    branch.to_string()
 }
 
-struct RequestAttachment {
-    id: String,
-    owner: Option<String>,
-    repo: Option<String>,
-    remote: Option<String>,
-    name: Option<String>,
+struct RequestAttachment<'a> {
+    id: &'a str,
+    owner: Option<&'a str>,
+    repo: Option<&'a str>,
+    remote: Option<&'a str>,
+    name: Option<&'a str>,
 }
 
-fn request_attachment(
-    git_repo: &GitRepo,
+fn request_attachment<'a>(
+    checkout: &'a GitSnapshot,
     branch: &str,
-) -> anyhow::Result<Option<RequestAttachment>> {
-    let Some(id) = branch_config_value(git_repo, branch, REQUEST_ID_KEY)? else {
-        return Ok(None);
-    };
-    Ok(Some(RequestAttachment {
-        id,
-        owner: branch_config_value(git_repo, branch, REQUEST_OWNER_KEY)?,
-        repo: branch_config_value(git_repo, branch, REQUEST_REPO_KEY)?,
-        remote: branch_config_value(git_repo, branch, REQUEST_REMOTE_KEY)?,
-        name: branch_config_value(git_repo, branch, REQUEST_NAME_KEY)?,
-    }))
+) -> Option<RequestAttachment<'a>> {
+    let value = |key| checkout.branch_config_value(branch, key);
+    Some(RequestAttachment {
+        id: value(REQUEST_ID_KEY)?,
+        owner: value(REQUEST_OWNER_KEY),
+        repo: value(REQUEST_REPO_KEY),
+        remote: value(REQUEST_REMOTE_KEY),
+        name: value(REQUEST_NAME_KEY),
+    })
 }
 
 pub(crate) enum RequestComparison {
@@ -307,30 +303,27 @@ pub(crate) enum RequestComparison {
 }
 
 pub(crate) fn resolve_request_comparison_ref(
-    git_repo: &GitRepo,
+    checkout: &GitSnapshot,
     branch: &str,
     target: &ScopeRemote,
     resolved_request: Option<&RequestSummaryResponse>,
 ) -> RequestComparison {
-    let Some(attachment) = request_attachment(git_repo, branch).ok().flatten() else {
+    let Some(attachment) = request_attachment(checkout, branch) else {
         return RequestComparison::Main;
     };
-    if attachment.id.is_empty()
-        || attachment.owner.as_deref() != Some(target.owner.as_str())
-        || attachment.repo.as_deref() != Some(target.repo.as_str())
-        || attachment.remote.as_deref() != Some(target.remote.as_str())
+    if attachment.owner != Some(target.owner.as_str())
+        || attachment.repo != Some(target.repo.as_str())
+        || attachment.remote != Some(target.remote.as_str())
     {
         return RequestComparison::Main;
     }
     let name = resolved_request
         .filter(|request| request.id == attachment.id)
         .map(|request| request.name.as_str())
-        .or(attachment.name.as_deref());
+        .or(attachment.name);
     match name {
-        Some(name) if !name.is_empty() => {
-            RequestComparison::Request(request_remote_ref(&target.remote, name))
-        }
-        _ => RequestComparison::Unavailable(attachment.id),
+        Some(name) => RequestComparison::Request(request_remote_ref(&target.remote, name)),
+        None => RequestComparison::Unavailable(attachment.id.to_string()),
     }
 }
 
@@ -338,7 +331,7 @@ fn validate_stored_request_target(
     attachment: &RequestAttachment,
     context: &RequestContext,
 ) -> anyhow::Result<()> {
-    match (attachment.owner.as_deref(), attachment.repo.as_deref()) {
+    match (attachment.owner, attachment.repo) {
         (Some(owner), Some(repo))
             if owner == context.target.owner && repo == context.target.repo =>
         {
@@ -458,7 +451,7 @@ mod tests {
     fn merge_ref_only_names_a_request_for_the_selected_scope_remote() {
         assert_eq!(
             inferred_request_name(
-                "scope-fix".to_string(),
+                "scope-fix",
                 "scope",
                 Some("scope"),
                 Some("refs/heads/request-fix"),
@@ -467,7 +460,7 @@ mod tests {
         );
         assert_eq!(
             inferred_request_name(
-                "scope-fix".to_string(),
+                "scope-fix",
                 "scope",
                 Some("origin"),
                 Some("refs/heads/other-fix"),
