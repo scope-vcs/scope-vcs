@@ -35,7 +35,7 @@ impl CodexReviewState {
         )
         .ok()?
         .into_iter()
-        .filter(|(name, _)| name.ends_with(REVIEW_SUFFIX))
+        .filter(|(name, part)| name.ends_with(REVIEW_SUFFIX) && !never_ran(part))
         .map(|(_, part)| serde_json::from_value::<CodexReviewPart>(part).ok())
         .collect::<Option<Vec<_>>>()?;
         (!parts.is_empty()).then_some(Self { parts })
@@ -69,6 +69,11 @@ impl CodexReviewState {
             None
         }
     }
+}
+
+fn never_ran(part: &serde_json::Value) -> bool {
+    part.as_object()
+        .is_some_and(|fields| !fields.is_empty() && fields.values().all(serde_json::Value::is_null))
 }
 
 fn names_commit(named: &str, head_oid: &str) -> bool {

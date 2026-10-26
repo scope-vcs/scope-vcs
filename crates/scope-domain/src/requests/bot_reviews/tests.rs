@@ -124,6 +124,14 @@ fn codex_state_comment_is_done_only_when_every_review_completed_the_head() {
         CodexReviewState::parse(&mixed).unwrap().state_for(HEAD),
         Some(GitHubReviewBotState::Working)
     );
+    let not_run = "{\"commit_sha\":null,\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":null}";
+    let requested_code_review = codex_comment(&part(HEAD, "completed", "false"), not_run);
+    assert_eq!(
+        state(&[commented(requested_code_review)], CODEX),
+        GitHubReviewBotState::Clear
+    );
+    let nothing_ran = codex_comment(not_run, not_run);
+    assert_eq!(CodexReviewState::parse(&nothing_ran), None);
     let code_only = "<!-- codex-review-state:v1 {\"code_review\":".to_string()
         + &part(HEAD, "completed", "false")
         + "} -->";
@@ -175,6 +183,7 @@ fn one_malformed_review_object_invalidates_the_whole_state_comment() {
             "{{\"commit_sha\":\"{HEAD}\",\"has_any_findings\":false,\"has_unresolved_findings\":false}}"
         ),
         "{\"commit_sha\":7,\"has_any_findings\":false,\"has_unresolved_findings\":false,\"status\":\"completed\"}".to_string(),
+        "{\"commit_sha\":null,\"has_any_findings\":false,\"has_unresolved_findings\":false,\"status\":\"completed\"}".to_string(),
         "null".to_string(),
         "\"completed\"".to_string(),
     ] {
