@@ -15,8 +15,8 @@ oxc_resolver = { version = "=11.24.3", default-features = false }
 oxc_span = "=0.155.0"
 rayon = "1.12.0"
 scope_domain = { package = "scope-domain", path = "../scope-domain" }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.147"
+serde = "1.0.228"
+serde_json = { version = "1.0.147", features = ["raw_value"] }
 
 [dev-dependencies]
 tempfile = "3.23.0"

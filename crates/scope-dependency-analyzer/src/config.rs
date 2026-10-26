@@ -389,7 +389,13 @@ fn read_config(path: &Path) -> Option<ConfigDocument> {
     let Value::Object(values) = serde_json::from_str(text).ok()? else {
         return None;
     };
-    let path_mappings = jsonc::ordered_path_mappings(text).unwrap_or_default();
+    let path_mappings = match values
+        .get("compilerOptions")
+        .and_then(|options| options.get("paths"))
+    {
+        Some(_) => jsonc::ordered_path_mappings(text)?,
+        None => Vec::new(),
+    };
     Some(ConfigDocument {
         values,
         path_mappings,

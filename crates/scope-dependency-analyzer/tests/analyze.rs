@@ -470,6 +470,26 @@ fn inherited_paths_without_base_url_resolve_from_the_consuming_config() {
 }
 
 #[test]
+fn duplicate_config_keys_use_the_last_value_like_json_parse() {
+    let root = repository(&[
+        (
+            "tsconfig.json",
+            r#"{"compilerOptions":{"strict":true},"compilerOptions":{"paths":{"@x":["missing.ts"],"@x":["value.ts"]}}}"#,
+        ),
+        ("entry.ts", "import '@x';\n"),
+        ("value.ts", "export {};\n"),
+    ]);
+
+    let output = analyze(root.path());
+
+    assert_eq!(output.gaps, []);
+    assert_eq!(
+        output.edges,
+        [edge("entry.ts", "value.ts", SideEffectImport)]
+    );
+}
+
+#[test]
 fn hash_comments_make_a_config_invalid_without_losing_relative_edges() {
     let root = repository(&[
         (

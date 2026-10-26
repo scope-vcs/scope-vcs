@@ -1,7 +1,8 @@
 use serde::{
-    Deserialize, Deserializer,
-    de::{MapAccess, Visitor},
+    Deserializer,
+    de::{IgnoredAny, MapAccess, Visitor},
 };
+use serde_json::{Value, value::RawValue};
 use std::fmt;
 
 pub(crate) fn has_hash_comment(text: &str) -> bool {
@@ -39,43 +40,53 @@ pub(crate) fn has_hash_comment(text: &str) -> bool {
     false
 }
 
-pub(crate) fn ordered_path_mappings(text: &str) -> Option<Vec<(String, Vec<String>)>> {
-    let document: Document = serde_json::from_str(text).ok()?;
-    Some(document.compiler_options?.paths?.0)
+pub(crate) fn ordered_path_mappings(document: &str) -> Option<Vec<(String, Vec<String>)>> {
+    let compiler_options = last_field(document, "compilerOptions")?;
+    let paths = last_field(compiler_options.get(), "paths")?;
+    let mut deserializer = serde_json::Deserializer::from_str(paths.get());
+    deserializer.deserialize_map(OrderedPaths).ok()
 }
 
-#[derive(Deserialize)]
-struct Document {
-    #[serde(rename = "compilerOptions")]
-    compiler_options: Option<CompilerOptions>,
+fn last_field<'a>(object: &'a str, key: &str) -> Option<&'a RawValue> {
+    let mut deserializer = serde_json::Deserializer::from_str(object);
+    deserializer.deserialize_map(LastField(key)).ok()?
 }
 
-#[derive(Deserialize)]
-struct CompilerOptions {
-    paths: Option<OrderedPaths>,
-}
+struct LastField<'k>(&'k str);
 
-struct OrderedPaths(Vec<(String, Vec<String>)>);
+impl<'de> Visitor<'de> for LastField<'_> {
+    type Value = Option<&'de RawValue>;
 
-impl<'de> Deserialize<'de> for OrderedPaths {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(OrderedPathsVisitor)
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON object")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut found = None;
+        while let Some(key) = map.next_key::<String>()? {
+            if key == self.0 {
+                found = Some(map.next_value::<&RawValue>()?);
+            } else {
+                map.next_value::<IgnoredAny>()?;
+            }
+        }
+        Ok(found)
     }
 }
 
-struct OrderedPathsVisitor;
+struct OrderedPaths;
 
-impl<'de> Visitor<'de> for OrderedPathsVisitor {
-    type Value = OrderedPaths;
+impl<'de> Visitor<'de> for OrderedPaths {
+    type Value = Vec<(String, Vec<String>)>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a paths object")
     }
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-        let mut mappings: Vec<(String, Vec<String>)> = Vec::new();
+        let mut mappings: Vec<(String, Value)> = Vec::new();
         while let Some(pattern) = map.next_key::<String>()? {
-            let targets = map.next_value::<Vec<String>>()?;
+            let targets = map.next_value::<Value>()?;
             match mappings
                 .iter_mut()
                 .find(|(existing, _)| *existing == pattern)
@@ -84,6 +95,18 @@ impl<'de> Visitor<'de> for OrderedPathsVisitor {
                 None => mappings.push((pattern, targets)),
             }
         }
-        Ok(OrderedPaths(mappings))
+        Ok(mappings
+            .into_iter()
+            .map(|(pattern, targets)| {
+                let targets = targets
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect();
+                (pattern, targets)
+            })
+            .collect())
     }
 }
