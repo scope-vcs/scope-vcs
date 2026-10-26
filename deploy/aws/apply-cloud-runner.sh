@@ -87,16 +87,6 @@ if [[ -z "$execution_role_arn" ]]; then
   exit 2
 fi
 
-readonly parameters=(
-  "ParameterKey=Environment,ParameterValue=$environment_name"
-  "ParameterKey=BudgetNotificationEmail,ParameterValue=$budget_email"
-  "ParameterKey=MonthlyBudgetUsd,ParameterValue=$monthly_budget_usd"
-  "ParameterKey=GitHubRepository,ParameterValue=$github_repository"
-  "ParameterKey=GitHubRepositoryId,ParameterValue=$github_repository_id"
-  "ParameterKey=GitHubRepositoryOwnerId,ParameterValue=$github_repository_owner_id"
-  "ParameterKey=ExistingGitHubOidcProviderArn,ParameterValue=$existing_github_oidc_provider_arn"
-  "ParameterKey=RegistryCredentialsSecretArn,ParameterValue=$registry_credentials_secret_arn"
-)
 readonly tags=(
   "Key=Project,Value=scope-vcs"
   "Key=Environment,Value=$environment_name"
@@ -146,6 +136,24 @@ else
       exit 1
       ;;
   esac
+  if [[ "$stack_operation" == UPDATE && -z "$existing_github_oidc_provider_arn" ]]; then
+    echo "GitHub OIDC provider: keeping the stack's current ExistingGitHubOidcProviderArn"
+    github_oidc_provider_parameter="ParameterKey=ExistingGitHubOidcProviderArn,UsePreviousValue=true"
+  else
+    echo "GitHub OIDC provider: ExistingGitHubOidcProviderArn=${existing_github_oidc_provider_arn:-<empty; the stack creates and owns the provider>}"
+    github_oidc_provider_parameter="ParameterKey=ExistingGitHubOidcProviderArn,ParameterValue=$existing_github_oidc_provider_arn"
+  fi
+  readonly github_oidc_provider_parameter
+  readonly parameters=(
+    "ParameterKey=Environment,ParameterValue=$environment_name"
+    "ParameterKey=BudgetNotificationEmail,ParameterValue=$budget_email"
+    "ParameterKey=MonthlyBudgetUsd,ParameterValue=$monthly_budget_usd"
+    "ParameterKey=GitHubRepository,ParameterValue=$github_repository"
+    "ParameterKey=GitHubRepositoryId,ParameterValue=$github_repository_id"
+    "ParameterKey=GitHubRepositoryOwnerId,ParameterValue=$github_repository_owner_id"
+    "$github_oidc_provider_parameter"
+    "ParameterKey=RegistryCredentialsSecretArn,ParameterValue=$registry_credentials_secret_arn"
+  )
   change_set_name="cli-$(date -u +%Y%m%dT%H%M%SZ)-$$"
   readonly change_set_name
   change_set_arn="$(aws_command cloudformation create-change-set \

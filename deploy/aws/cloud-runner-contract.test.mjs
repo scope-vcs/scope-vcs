@@ -52,12 +52,15 @@ test('the Railway dispatcher can invoke only the exact broker function', () => {
 
 const executionWorkflow = readFileSync(new URL('../../.github/workflows/scope-aws-infrastructure-execute.yml', import.meta.url), 'utf8')
 const brokerScript = new URL('./apply-dispatch-broker.sh', import.meta.url).pathname
+const runnerScript = new URL('./apply-cloud-runner.sh', import.meta.url).pathname
 const account = '123456789012'
 const executionRole = `arn:aws:iam::${account}:role/scope-infrastructure-execution`
 const brokerChangeSet = `arn:aws:cloudformation:us-east-1:${account}:changeSet/broker-review/identifier`
+const runnerChangeSet = `arn:aws:cloudformation:us-east-1:${account}:changeSet/runner-review/identifier`
+const accountOidcProvider = `arn:aws:iam::${account}:oidc-provider/token.actions.githubusercontent.com`
 
-function brokerOperation(t, command, overrides = {}, changeSet = '') {
-  const directory = mkdtempSync(join(tmpdir(), 'scope-broker-plan-'))
+function scriptOperation(t, script, command, overrides = {}, changeSet = '') {
+  const directory = mkdtempSync(join(tmpdir(), 'scope-infrastructure-plan-'))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const callsPath = join(directory, 'calls.jsonl')
   writeFileSync(join(directory, 'aws'), `#!/usr/bin/env node
@@ -65,15 +68,22 @@ function brokerOperation(t, command, overrides = {}, changeSet = '') {
     const args = process.argv.slice(2);
     appendFileSync(process.env.FAKE_AWS_CALLS, JSON.stringify(args) + '\\n');
     const command = args.slice(2, 4).join(' ');
+    const query = args[args.indexOf('--query') + 1];
     if (command === 'sts get-caller-identity') console.log('arn:aws:sts::${account}:assumed-role/infrastructure/test\\t${account}');
-    else if (command === 'cloudformation describe-stacks') console.log(process.env.FAKE_STACK_STATUS || 'UPDATE_COMPLETE');
-    else if (command === 'cloudformation create-change-set') console.log('${brokerChangeSet}');
+    else if (command === 'cloudformation describe-stacks' && query === 'Stacks[0].StackStatus') {
+      if (process.env.FAKE_STACK_STATUS === '') process.exit(254);
+      console.log(process.env.FAKE_STACK_STATUS || 'UPDATE_COMPLETE');
+    }
+    else if (command === 'cloudformation describe-change-set' && query === 'ChangeSetType') console.log('UPDATE');
+    else if (command === 'cloudformation create-change-set') console.log(process.env.FAKE_CREATED_CHANGE_SET);
     else console.log('validated');
   `, { mode: 0o755 })
   const env = { ...process.env, PATH: `${directory}:${process.env.PATH}`, FAKE_AWS_CALLS: callsPath,
+    FAKE_CREATED_CHANGE_SET: script === brokerScript ? brokerChangeSet : runnerChangeSet,
     AWS_REGION: 'us-east-1', SCOPE_AWS_EXECUTION_ROLE_ARN: executionRole }
-  for (const key of ['SCOPE_BROKER_CODE_BUCKET', 'SCOPE_BROKER_CODE_KEY', 'SCOPE_BROKER_CODE_VERSION', 'FAKE_STACK_STATUS']) delete env[key]
-  const result = spawnSync('bash', [brokerScript, command, changeSet], {
+  for (const key of ['SCOPE_BROKER_CODE_BUCKET', 'SCOPE_BROKER_CODE_KEY', 'SCOPE_BROKER_CODE_VERSION', 'FAKE_STACK_STATUS',
+    'STACK_NAME', 'EXISTING_GITHUB_OIDC_PROVIDER_ARN']) delete env[key]
+  const result = spawnSync('bash', [script, command, changeSet], {
     env: { ...env, ...overrides }, encoding: 'utf8', timeout: 60_000,
   })
   assert.ifError(result.error)
@@ -81,6 +91,34 @@ function brokerOperation(t, command, overrides = {}, changeSet = '') {
   try { calls = readFileSync(callsPath, 'utf8').trim().split('\n').map(JSON.parse) } catch {}
   return { ...result, calls }
 }
+
+const brokerOperation = (t, ...rest) => scriptOperation(t, brokerScript, ...rest)
+const runnerOperation = (t, ...rest) => scriptOperation(t, runnerScript, ...rest)
+
+test('runner plans set the GitHub OIDC provider on create and keep the deployed choice on update unless overridden', t => {
+  for (const [stackStatus, override, operation, expected] of [
+    ['', '', 'CREATE', 'ParameterKey=ExistingGitHubOidcProviderArn,ParameterValue='],
+    ['', accountOidcProvider, 'CREATE', `ParameterKey=ExistingGitHubOidcProviderArn,ParameterValue=${accountOidcProvider}`],
+    ['UPDATE_COMPLETE', '', 'UPDATE', 'ParameterKey=ExistingGitHubOidcProviderArn,UsePreviousValue=true'],
+    ['UPDATE_ROLLBACK_COMPLETE', accountOidcProvider, 'UPDATE', `ParameterKey=ExistingGitHubOidcProviderArn,ParameterValue=${accountOidcProvider}`],
+  ]) {
+    const result = runnerOperation(t, 'plan', { FAKE_STACK_STATUS: stackStatus, EXISTING_GITHUB_OIDC_PROVIDER_ARN: override })
+    assert.equal(result.status, 0, result.stderr)
+    const create = result.calls.find(call => call.includes('create-change-set'))
+    assert.equal(create[create.indexOf('--change-set-type') + 1], operation)
+    assert.deepEqual(create.filter(argument => argument.startsWith('ParameterKey=ExistingGitHubOidcProviderArn,')), [expected])
+    assert.ok(result.calls.every(call => !call.includes('execute-change-set')))
+  }
+})
+
+test('runner apply of an exact change set never rebuilds its parameters', t => {
+  const result = runnerOperation(t, 'apply', { EXISTING_GITHUB_OIDC_PROVIDER_ARN: accountOidcProvider }, runnerChangeSet)
+  assert.equal(result.status, 0, result.stderr)
+  assert.ok(result.calls.every(call => !call.includes('create-change-set')))
+  const execute = result.calls.find(call => call.includes('execute-change-set'))
+  assert.equal(execute[execute.indexOf('--change-set-name') + 1], runnerChangeSet)
+  assert.doesNotMatch(JSON.stringify(result.calls), /ExistingGitHubOidcProviderArn/)
+})
 
 const brokerCode = {
   SCOPE_BROKER_CODE_BUCKET: `scope-dispatch-broker-artifacts-${account}-us-east-1`,
