@@ -8,6 +8,12 @@ const MARKER_END: &str = "-->";
 const FULL_OID_LENGTH: usize = 40;
 const REVIEW_SUFFIX: &str = "_review";
 const COMPLETED: &str = "completed";
+const PART_FIELDS: [&str; 4] = [
+    "commit_sha",
+    "status",
+    "has_any_findings",
+    "has_unresolved_findings",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodexReviewState {
@@ -35,7 +41,7 @@ impl CodexReviewState {
         )
         .ok()?
         .into_iter()
-        .filter(|(name, _)| name.ends_with(REVIEW_SUFFIX))
+        .filter(|(name, part)| name.ends_with(REVIEW_SUFFIX) && !never_ran(part))
         .map(|(_, part)| serde_json::from_value::<CodexReviewPart>(part).ok())
         .collect::<Option<Vec<_>>>()?;
         (!parts.is_empty()).then_some(Self { parts })
@@ -69,6 +75,14 @@ impl CodexReviewState {
             None
         }
     }
+}
+
+fn never_ran(part: &serde_json::Value) -> bool {
+    part.as_object().is_some_and(|fields| {
+        PART_FIELDS
+            .iter()
+            .all(|field| fields.get(*field).is_some_and(serde_json::Value::is_null))
+    })
 }
 
 fn names_commit(named: &str, head_oid: &str) -> bool {
