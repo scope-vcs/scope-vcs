@@ -29,11 +29,12 @@ use scope_api_contract::{
 };
 use scope_domain::{
     runs::log::RunLogChunk,
+    runs::source::MAX_RUN_SOURCE_BUNDLE_BYTES,
     runs::step::{AttemptConclusion, RunAttemptStep, StepConclusion},
 };
 
 const ATTEMPT_LEASE_SECONDS: u64 = 90;
-const MAX_SOURCE_BUNDLE_BYTES: usize = 128 * 1024 * 1024;
+
 pub(crate) async fn claim(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -238,7 +239,7 @@ pub(crate) async fn source(
     let claim = require_attempt(&state, &headers, &attempt_id).await?;
     let source_identity = claim.run.source.source_identity().to_string();
     let materialized =
-        materialize_run_source_bundle(&state, &claim.run, MAX_SOURCE_BUNDLE_BYTES).await?;
+        materialize_run_source_bundle(&state, &claim.run, MAX_RUN_SOURCE_BUNDLE_BYTES).await?;
     let mut response_headers = HeaderMap::new();
     response_headers.insert(
         CONTENT_TYPE,

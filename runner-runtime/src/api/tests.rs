@@ -1,10 +1,11 @@
 use super::{
     RuntimeClient,
     cache_client::{CacheDownloadError, copy_hashed},
-    source::{MAX_SOURCE_BYTES, retryable_source_status},
+    source::retryable_source_status,
 };
 use crate::execute::{AppendLogError, AppendLogOutcome, ExecutionSink as _};
 use reqwest::{StatusCode, blocking::Client};
+use scope_domain::runs::source::MAX_RUN_SOURCE_BUNDLE_BYTES;
 use sha2::{Digest as _, Sha256};
 use std::{
     fs,
@@ -57,9 +58,9 @@ fn source_download_rejects_invalid_sources_and_local_failures_without_retry_or_p
         ),
         (
             digest.as_str(),
-            Some(MAX_SOURCE_BYTES + 1),
+            Some(MAX_RUN_SOURCE_BUNDLE_BYTES as u64 + 1),
             "source.bundle",
-            format!("run source exceeds {MAX_SOURCE_BYTES} bytes"),
+            format!("run source exceeds {MAX_RUN_SOURCE_BUNDLE_BYTES} bytes"),
         ),
     ] {
         let (client, requests, server) = raw_test_client(vec![source_response(

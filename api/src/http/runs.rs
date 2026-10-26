@@ -28,12 +28,11 @@ use scope_api_contract::{
     CreateManualRunQuery, PushTriggerCheckResponse, PushTriggerEvaluationResponse,
     RepositoryRunDetailResponse, ResolveManualRunResponse, RunResponse,
 };
-use scope_domain::runs::manual::ManualRunRequest;
+use scope_domain::runs::{manual::ManualRunRequest, source::MAX_RUN_SOURCE_BUNDLE_BYTES};
 use scope_postgres::db::StepLogCursor;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
-const MAX_MANUAL_BUNDLE_BYTES: usize = 128 * 1024 * 1024;
 const REPOSITORY_STEP_LOG_LIMIT: u64 = 128;
 
 pub(crate) async fn create_manual_run(
@@ -47,7 +46,7 @@ pub(crate) async fn create_manual_run(
     let repo = require_full_view_member(&state, &user.id, &owner, &repo_name).await?;
     let request = manual_run_request(repo.record.id, user.id, query)?;
     let bundle = Vec::from(
-        to_bytes(body, MAX_MANUAL_BUNDLE_BYTES)
+        to_bytes(body, MAX_RUN_SOURCE_BUNDLE_BYTES)
             .await
             .map_err(|error| {
                 ApiError::payload_too_large(format!("run bundle is too large: {error}"))
