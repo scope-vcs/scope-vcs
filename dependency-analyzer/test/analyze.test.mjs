@@ -78,6 +78,22 @@ test("reports unsupported source languages and retains internal data-file edges"
   assert.ok(!result.analyzed_files.includes("README.md"));
 });
 
+test("analyzes uppercase and mixed-case source and data extensions", async (context) => {
+  const root = await mkdtemp(resolve(tmpdir(), "scope-dependency-extension-case-"));
+  context.after(() => rm(root, { recursive: true }));
+  await mkdir(resolve(root, "src"));
+  await writeFile(resolve(root, "src/APP.TS"), "import './Util.Mjs';\n");
+  await writeFile(resolve(root, "src/Util.Mjs"), "import '../CONFIG.JSON';\n");
+  await writeFile(resolve(root, "CONFIG.JSON"), "{}");
+  const result = await analyzeSnapshot(root);
+  assert.deepEqual(result.analyzed_files, ["src/APP.TS", "src/Util.Mjs"]);
+  assert.deepEqual(result.gaps, []);
+  assert.deepEqual(result.edges, [
+    { source_path: "src/APP.TS", target_path: "src/Util.Mjs", kind: "side-effect-import" },
+    { source_path: "src/Util.Mjs", target_path: "CONFIG.JSON", kind: "side-effect-import" },
+  ]);
+});
+
 test("resolves aliases inherited by a nested monorepo tsconfig", async () => {
   const result = await analyzeSnapshot(fixture("monorepo"));
   assert.deepEqual(result.gaps, []);

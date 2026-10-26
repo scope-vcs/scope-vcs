@@ -1,5 +1,6 @@
 use crate::progress::{CancellationToken, run_cancellable};
 use anyhow::{Context, bail, ensure};
+use scope_domain::dependency_analysis::is_analyzer_input;
 use std::{collections::BTreeMap, fs, path::Path, process::Command, time::Duration};
 use tempfile::TempDir;
 
@@ -48,7 +49,7 @@ pub(super) fn materialize(
     }
     let expected: BTreeMap<_, _> = files
         .iter()
-        .filter(|file| needs_content(&file.path))
+        .filter(|file| is_analyzer_input(&file.path))
         .map(|file| (file.oid.clone(), file.size))
         .collect();
     let blobs = if expected.is_empty() {
@@ -72,7 +73,7 @@ pub(super) fn materialize(
         cancellation.check()?;
         let path = directory.path().join(&file.path);
         fs::create_dir_all(path.parent().context("Snapshot path has no parent")?)?;
-        let bytes = if needs_content(&file.path) {
+        let bytes = if is_analyzer_input(&file.path) {
             blobs
                 .get(&file.oid)
                 .context("Snapshot Git blob is missing")?
@@ -113,7 +114,7 @@ fn parse_tree(bytes: &[u8]) -> anyhow::Result<Vec<File>> {
             .context("Dependency snapshot contains a non-UTF-8 path")?;
         validate_path(path)?;
         let size: usize = header[3].parse().context("Invalid Git blob size")?;
-        if needs_content(path) {
+        if is_analyzer_input(path) {
             ensure!(
                 size <= MAX_FILE_BYTES,
                 "Dependency source exceeds {MAX_FILE_BYTES} bytes"
@@ -152,18 +153,6 @@ fn validate_path(path: &str) -> anyhow::Result<()> {
         );
     }
     Ok(())
-}
-
-fn needs_content(path: &str) -> bool {
-    Path::new(path)
-        .extension()
-        .and_then(|value| value.to_str())
-        .is_some_and(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts" | "json" | "jsonc"
-            )
-        })
 }
 
 fn parse_blobs(

@@ -1,6 +1,7 @@
 use scope_domain::{
     content::{SYMLINK_GIT_FILE_MODE, SourceBlob, is_supported_git_file_mode},
     content_ref::ContentRef,
+    dependency_analysis::is_analyzer_input,
     repository::git::{GitPoolPack, GitPoolPackStorage},
 };
 use scope_git_process::{ProcessCancellation, ProcessLimits, run_cancellable};
@@ -153,7 +154,7 @@ fn validate_git_restore(
     packs: &[GitPoolPack],
 ) -> anyhow::Result<bool> {
     let required = files.iter().any(|file| {
-        needs_content(file.path.as_str())
+        is_analyzer_input(file.path.as_str())
             && matches!(&file.blob.content_ref, ContentRef::GitBlob { .. })
     });
     if !required {
@@ -195,7 +196,7 @@ fn validate_files(files: &[DependencySnapshotFile]) -> anyhow::Result<()> {
         if !is_supported_git_file_mode(&file.blob.git_file_mode) {
             anyhow::bail!("dependency snapshot contains an unsupported file mode");
         }
-        if needs_content(file.path.as_str()) {
+        if is_analyzer_input(file.path.as_str()) {
             if file.blob.size_bytes > MAX_FILE_BYTES as u64 {
                 anyhow::bail!("dependency source file exceeds {MAX_FILE_BYTES} bytes");
             }
@@ -206,18 +207,6 @@ fn validate_files(files: &[DependencySnapshotFile]) -> anyhow::Result<()> {
         anyhow::bail!("dependency snapshot exceeds {MAX_SOURCE_BYTES} source bytes");
     }
     Ok(())
-}
-
-fn needs_content(path: &str) -> bool {
-    Path::new(path)
-        .extension()
-        .and_then(|value| value.to_str())
-        .is_some_and(|extension| {
-            matches!(
-                extension,
-                "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts" | "json" | "jsonc"
-            )
-        })
 }
 
 fn write_files(
@@ -235,7 +224,7 @@ fn write_files(
             .parent()
             .ok_or_else(|| anyhow::anyhow!("snapshot file has no parent"))?;
         fs::create_dir_all(parent)?;
-        if !needs_content(file.path.as_str()) {
+        if !is_analyzer_input(file.path.as_str()) {
             fs::write(path, [])?;
             continue;
         }
@@ -482,7 +471,7 @@ mod tests {
         assert!(validate_files(&too_many[..MAX_FILES]).is_ok());
         assert!(validate_files(&too_many).is_err());
 
-        let oversized_file = snapshot_file("src/main.ts", MAX_FILE_BYTES as u64 + 1, "100644");
+        let oversized_file = snapshot_file("src/MAIN.TS", MAX_FILE_BYTES as u64 + 1, "100644");
         assert!(
             validate_files(&[snapshot_file(
                 "src/main.ts",
@@ -546,6 +535,11 @@ mod tests {
             ("packages/app/package.json", "{}", true),
             ("src/main.mts", "import '../data.json';\n", true),
             ("data.json", r#"{"scope":true}"#, true),
+            ("src/APP.TS", "import './Util.Mjs';\n", true),
+            ("src/Util.Mjs", "import '../CONFIG.JSON';\n", true),
+            ("CONFIG.JSON", r#"{"upper":true}"#, true),
+            ("Settings.JsonC", r#"{"mixed":true}"#, true),
+            ("assets/LOGO.PNG", "not really a png", false),
             (
                 "internal/private.rs",
                 "pub const PRIVATE: bool = true;\n",

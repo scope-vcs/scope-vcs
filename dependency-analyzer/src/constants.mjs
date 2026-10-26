@@ -1,4 +1,4 @@
-export const ANALYZER_VERSION = "enhanced-resolve@5.25.1+scope-2";
+export const ANALYZER_VERSION = "enhanced-resolve@5.25.1+scope-3";
 
 export const SUPPORTED_SOURCE_EXTENSIONS = new Set([
   ".cjs",
