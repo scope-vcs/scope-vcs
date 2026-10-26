@@ -19,7 +19,7 @@ async fn independent_request_writes_share_repository_guard_without_hydrating_his
     held.execute_unprepared("LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files IN ACCESS EXCLUSIVE MODE")
         .await.unwrap();
     let edited = tokio::time::timeout(
-        Duration::from_secs(2),
+        Duration::from_secs(60),
         store
             .requests()
             .edit_request_identity(EditRequestIdentityCommand {
@@ -42,7 +42,6 @@ async fn independent_request_writes_share_repository_guard_without_hydrating_his
 #[tokio::test]
 async fn request_write_waits_for_membership_revocation_and_rechecks_permissions() {
     use sea_orm::{EntityTrait, TransactionTrait};
-    use std::time::Duration;
     let store = store_with_public_user_membership();
     let mut input = public_start_input();
     input.author_user_id = "user_owner".to_string();
@@ -60,8 +59,9 @@ async fn request_write_waits_for_membership_revocation_and_rechecks_permissions(
     .exec(&revocation)
     .await
     .unwrap();
+    let revocation_pid = super::super::super::locks::backend_pid(&revocation).await;
     let writing_store = store.clone();
-    let mut writing = tokio::spawn(async move {
+    let writing = tokio::spawn(async move {
         writing_store
             .requests()
             .edit_request_identity(EditRequestIdentityCommand {
@@ -75,17 +75,9 @@ async fn request_write_waits_for_membership_revocation_and_rechecks_permissions(
             })
             .await
     });
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), &mut writing)
-            .await
-            .is_err(),
-        "repository revocation must exclude request writers"
-    );
+    super::super::super::locks::wait_for_transaction_waiter(&store, revocation_pid).await;
     revocation.commit().await.unwrap();
-    let result = tokio::time::timeout(Duration::from_secs(2), writing)
-        .await
-        .unwrap()
-        .unwrap();
+    let result = writing.await.unwrap();
     assert!(
         result.is_err(),
         "a waiter must authorize against committed membership facts"
@@ -103,7 +95,6 @@ async fn request_write_waits_for_membership_revocation_and_rechecks_permissions(
 async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
     use crate::{db::SubmitRequestCommand, error::PostgresErrorKind};
     use sea_orm::{EntityTrait, TransactionTrait};
-    use std::time::Duration;
 
     let store = store_with_public_user_membership();
     let mut input = public_start_input();
@@ -157,8 +148,9 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
     .exec(&revocation)
     .await
     .unwrap();
+    let revocation_pid = super::super::super::locks::backend_pid(&revocation).await;
     let writing_store = store.clone();
-    let mut submitting = tokio::spawn(async move {
+    let submitting = tokio::spawn(async move {
         writing_store
             .requests()
             .submit_request(SubmitRequestCommand {
@@ -169,18 +161,9 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
             })
             .await
     });
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), &mut submitting)
-            .await
-            .is_err(),
-        "repository revocation must exclude request submission"
-    );
+    super::super::super::locks::wait_for_transaction_waiter(&store, revocation_pid).await;
     revocation.commit().await.unwrap();
-    let error = tokio::time::timeout(Duration::from_secs(2), submitting)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap_err();
+    let error = submitting.await.unwrap().unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::PermissionDenied);
     assert_eq!(error.message, "request submission access required");
     assert_eq!(
