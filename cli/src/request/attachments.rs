@@ -629,7 +629,7 @@ mod tests {
         .unwrap();
         let error = wait_for_processing(
             ApiSession::new(
-                &reqwest::blocking::Client::new(),
+                &crate::api::http_client_builder().build().unwrap(),
                 "http://127.0.0.1:9",
                 "token",
             ),

@@ -19,7 +19,8 @@ ctrlc = "3.4"
 getrandom = "0.3.4"
 hex = "0.4.3"
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29"] }
-reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "query", "rustls"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "query", "rustls-no-provider"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 scope_domain = { package = "scope-domain", path = "../crates/scope-domain" }
 scope_api_contract = { package = "scope-api-contract", path = "../crates/scope-api-contract" }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -51,3 +52,9 @@ libc = "0.2"
 
 [profile.dev]
 debug = "line-tables-only"
+
+[profile.release]
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+opt-level = "s"

@@ -354,7 +354,7 @@ mod tests {
     fn unavailable_api_connections_are_temporary_even_with_context() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
-        let error = reqwest::blocking::Client::builder()
+        let error = crate::api::http_client_builder()
             .timeout(Duration::from_millis(20))
             .build()
             .unwrap()

@@ -68,7 +68,7 @@ license and notice. It is a freshness check, not a vulnerability scanner.
 | Distribution | License material |
 | --- | --- |
 | Repository source | Root `LICENSE`, `NOTICE`, inventory, and generated third-party notices |
-| CLI binary | `scope licenses` prints embedded Apache, Scope, and Rust dependency texts without authentication or a repository; `--json` returns the same material as JSON |
+| CLI binary | `scope licenses` prints embedded Apache and Scope texts and `legal/third-party-cli.txt`, the notices for the CLI lockfile, without authentication or a repository; `--json` returns the same material as JSON |
 | Web application | Public `/licenses` links to `/LICENSE.txt`, `/NOTICE.txt`, and `/third-party-licenses.txt`; the build includes these assets |
 | Backend release archive | `LICENSE`, `NOTICE`, and `third-party-rust.txt` accompany the binaries |
 | Backend and CLI service deployments | License files accompany the deployed binaries in `bin/` |

@@ -56,7 +56,7 @@ chmod 0755 "$bundle/$scope_name" "$runtime/$node_name"
 
 cp dependency-analyzer/analyze.mjs dependency-analyzer/package.json dependency-analyzer/package-lock.json "$analyzer/"
 cp -R dependency-analyzer/src dependency-analyzer/node_modules "$analyzer/"
-cp LICENSE NOTICE legal/third-party-rust.txt legal/third-party-dependency-analyzer.txt "$licenses/"
+cp LICENSE NOTICE legal/third-party-dependency-analyzer.txt "$licenses/"
 cp "$node_root/LICENSE" "$licenses/Node.js-LICENSE"
 
 tar -czf "$SCOPE_ARTIFACT" -C "$bundle" .

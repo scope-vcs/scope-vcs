@@ -482,7 +482,9 @@ impl Actor {
         let root = workspace.join(handle);
         let config = root.join("config");
         fs::create_dir_all(&config).unwrap();
-        let response = reqwest::blocking::Client::new()
+        let response = scope_cli::api::http_client_builder()
+            .build()
+            .unwrap()
             .post(format!("{api_url}/v1/dev/cli-session/{handle}"))
             .send()
             .unwrap()

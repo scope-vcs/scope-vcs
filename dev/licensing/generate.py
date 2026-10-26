@@ -309,7 +309,7 @@ def reference_terms(text, terms):
     return SHARED_TERMS.sub(replace, text)
 
 
-def render(entries, ecosystem):
+def render(entries, ecosystem, lockfile=None):
     output = ["Third-party licenses for Scope", "",
         "Generated from checksum-verified dependency archives by dev/licensing/generate.py.",
         "Includes every locked dependency, including build, development, optional, and",
@@ -320,7 +320,7 @@ def render(entries, ecosystem):
         "with each license document.", ""]
     texts = {}
     for entry in entries:
-        if entry["ecosystem"] != ecosystem:
+        if entry["ecosystem"] != ecosystem or lockfile and lockfile not in entry["lockfiles"]:
             continue
         output.extend(["=" * 78, f"{entry['name']} {entry['version']}",
             f"Declared license: {entry['license'] or 'not declared'}", f"Selected license: {entry['selected_license']}", f"Source: {entry['url']}", ""])
@@ -374,6 +374,7 @@ def main():
         for document in entry["documents"]]} for entry in entries]
     outputs = {
         "legal/third-party-rust.txt": render(entries, "rust"),
+        "legal/third-party-cli.txt": render(entries, "rust", "cli/Cargo.lock"),
         "legal/third-party-dependency-analyzer.txt": render(entries, "dependency-analyzer"),
         "web/public/third-party-licenses.txt": render(entries, "web"),
         "web/public/LICENSE.txt": (ROOT / "LICENSE").read_text(encoding="utf-8"),

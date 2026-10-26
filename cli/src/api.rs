@@ -196,7 +196,8 @@ fn terminal_safe(value: &str) -> String {
     crate::display::terminal_text(value.trim())
 }
 
-pub(crate) fn http_client_builder() -> ClientBuilder {
+pub fn http_client_builder() -> ClientBuilder {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     Client::builder().default_headers(cli_identity_headers())
 }
 
