@@ -51,7 +51,7 @@ ENV PATH=/opt/libheif/bin:$PATH LD_LIBRARY_PATH=/opt/libheif/lib CARGO_BUILD_JOB
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates=20250419 \
+        ca-certificates=20250419+deb13u1 \
         ffmpeg=7:7.1.5-0+deb13u1 \
         libaom3 libde265-0 libjpeg62-turbo libpng16-16t64 libx265-215 \
     && rm -rf /var/lib/apt/lists/* \
@@ -85,7 +85,7 @@ ARG BROTLI_VERSION=1.1.0-2+deb13u1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates=20250419 \
+        ca-certificates=20250419+deb13u1 \
         ffmpeg=7:7.1.5-0+deb13u1 \
         libaom3 libde265-0 libjpeg62-turbo libpng16-16t64 libx265-215 \
         "libssl3t64=${OPENSSL_VERSION}" \
