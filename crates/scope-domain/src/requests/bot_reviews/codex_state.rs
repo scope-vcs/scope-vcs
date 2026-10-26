@@ -8,6 +8,12 @@ const MARKER_END: &str = "-->";
 const FULL_OID_LENGTH: usize = 40;
 const REVIEW_SUFFIX: &str = "_review";
 const COMPLETED: &str = "completed";
+const PART_FIELDS: [&str; 4] = [
+    "commit_sha",
+    "status",
+    "has_any_findings",
+    "has_unresolved_findings",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodexReviewState {
@@ -72,8 +78,11 @@ impl CodexReviewState {
 }
 
 fn never_ran(part: &serde_json::Value) -> bool {
-    part.as_object()
-        .is_some_and(|fields| !fields.is_empty() && fields.values().all(serde_json::Value::is_null))
+    part.as_object().is_some_and(|fields| {
+        PART_FIELDS
+            .iter()
+            .all(|field| fields.get(*field).is_some_and(serde_json::Value::is_null))
+    })
 }
 
 fn names_commit(named: &str, head_oid: &str) -> bool {
