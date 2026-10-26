@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::Path};
 use thiserror::Error;
 
-pub const DEPENDENCY_ANALYZER_VERSION: &str = "enhanced-resolve@5.25.1+scope-2";
+pub const DEPENDENCY_ANALYZER_VERSION: &str = "enhanced-resolve@5.25.1+scope-3";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AnalyzerOutput {
