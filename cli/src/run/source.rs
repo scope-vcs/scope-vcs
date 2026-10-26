@@ -1,5 +1,6 @@
 use crate::git_repo::GitRepo;
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, ensure};
+use scope_domain::runs::source::{MAX_RUN_SOURCE_BUNDLE_BYTES, run_source_bundle_within_limit};
 use std::{fs, process::Command};
 
 pub(super) fn create_bundle(
@@ -57,7 +58,21 @@ pub(super) fn create_bundle(
         fs::set_permissions(&bundle_path, fs::Permissions::from_mode(0o600))
             .context("secure exact Git bundle for Scope run")?;
     }
+    let size = fs::metadata(&bundle_path)
+        .context("inspect exact Git bundle for Scope run")?
+        .len();
+    ensure_bundle_fits(size)?;
     fs::read(bundle_path).context("read exact Git bundle for Scope run")
+}
+
+fn ensure_bundle_fits(size: u64) -> anyhow::Result<()> {
+    ensure!(
+        run_source_bundle_within_limit(size),
+        "Git bundle for this commit is {size} bytes, over Scope's {} MiB manual run upload limit. \
+         Run a commit that is already the head of the Scope repository to use its stored source.",
+        MAX_RUN_SOURCE_BUNDLE_BYTES / (1024 * 1024)
+    );
+    Ok(())
 }
 
 pub(super) fn random_request_id() -> anyhow::Result<String> {
@@ -65,4 +80,19 @@ pub(super) fn random_request_id() -> anyhow::Result<String> {
     getrandom::fill(&mut bytes)
         .map_err(|error| anyhow::anyhow!("generate run request id: {error}"))?;
     Ok(hex::encode(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundle_size_check_admits_the_limit_and_rejects_one_byte_more() {
+        let limit = MAX_RUN_SOURCE_BUNDLE_BYTES as u64;
+
+        ensure_bundle_fits(limit).unwrap();
+        let error = ensure_bundle_fits(limit + 1).unwrap_err().to_string();
+        assert!(error.contains(&format!("{} bytes", limit + 1)), "{error}");
+        assert!(error.contains("128 MiB manual run upload limit"), "{error}");
+    }
 }
