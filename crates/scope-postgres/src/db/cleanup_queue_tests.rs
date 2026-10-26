@@ -5,7 +5,7 @@ use crate::db::{
 use crate::job_trace::{QueuedTrace, test_support::queued_by};
 use scope_domain::content::{DEFAULT_GIT_FILE_MODE, SourceBlob};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
-use std::{collections::BTreeSet, time::Duration};
+use std::collections::BTreeSet;
 
 #[tokio::test]
 async fn content_fence_serializes_publication_with_delete_revalidation() {
@@ -36,13 +36,12 @@ async fn content_fence_serializes_publication_with_delete_revalidation() {
             .await
             .unwrap()
     });
-    let mut waiting_cleanup = Box::pin(waiting_cleanup);
-    assert!(
-        tokio::time::timeout(Duration::from_millis(50), waiting_cleanup.as_mut())
-            .await
-            .is_err(),
-        "cleanup must wait while publication owns the content fence"
-    );
+    super::locks::wait_for_advisory_waiter(
+        &store,
+        "content-ref",
+        &serde_json::to_string(&blob.content_ref).unwrap(),
+    )
+    .await;
 
     super::object_references::insert_object_reference(
         store.db.as_ref(),

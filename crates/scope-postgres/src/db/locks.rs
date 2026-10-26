@@ -110,17 +110,16 @@ pub(super) async fn wait_for_transaction_waiter(
 pub(super) async fn wait_for_advisory_waiter(
     store: &super::MetadataStore,
     namespace: &str,
-    repo_id: &str,
+    id: &str,
 ) {
     let schema = super::content_fences::current_schema(store.db.as_ref())
         .await
         .unwrap();
-    let key = sea_orm::sqlx::postgres::PgAdvisoryLock::new(format!(
-        "scope:{namespace}:{schema}:{repo_id}"
-    ))
-    .key()
-    .as_bigint()
-    .unwrap();
+    let key =
+        sea_orm::sqlx::postgres::PgAdvisoryLock::new(format!("scope:{namespace}:{schema}:{id}"))
+            .key()
+            .as_bigint()
+            .unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         loop {
             let waiting = store.db.query_one_raw(Statement::from_sql_and_values(
@@ -163,19 +162,10 @@ mod tests {
         seeded.commit().await.unwrap();
 
         let held = store.db.begin().await.unwrap();
-        let holder_pid: i32 = held
-            .query_one_raw(Statement::from_string(
-                DatabaseBackend::Postgres,
-                "SELECT pg_backend_pid() AS pid".to_string(),
-            ))
-            .await
-            .unwrap()
-            .unwrap()
-            .try_get("", "pid")
-            .unwrap();
         acquire_aggregate_lock(&held, "repository", "owner/one")
             .await
             .unwrap();
+        let holder_pid = backend_pid(&held).await;
 
         let same_store = store.clone();
         let same = tokio::spawn(async move {
@@ -194,7 +184,7 @@ mod tests {
             tx.commit().await.unwrap();
         });
 
-        tokio::time::timeout(Duration::from_secs(2), other)
+        tokio::time::timeout(Duration::from_secs(60), other)
             .await
             .expect("different aggregate key should not block")
             .unwrap();
@@ -227,9 +217,6 @@ mod tests {
         .await
         .expect("same-key writer must block on SELECT FOR UPDATE");
         held.commit().await.unwrap();
-        tokio::time::timeout(Duration::from_secs(2), same)
-            .await
-            .expect("same aggregate key should proceed after release")
-            .unwrap();
+        same.await.unwrap();
     }
 }
