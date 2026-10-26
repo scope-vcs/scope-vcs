@@ -1,5 +1,4 @@
 mod baseline;
-mod bridge;
 mod m0084_request_review_bases;
 mod m0085_request_check_identity;
 mod m0086_private_request_stacks;
@@ -170,9 +169,7 @@ pub async fn apply_in_maintenance(
     let tx = db.begin().await?;
     set_operation_limits(&tx, limits).await?;
     lock_migration_inventory(&tx).await?;
-    if bridge::is_bridged_chain(&plan(&tx).await?.applied) {
-        bridge::bridge(&tx).await?;
-    }
+    plan(&tx).await?;
     Migrator::up(&tx, None).await?;
     assert_exact_state(&tx).await?;
     tx.commit().await
@@ -189,7 +186,7 @@ pub async fn preflight(
         let plan = plan(&tx).await?;
         if plan.applied.is_empty() {
             baseline::assert_empty_schema(&tx).await?;
-        } else if bridge::is_bridged_chain(&plan.applied) || plan.applied == [baseline::NAME] {
+        } else if plan.applied == [baseline::NAME] {
             baseline::assert_baseline_schema(&tx).await?;
         }
         Ok(plan)
@@ -230,18 +227,16 @@ where
         .iter()
         .map(|entry| entry.migration.name().to_string())
         .collect::<Vec<_>>();
-    let bridged = bridge::is_bridged_chain(&actual);
-    if !bridged && !expected.starts_with(&actual) {
+    if !expected.starts_with(&actual) {
         return Err(DbErr::Custom(format!(
-            "Scope metadata migration ledger is not a canonical prefix: expected [{}], found [{}]. {}",
+            "Scope metadata migration ledger is not a canonical prefix: expected [{}], found [{}]",
             expected.join(", "),
-            actual.join(", "),
-            bridge::unsupported_ledger_hint()
+            actual.join(", ")
         )));
     }
     let pending_entries = migrations
         .into_iter()
-        .skip(if bridged { 0 } else { actual.len() })
+        .skip(actual.len())
         .collect::<Vec<_>>();
     let metadata_restore_safe = pending_entries
         .iter()

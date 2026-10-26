@@ -49,9 +49,7 @@ and existing image repositories are independent of these orchestration keys.
 ## Migration policy
 
 Every pending migration requires maintenance. Runtime startup checks the exact
-migration ledger and refuses a mismatch; it never applies migrations. The
-one-time [current schema baseline bridge](operations/current-schema-baseline.md#baseline-bridge)
-is planned and applied as an ordinary pending migration. Development
+migration ledger and refuses a mismatch; it never applies migrations. Development
 and test setup invoke migration application explicitly. A production migration
 requires a complete prepared application set so schema participants move together.
 
