@@ -5,7 +5,7 @@ use crate::{
 };
 use serde_json::{Map, Value};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -14,6 +14,7 @@ pub(crate) type ConfigGroups = BTreeMap<Option<String>, Vec<String>>;
 
 pub(crate) struct ResolutionConfig {
     pub(crate) config_file: PathBuf,
+    pub(crate) config_files: HashSet<PathBuf>,
     pub(crate) path_patterns: Vec<String>,
     pub(crate) module_suffixes: Vec<String>,
 }
@@ -90,6 +91,11 @@ impl<'a> ConfigLoader<'a> {
             .map_err(|reason| format!("invalid TypeScript config: {reason}"))?;
         Ok(ResolutionConfig {
             config_file: self.inventory.root.join(config_path),
+            config_files: self
+                .loaded
+                .keys()
+                .map(|path| self.inventory.root.join(path))
+                .collect(),
             path_patterns: options
                 .paths
                 .map(|paths| paths.keys().cloned().collect())
