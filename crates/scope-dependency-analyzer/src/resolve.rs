@@ -46,6 +46,9 @@ impl Resolvers {
             config
                 .map(|config| config.module_suffixes.clone())
                 .unwrap_or_default(),
+            config
+                .map(|config| config.config_files.clone())
+                .unwrap_or_default(),
         );
         let options = |type_only: bool, require_mode: bool| {
             resolve_options(

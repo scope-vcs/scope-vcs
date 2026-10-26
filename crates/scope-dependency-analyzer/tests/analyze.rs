@@ -517,15 +517,20 @@ fn module_suffixes_without_an_empty_suffix_never_use_an_unsuffixed_file() {
     let root = repository(&[
         (
             "tsconfig.json",
-            r#"{"compilerOptions":{"moduleSuffixes":[".native"]}}"#,
+            r#"{"extends":"./config/base.json","compilerOptions":{"moduleSuffixes":[".native"]}}"#,
         ),
-        ("entry.ts", "import './value';\n"),
+        ("config/base.json", "{}"),
+        ("entry.ts", "import './value'; import './native';\n"),
         ("value.ts", "export {};\n"),
+        ("native.native.ts", "export {};\n"),
     ]);
 
     let output = analyze(root.path());
 
-    assert_eq!(output.edges, []);
+    assert_eq!(
+        output.edges,
+        [edge("entry.ts", "native.native.ts", SideEffectImport)]
+    );
     assert_eq!(
         output.gaps,
         [gap("entry.ts", "unresolved side-effect-import: ./value")]
@@ -533,10 +538,13 @@ fn module_suffixes_without_an_empty_suffix_never_use_an_unsuffixed_file() {
 
     write_files(
         root.path(),
-        &[(
-            "tsconfig.json",
-            r#"{"compilerOptions":{"moduleSuffixes":[]}}"#,
-        )],
+        &[
+            (
+                "tsconfig.json",
+                r#"{"compilerOptions":{"moduleSuffixes":[]}}"#,
+            ),
+            ("entry.ts", "import './value';\n"),
+        ],
     );
     let output = analyze(root.path());
     assert_eq!(output.gaps, []);
