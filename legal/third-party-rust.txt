@@ -5533,20 +5533,20 @@ Repository: "https://github.com/dtolnay/zmij"
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
-zstd 0.13.3
-Declared license: MIT
-Selected license: MIT
-Source: https://static.crates.io/crates/zstd/zstd-0.13.3.crate
+zstd 0.14.3
+Declared license: BSD-3-Clause
+Selected license: BSD-3-Clause
+Source: https://static.crates.io/crates/zstd/zstd-0.14.3.crate
 
 Published author metadata: ["Alexandre Bury <alexandre.bury@gmail.com>"]
 Repository: "https://github.com/gyscos/zstd-rs"
-LICENSE: text 84b7e1b767becaf1620b800ed3f5c323d90c18c9a8c3c5714c7f4410e6416b86
+LICENSE: text 769153f04f135a5bc87cd68f6dcf5168ad3c136749616e8dbd9b78b0199e0b18
 
 ==============================================================================
-zstd-safe 7.3.0
+zstd-safe 8.2.0
 Declared license: BSD-3-Clause
 Selected license: BSD-3-Clause
-Source: https://static.crates.io/crates/zstd-safe/zstd-safe-7.3.0.crate
+Source: https://static.crates.io/crates/zstd-safe/zstd-safe-8.2.0.crate
 
 Published author metadata: ["Alexandre Bury <alexandre.bury@gmail.com>"]
 Repository: "https://github.com/gyscos/zstd-rs"
@@ -8711,12 +8711,6 @@ limitations under the License.
 
 --- text 836ed921bbad486c21fe437f1f565aef73cf20f242f7344eae04b01ed53a2d57 ---
 Copyright (c) 2018-2026 The RustCrypto Project Developers
-
-[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
-
---- text 84b7e1b767becaf1620b800ed3f5c323d90c18c9a8c3c5714c7f4410e6416b86 ---
-The MIT License (MIT)
-Copyright (c) 2016 Alexandre Bury
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
