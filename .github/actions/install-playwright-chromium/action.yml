@@ -1,0 +1,46 @@
+name: Install Playwright Chromium
+description: Install Chromium and its system packages for web/ from browsers and packages cached per runner image and Playwright version, saving them for later runs.
+runs:
+  using: composite
+  steps:
+    - id: plan
+      shell: bash
+      working-directory: web
+      run: |
+        version=$(pnpm exec playwright --version | awk '{print $2}')
+        prefix="playwright-chromium-${ImageOS:?}-${ImageVersion:?}-"
+        echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        echo "key=$prefix$version" >> "$GITHUB_OUTPUT"
+
+    - id: restore
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cache/ms-playwright
+          ~/.cache/playwright-debs
+        key: ${{ steps.plan.outputs.key }}
+        restore-keys: ${{ steps.plan.outputs.prefix }}
+
+    - shell: bash
+      working-directory: web
+      run: |
+        packages="$HOME/.cache/playwright-debs"
+        mkdir -p "$packages"
+        sudo find /var/cache/apt/archives -maxdepth 1 -name '*.deb' -delete
+        if compgen -G "$packages/*.deb" > /dev/null; then
+          sudo cp "$packages"/*.deb /var/cache/apt/archives/
+        fi
+        pnpm exec playwright install --with-deps chromium
+        rm -rf "$packages"
+        mkdir -p "$packages"
+        if compgen -G "/var/cache/apt/archives/*.deb" > /dev/null; then
+          cp /var/cache/apt/archives/*.deb "$packages"/
+        fi
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: |
+          ~/.cache/ms-playwright
+          ~/.cache/playwright-debs
+        key: ${{ steps.plan.outputs.key }}
