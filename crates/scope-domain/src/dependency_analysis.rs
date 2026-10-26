@@ -1,7 +1,7 @@
 use crate::views::ViewId;
 use crate::{policy::ScopePath, repo_config::RepoConfig};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, path::Path};
 use thiserror::Error;
 
 pub const DEPENDENCY_ANALYZER_VERSION: &str = "enhanced-resolve@5.25.1+scope-2";
@@ -149,6 +149,18 @@ impl StoredDependencyAnalysis {
             gaps,
         })
     }
+}
+
+pub fn is_analyzer_input(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" | "mts" | "cts" | "json" | "jsonc"
+            )
+        })
 }
 
 pub fn evaluate_dependency_analysis(
