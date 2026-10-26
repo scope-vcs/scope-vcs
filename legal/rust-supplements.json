@@ -69,6 +69,16 @@
       ],
       "declared_metadata": true
     },
+    "rust:fast-glob@1.1.2": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-fast-glob-cd1157ebe949-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/fast-glob/cd1157ebe949c07c2e08ccf7b96f753dfc08e7bd/LICENSE",
+          "sha256": "7fb47d7306f9a3ba25b44e7b9a94a300548a46709ed27753e28deac8e868b1cd"
+        }
+      ]
+    },
     "rust:jni-macros@0.22.4": {
       "reason_key": "published-vcs-mit",
       "documents": [
@@ -126,6 +136,16 @@
           "path": "legal/upstream/rust-windowing-android-ndk-rs-10f2ba388fca-LICENSE-MIT",
           "url": "https://raw.githubusercontent.com/rust-windowing/android-ndk-rs/10f2ba388fca20f7349996ebae26ccda7a6fda5c/LICENSE-MIT",
           "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+        }
+      ]
+    },
+    "rust:nodejs-built-in-modules@1.0.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-nodejs-built-in-modules-9117efa38fe0-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/nodejs-built-in-modules/9117efa38fe088325e8a1036a8ddea7f3546c1ac/LICENSE",
+          "sha256": "20538257cfb1812d48164a7d11c0008a66b33c01b4debdfa0ec2a104fe00f028"
         }
       ]
     },
@@ -330,6 +350,221 @@
           "path": "legal/upstream/open-telemetry-opentelemetry-rust-19833847cab8-LICENSE",
           "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE",
           "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    "rust:oxc_allocator@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_ast@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_ast_macros@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_ast_visit@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_data_structures@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_diagnostics@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_ecmascript@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_estree@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_index@5.0.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-index-vec-8e09fe324eb6-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc-index-vec/8e09fe324eb6df02f56e4eacdfac958930300380/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        }
+      ]
+    },
+    "rust:oxc_parser@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_regular_expression@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_resolver@11.24.3": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-resolver-b6a6125c5556-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc-resolver/b6a6125c5556ca1ae0e48b479d203e8f06effd10/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        }
+      ]
+    },
+    "rust:oxc_span@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_str@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
+        }
+      ]
+    },
+    "rust:oxc_syntax@0.155.0": {
+      "reason_key": "published-vcs-license",
+      "documents": [
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/LICENSE",
+          "sha256": "95ced5ecf1133fbf41d409b5555c86c344f83f3b019926057ddbc07cfdcc27b3"
+        },
+        {
+          "path": "legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE",
+          "url": "https://raw.githubusercontent.com/oxc-project/oxc/73e6b564737a29ecebf428d276421dcc492836df/THIRD-PARTY-LICENSE",
+          "sha256": "77643247a04db72198cea3c8b73751091821b4d51b5448fd65501127a9db5111"
         }
       ]
     },

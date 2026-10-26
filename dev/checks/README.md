@@ -8,7 +8,7 @@ root, regardless of the caller's working directory.
 | --- | --- |
 | `backend` | Workspace formatting, dependency advisories, tests, API test support, local development helpers, Clippy |
 | `cli` | Standalone formatting, dependency advisories, tests, distribution selector, Clippy |
-| `cli-bundle` | Host release binaries, packaged analyzer runtime, archive size cap, native installer check |
+| `cli-bundle` | Host release binaries, archive size cap, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |
 | `policy` | License inventory freshness, complete-tree source size, comments, test waits, Rust boundaries, toolchain pins, workflow job timeouts, gate inventory |
@@ -39,7 +39,7 @@ and the installer check on native Linux, macOS, and Windows runners. It also run
 credential-key, injected Git credential, and browser callback unit tests without
 accessing native credential stores. The full
 Rust suite runs on Linux; authentication fixtures currently use its file session
-store. All six targets produce complete CLI and analyzer bundles; ARM64 Linux
+store. All six targets produce complete CLI bundles; ARM64 Linux
 and Windows remain build-only until native runners are available. Pull requests
 build only the Linux and Windows x64 targets; releases build all six. Every
 target builds on a GitHub-hosted runner. Run the

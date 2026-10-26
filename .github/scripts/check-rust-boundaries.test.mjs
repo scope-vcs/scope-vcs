@@ -30,8 +30,9 @@ function validMainMetadata() {
     packageFixture('scope-git-process'),
     packageFixture('scope-api-contract', [dependency('scope-domain')]),
     packageFixture('scope-content-lifecycle', [dependency('scope-domain')]),
+    packageFixture('scope-dependency-analyzer', [dependency('scope-domain')]),
     packageFixture('api', [dependency('scope-content-lifecycle')]),
-    packageFixture('worker', [dependency('scope-content-lifecycle')]),
+    packageFixture('worker', [dependency('scope-content-lifecycle'), dependency('scope-dependency-analyzer')]),
     packageFixture('scope-repo-router'),
     packageFixture('scope-runner-runtime'),
   ])
@@ -39,7 +40,11 @@ function validMainMetadata() {
 
 function validCliMetadata() {
   return metadata([
-    packageFixture('scope-cli', [dependency('scope-domain'), dependency('scope-api-contract')]),
+    packageFixture('scope-cli', [
+      dependency('scope-domain'),
+      dependency('scope-api-contract'),
+      dependency('scope-dependency-analyzer'),
+    ]),
   ], cliRoot)
 }
 

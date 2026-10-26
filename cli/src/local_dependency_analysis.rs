@@ -6,11 +6,10 @@ use crate::{
     progress::{CancellationToken, run_cancellable},
 };
 use anyhow::{Context, bail};
-use scope_domain::dependency_analysis::{
-    AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, StoredDependencyAnalysis,
-};
+use scope_dependency_analyzer::{ANALYZE_COMMAND, MAX_OUTPUT_BYTES};
+use scope_domain::dependency_analysis::{AnalyzerOutput, StoredDependencyAnalysis};
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     process::Command,
     sync::mpsc::{self, Receiver, TryRecvError},
     thread::{self, JoinHandle},
@@ -18,7 +17,6 @@ use std::{
 };
 
 const ANALYZER_TIMEOUT: Duration = Duration::from_secs(120);
-const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 
 pub struct AnalysisJob {
     receiver: Receiver<Result<StoredDependencyAnalysis, String>>,
@@ -92,9 +90,6 @@ fn analyze_cached(
     let snapshot = snapshot::materialize(repo, commit, cancellation)?;
     cancellation.check()?;
     let output = analyze(snapshot.path(), cancellation)?;
-    if output.analyzer_version != DEPENDENCY_ANALYZER_VERSION {
-        bail!("Installed dependency analyzer does not match this CLI; reinstall Scope");
-    }
     let analysis = StoredDependencyAnalysis::from_output(commit, output)?;
     cancellation.check()?;
     if let Some(path) = cache_path {
@@ -107,13 +102,16 @@ fn analyze_snapshot(
     snapshot: &Path,
     cancellation: &CancellationToken,
 ) -> anyhow::Result<AnalyzerOutput> {
-    let runtime = runtime_directory()?;
-    let node = runtime.join(if cfg!(windows) { "node.exe" } else { "node" });
-    let analyzer = runtime.join("dependency-analyzer/analyze.mjs");
-    if !node.is_file() || !analyzer.is_file() {
-        bail!("Dependency analyzer is not installed with this CLI; reinstall Scope");
-    }
-    let mut command = Command::new(node);
+    let executable = std::env::current_exe().context("Find the running Scope executable")?;
+    analyze_snapshot_with(&executable, snapshot, cancellation)
+}
+
+pub fn analyze_snapshot_with(
+    executable: &Path,
+    snapshot: &Path,
+    cancellation: &CancellationToken,
+) -> anyhow::Result<AnalyzerOutput> {
+    let mut command = Command::new(executable);
     command.env_clear();
     for key in ["SystemRoot", "WINDIR", "TEMP", "TMP", "TMPDIR"] {
         if let Some(value) = std::env::var_os(key) {
@@ -122,8 +120,7 @@ fn analyze_snapshot(
     }
     command
         .current_dir(snapshot)
-        .arg("--max-old-space-size=512")
-        .arg(analyzer)
+        .arg(ANALYZE_COMMAND)
         .arg(snapshot);
     let output = run_cancellable(
         &mut command,
@@ -140,19 +137,6 @@ fn analyze_snapshot(
         );
     }
     serde_json::from_slice(&output.stdout).context("Read dependency analysis result")
-}
-
-fn runtime_directory() -> anyhow::Result<PathBuf> {
-    if let Some(path) = std::env::var_os("SCOPE_CLI_RUNTIME_DIR") {
-        return PathBuf::from(path)
-            .canonicalize()
-            .context("Find dependency analyzer runtime");
-    }
-    let executable = std::env::current_exe().context("Find the running Scope executable")?;
-    let parent = executable
-        .parent()
-        .context("Scope executable has no parent directory")?;
-    Ok(parent.join("scope-runtime"))
 }
 
 #[cfg(test)]

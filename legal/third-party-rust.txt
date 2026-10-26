@@ -806,6 +806,17 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 44739c31580605e9e2f342a47e77fb31fd6ce40cf09fbc745722690c0df807a9
 
 ==============================================================================
+bytecount 0.6.9
+Declared license: Apache-2.0/MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/bytecount/bytecount-0.6.9.crate
+
+Published author metadata: ["Andre Bogus <bogusandre@gmail.de>", "Joshua Landau <joshua@landau.ws>"]
+Repository: "https://github.com/llogiq/bytecount"
+LICENSE.Apache2: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a
+LICENSE.MIT: text 3dda214a46ef7de902363b8e9504fe51fae2e8191d8ab6bbf08dc8c93fb57ca0
+
+==============================================================================
 byteorder 1.5.0
 Declared license: Unlicense OR MIT
 Selected license: MIT
@@ -1014,6 +1025,16 @@ Repository: "https://github.com/Marwes/combine"
 LICENSE: text a8d7d8157c7166afaa5da53eab0badc7e2c4dc62177d424299d1c96a445585d2
 
 ==============================================================================
+compact_str 0.10.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/compact_str/compact_str-0.10.0.crate
+
+Published author metadata: ["Parker Timmerman <parker@parkertimmerman.com>"]
+Repository: "https://github.com/ParkMyCar/compact_str"
+LICENSE: text 66316831909c9a5653932b8c0128ffa60765edcf312331e75896ceffbfcb5300
+
+==============================================================================
 compact_str 0.9.1
 Declared license: MIT
 Selected license: MIT
@@ -1089,6 +1110,16 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 3bfacc197ff245b6217891d481f11cf9be791a06baa086ba1f80c80a2273e947
 
 ==============================================================================
+cow-utils 0.1.3
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/cow-utils/cow-utils-0.1.3.crate
+
+Published author metadata: ["Ingvar Stepanyan <me@rreverser.com>"]
+Repository: "https://github.com/RReverser/cow-utils-rs"
+LICENSE: text 903ee1f5fb43899b59bb2b74c981e810c2bb9d832be0e8f2e1166234cd86989a
+
+==============================================================================
 cpufeatures 0.2.17
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -1155,6 +1186,26 @@ Published author metadata: ["Sam Rijs <srijs@airpost.net>", "Alex Crichton <alex
 Repository: "https://github.com/srijs/rust-crc32fast"
 LICENSE-APACHE: text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a
 LICENSE-MIT: text 9599127e421e16595d107a20935532cdb97ff570fbb0b06ed3aa67b04d0185a2
+
+==============================================================================
+crossbeam-deque 0.8.8
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/crossbeam-deque/crossbeam-deque-0.8.8.crate
+
+Repository: "https://github.com/crossbeam-rs/crossbeam"
+LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+LICENSE-MIT: text 5a7d13c6710cdec29e74eb3172b80712049c34099ab7259661ada051fc90777b
+
+==============================================================================
+crossbeam-epoch 0.9.21
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/crossbeam-epoch/crossbeam-epoch-0.9.21.crate
+
+Repository: "https://github.com/crossbeam-rs/crossbeam"
+LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+LICENSE-MIT: text 5a7d13c6710cdec29e74eb3172b80712049c34099ab7259661ada051fc90777b
 
 ==============================================================================
 crossbeam-queue 0.3.14
@@ -1311,6 +1362,16 @@ Repository: "https://github.com/TedDriggs/darling"
 LICENSE: text cc8f3c8ab396de7fa549e3907319281cf13d0a4a456a2b0695c5b61d877dba68
 
 ==============================================================================
+dashmap 6.2.1
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/dashmap/dashmap-6.2.1.crate
+
+Published author metadata: ["Acrimon <joel.wejdenstal@gmail.com>"]
+Repository: "https://github.com/xacrimon/dashmap"
+LICENSE: text 3ce3cce00b62cb4bb26ff4a3d7d4f5a73d1b928e835bf74a1844a59367327215
+
+==============================================================================
 deranged 0.5.9
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -1420,6 +1481,17 @@ Repository: "https://github.com/allan2/dotenvy"
 LICENSE: text 37653ea50ac84bb5e93bf59d801df1ecbe17f0042a30bfe335e3b20f4a4465fa
 
 ==============================================================================
+dragonbox_ecma 0.1.12
+Declared license: Apache-2.0 WITH LLVM-exception OR BSL-1.0
+Selected license: Apache-2.0 WITH LLVM-exception
+Source: https://static.crates.io/crates/dragonbox_ecma/dragonbox_ecma-0.1.12.crate
+
+Published author metadata: ["David Tolnay <dtolnay@gmail.com>", "magic-akari <akari.ccino@gmail.com>"]
+Repository: "https://github.com/magic-akari/dragonbox"
+LICENSE-Apache2-LLVM: text 7fa3f523d098ffbbc7c4b39ac6636f33a468fc2221d23a04fa2797b61af3ff77
+LICENSE-Boost: text 8d8291caf1cee26d23acf3eb67c9f9a2d58f1c681b16a4fbe8cbfb9e3c0b5a9b
+
+==============================================================================
 dunce 1.0.5
 Declared license: CC0-1.0 OR MIT-0 OR Apache-2.0
 Selected license: Apache-2.0
@@ -1493,6 +1565,18 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
 ==============================================================================
+fast-glob 1.1.2
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/fast-glob/fast-glob-1.1.2.crate
+
+Published author metadata: ["shulaoda <laipichan@qq.com>", "fast-glob contributors"]
+Repository: "https://github.com/oxc-project/fast-glob.git"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-fast-glob-cd1157ebe949-LICENSE: text 3774b37c2ccdeb76e9979cd22013b93393448b44a62abcff351e820433083c54
+
+==============================================================================
 fastrand 2.5.0
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
@@ -1534,6 +1618,16 @@ Published author metadata: ["Alex Crichton <alex@alexcrichton.com>", "Josh Tripl
 Repository: "https://github.com/rust-lang/flate2-rs"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 LICENSE-MIT: text 1b7402ea003f3186c7365a26343794193828b67f2650bdbb75d5a4f588e56c7d
+
+==============================================================================
+float-cmp 0.10.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/float-cmp/float-cmp-0.10.0.crate
+
+Published author metadata: ["Mike Dilger <mike@mikedilger.com>"]
+Repository: "https://github.com/mikedilger/float-cmp"
+LICENSE: text f0736819cfc3d1c058c6134bc2c22c36490a07fc81d14ba899cd381c8b6a157a
 
 ==============================================================================
 flume 0.12.0
@@ -1755,6 +1849,28 @@ LICENSE-APACHE: text 4bf96504d6e83ce5c6fc7167f1795d9ceaa68e70ab86bc5d08ab9318426
 LICENSE-MIT: text 1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f
 
 ==============================================================================
+halfbrown 0.4.0
+Declared license: Apache-2.0/MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/halfbrown/halfbrown-0.4.0.crate
+
+Published author metadata: ["Heinz N. Gies <heinz@licenser.net>"]
+Repository: "https://github.com/Licenser/halfbrown"
+LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+LICENSE-MIT: text a406579cd136771c705c521db86ca7d60a6f3de7c9b5460e6193a2df27861bde
+
+==============================================================================
+hashbrown 0.14.5
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/hashbrown/hashbrown-0.14.5.crate
+
+Published author metadata: ["Amanieu d'Antras <amanieu@gmail.com>"]
+Repository: "https://github.com/rust-lang/hashbrown"
+LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+LICENSE-MIT: text ae9791f02f2bbe0ce17b434753af97be6e5284b6f8e9f22db3c1f0f11b2e015a
+
+==============================================================================
 hashbrown 0.16.1
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -1957,70 +2073,110 @@ LICENSE-APACHE: text 793420c92f3ce7d37390df60db0abc7eb8c7b990aeb1800bd010890c064
 LICENSE-MIT: text 3444712f3370b1c8e01c59c8fc887e4ebcdf5fa0276fc9af6146ab6068028c54
 
 ==============================================================================
-icu_collections 2.3.0
+icu_collections 2.4.0
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/icu_collections/icu_collections-2.3.0.crate
+Source: https://static.crates.io/crates/icu_collections/icu_collections-2.4.0.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-icu_locale_core 2.3.0
+icu_locale_core 2.4.0
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/icu_locale_core/icu_locale_core-2.3.0.crate
+Source: https://static.crates.io/crates/icu_locale_core/icu_locale_core-2.4.0.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-icu_normalizer 2.3.0
+icu_locale_fallback 2.4.0
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/icu_normalizer/icu_normalizer-2.3.0.crate
+Source: https://static.crates.io/crates/icu_locale_fallback/icu_locale_fallback-2.4.0.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-icu_normalizer_data 2.3.0
+icu_locale_fallback_data 2.4.0
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/icu_normalizer_data/icu_normalizer_data-2.3.0.crate
+Source: https://static.crates.io/crates/icu_locale_fallback_data/icu_locale_fallback_data-2.4.0.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-icu_properties 2.3.0
+icu_normalizer 2.4.0
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/icu_properties/icu_properties-2.3.0.crate
+Source: https://static.crates.io/crates/icu_normalizer/icu_normalizer-2.4.0.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-icu_properties_data 2.3.0
+icu_normalizer_data 2.4.0
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/icu_properties_data/icu_properties_data-2.3.0.crate
+Source: https://static.crates.io/crates/icu_normalizer_data/icu_normalizer_data-2.4.0.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-icu_provider 2.3.1
+icu_properties 2.4.0
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/icu_provider/icu_provider-2.3.1.crate
+Source: https://static.crates.io/crates/icu_properties/icu_properties-2.4.0.crate
+
+Published author metadata: ["The ICU4X Project Developers"]
+Repository: "https://github.com/unicode-org/icu4x"
+LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
+
+==============================================================================
+icu_properties_data 2.4.0
+Declared license: Unicode-3.0
+Selected license: Unicode-3.0
+Source: https://static.crates.io/crates/icu_properties_data/icu_properties_data-2.4.0.crate
+
+Published author metadata: ["The ICU4X Project Developers"]
+Repository: "https://github.com/unicode-org/icu4x"
+LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
+
+==============================================================================
+icu_provider 2.4.0
+Declared license: Unicode-3.0
+Selected license: Unicode-3.0
+Source: https://static.crates.io/crates/icu_provider/icu_provider-2.4.0.crate
+
+Published author metadata: ["The ICU4X Project Developers"]
+Repository: "https://github.com/unicode-org/icu4x"
+LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
+
+==============================================================================
+icu_segmenter 2.4.0
+Declared license: Unicode-3.0
+Selected license: Unicode-3.0
+Source: https://static.crates.io/crates/icu_segmenter/icu_segmenter-2.4.0.crate
+
+Published author metadata: ["The ICU4X Project Developers"]
+Repository: "https://github.com/unicode-org/icu4x"
+LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
+
+==============================================================================
+icu_segmenter_data 2.4.0
+Declared license: Unicode-3.0
+Selected license: Unicode-3.0
+Source: https://static.crates.io/crates/icu_segmenter_data/icu_segmenter_data-2.4.0.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
@@ -2213,6 +2369,15 @@ Published author metadata: ["The wasm-bindgen Developers"]
 Repository: "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 LICENSE-MIT: text 84e1bbfebd74e4196cfa0ea5cf58e677aa24b47c6661adbb19fb07920d089d1d
+
+==============================================================================
+json-strip-comments 3.1.2
+Declared license: Apache-2.0
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/json-strip-comments/json-strip-comments-3.1.2.crate
+
+Repository: "https://github.com/oxc-project/json-strip-comments"
+LICENSE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 
 ==============================================================================
 jsonwebtoken 10.4.0
@@ -2590,6 +2755,29 @@ Repository: "https://github.com/nix-rust/nix"
 LICENSE: text b9b039b5058cfe9680025ca12f8591df832666baef9f469ea8ba24e73a7fee60
 
 ==============================================================================
+nodejs-built-in-modules 1.0.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/nodejs-built-in-modules/nodejs-built-in-modules-1.0.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>"]
+Repository: "https://github.com/oxc-project/nodejs-built-in-modules"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-nodejs-built-in-modules-9117efa38fe0-LICENSE: text 400332b07f19609766b1a55e8c22eb3c078031cbaec231effaa4897645194a27
+
+==============================================================================
+nonmax 0.5.5
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/nonmax/nonmax-0.5.5.crate
+
+Published author metadata: ["Lucien Greathouse <me@lpghatguy.com>"]
+Repository: "https://github.com/LPGhatguy/nonmax"
+LICENSE-APACHE: text 3807885510ca227863c63fa2f205dc8570480167fa4fe4074cfe86caa18fe08c
+LICENSE-MIT: text a7a9cf0c93716fc4861165716257701f7363402abfe748bdac1a802cfcd2fa49
+
+==============================================================================
 nu-ansi-term 0.50.3
 Declared license: MIT
 Selected license: MIT
@@ -2911,6 +3099,199 @@ Repository: "https://github.com/Nugine/outref"
 LICENSE: text a00511478c83ebb464ef19d840f061c7444adc4636bb561900e75c5808cfc6cc
 
 ==============================================================================
+oxc_allocator 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_allocator/oxc_allocator-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_ast 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_ast/oxc_ast-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_ast_macros 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_ast_macros/oxc_ast_macros-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_ast_visit 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_ast_visit/oxc_ast_visit-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_data_structures 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_data_structures/oxc_data_structures-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_diagnostics 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_diagnostics/oxc_diagnostics-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_ecmascript 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_ecmascript/oxc_ecmascript-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_estree 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_estree/oxc_estree-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_index 5.0.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_index/oxc_index-5.0.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>"]
+Repository: "https://github.com/oxc-project/oxc-index-vec"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-index-vec-8e09fe324eb6-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+
+==============================================================================
+oxc_parser 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_parser/oxc_parser-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_regular_expression 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_regular_expression/oxc_regular_expression-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_resolver 11.24.3
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_resolver/oxc_resolver-11.24.3.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>"]
+Repository: "https://github.com/oxc-project/oxc-resolver"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-resolver-b6a6125c5556-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+
+==============================================================================
+oxc_span 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_span/oxc_span-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_str 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_str/oxc_str-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
+oxc_syntax 0.155.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/oxc_syntax/oxc_syntax-0.155.0.crate
+
+Published author metadata: ["Boshen <boshenc@gmail.com>", "Oxc contributors"]
+Repository: "https://github.com/oxc-project/oxc"
+Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
+
+legal/upstream/oxc-project-oxc-73e6b564737a-LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+legal/upstream/oxc-project-oxc-73e6b564737a-THIRD-PARTY-LICENSE: text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1
+
+==============================================================================
 palette 0.7.7
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -3008,6 +3389,46 @@ Published author metadata: ["Andrew Kane <andrew@ankane.org>"]
 Repository: "https://github.com/pgvector/pgvector-rust"
 LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
 LICENSE-MIT: text 6d2cd6136514e2a86c6cb8bed3077488145b02cf43656c8bee94f054e65de271
+
+==============================================================================
+phf 0.14.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/phf/phf-0.14.0.crate
+
+Published author metadata: ["Steven Fackler <sfackler@gmail.com>"]
+Repository: "https://github.com/rust-phf/rust-phf"
+LICENSE: text ec5d7c32366268f1c8c110c2db8dc745dadc8f35a99a44c6ec3c7ed31b61413a
+
+==============================================================================
+phf_generator 0.14.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/phf_generator/phf_generator-0.14.0.crate
+
+Published author metadata: ["Steven Fackler <sfackler@gmail.com>"]
+Repository: "https://github.com/rust-phf/rust-phf"
+LICENSE: text ec5d7c32366268f1c8c110c2db8dc745dadc8f35a99a44c6ec3c7ed31b61413a
+
+==============================================================================
+phf_macros 0.14.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/phf_macros/phf_macros-0.14.0.crate
+
+Published author metadata: ["Steven Fackler <sfackler@gmail.com>"]
+Repository: "https://github.com/rust-phf/rust-phf"
+LICENSE: text ec5d7c32366268f1c8c110c2db8dc745dadc8f35a99a44c6ec3c7ed31b61413a
+
+==============================================================================
+phf_shared 0.14.0
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/phf_shared/phf_shared-0.14.0.crate
+
+Published author metadata: ["Steven Fackler <sfackler@gmail.com>"]
+Repository: "https://github.com/rust-phf/rust-phf"
+LICENSE: text ec5d7c32366268f1c8c110c2db8dc745dadc8f35a99a44c6ec3c7ed31b61413a
 
 ==============================================================================
 pin-project-lite 0.2.17
@@ -3367,6 +3788,26 @@ Source: https://static.crates.io/crates/ratatui-widgets/ratatui-widgets-0.3.2.cr
 Published author metadata: ["Florian Dehau <work@fdehau.com>", "The Ratatui Developers"]
 Repository: "https://github.com/ratatui/ratatui"
 LICENSE: text 59edc29ade784518f1b280f877d4c07178664fcf47ba2538255ea7771f80d435
+
+==============================================================================
+rayon 1.12.0
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/rayon/rayon-1.12.0.crate
+
+Repository: "https://github.com/rayon-rs/rayon"
+LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+LICENSE-MIT: text 9e0027807b0c548ac1df1bd85fe0d72da6665498b06ebf8a64d5cb841f39fcef
+
+==============================================================================
+rayon-core 1.13.0
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/rayon-core/rayon-core-1.13.0.crate
+
+Repository: "https://github.com/rayon-rs/rayon"
+LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
+LICENSE-MIT: text 9e0027807b0c548ac1df1bd85fe0d72da6665498b06ebf8a64d5cb841f39fcef
 
 ==============================================================================
 redox_syscall 0.5.18
@@ -3812,6 +4253,17 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 37412fff76e3ad06d95d677566b2b771ad595aada257e204eaf040ca938bcb62
 
 ==============================================================================
+self_cell 1.3.0
+Declared license: Apache-2.0 OR GPL-2.0-only
+Selected license: Apache-2.0
+Source: https://static.crates.io/crates/self_cell/self_cell-1.3.0.crate
+
+Published author metadata: ["Lukas Bergdoll <lukas.bergdoll@gmail.com>"]
+Repository: "https://github.com/Voultapher/self_cell"
+LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+LICENSE-GPLv2: text 1be990a929b50ca91d815cea1cd3cebb5c49e86076ade82b1103f2b9cd71a3af
+
+==============================================================================
 semver 1.0.28
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -3819,6 +4271,17 @@ Source: https://static.crates.io/crates/semver/semver-1.0.28.crate
 
 Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
 Repository: "https://github.com/dtolnay/semver"
+LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e38179
+LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
+
+==============================================================================
+seq-macro 0.3.6
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/seq-macro/seq-macro-0.3.6.crate
+
+Published author metadata: ["David Tolnay <dtolnay@gmail.com>"]
+Repository: "https://github.com/dtolnay/seq-macro"
 LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e38179
 LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
 
@@ -4007,6 +4470,17 @@ Repository: "https://github.com/mcountryman/simd-adler32"
 LICENSE.md: text 627eff66d6c4b984355e737e8a92b262d584865956e93a1ece6e285a083d8be9
 
 ==============================================================================
+simd-json 0.18.1
+Declared license: Apache-2.0 OR MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/simd-json/simd-json-0.18.1.crate
+
+Published author metadata: ["Heinz N. Gies <heinz@licenser.net>", "Sunny Gleason"]
+Repository: "https://github.com/simd-lite/simd-json"
+LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+LICENSE-MIT: text a406579cd136771c705c521db86ca7d60a6f3de7c9b5460e6193a2df27861bde
+
+==============================================================================
 simd_cesu8 1.2.0
 Declared license: Apache-2.0 OR MIT
 Selected license: MIT
@@ -4039,6 +4513,18 @@ Repository: "https://github.com/acw/simple_asn1"
 LICENSE: text 11bb064069985cc016cf589760b4f4e801348769dca84a33c12c921fcd6198a1
 
 ==============================================================================
+siphasher 1.0.4
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/siphasher/siphasher-1.0.4.crate
+
+Published author metadata: ["Frank Denis <github@pureftpd.org>"]
+Repository: "https://github.com/jedisct1/rust-siphash"
+COPYING: text 24e26e8fb783e2db1c502733a49f69865ea6cb6245bc13ae8429796a0f5e0a48
+LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+LICENSE-MIT: text 21a2121221d2a35df2d8d333d00a61ed240446b6107092741ff996941acdc919
+
+==============================================================================
 slab 0.4.12
 Declared license: MIT
 Selected license: MIT
@@ -4058,6 +4544,16 @@ Published author metadata: ["The Servo Project Developers"]
 Repository: "https://github.com/servo/rust-smallvec"
 LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 LICENSE-MIT: text 7f194ae45c2525a57443f7edabd392e8218109ee81a4bce70d385104c87c1a71
+
+==============================================================================
+smawk 0.3.3
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/smawk/smawk-0.3.3.crate
+
+Published author metadata: ["Martin Geisler <martin@geisler.net>"]
+Repository: "https://github.com/mgeisler/smawk"
+LICENSE: text 9984f3e87feaf4818fee0cbb0c2b43b41caf7ba4d802c23522eb64257a027263
 
 ==============================================================================
 socket2 0.6.5
@@ -4321,6 +4817,15 @@ LICENSE-MIT: text 154c1af2b38e25e5c18613dfe352eed29b0863cb39e494007822cdeb39150a
 UNLICENSE: text ca2abdf695884c77ea4b4a5b64ca7b732d9d9dbade4eebc1c2e76c53e9e3bc83
 
 ==============================================================================
+textwrap 0.16.4
+Declared license: MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/textwrap/textwrap-0.16.4.crate
+
+Repository: "https://github.com/mgeisler/textwrap"
+LICENSE: text 43682a866fa5c145d9e0ed15f1b76c055f6a49443ebfd0e04db870dee6cc2f30
+
+==============================================================================
 thiserror 2.0.21
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
@@ -4419,10 +4924,10 @@ Published author metadata: ["debris <marek.kotewicz@gmail.com>"]
 LICENSE: text 6d489af6292662d9e36d34ce49423784984a5f6e41d7b58f49b01264df59fa03
 
 ==============================================================================
-tinystr 0.8.4
+tinystr 0.8.5
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/tinystr/tinystr-0.8.4.crate
+Source: https://static.crates.io/crates/tinystr/tinystr-0.8.5.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
@@ -4700,6 +5205,18 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 033a9383ff21d1e4811d98dd2e0081b0ba0d9c9a31d6c7ba9e63e3488479bf29
 
 ==============================================================================
+unicode-id-start 1.5.0
+Declared license: (MIT OR Apache-2.0) AND Unicode-3.0
+Selected license: MIT AND Unicode-3.0
+Source: https://static.crates.io/crates/unicode-id-start/unicode-id-start-1.5.0.crate
+
+Published author metadata: ["David Tolnay <dtolnay@gmail.com>", "Boshen <boshenc@gmail.com>"]
+Repository: "https://github.com/Boshen/unicode-id-start"
+LICENSE-APACHE: text 85ad950cce8752f716dbf49be95b2639172cb49f291336d57f1fdc9989e38179
+LICENSE-MIT: text 30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652
+LICENSE-UNICODE: text 361d7912957842f2ce61c774b14afba41ae91df84882982e6f7e749e01c07c91
+
+==============================================================================
 unicode-ident 1.0.27
 Declared license: (MIT OR Apache-2.0) AND Unicode-3.0
 Selected license: MIT AND Unicode-3.0
@@ -4880,6 +5397,17 @@ Repository: "https://github.com/tokio-rs/valuable"
 Published crate archive omits license texts; preserved unmodified from its .cargo_vcs_info.json revision.
 
 legal/upstream/tokio-rs-valuable-9efc29b6e58c-LICENSE: text dda3bff8ecf2ddd361a5ce51da55489f40216672d7c1ef412f18757c6a7ee6b8
+
+==============================================================================
+value-trait 0.12.3
+Declared license: Apache-2.0/MIT
+Selected license: MIT
+Source: https://static.crates.io/crates/value-trait/value-trait-0.12.3.crate
+
+Published author metadata: ["Heinz N. Gies <heinz@licenser.net>"]
+Repository: "https://github.com/simd-lite/value-trait"
+LICENSE-APACHE: text 283ea6cc2997a1a70da0049e09adf9317bb60ca1b51279b65196b83a69e1996b
+LICENSE-MIT: text a406579cd136771c705c521db86ca7d60a6f3de7c9b5460e6193a2df27861bde
 
 ==============================================================================
 vcpkg 0.2.15
@@ -5134,10 +5662,40 @@ MIT branch selected. Archive omits license texts and VCS metadata. All 1418 ship
 legal/upstream/retep998-winapi-rs-9497609ef44c-LICENSE-MIT: text 8cae4a4abfbe47d1b6f19c669c50f5edef55024eba44f13fdc4b3e8912170687
 
 ==============================================================================
+windows 0.62.2
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/windows/windows-0.62.2.crate
+
+Repository: "https://github.com/microsoft/windows-rs"
+license-apache-2.0: text 783829b43aacb86cb8e6cedcd777210c13f2081aae94419cc7a30e112977d488
+license-mit: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+windows-collections 0.3.2
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/windows-collections/windows-collections-0.3.2.crate
+
+Repository: "https://github.com/microsoft/windows-rs"
+license-apache-2.0: text 783829b43aacb86cb8e6cedcd777210c13f2081aae94419cc7a30e112977d488
+license-mit: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
 windows-core 0.62.2
 Declared license: MIT OR Apache-2.0
 Selected license: MIT
 Source: https://static.crates.io/crates/windows-core/windows-core-0.62.2.crate
+
+Repository: "https://github.com/microsoft/windows-rs"
+license-apache-2.0: text 783829b43aacb86cb8e6cedcd777210c13f2081aae94419cc7a30e112977d488
+license-mit: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+windows-future 0.3.2
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/windows-future/windows-future-0.3.2.crate
 
 Repository: "https://github.com/microsoft/windows-rs"
 license-apache-2.0: text 783829b43aacb86cb8e6cedcd777210c13f2081aae94419cc7a30e112977d488
@@ -5183,6 +5741,16 @@ Published author metadata: ["Daniel Brotsky <dev@brotsky.com>"]
 Repository: "https://github.com/open-source-cooperative/windows-native-keyring-store.git"
 LICENSE-APACHE: text 6205fe4502daf35e54d14308e1d9bebf8cbeeef098479664c226e92dea25b5b3
 LICENSE-MIT: text b5e6923cd7c0e4a493cb1b0a26ddbad80effa363dd8dbf0ff8077117ff68f5d9
+
+==============================================================================
+windows-numerics 0.3.1
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/windows-numerics/windows-numerics-0.3.1.crate
+
+Repository: "https://github.com/microsoft/windows-rs"
+license-apache-2.0: text 783829b43aacb86cb8e6cedcd777210c13f2081aae94419cc7a30e112977d488
+license-mit: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
 
 ==============================================================================
 windows-result 0.4.1
@@ -5232,6 +5800,16 @@ Selected license: MIT
 Source: https://static.crates.io/crates/windows-targets/windows-targets-0.52.6.crate
 
 Published author metadata: ["Microsoft"]
+Repository: "https://github.com/microsoft/windows-rs"
+license-apache-2.0: text 783829b43aacb86cb8e6cedcd777210c13f2081aae94419cc7a30e112977d488
+license-mit: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
+
+==============================================================================
+windows-threading 0.2.1
+Declared license: MIT OR Apache-2.0
+Selected license: MIT
+Source: https://static.crates.io/crates/windows-threading/windows-threading-0.2.1.crate
+
 Repository: "https://github.com/microsoft/windows-rs"
 license-apache-2.0: text 783829b43aacb86cb8e6cedcd777210c13f2081aae94419cc7a30e112977d488
 license-mit: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
@@ -5400,10 +5978,10 @@ LICENSE-APACHE: text 6b2b73c04ae9a88a9d3b3fe01f0d87274496574fdee44f387499c828d79
 LICENSE-MIT: text aa62629b3907025b9c8da658a3a572aad4bf888fb2e617d1db5f858796016d8e
 
 ==============================================================================
-yoke 0.8.3
+yoke 0.8.4
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/yoke/yoke-0.8.3.crate
+Source: https://static.crates.io/crates/yoke/yoke-0.8.4.crate
 
 Published author metadata: ["Manish Goregaokar <manishsmail@gmail.com>"]
 Repository: "https://github.com/unicode-org/icu4x"
@@ -5494,20 +6072,20 @@ Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-zerovec 0.11.8
+zerovec 0.11.9
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/zerovec/zerovec-0.11.8.crate
+Source: https://static.crates.io/crates/zerovec/zerovec-0.11.9.crate
 
 Published author metadata: ["The ICU4X Project Developers"]
 Repository: "https://github.com/unicode-org/icu4x"
 LICENSE: text cde87abe221f413fede55ded0f17985f37b8fdc23e5f6cba9a3955437facb3ae
 
 ==============================================================================
-zerovec-derive 0.11.6
+zerovec-derive 0.11.7
 Declared license: Unicode-3.0
 Selected license: Unicode-3.0
-Source: https://static.crates.io/crates/zerovec-derive/zerovec-derive-0.11.6.crate
+Source: https://static.crates.io/crates/zerovec-derive/zerovec-derive-0.11.7.crate
 
 Published author metadata: ["Manish Goregaokar <manishsmail@gmail.com>"]
 Repository: "https://github.com/unicode-org/icu4x"
@@ -6479,6 +7057,9 @@ Portions of this work Copyright (C) LaunchBadge, LLC
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 21a2121221d2a35df2d8d333d00a61ed240446b6107092741ff996941acdc919 ---
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 23c3dce12b908f6f44f977b861bc8c40937d157c45dca8e29116ee228dd33d77 ---
 Copyright (c) 2019 Eliza Weisman
 
@@ -6525,6 +7106,15 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+--- text 24e26e8fb783e2db1c502733a49f69865ea6cb6245bc13ae8429796a0f5e0a48 ---
+Copyright 2012-2016 The Rust Project Developers.
+Copyright 2016-2026 Frank Denis.
+
+Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+<LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+option.
 
 --- text 24fa06d8eae3c3ba93e1f863f0640ef57c8996f4bece3e14c3d29c5efb7c0089 ---
 Copyright (c) 2016-2017 Isis Agora Lovecruft, Henry de Valence. All rights reserved.
@@ -6915,6 +7505,43 @@ Copyright (c) 2014 Santiago Lapresta and contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 3774b37c2ccdeb76e9979cd22013b93393448b44a62abcff351e820433083c54 ---
+MIT License
+
+Copyright (c) 2025-present VoidZero Inc. & Contributors
+Copyright (c) 2024 shulaoda
+Copyright (c) 2023 Devon Govett
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 3807885510ca227863c63fa2f205dc8570480167fa4fe4074cfe86caa18fe08c ---
+i                                 [Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "{}"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright {yyyy} {name of copyright owner}
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
 --- text 381f992f70f7089ddd7c450295f7a3c5e7ee776ded8771991281a6b146c5e5b9 ---
 Copyright (c) 2018-2023 Sean McArthur
 Copyright (c) 2016 Alex Crichton
@@ -6980,10 +7607,29 @@ Copyright (c) 2012-2013 Mozilla Foundation
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 3ce3cce00b62cb4bb26ff4a3d7d4f5a73d1b928e835bf74a1844a59367327215 ---
+MIT License
+
+Copyright (c) 2019 Acrimon
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 3dda214a46ef7de902363b8e9504fe51fae2e8191d8ab6bbf08dc8c93fb57ca0 ---
+Copyright (c) 2017 The bytecount Developers
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 3e1bef82aa0dfee4504ad211f7e4895153e3191db6ab179f94a7e20f990a0b67 ---
 MIT License
 
 Copyright (c) Tokio Contributors
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 400332b07f19609766b1a55e8c22eb3c078031cbaec231effaa4897645194a27 ---
+MIT License
+
+Copyright (c) 2024-present VoidZero Inc. & Contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -7055,6 +7701,13 @@ limitations under the License.
 
 --- text 431b0387e5dac54c5ac006f8fd3cc5df1bc6af23facdff10d82a2ead264ac253 ---
 Copyright (c) 2020 Olivier Goffart <ogoffart@sixtyfps.io>
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 43682a866fa5c145d9e0ed15f1b76c055f6a49443ebfd0e04db870dee6cc2f30 ---
+MIT License
+
+Copyright (c) 2016 Martin Geisler
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -7603,6 +8256,14 @@ Copyright (c) 2023-2025 The Ratatui Developers
 The MIT License (MIT)
 
 Copyright (c) 2019 The Crossbeam Project Developers
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff ---
+MIT License
+
+Copyright (c) 2024-present VoidZero Inc. & Contributors
+Copyright (c) 2023 Boshen
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
@@ -8504,6 +9165,26 @@ Copyright (c) 2014 Chris Wong
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 7fa3f523d098ffbbc7c4b39ac6636f33a468fc2221d23a04fa2797b61af3ff77 ---
+[Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
+
+
+--- LLVM Exceptions to the Apache 2.0 License ----
+
+As an exception, if, as a result of your compiling your source code, portions
+of this Software are embedded into an Object form of such source code, you
+may redistribute such embedded portions in such Object form without complying
+with the conditions of Sections 4(a), 4(b) and 4(d) of the License.
+
+In addition, if you combine or link compiled forms of this Software with
+software that is licensed under the GPLv2 ("Combined Software") and if a
+court of competent jurisdiction determines that the patent provision (Section
+3), the indemnity provision (Section 9) or other Section of the License
+conflicts with the conditions of the GPLv2, you may retroactively and
+prospectively choose to deem waived or otherwise exclude such Section(s) of
+the License, but only in their entirety and only with respect to the Combined
+Software.
+
 --- text 7fb46adff9025f553b882b84ce593c37008d1e83019e4fdd6b21f8c800d0c485 ---
 Apache License
                            Version 2.0, January 2004
@@ -8823,6 +9504,13 @@ Copyright (c) The Ratatui Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 903ee1f5fb43899b59bb2b74c981e810c2bb9d832be0e8f2e1166234cd86989a ---
+MIT License
+
+Copyright (c) 2020 Ingvar Stepanyan
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 905bac0de925bc6f76905f55359c166042d163a1ee9e859a9d30b1b509516203 ---
 MIT License
 
@@ -8936,6 +9624,13 @@ Copyright 2025 Don MacAskill
    See the License for the specific language governing permissions and
    limitations under the License.
 
+--- text 9984f3e87feaf4818fee0cbb0c2b43b41caf7ba4d802c23522eb64257a027263 ---
+MIT License
+
+Copyright (c) 2017 Martin Geisler
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 99afaa30c17801207692138b8a7d9f7522b52711dabb4cde25855dadc950e4c8 ---
 Copyright (c) 2018 Josh Stone
 
@@ -9046,6 +9741,11 @@ Copyright (c) 2015-2020 The rust-hex Developers
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 9e0027807b0c548ac1df1bd85fe0d72da6665498b06ebf8a64d5cb841f39fcef ---
+Copyright (c) 2010 The Rust Project Developers
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 9f1b59f145a4184430c2aa487294e726f6b86095fadad30c7a864eb90fd310d5 ---
 {
   "name": "objc2-core-foundation",
@@ -9110,6 +9810,13 @@ Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com>
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text a406579cd136771c705c521db86ca7d60a6f3de7c9b5460e6193a2df27861bde ---
+MIT License
+
+Copyright (c) [year] [fullname]
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text a759ce38c686a2042f62a0a6b8ea01781e3447726dcb68f4bb8b9f199feff12e ---
 Copyright 2015 Nicholas Allegra (comex).
 
@@ -9124,6 +9831,11 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+--- text a7a9cf0c93716fc4861165716257701f7363402abfe748bdac1a802cfcd2fa49 ---
+Copyright (c) 2020 Lucien Greathouse
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text a8d7d8157c7166afaa5da53eab0badc7e2c4dc62177d424299d1c96a445585d2 ---
 The MIT License (MIT)
@@ -10639,6 +11351,13 @@ Permission is granted to anyone to use this software for any purpose, including 
 
 3. This notice may not be removed or altered from any source distribution.
 
+--- text ec5d7c32366268f1c8c110c2db8dc745dadc8f35a99a44c6ec3c7ed31b61413a ---
+The MIT License (MIT)
+
+Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text ed2fda479dacddadebb37fe6594515ed84a03e892721189c06cf3f86fa8e3af0 ---
 The MIT License (MIT)
 Copyright (c) 2017-2018 Sergio Benitez
@@ -11184,6 +11903,11 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+--- text f0736819cfc3d1c058c6134bc2c22c36490a07fc81d14ba899cd381c8b6a157a ---
+Copyright (c) 2014-2020 Optimal Computing (NZ) Ltd
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text f0a559a114200228b3a06d7d22961a7e0fc21a9c2b139a970be5830cebac8e10 ---
 [Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
 
@@ -11316,6 +12040,322 @@ AUTHORS: (ordered alphabetically)
         Rob Bradford <robert.bradford@intel.com>, <rbradford@rivosinc.com>
         Tom Gundersen <teg@jklm.no>
         Trevor Gross <tmgross@umich.edu>
+
+--- text f3ac1d393c49575d60937964180cbb52e71dd6d5ab76160a36a718edd851e0d1 ---
+* TypeScript
+* zkat/miette
+
+
+                                 [Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
+
+--------------------------------------------------------------------------------
+
+ESLint
+
+Copyright OpenJS Foundation and other contributors, <www.openjsf.org>
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+typescript-eslint
+
+Originally extracted from:
+
+TypeScript ESLint Parser
+Copyright JS Foundation and other contributors, https://js.foundation
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+- Redistributions of source code must retain the above copyright
+  notice, this list of conditions and the following disclaimer.
+- Redistributions in binary form must reproduce the above copyright
+  notice, this list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-import
+
+The MIT License (MIT)
+
+Copyright (c) 2015 Ben Mosher
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-jest
+
+MIT License
+
+Copyright (c) 2018 Jonathan Kim
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-promise
+
+Copyright (c) 2020, Jamund Ferguson
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+jsparagus
+
+Copyright (c) 2020 Mozilla Foundation
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+Biome
+
+MIT License
+
+Copyright (c) 2023 Biome Developers and Contributors.
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+acorn
+
+MIT License
+
+Copyright (C) 2012-2022 by various contributors (see AUTHORS)
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+sindresorhus/globals
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+terser
+
+Terser is released under the BSD license:
+
+Copyright 2012-2018 (c) Mihai Bazon <mihai.bazon@gmail.com>
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+    * Redistributions of source code must retain the above
+      copyright notice, this list of conditions and the following
+      disclaimer.
+
+    * Redistributions in binary form must reproduce the above
+      copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials
+      provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR
+TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+
+evanw/esbuild
+
+MIT License
+
+Copyright (c) 2020 Evan Wallace
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+google/closure-compiler
+
+Copyright 2009 The Closure Compiler Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0.
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+--------------------------------------------------------------------------------
+
+tdewolff/minify
+
+Copyright (c) 2015 Taco de Wolff
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+prettier
+
+Copyright © James Long and contributors
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+index_vec
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+typescript-eslint (eslint-plugin)
+
+MIT License
+
+Copyright (c) 2019 typescript-eslint and other contributors
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-unicorn
+
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-react
+
+The MIT License (MIT)
+
+Copyright (c) 2014 Yannick Croissant
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-react-hooks
+
+MIT License
+
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-react-perf
+
+The MIT License (MIT)
+
+Copyright (c) 2016 Charles Vazac
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-jsx-a11y
+
+The MIT License (MIT)
+Copyright (c) 2016 Ethan Cohen
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-jsdoc
+
+Copyright (c) 2018, Gajus Kuizinas (http://gajus.com/)
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the Gajus Kuizinas (http://gajus.com/) nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL ANUARY BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-n
+
+The MIT License (MIT)
+
+Copyright (c) 2015 Toru Nagashima
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+Next.js (eslint-plugin-next)
+
+The MIT License (MIT)
+
+Copyright (c) 2025 Vercel, Inc.
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-vitest
+
+MIT License
+
+Copyright (c) 2022 - PRESENT Verité Mugabo  Makuza
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--------------------------------------------------------------------------------
+
+eslint-plugin-vue
+
+MIT License
+
+Copyright (c) 2017 Toru Nagashima
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text f47894ff9c86dc7e364e3c161a13b4b7414da6192b91d0eccf0161f944f753e5 ---
 Copyright (c) 2017 http-rs authors

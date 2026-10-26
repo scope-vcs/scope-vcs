@@ -19,21 +19,8 @@ BACKEND_FILES.update(
     for service in services.values()
     if (definition := service['deployment'])['backend'] and definition['artifact']['kind'] == 'binary'
 )
-ANALYZER_FILES = {
-    'analyze.mjs', 'package.json', 'package-lock.json',
-    'third-party-dependency-analyzer.txt',
-}
-
-
 def valid_backend_entry(path, member):
-    if path == PurePosixPath('dependency-analyzer'):
-        return member.isdir()
-    if len(path.parts) == 1:
-        return path.name in BACKEND_FILES and member.isfile()
-    if path.parent == PurePosixPath('dependency-analyzer'):
-        return (path.name in ANALYZER_FILES and member.isfile()) or (path.name == 'src' and member.isdir())
-    return (path.parent == PurePosixPath('dependency-analyzer/src')
-        and path.suffix == '.mjs' and member.isfile())
+    return len(path.parts) == 1 and path.name in BACKEND_FILES and member.isfile()
 
 
 def archive_path(member, kind):

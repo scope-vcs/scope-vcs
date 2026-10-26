@@ -4,7 +4,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope
 cargo build -p scope-cli-downloads --release --locked
-npm ci --prefix dependency-analyzer --ignore-scripts
 
 host="$(rustc -vV | sed -n 's/^host: //p')"
 target="$(jq -c --arg host "$host" '.targets[] | select(.triple == $host)' cli/distribution/targets.json)"
@@ -14,12 +13,8 @@ scope_binary="$(./dev/cargo-target-dir cli/Cargo.toml)/release/scope"
 artifact="cli/dist/$(jq -r '.artifact' <<<"$target")"
 SCOPE_BINARY="$scope_binary" \
 SCOPE_ARTIFACT="$artifact" \
-SCOPE_NODE_VERSION="$(jq -r '.node_version' cli/distribution/targets.json)" \
-SCOPE_NODE_PLATFORM="$(jq -r '.node_platform' <<<"$target")" \
-SCOPE_NODE_SHA256="$(jq -r '.node_sha256' <<<"$target")" \
   bash cli/distribution/package-bundle.sh
 
-SCOPE_ARTIFACT="$artifact" bash cli/distribution/verify-bundled-analyzer.sh
 service_binary="$(./dev/cargo-target-dir Cargo.toml)/release/scope-cli-service"
 [[ "$host" == *windows* ]] && service_binary+=.exe
 SCOPE_TEST_BINARY="$scope_binary" SCOPE_TEST_ARTIFACT="$artifact" SCOPE_TEST_SERVICE="$service_binary" \

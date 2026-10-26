@@ -17,9 +17,7 @@ if [[ "${PREPARE_BACKEND:-0}" == 1 ]]; then
     cp artifacts/backend/bin/LICENSE artifacts/backend/bin/NOTICE artifacts/backend/bin/third-party-rust.txt "$root/bin/"
     binary="$(node .github/scripts/deployment-components.mjs field "$component" binary)"
     install -m 0755 "artifacts/backend/bin/$binary" "$root/bin/$binary"
-    if [[ "$component" == run-worker ]]; then
-      cp -a artifacts/backend/bin/dependency-analyzer "$root/dependency-analyzer"
-    elif [[ "$component" == api ]]; then
+    if [[ "$component" == api ]]; then
       : "${SCOPE_MAINTENANCE_BINARY:?API preparation requires the original maintenance binary}"
       install -m 0755 "$SCOPE_MAINTENANCE_BINARY" "$root/bin/scope-maintenance"
     fi

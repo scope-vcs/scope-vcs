@@ -473,6 +473,8 @@ The Unix-only exchange-file permissions test runs on Linux and macOS.
 Pull requests skip the native lanes when their CLI changes are limited to
 `crates/scope-domain/` and `crates/scope-api-contract/`. The Linux CLI checks
 still build and test the CLI against those crates, and releases run every lane.
+Changes to `crates/scope-dependency-analyzer/` run the native lanes because the
+CLI links that analyzer into its binary.
 
 The installer check uses a temporary directory containing spaces. It verifies
 first installation, replacement of an old binary, command discovery on `PATH`,
