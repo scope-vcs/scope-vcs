@@ -44,6 +44,21 @@ impl GitSnapshot {
         if !remotes.status.success() {
             bail!("list Git remotes failed");
         }
+        let mut remotes = remote_urls(&String::from_utf8_lossy(&remotes.stdout));
+        for remote in &mut remotes {
+            if remote.fetch.is_none() {
+                remote.fetch = Some(git_text_in_repo(
+                    repo,
+                    &["remote", "get-url", &remote.name],
+                )?);
+                if remote.push.is_none() {
+                    remote.push = Some(git_text_in_repo(
+                        repo,
+                        &["remote", "get-url", "--push", &remote.name],
+                    )?);
+                }
+            }
+        }
         Ok(Self {
             branch: branch
                 .status
@@ -51,7 +66,7 @@ impl GitSnapshot {
                 .then(|| String::from_utf8_lossy(&branch.stdout).trim().to_string())
                 .filter(|branch| !branch.is_empty()),
             config: config_entries(&String::from_utf8_lossy(&config.stdout)),
-            remotes: remote_urls(&String::from_utf8_lossy(&remotes.stdout)),
+            remotes,
         })
     }
 
@@ -220,6 +235,18 @@ mod tests {
             "remote.mirror.pushurl",
             "https://second.example",
         ]);
+        dir.run_git([
+            "config",
+            "remote.alias.fetch",
+            "+refs/heads/*:refs/remotes/alias/*",
+        ]);
+        dir.run_git([
+            "config",
+            "url.https://alias.example/git/private/o/r.insteadOf",
+            "alias",
+        ]);
+        dir.run_git(["config", "remote.push-only.pushurl", "https://push.example"]);
+        dir.run_git(["config", "remote.empty.url", ""]);
         let repo = GitRepo {
             root: dir.path().to_path_buf(),
         };
@@ -240,9 +267,19 @@ mod tests {
         );
         assert_eq!(
             snapshot.remote_names().collect::<Vec<_>>(),
-            ["mirror", "scope"]
+            ["alias", "empty", "mirror", "push-only", "scope"]
         );
-        for (remote, push) in [("scope", false), ("scope", true), ("mirror", true)] {
+        for (remote, push) in [
+            ("scope", false),
+            ("scope", true),
+            ("mirror", true),
+            ("alias", false),
+            ("alias", true),
+            ("empty", false),
+            ("empty", true),
+            ("push-only", false),
+            ("push-only", true),
+        ] {
             let args = if push {
                 vec!["remote", "get-url", "--push", remote]
             } else {
