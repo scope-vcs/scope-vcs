@@ -39,7 +39,7 @@ fn licenses_prints_complete_embedded_texts_without_a_repository_or_server() {
     assert!(stdout.starts_with("Scope — Apache-2.0\n"));
     assert!(stdout.contains(include_str!("../../LICENSE")));
     assert!(stdout.contains(include_str!("../../NOTICE")));
-    assert!(stdout.contains(include_str!("../../legal/third-party-cli.txt")));
+    assert!(stdout.contains(include_str!("../../legal/third-party-rust.txt")));
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn licenses_json_contains_complete_texts_as_one_document() {
         assert_eq!(document["notice"], include_str!("../../NOTICE"));
         assert_eq!(
             document["third_party_notices"],
-            include_str!("../../legal/third-party-cli.txt")
+            include_str!("../../legal/third-party-rust.txt")
         );
     }
 }

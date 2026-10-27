@@ -1,7 +1,7 @@
 use super::{LocalState, VisibilityState};
 use crate::{
     api::RequestSummaryResponse,
-    git_repo::{self, GitRepo},
+    git_repo::{self, GitRepo, GitSnapshot},
     git_transport::ScopeRemote,
     repo_config, request,
 };
@@ -11,6 +11,7 @@ use std::process::Command;
 pub(super) fn compare_scope_ref(
     local: &mut LocalState,
     repo: &GitRepo,
+    checkout: &GitSnapshot,
     target: &ScopeRemote,
     main_remote: &str,
     resolved_request: Option<&RequestSummaryResponse>,
@@ -22,7 +23,7 @@ pub(super) fn compare_scope_ref(
         .branch
         .as_deref()
         .map(|branch| {
-            request::resolve_request_comparison_ref(repo, branch, target, resolved_request)
+            request::resolve_request_comparison_ref(checkout, branch, target, resolved_request)
         })
         .unwrap_or(request::RequestComparison::Main);
     let reference = match comparison {
@@ -43,30 +44,36 @@ pub(super) fn compare_scope_ref(
     None
 }
 
-pub(super) fn local_state(repo: &GitRepo) -> anyhow::Result<LocalState> {
+pub(super) fn local_state(repo: &GitRepo, checkout: &GitSnapshot) -> anyhow::Result<LocalState> {
     let output = Command::new("git")
         .current_dir(&repo.root)
-        .args(["status", "--porcelain", "-z"])
+        .args(["status", "--porcelain=v2", "--branch", "-z"])
         .output()
         .context("inspect working tree")?;
     if !output.status.success() {
         anyhow::bail!("Git could not inspect the working tree");
     }
-    let upstream = git_text(
-        repo,
-        &[
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-        ],
-    );
+    let status = String::from_utf8_lossy(&output.stdout);
+    let header = |name: &str| {
+        status.split('\0').find_map(|entry| {
+            entry
+                .strip_prefix("# ")?
+                .strip_prefix(name)?
+                .strip_prefix(' ')
+        })
+    };
     Ok(LocalState {
         root: repo.root.clone(),
-        branch: git_repo::current_branch(repo).ok(),
-        head_oid: git_text(repo, &["rev-parse", "--verify", "HEAD"]),
-        dirty: !output.stdout.is_empty(),
-        upstream,
+        branch: checkout.branch().map(str::to_string),
+        head_oid: header("branch.oid")
+            .filter(|oid| *oid != "(initial)")
+            .map(str::to_string),
+        dirty: status
+            .split('\0')
+            .any(|entry| !entry.is_empty() && !entry.starts_with("# ")),
+        upstream: header("branch.ab")
+            .and(header("branch.upstream"))
+            .map(str::to_string),
         comparison_ref: None,
         unpushed_commits: None,
         visibility: None,
@@ -74,12 +81,12 @@ pub(super) fn local_state(repo: &GitRepo) -> anyhow::Result<LocalState> {
 }
 
 pub(super) fn local_visibility(repo: &GitRepo) -> anyhow::Result<VisibilityState> {
-    let config = repo_config::load_worktree_scope_repo_config(&repo.root)?;
-    let local_hash = scope_domain::repo_config::repo_config_fingerprint(&config)?;
-    let base_hash = repo_config::load_worktree_scope_repo_config_base_hash(&repo.root)?;
+    let synced = repo_config::load_synced_worktree_scope_repo_config(&repo.root)?;
+    let local_hash = scope_domain::repo_config::repo_config_fingerprint(&synced.config)?;
+    let base_hash = synced.base_hash;
     let local_edits = base_hash != local_hash;
     Ok(VisibilityState {
-        path: repo_config::repo_config_path(&repo.root)?,
+        path: synced.path,
         local_hash,
         base_hash: Some(base_hash),
         local_edits: Some(local_edits),

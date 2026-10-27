@@ -11,7 +11,7 @@ pub(super) fn load_exact_request(
     crate::api::RequestDetailResponse,
 )> {
     let context = load_context(git_repo, api, target.remote.as_deref())?;
-    let request_id = request_id_for_context(git_repo, api, &context, target.request)?;
+    let request_id = request_id_for_context(api, &context, target.request)?;
     let detail = get_request(
         api,
         &context.target.owner,

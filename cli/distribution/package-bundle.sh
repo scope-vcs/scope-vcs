@@ -15,7 +15,7 @@ scope_name=scope
 [[ "$SCOPE_BINARY" == *.exe ]] && scope_name=scope.exe
 cp "$SCOPE_BINARY" "$bundle/$scope_name"
 chmod 0755 "$bundle/$scope_name"
-cp LICENSE NOTICE legal/third-party-cli.txt "$licenses/"
+cp LICENSE NOTICE legal/third-party-rust.txt "$licenses/"
 
 tar -czf "$SCOPE_ARTIFACT" -C "$bundle" .
 

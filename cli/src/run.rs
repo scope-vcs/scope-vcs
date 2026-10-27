@@ -2,7 +2,7 @@ use crate::api::ApiSession;
 use crate::display::short_oid;
 use crate::{
     api::{self, api_url, http_client_builder, run_detail},
-    git_repo::{GitRepo, ensure_git_repo_ready, head_oid, warn_if_dirty_working_tree},
+    git_repo::{GitRepo, GitSnapshot, ensure_git_repo_ready, head_oid, warn_if_dirty_working_tree},
     git_transport::ScopeRemote,
     login::session_from_cache_or_browser,
 };
@@ -225,13 +225,13 @@ impl Connection {
     }
 
     fn resolve(remote: Option<&str>) -> anyhow::Result<Self> {
-        let repo = crate::context::discover_optional()?;
-        let target = crate::context::resolve_repository(repo.as_ref(), remote)?;
-        Self::new(target)
+        Self::for_checkout(crate::context::discover_optional()?.as_ref(), remote)
     }
 
-    fn new(target: ScopeRemote) -> anyhow::Result<Self> {
+    fn for_checkout(repo: Option<&GitRepo>, remote: Option<&str>) -> anyhow::Result<Self> {
+        let checkout = repo.map(GitSnapshot::read).transpose()?;
         let api_url = api_url()?;
+        let target = crate::context::resolve_repository(checkout.as_ref(), &api_url, remote)?;
         let client = run_client(Duration::from_secs(120))?;
         let session = session_from_cache_or_browser(&client, &api_url)?;
         Ok(Self {
@@ -262,8 +262,7 @@ struct QueuedRun {
 fn queue(workflow: &str, remote: Option<&str>) -> anyhow::Result<QueuedRun> {
     let repo = ensure_git_repo_ready("scope run start")?;
     warn_if_dirty_working_tree(&repo)?;
-    let target = crate::context::resolve_repository(Some(&repo), remote)?;
-    let connection = Connection::new(target)?;
+    let connection = Connection::for_checkout(Some(&repo), remote)?;
     queue_from_checkout(workflow, &repo, connection)
 }
 

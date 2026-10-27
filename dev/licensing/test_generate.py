@@ -253,16 +253,6 @@ class LicensingChecks(unittest.TestCase):
         for name in ["Alice", "Bob"]:
             self.assertIn("Copyright " + name, rendered)
 
-    def test_lockfile_notices_cover_exactly_that_lockfile(self):
-        entries = [dict(ecosystem="rust", name=name, version="1", license="MIT", selected_license="MIT",
-            url="https://example.invalid/source", documents=[], lockfiles=lockfiles)
-            for name, lockfiles in [("shared", ["Cargo.lock", "cli/Cargo.lock"]), ("cli-only", ["cli/Cargo.lock"]),
-                ("backend-only", ["Cargo.lock"])]]
-        rendered = generate.render(entries, "rust", "cli/Cargo.lock")
-        self.assertIn("shared 1\n", rendered)
-        self.assertIn("cli-only 1\n", rendered)
-        self.assertNotIn("backend-only", rendered)
-
     def test_compact_inventory_preserves_every_field(self):
         metadata = dict(lockfiles={"Cargo.lock": "checksum"}, inputs={}, artifacts={})
         packages = [dict(name="example", authors=["Copyright Holder"], documents=[dict(path="LICENSE", sha256="hash")])]

@@ -39,6 +39,7 @@ use serde::Deserialize;
 pub(crate) struct RequestListQuery {
     cursor: Option<String>,
     limit: Option<usize>,
+    name: Option<String>,
 }
 
 pub(crate) async fn list_requests(
@@ -67,6 +68,7 @@ pub(crate) async fn list_requests(
             access: access.clone(),
             views: &repo.views,
             after_id: after_id.as_deref(),
+            name: query.name.as_deref(),
             limit: (limit + 1) as u64,
         })
         .await?;

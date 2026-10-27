@@ -48,7 +48,7 @@ pub(super) fn run(
     })?;
     let context = load_context(Some(repo), api, args.remote.as_deref())?;
     local::require_git_remote(&context)?;
-    let id = local::attached_request_id(repo, &branch, &context)?;
+    let id = local::attached_request_id(&branch, &context)?;
     let request = get_request(api, &context.target.owner, &context.target.repo, &id)?.request;
     if !request.permissions.can_push_branch {
         return Err(crate::error::CliError::new(ErrorResponse::new(

@@ -5,7 +5,7 @@
     "web/pnpm-lock.yaml": "2e44111af774a59de496dabb3a577d7e00899de1bf141205bc38faed8e9246cf"
   },
   "inputs": {
-    "dev/licensing/generate.py": "8b8ebaf1e767ef96c9abb74beb2c7e28d3e3683c0170e7d034459861e9898955",
+    "dev/licensing/generate.py": "b561e5d31a5e4eca86d5da0dbf0a37ab94c8ab0e59e919e737ca9aa4ad849bce",
     "dev/licensing/requirements.txt": "0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a",
     "legal/copied-sources.json": "190ff3e7315a2273ed650091869902f07b9fa47b39617029f43aebf1df62b3b8",
     "legal/git-sources.json": "a8db269598ef5d4df96efe4083b2fec7daa289f10c628cc5d20fa0e91a38e092",
@@ -58,7 +58,6 @@
   },
   "artifacts": {
     "legal/third-party-rust.txt": "5ff5fdb810b2e165d816a63ded1df9a47754aec3fbb7db4fbd2551150ed7bd3c",
-    "legal/third-party-cli.txt": "65aef76826d236a1c60fd95621bef04b2a244318fa513936ad40257ca3fa2a64",
     "web/public/third-party-licenses.txt": "4b13caee61ef13ddb156b26fa932d7e20aafce8340b9550423af3be2d140f268",
     "web/public/LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
     "web/public/NOTICE.txt": "0d30174ea34f0f7fbf7839cb5aa93a1e9b3d1a7166ed43ed88c6d64396a748a4"

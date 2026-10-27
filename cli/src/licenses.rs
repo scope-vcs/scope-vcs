@@ -14,7 +14,7 @@ const LICENSES: Licenses = Licenses {
     license: "Apache-2.0",
     license_text: include_str!("../../LICENSE"),
     notice: include_str!("../../NOTICE"),
-    third_party_notices: include_str!("../../legal/third-party-cli.txt"),
+    third_party_notices: include_str!("../../legal/third-party-rust.txt"),
 };
 
 pub fn run(json: bool) -> anyhow::Result<()> {
