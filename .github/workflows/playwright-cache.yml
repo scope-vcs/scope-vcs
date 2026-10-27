@@ -1,0 +1,47 @@
+name: Playwright cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/actions/install-playwright-chromium/**
+      - .github/workflows/playwright-cache.yml
+      - web/pnpm-lock.yaml
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: playwright-cache
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    name: Save Playwright Chromium and packages on main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 11.1.0
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        uses: ./.github/actions/install-playwright-chromium
