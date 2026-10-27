@@ -93,24 +93,3 @@ pub(super) fn store_seed_git_pack(
     };
     Ok((prepared.head, SeedMainPack { pack, upload }))
 }
-
-#[cfg(test)]
-pub(crate) fn test_seed_git_segment_store() -> scope_storage::GitSegmentStore {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    };
-
-    static ATTEMPT: AtomicU64 = AtomicU64::new(1);
-    let root = std::env::temp_dir().join(format!(
-        "scope-seed-segments-{}-{}",
-        std::process::id(),
-        ATTEMPT.fetch_add(1, Ordering::Relaxed)
-    ));
-    scope_storage::GitSegmentStore::new(
-        Arc::new(scope_storage::MemoryBackend::default()),
-        scope_storage::EncryptionKey::new("test", [3_u8; 32]).unwrap(),
-        scope_storage::GitSegmentStoreConfig::new(root),
-    )
-    .unwrap()
-}

@@ -26,6 +26,8 @@ pub(crate) struct StorageRuntime {
     pub(crate) push_intent_signing_key: Arc<[u8]>,
     #[cfg(test)]
     pub(crate) test_object_backend: Arc<scope_storage::MemoryBackend>,
+    #[cfg(test)]
+    pub(crate) test_data_dir: Option<Arc<tempfile::TempDir>>,
 }
 
 impl StorageRuntime {
@@ -62,7 +64,8 @@ impl StorageRuntime {
     pub(crate) fn for_tests() -> Self {
         use scope_storage::{GitSegmentStoreConfig, MemoryBackend};
         let object_backend = Arc::new(MemoryBackend::default());
-        let data_dir = crate::persistence::test_data_dir();
+        let test_data_dir = crate::persistence::test_data_dir();
+        let data_dir = test_data_dir.path().to_path_buf();
         let git_segment_store = GitSegmentStore::new(
             Arc::new(MemoryBackend::default()),
             EncryptionKey::new("test", [9_u8; 32]).unwrap(),
@@ -83,6 +86,7 @@ impl StorageRuntime {
         )
         .unwrap();
         storage.test_object_backend = object_backend;
+        storage.test_data_dir = Some(test_data_dir);
         storage
     }
 
@@ -115,6 +119,8 @@ impl StorageRuntime {
             push_intent_signing_key,
             #[cfg(test)]
             test_object_backend: Arc::new(scope_storage::MemoryBackend::default()),
+            #[cfg(test)]
+            test_data_dir: None,
         })
     }
 }

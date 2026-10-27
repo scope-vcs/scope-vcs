@@ -3,7 +3,10 @@ use super::request_discussions::{
 };
 use super::*;
 use scope_domain::views::ViewId;
-use scope_storage::{EncryptedObjectStore, EncryptionKey, MemoryBackend, source_blob_bytes};
+use scope_storage::{
+    EncryptedObjectStore, EncryptionKey, GitSegmentStore, GitSegmentStoreConfig, MemoryBackend,
+    source_blob_bytes,
+};
 use std::sync::Arc;
 
 #[test]
@@ -38,7 +41,13 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
         Arc::new(MemoryBackend::default()),
         EncryptionKey::new("test", [9; 32]).unwrap(),
     );
-    let git_segment_store = super::test_seed_git_segment_store();
+    let segment_root = tempfile::tempdir().unwrap();
+    let git_segment_store = GitSegmentStore::new(
+        Arc::new(MemoryBackend::default()),
+        EncryptionKey::new("test", [3; 32]).unwrap(),
+        GitSegmentStoreConfig::new(segment_root.path()),
+    )
+    .unwrap();
 
     let catalog = super::catalog(
         &store,
