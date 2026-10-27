@@ -49,6 +49,8 @@ pub struct AppState {
     pub(crate) merge_routing: Option<Arc<MergeRouting>>,
     #[cfg(test)]
     pub(crate) test_object_backend: Arc<scope_storage::MemoryBackend>,
+    #[cfg(test)]
+    pub(crate) _test_data_dir: Option<Arc<tempfile::TempDir>>,
 }
 
 pub(crate) struct AppServices {
@@ -175,6 +177,8 @@ impl AppState {
             merge_routing: integrations.merge_routing,
             #[cfg(test)]
             test_object_backend: storage.test_object_backend,
+            #[cfg(test)]
+            _test_data_dir: storage.test_data_dir,
         }
     }
 
@@ -202,7 +206,8 @@ impl AppState {
 
     #[cfg(test)]
     pub(crate) fn replica_for_tests(&self) -> Self {
-        let data_dir = crate::persistence::test_data_dir();
+        let test_data_dir = crate::persistence::test_data_dir();
+        let data_dir = test_data_dir.path().to_path_buf();
         let git_segment_store = Arc::new(
             self.git_segment_store
                 .with_local_root(data_dir.join("git-segments"))
@@ -219,6 +224,7 @@ impl AppState {
             data_dir: Arc::new(data_dir),
             git_segment_store,
             repository_engine,
+            _test_data_dir: Some(test_data_dir),
             ..self.clone()
         }
     }
