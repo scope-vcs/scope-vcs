@@ -3,7 +3,7 @@ use serde::{
     de::{IgnoredAny, MapAccess, Visitor},
 };
 use serde_json::{Value, value::RawValue};
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 pub(crate) fn has_hash_comment(text: &str) -> bool {
     let mut bytes = text.bytes().peekable();
@@ -85,14 +85,14 @@ impl<'de> Visitor<'de> for OrderedPaths {
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
         let mut mappings: Vec<(String, Value)> = Vec::new();
+        let mut positions = HashMap::new();
         while let Some(pattern) = map.next_key::<String>()? {
             let targets = map.next_value::<Value>()?;
-            match mappings
-                .iter_mut()
-                .find(|(existing, _)| *existing == pattern)
-            {
-                Some((_, existing)) => *existing = targets,
-                None => mappings.push((pattern, targets)),
+            if let Some(&index) = positions.get(&pattern) {
+                mappings[index] = (pattern, targets);
+            } else {
+                positions.insert(pattern.clone(), mappings.len());
+                mappings.push((pattern, targets));
             }
         }
         Ok(mappings
