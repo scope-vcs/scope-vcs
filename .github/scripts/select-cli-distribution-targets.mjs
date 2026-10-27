@@ -12,9 +12,6 @@ export function selectCliDistributionTargets(configuration, mode) {
   if (!Array.isArray(configuration?.targets) || configuration.targets.length === 0) {
     throw new Error("CLI distribution configuration must contain a non-empty targets array");
   }
-  if (typeof configuration.node_version !== "string") {
-    throw new Error("CLI distribution configuration must pin node_version");
-  }
   if (mode !== "pull-request" && mode !== "release") {
     throw new Error(`Unknown CLI distribution mode: ${mode}`);
   }
@@ -30,7 +27,6 @@ export function selectCliDistributionTargets(configuration, mode) {
     include: targets.map(({ triple, ...target }) => ({
       ...target,
       target: triple,
-      node_version: configuration.node_version,
     })),
   };
 }

@@ -78,7 +78,7 @@ export function validateRustBoundaries(mainMetadata, cliMetadata, expectedCliRoo
   if (cliPackages.length !== 1 || cliPackages[0]?.name !== 'scope-cli') {
     errors.push('scope-cli: standalone workspace must contain only scope-cli')
   } else {
-    const allowed = new Set(['scope-api-contract', 'scope-domain'])
+    const allowed = new Set(['scope-api-contract', 'scope-dependency-analyzer', 'scope-domain'])
     const actual = cliPackages[0].dependencies
       .filter(({ kind, source }) => kind !== 'dev' && source === null)
       .map(({ name }) => name)
@@ -117,6 +117,7 @@ async function main() {
   ])
   const standaloneManifests = Object.fromEntries(await Promise.all([
     ['scope-api-contract', path.join(root, 'crates', 'scope-api-contract', 'Cargo.toml')],
+    ['scope-dependency-analyzer', path.join(root, 'crates', 'scope-dependency-analyzer', 'Cargo.toml')],
     ['scope-domain', path.join(root, 'crates', 'scope-domain', 'Cargo.toml')],
   ].map(async ([name, manifest]) => [name, await readFile(manifest, 'utf8')])))
   await access(path.join(cliRoot, 'Cargo.lock'))

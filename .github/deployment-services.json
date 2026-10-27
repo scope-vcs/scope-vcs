@@ -247,13 +247,11 @@
         ".github/scripts/prepare-railway-artifact.sh",
         ".github/scripts/extract-railway-release.py",
         ".github/scripts/railway-artifact.mjs",
-        "dev/checks/dependency-analyzer",
         ".github/scripts/deploy-monitored-railway.sh"
       ],
       "prefixes": [
         "crates/",
-        "worker/",
-        "dependency-analyzer/"
+        "worker/"
       ]
     },
     "media-worker": {
@@ -414,7 +412,6 @@
         "Cargo.lock",
         "Cargo.toml",
         "Cross.toml",
-        "legal/third-party-dependency-analyzer.txt",
         "rust-toolchain.toml",
         "web/src/api/types.generated.ts",
         ".github/workflows/scope-cli-build.yml",
@@ -432,15 +429,13 @@
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "dev/local-process.py",
-        "dev/dotenv.sh",
-        "dev/checks/dependency-analyzer"
+        "dev/dotenv.sh"
       ],
       "prefixes": [
         "api/",
         "cli/",
         "cli-downloads/",
         "crates/",
-        "dependency-analyzer/",
         "worker/"
       ]
     },
@@ -454,7 +449,6 @@
         "cli/Cargo.toml",
         "cli/deny.toml",
         "Cross.toml",
-        "legal/third-party-dependency-analyzer.txt",
         "rust-toolchain.toml",
         ".github/workflows/scope-cli-build.yml",
         "dev/checks/cli",
@@ -467,7 +461,7 @@
         "cli/distribution/",
         "cli/src/",
         "cli-downloads/",
-        "dependency-analyzer/"
+        "crates/scope-dependency-analyzer/"
       ]
     }
   },

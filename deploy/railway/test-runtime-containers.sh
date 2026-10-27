@@ -31,22 +31,11 @@ scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 git init --bare --template= "$scratch/repository"
 git --git-dir="$scratch/repository" hash-object -w --stdin < .scope/git-segments/probe
-if [ -n "${SCOPE_DEPENDENCY_ANALYZER_PATH:-}" ]; then
-  test ! -w "$SCOPE_DEPENDENCY_ANALYZER_PATH"
-  mkdir -p .scope/dependency-checks/source
-  printf 'export const value = 1;\n' > .scope/dependency-checks/source/value.js
-  printf 'import { value } from "./value.js";\n' > .scope/dependency-checks/source/index.js
-  node "$SCOPE_DEPENDENCY_ANALYZER_PATH" .scope/dependency-checks/source > "$scratch/analysis.json"
-  node -e 'const fs = require("node:fs"); JSON.parse(fs.readFileSync(process.argv[1], "utf8"))' "$scratch/analysis.json"
-fi
 SH
 chmod 755 "$context/bin/scope-worker"
-cp -R "$repo_root/dependency-analyzer" "$context/dependency-analyzer"
-cp "$repo_root/legal/third-party-dependency-analyzer.txt" "$context/dependency-analyzer/"
 cp "$repo_root/deploy/railway/install-git.sh" "$context/install-git.sh"
 git_version="$(jq -er '.git.version' "$repo_root/dev/tool-versions.json")"
 git_source_sha256="$(jq -er '.git.sourceSha256' "$repo_root/dev/tool-versions.json")"
-rm -rf "$context/dependency-analyzer/node_modules"
 
 docker build -f "$repo_root/deploy/railway/prebuilt.Dockerfile" \
   --build-arg INSTALL_GIT=1 --build-arg BINARY=scope-worker \

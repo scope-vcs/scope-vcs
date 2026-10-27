@@ -85,9 +85,12 @@ test("changes select the required deployment lanes", () => {
       { "run-worker": true, "git-router": true, api: true, "cli-downloads": true },
     ],
     [
-      "dependency analyzer changes rebuild the worker and CLI bundle",
-      ["dependency-analyzer/analyze.mjs"],
-      { "run-worker": true, "cli-downloads": true, "cli-distribution": true },
+      "dependency analyzer crate changes rebuild crate consumers and the CLI bundle",
+      ["crates/scope-dependency-analyzer/src/lib.rs"],
+      {
+        "run-worker": true, "git-router": true, "media-api": true, "media-worker": true,
+        api: true, web: true, "cli-downloads": true, "cli-distribution": true,
+      },
     ],
     [
       "worker runtime image selects only the worker",

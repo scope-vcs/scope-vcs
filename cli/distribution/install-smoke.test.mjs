@@ -47,7 +47,7 @@ async function waitForService(url, child) {
   throw new Error('installer service did not become ready');
 }
 
-test('native installer installs the managed analyzer and preserves the bundle on failed updates', { timeout: 300_000 }, async (t) => {
+test('native installer installs the CLI and preserves it on failed updates', { timeout: 300_000 }, async (t) => {
   assert.ok(target, `No native distribution target for ${process.platform}/${process.arch}`);
   const workspace = await mkdtemp(join(tmpdir(), 'scope installer '));
   let child;
@@ -139,18 +139,6 @@ test('native installer installs the managed analyzer and preserves the bundle on
     assert.equal(found.stdout.trim(), destination);
   }
 
-  const runtime = join(installDir, 'scope-runtime');
-  const managedNode = join(runtime, windows ? 'node.exe' : 'node');
-  const analyzer = join(runtime, 'dependency-analyzer', 'analyze.mjs');
-  const fixture = resolve('dependency-analyzer/test/fixtures/static');
-  const analysis = await execute(managedNode, [analyzer, fixture], {
-    env: { ...process.env, PATH: installDir },
-  });
-  const result = JSON.parse(analysis.stdout);
-  assert.equal(result.analyzer_version, 'enhanced-resolve@5.25.1+scope-3');
-  assert.ok(result.edges.some(({ source_path, target_path }) =>
-    source_path === 'src/public/direct.ts' && target_path === 'src/private/pricing.ts'));
-
   if (windows) {
     await install({ processOnly: true });
     await mkdir(join(workspace, 'competing bin'));
@@ -171,8 +159,8 @@ test('native installer installs the managed analyzer and preserves the bundle on
   assert.match((await execute(destination, ['--version'])).stdout, /^scope /);
 
   const incompleteBundle = join(workspace, 'incomplete bundle');
-  await mkdir(incompleteBundle);
-  await writeFile(join(incompleteBundle, executable), binaryBytes);
+  await mkdir(join(incompleteBundle, 'licenses'), { recursive: true });
+  await writeFile(join(incompleteBundle, 'licenses', 'LICENSE'), 'license');
   await execute('tar', [
     '-czf', join(artifacts, target.artifact), '-C', incompleteBundle, '.',
   ]);
@@ -183,10 +171,6 @@ test('native installer installs the managed analyzer and preserves the bundle on
   );
   await assert.rejects(install());
   assert.equal(createHash('sha256').update(await readFile(destination)).digest('hex'), installedChecksum);
-  assert.equal(
-    (await execute(managedNode, [analyzer, '--version'])).stdout.trim(),
-    'enhanced-resolve@5.25.1+scope-3',
-  );
 
   if (!windows) {
     await assert.rejects(execute('sh', [script], {

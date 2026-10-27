@@ -243,15 +243,6 @@ jobs:
           cargo build -p scope-cli-downloads --release --locked
           --target "${{ matrix.target }}"
 
-      - name: Install Node for analyzer packaging
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 24
-
-      - name: Install trusted analyzer dependencies
-        working-directory: dependency-analyzer
-        run: npm ci --ignore-scripts
-
       - name: Verify release identity
         working-directory: cli
         shell: bash
@@ -270,24 +261,18 @@ jobs:
             }
           fi
 
-      - name: Package CLI and managed analyzer runtime
+      - name: Package CLI
         shell: bash
         env:
           SCOPE_BINARY: cli/${{ matrix.binary }}
           SCOPE_ARTIFACT: cli/dist/${{ matrix.artifact }}
-          SCOPE_NODE_VERSION: ${{ matrix.node_version }}
-          SCOPE_NODE_PLATFORM: ${{ matrix.node_platform }}
-          SCOPE_NODE_SHA256: ${{ matrix.node_sha256 }}
         run: bash cli/distribution/package-bundle.sh
 
-      - name: Verify Rust integration with packaged analyzer
+      - name: Install Node for the installer smoke test
         if: matrix.smoke
-        shell: bash
-        env:
-          SCOPE_ARTIFACT: cli/dist/${{ matrix.artifact }}
-        run: >
-          bash cli/distribution/verify-bundled-analyzer.sh
-          --release --target "${{ matrix.target }}"
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
 
       - name: Verify native install, update, checksum, and PATH
         if: matrix.smoke

@@ -1,6 +1,7 @@
-use super::{MAX_OUTPUT_BYTES, snapshot};
+use super::snapshot;
 use crate::progress::CancellationToken;
 use anyhow::Context;
+use scope_dependency_analyzer::MAX_OUTPUT_BYTES;
 use scope_domain::dependency_analysis::{
     AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, StoredDependencyAnalysis,
 };

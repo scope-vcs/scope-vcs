@@ -21,7 +21,7 @@ use scope_storage::{
 };
 use std::{
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, ExitCode},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -32,12 +32,15 @@ const SCOPE_OBJECT_STORE_DIR_ENV: &str = "SCOPE_OBJECT_STORE_DIR";
 
 const SCHEMA_WAIT_RETRY_SECS: u64 = 2;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<ExitCode> {
+    if let Some(code) = scope_dependency_analyzer::run_requested_analysis(std::env::args_os()) {
+        return Ok(code);
+    }
     scope_git_process::install_pid1_reaper_if_needed()?;
     let telemetry = init_telemetry("run-worker", "worker=info,scope_postgres=info")?;
     let result = run();
     telemetry.shutdown();
-    result
+    result.map(|()| ExitCode::SUCCESS)
 }
 
 #[tokio::main]
@@ -65,7 +68,6 @@ async fn run() -> anyhow::Result<()> {
 
 async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::Result<()> {
     require_git_runtime()?;
-    dependencies::require_analyzer_runtime()?;
     let Some(metadata) = connect_worker_or_wait(&settings, &health).await else {
         return Ok(());
     };

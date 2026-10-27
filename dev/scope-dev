@@ -413,7 +413,6 @@ export SCOPE_OBJECT_STORE="filesystem"
 export SCOPE_DATA_DIR="$DATA_DIR"
 export SCOPE_OBJECT_STORE_DIR="$OBJECT_DIR"
 export SCOPE_OBJECT_ENCRYPTION_KEY="$object_key"
-export SCOPE_DEPENDENCY_ANALYZER_PATH="$ROOT/dependency-analyzer/analyze.mjs"
 EOF
   printf 'export DATABASE_URL=%q\n' "$database_url" >> "$runner"
   printf 'exec %q\n' "$LOCAL_CARGO_TARGET_DIR/debug/worker" >> "$runner"
@@ -476,13 +475,6 @@ build_local_services() {
       exit 1
     fi
   done
-}
-
-install_dependency_analyzer() {
-  (
-    cd "$ROOT/dependency-analyzer"
-    npm ci --ignore-scripts
-  )
 }
 
 wait_http() {
@@ -604,7 +596,6 @@ up() {
   rm -f "$API_OUT_LOG" "$API_ERR_LOG" "$WEB_OUT_LOG" "$WEB_ERR_LOG"
   rm -f "$WORKER_OUT_LOG" "$WORKER_ERR_LOG"
   rm -f "$MEDIA_OUT_LOG" "$MEDIA_ERR_LOG" "$MEDIA_WORKER_OUT_LOG" "$MEDIA_WORKER_ERR_LOG"
-  install_dependency_analyzer
   build_local_services
   if (( SLOT != 0 )); then
     with_stacks_lock recreate_owned_database

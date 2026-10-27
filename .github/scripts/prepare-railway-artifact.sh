@@ -24,13 +24,6 @@ metadata="$(mktemp)"
 pull_config="$(mktemp -d)"
 trap 'rm -f "$metadata"; rm -rf "$pull_config"' EXIT
 
-if [[ "$component" == run-worker ]]; then
-  test -s "$context_root/dependency-analyzer/package.json"
-  test -s "$context_root/dependency-analyzer/package-lock.json"
-  test -s "$context_root/dependency-analyzer/analyze.mjs"
-  test -d "$context_root/dependency-analyzer/src"
-  test ! -e "$context_root/dependency-analyzer/node_modules"
-fi
 if [[ "$(jq -r '.artifact.kind' <<< "$definition")" == web ]]; then
   test -s "$context_root/.output/server/index.mjs"
   test -s "$context_root/.output/server/_instrumentation/instrumentation.mjs"

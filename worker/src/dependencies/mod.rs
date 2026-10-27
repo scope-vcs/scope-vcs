@@ -5,8 +5,9 @@ use crate::{
     settings::{CONTROL_POLL_BATCH_SIZE, POLL_INTERVAL, WorkerSettings},
 };
 use scope_api_contract::{RepoChangeEvent, RepoChangeKind, RepoChangeNotification};
+use scope_dependency_analyzer::{ANALYZE_COMMAND, MAX_OUTPUT_BYTES};
 use scope_domain::dependency_analysis::{AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION};
-use scope_git_process::{ProcessCancellation, ProcessLimits, run as run_process, run_cancellable};
+use scope_git_process::{ProcessCancellation, ProcessLimits, run_cancellable};
 use scope_postgres::db::{DependencyAnalysisClaim, DependencyCompletion, MetadataStore};
 use scope_storage::GitSegmentStore;
 use scope_storage::ObjectStore;
@@ -23,7 +24,6 @@ const LEASE_SECONDS: u64 = 60;
 const HEARTBEAT: Duration = Duration::from_secs(5);
 const ANALYZER_TIMEOUT: Duration = Duration::from_secs(120);
 const ANALYSIS_TIMEOUT: Duration = Duration::from_secs(300);
-const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const BACKFILL_INTERVAL: Duration = Duration::from_secs(5 * 60);
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PollOutcome {
@@ -33,36 +33,6 @@ enum PollOutcome {
 }
 
 const PUBLIC_FAILURE: &str = "Dependency check could not finish. It will retry automatically.";
-
-fn analyzer_command() -> anyhow::Result<Command> {
-    let path = std::env::var_os("SCOPE_DEPENDENCY_ANALYZER_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("dependency-analyzer/analyze.mjs"))
-        .canonicalize()
-        .map_err(|error| anyhow::anyhow!("dependency analyzer is not installed: {error}"))?;
-    let mut command = Command::new("node");
-    command.env_clear();
-    if let Some(path) = std::env::var_os("PATH") {
-        command.env("PATH", path);
-    }
-    command.arg("--max-old-space-size=512").arg(path);
-    Ok(command)
-}
-
-pub(crate) fn require_analyzer_runtime() -> anyhow::Result<()> {
-    let output = run_process(
-        analyzer_command()?.arg("--version"),
-        None,
-        ProcessLimits::new(Duration::from_secs(10)).with_max_stdout_bytes(256),
-        "checking dependency analyzer runtime",
-    )?;
-    if !output.status.success()
-        || String::from_utf8_lossy(&output.stdout).trim() != DEPENDENCY_ANALYZER_VERSION
-    {
-        anyhow::bail!("dependency analyzer runtime must be {DEPENDENCY_ANALYZER_VERSION}");
-    }
-    Ok(())
-}
 
 pub(crate) async fn run(
     metadata: MetadataStore,
@@ -269,8 +239,13 @@ async fn analyze(
     let snapshot =
         snapshot::materialize(claim, objects, segments, &data_dir, cancellation.clone()).await?;
     tokio::task::spawn_blocking(move || {
+        let mut command = Command::new(std::env::current_exe()?);
+        command
+            .env_clear()
+            .arg(ANALYZE_COMMAND)
+            .arg(&snapshot.source);
         let output = run_cancellable(
-            analyzer_command()?.arg(&snapshot.source),
+            &mut command,
             None,
             ProcessLimits::new(ANALYZER_TIMEOUT).with_max_stdout_bytes(MAX_OUTPUT_BYTES),
             "analyzing repository dependencies",
@@ -282,11 +257,7 @@ async fn analyze(
                 String::from_utf8_lossy(&output.stderr).trim()
             );
         }
-        let analysis: AnalyzerOutput = serde_json::from_slice(&output.stdout)?;
-        if analysis.analyzer_version != DEPENDENCY_ANALYZER_VERSION {
-            anyhow::bail!("dependency analyzer version changed during analysis");
-        }
-        Ok(analysis)
+        Ok(serde_json::from_slice(&output.stdout)?)
     })
     .await?
 }

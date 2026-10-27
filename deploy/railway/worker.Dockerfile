@@ -7,12 +7,6 @@ COPY install-git.sh /tmp/install-git.sh
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
     && if [ "$INSTALL_GIT" = 1 ]; then bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"; else mkdir -p /opt/git; fi
 
-FROM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS analyzer-dependencies
-WORKDIR /app/dependency-analyzer
-COPY dependency-analyzer/package.json dependency-analyzer/package-lock.json ./
-RUN npm ci --ignore-scripts --omit=dev \
-    && npm cache clean --force
-
 FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 ARG IMAGE_DEPENDENCY_EPOCH=local
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
@@ -23,25 +17,14 @@ ARG GIT_VERSION
 ARG SCOPE_ANALYTICS_RELEASE
 ENV SCOPE_ANALYTICS_RELEASE=$SCOPE_ANALYTICS_RELEASE
 COPY --from=git-builder /opt/git /opt/git
-COPY --from=analyzer-dependencies /usr/local/ /usr/local/
-COPY --from=analyzer-dependencies /app/dependency-analyzer/node_modules /app/dependency-analyzer/node_modules
-
-WORKDIR /app/dependency-analyzer
-COPY dependency-analyzer/analyze.mjs ./
-COPY dependency-analyzer/src ./src
-COPY dependency-analyzer/third-party-dependency-analyzer.txt ./
-
 WORKDIR /app
 COPY bin /app/bin
 RUN useradd --uid 65532 --user-group --create-home --shell /usr/sbin/nologin scope \
     && mkdir -p /app/.scope /home/scope/.cache \
     && chown 65532:65532 /app/.scope /home/scope/.cache
-ENV NODE_VERSION=24.21.0 \
-    HOME=/home/scope \
-    XDG_CACHE_HOME=/home/scope/.cache \
-    SCOPE_DEPENDENCY_ANALYZER_PATH=/app/dependency-analyzer/analyze.mjs
+ENV HOME=/home/scope \
+    XDG_CACHE_HOME=/home/scope/.cache
 ENV PATH=/opt/git/bin:$PATH
-RUN test "$(git --version)" = "git version ${GIT_VERSION}" \
-    && test "$(node --version)" = "v${NODE_VERSION}"
+RUN test "$(git --version)" = "git version ${GIT_VERSION}"
 USER 65532:65532
 CMD ["/app/bin/scope-worker"]

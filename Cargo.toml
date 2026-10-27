@@ -9,6 +9,7 @@ members = [
     "crates/scope-api-contract",
     "crates/scope-cache-domain",
     "crates/scope-content-lifecycle",
+    "crates/scope-dependency-analyzer",
     "crates/scope-domain",
     "crates/scope-postgres",
     "crates/scope-git",
@@ -87,6 +88,7 @@ xmlparser = "0.13.6"
 scope_api_contract = { package = "scope-api-contract", path = "crates/scope-api-contract" }
 scope_cache_domain = { package = "scope-cache-domain", path = "crates/scope-cache-domain" }
 scope_content_lifecycle = { package = "scope-content-lifecycle", path = "crates/scope-content-lifecycle" }
+scope_dependency_analyzer = { package = "scope-dependency-analyzer", path = "crates/scope-dependency-analyzer" }
 scope_domain = { package = "scope-domain", path = "crates/scope-domain" }
 scope_git = { package = "scope-git", path = "crates/scope-git", default-features = false }
 scope_git_process = { package = "scope-git-process", path = "crates/scope-git-process" }

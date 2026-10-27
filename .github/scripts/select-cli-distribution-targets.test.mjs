@@ -8,7 +8,7 @@ const configuration = JSON.parse(
   readFileSync(new URL("../../cli/distribution/targets.json", import.meta.url), "utf8"),
 );
 
-test("releases build every configured target with the pinned Node runtime", () => {
+test("releases build every configured target", () => {
   const plan = selectCliDistributionTargets(configuration, "release");
 
   assert.deepEqual(
@@ -17,11 +17,6 @@ test("releases build every configured target with the pinned Node runtime", () =
   );
   assert.equal(plan.include.filter(({ smoke }) => smoke).length, 4);
   assert.ok(plan.include.every(({ artifact }) => artifact.endsWith(".tar.gz")));
-  assert.match(configuration.node_version, /^\d+\.\d+\.\d+$/);
-  assert.ok(plan.include.every(({ node_version, node_platform, node_sha256 }) =>
-    node_version === configuration.node_version
-    && /^(linux|darwin|win)-(x64|arm64)$/.test(node_platform)
-    && /^[a-f0-9]{64}$/.test(node_sha256)));
 });
 
 test("pull requests build only the Linux and Windows x64 targets", () => {
@@ -34,12 +29,8 @@ test("pull requests build only the Linux and Windows x64 targets", () => {
   assert.ok(plan.include.every(({ smoke }) => smoke));
 });
 
-test("configurations without targets, a pinned Node version, or a known mode fail", () => {
+test("configurations without targets or a known mode fail", () => {
   assert.throws(() => selectCliDistributionTargets({ targets: [] }, "release"), /non-empty targets/);
-  assert.throws(
-    () => selectCliDistributionTargets({ targets: configuration.targets }, "release"),
-    /node_version/,
-  );
   assert.throws(() => selectCliDistributionTargets(configuration, "nightly"), /Unknown CLI distribution mode/);
   assert.throws(() => selectCliDistributionTargets(configuration), /Unknown CLI distribution mode/);
 });
