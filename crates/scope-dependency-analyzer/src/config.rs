@@ -1,12 +1,12 @@
 use crate::{
     jsonc, limits,
-    paths::{file_name, join_relative, parent_directory, resolve_lexically},
+    paths::{file_name, join_relative, normalize_lexically, parent_directory, resolve_lexically},
     snapshot::{Inventory, absolute_snapshot_path},
 };
 use serde_json::{Map, Value};
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -22,9 +22,13 @@ pub(crate) struct ResolutionConfig {
 }
 
 impl ResolutionConfig {
-    fn new(options: CompilerOptions, config_directory: &Path) -> Self {
+    fn new(
+        validated: CompilerOptions,
+        resolver_options: &CompilerOptions,
+        config_directory: &Path,
+    ) -> Self {
         let (module_patterns, mut path_aliases): (Vec<_>, Vec<_>) =
-            path_aliases(&options, config_directory)
+            path_aliases(resolver_options, config_directory)
                 .into_iter()
                 .partition(|alias| alias.pattern == "*");
         let mut module_directories = module_patterns
@@ -37,14 +41,14 @@ impl ResolutionConfig {
                     .map(PathBuf::from)
             })
             .collect::<Vec<_>>();
-        if let Some(BaseUrl::Directory(base_url)) = options.base_url
-            && !module_directories.contains(&base_url)
+        if let Some(BaseUrl::Directory(base_url)) = &resolver_options.base_url
+            && !module_directories.contains(base_url)
         {
-            module_directories.push(base_url);
+            module_directories.push(base_url.clone());
         }
         path_aliases.sort_by_key(|alias| Reverse(wildcard_prefix_length(&alias.pattern)));
         Self {
-            path_patterns: options
+            path_patterns: validated
                 .paths
                 .into_iter()
                 .flatten()
@@ -52,8 +56,8 @@ impl ResolutionConfig {
                 .collect(),
             path_aliases,
             module_directories,
-            root_dirs: options.root_dirs.unwrap_or_default(),
-            module_suffixes: options.module_suffixes.unwrap_or_default(),
+            root_dirs: validated.root_dirs.unwrap_or_default(),
+            module_suffixes: validated.module_suffixes.unwrap_or_default(),
         }
     }
 
@@ -64,9 +68,20 @@ impl ResolutionConfig {
     }
 
     pub(crate) fn alias_targets(&self, specifier: &str) -> Option<Vec<String>> {
-        self.path_aliases
+        let (path, query_and_fragment) = split_request(specifier);
+        let targets = self
+            .path_aliases
             .iter()
-            .find_map(|alias| alias.substitute(specifier))
+            .find_map(|alias| alias.substitute(path))?;
+        Some(
+            targets
+                .into_iter()
+                .map(|target| {
+                    let target = normalize_lexically(Path::new(&target));
+                    format!("{}{query_and_fragment}", target.to_string_lossy())
+                })
+                .collect(),
+        )
     }
 
     pub(crate) fn root_dir_candidates(&self, candidate: &Path) -> Vec<PathBuf> {
@@ -121,6 +136,14 @@ impl PathAlias {
                 .collect(),
         )
     }
+}
+
+fn split_request(specifier: &str) -> (&str, &str) {
+    let path_start = usize::from(specifier.starts_with('#'));
+    let path_end = specifier[path_start..]
+        .find(['?', '#'])
+        .map_or(specifier.len(), |index| path_start + index);
+    specifier.split_at(path_end)
 }
 
 fn matches_path_pattern(pattern: &str, specifier: &str) -> bool {
@@ -198,7 +221,13 @@ fn config_rank(path: &str) -> u8 {
 pub(crate) struct ConfigLoader<'a> {
     inventory: &'a Inventory,
     visiting: Vec<String>,
-    loaded: HashMap<String, CompilerOptions>,
+    loaded: HashMap<String, LoadedConfig>,
+}
+
+struct LoadedConfig {
+    merged: CompilerOptions,
+    own: CompilerOptions,
+    extends: Vec<String>,
 }
 
 impl<'a> ConfigLoader<'a> {
@@ -214,18 +243,38 @@ impl<'a> ConfigLoader<'a> {
         &mut self,
         config_path: &str,
     ) -> Result<ResolutionConfig, String> {
-        let options = self
+        let validated = self
             .load(config_path)
             .map_err(|reason| format!("invalid TypeScript config: {reason}"))?;
+        let resolver_options = self.resolver_options(config_path, &mut HashSet::new());
         Ok(ResolutionConfig::new(
-            options,
+            validated,
+            &resolver_options,
             &config_directory(&self.inventory.root, config_path),
         ))
     }
 
+    fn resolver_options<'p>(
+        &'p self,
+        config_path: &'p str,
+        visited: &mut HashSet<&'p str>,
+    ) -> CompilerOptions {
+        if !visited.insert(config_path) {
+            return CompilerOptions::default();
+        }
+        let config = &self.loaded[config_path];
+        config
+            .extends
+            .iter()
+            .fold(CompilerOptions::default(), |inherited, extended| {
+                inherited.extended_by(self.resolver_options(extended, visited))
+            })
+            .extended_by(config.own.clone())
+    }
+
     fn load(&mut self, config_path: &str) -> Result<CompilerOptions, String> {
-        if let Some(options) = self.loaded.get(config_path) {
-            return Ok(options.clone());
+        if let Some(loaded) = self.loaded.get(config_path) {
+            return Ok(loaded.merged.clone());
         }
         if self.visiting.iter().any(|visiting| visiting == config_path) {
             return Err(format!("extended config cycle at {config_path}"));
@@ -239,9 +288,10 @@ impl<'a> ConfigLoader<'a> {
         self.visiting.push(config_path.to_owned());
         let loaded = self.load_uncached(config_path);
         self.visiting.pop();
-        let options = loaded?;
-        self.loaded.insert(config_path.to_owned(), options.clone());
-        Ok(options)
+        let loaded = loaded?;
+        let merged = loaded.merged.clone();
+        self.loaded.insert(config_path.to_owned(), loaded);
+        Ok(merged)
     }
 }
 
@@ -303,28 +353,31 @@ fn wildcard_prefix_length(pattern: &str) -> usize {
 }
 
 impl ConfigLoader<'_> {
-    fn load_uncached(&mut self, config_path: &str) -> Result<CompilerOptions, String> {
+    fn load_uncached(&mut self, config_path: &str) -> Result<LoadedConfig, String> {
         let inventory = self.inventory;
         let root = &inventory.root;
         let config_file = inventory.absolute(config_path)?;
         let config =
             read_config(&config_file).ok_or_else(|| format!("malformed JSONC at {config_path}"))?;
-        let own = match config.values.get("compilerOptions") {
+        let compiler_options = match config.values.get("compilerOptions") {
             None | Some(Value::Null) => Map::new(),
             Some(Value::Object(options)) => options.clone(),
             Some(_) => return Err("compilerOptions must be an object".into()),
         };
-        validate_compiler_options(&own)?;
+        validate_compiler_options(&compiler_options)?;
 
-        let mut options = CompilerOptions::default();
+        let mut inherited = CompilerOptions::default();
+        let mut extends = Vec::new();
         for extended in extends_values(&config.values)? {
             let extended_path = self.resolve_extended(config_path, &extended)?;
-            options = options.extended_by(self.load(&extended_path)?);
+            inherited = inherited.extended_by(self.load(&extended_path)?);
+            extends.push(extended_path);
         }
 
+        let mut own = CompilerOptions::default();
         let config_directory = config_directory(root, config_path);
-        if let Some(base_url) = own.get("baseUrl").and_then(Value::as_str) {
-            options.base_url = Some(if base_url.is_empty() {
+        if let Some(base_url) = compiler_options.get("baseUrl").and_then(Value::as_str) {
+            own.base_url = Some(if base_url.is_empty() {
                 BaseUrl::ConfigDirectory
             } else {
                 let directory = resolve_lexically(&config_directory, base_url);
@@ -332,28 +385,33 @@ impl ConfigLoader<'_> {
                 BaseUrl::Directory(directory)
             });
         }
-        if let Some(root_dirs) = string_array(&own, "rootDirs") {
+        if let Some(root_dirs) = string_array(&compiler_options, "rootDirs") {
             let root_dirs = root_dirs
                 .into_iter()
                 .map(|directory| {
                     absolute_snapshot_path(root, resolve_lexically(&config_directory, directory))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            options.root_dirs = Some(root_dirs);
+            own.root_dirs = Some(root_dirs);
         }
-        if let Some(module_suffixes) = string_array(&own, "moduleSuffixes") {
-            options.module_suffixes = Some(module_suffixes);
+        if let Some(module_suffixes) = string_array(&compiler_options, "moduleSuffixes") {
+            own.module_suffixes = Some(module_suffixes);
         }
-        if own.contains_key("paths") {
-            options.paths = Some(config.path_mappings);
+        if compiler_options.contains_key("paths") {
+            own.paths = Some(config.path_mappings);
         }
 
-        for alias in path_aliases(&options, &config_directory) {
+        let merged = inherited.extended_by(own.clone());
+        for alias in path_aliases(&merged, &config_directory) {
             for target in alias.targets {
                 absolute_snapshot_path(root, target.replace('*', "segment"))?;
             }
         }
-        Ok(options)
+        Ok(LoadedConfig {
+            merged,
+            own,
+            extends,
+        })
     }
 
     fn resolve_extended(&self, current: &str, requested: &str) -> Result<String, String> {
@@ -365,11 +423,12 @@ impl ConfigLoader<'_> {
             return Err(format!("extended config escapes snapshot: {requested}"));
         }
         let nested = join_relative(&base, "tsconfig.json");
-        let mut candidates = Vec::with_capacity(3);
-        if !requested.contains(".json") {
-            candidates.push(format!("{base}.json"));
-        }
-        candidates.extend([base.clone(), nested]);
+        let with_extension = format!("{base}.json");
+        let candidates = if requested.contains(".json") {
+            [base.clone(), with_extension, nested]
+        } else {
+            [with_extension, base.clone(), nested]
+        };
         if let Some(found) = candidates
             .into_iter()
             .find(|candidate| self.inventory.all_files.contains(candidate))

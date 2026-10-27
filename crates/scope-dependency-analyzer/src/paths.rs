@@ -1,8 +1,12 @@
 use std::path::{Component, Path, PathBuf};
 
 pub(crate) fn resolve_lexically(base: &Path, relative: impl AsRef<Path>) -> PathBuf {
+    normalize_lexically(&base.join(relative))
+}
+
+pub(crate) fn normalize_lexically(path: &Path) -> PathBuf {
     let mut resolved = PathBuf::new();
-    for component in base.join(relative).components() {
+    for component in path.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {

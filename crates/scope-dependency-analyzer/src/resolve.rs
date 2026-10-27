@@ -16,6 +16,8 @@ use std::{
 
 type Resolver = ResolverGeneric<SuffixFileSystem>;
 
+const MAX_ALIAS_DEPTH: usize = 16;
+
 const EXTENSIONS: &[&str] = &[
     ".ts", ".tsx", ".d.ts", ".mts", ".d.mts", ".cts", ".d.cts", ".js", ".jsx", ".mjs", ".cjs",
     ".json",
@@ -62,7 +64,8 @@ impl<'a> Resolvers<'a> {
     }
 
     fn resolve(&self, resolver: &Resolver, directory: &Path, specifier: &str) -> Option<PathBuf> {
-        self.resolve_configured(resolver, directory, specifier)
+        let mut aliased = Vec::new();
+        self.resolve_configured(resolver, directory, specifier, &mut aliased)
             .or_else(|| {
                 let config = self.config?;
                 if !specifier.starts_with('.') {
@@ -72,7 +75,12 @@ impl<'a> Resolvers<'a> {
                     .root_dir_candidates(&resolve_lexically(directory, specifier))
                     .into_iter()
                     .find_map(|candidate| {
-                        self.resolve_configured(resolver, directory, candidate.to_str()?)
+                        self.resolve_configured(
+                            resolver,
+                            directory,
+                            candidate.to_str()?,
+                            &mut aliased,
+                        )
                     })
             })
             .map(|resolved| self.file_system.locate(&resolved).into_owned())
@@ -83,6 +91,7 @@ impl<'a> Resolvers<'a> {
         resolver: &Resolver,
         directory: &Path,
         specifier: &str,
+        aliased: &mut Vec<String>,
     ) -> Option<PathBuf> {
         let resolve = |specifier: &str| {
             resolver
@@ -90,24 +99,29 @@ impl<'a> Resolvers<'a> {
                 .ok()
                 .map(|resolution| resolution.path().to_path_buf())
         };
-        if let Some(config) = self.config {
-            let aliased = config
-                .alias_targets(specifier)
-                .and_then(|targets| targets.iter().find_map(|target| resolve(target)));
-            if aliased.is_some() {
-                return aliased;
+        let Some(config) = self.config else {
+            return resolve(specifier);
+        };
+        if let Some(targets) = config.alias_targets(specifier)
+            && aliased.len() < MAX_ALIAS_DEPTH
+            && !aliased.iter().any(|seen| seen == specifier)
+        {
+            aliased.push(specifier.to_owned());
+            let resolved = targets
+                .iter()
+                .find_map(|target| self.resolve_configured(resolver, directory, target, aliased));
+            aliased.pop();
+            if resolved.is_some() {
+                return resolved;
             }
-            if is_bare_specifier(specifier) {
-                let in_module_directory =
-                    config
-                        .module_directories
-                        .iter()
-                        .find_map(|module_directory| {
-                            resolve(module_directory.join(specifier).to_str()?)
-                        });
-                if in_module_directory.is_some() {
-                    return in_module_directory;
-                }
+        }
+        if is_bare_specifier(specifier) {
+            let in_module_directory = config
+                .module_directories
+                .iter()
+                .find_map(|module_directory| resolve(module_directory.join(specifier).to_str()?));
+            if in_module_directory.is_some() {
+                return in_module_directory;
             }
         }
         resolve(specifier)
