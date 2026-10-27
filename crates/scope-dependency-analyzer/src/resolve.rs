@@ -17,6 +17,31 @@ use std::{
 type Resolver = ResolverGeneric<SuffixFileSystem>;
 
 const MAX_ALIAS_DEPTH: usize = 16;
+const MAX_ALIAS_EXPANSIONS: usize = 64;
+
+#[derive(Default)]
+struct AliasExpansion {
+    chain: Vec<String>,
+    expansions: usize,
+}
+
+impl AliasExpansion {
+    fn enter(&mut self, specifier: &str) -> bool {
+        if self.chain.len() >= MAX_ALIAS_DEPTH
+            || self.expansions >= MAX_ALIAS_EXPANSIONS
+            || self.chain.iter().any(|seen| seen == specifier)
+        {
+            return false;
+        }
+        self.expansions += 1;
+        self.chain.push(specifier.to_owned());
+        true
+    }
+
+    fn leave(&mut self) {
+        self.chain.pop();
+    }
+}
 
 const EXTENSIONS: &[&str] = &[
     ".ts", ".tsx", ".d.ts", ".mts", ".d.mts", ".cts", ".d.cts", ".js", ".jsx", ".mjs", ".cjs",
@@ -64,7 +89,7 @@ impl<'a> Resolvers<'a> {
     }
 
     fn resolve(&self, resolver: &Resolver, directory: &Path, specifier: &str) -> Option<PathBuf> {
-        let mut aliased = Vec::new();
+        let mut aliased = AliasExpansion::default();
         self.resolve_configured(resolver, directory, specifier, &mut aliased)
             .or_else(|| {
                 let config = self.config?;
@@ -91,7 +116,7 @@ impl<'a> Resolvers<'a> {
         resolver: &Resolver,
         directory: &Path,
         specifier: &str,
-        aliased: &mut Vec<String>,
+        aliased: &mut AliasExpansion,
     ) -> Option<PathBuf> {
         let resolve = |specifier: &str| {
             resolver
@@ -103,14 +128,12 @@ impl<'a> Resolvers<'a> {
             return resolve(specifier);
         };
         if let Some(targets) = config.alias_targets(specifier)
-            && aliased.len() < MAX_ALIAS_DEPTH
-            && !aliased.iter().any(|seen| seen == specifier)
+            && aliased.enter(specifier)
         {
-            aliased.push(specifier.to_owned());
             let resolved = targets
                 .iter()
                 .find_map(|target| self.resolve_configured(resolver, directory, target, aliased));
-            aliased.pop();
+            aliased.leave();
             if resolved.is_some() {
                 return resolved;
             }

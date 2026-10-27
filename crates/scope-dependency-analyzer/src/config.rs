@@ -243,14 +243,16 @@ impl<'a> ConfigLoader<'a> {
         &mut self,
         config_path: &str,
     ) -> Result<ResolutionConfig, String> {
-        let validated = self
-            .load(config_path)
-            .map_err(|reason| format!("invalid TypeScript config: {reason}"))?;
+        let invalid = |reason| format!("invalid TypeScript config: {reason}");
+        let validated = self.load(config_path).map_err(invalid)?;
         let resolver_options = self.resolver_options(config_path, &mut HashSet::new());
+        let config_directory = config_directory(&self.inventory.root, config_path);
+        check_alias_targets(&self.inventory.root, &resolver_options, &config_directory)
+            .map_err(invalid)?;
         Ok(ResolutionConfig::new(
             validated,
             &resolver_options,
-            &config_directory(&self.inventory.root, config_path),
+            &config_directory,
         ))
     }
 
@@ -348,6 +350,19 @@ fn path_aliases(options: &CompilerOptions, config_directory: &Path) -> Vec<PathA
         .collect()
 }
 
+fn check_alias_targets(
+    root: &Path,
+    options: &CompilerOptions,
+    config_directory: &Path,
+) -> Result<(), String> {
+    for alias in path_aliases(options, config_directory) {
+        for target in alias.targets {
+            absolute_snapshot_path(root, target.replace('*', "segment"))?;
+        }
+    }
+    Ok(())
+}
+
 fn wildcard_prefix_length(pattern: &str) -> usize {
     pattern.find('*').unwrap_or(pattern.len())
 }
@@ -402,11 +417,7 @@ impl ConfigLoader<'_> {
         }
 
         let merged = inherited.extended_by(own.clone());
-        for alias in path_aliases(&merged, &config_directory) {
-            for target in alias.targets {
-                absolute_snapshot_path(root, target.replace('*', "segment"))?;
-            }
-        }
+        check_alias_targets(root, &merged, &config_directory)?;
         Ok(LoadedConfig {
             merged,
             own,

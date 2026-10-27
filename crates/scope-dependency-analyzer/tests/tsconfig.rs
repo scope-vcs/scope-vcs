@@ -549,3 +549,63 @@ fn deep_extended_config_chains_become_a_config_gap() {
         [edge("main.ts", "value.ts", SideEffectImport)]
     );
 }
+
+#[test]
+fn branching_alias_chains_stop_at_the_expansion_budget() {
+    let root = TempDir::new().unwrap();
+    let branch = fs::canonicalize(root.path()).unwrap().join("x");
+    write_files(
+        root.path(),
+        &[
+            (
+                "tsconfig.json",
+                &format!(
+                    r#"{{"compilerOptions":{{"paths":{{"@x":["x"],"{}*":["x*a","x*b","x*c"]}}}}}}"#,
+                    branch.display()
+                ),
+            ),
+            ("entry.ts", "import '@x';\n"),
+        ],
+    );
+
+    let output = analyze(root.path());
+
+    assert_eq!(output.edges, []);
+    assert_eq!(
+        output.gaps,
+        [gap("entry.ts", "unresolved side-effect-import: @x")]
+    );
+}
+
+#[test]
+fn alias_targets_from_the_first_visit_merge_stay_inside_the_snapshot() {
+    let parent = repository(&[
+        ("value.ts", "export {};\n"),
+        (
+            "nested/repo/tsconfig.json",
+            r#"{"extends":["./a.json","./b.json"],"compilerOptions":{"paths":{"@x":["../../value.ts"]}}}"#,
+        ),
+        (
+            "nested/repo/a.json",
+            r#"{"extends":"./base.json","compilerOptions":{"baseUrl":"."}}"#,
+        ),
+        ("nested/repo/b.json", r#"{"extends":"./base.json"}"#),
+        (
+            "nested/repo/base.json",
+            r#"{"compilerOptions":{"baseUrl":"deep/deeper"}}"#,
+        ),
+        ("nested/repo/deep/deeper/.keep", ""),
+        ("nested/repo/entry.ts", "import '@x';\n"),
+    ]);
+
+    let output = analyze(&parent.path().join("nested/repo"));
+
+    assert_eq!(output.edges, []);
+    assert_eq!(
+        output.gaps,
+        [gap(
+            "tsconfig.json",
+            "invalid TypeScript config: snapshot path escapes its root"
+        )]
+    );
+}
