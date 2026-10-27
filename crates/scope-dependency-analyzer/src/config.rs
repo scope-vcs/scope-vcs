@@ -37,7 +37,7 @@ impl ResolutionConfig {
                     .map(PathBuf::from)
             })
             .collect::<Vec<_>>();
-        if let Some(base_url) = options.base_url
+        if let Some(BaseUrl::Directory(base_url)) = options.base_url
             && !module_directories.contains(&base_url)
         {
             module_directories.push(base_url);
@@ -247,10 +247,16 @@ impl<'a> ConfigLoader<'a> {
 
 #[derive(Clone, Default)]
 struct CompilerOptions {
-    base_url: Option<PathBuf>,
+    base_url: Option<BaseUrl>,
     paths: Option<PathMappings>,
     root_dirs: Option<Vec<PathBuf>>,
     module_suffixes: Option<Vec<String>>,
+}
+
+#[derive(Clone)]
+enum BaseUrl {
+    ConfigDirectory,
+    Directory(PathBuf),
 }
 
 impl CompilerOptions {
@@ -269,7 +275,10 @@ fn config_directory(root: &Path, config_path: &str) -> PathBuf {
 }
 
 fn path_aliases(options: &CompilerOptions, config_directory: &Path) -> Vec<PathAlias> {
-    let base = options.base_url.as_deref().unwrap_or(config_directory);
+    let base = match &options.base_url {
+        Some(BaseUrl::Directory(directory)) => directory,
+        _ => config_directory,
+    };
     let config_directory = config_directory.to_string_lossy();
     options
         .paths
@@ -314,12 +323,14 @@ impl ConfigLoader<'_> {
         }
 
         let config_directory = config_directory(root, config_path);
-        if let Some(base_url) = own.get("baseUrl").and_then(Value::as_str)
-            && !base_url.is_empty()
-        {
-            let base_url = resolve_lexically(&config_directory, base_url);
-            absolute_snapshot_path(root, &base_url)?;
-            options.base_url = Some(base_url);
+        if let Some(base_url) = own.get("baseUrl").and_then(Value::as_str) {
+            options.base_url = Some(if base_url.is_empty() {
+                BaseUrl::ConfigDirectory
+            } else {
+                let directory = resolve_lexically(&config_directory, base_url);
+                absolute_snapshot_path(root, &directory)?;
+                BaseUrl::Directory(directory)
+            });
         }
         if let Some(root_dirs) = string_array(&own, "rootDirs") {
             let root_dirs = root_dirs
