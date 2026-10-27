@@ -265,30 +265,36 @@ fn unresolved_bare_imports_are_external_unless_the_repository_claims_the_name() 
 
 #[test]
 fn inherited_paths_use_a_childs_explicit_base_url_as_typescript_does() {
-    let root = repository(&[
-        (
-            "config/base.json",
-            r#"{"compilerOptions":{"paths":{"@x/*":["src/*"]}}}"#,
-        ),
-        (
-            "app/tsconfig.json",
-            r#"{"extends":"../config/base.json","compilerOptions":{"baseUrl":"."}}"#,
-        ),
-        ("config/src/value.ts", "export const value = 1;\n"),
-        ("app/src/value.ts", "export const value = 1;\n"),
-        (
-            "app/main.ts",
-            "import { value } from '@x/value'; export { value };\n",
-        ),
-    ]);
+    for base_url in [".", ""] {
+        let root = repository(&[
+            (
+                "config/base.json",
+                r#"{"compilerOptions":{"baseUrl":".","paths":{"@x/*":["src/*"]}}}"#,
+            ),
+            (
+                "app/override.json",
+                &format!(
+                    r#"{{"extends":"../config/base.json","compilerOptions":{{"baseUrl":"{base_url}"}}}}"#
+                ),
+            ),
+            ("app/tsconfig.json", r#"{"extends":"./override.json"}"#),
+            ("config/src/value.ts", "export const value = 1;\n"),
+            ("app/src/value.ts", "export const value = 1;\n"),
+            (
+                "app/main.ts",
+                "import { value } from '@x/value'; import 'src/value'; export { value };\n",
+            ),
+        ]);
 
-    let output = analyze(root.path());
+        let output = analyze(root.path());
 
-    assert_eq!(output.gaps, []);
-    assert_eq!(
-        output.edges,
-        [edge("app/main.ts", "app/src/value.ts", Import)]
-    );
+        assert_eq!(output.gaps, [], "baseUrl: {base_url:?}");
+        let mut expected = vec![edge("app/main.ts", "app/src/value.ts", Import)];
+        if !base_url.is_empty() {
+            expected.push(edge("app/main.ts", "app/src/value.ts", SideEffectImport));
+        }
+        assert_eq!(output.edges, expected, "baseUrl: {base_url:?}");
+    }
 }
 
 #[test]
