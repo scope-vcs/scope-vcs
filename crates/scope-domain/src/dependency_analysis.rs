@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, path::Path};
 use thiserror::Error;
 
-pub const DEPENDENCY_ANALYZER_VERSION: &str = "oxc_parser@0.155.0+oxc_resolver@11.24.3+scope-4";
+pub const DEPENDENCY_ANALYZER_VERSION: &str = "oxc_parser@0.155.0+oxc_resolver@11.24.3+scope-5";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AnalyzerOutput {
