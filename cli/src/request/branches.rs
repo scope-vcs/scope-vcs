@@ -171,7 +171,7 @@ pub(super) fn push_request_branch(
     }
     let context = load_context(Some(git_repo), api, remote.as_deref())?;
     local::require_git_remote(&context)?;
-    let request_id = request_id_for_context(Some(git_repo), api, &context, request_id)?;
+    let request_id = request_id_for_context(api, &context, request_id)?;
     let detail = get_request(
         api,
         &context.target.owner,

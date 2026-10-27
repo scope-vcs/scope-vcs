@@ -17,7 +17,7 @@ pub(super) fn current_parent(
     view: Option<&ViewId>,
     revision: Option<&str>,
 ) -> anyhow::Result<(RequestSummaryResponse, SelectedBase)> {
-    let id = request_id_for_context(Some(git_repo), api, context, Some(selector))?;
+    let id = request_id_for_context(api, context, Some(selector))?;
     let parent = get_request(api, &context.target.owner, &context.target.repo, &id)?.request;
     if parent.state != RequestState::Open {
         return Err(crate::error::CliError::usage("the parent request must be Open").into());

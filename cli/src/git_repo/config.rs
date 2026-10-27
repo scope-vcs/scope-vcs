@@ -33,22 +33,6 @@ pub fn install_scope_fetch_auth(
     Ok(())
 }
 
-pub fn scope_git_origin(repo: &GitRepo, fallback_url: &str) -> anyhow::Result<String> {
-    let output = git_output_in_repo(
-        repo,
-        &["config", "--local", "--get", SCOPE_GIT_ORIGIN_CONFIG_KEY],
-    )?;
-    if output.status.success() {
-        let origin = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !origin.is_empty() {
-            return Ok(origin);
-        }
-    } else if output.status.code() != Some(1) {
-        bail!("read configured Scope Git origin failed");
-    }
-    transport_origin(fallback_url)
-}
-
 pub fn scope_api_url_from_git_config(repo_root: &Path) -> anyhow::Result<Option<String>> {
     let output = Command::new("git")
         .current_dir(repo_root)
@@ -72,7 +56,7 @@ pub fn scope_api_url_from_git_config(repo_root: &Path) -> anyhow::Result<Option<
     )
 }
 
-fn transport_origin(value: &str) -> anyhow::Result<String> {
+pub(super) fn transport_origin(value: &str) -> anyhow::Result<String> {
     let mut url = Url::parse(value).context("parse Scope transport URL")?;
     let _ = url.set_username("");
     let _ = url.set_password(None);
@@ -117,52 +101,6 @@ pub fn clear_scope_push_address(repo_root: &Path, remote: &str) -> anyhow::Resul
         bail!("clear Scope push address failed");
     }
     Ok(())
-}
-
-pub fn git_remote_push_url(repo: &GitRepo, remote: &str) -> anyhow::Result<String> {
-    remote_url(repo, remote, true)
-}
-
-pub fn git_remote_fetch_url(repo: &GitRepo, remote: &str) -> anyhow::Result<String> {
-    remote_url(repo, remote, false)
-}
-
-fn remote_url(repo: &GitRepo, remote: &str, push: bool) -> anyhow::Result<String> {
-    let args = if push {
-        vec!["remote", "get-url", "--push", remote]
-    } else {
-        vec!["remote", "get-url", remote]
-    };
-    let output = git_output_in_repo(repo, &args)?;
-    if !output.status.success() {
-        return Err(crate::error::CliError::usage(format!(
-            "Scope remote '{remote}' is not configured. Run: scope init"
-        ))
-        .into());
-    }
-    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if url.is_empty() {
-        let direction = if push { "push" } else { "fetch" };
-        return Err(crate::error::CliError::usage(format!(
-            "Scope remote '{remote}' has an empty {direction} URL"
-        ))
-        .into());
-    }
-    Ok(url)
-}
-
-pub fn git_remote_names(repo: &GitRepo) -> anyhow::Result<Vec<String>> {
-    let output = git_output_in_repo(repo, &["remote"])?;
-    if !output.status.success() {
-        bail!("list Git remotes failed");
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|remote| !remote.is_empty())
-        .map(str::to_string)
-        .collect())
 }
 
 pub fn branch_config_value(

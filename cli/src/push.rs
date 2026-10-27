@@ -7,11 +7,11 @@ use crate::{
         get_push_trigger_evaluation, get_repo_config, http_client,
     },
     git_repo::{
-        GitRepo, changed_paths_since_scope_base_at_commit, ensure_git_repo_ready,
-        fetch_scope_remote_with_bearer, git_remote_push_url, head_oid, mark_scope_remote_pushed,
-        push_head_with_bearer, scope_git_origin, scope_remote_head_oid, warn_if_dirty_working_tree,
+        GitRepo, GitSnapshot, changed_paths_since_scope_base_at_commit, ensure_git_repo_ready,
+        fetch_scope_remote_with_bearer, head_oid, mark_scope_remote_pushed, push_head_with_bearer,
+        scope_remote_head_oid, warn_if_dirty_working_tree,
     },
-    git_transport::{ScopeRemote, select_scope_push_remote},
+    git_transport::ScopeRemote,
     login::session_from_cache_or_browser_with_progress,
     progress::PreparationProgress,
     repo_config::{
@@ -49,8 +49,12 @@ pub fn run(explicit_remote: Option<&str>, no_review: bool, wait: bool) -> anyhow
         warn_if_dirty_working_tree(&git_repo)?;
     }
     let api_url = api_url()?;
-    let remote = select_scope_push_remote(&git_repo, &api_url, explicit_remote)?;
-    let target = load_scope_remote(&git_repo, &api_url, &remote)?;
+    let target = crate::context::select_scope_remote(
+        &GitSnapshot::read(&git_repo)?,
+        &api_url,
+        explicit_remote,
+        true,
+    )?;
     if target.view.is_private() {
         push_to_main(
             progress,
@@ -368,16 +372,6 @@ fn ensure_reviewed_base_matches_intent(
         .into());
     }
     Ok(())
-}
-
-fn load_scope_remote(
-    git_repo: &GitRepo,
-    api_url: &str,
-    remote: &str,
-) -> anyhow::Result<ScopeRemote> {
-    let push_url = git_remote_push_url(git_repo, remote)?;
-    let git_origin = scope_git_origin(git_repo, api_url)?;
-    ScopeRemote::parse(&git_origin, remote, &push_url)
 }
 
 fn main_push_mode(
