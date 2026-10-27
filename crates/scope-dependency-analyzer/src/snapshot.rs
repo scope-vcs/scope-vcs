@@ -7,6 +7,7 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 const SUPPORTED_SOURCE_EXTENSIONS: &[&str] =
@@ -35,7 +36,8 @@ pub(crate) struct SourceFile {
 
 pub(crate) struct Inventory {
     pub(crate) root: PathBuf,
-    pub(crate) all_files: HashSet<String>,
+    pub(crate) all_files: Arc<HashSet<String>>,
+    pub(crate) directories: Arc<HashSet<String>>,
     pub(crate) configs: Vec<String>,
     pub(crate) sources: Vec<SourceFile>,
     pub(crate) unsupported_files: Vec<String>,
@@ -80,14 +82,18 @@ pub(crate) fn inventory(requested_root: &Path) -> Result<Inventory, SnapshotErro
 
     let mut inventory = Inventory {
         root,
-        all_files: HashSet::new(),
+        all_files: Arc::default(),
+        directories: Arc::default(),
         configs: Vec::new(),
         sources: Vec::new(),
         unsupported_files: Vec::new(),
     };
+    let mut all_files = HashSet::new();
+    let mut known_directories = HashSet::new();
     let mut total_input_bytes = 0_u64;
     let mut directories = vec![(inventory.root.clone(), String::new())];
     while let Some((absolute, parent)) = directories.pop() {
+        known_directories.insert(parent.clone());
         let mut entries = fs::read_dir(&absolute)
             .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
             .map_err(inventory_error)?;
@@ -121,8 +127,8 @@ pub(crate) fn inventory(requested_root: &Path) -> Result<Inventory, SnapshotErro
                 continue;
             }
 
-            inventory.all_files.insert(path.clone());
-            if inventory.all_files.len() > limits::MAX_FILES {
+            all_files.insert(path.clone());
+            if all_files.len() > limits::MAX_FILES {
                 return Err(SnapshotError(format!(
                     "file limit exceeded ({})",
                     limits::MAX_FILES
@@ -166,6 +172,8 @@ pub(crate) fn inventory(requested_root: &Path) -> Result<Inventory, SnapshotErro
         }
     }
 
+    inventory.all_files = Arc::new(all_files);
+    inventory.directories = Arc::new(known_directories);
     inventory.configs.sort();
     inventory
         .sources

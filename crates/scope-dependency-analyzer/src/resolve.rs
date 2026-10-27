@@ -2,21 +2,20 @@ use crate::{
     config::ResolutionConfig,
     findings::Findings,
     limits,
-    module_suffixes::SuffixFileSystem,
-    paths::{is_outside, repository_path, resolve_lexically},
+    paths::{is_outside, resolve_lexically},
     scan::Reference,
     snapshot::Inventory,
+    snapshot_file_system::SnapshotFileSystem,
 };
 use oxc_resolver::{ResolveOptions, ResolverGeneric};
 use rayon::prelude::*;
 use scope_domain::dependency_analysis::{DependencyEdge, DependencyEdgeKind, DependencyGap};
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::{Path, PathBuf},
 };
 
-type Resolver = ResolverGeneric<SuffixFileSystem>;
+type Resolver = ResolverGeneric<SnapshotFileSystem>;
 
 const MAX_ALIAS_DEPTH: usize = 16;
 const MAX_ALIAS_EXPANSIONS: usize = 64;
@@ -58,13 +57,14 @@ pub(crate) struct GroupContext<'a> {
 
 struct Resolvers<'a> {
     config: Option<&'a ResolutionConfig>,
-    file_system: SuffixFileSystem,
+    file_system: SnapshotFileSystem,
     by_mode: [Resolver; 4],
 }
 
 impl<'a> Resolvers<'a> {
-    fn new(config: Option<&'a ResolutionConfig>) -> Self {
-        let file_system = SuffixFileSystem::new(
+    fn new(inventory: &Inventory, config: Option<&'a ResolutionConfig>) -> Self {
+        let file_system = SnapshotFileSystem::new(
+            inventory,
             config
                 .map(|config| config.module_suffixes.clone())
                 .unwrap_or_default(),
@@ -84,7 +84,7 @@ impl<'a> Resolvers<'a> {
         }
     }
 
-    fn resolve(&self, resolver: &Resolver, directory: &Path, specifier: &str) -> Option<PathBuf> {
+    fn resolve(&self, resolver: &Resolver, directory: &Path, specifier: &str) -> Option<String> {
         let mut aliased = AliasExpansion::default();
         self.resolve_configured(resolver, directory, specifier, &mut aliased)
             .or_else(|| {
@@ -104,7 +104,7 @@ impl<'a> Resolvers<'a> {
                         )
                     })
             })
-            .map(|resolved| self.file_system.locate(&resolved).into_owned())
+            .and_then(|resolved| self.file_system.snapshot_file(&resolved))
     }
 
     fn resolve_configured(
@@ -207,7 +207,7 @@ pub(crate) fn resolve_group(
     sources: &[String],
     findings: &mut Findings,
 ) {
-    let resolvers = Resolvers::new(config);
+    let resolvers = Resolvers::new(context.inventory, config);
     let references = sources
         .iter()
         .flat_map(|source| {
@@ -273,51 +273,27 @@ fn resolve_reference(
     };
 
     let resolver = resolvers.for_reference(*kind, common_js_source);
-    let Some(resolved_file) = resolvers.resolve(resolver, source_directory, specifier) else {
+    let Some(target_path) = resolvers.resolve(resolver, source_directory, specifier) else {
         if unclaimed_bare {
             return;
         }
-        let escapes = specifier.starts_with('.')
-            && is_outside(
-                root,
-                &resolve_lexically(source_directory, specifier.as_str()),
-            );
-        if escapes {
+        if names_path_outside(root, source_directory, specifier) {
             gap("resolved target escapes snapshot");
         } else {
             gap(&format!("unresolved {}", kind_name(*kind)));
         }
         return;
     };
-    let Some(target_path) = repository_path(root, &resolved_file) else {
-        if !unclaimed_bare {
-            gap("resolved target escapes snapshot");
-        }
-        return;
-    };
-    if target_path
-        .split('/')
-        .any(|segment| segment == "node_modules")
-    {
-        return;
-    }
-    if !context.inventory.all_files.contains(&target_path) {
-        gap("resolved target is absent from snapshot");
-        return;
-    }
-    match fs::symlink_metadata(&resolved_file)
-        .and_then(|metadata| Ok((metadata, fs::canonicalize(&resolved_file)?)))
-    {
-        Ok((metadata, canonical)) if metadata.is_file() && !is_outside(root, &canonical) => {
-            findings.add_edge(DependencyEdge {
-                source_path: source.to_owned(),
-                target_path,
-                kind: *kind,
-            });
-        }
-        Ok(_) => gap("resolved target is not a regular file"),
-        Err(_) => gap("resolved target is unreadable"),
-    }
+    findings.add_edge(DependencyEdge {
+        source_path: source.to_owned(),
+        target_path,
+        kind: *kind,
+    });
+}
+
+fn names_path_outside(root: &Path, directory: &Path, specifier: &str) -> bool {
+    (specifier.starts_with(['.', '/']) || Path::new(specifier).is_absolute())
+        && is_outside(root, &resolve_lexically(directory, specifier))
 }
 
 pub(crate) fn kind_name(kind: DependencyEdgeKind) -> &'static str {

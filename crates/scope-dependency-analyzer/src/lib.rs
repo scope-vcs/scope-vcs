@@ -2,11 +2,11 @@ mod config;
 mod findings;
 mod jsonc;
 mod memory;
-mod module_suffixes;
 mod paths;
 mod resolve;
 mod scan;
 mod snapshot;
+mod snapshot_file_system;
 
 use findings::{Findings, repository_gap};
 use resolve::GroupContext;

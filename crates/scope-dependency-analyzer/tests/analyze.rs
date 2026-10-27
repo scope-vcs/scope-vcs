@@ -139,6 +139,72 @@ fn reports_imports_resolving_outside_the_snapshot_without_an_edge() {
 }
 
 #[test]
+fn gap_text_is_the_same_whether_or_not_an_outside_file_exists() {
+    let parent = repository(&[("outside.ts", "export {};\n")]);
+    let present = parent.path().join("outside.ts").display().to_string();
+    let absent = parent.path().join("absent.ts").display().to_string();
+    write_files(
+        &parent.path().join("repo"),
+        &[
+            (
+                "src/main.ts",
+                &format!(
+                    "import '{present}';\nimport '{absent}';\nimport './present';\nimport './absent';\n"
+                ),
+            ),
+            (
+                "src/present/package.json",
+                r#"{"main":"../../../outside.ts"}"#,
+            ),
+            (
+                "src/absent/package.json",
+                r#"{"main":"../../../absent.ts"}"#,
+            ),
+        ],
+    );
+
+    let output = analyze(&parent.path().join("repo"));
+
+    assert_eq!(output.edges, []);
+    assert_eq!(
+        output.gaps,
+        [
+            gap(
+                "src/main.ts",
+                &format!("resolved target escapes snapshot: {absent}")
+            ),
+            gap(
+                "src/main.ts",
+                &format!("resolved target escapes snapshot: {present}")
+            ),
+            gap("src/main.ts", "unresolved side-effect-import: ./absent"),
+            gap("src/main.ts", "unresolved side-effect-import: ./present"),
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn never_reads_through_symbolic_links_in_ignored_directories() {
+    let outside = repository(&[("manifest.json", r#"{"main":"../../src/target.ts"}"#)]);
+    let root = repository(&[
+        ("src/main.ts", "import value from 'linked';\n"),
+        ("src/target.ts", "export default 1;\n"),
+    ]);
+    std::fs::create_dir_all(root.path().join("node_modules/linked")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("manifest.json"),
+        root.path().join("node_modules/linked/package.json"),
+    )
+    .unwrap();
+
+    let output = analyze(root.path());
+
+    assert_eq!(output.edges, []);
+    assert_eq!(output.gaps, []);
+}
+
+#[test]
 fn unresolved_bare_imports_are_external_unless_the_repository_claims_the_name() {
     let root = repository(&[
         ("package.json", r#"{"name":"@acme/app","private":true}"#),
@@ -247,10 +313,10 @@ fn ignores_installed_external_packages_in_the_snapshot_parent() {
     let parent = repository(&[
         (
             "node_modules/external/package.json",
-            r#"{"main":"index.js"}"#,
+            r#"{"main":"../../repo/src/target.ts"}"#,
         ),
-        ("node_modules/external/index.js", "module.exports = 1;\n"),
         ("repo/src/main.ts", "import value from 'external';\n"),
+        ("repo/src/target.ts", "export default 1;\n"),
     ]);
 
     let output = analyze(&parent.path().join("repo"));
