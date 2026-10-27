@@ -28,11 +28,16 @@ impl From<SnapshotError> for String {
     }
 }
 
+pub(crate) struct SourceFile {
+    pub(crate) path: String,
+    pub(crate) bytes: u64,
+}
+
 pub(crate) struct Inventory {
     pub(crate) root: PathBuf,
     pub(crate) all_files: HashSet<String>,
     pub(crate) configs: Vec<String>,
-    pub(crate) sources: Vec<String>,
+    pub(crate) sources: Vec<SourceFile>,
     pub(crate) unsupported_files: Vec<String>,
 }
 
@@ -129,8 +134,9 @@ pub(crate) fn inventory(requested_root: &Path) -> Result<Inventory, SnapshotErro
             if is_resolution_config(&path) {
                 inventory.configs.push(path.clone());
             }
+            let mut size = 0;
             if supported || extension == ".json" || extension == ".jsonc" {
-                let size = entry.metadata().map_err(inventory_error)?.len();
+                size = entry.metadata().map_err(inventory_error)?.len();
                 if size > limits::MAX_SOURCE_BYTES {
                     return Err(SnapshotError(format!(
                         "analyzer input file size limit exceeded ({} bytes): {path}",
@@ -147,7 +153,7 @@ pub(crate) fn inventory(requested_root: &Path) -> Result<Inventory, SnapshotErro
             }
 
             if supported {
-                inventory.sources.push(path);
+                inventory.sources.push(SourceFile { path, bytes: size });
             } else if UNSUPPORTED_SOURCE_EXTENSIONS.contains(&extension.as_str()) {
                 inventory.unsupported_files.push(path);
                 if inventory.unsupported_files.len() > limits::MAX_UNSUPPORTED_SOURCES {
@@ -161,7 +167,9 @@ pub(crate) fn inventory(requested_root: &Path) -> Result<Inventory, SnapshotErro
     }
 
     inventory.configs.sort();
-    inventory.sources.sort();
+    inventory
+        .sources
+        .sort_by(|left, right| left.path.cmp(&right.path));
     inventory.unsupported_files.sort();
     Ok(inventory)
 }

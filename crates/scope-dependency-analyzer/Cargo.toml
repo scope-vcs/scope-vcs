@@ -18,5 +18,11 @@ scope_domain = { package = "scope-domain", path = "../scope-domain" }
 serde = "1.0.228"
 serde_json = { version = "1.0.147", features = ["raw_value"] }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
 [dev-dependencies]
 tempfile = "3.23.0"

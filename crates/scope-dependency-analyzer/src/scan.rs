@@ -1,4 +1,8 @@
-use crate::snapshot::Inventory;
+use crate::{
+    findings::Findings,
+    limits,
+    snapshot::{Inventory, SourceFile},
+};
 use oxc_allocator::Allocator;
 use oxc_ast::ast::{
     Argument, CallExpression, ExportAllDeclaration, ExportFromDeclaration, Expression,
@@ -27,8 +31,8 @@ pub(crate) struct Reference {
 pub(crate) struct Scan {
     pub(crate) analyzed_files: Vec<String>,
     pub(crate) resolvable_files: Vec<String>,
-    pub(crate) gaps: Vec<DependencyGap>,
     pub(crate) references: HashMap<String, Vec<Reference>>,
+    references_exceeded: bool,
 }
 
 enum SourceScan {
@@ -40,40 +44,80 @@ enum SourceScan {
     },
 }
 
-pub(crate) fn scan_sources(inventory: &Inventory) -> Scan {
-    let scanned = inventory
-        .sources
-        .par_iter()
-        .map(|path| (path, scan_source(inventory, path)))
-        .collect::<Vec<_>>();
-
+pub(crate) fn scan_sources(inventory: &Inventory, findings: &mut Findings) -> Scan {
     let mut scan = Scan::default();
-    for (path, outcome) in scanned {
+    let mut references_left = limits::MAX_REFERENCES;
+    for chunk in source_chunks(&inventory.sources) {
+        let scanned = chunk
+            .par_iter()
+            .map(|source| (&source.path, scan_source(inventory, &source.path)))
+            .collect::<Vec<_>>();
+        for (path, outcome) in scanned {
+            scan.record(path, outcome, findings, &mut references_left);
+        }
+    }
+    if scan.references_exceeded {
+        findings.add_repository_gap(format!(
+            "dependency reference limit exceeded ({})",
+            limits::MAX_REFERENCES
+        ));
+    }
+    scan
+}
+
+fn source_chunks(sources: &[SourceFile]) -> Vec<&[SourceFile]> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    let mut bytes = 0;
+    for (index, source) in sources.iter().enumerate() {
+        if index > start && bytes + source.bytes > limits::MAX_CONCURRENT_SOURCE_BYTES {
+            chunks.push(&sources[start..index]);
+            start = index;
+            bytes = 0;
+        }
+        bytes += source.bytes;
+    }
+    if start < sources.len() {
+        chunks.push(&sources[start..]);
+    }
+    chunks
+}
+
+impl Scan {
+    fn record(
+        &mut self,
+        path: &str,
+        outcome: SourceScan,
+        findings: &mut Findings,
+        references_left: &mut usize,
+    ) {
         match outcome {
-            SourceScan::Unreadable(error) => scan
-                .gaps
-                .push(gap(path, format!("source file is unreadable: {error}"))),
+            SourceScan::Unreadable(error) => {
+                findings.add_gap(gap(path, format!("source file is unreadable: {error}")));
+            }
             SourceScan::Parsed {
                 references,
                 syntax_error,
                 gap_reasons,
             } => {
-                scan.analyzed_files.push(path.clone());
+                self.analyzed_files.push(path.to_owned());
                 match syntax_error {
-                    Some(error) => scan.gaps.push(gap(path, format!("syntax error: {error}"))),
-                    None => scan.resolvable_files.push(path.clone()),
+                    Some(error) => findings.add_gap(gap(path, format!("syntax error: {error}"))),
+                    None => self.resolvable_files.push(path.to_owned()),
                 }
-                scan.gaps.extend(
-                    gap_reasons
-                        .into_iter()
-                        .map(|reason| gap(path, reason.into())),
-                );
-                scan.references
-                    .insert(path.clone(), references.into_iter().collect());
+                for reason in gap_reasons {
+                    findings.add_gap(gap(path, reason.into()));
+                }
+                if self.references_exceeded || references.len() > *references_left {
+                    self.references_exceeded = true;
+                    return;
+                }
+                *references_left -= references.len();
+                self.references
+                    .insert(path.to_owned(), references.into_iter().collect());
             }
         }
     }
-    scan
 }
 
 fn gap(path: &str, reason: String) -> DependencyGap {

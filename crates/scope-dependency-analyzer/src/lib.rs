@@ -1,14 +1,17 @@
 mod config;
+mod findings;
 mod jsonc;
+mod memory;
 mod module_suffixes;
 mod paths;
 mod resolve;
 mod scan;
 mod snapshot;
 
-use resolve::{GroupContext, kind_name};
+use findings::{Findings, repository_gap};
+use resolve::GroupContext;
 use scope_domain::dependency_analysis::{
-    AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, DependencyEdge, DependencyGap,
+    AnalyzerOutput, DEPENDENCY_ANALYZER_VERSION, DependencyGap,
 };
 use std::{
     ffi::OsString,
@@ -19,6 +22,7 @@ use std::{
 
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 pub const ANALYZE_COMMAND: &str = "__analyze-dependencies";
+const MAX_ANALYZER_MEMORY_BYTES: u64 = 512 * 1024 * 1024;
 
 mod limits {
     pub(crate) const MAX_CONFIGS: usize = 64;
@@ -29,15 +33,29 @@ mod limits {
     pub(crate) const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
     pub(crate) const MAX_TOTAL_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
     pub(crate) const MAX_UNSUPPORTED_SOURCES: usize = 5_000;
+    pub(crate) const MAX_REFERENCES: usize = 500_000;
+    pub(crate) const MAX_CONCURRENT_SOURCE_BYTES: u64 = 8 * 1024 * 1024;
+    pub(crate) const RESOLUTION_BATCH: usize = 16_384;
 }
 
-pub fn run_requested_analysis(mut arguments: impl Iterator<Item = OsString>) -> Option<ExitCode> {
+pub fn run_requested_analysis(arguments: impl Iterator<Item = OsString>) -> Option<ExitCode> {
+    run_analysis_command(arguments, MAX_ANALYZER_MEMORY_BYTES)
+}
+
+fn run_analysis_command(
+    mut arguments: impl Iterator<Item = OsString>,
+    memory_limit_bytes: u64,
+) -> Option<ExitCode> {
     let snapshot = match (arguments.nth(1), arguments.next(), arguments.next()) {
         (Some(command), Some(snapshot), None) if command == ANALYZE_COMMAND => {
             PathBuf::from(snapshot)
         }
         _ => return None,
     };
+    if let Err(error) = memory::limit(memory_limit_bytes) {
+        eprintln!("cannot limit dependency analyzer memory: {error}");
+        return Some(ExitCode::FAILURE);
+    }
     let output = analyze_snapshot(&snapshot);
     let written = serde_json::to_writer(std::io::stdout().lock(), &output)
         .map_err(std::io::Error::from)
@@ -58,16 +76,17 @@ pub fn analyze_snapshot(snapshot: &Path) -> AnalyzerOutput {
 }
 
 fn analyze_inventory(inventory: &snapshot::Inventory) -> AnalyzerOutput {
-    let scan = scan::scan_sources(inventory);
-    let mut gaps = scan.gaps;
+    let mut findings = Findings::default();
+    let scan = scan::scan_sources(inventory, &mut findings);
     let groups = match config::group_sources_by_config(&scan.resolvable_files, &inventory.configs) {
         Ok(groups) => groups,
         Err(reason) => {
-            gaps.push(repository_gap(reason));
+            findings.add_repository_gap(reason);
+            let (_, gaps) = findings.into_parts();
             return AnalyzerOutput {
                 analyzed_files: scan.analyzed_files,
                 unsupported_files: inventory.unsupported_files.clone(),
-                gaps: bounded_gaps(gaps),
+                gaps,
                 ..incomplete_base()
             };
         }
@@ -80,13 +99,12 @@ fn analyze_inventory(inventory: &snapshot::Inventory) -> AnalyzerOutput {
         references: &scan.references,
     };
     let mut configs = config::ConfigLoader::new(inventory);
-    let mut edges = Vec::new();
     for (config_path, sources) in &groups {
         let config = match config_path {
             Some(config_path) => match configs.resolution_config(config_path) {
                 Ok(config) => Some(config),
                 Err(reason) => {
-                    gaps.push(DependencyGap {
+                    findings.add_gap(DependencyGap {
                         path: config_path.clone(),
                         reason,
                     });
@@ -95,51 +113,16 @@ fn analyze_inventory(inventory: &snapshot::Inventory) -> AnalyzerOutput {
             },
             None => None,
         };
-        let group = resolve::resolve_group(&context, config.as_ref(), sources);
-        edges.extend(group.edges);
-        gaps.extend(group.gaps);
+        resolve::resolve_group(&context, config.as_ref(), sources, &mut findings);
     }
 
-    edges.sort_by(|left, right| edge_key(left).cmp(&edge_key(right)));
-    edges.dedup();
-    if edges.len() > limits::MAX_EDGES {
-        gaps.push(repository_gap(format!(
-            "dependency edge limit exceeded ({})",
-            limits::MAX_EDGES
-        )));
-        edges.clear();
-    }
-
+    let (edges, gaps) = findings.into_parts();
     AnalyzerOutput {
         analyzer_version: DEPENDENCY_ANALYZER_VERSION.into(),
         analyzed_files: scan.analyzed_files,
         unsupported_files: inventory.unsupported_files.clone(),
         edges,
-        gaps: bounded_gaps(gaps),
-    }
-}
-
-fn edge_key(edge: &DependencyEdge) -> (&str, &str, &str) {
-    (&edge.source_path, &edge.target_path, kind_name(edge.kind))
-}
-
-fn bounded_gaps(mut gaps: Vec<DependencyGap>) -> Vec<DependencyGap> {
-    gaps.sort();
-    gaps.dedup();
-    if gaps.len() > limits::MAX_GAPS {
-        gaps.truncate(limits::MAX_GAPS - 1);
-        gaps.push(repository_gap(format!(
-            "coverage gap limit exceeded ({})",
-            limits::MAX_GAPS
-        )));
-    }
-    gaps
-}
-
-fn repository_gap(reason: String) -> DependencyGap {
-    DependencyGap {
-        path: ".".into(),
-        reason,
+        gaps,
     }
 }
 

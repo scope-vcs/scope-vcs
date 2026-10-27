@@ -1,5 +1,7 @@
 use crate::{
     config::ResolutionConfig,
+    findings::Findings,
+    limits,
     module_suffixes::SuffixFileSystem,
     paths::{is_outside, repository_path, resolve_lexically},
     scan::Reference,
@@ -52,12 +54,6 @@ pub(crate) struct GroupContext<'a> {
     pub(crate) inventory: &'a Inventory,
     pub(crate) internal_package_names: &'a HashSet<String>,
     pub(crate) references: &'a HashMap<String, Vec<Reference>>,
-}
-
-#[derive(Default)]
-pub(crate) struct GroupResult {
-    pub(crate) edges: Vec<DependencyEdge>,
-    pub(crate) gaps: Vec<DependencyGap>,
 }
 
 struct Resolvers<'a> {
@@ -150,6 +146,10 @@ impl<'a> Resolvers<'a> {
         resolve(specifier)
     }
 
+    fn clear_cache(&self) {
+        self.by_mode[0].clear_cache();
+    }
+
     fn for_reference(&self, kind: DependencyEdgeKind, common_js_source: bool) -> &Resolver {
         let type_only = matches!(
             kind,
@@ -205,25 +205,40 @@ pub(crate) fn resolve_group(
     context: &GroupContext,
     config: Option<&ResolutionConfig>,
     sources: &[String],
-) -> GroupResult {
+    findings: &mut Findings,
+) {
     let resolvers = Resolvers::new(config);
-    let results = sources
-        .par_iter()
-        .map(|source| {
-            let mut result = GroupResult::default();
-            for reference in context.references.get(source).into_iter().flatten() {
-                resolve_reference(context, &resolvers, source, reference, &mut result);
-            }
-            result
+    let references = sources
+        .iter()
+        .flat_map(|source| {
+            context
+                .references
+                .get(source)
+                .into_iter()
+                .flatten()
+                .map(move |reference| (source, reference))
         })
         .collect::<Vec<_>>();
-    results
-        .into_iter()
-        .fold(GroupResult::default(), |mut combined, result| {
-            combined.edges.extend(result.edges);
-            combined.gaps.extend(result.gaps);
-            combined
-        })
+    for batch in references.chunks(limits::RESOLUTION_BATCH) {
+        if !findings.within_limits() {
+            return;
+        }
+        let batch_findings = batch
+            .par_iter()
+            .fold(
+                Findings::default,
+                |mut batch_findings, (source, reference)| {
+                    resolve_reference(context, &resolvers, source, reference, &mut batch_findings);
+                    batch_findings
+                },
+            )
+            .reduce(Findings::default, |mut left, right| {
+                left.merge(right);
+                left
+            });
+        findings.merge(batch_findings);
+        resolvers.clear_cache();
+    }
 }
 
 fn resolve_reference(
@@ -231,7 +246,7 @@ fn resolve_reference(
     resolvers: &Resolvers,
     source: &str,
     reference: &Reference,
-    result: &mut GroupResult,
+    findings: &mut Findings,
 ) {
     let Reference { specifier, kind } = reference;
     if specifier.starts_with("node:") {
@@ -251,7 +266,7 @@ fn resolve_reference(
     };
     let source_directory = source_file.parent().unwrap_or(root);
     let mut gap = |reason: &str| {
-        result.gaps.push(DependencyGap {
+        findings.add_gap(DependencyGap {
             path: source.to_owned(),
             reason: format!("{reason}: {specifier}"),
         });
@@ -294,7 +309,7 @@ fn resolve_reference(
         .and_then(|metadata| Ok((metadata, fs::canonicalize(&resolved_file)?)))
     {
         Ok((metadata, canonical)) if metadata.is_file() && !is_outside(root, &canonical) => {
-            result.edges.push(DependencyEdge {
+            findings.add_edge(DependencyEdge {
                 source_path: source.to_owned(),
                 target_path,
                 kind: *kind,

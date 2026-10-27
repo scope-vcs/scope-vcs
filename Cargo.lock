@@ -3695,6 +3695,7 @@ name = "scope-dependency-analyzer"
 version = "0.1.0"
 dependencies = [
  "json-strip-comments",
+ "libc",
  "oxc_allocator",
  "oxc_ast",
  "oxc_ast_visit",
@@ -3706,6 +3707,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
