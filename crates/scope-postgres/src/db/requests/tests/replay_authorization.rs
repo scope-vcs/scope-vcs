@@ -2,7 +2,6 @@ use super::*;
 use crate::error::PostgresErrorKind;
 use scope_domain::requests::RequestDiscussionReadState;
 use sea_orm::{EntityTrait, TransactionTrait};
-use std::time::Duration;
 
 async fn create_discussion_and_reply(
     store: &MetadataStore,
@@ -67,8 +66,9 @@ async fn discussion_replays_recheck_membership_after_waiting_for_revocation() {
     .exec(&revocation)
     .await
     .unwrap();
+    let revocation_pid = super::super::super::locks::backend_pid(&revocation).await;
     let writing_store = store.clone();
-    let mut replay = tokio::spawn(async move {
+    let replay = tokio::spawn(async move {
         let discussion = writing_store
             .requests()
             .create_request_discussion(create)
@@ -79,16 +79,9 @@ async fn discussion_replays_recheck_membership_after_waiting_for_revocation() {
             .await;
         (discussion, reply)
     });
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), &mut replay)
-            .await
-            .is_err()
-    );
+    super::super::super::locks::wait_for_transaction_waiter(&store, revocation_pid).await;
     revocation.commit().await.unwrap();
-    let (discussion, reply) = tokio::time::timeout(Duration::from_secs(2), replay)
-        .await
-        .unwrap()
-        .unwrap();
+    let (discussion, reply) = replay.await.unwrap();
     assert_eq!(discussion.unwrap_err().kind, PostgresErrorKind::NotFound);
     assert_eq!(reply.unwrap_err().kind, PostgresErrorKind::NotFound);
     let read_state = super::super::super::request_discussion_rows::read_state(
@@ -172,24 +165,17 @@ async fn discussion_reply_replay_rechecks_draft_invitation_after_waiting() {
     .exec(&revocation)
     .await
     .unwrap();
+    let revocation_pid = super::super::super::locks::backend_pid(&revocation).await;
     let writing_store = store.clone();
-    let mut replay = tokio::spawn(async move {
+    let replay = tokio::spawn(async move {
         writing_store
             .requests()
             .create_request_discussion_reply(reply)
             .await
     });
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), &mut replay)
-            .await
-            .is_err()
-    );
+    super::super::super::locks::wait_for_transaction_waiter(&store, revocation_pid).await;
     revocation.commit().await.unwrap();
-    let error = tokio::time::timeout(Duration::from_secs(2), replay)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap_err();
+    let error = replay.await.unwrap().unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::NotFound);
     let read_state = super::super::super::request_discussion_rows::read_state(
         store.db.as_ref(),

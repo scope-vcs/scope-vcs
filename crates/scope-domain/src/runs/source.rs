@@ -4,6 +4,12 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+pub const MAX_RUN_SOURCE_BUNDLE_BYTES: usize = 128 * 1024 * 1024;
+
+pub fn run_source_bundle_within_limit(bytes: u64) -> bool {
+    bytes <= MAX_RUN_SOURCE_BUNDLE_BYTES as u64
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RunTrigger {
@@ -138,6 +144,14 @@ fn validate_source_blob(blob: &SourceBlob, label: &str) -> Result<(), DomainErro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_source_bundle_limit_admits_the_limit_and_rejects_one_byte_more() {
+        let limit = MAX_RUN_SOURCE_BUNDLE_BYTES as u64;
+
+        assert!(run_source_bundle_within_limit(limit));
+        assert!(!run_source_bundle_within_limit(limit + 1));
+    }
 
     #[test]
     fn accepted_git_head_pins_only_the_head() {

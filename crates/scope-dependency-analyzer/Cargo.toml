@@ -1,0 +1,28 @@
+[package]
+name = "scope-dependency-analyzer"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/adamblumoff/scope-vcs"
+
+[dependencies]
+json-strip-comments = "3.1.2"
+oxc_allocator = "=0.155.0"
+oxc_ast = "=0.155.0"
+oxc_ast_visit = "=0.155.0"
+oxc_parser = "=0.155.0"
+oxc_resolver = { version = "=11.24.3", default-features = false }
+oxc_span = "=0.155.0"
+rayon = "1.12.0"
+scope_domain = { package = "scope-domain", path = "../scope-domain" }
+serde = "1.0.228"
+serde_json = { version = "1.0.147", features = ["raw_value"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tempfile = "3.23.0"

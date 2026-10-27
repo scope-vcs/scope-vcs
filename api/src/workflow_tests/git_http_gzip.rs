@@ -122,7 +122,7 @@ async fn upload_pack_accepts_gzip_encoded_request_body() {
     let request = upload_pack_want_request(head.trim());
     let gzipped_request = gzip_bytes(&request);
 
-    let response = router(state)
+    let response = router(state.clone())
         .oneshot(
             Request::builder()
                 .method("POST")

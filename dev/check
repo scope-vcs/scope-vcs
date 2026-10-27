@@ -7,7 +7,7 @@ source "$ROOT/dev/dotenv.sh"
 
 usage() {
   cat <<'EOF'
-usage: ./dev/check [all|guardrails|rust|contract|cli|web|analyzer|ops|smoke]
+usage: ./dev/check [all|guardrails|rust|contract|cli|web|ops|smoke]
 
   all         run every non-browser check group (default)
   guardrails  check source size, crate boundaries, and replicated toolchain pins
@@ -15,7 +15,6 @@ usage: ./dev/check [all|guardrails|rust|contract|cli|web|analyzer|ops|smoke]
   contract    compare the generated API TypeScript contract with the checked-in files
   cli         format, test, and lint the CLI workspace, then build and check its bundle
   web         test, check, and build the web application
-  analyzer    install the locked analyzer dependencies and run its tests
   ops         test deployment orchestration and benchmark scripts
   smoke       run the browser smoke suite against an already running local stack
 EOF
@@ -26,7 +25,6 @@ rust() { ./dev/checks/backend; }
 contract() { ./dev/checks/contract; }
 cli() { ./dev/checks/cli; ./dev/checks/cli-bundle; }
 web() { ./dev/checks/web; }
-analyzer() { ./dev/checks/dependency-analyzer; }
 ops() { ./dev/checks/ops; }
 
 smoke() {
@@ -50,7 +48,6 @@ case "$COMMAND" in
     contract
     cli
     web
-    analyzer
     ops
     ;;
   guardrails) guardrails ;;
@@ -58,7 +55,6 @@ case "$COMMAND" in
   contract) contract ;;
   cli) cli ;;
   web) web ;;
-  analyzer) analyzer ;;
   ops) ops ;;
   smoke) smoke ;;
   help|-h|--help) usage ;;

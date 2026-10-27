@@ -1,6 +1,7 @@
 use super::RuntimeClient;
 use anyhow::Context as _;
 use reqwest::StatusCode;
+use scope_domain::runs::source::{MAX_RUN_SOURCE_BUNDLE_BYTES, run_source_bundle_within_limit};
 use sha2::{Digest as _, Sha256};
 use std::{
     io::{Read, Write},
@@ -9,7 +10,6 @@ use std::{
     time::Duration,
 };
 
-pub(super) const MAX_SOURCE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_SOURCE_DOWNLOAD_ATTEMPTS: usize = 3;
 const SOURCE_RETRY_DELAY: Duration = Duration::from_millis(100);
 const SOURCE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -106,10 +106,10 @@ impl RuntimeClient {
         let expected_digest = expected_digest.to_string();
         if response
             .content_length()
-            .is_some_and(|length| length > MAX_SOURCE_BYTES)
+            .is_some_and(|length| !run_source_bundle_within_limit(length))
         {
             return Err(SourceDownloadError::Fatal(anyhow::anyhow!(
-                "run source exceeds {MAX_SOURCE_BYTES} bytes"
+                "run source exceeds {MAX_RUN_SOURCE_BUNDLE_BYTES} bytes"
             )));
         }
 
@@ -135,9 +135,9 @@ impl RuntimeClient {
             total = total.checked_add(read as u64).ok_or_else(|| {
                 SourceDownloadError::Fatal(anyhow::anyhow!("source size overflow"))
             })?;
-            if total > MAX_SOURCE_BYTES {
+            if !run_source_bundle_within_limit(total) {
                 return Err(SourceDownloadError::Fatal(anyhow::anyhow!(
-                    "run source exceeds {MAX_SOURCE_BYTES} bytes"
+                    "run source exceeds {MAX_RUN_SOURCE_BUNDLE_BYTES} bytes"
                 )));
             }
             staged.write_all(&buffer[..read]).map_err(|error| {

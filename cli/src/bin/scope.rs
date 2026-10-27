@@ -155,6 +155,9 @@ struct InspectionArgs {
 }
 
 fn main() -> ExitCode {
+    if let Some(code) = scope_dependency_analyzer::run_requested_analysis(std::env::args_os()) {
+        return code;
+    }
     let json_requested = std::env::args_os().any(|arg| arg == "--json");
     let matches = match Cli::command()
         .version(scope_cli::build::version_identity())

@@ -1,6 +1,8 @@
 use super::*;
 use crate::test_support::{TempDir, commit_all};
-use scope_domain::dependency_analysis::{DependencyEdge, DependencyEdgeKind, DependencyGap};
+use scope_domain::dependency_analysis::{
+    DEPENDENCY_ANALYZER_VERSION, DependencyEdge, DependencyEdgeKind, DependencyGap,
+};
 use std::{
     fs,
     sync::atomic::{AtomicUsize, Ordering},
@@ -188,29 +190,4 @@ fn canceled_analysis_does_not_launch_or_publish_cache() {
         .is_err()
     );
     assert!(!path.exists());
-}
-
-#[test]
-#[ignore = "requires SCOPE_CLI_RUNTIME_DIR pointing to a packaged analyzer"]
-fn bundled_analyzer_reports_committed_imports() {
-    assert!(
-        std::env::var_os("SCOPE_CLI_RUNTIME_DIR").is_some(),
-        "set SCOPE_CLI_RUNTIME_DIR to a packaged runtime"
-    );
-    let (repo, commit) = repository();
-    let result = analyze_cached(
-        repo.path(),
-        &commit,
-        &CancellationToken::new(),
-        analyze_snapshot,
-    )
-    .unwrap();
-    assert!(
-        result
-            .edges
-            .iter()
-            .any(|edge| edge.source_path == "src/index.ts"
-                && edge.target_path == "internal/client.ts")
-    );
-    assert!(result.gaps.is_empty(), "{:?}", result.gaps);
 }

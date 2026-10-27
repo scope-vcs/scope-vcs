@@ -22,8 +22,6 @@ mod runs;
 mod tests;
 #[path = "seed/workflow_files.rs"]
 mod workflow_files;
-#[cfg(test)]
-pub(super) use git_segments::test_seed_git_segment_store;
 use git_segments::{SeedMainPack, store_seed_git_pack};
 #[cfg(feature = "local-dev")]
 pub(crate) use request_discussion_gallery::seed_request_discussion_gallery;

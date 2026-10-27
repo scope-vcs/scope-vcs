@@ -23,7 +23,7 @@ aws sts get-caller-identity
 
 Never deploy this stack from the AWS root user. Use an administrative role with MFA for the initial stack and a CI deployment role for later changes.
 
-The GitHub OIDC provider is account-global. Check for an existing provider before the first stack update:
+The GitHub OIDC provider is account-global. Check for an existing provider before creating the stack:
 
 ```bash
 aws iam list-open-id-connect-providers \
@@ -31,7 +31,7 @@ aws iam list-open-id-connect-providers \
   --output text
 ```
 
-If this prints an ARN, pass it as `EXISTING_GITHUB_OIDC_PROVIDER_ARN` when planning and applying. Otherwise the stack creates and owns the provider.
+If this prints an ARN, pass it as `EXISTING_GITHUB_OIDC_PROVIDER_ARN` when planning the first deployment. Otherwise the stack creates and owns the provider. Later plans keep the stack's deployed `ExistingGitHubOidcProviderArn`, so routine updates, including the `AWS infrastructure` workflow, need no provider setting. To change the provider ARN deliberately, set `EXISTING_GITHUB_OIDC_PROVIDER_ARN` for that plan; the plan prints the value it sends.
 
 ## Validate and preview
 
@@ -42,7 +42,7 @@ deploy/aws/apply-cloud-runner.sh validate
 deploy/aws/apply-cloud-runner.sh plan
 ```
 
-For an account that already has the GitHub provider:
+For a first deployment in an account that already has the GitHub provider:
 
 ```bash
 EXISTING_GITHUB_OIDC_PROVIDER_ARN=arn:aws:iam::<account ID>:oidc-provider/token.actions.githubusercontent.com \
@@ -254,7 +254,7 @@ Before step 1, confirm the runner stack matches main's template without this cha
    deploy/aws/apply-cloud-runner.sh plan
    ```
 
-   Pass the same `BUDGET_NOTIFICATION_EMAIL`, `MONTHLY_BUDGET_USD` and `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` as routine applies. The change set must add `RunnerBaseImageRepository`, remove `ChecksImageRepository`, and modify `ChecksImagePublisherRole` and `RunnerTaskExecutionRole` with `Replacement` `False`. Stop if it shows anything else, in particular a change to `GitHubOidcProvider` or `GitHubInfrastructureRole`.
+   Pass the same `BUDGET_NOTIFICATION_EMAIL`, `MONTHLY_BUDGET_USD` and `SCOPE_REGISTRY_CREDENTIALS_SECRET_ARN` as routine applies. The change set must add `RunnerBaseImageRepository`, remove `ChecksImageRepository`, and modify `ChecksImagePublisherRole` and `RunnerTaskExecutionRole` with `Replacement` `False`. Stop if it shows anything else.
 
 4. Apply that exact change set with the same environment, then confirm the role ARN output:
 

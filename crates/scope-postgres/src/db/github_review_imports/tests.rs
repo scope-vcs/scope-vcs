@@ -696,29 +696,18 @@ async fn an_import_that_loses_the_race_with_a_disconnect_commits_nothing() {
         .execute_unprepared("DELETE FROM scope_github_connections WHERE repo_id = 'owner/repo'")
         .await
         .unwrap();
+    let disconnect_pid = crate::db::locks::backend_pid(&disconnect).await;
     let importing_store = store.clone();
     let importing_link = stale_link.clone();
-    let mut importing = tokio::spawn(async move {
+    let importing = tokio::spawn(async move {
         importing_store
             .requests()
             .import_github_review(review(&importing_link, vec![comment(51, None)], 20))
             .await
     });
-    assert!(
-        tokio::time::timeout(std::time::Duration::from_millis(200), &mut importing)
-            .await
-            .is_err(),
-        "an import must wait for a disconnect that holds the connection"
-    );
+    crate::db::locks::wait_for_transaction_waiter(&store, disconnect_pid).await;
     disconnect.commit().await.unwrap();
-    assert_eq!(
-        tokio::time::timeout(std::time::Duration::from_secs(5), importing)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap(),
-        None
-    );
+    assert_eq!(importing.await.unwrap().unwrap(), None);
 
     connect_github(&store).await;
     assert_ne!(live_link(&store).await, stale_link);
