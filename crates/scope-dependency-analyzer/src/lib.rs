@@ -23,6 +23,7 @@ use std::{
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 pub const ANALYZE_COMMAND: &str = "__analyze-dependencies";
 const MAX_ANALYZER_MEMORY_BYTES: u64 = 512 * 1024 * 1024;
+const ANALYZER_THREADS: usize = 2;
 
 mod limits {
     pub(crate) const MAX_CONFIGS: usize = 64;
@@ -54,6 +55,13 @@ fn run_analysis_command(
     };
     if let Err(error) = memory::limit(memory_limit_bytes) {
         eprintln!("cannot limit dependency analyzer memory: {error}");
+        return Some(ExitCode::FAILURE);
+    }
+    if let Err(error) = rayon::ThreadPoolBuilder::new()
+        .num_threads(ANALYZER_THREADS)
+        .build_global()
+    {
+        eprintln!("cannot limit dependency analyzer threads: {error}");
         return Some(ExitCode::FAILURE);
     }
     let output = analyze_snapshot(&snapshot);
