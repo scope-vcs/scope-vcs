@@ -59,7 +59,17 @@ export async function startFixtureServer(t, fixture, options) {
   })
   t.after(() => server.close())
   await server.listen()
+  await settleFirstNavigation(server.environments.client, fixture)
   return server
+}
+
+async function settleFirstNavigation(client, fixture) {
+  const entry = existsSync(fixturePath(fixture, 'entry.tsx')) ? '/entry.tsx' : '/entry.ts'
+  await client.warmupRequest(entry)
+  await client.waitForRequestsIdle()
+  const { depsOptimizer } = client
+  await depsOptimizer.scanProcessing
+  await Promise.all(Object.values(depsOptimizer.metadata.discovered).map(({ processing }) => processing))
 }
 
 export async function launchBrowser(t) {
