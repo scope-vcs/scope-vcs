@@ -47,6 +47,8 @@ fn state_after_imports(
         HEAD,
         Some(PUSHED_AT),
         imported_review_ids,
+        None,
+        PUSHED_AT,
     )[0]
     .state
 }
@@ -287,7 +289,9 @@ fn a_bot_is_done_after_reviewing_the_head_or_approving_after_it_was_pushed() {
             &[reacted(GREPTILE, GitHubBotReaction::ThumbsUp, PUSHED_AT)],
             HEAD,
             None,
-            &[]
+            &[],
+            None,
+            PUSHED_AT,
         )[0]
         .state,
         GitHubReviewBotState::NotStarted
@@ -365,6 +369,56 @@ fn codex_without_a_valid_state_comment_never_finishes() {
     );
 }
 
+#[test]
+fn a_required_bot_that_never_starts_on_the_requested_head_stops_holding_after_the_deadline() {
+    let requested = GitHubReviewRequest {
+        head_oid: HEAD.to_string(),
+        at_unix: PUSHED_AT,
+    };
+    let deadline = PUSHED_AT + REVIEW_BOT_START_DEADLINE_SECS;
+    let state_at = |signals: &[GitHubReviewBotSignal], request: &GitHubReviewRequest, now| {
+        github_review_bot_statuses(
+            &[bot(CODEX, true)],
+            signals,
+            HEAD,
+            Some(PUSHED_AT),
+            &[],
+            Some(request),
+            now,
+        )[0]
+        .state
+    };
+    assert_eq!(
+        state_at(&[], &requested, deadline - 1),
+        GitHubReviewBotState::NotStarted
+    );
+    assert_eq!(
+        state_at(&[], &requested, deadline),
+        GitHubReviewBotState::TimedOut
+    );
+    let eyes = reacted(CODEX, GitHubBotReaction::Eyes, deadline + 60);
+    assert_eq!(
+        state_at(std::slice::from_ref(&eyes), &requested, deadline + 3_600),
+        GitHubReviewBotState::Working
+    );
+    let running = commented(codex_comment(
+        &part(HEAD, "running", "null"),
+        &part(HEAD, "running", "null"),
+    ));
+    assert_eq!(
+        state_at(&[running], &requested, deadline + 3_600),
+        GitHubReviewBotState::Working
+    );
+    let earlier_head = GitHubReviewRequest {
+        head_oid: OLD.to_string(),
+        at_unix: 0,
+    };
+    assert_eq!(
+        state_at(&[], &earlier_head, deadline),
+        GitHubReviewBotState::NotStarted
+    );
+}
+
 fn reviews(
     bots: Vec<GitHubReviewBot>,
     states: &[(&str, GitHubReviewBotState)],
@@ -415,6 +469,10 @@ fn required_bots_gate_full_view_requests_on_the_current_head_and_open_findings()
     );
     assert_eq!(
         outcome(&reviews(bots(), &[(CODEX, Clear)])),
+        RequestReviewsOutcome::Clear
+    );
+    assert_eq!(
+        outcome(&reviews(bots(), &[(CODEX, TimedOut)])),
         RequestReviewsOutcome::Clear
     );
     let stale = reviews(bots(), &[(CODEX, Clear)]);

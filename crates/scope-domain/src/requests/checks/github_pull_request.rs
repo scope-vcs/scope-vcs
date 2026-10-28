@@ -28,6 +28,12 @@ pub struct OpenedGitHubPullRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubReviewRequest {
+    pub head_oid: String,
+    pub at_unix: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubPullRequestIntent {
     Open { base: String, head_oid: String },
     Close,
@@ -50,7 +56,7 @@ pub struct GitHubPullRequest {
     pub intent: GitHubPullRequestIntent,
     pub intent_sequence: u64,
     pub pull_request: Option<OpenedGitHubPullRequest>,
-    pub commented_head_oid: Option<String>,
+    pub review_request: Option<GitHubReviewRequest>,
     pub job_state: GitHubPullRequestJobState,
     pub attempts: u32,
     pub last_error: Option<String>,
@@ -222,7 +228,10 @@ impl GitHubPullRequest {
                             text: text.to_string(),
                         })
                     } else if review_bots.review_request_comment.is_some()
-                        && self.commented_head_oid.as_ref() != Some(head_oid)
+                        && self
+                            .review_request
+                            .as_ref()
+                            .is_none_or(|request| &request.head_oid != head_oid)
                     {
                         Some(GitHubPullRequestStep::Comment {
                             number: opened.number,
@@ -253,7 +262,7 @@ impl GitHubPullRequest {
         written_text: Option<String>,
     ) {
         if self.pull_request.as_ref().map(|opened| opened.number) != Some(number) {
-            self.commented_head_oid = None;
+            self.review_request = None;
         }
         self.pull_request = Some(OpenedGitHubPullRequest {
             number,
@@ -276,8 +285,8 @@ impl GitHubPullRequest {
         }
     }
 
-    pub fn record_commented(&mut self, head_oid: String) {
-        self.commented_head_oid = Some(head_oid);
+    pub fn record_commented(&mut self, head_oid: String, at_unix: u64) {
+        self.review_request = Some(GitHubReviewRequest { head_oid, at_unix });
     }
 
     pub fn record_closed(&mut self) {

@@ -50,5 +50,6 @@ fn state_label(state: RequestReviewBotState) -> &'static str {
         RequestReviewBotState::Working => "is reviewing",
         RequestReviewBotState::Commented => "finished with comments",
         RequestReviewBotState::Clear => "finished with nothing found",
+        RequestReviewBotState::TimedOut => "did not start in time and is advisory on this head",
     }
 }

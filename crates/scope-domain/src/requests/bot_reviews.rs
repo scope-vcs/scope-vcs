@@ -1,5 +1,6 @@
 use crate::{
     github_review_bots::GitHubReviewBot,
+    requests::GitHubReviewRequest,
     views::{ViewId, Views},
 };
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,8 @@ pub use codex_state::{CODEX_REVIEW_BOT_LOGIN, CodexReviewState};
 #[cfg(test)]
 mod tests;
 
+pub const REVIEW_BOT_START_DEADLINE_SECS: u64 = 30 * 60;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GitHubReviewBotState {
@@ -17,11 +20,16 @@ pub enum GitHubReviewBotState {
     Working,
     Commented,
     Clear,
+    TimedOut,
 }
 
 impl GitHubReviewBotState {
     pub fn is_done(self) -> bool {
         matches!(self, Self::Commented | Self::Clear)
+    }
+
+    pub fn holds_merge(self) -> bool {
+        matches!(self, Self::NotStarted | Self::Working)
     }
 }
 
@@ -72,23 +80,37 @@ pub fn github_review_bot_statuses(
     head_oid: &str,
     head_delivered_at_unix: Option<u64>,
     imported_review_ids: &[u64],
+    review_request: Option<&GitHubReviewRequest>,
+    now_unix: u64,
 ) -> Vec<GitHubReviewBotStatus> {
+    let start_deadline_passed = review_request.is_some_and(|request| {
+        request.head_oid == head_oid
+            && now_unix
+                >= request
+                    .at_unix
+                    .saturating_add(REVIEW_BOT_START_DEADLINE_SECS)
+    });
     bots.iter()
         .map(|bot| {
             let signals = signals
                 .iter()
                 .filter(|signal| bot.login.names(signal.login()))
                 .collect::<Vec<_>>();
+            let state = bot_state(
+                bot.login.names(CODEX_REVIEW_BOT_LOGIN),
+                &signals,
+                head_oid,
+                head_delivered_at_unix,
+                imported_review_ids,
+            );
             GitHubReviewBotStatus {
                 login: bot.login.as_str().to_string(),
                 head_oid: head_oid.to_string(),
-                state: bot_state(
-                    bot.login.names(CODEX_REVIEW_BOT_LOGIN),
-                    &signals,
-                    head_oid,
-                    head_delivered_at_unix,
-                    imported_review_ids,
-                ),
+                state: if state == GitHubReviewBotState::NotStarted && start_deadline_passed {
+                    GitHubReviewBotState::TimedOut
+                } else {
+                    state
+                },
             }
         })
         .collect()
@@ -238,7 +260,7 @@ pub fn request_reviews_outcome(
         RequestReviewsOutcome::Clear
     } else if reviews.has_open_findings() {
         RequestReviewsOutcome::FindingsOpen
-    } else if required.any(|bot| !reviews.state_of(bot, head_oid).is_done()) {
+    } else if required.any(|bot| reviews.state_of(bot, head_oid).holds_merge()) {
         RequestReviewsOutcome::Pending
     } else {
         RequestReviewsOutcome::Clear

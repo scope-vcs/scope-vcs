@@ -230,7 +230,10 @@ wire_enum!(
     /// once it reacted with eyes, `commented` once it reviewed that head,
     /// `clear` once it approved the pull request with a thumbs up after the
     /// head was pushed, and for bots that publish a review state, once every
-    /// review they report completed that head.
+    /// review they report completed that head. `timed_out` means the bot
+    /// showed no sign of starting before the deadline after Scope requested a
+    /// review of the head, so it is advisory for that head and no longer holds
+    /// the merge.
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
     RequestReviewBotState => DomainGitHubReviewBotState {
@@ -238,6 +241,7 @@ wire_enum!(
         Working,
         Commented,
         Clear,
+        TimedOut,
     }
 );
 wire_enum!(

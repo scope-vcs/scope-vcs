@@ -139,6 +139,7 @@ const REVIEW_BOT_STATES = {
   working: { label: 'Reviewing', tone: 'running' },
   commented: { label: 'Finished with comments', tone: 'waiting' },
   clear: { label: 'Finished, nothing found', tone: 'success' },
+  timed_out: { label: 'Didn’t start · advisory', tone: 'inert' },
 } as const satisfies Record<RequestReviewBotState, { label: string; tone: RunTone }>
 
 export function requestReviewBotRows(bots: RequestReviewBotResponse[]) {
