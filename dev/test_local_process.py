@@ -23,13 +23,14 @@ class LocalProcessTests(unittest.TestCase):
                               capture_output=True, text=True).stdout.strip()
 
     def child(self, script="sleep 60"):
-        child = subprocess.Popen(["bash", "-c", script], start_new_session=True)
+        child = subprocess.Popen(["bash", "-c", script], start_new_session=True, stdout=subprocess.PIPE, text=True)
         def cleanup():
             try:
                 os.killpg(child.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             child.wait(timeout=5)
+            child.stdout.close()
         self.addCleanup(cleanup)
         return child
 
@@ -47,15 +48,10 @@ class LocalProcessTests(unittest.TestCase):
             self.assertFalse(path.exists())
 
     def test_owned_session_stops_descendants_that_ignore_term(self):
-        descendant = self.path / "descendant"
-        child = self.child(f"trap '' TERM; sleep 60 & echo $! > '{descendant}'; wait")
+        child = self.child("trap '' TERM; sleep 60 & echo $!; wait")
         path = self.path / "api.pid"
         self.helper("record", path, child.pid)
-        for _ in range(100):
-            if descendant.exists():
-                break
-            time.sleep(0.01)
-        pid = int(descendant.read_text())
+        pid = int(child.stdout.readline())
         self.helper("stop", path)
         child.wait(timeout=5)
         for _ in range(100):
