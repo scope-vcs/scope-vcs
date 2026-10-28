@@ -46,7 +46,8 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     started = true;
     applyProductionMigrations(dir, 'postgres');
     query(`DELETE FROM seaql_migrations WHERE version = '${candidateMigrationVersion}';`);
-    const actual = query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename").stdout.trim().split('\n');
+    const actual = query(`SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f') ORDER BY c.relname`).stdout.trim().split('\n');
     assert.deepEqual(actual, tables);
     query(renderPolicy());
     query('GRANT SELECT (id) ON scope_cli_sessions TO scope_media_worker;');
