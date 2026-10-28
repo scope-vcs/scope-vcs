@@ -57,6 +57,16 @@ reconciliation. Browser interception reads the compiled server-function manifest
 staging extracts it from the exact live web image rather than maintaining a
 second list of function IDs.
 
+PR checks also enforce three requirements that once failed only during release.
+Selected backend changes build the deployment binaries and compare them with
+the manifest's size caps, using the release job. The runtime role test applies
+the production migration chain before checking the role policy, so a new
+relation without reviewed grants fails before merge. Changes that select the API
+or media components run `dev/media-smoke.mjs` against the seeded local stack,
+the same script staging runs. The Git router smoke still runs only in staging:
+it checks that the deployed router domain serves Git over TLS, and the local
+stack has neither the router nor TLS.
+
 ## Activation and retries
 
 After writer closure and schema verification, media API activation runs first,

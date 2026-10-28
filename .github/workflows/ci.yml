@@ -60,6 +60,7 @@ jobs:
       web: ${{ steps.plan.outputs.web }}
       cli: ${{ steps.plan.outputs.cli }}
       cli_distribution: ${{ steps.plan.outputs.cli_distribution }}
+      media_smoke: ${{ steps.plan.outputs.api == 'true' || steps.plan.outputs.media == 'true' || steps.plan.outputs.media_worker == 'true' }}
     steps:
       - name: Checkout revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -149,6 +150,7 @@ jobs:
       web: ${{ needs.plan.outputs.web }}
       cli: ${{ needs.plan.outputs.cli }}
       cli_distribution: ${{ needs.plan.outputs.cli_distribution }}
+      media_smoke: ${{ needs.plan.outputs.media_smoke }}
       release_sha: ${{ github.sha }}
     secrets: inherit
 
