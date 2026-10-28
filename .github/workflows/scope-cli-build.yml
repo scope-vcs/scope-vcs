@@ -152,16 +152,19 @@ jobs:
           sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
           echo /opt/git/bin >> "$GITHUB_PATH"
 
-      - name: Install current Git on macOS
+      - name: Install Git 2.55 or newer on macOS
         if: runner.os == 'macOS'
         run: |
-          brew update
-          if brew list --versions git >/dev/null; then
-            brew upgrade git
-          else
-            brew install git
+          git_bin="$(brew --prefix git)/bin"
+          if ! PATH="$git_bin:$PATH" node dev/check-git-version.mjs; then
+            brew update
+            if brew list --versions git >/dev/null; then
+              brew upgrade git
+            else
+              brew install git
+            fi
           fi
-          echo "$(brew --prefix git)/bin" >> "$GITHUB_PATH"
+          echo "$git_bin" >> "$GITHUB_PATH"
 
       - name: Install Git for Windows 2.55
         if: runner.os == 'Windows'
