@@ -1,53 +1,64 @@
 use super::RepositoryStore;
 use crate::error::PostgresError;
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use sqlx::postgres::PgListener;
 use std::{
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock, PoisonError},
     time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinHandle};
 
 pub(crate) const POSTGRES_REPO_CHANGE_CHANNEL: &str = "scope_repo_changes";
 const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 const QUEUED_NOTIFICATION_LIMIT: usize = 16_384;
 const NOTIFICATIONS_PER_COMMIT: usize = 256;
-type PayloadHandler = Arc<dyn Fn(String) + Send + Sync>;
+
+pub struct RepoChangeListener {
+    task: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl RepoChangeListener {
+    pub async fn shutdown(&self) {
+        let task = self
+            .task
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(task) = task {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+}
+
+impl Drop for RepoChangeListener {
+    fn drop(&mut self) {
+        if let Some(task) = self
+            .task
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            task.abort();
+        }
+    }
+}
 
 impl RepositoryStore {
-    pub fn start_repo_change_listener(
+    pub async fn listen_for_repo_changes(
         &self,
-        on_payload: impl Fn(String) + Send + Sync + 'static,
-    ) -> anyhow::Result<()> {
-        let Some(database_url) = &self.postgres_database_url else {
-            return Ok(());
-        };
-        let database_url = database_url.to_string();
-        let on_payload: PayloadHandler = Arc::new(on_payload);
-        std::thread::Builder::new()
-            .name("scope-repo-change-listener".to_string())
-            .spawn(move || {
-                let runtime = match tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                {
-                    Ok(runtime) => runtime,
-                    Err(error) => {
-                        tracing::error!(%error, "failed to start repo change listener runtime");
-                        return;
-                    }
-                };
-                runtime.block_on(async move {
-                    loop {
-                        if let Err(error) =
-                            listen_for_repo_changes(&database_url, Arc::clone(&on_payload)).await
-                        {
-                            tracing::warn!(%error, "repo change listener disconnected");
-                            tokio::time::sleep(RECONNECT_DELAY).await;
-                        }
-                    }
-                });
-            })?;
-        Ok(())
+        on_payload: impl Fn(String) + Send + 'static,
+    ) -> Result<RepoChangeListener, PostgresError> {
+        let database_url = self.postgres_database_url.clone().ok_or_else(|| {
+            PostgresError::internal_message("repo change listener requires a PostgreSQL URL")
+        })?;
+        let listener = subscribe(&database_url).await.map_err(|error| {
+            PostgresError::unavailable(format!("subscribing to repo changes: {error}"))
+        })?;
+        let task = tokio::spawn(receive_repo_changes(database_url, listener, on_payload));
+        Ok(RepoChangeListener {
+            task: Mutex::new(Some(task)),
+        })
     }
 
     pub fn queue_repo_change_notification(&self, payload: String) -> Result<(), PostgresError> {
@@ -119,22 +130,75 @@ async fn notify_together(
     Ok(())
 }
 
-async fn listen_for_repo_changes(
-    database_url: &str,
-    on_payload: PayloadHandler,
-) -> Result<(), sqlx::Error> {
-    let mut listener = sqlx::postgres::PgListener::connect(database_url).await?;
+async fn subscribe(database_url: &str) -> Result<PgListener, sqlx::Error> {
+    let mut listener = PgListener::connect(database_url).await?;
     listener.listen(POSTGRES_REPO_CHANGE_CHANNEL).await?;
+    Ok(listener)
+}
+
+async fn receive_repo_changes(
+    database_url: Arc<str>,
+    mut listener: PgListener,
+    on_payload: impl Fn(String),
+) {
     loop {
-        let notification = listener.recv().await?;
-        on_payload(notification.payload().to_string());
+        match listener.recv().await {
+            Ok(notification) => on_payload(notification.payload().to_string()),
+            Err(error) => {
+                tracing::warn!(%error, "repo change listener disconnected");
+                listener = resubscribe(&database_url).await;
+            }
+        }
+    }
+}
+
+async fn resubscribe(database_url: &str) -> PgListener {
+    loop {
+        tokio::time::sleep(RECONNECT_DELAY).await;
+        match subscribe(database_url).await {
+            Ok(listener) => return listener,
+            Err(error) => tracing::warn!(%error, "repo change listener failed to resubscribe"),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::db::{MetadataStore, TestDatabaseTarget};
-    use std::time::Duration;
+    use crate::db::{MetadataStore, RepositoryStore, TestDatabaseTarget};
+    use std::{sync::Arc, time::Duration};
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    async fn listener_is_ready_only_once_subscribed_and_stops_on_shutdown() {
+        let target = TestDatabaseTarget::required().unwrap();
+        let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
+        let unreachable = RepositoryStore {
+            postgres_database_url: Some(Arc::from("postgres://scope@127.0.0.1:1/scope")),
+            ..store.repositories()
+        };
+        assert!(unreachable.listen_for_repo_changes(|_| {}).await.is_err());
+
+        let (received, mut payloads) = mpsc::unbounded_channel();
+        let listener = store
+            .repositories()
+            .listen_for_repo_changes(move |payload| received.send(payload).unwrap())
+            .await
+            .unwrap();
+        store
+            .repositories()
+            .queue_repo_change_notification("ready".to_string())
+            .unwrap();
+        let payload = tokio::time::timeout(Duration::from_secs(4), payloads.recv())
+            .await
+            .unwrap();
+        assert_eq!(payload.as_deref(), Some("ready"));
+
+        listener.shutdown().await;
+        assert_eq!(
+            payloads.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected)
+        );
+    }
 
     #[tokio::test]
     async fn queued_notifications_reach_listeners_in_order() {

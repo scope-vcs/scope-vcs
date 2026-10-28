@@ -19,7 +19,7 @@ use crate::{
         run_caches::RunCacheStorage,
     },
 };
-use scope_postgres::db::MetadataStore;
+use scope_postgres::db::{MetadataStore, RepoChangeListener};
 use scope_product_analytics::{EventSource, ProductAnalytics};
 use scope_storage::GitSegmentStore;
 use scope_storage::ObjectStore;
@@ -43,6 +43,7 @@ pub struct AppState {
     pub(crate) dispatch_broker_token: Option<Arc<str>>,
     pub(crate) product_analytics: ProductAnalytics,
     pub(crate) repo_events: RepoChangeBus,
+    pub(crate) repo_change_listener: Option<Arc<RepoChangeListener>>,
     pub(crate) push_intent_signing_key: Arc<[u8]>,
     pub(crate) repository_engine: Arc<RepositoryEngine>,
     pub(crate) git_public_url: Arc<str>,
@@ -120,24 +121,28 @@ impl AppState {
             media_grants: MediaGrantIssuer::from_env()?,
             product_analytics: ProductAnalytics::from_env(EventSource::Api).await?,
             git_public_url,
-        })?;
+        })
+        .await?;
         best_effort_drain_pending_repo_storage_deletions(&state).await;
         Ok(state)
     }
 
-    pub(crate) fn connect(services: AppServices) -> anyhow::Result<Self> {
+    pub(crate) async fn connect(services: AppServices) -> anyhow::Result<Self> {
+        let integrations = Integrations::from_env()?;
         let repo_events = RepoChangeBus::default();
         let listener_bus = repo_events.clone();
-        services
+        let repo_change_listener = services
             .metadata
             .repositories()
-            .start_repo_change_listener(move |payload| {
+            .listen_for_repo_changes(move |payload| {
                 listener_bus.publish_notification_payload(&payload)
-            })?;
+            })
+            .await?;
         Ok(Self::assemble(
             services,
-            Integrations::from_env()?,
+            integrations,
             repo_events,
+            Some(Arc::new(repo_change_listener)),
         ))
     }
 
@@ -145,6 +150,7 @@ impl AppState {
         services: AppServices,
         integrations: Integrations,
         repo_events: RepoChangeBus,
+        repo_change_listener: Option<Arc<RepoChangeListener>>,
     ) -> Self {
         let AppServices {
             storage,
@@ -171,6 +177,7 @@ impl AppState {
             dispatch_broker_token: integrations.dispatch_broker_token,
             product_analytics,
             repo_events,
+            repo_change_listener,
             push_intent_signing_key: storage.push_intent_signing_key,
             repository_engine: storage.repository_engine,
             git_public_url: Arc::from(git_public_url),
@@ -182,7 +189,10 @@ impl AppState {
         }
     }
 
-    pub async fn shutdown_product_analytics(&self) {
+    pub async fn shutdown(&self) {
+        if let Some(listener) = &self.repo_change_listener {
+            listener.shutdown().await;
+        }
         self.product_analytics.shutdown().await;
     }
 
@@ -201,6 +211,7 @@ impl AppState {
             },
             Integrations::for_tests(),
             RepoChangeBus::default(),
+            None,
         )
     }
 
