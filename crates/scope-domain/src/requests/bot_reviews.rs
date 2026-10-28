@@ -151,8 +151,7 @@ fn bot_state(
         signals.iter().any(|signal| {
             matches!(signal, GitHubReviewBotSignal::Reacted { reaction, at_unix, .. }
                 if *reaction == wanted
-                    && (wanted == GitHubBotReaction::Eyes
-                        || head_delivered_at_unix.is_some_and(|delivered| *at_unix > delivered)))
+                    && head_delivered_at_unix.is_some_and(|delivered| *at_unix > delivered))
         })
     };
     let working = || {

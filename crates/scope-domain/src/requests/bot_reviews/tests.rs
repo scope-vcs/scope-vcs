@@ -243,6 +243,13 @@ fn a_bot_is_done_after_reviewing_the_head_or_approving_after_it_was_pushed() {
     assert_eq!(state(&[], GREPTILE), GitHubReviewBotState::NotStarted);
     assert_eq!(
         state(&[reacted(GREPTILE, GitHubBotReaction::Eyes, 1)], GREPTILE),
+        GitHubReviewBotState::NotStarted
+    );
+    assert_eq!(
+        state(
+            &[reacted(GREPTILE, GitHubBotReaction::Eyes, PUSHED_AT + 1)],
+            GREPTILE
+        ),
         GitHubReviewBotState::Working
     );
     assert_eq!(
@@ -300,7 +307,7 @@ fn a_bot_is_done_after_reviewing_the_head_or_approving_after_it_was_pushed() {
         state(
             &[
                 reacted("octo-reviewer[bot]", GitHubBotReaction::ThumbsUp, PUSHED_AT),
-                reacted(GREPTILE, GitHubBotReaction::Eyes, 1),
+                reacted(GREPTILE, GitHubBotReaction::Eyes, PUSHED_AT + 1),
             ],
             GREPTILE
         ),
@@ -394,6 +401,11 @@ fn a_required_bot_that_never_starts_on_the_requested_head_stops_holding_after_th
     );
     assert_eq!(
         state_at(&[], &requested, deadline),
+        GitHubReviewBotState::TimedOut
+    );
+    let stale_eyes = reacted(CODEX, GitHubBotReaction::Eyes, PUSHED_AT - 1);
+    assert_eq!(
+        state_at(std::slice::from_ref(&stale_eyes), &requested, deadline),
         GitHubReviewBotState::TimedOut
     );
     let eyes = reacted(CODEX, GitHubBotReaction::Eyes, deadline + 60);
