@@ -20,8 +20,9 @@ pub use view_paths::{PathHistory, RequestViewPathError, RequestViewPaths};
 mod bot_reviews;
 pub use bot_reviews::{
     CodexReviewState, GitHubBotReaction, GitHubReviewBotSignal, GitHubReviewBotState,
-    GitHubReviewBotStatus, RequestBotReviews, RequestReviewsOutcome, github_review_bot_statuses,
-    github_reviews_awaiting_import, request_reviews_outcome,
+    GitHubReviewBotStatus, REVIEW_BOT_START_DEADLINE_SECS, RequestBotReviews,
+    RequestReviewsOutcome, github_review_bot_statuses, github_reviews_awaiting_import,
+    request_reviews_outcome,
 };
 pub mod merge_gate;
 pub use merge_gate::{
@@ -52,8 +53,8 @@ pub use checks::{
     GitHubCheckTarget, GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestJobState,
     GitHubPullRequestObservation, GitHubPullRequestState, GitHubPullRequestStatus,
     GitHubPullRequestStatusState, GitHubPullRequestStep, GitHubPush, GitHubPushDestination,
-    GitHubPushState, GitHubPushStatus, GitHubRequestChecks, GitHubTestedCommit,
-    NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, OpenedGitHubPullRequest,
+    GitHubPushState, GitHubPushStatus, GitHubRequestChecks, GitHubReviewRequest,
+    GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, OpenedGitHubPullRequest,
     PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
     RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
     RequestCheckReviewer, RequestChecksOutcome, carrier_may_change, carrier_pull_request_intent,

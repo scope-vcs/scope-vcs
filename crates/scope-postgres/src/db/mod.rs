@@ -182,6 +182,7 @@ pub use maintenance::{
 pub use merge_turns::RepositoryMergeTurn;
 pub use native_runs::{NativeRunsAccountListing, NativeRunsAddition, NativeRunsWithdrawal};
 pub use outbox::{OutboxCreatedRun, OutboxJobCounts, OutboxRunSummary};
+pub use repo_change_notifications::RepoChangeListener;
 pub use repo_collaboration::{
     CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
     RepositoryCollaborationMutation, RepositoryCollaborationRead,

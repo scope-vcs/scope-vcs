@@ -665,7 +665,7 @@ number: number | null, url: string | null,
  */
 error: string | null, };
 
-export type RequestReviewBotState = "not_started" | "working" | "commented" | "clear";
+export type RequestReviewBotState = "not_started" | "working" | "commented" | "clear" | "timed_out";
 
 export type RequestReviewBotResponse = { login: string,
 /**

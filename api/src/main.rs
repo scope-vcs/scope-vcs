@@ -58,7 +58,7 @@ async fn serve(addr: SocketAddr, state: AppState) -> anyhow::Result<()> {
         .await
         .context("serving api");
     background_work.shutdown().await;
-    shutdown_state.shutdown_product_analytics().await;
+    shutdown_state.shutdown().await;
 
     result
 }

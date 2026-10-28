@@ -78,6 +78,7 @@ pub async fn app_state_from_env() -> anyhow::Result<AppState> {
         product_analytics: ProductAnalytics::disabled(),
         git_public_url,
     })
+    .await
 }
 
 pub(crate) async fn create_bench_cli_session(

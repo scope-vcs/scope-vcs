@@ -13,8 +13,8 @@ use crate::error::PostgresError;
 use scope_domain::{
     github_connection::GitHubConnection,
     requests::{
-        GitHubPullRequest, GitHubPullRequestIntent, GitHubPushDestination, OpenedGitHubPullRequest,
-        Request, carrier_pull_request_intent, closes_carrier_pull_request,
+        GitHubPullRequest, GitHubPullRequestIntent, GitHubPushDestination, GitHubReviewRequest,
+        OpenedGitHubPullRequest, Request, carrier_pull_request_intent, closes_carrier_pull_request,
         retains_request_branch_for_carrier,
     },
 };
@@ -22,7 +22,8 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Tran
 
 const SELECT_PULL_REQUEST: &str = "request_id, repo_id, installation_id, github_repository_id, \
     github_full_name, intent, intent_base, intent_head_oid, intent_sequence, number, url, base, \
-    state, commented_head_oid, job_state, attempts, last_error, written_text_sha256";
+    state, commented_head_oid, commented_at_unix, job_state, attempts, last_error, \
+    written_text_sha256";
 
 const REQUEUE: &str = "intent_sequence = pull_request.intent_sequence + 1,
     job_state = CASE WHEN pull_request.job_state = 'running' THEN 'running' ELSE 'queued' END,
@@ -46,6 +47,7 @@ struct PullRequestRow {
     base: Option<String>,
     state: Option<String>,
     commented_head_oid: Option<String>,
+    commented_at_unix: Option<i64>,
     job_state: String,
     attempts: i32,
     last_error: Option<String>,
@@ -148,16 +150,16 @@ impl RequestStore {
                 DatabaseBackend::Postgres,
                 format!(
                     "UPDATE scope_github_pull_requests pull_request SET {RECORDED},
-                        written_text_sha256 = $15,
-                        job_state = CASE WHEN intent_sequence <> $8 THEN 'queued' ELSE $9 END,
-                        attempts = CASE WHEN intent_sequence <> $8 THEN 0 ELSE attempts END,
-                        next_attempt_at_unix = CASE WHEN intent_sequence <> $8 THEN $12
-                            ELSE coalesce($10, next_attempt_at_unix) END,
-                        last_error = CASE WHEN intent_sequence <> $8 THEN NULL ELSE $11 END,
+                        written_text_sha256 = $16,
+                        job_state = CASE WHEN intent_sequence <> $9 THEN 'queued' ELSE $10 END,
+                        attempts = CASE WHEN intent_sequence <> $9 THEN 0 ELSE attempts END,
+                        next_attempt_at_unix = CASE WHEN intent_sequence <> $9 THEN $13
+                            ELSE coalesce($11, next_attempt_at_unix) END,
+                        last_error = CASE WHEN intent_sequence <> $9 THEN NULL ELSE $12 END,
                         lease_until_unix = NULL, claim_token = NULL,
-                        updated_at_unix = greatest($12, updated_at_unix)
-                      WHERE request_id = $1 AND claim_token = $7 AND job_state = 'running'
-                        AND installation_id = $13 AND github_repository_id = $14"
+                        updated_at_unix = greatest($13, updated_at_unix)
+                      WHERE request_id = $1 AND claim_token = $8 AND job_state = 'running'
+                        AND installation_id = $14 AND github_repository_id = $15"
                 ),
                 values,
             ))
@@ -227,7 +229,8 @@ impl RequestStore {
     }
 }
 
-const RECORDED: &str = "number = $2, url = $3, base = $4, state = $5, commented_head_oid = $6";
+const RECORDED: &str = "number = $2, url = $3, base = $4, state = $5, commented_head_oid = $6,
+    commented_at_unix = $7";
 
 fn recorded_values(carrier: &GitHubPullRequest) -> Result<Vec<sea_orm::Value>, PostgresError> {
     let opened = carrier.pull_request.as_ref();
@@ -243,7 +246,17 @@ fn recorded_values(carrier: &GitHubPullRequest) -> Result<Vec<sea_orm::Value>, P
             .map(|opened| encode_enum(opened.state))
             .transpose()?
             .into(),
-        carrier.commented_head_oid.clone().into(),
+        carrier
+            .review_request
+            .as_ref()
+            .map(|request| request.head_oid.clone())
+            .into(),
+        carrier
+            .review_request
+            .as_ref()
+            .map(|request| u64_to_i64(request.at_unix, "GitHub review request time"))
+            .transpose()?
+            .into(),
     ])
 }
 
@@ -306,6 +319,8 @@ pub(super) async fn queue_carrier_for_pushed_head<C: ConnectionTrait>(
                 state = CASE WHEN {SAME_REPOSITORY} THEN pull_request.state END,
                 commented_head_oid = CASE WHEN {SAME_REPOSITORY}
                     THEN pull_request.commented_head_oid END,
+                commented_at_unix = CASE WHEN {SAME_REPOSITORY}
+                    THEN pull_request.commented_at_unix END,
                 written_text_sha256 = CASE WHEN {SAME_REPOSITORY}
                     THEN pull_request.written_text_sha256 END,
                 intent = 'open', intent_base = EXCLUDED.intent_base,
@@ -520,7 +535,18 @@ impl PullRequestRow {
             intent,
             intent_sequence: i64_to_u64(self.intent_sequence, "GitHub pull request intent")?,
             pull_request,
-            commented_head_oid: self.commented_head_oid,
+            review_request: match (self.commented_head_oid, self.commented_at_unix) {
+                (Some(head_oid), Some(at_unix)) => Some(GitHubReviewRequest {
+                    head_oid,
+                    at_unix: i64_to_u64(at_unix, "GitHub review request time")?,
+                }),
+                (None, None) => None,
+                _ => {
+                    return Err(PostgresError::internal_message(
+                        "GitHub review request record is inconsistent",
+                    ));
+                }
+            },
             job_state: decode_enum(self.job_state)?,
             attempts: i32_to_u32(self.attempts, "GitHub pull request attempts")?,
             last_error: self.last_error,

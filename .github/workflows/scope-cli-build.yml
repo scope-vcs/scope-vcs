@@ -56,12 +56,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install reviewed Git on Linux
-        run: |
-          version="$(jq -er '.git.version' dev/tool-versions.json)"
-          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
-          sudo bash .github/scripts/use-ubuntu-apt-sources.sh
-          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
-          echo /opt/git/bin >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-reviewed-git
 
       - name: Verify host Git version
         run: node dev/check-git-version.mjs
@@ -98,12 +93,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install reviewed Git on Linux
-        run: |
-          version="$(jq -er '.git.version' dev/tool-versions.json)"
-          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
-          sudo bash .github/scripts/use-ubuntu-apt-sources.sh
-          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
-          echo /opt/git/bin >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-reviewed-git
 
       - name: Verify host Git version
         run: node dev/check-git-version.mjs
@@ -145,12 +135,7 @@ jobs:
 
       - name: Install reviewed Git on Linux
         if: runner.os == 'Linux'
-        run: |
-          version="$(jq -er '.git.version' dev/tool-versions.json)"
-          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
-          sudo bash .github/scripts/use-ubuntu-apt-sources.sh
-          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
-          echo /opt/git/bin >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-reviewed-git
 
       - name: Install Git 2.55 or newer on macOS
         if: runner.os == 'macOS'

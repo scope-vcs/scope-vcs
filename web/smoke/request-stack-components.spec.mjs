@@ -1,37 +1,10 @@
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import tailwindcss from '@tailwindcss/vite'
-
-const require = createRequire(import.meta.url)
+import { launchBrowser, startFixtureServer } from './support/fixture-server.mjs'
 
 test('same-view stack comparisons render child layers at the parent pin without parent file leakage', async (t) => {
-  const cacheDir = await mkdtemp(join(tmpdir(), 'scope-vite-request-stack-'))
-  t.after(() => rm(cacheDir, { recursive: true, force: true }))
-  const server = await createServer({
-    cacheDir, configFile: false,
-    root: fileURLToPath(new URL('./fixtures/request-stack', import.meta.url)),
-    plugins: [tailwindcss()],
-    server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('..', import.meta.url))] } },
-    resolve: { alias: [
-      { find: '@', replacement: fileURLToPath(new URL('../src', import.meta.url)) },
-      ...['react/jsx-dev-runtime', 'react/jsx-runtime', 'react-dom/client', 'react']
-        .map((name) => ({ find: name, replacement: require.resolve(name) })),
-    ] },
-    oxc: { jsx: { runtime: 'automatic' } },
-  })
-  t.after(() => server.close())
-  await server.listen()
-  await server.environments.client.warmupRequest('/entry.tsx')
-  await server.waitForRequestsIdle()
-  const browser = await chromium.launch({ headless: true })
-  t.after(() => browser.close())
+  const server = await startFixtureServer(t, 'request-stack', { tailwind: true })
+  const browser = await launchBrowser(t)
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   page.setDefaultTimeout(10_000)
   async function captureComparison(name) {

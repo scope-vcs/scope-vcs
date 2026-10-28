@@ -118,7 +118,7 @@ const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
-  /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_(process|stack)\.py|install-test-postgres\.sh)$/,
+  /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.sh)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
   /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
@@ -538,7 +538,7 @@ test('a Scope request revision reuses an open pull request run, waiting briefly 
     try {
       writeFileSync(resolve(dir, 'pulls'), pulls.join('\n') + '\n');
       writeFileSync(resolve(dir, 'runs'), runs.join('\n') + '\n');
-      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\nanswer() { n=$(cat "${dir}/$1.count" 2>/dev/null || echo 0); echo $((n + 1)) > "${dir}/$1.count"; line=$((n + 1)); total=$(wc -l < "${dir}/$1"); sed -n "$(( line < total ? line : total ))p" "${dir}/$1"; }\ncase "$2" in\n  */pulls) answer pulls ;;\n  */runs*) answer runs ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
+      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\nanswer() { n=$(cat "${dir}/$1.count" 2>/dev/null || echo 0); echo $((n + 1)) > "${dir}/$1.count"; line=$((n + 1)); total=$(wc -l < "${dir}/$1"); reply=$(sed -n "$(( line < total ? line : total ))p" "${dir}/$1"); [[ "$reply" == error ]] && exit 1; echo "$reply"; }\ncase "$2" in\n  */pulls) answer pulls ;;\n  */runs*) answer runs ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
       writeFileSync(resolve(dir, 'sleep'), `#!/bin/sh\necho "$1" >> "${dir}/slept"\n`, { mode: 0o755 });
       const output = resolve(dir, 'output');
       const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
@@ -556,6 +556,8 @@ test('a Scope request revision reuses an open pull request run, waiting briefly 
   assert.deepEqual(find({ pulls: ['', '7'], runs: ['', '123'] }), { output: 'number=7\n', slept: 2 }, 'the pull request and its run can appear after the push');
   assert.deepEqual(find({ pulls: [''] }), { output: 'number=\n', slept: 7 });
   assert.deepEqual(find({ runs: [''] }), { output: 'number=\n', slept: 7 }, 'a pull request with conflicts never gets a run to wait for');
+  assert.deepEqual(find({ pulls: ['error', '7'] }), { output: 'number=7\n', slept: 1 }, 'a failed pull request lookup moves on to the next attempt');
+  assert.deepEqual(find({ runs: ['error', '123'] }), { output: 'number=7\n', slept: 1 }, 'a failed run lookup moves on to the next attempt');
 });
 
 test('validation gate allows unselected jobs and reused artifacts but fails selected jobs and cancellation', () => {

@@ -41,6 +41,7 @@ async fn open_carrier(store: &MetadataStore, request_id: &str, number: u64) {
         "main".into(),
         None,
     );
+    carrier.record_commented(oid('a'), 11);
     assert!(
         store
             .requests()
@@ -122,6 +123,10 @@ async fn open_carriers_of_repositories_with_bots_are_reconciled_until_the_next_d
             github_repository_id: 42,
             github_full_name: "octo/checks-42".into(),
             number: 5,
+            review_request: Some(GitHubReviewRequest {
+                head_oid: oid('a'),
+                at_unix: 11,
+            }),
         }]
     );
     assert!(due(&store, 119).await.is_empty());
@@ -164,6 +169,15 @@ async fn open_carriers_of_repositories_with_bots_are_reconciled_until_the_next_d
     );
     assert!(due(&store, 499).await.is_empty());
     assert_eq!(bot_reviews(&store).await.statuses, working);
+
+    let timed_out = [status("greptile-apps[bot]", GitHubReviewBotState::TimedOut)];
+    assert!(
+        requests
+            .finish_github_review_bot_reconcile(&claimed[0], Some(&timed_out), 500, 25)
+            .await
+            .unwrap()
+    );
+    assert_eq!(bot_reviews(&store).await.statuses, timed_out);
 }
 
 #[tokio::test]

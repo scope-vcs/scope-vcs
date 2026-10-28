@@ -93,6 +93,7 @@ test('request CI states its count once, names workflows only when several share 
     { login: 'chatgpt-codex-connector[bot]', required: false, state: 'commented' },
     { login: 'octo-reviewer[bot]', required: true, state: 'clear' },
     { login: 'lint-bot[bot]', required: false, state: 'not_started' },
+    { login: 'quiet-bot[bot]', required: true, state: 'timed_out' },
   ]))
   assert.deepEqual(
     await checks.getByRole('list', { name: 'Review bots', exact: true }).getByRole('listitem').allTextContents(),
@@ -101,6 +102,7 @@ test('request CI states its count once, names workflows only when several share 
       'chatgpt-codex-connector[bot]Finished with comments',
       'octo-reviewer[bot]requiredFinished, nothing found',
       'lint-bot[bot]Not started',
+      'quiet-bot[bot]requiredDidn’t start · advisory',
     ],
   )
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
