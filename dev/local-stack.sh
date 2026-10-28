@@ -28,7 +28,7 @@ tailnet_host() {
 slot_tailnet_origin() {
   local port="$1" host
   host="$(cat "$TAILNET_FILE" 2>/dev/null || true)"
-  if [[ -n "$host" ]]; then
+  if [[ -n "$host" ]] && grep -qx "$port" "$TAILNET_PORTS_FILE" 2>/dev/null; then
     printf 'https://%s:%s\n' "$host" "$((TAILNET_PORT_OFFSET + port))"
   fi
 }

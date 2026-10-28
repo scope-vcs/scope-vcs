@@ -50,6 +50,7 @@ case "$ACTION" in
     ;;
   slot) echo "$SLOT" ;;
   origin) slot_tailnet_origin "$WEB_PORT" ;;
+  media-origin) slot_tailnet_origin "$MEDIA_PORT" ;;
   database) isolated_database url ;;
   release) release_isolated_stack ;;
 esac
@@ -185,6 +186,8 @@ class LocalStackClaimTests(unittest.TestCase):
 
         self.assertEqual(self.tailscale_commands(),
                          [f"{root}: tailscale serve --bg --https=48090 http://127.0.0.1:8090"])
+        self.assertEqual(self.run_stack("origin", root).stdout.strip(), "")
+        self.assertEqual(self.run_stack("media-origin", root).stdout.strip(), "")
 
     def test_a_partly_published_slot_can_still_remove_its_tailnet_ports(self):
         root = self.worktree("partial")
