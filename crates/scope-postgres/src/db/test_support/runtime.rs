@@ -16,9 +16,20 @@ pub(super) fn run_test_future<R: Send + 'static>(
 ) -> R {
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     test_runtime().spawn(async move {
-        let mut future = Box::pin(future);
+        let mut future = Some(Box::pin(future));
         let outcome = std::future::poll_fn(|cx| {
-            match std::panic::catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(cx))) {
+            PANIC_LOCATION.set(None);
+            let polled = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                let running = future
+                    .as_mut()
+                    .expect("a finished test database future is not polled again");
+                let poll = running.as_mut().poll(cx);
+                if poll.is_ready() {
+                    future = None;
+                }
+                poll
+            }));
+            match polled {
                 Ok(poll) => poll.map(Ok),
                 Err(payload) => Poll::Ready(Err(panic_report(payload))),
             }
@@ -66,7 +77,9 @@ fn panic_report(payload: Box<dyn Any + Send>) -> String {
         .downcast_ref::<&str>()
         .copied()
         .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-        .unwrap_or("non-string panic payload");
+        .unwrap_or("non-string panic payload")
+        .to_owned();
+    std::mem::forget(payload);
     format!("{location}: {message}")
 }
 
@@ -87,6 +100,31 @@ mod tests {
         assert!(
             message.starts_with(&format!("test database future panicked at {location}"))
                 && message.ends_with(": future failed for its own reason"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn run_test_future_reports_a_panic_while_dropping_a_finished_future() {
+        struct ReadyThenPanicsOnDrop;
+        impl Future for ReadyThenPanicsOnDrop {
+            type Output = ();
+            fn poll(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> Poll<()> {
+                Poll::Ready(())
+            }
+        }
+        impl Drop for ReadyThenPanicsOnDrop {
+            fn drop(&mut self) {
+                panic!("finished future failed while dropping");
+            }
+        }
+
+        let payload =
+            std::panic::catch_unwind(|| run_test_future(ReadyThenPanicsOnDrop)).unwrap_err();
+
+        let message = payload.downcast_ref::<String>().unwrap();
+        assert!(
+            message.ends_with(": finished future failed while dropping"),
             "{message}"
         );
     }
