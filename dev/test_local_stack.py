@@ -27,6 +27,7 @@ tailnet_host() {
   echo "${TAILNET_HOST:-}"
 }
 tailscale() {
+  [[ -z "${TAILSCALE_FAILS:-}" || "$*" != *"$TAILSCALE_FAILS"* ]] || return 1
   echo "$ROOT: tailscale $*" >> "$TAILSCALE_LOG"
 }
 local_database_url() {
@@ -177,6 +178,24 @@ class LocalStackClaimTests(unittest.TestCase):
                          [f"{replacement}: tailscale serve --https={port} off" for port in (43010, 48090, 48093)])
         self.assertEqual(self.run_stack("origin", replacement).stdout.strip(), "")
         self.assertFalse((self.runtime / "scope-dev-stacks/slot-1").exists())
+
+    def test_tailnet_ports_cover_only_the_services_the_stack_starts(self):
+        root = self.worktree("no-media")
+        self.claimed(root, TAILNET_HOST="host.tailnet.ts.net", WITH_MEDIA="0", SCOPE_DEV_HEADLESS_E2E="1")
+
+        self.assertEqual(self.tailscale_commands(),
+                         [f"{root}: tailscale serve --bg --https=48090 http://127.0.0.1:8090"])
+
+    def test_a_partly_published_slot_can_still_remove_its_tailnet_ports(self):
+        root = self.worktree("partial")
+        result = self.claim(root, TAILNET_HOST="host.tailnet.ts.net", TAILSCALE_FAILS="--https=48093")
+        self.assertNotEqual(result.returncode, 0)
+        self.tailscale_log.unlink()
+
+        self.release(root)
+
+        self.assertEqual(self.tailscale_commands(),
+                         [f"{root}: tailscale serve --https={port} off" for port in (43010, 48090)])
 
     def test_a_startup_that_outlived_its_claim_cannot_recreate_the_replacement_database(self):
         stale, replacement = self.worktree("stale"), self.worktree("replacement")

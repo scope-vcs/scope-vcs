@@ -3,6 +3,7 @@
 SLOT_FILE="$STATE_DIR/slot"
 CLAIM_FILE="$STATE_DIR/claim"
 TAILNET_FILE="$STATE_DIR/tailnet-host"
+TAILNET_PORTS_FILE="$STATE_DIR/tailnet-ports"
 TAILNET_PORT_OFFSET=40000
 STACKS_DIR="${XDG_RUNTIME_DIR:-/tmp}/scope-dev-stacks"
 ISOLATED_SLOTS=(1 2)
@@ -32,24 +33,35 @@ slot_tailnet_origin() {
   fi
 }
 
+slot_served_ports() {
+  if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
+    echo "$WEB_PORT"
+  fi
+  echo "$API_PORT"
+  if (( WITH_MEDIA )); then
+    echo "$MEDIA_PORT"
+  fi
+}
+
 serve_slot_tailnet() {
   local host port
   host="$(tailnet_host)"
   [[ -n "$host" ]] || return 0
-  for port in "$WEB_PORT" "$API_PORT" "$MEDIA_PORT"; do
-    tailscale serve --bg --https="$((TAILNET_PORT_OFFSET + port))" "http://127.0.0.1:$port" >/dev/null
-  done
   printf '%s\n' "$host" > "$TAILNET_FILE"
+  for port in $(slot_served_ports); do
+    tailscale serve --bg --https="$((TAILNET_PORT_OFFSET + port))" "http://127.0.0.1:$port" >/dev/null
+    printf '%s\n' "$port" >> "$TAILNET_PORTS_FILE"
+  done
 }
 
 unserve_slot_tailnet() {
   local port
-  [[ -f "$TAILNET_FILE" ]] || return 0
-  for port in "$WEB_PORT" "$API_PORT" "$MEDIA_PORT"; do
+  [[ -f "$TAILNET_PORTS_FILE" ]] || return 0
+  while read -r port; do
     if ! tailscale serve --https="$((TAILNET_PORT_OFFSET + port))" off >/dev/null; then
       echo "could not remove tailnet port $((TAILNET_PORT_OFFSET + port)); run tailscale serve --https=$((TAILNET_PORT_OFFSET + port)) off" >&2
     fi
-  done
+  done < "$TAILNET_PORTS_FILE"
 }
 
 recorded_slot() {
@@ -192,7 +204,7 @@ release_isolated_stack() {
   if (( SLOT != 0 )); then
     with_stacks_lock release_owned_slot
   fi
-  rm -f -- "$SLOT_FILE" "$CLAIM_FILE" "$TAILNET_FILE"
+  rm -f -- "$SLOT_FILE" "$CLAIM_FILE" "$TAILNET_FILE" "$TAILNET_PORTS_FILE"
   CLAIM_TOKEN=""
   use_slot 0
 }

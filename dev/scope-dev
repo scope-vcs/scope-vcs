@@ -607,8 +607,8 @@ up() {
   release_isolated_stack
   if (( ISOLATED )); then
     assert_command psql
-    claim_isolated_slot
     trap down EXIT
+    claim_isolated_slot
   fi
   assert_port_free "$API_PORT" "api"
   assert_port_free "$WORKER_PORT" "worker health"

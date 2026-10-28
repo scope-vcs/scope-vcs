@@ -37,7 +37,7 @@ def source_identity(root):
     with tempfile.TemporaryDirectory(prefix="scope-dev-index-") as temp:
         scratch = Path(temp) / "index"
         if Path(index).is_file():
-            shutil.copyfile(index, scratch)
+            shutil.copy2(index, scratch)
         env = {**os.environ, "GIT_INDEX_FILE": str(scratch)}
         if git(root, "add", "--all", env=env) is None:
             return None
@@ -308,9 +308,11 @@ def change_failures(root, build, current, change):
     commit = git(root, "rev-parse", "--verify", f"{change}^{{commit}}")
     if commit is None:
         return [f"{change} is not a commit in this checkout"]
-    return [f"the {label} at {head[:12]} does not contain {commit[:12]}"
-            for label, head in (("running build", build["source"]["head"]), ("checkout", current["head"]))
-            if git(root, "merge-base", "--is-ancestor", commit, head) is None]
+    identities = (("running build", build["source"]), ("checkout", current))
+    return [f"the {label} has uncommitted changes, so it cannot be shown to contain {commit[:12]}"
+            if identity["uncommitted"] else f"the {label} at {identity['head'][:12]} does not contain {commit[:12]}"
+            for label, identity in identities
+            if identity["uncommitted"] or git(root, "merge-base", "--is-ancestor", commit, identity["head"]) is None]
 
 
 def verify(args):

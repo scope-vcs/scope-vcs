@@ -144,6 +144,12 @@ class LocalIdentityTests(unittest.TestCase):
         self.assertIn("the stack does not serve the checkout: HEAD is 1 commits ahead of the running build",
                       stale.stdout)
         self.assertEqual(self.verify(first).returncode, 0)
+        (self.root / "app.txt").write_text("one\n")
+        undone = self.verify(second)
+        self.assertEqual(undone.returncode, 1)
+        self.assertIn(f"the checkout has uncommitted changes, so it cannot be shown to contain {second[:12]}",
+                      undone.stdout)
+        self.git("checkout", "--", "app.txt")
         missing = self.verify(second)
         self.assertIn(f"the running build at {first[:12]} does not contain {second[:12]}", missing.stdout)
         self.assertNotIn("the checkout at", missing.stdout)
