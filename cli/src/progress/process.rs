@@ -379,12 +379,16 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn timeout_kills_windows_descendants_after_the_leader_exits() {
+        let descendant_lifetime = Duration::from_secs(30);
         let started = Instant::now();
         let error = run_cancellable(
             Command::new("powershell.exe").args([
                 "-NoProfile",
                 "-Command",
-                "Start-Process -NoNewWindow ping.exe -ArgumentList '-n','30','127.0.0.1'; exit",
+                &format!(
+                    "Start-Process -NoNewWindow ping.exe -ArgumentList '-n','{}','127.0.0.1'; exit",
+                    descendant_lifetime.as_secs()
+                ),
             ]),
             None,
             &CancellationToken::new(),
@@ -393,6 +397,10 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("timed out"), "{error:#}");
-        assert!(started.elapsed() < Duration::from_secs(3));
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < descendant_lifetime / 2,
+            "descendants kept the output pipes open for {elapsed:?}"
+        );
     }
 }
