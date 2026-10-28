@@ -403,6 +403,20 @@ fn a_required_bot_that_never_starts_on_the_requested_head_stops_holding_after_th
         state_at(&[], &requested, deadline),
         GitHubReviewBotState::TimedOut
     );
+    let same_second_eyes = reacted(CODEX, GitHubBotReaction::Eyes, PUSHED_AT);
+    assert_eq!(
+        state_at(
+            std::slice::from_ref(&same_second_eyes),
+            &requested,
+            deadline
+        ),
+        GitHubReviewBotState::Working
+    );
+    let head_review = reviewed(CODEX, IMPORTED_REVIEW, HEAD);
+    assert_eq!(
+        state_at(std::slice::from_ref(&head_review), &requested, deadline),
+        GitHubReviewBotState::NotStarted
+    );
     let stale_eyes = reacted(CODEX, GitHubBotReaction::Eyes, PUSHED_AT - 1);
     assert_eq!(
         state_at(std::slice::from_ref(&stale_eyes), &requested, deadline),

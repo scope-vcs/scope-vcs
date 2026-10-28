@@ -106,7 +106,10 @@ pub fn github_review_bot_statuses(
             GitHubReviewBotStatus {
                 login: bot.login.as_str().to_string(),
                 head_oid: head_oid.to_string(),
-                state: if state == GitHubReviewBotState::NotStarted && start_deadline_passed {
+                state: if state == GitHubReviewBotState::NotStarted
+                    && start_deadline_passed
+                    && !signalled_head(&signals, head_oid)
+                {
                     GitHubReviewBotState::TimedOut
                 } else {
                     state
@@ -140,6 +143,16 @@ pub fn github_reviews_awaiting_import(
         .collect()
 }
 
+fn signalled_head(signals: &[&GitHubReviewBotSignal], head_oid: &str) -> bool {
+    signals.iter().any(|signal| match signal {
+        GitHubReviewBotSignal::Reviewed { commit_oid, .. } => commit_oid == head_oid,
+        GitHubReviewBotSignal::Commented { body, .. } => {
+            CodexReviewState::parse(body).is_some_and(|state| state.state_for(head_oid).is_some())
+        }
+        GitHubReviewBotSignal::Reacted { .. } => false,
+    })
+}
+
 fn bot_state(
     reports_state: bool,
     signals: &[&GitHubReviewBotSignal],
@@ -150,8 +163,11 @@ fn bot_state(
     let reacted = |wanted: GitHubBotReaction| {
         signals.iter().any(|signal| {
             matches!(signal, GitHubReviewBotSignal::Reacted { reaction, at_unix, .. }
-                if *reaction == wanted
-                    && head_delivered_at_unix.is_some_and(|delivered| *at_unix > delivered))
+            if *reaction == wanted
+                && head_delivered_at_unix.is_some_and(|delivered| match wanted {
+                    GitHubBotReaction::Eyes => *at_unix >= delivered,
+                    GitHubBotReaction::ThumbsUp => *at_unix > delivered,
+                }))
         })
     };
     let working = || {
