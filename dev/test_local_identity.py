@@ -185,7 +185,10 @@ class LocalIdentityTests(unittest.TestCase):
 
     def test_a_binary_replaced_after_the_build_is_not_the_built_revision(self):
         self.build()
-        self.build_binary()
+        built = self.binary.stat()
+        shutil.copyfile(sys.executable, self.binary)
+        os.utime(self.binary, ns=(built.st_atime_ns, built.st_mtime_ns + 1_000_000_000))
+        self.assertEqual(self.binary.stat().st_ino, built.st_ino)
         self.start_stack()
 
         failed = self.verify()

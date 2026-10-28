@@ -47,6 +47,10 @@ def source_identity(root):
     return {"head": head, "tree": tree, "uncommitted": tree != git(root, "rev-parse", "HEAD^{tree}")}
 
 
+def file_identity(stat):
+    return {"device": stat.st_dev, "inode": stat.st_ino, "size": stat.st_size, "modified_ns": stat.st_mtime_ns}
+
+
 def write_json(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
 
@@ -79,7 +83,7 @@ def build_finish(root, state, entries):
         name, _, binary = entry.partition("=")
         if binary:
             stat = os.stat(binary)
-            record["services"][name] = {"binary": binary, "device": stat.st_dev, "inode": stat.st_ino}
+            record["services"][name] = {"binary": binary, **file_identity(stat)}
         else:
             record["services"][name] = {"live": str(root / name)}
     write_json(state / BUILD_FILE, record)
@@ -185,7 +189,7 @@ class Service:
             stat = os.stat(f"/proc/{self.pid}/exe")
         except OSError:
             return "cannot read the running binary"
-        if (stat.st_dev, stat.st_ino) != (self.expected["device"], self.expected["inode"]):
+        if any(self.expected.get(key) != value for key, value in file_identity(stat).items()):
             return "the running binary is not the one up built"
         return None
 
