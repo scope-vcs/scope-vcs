@@ -66,11 +66,7 @@ jobs:
 
       - name: Install reviewed Git for staging smoke
         timeout-minutes: 5
-        run: |
-          version="$(jq -er '.git.version' dev/tool-versions.json)"
-          source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
-          sudo bash deploy/railway/install-git.sh "$version" "$source_sha256"
-          echo /opt/git/bin >> "$GITHUB_PATH"
+        uses: ./.github/actions/install-reviewed-git
 
       - name: Verify staging Git version
         run: node dev/check-git-version.mjs

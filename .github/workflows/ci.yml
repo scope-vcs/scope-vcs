@@ -37,10 +37,10 @@ jobs:
             (( attempt == 1 )) || sleep 30
             candidate="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
               .state == \"open\" and .head.sha == \"$SHA\" and .base.ref == \"main\" and
-              .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")][0].number // empty")"
+              .head.repo.full_name == \"$REPOSITORY\" and .user.login != \"dependabot[bot]\")][0].number // empty")" || continue
             [[ -n "$candidate" ]] || continue
             run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
-              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $candidate))][0].id // empty")"
+              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $candidate))][0].id // empty")" || continue
             if [[ -n "$run" ]]; then
               number="$candidate"
               break
