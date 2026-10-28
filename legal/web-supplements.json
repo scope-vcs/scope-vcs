@@ -67,17 +67,6 @@
     "web:@oxlint/binding-win32-x64-msvc@1.87.0": {
       "from_package": "web:oxlint@1.87.0"
     },
-    "web:@pierre/theming@0.0.1": {
-      "reason": "The checksum-verified package.json explicitly declares apache-2.0. No license file, repository URL, or copyright notice is supplied. Preserve published metadata and provide the standard Apache-2.0 terms. No copyright holder or year is inferred.",
-      "declared_metadata": true,
-      "documents": [
-        {
-          "path": "legal/upstream/apache-2.0.txt",
-          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
-          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
-        }
-      ]
-    },
     "web:@rolldown/binding-android-arm-eabi@1.2.13": {
       "from_package": "web:rolldown@1.2.13"
     },
