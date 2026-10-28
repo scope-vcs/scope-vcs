@@ -1,5 +1,5 @@
 use super::*;
-use reqwest::{StatusCode, blocking::Client};
+use reqwest::StatusCode;
 use std::{io::Write, net::TcpListener, thread};
 
 #[test]
@@ -7,7 +7,7 @@ fn list_requests_sends_the_opaque_cursor_as_a_query_parameter() {
     let (api_url, server) = serve_once(StatusCode::OK, r#"{"requests":[],"next_cursor":null}"#);
 
     let response = list_requests(
-        ApiSession::new(&Client::new(), &api_url, "token"),
+        ApiSession::new(&http_client_builder().build().unwrap(), &api_url, "token"),
         "owner",
         "repo",
         Some("next page/+"),
@@ -32,7 +32,7 @@ fn request_named_filters_by_the_exact_name_in_one_request() {
     let (api_url, server) = serve_once(StatusCode::OK, r#"{"requests":[],"next_cursor":null}"#);
 
     let found = request_named(
-        ApiSession::new(&Client::new(), &api_url, "token"),
+        ApiSession::new(&http_client_builder().build().unwrap(), &api_url, "token"),
         "owner",
         "repo",
         "fix/a b",
@@ -58,9 +58,12 @@ fn request_errors_surface_terminal_safe_message_instruction_and_reference() {
         r#"{"code":"conflict","message":"request cannot be submitted\u001b[31m","instruction":"Retry later.\u001b[31m","error_reference":"err_0123456789abcdef0123456789abcdef\u001b[31m","retryable":false}"#,
     );
 
-    let error = submit_request(ApiSession::new(&Client::new(), &api_url, "token"), target())
-        .unwrap_err()
-        .to_string();
+    let error = submit_request(
+        ApiSession::new(&http_client_builder().build().unwrap(), &api_url, "token"),
+        target(),
+    )
+    .unwrap_err()
+    .to_string();
 
     assert_eq!(
         error,
@@ -74,7 +77,7 @@ fn malformed_error_bodies_use_a_scoped_status_fallback() {
     let (api_url, server) = serve_once(StatusCode::SERVICE_UNAVAILABLE, "upstream exploded");
 
     let error = merge_request(
-        ApiSession::new(&Client::new(), &api_url, "token"),
+        ApiSession::new(&http_client_builder().build().unwrap(), &api_url, "token"),
         target(),
         GitOid::try_from("a".repeat(40).as_str()).unwrap(),
     )
