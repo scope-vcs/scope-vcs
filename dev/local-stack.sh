@@ -2,6 +2,9 @@
 
 SLOT_FILE="$STATE_DIR/slot"
 CLAIM_FILE="$STATE_DIR/claim"
+TAILNET_FILE="$STATE_DIR/tailnet-host"
+TAILNET_PORTS_FILE="$STATE_DIR/tailnet-ports"
+TAILNET_PORT_OFFSET=40000
 STACKS_DIR="${XDG_RUNTIME_DIR:-/tmp}/scope-dev-stacks"
 ISOLATED_SLOTS=(1 2)
 ISOLATED_LIFETIME_SECONDS=3600
@@ -16,6 +19,52 @@ use_slot() {
   MEDIA_WORKER_PORT=$((8084 + offset))
   LOCAL_WEB_ORIGIN="http://localhost:$WEB_PORT"
   LOCAL_API_ORIGIN="http://localhost:$API_PORT"
+}
+
+tailnet_host() {
+  python3 "$ROOT/dev/local-identity.py" tailnet-host
+}
+
+slot_tailnet_origin() {
+  local port="$1" host
+  host="$(cat "$TAILNET_FILE" 2>/dev/null || true)"
+  if [[ -n "$host" ]] && grep -qx "$port" "$TAILNET_PORTS_FILE" 2>/dev/null; then
+    printf 'https://%s:%s\n' "$host" "$((TAILNET_PORT_OFFSET + port))"
+  fi
+}
+
+slot_served_ports() {
+  if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
+    echo "$WEB_PORT"
+  fi
+  echo "$API_PORT"
+  if (( WITH_MEDIA )); then
+    echo "$MEDIA_PORT"
+  fi
+}
+
+serve_slot_tailnet() {
+  local host port
+  host="$(tailnet_host)"
+  [[ -n "$host" ]] || return 0
+  for port in "$WEB_PORT" "$API_PORT" "$MEDIA_PORT"; do
+    tailscale serve --https="$((TAILNET_PORT_OFFSET + port))" off >/dev/null 2>&1 || true
+  done
+  printf '%s\n' "$host" > "$TAILNET_FILE"
+  for port in $(slot_served_ports); do
+    tailscale serve --bg --https="$((TAILNET_PORT_OFFSET + port))" "http://127.0.0.1:$port" >/dev/null
+    printf '%s\n' "$port" >> "$TAILNET_PORTS_FILE"
+  done
+}
+
+unserve_slot_tailnet() {
+  local port
+  [[ -f "$TAILNET_PORTS_FILE" ]] || return 0
+  while read -r port; do
+    if ! tailscale serve --https="$((TAILNET_PORT_OFFSET + port))" off >/dev/null; then
+      echo "could not remove tailnet port $((TAILNET_PORT_OFFSET + port)); run tailscale serve --https=$((TAILNET_PORT_OFFSET + port)) off" >&2
+    fi
+  done < "$TAILNET_PORTS_FILE"
 }
 
 recorded_slot() {
@@ -129,6 +178,7 @@ claim_free_slot() {
     write_expiry_runner
     start_service expiry {STACKS_LOCK}>&-
     printf '%s\n' "$ROOT" > "$STACKS_DIR/slot-$slot"
+    serve_slot_tailnet
     return
   done
   use_slot 0
@@ -144,6 +194,7 @@ release_owned_slot() {
     if ! drop_isolated_database; then
       echo "could not drop $(isolated_database name); drop it once Postgres is reachable" >&2
     fi
+    unserve_slot_tailnet
     rm -f -- "$STACKS_DIR/slot-$SLOT"
   fi
 }
@@ -156,7 +207,7 @@ release_isolated_stack() {
   if (( SLOT != 0 )); then
     with_stacks_lock release_owned_slot
   fi
-  rm -f -- "$SLOT_FILE" "$CLAIM_FILE"
+  rm -f -- "$SLOT_FILE" "$CLAIM_FILE" "$TAILNET_FILE" "$TAILNET_PORTS_FILE"
   CLAIM_TOKEN=""
   use_slot 0
 }
