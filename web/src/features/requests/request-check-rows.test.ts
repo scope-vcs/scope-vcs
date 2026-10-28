@@ -207,12 +207,14 @@ test('review bots keep their listed order and say where each is on the latest he
       { login: 'chatgpt-codex-connector[bot]', required: false, state: 'commented' },
       { login: 'octo-reviewer[bot]', required: true, state: 'clear' },
       { login: 'lint-bot[bot]', required: false, state: 'not_started' },
+      { login: 'quiet-bot[bot]', required: true, state: 'timed_out' },
     ]),
     [
       { login: 'greptile-apps[bot]', required: true, label: 'Reviewing', tone: 'running' },
       { login: 'chatgpt-codex-connector[bot]', required: false, label: 'Finished with comments', tone: 'waiting' },
       { login: 'octo-reviewer[bot]', required: true, label: 'Finished, nothing found', tone: 'success' },
       { login: 'lint-bot[bot]', required: false, label: 'Not started', tone: 'inert' },
+      { login: 'quiet-bot[bot]', required: true, label: 'Didn’t start · advisory', tone: 'inert' },
     ],
   )
 })

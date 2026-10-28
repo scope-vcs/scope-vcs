@@ -352,7 +352,7 @@ async fn take_step(
                     .map_err(call_failure)?;
                 }
             }
-            carrier.record_commented(head_oid);
+            carrier.record_commented(head_oid, unix_now()?);
         }
         GitHubPullRequestStep::AdoptToClose => {
             let head = carrier.branch().name();

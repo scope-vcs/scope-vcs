@@ -8,8 +8,8 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{
-        GitHubReviewBotStatus, Request, RequestBotReviews, RequestDiscussionStatus,
-        RequestReviewsOutcome, request_reviews_outcome,
+        GitHubReviewBotStatus, GitHubReviewRequest, Request, RequestBotReviews,
+        RequestDiscussionStatus, RequestReviewsOutcome, request_reviews_outcome,
     },
     views::Views,
 };
@@ -27,6 +27,7 @@ pub struct GitHubReviewBotReconcile {
     pub github_repository_id: u64,
     pub github_full_name: String,
     pub number: u64,
+    pub review_request: Option<GitHubReviewRequest>,
 }
 
 impl RequestStore {
@@ -53,7 +54,8 @@ impl RequestStore {
               RETURNING pull_request.request_id, pull_request.repo_id,
                         pull_request.installation_id, pull_request.github_repository_id,
                         pull_request.github_full_name,
-                        pull_request.number",
+                        pull_request.number, pull_request.commented_head_oid,
+                        pull_request.commented_at_unix",
                 [
                     u64_to_i64(now_unix, "review bot reconcile time")?.into(),
                     u64_to_i64(lease_until_unix, "review bot reconcile lease")?.into(),
@@ -77,6 +79,16 @@ impl RequestStore {
                     )?,
                     github_full_name: row.try_get("", "github_full_name")?,
                     number: i64_to_u64(column("number")?, "GitHub pull request number")?,
+                    review_request: match (
+                        row.try_get::<Option<String>>("", "commented_head_oid")?,
+                        row.try_get::<Option<i64>>("", "commented_at_unix")?,
+                    ) {
+                        (Some(head_oid), Some(at_unix)) => Some(GitHubReviewRequest {
+                            head_oid,
+                            at_unix: i64_to_u64(at_unix, "GitHub review request time")?,
+                        }),
+                        _ => None,
+                    },
                 })
             })
             .collect()

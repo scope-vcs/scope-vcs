@@ -356,7 +356,7 @@ async fn opened_carrier(store: &MetadataStore) {
         "main".into(),
         None,
     );
-    opened.record_commented(oid('a'));
+    opened.record_commented(oid('a'), 11);
     store
         .requests()
         .finish_github_pull_request(&opened, "claim_1", GitHubJobOutcome::Succeeded(()), 11)
@@ -395,7 +395,7 @@ async fn a_delivery_during_a_running_claim_runs_the_job_again_after_it() {
     opened_carrier(&store).await;
     push_succeeds(&store, "req_1", 'b', 20).await;
     let mut commenting = claim(&store, "claim_2", 20).await.remove(0);
-    commenting.record_commented(oid('b'));
+    commenting.record_commented(oid('b'), 21);
 
     let requests = store.requests();
     assert!(
@@ -411,7 +411,13 @@ async fn a_delivery_during_a_running_claim_runs_the_job_again_after_it() {
             .unwrap()
     );
     let rereading = claim(&store, "claim_3", 22).await.remove(0);
-    assert_eq!(rereading.commented_head_oid, Some(oid('b')));
+    assert_eq!(
+        rereading.review_request,
+        Some(GitHubReviewRequest {
+            head_oid: oid('b'),
+            at_unix: 21
+        })
+    );
     assert_eq!(rereading.pull_request.unwrap().number, 5);
 }
 

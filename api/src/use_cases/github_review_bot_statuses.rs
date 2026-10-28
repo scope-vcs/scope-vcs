@@ -33,7 +33,7 @@ pub(crate) async fn reconcile_due_review_bot_statuses(
     let claimed = due.len();
     for reconcile in due {
         let next_at_unix = now_unix.saturating_add(RECONCILE_EVERY_SECS);
-        let (statuses, next_at_unix) = match read_statuses(state, &reconcile).await {
+        let (statuses, next_at_unix) = match read_statuses(state, &reconcile, now_unix).await {
             Ok(statuses) => (statuses, next_at_unix),
             Err(PullRequestCallError::RateLimited { retry_at_unix }) => (None, retry_at_unix),
             Err(error) => {
@@ -63,6 +63,7 @@ pub(crate) async fn reconcile_due_review_bot_statuses(
 async fn read_statuses(
     state: &AppState,
     reconcile: &GitHubReviewBotReconcile,
+    now_unix: u64,
 ) -> Result<Option<Vec<GitHubReviewBotStatus>>, PullRequestCallError> {
     let Some(app) = state.github.clone() else {
         return Ok(None);
@@ -114,6 +115,8 @@ async fn read_statuses(
         &request.head_oid,
         head_delivered_at_unix,
         &imported_review_ids,
+        reconcile.review_request.as_ref(),
+        now_unix,
     )))
 }
 

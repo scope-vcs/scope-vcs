@@ -5,7 +5,9 @@ use crate::use_cases::{
     github_review_bot_statuses::reconcile_due_review_bot_statuses,
     github_review_imports::import_due_github_reviews,
 };
-use scope_domain::github_review_bots::GitHubReviewBotInput;
+use scope_domain::{
+    github_review_bots::GitHubReviewBotInput, requests::REVIEW_BOT_START_DEADLINE_SECS,
+};
 
 const CODEX: &str = "chatgpt-codex-connector[bot]";
 const GREPTILE: &str = "greptile-apps[bot]";
@@ -424,5 +426,64 @@ async fn required_bots_hold_the_merge_only_while_review_bot_pull_requests_are_on
     assert_eq!(checks["review_bots_enforced"], false);
     assert_eq!(checks["review_bots"][0]["required"], true);
     assert_eq!(checks["mergeability"]["status"], "Ready");
+    assert_eq!(listed_status(&request).await, "Ready");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_required_bot_that_never_starts_after_the_review_request_turns_advisory() {
+    let request = gated_request("review-bot-silent").await;
+    let state = &request.state;
+    state
+        .metadata
+        .repositories()
+        .set_github_review_request_comment(TEST_REPO_ID, &test_owner_id(), "@codex review")
+        .await
+        .unwrap();
+    let requested_after = unix_now();
+    state
+        .metadata
+        .requests()
+        .requeue_github_pull_request(GITHUB_REPOSITORY_ID, &request.request_id, requested_after)
+        .await
+        .unwrap();
+    assert_eq!(
+        run_due_github_pull_requests(state, requested_after)
+            .await
+            .unwrap(),
+        1
+    );
+    let requested_before = unix_now();
+
+    assert_eq!(
+        reconcile(
+            &request,
+            requested_after + REVIEW_BOT_START_DEADLINE_SECS - 1
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        bot_states(&request).await,
+        (
+            states("not_started", "not_started"),
+            "ReviewsPending".into()
+        )
+    );
+
+    request
+        .state
+        .metadata
+        .requests()
+        .requeue_github_review_bot_reconcile(GITHUB_REPOSITORY_ID, 1)
+        .await
+        .unwrap();
+    assert_eq!(
+        reconcile(&request, requested_before + REVIEW_BOT_START_DEADLINE_SECS).await,
+        1
+    );
+    assert_eq!(
+        bot_states(&request).await,
+        (states("timed_out", "timed_out"), "Ready".into())
+    );
     assert_eq!(listed_status(&request).await, "Ready");
 }

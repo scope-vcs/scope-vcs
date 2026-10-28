@@ -249,7 +249,7 @@ fn carrier(intent: GitHubPullRequestIntent) -> GitHubPullRequest {
         intent,
         intent_sequence: 1,
         pull_request: None,
-        commented_head_oid: None,
+        review_request: None,
         job_state: GitHubPullRequestJobState::Queued,
         attempts: 0,
         last_error: None,
@@ -289,7 +289,7 @@ fn an_open_intent_opens_retargets_then_comments_once_per_head() {
             head_oid: HEAD.into()
         })
     );
-    carrier.record_commented(HEAD.into());
+    carrier.record_commented(HEAD.into(), 100);
     assert_eq!(carrier.next_step(comment, None), None);
 
     carrier.intent = GitHubPullRequestIntent::Open {
@@ -310,7 +310,7 @@ fn an_open_intent_opens_retargets_then_comments_once_per_head() {
         "main".into(),
         None,
     );
-    assert_eq!(carrier.commented_head_oid, None);
+    assert_eq!(carrier.review_request, None);
 }
 
 #[test]
