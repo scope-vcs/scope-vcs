@@ -1,0 +1,44 @@
+name: Install reviewed Git
+description: Install the reviewed Git into /opt/git from a build cached per runner image, Git source and installer, building it from source and saving it on a miss.
+runs:
+  using: composite
+  steps:
+    - id: plan
+      shell: bash
+      run: |
+        version="$(jq -er '.git.version' dev/tool-versions.json)"
+        source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+        installer="$(sha256sum deploy/railway/install-git.sh | cut -c1-16)"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "source_sha256=$source_sha256" >> "$GITHUB_OUTPUT"
+        echo "key=reviewed-git-${ImageOS:?}-${ImageVersion:?}-${RUNNER_ARCH:?}-$version-${source_sha256:0:16}-$installer" >> "$GITHUB_OUTPUT"
+        sudo mkdir -p /opt/git
+        sudo chown "$(id -u):$(id -g)" /opt/git
+
+    - id: restore
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: /opt/git
+        key: ${{ steps.plan.outputs.key }}
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GIT_VERSION: ${{ steps.plan.outputs.version }}
+        GIT_SOURCE_SHA256: ${{ steps.plan.outputs.source_sha256 }}
+      run: |
+        sudo bash .github/scripts/use-ubuntu-apt-sources.sh
+        sudo bash deploy/railway/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: /opt/git
+        key: ${{ steps.plan.outputs.key }}
+
+    - shell: bash
+      env:
+        GIT_VERSION: ${{ steps.plan.outputs.version }}
+      run: |
+        test "$(/opt/git/bin/git --version)" = "git version $GIT_VERSION"
+        echo /opt/git/bin >> "$GITHUB_PATH"

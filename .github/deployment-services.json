@@ -201,7 +201,9 @@
         ".github/workflows/deploy-staging.yml",
         ".github/scripts/prepare-release-images.sh",
         ".github/scripts/run-bounded-image-builds.sh",
-        ".github/scripts/merge-prepared-release.mjs"
+        ".github/scripts/merge-prepared-release.mjs",
+        ".github/actions/install-reviewed-git/action.yml",
+        ".github/workflows/reviewed-git-cache.yml"
       ],
       "prefixes": []
     },
@@ -395,7 +397,9 @@
         "dev/local-identity.py",
         "dev/dotenv.sh",
         ".github/scripts/deploy-monitored-railway.sh",
-        ".github/scripts/deployment-components.mjs"
+        ".github/scripts/deployment-components.mjs",
+        ".github/actions/install-reviewed-git/action.yml",
+        ".github/workflows/reviewed-git-cache.yml"
       ],
       "prefixes": [
         "api/",
@@ -437,7 +441,9 @@
         "dev/cargo-target-dir",
         "dev/local-process.py",
         "dev/local-identity.py",
-        "dev/dotenv.sh"
+        "dev/dotenv.sh",
+        ".github/actions/install-reviewed-git/action.yml",
+        ".github/workflows/reviewed-git-cache.yml"
       ],
       "prefixes": [
         "api/",
@@ -463,7 +469,9 @@
         "dev/install-cargo-deny.sh",
         "dev/checks/cli-bundle",
         "dev/cargo-target-dir",
-        ".github/scripts/select-cli-distribution-targets.mjs"
+        ".github/scripts/select-cli-distribution-targets.mjs",
+        ".github/actions/install-reviewed-git/action.yml",
+        ".github/workflows/reviewed-git-cache.yml"
       ],
       "prefixes": [
         "cli/distribution/",
