@@ -155,7 +155,7 @@ if [[ "$public_head" == "$previous_public_head" ]]; then
   echo "The public projection did not advance after the staging push." >&2
   exit 1
 fi
-git -C "$public_checkout" show FETCH_HEAD:README.md | grep -Fqx "$marker"
+git -C "$public_checkout" show FETCH_HEAD:README.md | grep -Fx "$marker" >/dev/null
 if git -C "$public_checkout" cat-file -e FETCH_HEAD:internal/notes.md 2>/dev/null; then
   echo "The updated public projection exposed a private file." >&2
   exit 1

@@ -1,0 +1,33 @@
+name: Reviewed Git cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/actions/install-reviewed-git/**
+      - .github/workflows/reviewed-git-cache.yml
+      - .github/scripts/use-ubuntu-apt-sources.sh
+      - deploy/railway/install-git.sh
+      - dev/tool-versions.json
+  schedule:
+    - cron: '29 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reviewed-git-cache
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    name: Save the reviewed Git build on main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install reviewed Git
+        uses: ./.github/actions/install-reviewed-git
