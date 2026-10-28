@@ -3569,10 +3569,10 @@ Repository: "https://github.com/tokio-rs/prost"
 LICENSE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be005765a76
 
 ==============================================================================
-pulldown-cmark 0.13.4
+pulldown-cmark 0.13.5
 Declared license: MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.4.crate
+Source: https://static.crates.io/crates/pulldown-cmark/pulldown-cmark-0.13.5.crate
 
 Published author metadata: ["Raph Levien <raph.levien@gmail.com>", "Marcus Klaas de Vries <mail@marcusklaas.nl>"]
 Repository: "https://github.com/raphlinus/pulldown-cmark"
