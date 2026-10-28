@@ -2,6 +2,8 @@
 
 SLOT_FILE="$STATE_DIR/slot"
 CLAIM_FILE="$STATE_DIR/claim"
+TAILNET_FILE="$STATE_DIR/tailnet-host"
+TAILNET_PORT_OFFSET=40000
 STACKS_DIR="${XDG_RUNTIME_DIR:-/tmp}/scope-dev-stacks"
 ISOLATED_SLOTS=(1 2)
 ISOLATED_LIFETIME_SECONDS=3600
@@ -16,6 +18,38 @@ use_slot() {
   MEDIA_WORKER_PORT=$((8084 + offset))
   LOCAL_WEB_ORIGIN="http://localhost:$WEB_PORT"
   LOCAL_API_ORIGIN="http://localhost:$API_PORT"
+}
+
+tailnet_host() {
+  python3 "$ROOT/dev/local-identity.py" tailnet-host
+}
+
+slot_tailnet_origin() {
+  local port="$1" host
+  host="$(cat "$TAILNET_FILE" 2>/dev/null || true)"
+  if [[ -n "$host" ]]; then
+    printf 'https://%s:%s\n' "$host" "$((TAILNET_PORT_OFFSET + port))"
+  fi
+}
+
+serve_slot_tailnet() {
+  local host port
+  host="$(tailnet_host)"
+  [[ -n "$host" ]] || return 0
+  for port in "$WEB_PORT" "$API_PORT" "$MEDIA_PORT"; do
+    tailscale serve --bg --https="$((TAILNET_PORT_OFFSET + port))" "http://127.0.0.1:$port" >/dev/null
+  done
+  printf '%s\n' "$host" > "$TAILNET_FILE"
+}
+
+unserve_slot_tailnet() {
+  local port
+  [[ -f "$TAILNET_FILE" ]] || return 0
+  for port in "$WEB_PORT" "$API_PORT" "$MEDIA_PORT"; do
+    if ! tailscale serve --https="$((TAILNET_PORT_OFFSET + port))" off >/dev/null; then
+      echo "could not remove tailnet port $((TAILNET_PORT_OFFSET + port)); run tailscale serve --https=$((TAILNET_PORT_OFFSET + port)) off" >&2
+    fi
+  done
 }
 
 recorded_slot() {
@@ -129,6 +163,7 @@ claim_free_slot() {
     write_expiry_runner
     start_service expiry {STACKS_LOCK}>&-
     printf '%s\n' "$ROOT" > "$STACKS_DIR/slot-$slot"
+    serve_slot_tailnet
     return
   done
   use_slot 0
@@ -144,6 +179,7 @@ release_owned_slot() {
     if ! drop_isolated_database; then
       echo "could not drop $(isolated_database name); drop it once Postgres is reachable" >&2
     fi
+    unserve_slot_tailnet
     rm -f -- "$STACKS_DIR/slot-$SLOT"
   fi
 }
@@ -156,7 +192,7 @@ release_isolated_stack() {
   if (( SLOT != 0 )); then
     with_stacks_lock release_owned_slot
   fi
-  rm -f -- "$SLOT_FILE" "$CLAIM_FILE"
+  rm -f -- "$SLOT_FILE" "$CLAIM_FILE" "$TAILNET_FILE"
   CLAIM_TOKEN=""
   use_slot 0
 }

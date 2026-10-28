@@ -4,6 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 usage: ./dev/scope-dev [command] [options]
+       ./dev/scope-dev verify [REVISION]
 
 Supported local-development entrypoint.
 
@@ -11,7 +12,10 @@ commands:
   doctor  validate required tools, local environment, and Clerk development keys
   up      migrate and seed Postgres, then start API, workers, media, and web
   down    stop processes started by this script and release an isolated stack
-  status  show owned process and HTTP readiness state (default)
+  status  show which checkout, revision, and sign-in mode each port serves, the
+          private preview URLs, and the actor to use (default)
+  verify  pass only when this checkout's stack serves the checkout's working
+          tree, or with REVISION, a build and checkout that both contain it
   reset   run down, then remove .scope/dev and .tmp/local-dev
   bench   run the short deployed-system benchmark against the running local API
   help    show this help
@@ -28,7 +32,10 @@ options for up:
                slot, offset every port by 10 per slot, and recreate a
                dedicated database named after DATABASE_URL's with a _stack<slot>
                suffix. down drops that database and releases the slot, and the
-               stack runs down by itself one hour after up.
+               stack runs down by itself one hour after up. When Tailscale
+               is running, the claim adds tailnet-only `tailscale serve`
+               HTTPS ports at 40000 plus the web, API, and media ports, such
+               as https://HOST.TAILNET.ts.net:43010, and down removes them.
 
 required configuration:
   .env.local       DATABASE_URL, SCOPE_DEV_USER_EMAIL, optional SCOPE_DEV_USER_HANDLE
@@ -60,8 +67,8 @@ local services of the primary stack; isolated slot N adds 10*N to each port:
   worker health  http://localhost:8081
   media gateway  http://localhost:8083
   media worker health  http://localhost:8084
-Isolated stacks ignore the tailnet origins, and GitHub setup callbacks and
-webhooks reach only the primary stack.
+Isolated stacks ignore these origins, and GitHub setup callbacks and webhooks
+reach only the primary stack.
 
 The local API uses filesystem object storage under .scope/dev. Startup strips
 inherited Railway and bucket variables and rejects production-looking Clerk or
@@ -78,6 +85,11 @@ shift || true
 SIGNED_IN=0
 WITH_MEDIA=1
 ISOLATED=0
+CHANGE=""
+if [[ "$COMMAND" == "verify" && $# -eq 1 && "$1" != -* ]]; then
+  CHANGE="$1"
+  shift
+fi
 for option in "$@"; do
   case "$option" in
     --signed-in) SIGNED_IN=1 ;;
@@ -98,7 +110,7 @@ if (( ISOLATED )) && [[ "$COMMAND" != "up" ]]; then
   exit 2
 fi
 case "$COMMAND" in
-  bench|doctor|up|down|status|reset) ;;
+  bench|doctor|up|down|status|verify|reset) ;;
   help|-h|--help)
     usage
     exit 0
@@ -209,6 +221,11 @@ local_database_url() {
 get_tailnet_origin() {
   local name="$1" value
   if (( SLOT != 0 )); then
+    case "$name" in
+      SCOPE_DEV_TAILNET_WEB_ORIGIN) slot_tailnet_origin "$WEB_PORT" ;;
+      SCOPE_DEV_TAILNET_API_ORIGIN) slot_tailnet_origin "$API_PORT" ;;
+      SCOPE_DEV_TAILNET_MEDIA_ORIGIN) slot_tailnet_origin "$MEDIA_PORT" ;;
+    esac
     return
   fi
   value="$(read_dotenv_value "$ROOT/.env.local" "$name")"
@@ -279,6 +296,7 @@ down() {
     return
   fi
   stop_owned_processes
+  python3 "$ROOT/dev/local-identity.py" forget-build "$ROOT" "$STATE_DIR"
   release_isolated_stack
 }
 
@@ -464,6 +482,7 @@ build_local_services() {
     binaries+=(scope-media-service scope-media-worker)
   fi
   LOCAL_CARGO_TARGET_DIR="$(cd "$ROOT" && ./dev/cargo-target-dir Cargo.toml)"
+  python3 "$ROOT/dev/local-identity.py" build-start "$ROOT" "$STATE_DIR"
   (
     cd "$ROOT"
     cargo build --locked --features api/local-dev "${packages[@]}"
@@ -475,6 +494,15 @@ build_local_services() {
       exit 1
     fi
   done
+  local services=("api=$LOCAL_CARGO_TARGET_DIR/debug/api" "worker=$LOCAL_CARGO_TARGET_DIR/debug/worker")
+  if (( WITH_MEDIA )); then
+    services+=("media=$LOCAL_CARGO_TARGET_DIR/debug/scope-media-service"
+      "media-worker=$LOCAL_CARGO_TARGET_DIR/debug/scope-media-worker")
+  fi
+  if [[ "${SCOPE_DEV_HEADLESS_E2E:-0}" != "1" ]]; then
+    services+=(web)
+  fi
+  python3 "$ROOT/dev/local-identity.py" build-finish "$ROOT" "$STATE_DIR" "${services[@]}"
 }
 
 wait_http() {
@@ -624,37 +652,36 @@ up() {
   fi
 }
 
-status() {
-  local service
+identity_arguments() {
+  printf '%s\n' --root "$ROOT" --state "$STATE_DIR" \
+    --port "api=$API_PORT" --port "worker=$WORKER_PORT" --port "media=$MEDIA_PORT" \
+    --port "media-worker=$MEDIA_WORKER_PORT" --port "web=$WEB_PORT" \
+    --private "web=$(get_tailnet_origin SCOPE_DEV_TAILNET_WEB_ORIGIN)" \
+    --private "api=$(get_tailnet_origin SCOPE_DEV_TAILNET_API_ORIGIN)" \
+    --private "media=$(get_tailnet_origin SCOPE_DEV_TAILNET_MEDIA_ORIGIN)"
+}
+
+stack_header() {
   if (( SLOT == 0 )); then
     echo "stack: primary"
   else
     echo "stack: isolated slot $SLOT, database $(isolated_database name)"
   fi
-  for service in api worker media media-worker web expiry; do
-    echo "${service//-/ } process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/$service.pid")"
-  done
-  probe "api readyz $LOCAL_API_ORIGIN" "$LOCAL_API_ORIGIN/readyz"
-  probe "media healthz" "http://localhost:$MEDIA_PORT/healthz"
-  probe "media worker readyz" "http://localhost:$MEDIA_WORKER_PORT/readyz"
-  probe "web $LOCAL_WEB_ORIGIN" "$LOCAL_WEB_ORIGIN" status
 }
 
-probe() {
-  local label="$1"
-  local url="$2"
-  local mode="${3:-body}"
-  local value
-  if [[ "$mode" == "status" ]]; then
-    if value="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 "$url" 2>/dev/null)"; then
-      echo "$label: HTTP $value"
-      return
-    fi
-  elif value="$(curl -fsS --max-time 3 "$url" 2>/dev/null)"; then
-    echo "$label: $value"
-    return
-  fi
-  echo "$label: unavailable"
+status() {
+  local arguments
+  mapfile -t arguments < <(identity_arguments)
+  stack_header
+  python3 "$ROOT/dev/local-identity.py" status "${arguments[@]}"
+  echo "expiry process: $(python3 "$ROOT/dev/local-process.py" status "$STATE_DIR/expiry.pid")"
+}
+
+verify() {
+  local arguments
+  mapfile -t arguments < <(identity_arguments)
+  stack_header
+  python3 "$ROOT/dev/local-identity.py" verify "${arguments[@]}" ${CHANGE:+"$CHANGE"}
 }
 
 reset() {
@@ -678,5 +705,6 @@ case "$COMMAND" in
   up) up ;;
   down) down; echo "local dev stopped" ;;
   status) status ;;
+  verify) verify ;;
   reset) reset ;;
 esac

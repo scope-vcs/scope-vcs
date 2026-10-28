@@ -23,6 +23,12 @@ start_service() {
   python3 "$ROOT/dev/local-process.py" record "$STATE_DIR/$1.pid" "$!"
 }
 source "$STACK_SCRIPT"
+tailnet_host() {
+  echo "${TAILNET_HOST:-}"
+}
+tailscale() {
+  echo "$ROOT: tailscale $*" >> "$TAILSCALE_LOG"
+}
 local_database_url() {
   echo "${TEST_DATABASE_URL:-postgres://scope@127.0.0.1/scope_dev}"
 }
@@ -42,6 +48,7 @@ case "$ACTION" in
     with_stacks_lock recreate_owned_database
     ;;
   slot) echo "$SLOT" ;;
+  origin) slot_tailnet_origin "$WEB_PORT" ;;
   database) isolated_database url ;;
   release) release_isolated_stack ;;
 esac
@@ -55,6 +62,7 @@ class LocalStackClaimTests(unittest.TestCase):
         self.path = Path(temp.name)
         self.runtime = self.path / "runtime"
         self.database_log = self.path / "database.log"
+        self.tailscale_log = self.path / "tailscale.log"
 
     def worktree(self, name):
         root = self.path / name
@@ -71,7 +79,8 @@ class LocalStackClaimTests(unittest.TestCase):
         return subprocess.run(
             ["bash", "-c", STACK], capture_output=True, text=True, timeout=30,
             env={"PATH": "/usr/bin:/bin", "ROOT": str(root), "ACTION": action, "BUSY_PORTS": busy_ports,
-                 "DATABASE_LOG": str(self.database_log), "XDG_RUNTIME_DIR": str(self.runtime),
+                 "DATABASE_LOG": str(self.database_log), "TAILSCALE_LOG": str(self.tailscale_log),
+                 "XDG_RUNTIME_DIR": str(self.runtime),
                  "STACK_SCRIPT": str(ROOT / "dev/local-stack.sh"), **env})
 
     def claim(self, root, busy_ports="", **env):
@@ -142,15 +151,21 @@ class LocalStackClaimTests(unittest.TestCase):
         self.assertEqual(self.claimed(third), "1 3010 8090")
         self.assertEqual((self.runtime / "scope-dev-stacks/slot-1").read_text().strip(), str(third))
 
-    def test_a_stale_owner_release_leaves_the_replacement_claim_and_database(self):
+    def tailscale_commands(self):
+        return self.tailscale_log.read_text().splitlines() if self.tailscale_log.exists() else []
+
+    def test_a_stale_owner_release_leaves_the_replacement_claim_database_and_tailnet_ports(self):
         stale, replacement = self.worktree("stale"), self.worktree("replacement")
-        self.claimed(stale)
+        self.claimed(stale, TAILNET_HOST="host.tailnet.ts.net")
         self.stop_expiry(stale)
-        self.claimed(replacement)
+        self.claimed(replacement, TAILNET_HOST="host.tailnet.ts.net")
+        self.assertEqual(self.run_stack("origin", replacement).stdout.strip(), "https://host.tailnet.ts.net:43010")
+        self.tailscale_log.unlink()
 
         self.release(stale)
 
         self.assertEqual(self.database_commands(), [])
+        self.assertEqual(self.tailscale_commands(), [])
         self.assertEqual((self.runtime / "scope-dev-stacks/slot-1").read_text().strip(), str(replacement))
         self.assertFalse((stale / ".tmp/local-dev/slot").exists())
 
@@ -158,6 +173,9 @@ class LocalStackClaimTests(unittest.TestCase):
 
         self.assertEqual(self.database_commands(),
                          [f'{replacement}: DROP DATABASE IF EXISTS "scope_dev_stack1" WITH (FORCE)'])
+        self.assertEqual(self.tailscale_commands(),
+                         [f"{replacement}: tailscale serve --https={port} off" for port in (43010, 48090, 48093)])
+        self.assertEqual(self.run_stack("origin", replacement).stdout.strip(), "")
         self.assertFalse((self.runtime / "scope-dev-stacks/slot-1").exists())
 
     def test_a_startup_that_outlived_its_claim_cannot_recreate_the_replacement_database(self):

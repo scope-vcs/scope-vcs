@@ -272,6 +272,7 @@
         "dev/install-cargo-deny.sh",
         ".github/scripts/railway-artifact.mjs",
         "dev/local-process.py",
+        "dev/local-identity.py",
         "dev/dotenv.sh",
         "deploy/railway/reconcile-media.mjs",
         ".github/scripts/deploy-monitored-railway.sh"
@@ -336,6 +337,7 @@
         ".github/scripts/railway-artifact.mjs",
         "deploy/railway/reconcile-media.mjs",
         "dev/local-process.py",
+        "dev/local-identity.py",
         "dev/dotenv.sh",
         ".github/scripts/deploy-monitored-railway.sh"
       ],
@@ -390,6 +392,7 @@
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "dev/local-process.py",
+        "dev/local-identity.py",
         "dev/dotenv.sh",
         ".github/scripts/deploy-monitored-railway.sh",
         ".github/scripts/deployment-components.mjs"
@@ -433,6 +436,7 @@
         "dev/scope-dev",
         "dev/cargo-target-dir",
         "dev/local-process.py",
+        "dev/local-identity.py",
         "dev/dotenv.sh"
       ],
       "prefixes": [

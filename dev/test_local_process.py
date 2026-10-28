@@ -77,6 +77,7 @@ class LocalProcessTests(unittest.TestCase):
         shutil.copy(ROOT / "dev/dotenv.sh", root / "dev/dotenv.sh")
         shutil.copy(ROOT / "dev/local-stack.sh", root / "dev/local-stack.sh")
         shutil.copy(HELPER, root / "dev/local-process.py")
+        shutil.copy(ROOT / "dev/local-identity.py", root / "dev/local-identity.py")
         return root
 
     def reset(self, root):
