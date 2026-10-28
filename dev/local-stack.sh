@@ -47,6 +47,9 @@ serve_slot_tailnet() {
   local host port
   host="$(tailnet_host)"
   [[ -n "$host" ]] || return 0
+  for port in "$WEB_PORT" "$API_PORT" "$MEDIA_PORT"; do
+    tailscale serve --https="$((TAILNET_PORT_OFFSET + port))" off >/dev/null 2>&1 || true
+  done
   printf '%s\n' "$host" > "$TAILNET_FILE"
   for port in $(slot_served_ports); do
     tailscale serve --bg --https="$((TAILNET_PORT_OFFSET + port))" "http://127.0.0.1:$port" >/dev/null

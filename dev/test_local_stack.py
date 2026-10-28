@@ -184,10 +184,21 @@ class LocalStackClaimTests(unittest.TestCase):
         root = self.worktree("no-media")
         self.claimed(root, TAILNET_HOST="host.tailnet.ts.net", WITH_MEDIA="0", SCOPE_DEV_HEADLESS_E2E="1")
 
-        self.assertEqual(self.tailscale_commands(),
+        self.assertEqual([command for command in self.tailscale_commands() if "--bg" in command],
                          [f"{root}: tailscale serve --bg --https=48090 http://127.0.0.1:8090"])
         self.assertEqual(self.run_stack("origin", root).stdout.strip(), "")
         self.assertEqual(self.run_stack("media-origin", root).stdout.strip(), "")
+
+    def test_reclaiming_a_slot_removes_the_previous_claims_tailnet_ports(self):
+        stale, replacement = self.worktree("stale"), self.worktree("replacement")
+        self.claimed(stale, TAILNET_HOST="host.tailnet.ts.net")
+        self.stop_expiry(stale)
+        self.tailscale_log.unlink()
+
+        self.claimed(replacement, TAILNET_HOST="host.tailnet.ts.net", WITH_MEDIA="0", SCOPE_DEV_HEADLESS_E2E="1")
+
+        self.assertEqual([command for command in self.tailscale_commands() if "--bg" not in command],
+                         [f"{replacement}: tailscale serve --https={port} off" for port in (43010, 48090, 48093)])
 
     def test_a_partly_published_slot_can_still_remove_its_tailnet_ports(self):
         root = self.worktree("partial")
