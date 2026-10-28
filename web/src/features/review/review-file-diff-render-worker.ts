@@ -31,8 +31,9 @@ const REVIEW_FILE_DIFF_OPTIONS = {
   lineDiffType: 'word',
   maxLineDiffLength: 512,
   overflow: 'wrap',
+  preferredHighlighter: 'highlights',
   tokenizeMaxLineLength: 1_000,
-} satisfies FileDiffOptions<undefined>
+} satisfies FileDiffOptions<undefined, undefined>
 
 async function renderReviewFileDiff(
   input: ReviewFileDiffWorkerInput,

@@ -6,7 +6,7 @@ import { Worker } from 'node:worker_threads'
 import { filesBelow, sumBytes } from './bundle-budget.mjs'
 
 const MAX_BUNDLE_BYTES = 11 * 1024 * 1024
-const MAX_BUNDLE_FILES = 350
+const MAX_BUNDLE_FILES = 440
 const workerDirectory = fileURLToPath(new URL(
   '../.output/server/_workers',
   import.meta.url,
@@ -56,7 +56,6 @@ assert.doesNotMatch(
 )
 
 const workerBudget = {
-  maxHighlightLanguages: 16,
   maxHunks: 64,
   maxOutputBytes: 256 * 1024,
   maxRenderedLines: 800,

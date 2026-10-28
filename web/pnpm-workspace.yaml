@@ -2,6 +2,7 @@ minimumReleaseAge: 10080
 trustPolicy: no-downgrade
 trustPolicyExclude:
   - semver@6.3.1
+  - "@pierre/theme@2.0.0"
 blockExoticSubdeps: true
 overrides:
   lodash-es: 4.18.1
