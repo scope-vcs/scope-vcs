@@ -58,7 +58,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query(renderRuntimeRoleAudit(), 'scope_migrator');
     query('CREATE TABLE old_pending_relation(id int);', 'scope_migrator');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
-    query(`INSERT INTO seaql_migrations(version) VALUES ('${candidateMigrationVersion}');`);
+    query(`INSERT INTO seaql_migrations(version, applied_at) VALUES ('${candidateMigrationVersion}', 0);`);
     const auditFails = (pattern, audit = renderRuntimeRoleAudit()) => {
       const result = spawnSync(join(pgBin, 'psql'), ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
         '-h', dir, '-U', 'scope_migrator', '-d', 'postgres'], { input: audit, encoding: 'utf8' });
