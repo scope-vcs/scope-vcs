@@ -822,7 +822,7 @@ pub(crate) fn public_upload_input() -> RecordWorkingRequestUploadInput {
     }
 }
 
-fn source_blob(git_oid: &str) -> SourceBlob {
+pub(crate) fn source_blob(git_oid: &str) -> SourceBlob {
     SourceBlob {
         content_ref: scope_domain::content_ref::ContentRef::git_bundle_sha256(format!(
             "sha256-{git_oid}"

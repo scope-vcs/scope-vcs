@@ -1,8 +1,5 @@
 import type { RepoParams, ReviewDiffRenderBudget } from '@/api/types'
-import type {
-  CommitFileResponse,
-  HistoryEntryDetailResponse,
-} from '@/api/types.generated'
+import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
@@ -159,7 +156,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   )
 
   const closeDiff = useCallback(() => void selectPath(null), [selectPath])
-  const selectFile = useCallback((file: CommitFileResponse) => void selectPath(file.path), [selectPath])
+  const selectFile = useCallback((path: string) => void selectPath(path), [selectPath])
   const selectVisibility = useCallback(
     (change: HistoryVisibilityChange) => void selectPath(change.path, change.id),
     [selectPath],

@@ -1,6 +1,5 @@
 import type { CommitSummary, ReviewDiffRenderBudget, ReviewFileDiff } from '@/api/types'
 import type {
-  CommitFileResponse,
   ViewId,
   RequestRevisionListResponse,
 } from '@/api/types.generated'
@@ -406,8 +405,8 @@ function useRequestChangesModel({
       const selected = requestCommitForListId(orderedRevisions, commit.projected_id)
       replaceSelection(selected?.revision ?? null, selected?.commitOid ?? null, null)
     },
-    selectFile: (file: CommitFileResponse) =>
-      onSearchChange({ ...search, path: file.path, revision: selectedRevision?.id }),
+    selectFile: (path: string) =>
+      onSearchChange({ ...search, path, revision: selectedRevision?.id }),
     selectedCommitId: selectedCommit?.projected_id ?? selectedCommitId,
     selectedCommitOid,
     selectedCommitSummary,

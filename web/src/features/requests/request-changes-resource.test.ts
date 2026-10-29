@@ -28,7 +28,7 @@ test('public child layer and push inspections reopen at the same pin without cro
   requestChangesResource.clear()
   const requestIdentity = requestChangesSelectionIdentity('viewer-access', 'request', 'revision', undefined, 'request')
   const pushIdentity = requestChangesSelectionIdentity('viewer-access', 'request', 'revision', undefined, 'push')
-  const childFile = { path: '/src/child.ts', kind: 'Added' as const, old_oid: null, new_oid: 'child', old_mode: null, new_mode: '100644', label: 'public' }
+  const childFile = { path: '/src/child.ts', kind: 'Added' as const, old_oid: null, new_oid: 'child', old_mode: null, new_mode: '100644', label: 'public', lines: { kind: 'binary' as const } }
   const request: RequestRevisionListResponse = {
     revisions: [], has_earlier_revisions: false, review_revision_id: 'revision',
     comparison: { revision_id: 'revision', mode: 'request', base_oid: 'parent-pin', head_oid: 'child', inspection: 'Complete', files: [childFile] },

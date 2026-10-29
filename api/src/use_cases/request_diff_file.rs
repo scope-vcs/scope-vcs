@@ -5,7 +5,7 @@ use crate::{
     use_cases::{
         request_inspection_policy,
         request_revision_inspection::{
-            InspectedRequestChange, commit_belongs_to_revision, inspect_request_changes,
+            RequestChange, commit_belongs_to_revision, inspect_request_changes,
             request_commit_changes, request_comparison_base_oid, request_range_path_changes,
         },
     },
@@ -51,7 +51,7 @@ pub(crate) fn request_diff_file(
     revision: &RequestRevision,
     range: &RequestDiffRange,
     path: &ScopePath,
-) -> Result<Option<InspectedRequestChange>, ApiError> {
+) -> Result<Option<RequestChange>, ApiError> {
     let policy = match range {
         RequestDiffRange::Request | RequestDiffRange::Push => {
             request_inspection_policy::resolve_paths(
@@ -88,7 +88,7 @@ pub(crate) fn select_request_diff_file(
     revision: &RequestRevision,
     range: &RequestDiffRange,
     path: &ScopePath,
-) -> Result<Option<InspectedRequestChange>, ApiError> {
+) -> Result<Option<RequestChange>, ApiError> {
     let changes = match range {
         RequestDiffRange::Request | RequestDiffRange::Push => {
             let comparison = if matches!(range, RequestDiffRange::Request) {
@@ -128,10 +128,7 @@ pub(crate) fn select_request_diff_file(
         .find(|file| file.path == relative_path))
 }
 
-pub(crate) fn request_diff_side_oid(
-    file: &InspectedRequestChange,
-    side: RequestDiffSide,
-) -> Option<&str> {
+pub(crate) fn request_diff_side_oid(file: &RequestChange, side: RequestDiffSide) -> Option<&str> {
     match side {
         RequestDiffSide::Old => file.old_oid.as_deref(),
         RequestDiffSide::New => file.new_oid.as_deref(),

@@ -66,7 +66,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
             metaColumnLabel="Change"
             showVisibility
             onSelectFile={(file) => {
-              onSelectFile(file)
+              onSelectFile(file.path)
               navigation.setOpen(false)
             }}
             selectedFilePath={selectedFilePath}

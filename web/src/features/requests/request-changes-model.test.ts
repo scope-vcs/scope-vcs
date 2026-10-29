@@ -254,6 +254,7 @@ function revision(
         old_oid: 'base',
         path: `${oid}.txt`,
         label: 'public' as const,
+        lines: { kind: 'text' as const, additions: 1, deletions: 0 },
       }],
       message: `Commit ${oid}`,
       oid,

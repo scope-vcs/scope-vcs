@@ -194,6 +194,13 @@ pub(super) async fn complete_view_main_push(
     )
     .await;
     state.wakeups.auto_merge.notify_one();
+    crate::use_cases::request_diff_stats::record_published_revision_diff_stat(
+        state,
+        &push.incarnation,
+        &mutation.request,
+        &mutation.revision,
+    )
+    .await;
     Ok(ViewMainPushOutcome::Landed)
 }
 

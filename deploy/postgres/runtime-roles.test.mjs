@@ -14,7 +14,7 @@ const baselineMigration = 'm0084_current_schema_baseline.sql';
 const appliedMigrations = ['m0084_request_review_bases.rs', 'm0085_request_check_identity.rs', 'm0086_private_request_stacks.rs',
   'm0090_job_traceparents.rs', 'm0094_github_carrier_pull_requests.rs', 'm0095_github_review_imports.rs',
   'm0096_github_review_bot_gate.rs', 'm0099_request_object_pool.rs', 'm0100_head_only_run_sources.rs',
-  'm0101_main_pool_packs.rs'];
+  'm0101_main_pool_packs.rs', 'm0104_request_revision_diff_stats.rs'];
 
 test('every table-creating migration after the baseline is applied to the role inventory', () => {
   const creators = readdirSync(migrationsDir)

@@ -6,8 +6,8 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::requests::RequestRevision;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 use std::collections::BTreeMap;
 
@@ -84,6 +84,38 @@ where
         .await?
         .map(entities::request_revision::Model::try_into_domain)
         .transpose()
+}
+
+#[derive(sea_orm::FromQueryResult)]
+struct CurrentRevisionRow {
+    request_id: String,
+    id: String,
+}
+
+pub(super) async fn current_revision_ids<C>(
+    conn: &C,
+    request_ids: &[String],
+) -> Result<BTreeMap<String, String>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    if request_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let placeholders = (1..=request_ids.len())
+        .map(|index| format!("${index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    Ok(CurrentRevisionRow::find_by_statement(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        format!("SELECT DISTINCT ON (request_id) request_id, id FROM scope_request_revisions WHERE request_id IN ({placeholders}) ORDER BY request_id, position DESC, id DESC"),
+        request_ids.iter().map(|id| id.clone().into()).collect::<Vec<sea_orm::Value>>(),
+    ))
+    .all(conn)
+    .await?
+    .into_iter()
+    .map(|row| (row.request_id, row.id))
+    .collect())
 }
 
 pub async fn revisions_for_request_ids<C>(
