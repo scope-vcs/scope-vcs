@@ -219,10 +219,10 @@ pub(super) fn wait_label(submitted_at_unix: u64, now_unix: u64) -> String {
 }
 
 pub(super) fn request_detail_lines(
-    request: &RequestSummaryResponse,
-    navigation: &scope_api_contract::RequestStackNavigationResponse,
+    detail: &scope_api_contract::RequestDetailResponse,
     views: &Views,
 ) -> Vec<String> {
+    let request = &detail.request;
     let mut lines = vec![
         request_line(request),
         format!(
@@ -242,11 +242,17 @@ pub(super) fn request_detail_lines(
             short_oid(&request.head_oid)
         ),
     ];
+    lines.extend(
+        detail
+            .diff_stat
+            .as_ref()
+            .map(super::line_counts::detail_line),
+    );
     lines.push(format!(
         "  stack: depth {} · {:?}",
         request.stack_depth, request.stack_status
     ));
-    lines.extend(navigation::lines(request, navigation));
+    lines.extend(navigation::lines(request, &detail.stack_navigation));
     if !request.description_markdown.trim().is_empty() {
         lines.push(format!(
             "  description: {}",

@@ -171,8 +171,13 @@ fn queue_row_line(row: &QueueRow, now_unix: u64) -> String {
         }
         _ => String::new(),
     };
+    let changes = request
+        .diff_stat
+        .as_ref()
+        .map(|stat| format!(" · {}", super::line_counts::queue_label(stat)))
+        .unwrap_or_default();
     format!(
-        "{marker}{:>5}  {} ({}) — {} · {} · base {} · depth {} · {:?}{review_hold}",
+        "{marker}{:>5}  {} ({}) — {}{changes} · {} · base {} · depth {} · {:?}{review_hold}",
         render::wait_label(row.item.attention_at_unix, now_unix),
         terminal_text(&request.name),
         terminal_text(&request.id),
@@ -402,10 +407,15 @@ mod tests {
             item,
         };
 
-        let fresh = queue_row_line(&row(item("new_activity", serde_json::Value::Null)), 4_600);
+        let mut counted = item("new_activity", serde_json::Value::Null);
+        counted.request.diff_stat = Some(scope_api_contract::RequestDiffStatResponse {
+            additions: 2_400,
+            deletions: 41,
+            changed_files: 6,
+        });
         assert_eq!(
-            fresh,
-            "●   1h  fix-refs (req_one) — Fix refs · New reply or revision · base main · depth 1 · Main"
+            queue_row_line(&row(counted), 4_600),
+            "●   1h  fix-refs (req_one) — Fix refs · +2.4k -41 · New reply or revision · base main · depth 1 · Main"
         );
         let claimed = queue_row_line(
             &row(item(

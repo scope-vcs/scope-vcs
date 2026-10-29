@@ -62,9 +62,9 @@ pub(super) struct StartResult {
 
 #[derive(Serialize)]
 pub(super) struct DetailResult {
-    pub(super) stack_navigation: scope_api_contract::RequestStackNavigationResponse,
     pub(super) repo: RepoSummaryResponse,
-    pub(super) request: RequestSummaryResponse,
+    #[serde(flatten)]
+    pub(super) detail: scope_api_contract::RequestDetailResponse,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) activity: Option<RequestActivityPageResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
