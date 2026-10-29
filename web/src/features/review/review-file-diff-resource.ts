@@ -1,7 +1,11 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import type { ReviewDiffRenderBudget, ReviewFileDiff } from '@/api/types'
-import type { CachedResourceStore } from '@/lib/cached-resource'
-import { type CachedResource, useCachedResource } from '@/lib/use-cached-resource'
+import type { ReviewDiffRenderBudget, ReviewFileDiff } from '../../api/types'
+import type { CachedResourceStore } from '../../lib/cached-resource'
+import {
+  type CachedResource,
+  resourceErrorMessage,
+  useCachedResource,
+} from '../../lib/use-cached-resource'
 
 export type ReviewDiffFullRender = {
   error: string | null
@@ -13,6 +17,13 @@ export type ReviewFileDiffResource = CachedResource<ReviewFileDiff> & {
   fullRender: ReviewDiffFullRender | null
 }
 
+type ReviewFileDiffStore = CachedResourceStore<ReviewFileDiff>
+type ReviewFileDiffSnapshot = ReturnType<ReviewFileDiffStore['getSnapshot']>
+type LoadReviewFileDiff = (
+  budget: ReviewDiffRenderBudget,
+  signal: AbortSignal,
+) => Promise<ReviewFileDiff>
+
 export function useReviewFileDiffResource({
   fallbackError,
   identity,
@@ -21,18 +32,18 @@ export function useReviewFileDiffResource({
 }: {
   fallbackError: string
   identity: string | null
-  load: (budget: ReviewDiffRenderBudget, signal: AbortSignal) => Promise<ReviewFileDiff>
-  resource: CachedResourceStore<ReviewFileDiff>
+  load: LoadReviewFileDiff
+  resource: ReviewFileDiffStore
 }): ReviewFileDiffResource {
   const subscribe = useCallback((listener: () => void) => identity
     ? resource.subscribe(identity, listener)
     : () => {}, [identity, resource])
-  const requestedBudget = useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     subscribe,
-    () => identity ? resource.getSnapshot(identity).version : null,
+    () => identity ? resource.getSnapshot(identity) : null,
     () => null,
   )
-  const budget: ReviewDiffRenderBudget = requestedBudget === 'full' ? 'full' : 'standard'
+  const budget = reviewFileDiffBudget(snapshot)
   const loadBudget = useCallback((signal: AbortSignal) => load(budget, signal), [budget, load])
   const diff = useCachedResource({
     fallbackError,
@@ -42,18 +53,43 @@ export function useReviewFileDiffResource({
     version: budget,
   })
   const start = useCallback(() => {
-    if (!identity) return
-    resource.invalidate(identity)
-    void resource.ensure(identity, 'full', (signal) => load('full', signal))
+    if (identity) startFullReviewFileDiff(resource, identity, load)
   }, [identity, load, resource])
 
-  const presentation = diff.value?.presentation
-  const fullRender = presentation?.kind === 'omitted' && presentation.budget === 'standard'
-    ? {
-        error: budget === 'full' ? diff.error : null,
-        pending: budget === 'full' && diff.refreshing,
-        start,
-      }
-    : null
-  return { ...diff, fullRender }
+  return {
+    ...diff,
+    fullRender: snapshot && reviewFileDiffFullRender(snapshot, fallbackError, start),
+  }
+}
+
+export function reviewFileDiffBudget(
+  snapshot: ReviewFileDiffSnapshot | null,
+): ReviewDiffRenderBudget {
+  return snapshot?.version === 'full' ? 'full' : 'standard'
+}
+
+export function startFullReviewFileDiff(
+  resource: ReviewFileDiffStore,
+  identity: string,
+  load: LoadReviewFileDiff,
+) {
+  resource.invalidate(identity)
+  return resource.ensure(identity, 'full', (signal) => load('full', signal))
+}
+
+export function reviewFileDiffFullRender(
+  snapshot: ReviewFileDiffSnapshot,
+  fallbackError: string,
+  start: () => void,
+): ReviewDiffFullRender | null {
+  const presentation = snapshot.value?.presentation
+  if (presentation?.kind !== 'omitted' || presentation.budget !== 'standard') return null
+  const requested = reviewFileDiffBudget(snapshot) === 'full'
+  return {
+    error: requested && snapshot.error !== null
+      ? resourceErrorMessage(snapshot.error, fallbackError)
+      : null,
+    pending: requested && snapshot.pending,
+    start,
+  }
 }
