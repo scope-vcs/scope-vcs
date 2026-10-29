@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { launchBrowser, startFixtureServer } from './support/fixture-server.mjs'
+import { launchBrowser, startFixtureServer } from '../support/fixture-server.mjs'
 
 test('same-view stack comparisons render child layers at the parent pin without parent file leakage', async (t) => {
   const server = await startFixtureServer(t, 'request-stack', { tailwind: true })

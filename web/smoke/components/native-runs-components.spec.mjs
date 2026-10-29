@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
-import { fixtureClerk, fixturePath, openFixture } from './support/fixture-server.mjs'
+import { fixtureClerk, fixturePath, openFixture } from '../support/fixture-server.mjs'
 
 test('seeded native run navigation makes one read per resource on cold load and reopen', async (t) => {
   const { base, browser, errors, page } = await openFixture(t, 'native-runs', {

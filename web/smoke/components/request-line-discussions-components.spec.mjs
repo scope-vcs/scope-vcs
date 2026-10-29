@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Worker } from 'node:worker_threads'
-import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
+import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
 
 const oldText = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel', ''].join('\n')
 const newText = ['alpha', 'bravo', 'CHARLIE', 'delta', 'echo', 'foxtrot', 'golf', 'hotel', 'india', ''].join('\n')
 
 async function renderDiff() {
-  const worker = new Worker(new URL('../src/features/review/review-file-diff-render-worker.ts', import.meta.url))
+  const worker = new Worker(new URL('../../src/features/review/review-file-diff-render-worker.ts', import.meta.url))
   try {
     return await new Promise((resolve, reject) => {
       worker.on('error', reject)

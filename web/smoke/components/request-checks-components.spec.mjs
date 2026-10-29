@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { openFixture } from './support/fixture-server.mjs'
+import { openFixture } from '../support/fixture-server.mjs'
 
 test('request CI states its count once, names workflows only when several share the list, and links Scope runs', async (t) => {
   const { base, errors, page } = await openFixture(t, 'request-checks', { tailwind: true })

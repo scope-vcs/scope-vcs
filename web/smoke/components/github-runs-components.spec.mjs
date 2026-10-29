@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
+import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
 
 async function screenshot(page, options) {
   await page.mouse.move(0, 0)

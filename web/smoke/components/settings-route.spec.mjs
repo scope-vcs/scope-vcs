@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, fixturePath, openFixture } from './support/fixture-server.mjs'
+import { fixtureClerk, fixturePath, openFixture } from '../support/fixture-server.mjs'
 
 const ui = fixturePath('settings-route', 'ui.tsx')
 const mockedUi = [

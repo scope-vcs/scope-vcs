@@ -170,11 +170,17 @@ export function RequestWorkspaceSidebar({
   function keepHint() {
     window.clearTimeout(hintClosing.current)
   }
-  function leaveHint() {
+  function leaveHint(event: ReactPointerEvent) {
     keepHint()
-    if (hinted && 'stack' in hinted && hinted.stack)
-      hintClosing.current = window.setTimeout(() => setHint(null), RAIL_HINT_GRACE_MS)
-    else setHint(null)
+    if (!(hinted && 'stack' in hinted && hinted.stack)) return setHint(null)
+    const handle =
+      event.relatedTarget instanceof Element && event.relatedTarget.closest('.request-workspace-resize-handle')
+    if (handle) handle.addEventListener('pointerleave', closeHintAfterGrace, { once: true })
+    else closeHintAfterGrace()
+  }
+  function closeHintAfterGrace() {
+    keepHint()
+    hintClosing.current = window.setTimeout(() => setHint(null), RAIL_HINT_GRACE_MS)
   }
   function showHint(event: ReactPointerEvent | FocusEvent) {
     keepHint()

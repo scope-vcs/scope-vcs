@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { openFixture } from './support/fixture-server.mjs'
+import { openFixture } from '../support/fixture-server.mjs'
 
 test('repository components retain drafts, previews and pending actions across refreshes and interaction', async (t) => {
   const { base, errors, page } = await openFixture(t, 'repository-settings', { page: { hasTouch: true }, tailwind: true })

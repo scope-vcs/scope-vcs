@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
 import { gunzipSync } from 'node:zlib'
 import test from 'node:test'
-import { launchBrowser, startFixtureServer } from './support/fixture-server.mjs'
+import { launchBrowser, startFixtureServer } from '../support/fixture-server.mjs'
 
 test('browser analytics transport uses the bounded proxy while analytics domains are blocked', async (t) => {
   let runtime

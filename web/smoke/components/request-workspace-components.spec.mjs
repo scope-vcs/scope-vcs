@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
+import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
 
 async function workspacePage(t) {
   const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk], tailwind: true })
@@ -484,12 +484,21 @@ test('the collapsed rail shows a request\'s whole stack on hover while the stack
   const destination = await baseLink.boundingBox()
   const handle = await page.locator('.request-workspace-resize-handle').boundingBox()
   const avatarCenter = target.y + target.height / 2
-  const crossedHandle = []
+  const path = []
+  await page.clock.install()
   for (let x = target.x + target.width / 2; x <= destination.x + 20; x += 1) {
     await page.mouse.move(x, avatarCenter)
-    if (await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.classList.contains('request-workspace-resize-handle'), [x, avatarCenter])) crossedHandle.push(x)
+    const region = await page.evaluate(([x, y]) => {
+      const over = document.elementFromPoint(x, y)
+      if (over?.closest('.request-workspace-resize-handle')) return 'handle'
+      return over?.closest('.request-workspace-rail-hint') ? 'hint' : 'rail'
+    }, [x, avatarCenter])
+    if (region === path.at(-1)?.region) continue
+    path.push({ region, x })
+    await page.clock.runFor(1_000)
   }
-  assert(crossedHandle.length > 0 && crossedHandle.every((x) => Math.abs(x - handle.x) < 8), 'the path to the hint crosses the resize handle')
+  assert.deepEqual(path.map(({ region }) => region), ['rail', 'handle', 'hint'], 'the path to the hint crosses the resize handle')
+  assert(Math.abs(path[1].x - handle.x) < 8)
   await page.mouse.move(destination.x + 20, destination.y + destination.height / 2, { steps: 12 })
   assert.equal(await hint.locator('li[data-hovered] .request-workspace-rail-hint-title').textContent(), 'Stacked ready')
   await page.mouse.down()
