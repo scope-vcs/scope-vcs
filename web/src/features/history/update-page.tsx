@@ -1,11 +1,9 @@
-import type { RepoParams } from '@/api/types'
-import type {
-  CommitFileResponse,
-  HistoryEntryDetailResponse,
-} from '@/api/types.generated'
+import type { RepoParams, ReviewDiffRenderBudget } from '@/api/types'
+import type { HistoryEntryDetailResponse } from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import { useReviewFileDiffResource } from '@/features/review/review-file-diff-resource'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { loadHistoryEntry, loadHistoryEntryFileDiff } from '@/routes/-repo-history-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
@@ -117,8 +115,9 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
       })
     : null
   const loadDiff = useCallback(
-    (signal: AbortSignal) => loadHistoryEntryFileDiff({
+    (budget: ReviewDiffRenderBudget, signal: AbortSignal) => loadHistoryEntryFileDiff({
       data: {
+        budget,
         view,
         entry: entryId,
         owner,
@@ -130,7 +129,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
     }),
     [view, entryId, owner, repoName, selectedFilePath, selectedVisibilityId],
   )
-  const diffResource = useCachedResource({
+  const diffResource = useReviewFileDiffResource({
     fallbackError: 'This file diff is unavailable.',
     identity: diffIdentity,
     load: loadDiff,
@@ -157,7 +156,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
   )
 
   const closeDiff = useCallback(() => void selectPath(null), [selectPath])
-  const selectFile = useCallback((file: CommitFileResponse) => void selectPath(file.path), [selectPath])
+  const selectFile = useCallback((path: string) => void selectPath(path), [selectPath])
   const selectVisibility = useCallback(
     (change: HistoryVisibilityChange) => void selectPath(change.path, change.id),
     [selectPath],

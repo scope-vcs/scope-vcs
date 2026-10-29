@@ -1,13 +1,13 @@
 use super::git_oid_response;
 use crate::error::ApiError;
 use scope_api_contract::{
-    RequestActorSummaryResponse, RequestEventResponse, RequestInviteeResponse,
-    RequestListItemResponse, RequestMergeabilityResponse, RequestPermissionsResponse,
-    RequestSummaryResponse,
+    RequestActorSummaryResponse, RequestDiffStatResponse, RequestEventResponse,
+    RequestInviteeResponse, RequestListItemResponse, RequestMergeabilityResponse,
+    RequestPermissionsResponse, RequestSummaryResponse,
 };
 use scope_domain::{
     requests::{
-        Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject, RequestViewer,
+        DiffStat, Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject, RequestViewer,
         request_list_mergeability, request_mergeability, request_policy,
     },
     views::Views,
@@ -76,26 +76,35 @@ pub(crate) struct RequestGateOutcomes {
     pub(crate) reviews: scope_domain::requests::RequestReviewsOutcome,
 }
 
+pub(crate) struct RequestListItemFacts {
+    pub(crate) outcomes: RequestGateOutcomes,
+    pub(crate) parent: Option<scope_domain::requests::RequestStackParent>,
+    pub(crate) diff_stat: Option<DiffStat>,
+}
+
 pub(crate) fn request_list_item_response(
     request: RequestListRow,
     viewer: &RequestViewer<'_>,
     views: &Views,
     current_main_oid: Option<String>,
-    outcomes: RequestGateOutcomes,
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
-    parent: Option<scope_domain::requests::RequestStackParent>,
+    facts: RequestListItemFacts,
 ) -> Result<RequestListItemResponse, crate::error::ApiError> {
     let decision = request_list_mergeability(
         request_list_row_subject(&request),
         viewer,
         views,
-        outcomes.checks,
-        outcomes.reviews,
+        facts.outcomes.checks,
+        facts.outcomes.reviews,
         repository_lifecycle,
     );
     let request_head_oid = super::git_oid_response(request.head_oid)?;
     Ok(RequestListItemResponse {
-        stack_parent: parent.map(request_stack_parent_response).transpose()?,
+        diff_stat: facts.diff_stat.map(diff_stat_response),
+        stack_parent: facts
+            .parent
+            .map(request_stack_parent_response)
+            .transpose()?,
         id: request.id,
         name: request.name,
         title: request.title,
@@ -117,6 +126,14 @@ pub(crate) fn request_list_item_response(
             reason: decision.reason.map(str::to_string),
         },
     })
+}
+
+pub(crate) fn diff_stat_response(stat: DiffStat) -> RequestDiffStatResponse {
+    RequestDiffStatResponse {
+        additions: stat.additions,
+        deletions: stat.deletions,
+        changed_files: stat.changed_files,
+    }
 }
 
 pub(crate) fn request_event_response(

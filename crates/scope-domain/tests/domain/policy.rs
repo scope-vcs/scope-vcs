@@ -195,3 +195,28 @@ fn split_rules_rejoin_to_the_same_policy_and_labels() {
     );
     assert_eq!(directories.join_rules(files.into_iter().rev()), policy);
 }
+
+#[test]
+fn stored_rules_in_any_order_resolve_the_nearest_ancestor_and_last_duplicate() {
+    let views = Views::builtin();
+    let stored = serde_json::json!({
+        "default": "public",
+        "rules": [
+            {"path": "/docs/private/open.md", "view": "public"},
+            {"path": "/docs/private", "view": "private"},
+            {"path": "/", "view": "public"},
+            {"path": "/docs/private-notes", "view": "private"},
+            {"path": "/docs/private/open.md", "view": "private"},
+        ],
+    });
+    let policy: Policy = serde_json::from_value(stored).unwrap();
+    for (file, expected) in [
+        ("/docs/private/open.md", ViewId::private()),
+        ("/docs/private/deep/file.rs", ViewId::private()),
+        ("/docs/private-notes/todo.md", ViewId::private()),
+        ("/docs/privately.md", ViewId::public()),
+        ("/", ViewId::public()),
+    ] {
+        assert_eq!(policy.label(&path(file), &views), expected, "{file}");
+    }
+}

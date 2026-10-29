@@ -19,6 +19,7 @@ mod m0100_head_only_run_sources;
 mod m0101_main_pool_packs;
 mod m0102_projection_file_symlinks;
 mod m0103_review_request_times;
+mod m0104_request_revision_diff_stats;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -147,6 +148,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0103_review_request_times::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0104_request_revision_diff_stats::Migration),
             metadata_restore_safe: true,
         },
     ]

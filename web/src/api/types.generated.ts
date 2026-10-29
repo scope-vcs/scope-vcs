@@ -495,7 +495,9 @@ export type HistoryVisibilitySummaryResponse = { entered_count: number, left_cou
 
 export type HistoryVisibilityChangeResponse = { id: string, file: HistoryEntryFileResponse | null, path: string, old_label: ViewId, new_label: ViewId, };
 
-export type CommitFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, };
+export type CommitFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, lines: FileLineChangesResponse, };
+
+export type FileLineChangesResponse = { "kind": "text", additions: number, deletions: number, } | { "kind": "binary" };
 
 export type ProjectionPreviewRequest = { view: ViewId, };
 
@@ -551,7 +553,13 @@ export type RequestQueuePageResponse = { requests: Array<RequestQueueItemRespons
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
-export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, };
+export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse,
+/**
+ * Null until the current revision's line counts are recorded, or when the viewer's readable files cannot be counted.
+ */
+diff_stat: RequestDiffStatResponse | null, };
+
+export type RequestDiffStatResponse = { additions: number, deletions: number, changed_files: number, };
 
 export type RequestStateResponse = { viewer: RequestActorSummaryResponse | null, detail: RequestDetailResponse, checks: RequestChecksResponse, auto_merge: RequestAutoMergeResponse, };
 
@@ -573,7 +581,11 @@ stack_depth: number, id: string, name: string, title: string,
 /**
  * Null once that account is deleted; clients show a deleted user.
  */
-author_user_id: string | null, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse, };
+author_user_id: string | null, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse,
+/**
+ * Null until the current revision's line counts are recorded, or when the viewer's readable files cannot be counted.
+ */
+diff_stat: RequestDiffStatResponse | null, };
 
 export type RequestBase = { "kind": "main", review_base_oid: GitOid, } | { "kind": "request", request_id: string, revision_id: string, head_oid: GitOid, };
 

@@ -19,7 +19,7 @@ const base = 'a'.repeat(40)
 const firstHead = 'b'.repeat(40)
 const head = 'c'.repeat(40)
 const path = '/src/lib.ts'
-const file = { path, kind: 'Modified', old_oid: base, new_oid: head, old_mode: '100644', new_mode: '100644', label: 'private' }
+const file = { path, kind: 'Modified', old_oid: base, new_oid: head, old_mode: '100644', new_mode: '100644', label: 'private', lines: { kind: 'text', additions: 3, deletions: 1 } }
 const revision = (id: string, position: number, newHead: string) => ({
   base: { kind: 'main', review_base_oid: base }, base_version: 1, id, position, actor: null,
   old_head_oid: base, new_head_oid: newHead, inspection: 'Complete', created_at_unix: position,

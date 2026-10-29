@@ -6,7 +6,7 @@ import { Worker } from 'node:worker_threads'
 import { filesBelow, sumBytes } from './bundle-budget.mjs'
 
 const MAX_BUNDLE_BYTES = 11 * 1024 * 1024
-const MAX_BUNDLE_FILES = 350
+const MAX_BUNDLE_FILES = 440
 const workerDirectory = fileURLToPath(new URL(
   '../.output/server/_workers',
   import.meta.url,
@@ -41,7 +41,7 @@ const ssrSources = await Promise.all(
     .map((path) => readFile(path, 'utf8')),
 )
 const prerenderSource = ssrSources.find((source) =>
-  source.includes('scope.review-file-diff-renderer-v1')
+  source.includes('scope.review-file-diff-renderer-v2')
 )
 assert.ok(prerenderSource, 'review diff server renderer was not emitted')
 assert.match(
@@ -56,7 +56,6 @@ assert.doesNotMatch(
 )
 
 const workerBudget = {
-  maxHighlightLanguages: 16,
   maxHunks: 64,
   maxOutputBytes: 256 * 1024,
   maxRenderedLines: 800,

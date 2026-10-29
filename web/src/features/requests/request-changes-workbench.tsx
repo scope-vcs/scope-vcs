@@ -1,6 +1,5 @@
-import type { CommitSummary, ReviewFileDiff } from '@/api/types'
+import type { CommitSummary, ReviewDiffRenderBudget, ReviewFileDiff } from '@/api/types'
 import type {
-  CommitFileResponse,
   ViewId,
   RequestRevisionListResponse,
 } from '@/api/types.generated'
@@ -20,6 +19,7 @@ import {
   type CommitFileDiffState,
 } from '@/features/history/history-state'
 import { shortOid } from '@/lib/short-oid'
+import { useReviewFileDiffResource } from '@/features/review/review-file-diff-resource'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { AbsoluteTimestamp } from '@/components/timestamp'
 import { commitCount } from './request-revision-stepper'
@@ -341,12 +341,13 @@ function useRequestChangesModel({
       })
     : null
   const loadSelectedDiff = useCallback(
-    async (signal: AbortSignal) => {
+    async (budget: ReviewDiffRenderBudget, signal: AbortSignal) => {
       if (!selectedRevisionId || !selectedFilePath || diffMode === 'commit' && !selectedCommitOid) {
         throw new Error('Select a changed file.')
       }
       return loadDiff({
         ...params,
+        budget,
         comparison: diffMode,
         commit_oid: selectedCommitOid ?? undefined,
         path: selectedFilePath,
@@ -355,7 +356,7 @@ function useRequestChangesModel({
     },
     [loadDiff, params, selectedCommitOid, selectedFilePath, selectedRevisionId, diffMode],
   )
-  const diffResource = useCachedResource({
+  const diffResource = useReviewFileDiffResource({
     fallbackError: 'Request file diff is unavailable.',
     identity: diffIdentity,
     load: loadSelectedDiff,
@@ -404,8 +405,8 @@ function useRequestChangesModel({
       const selected = requestCommitForListId(orderedRevisions, commit.projected_id)
       replaceSelection(selected?.revision ?? null, selected?.commitOid ?? null, null)
     },
-    selectFile: (file: CommitFileResponse) =>
-      onSearchChange({ ...search, path: file.path, revision: selectedRevision?.id }),
+    selectFile: (path: string) =>
+      onSearchChange({ ...search, path, revision: selectedRevision?.id }),
     selectedCommitId: selectedCommit?.projected_id ?? selectedCommitId,
     selectedCommitOid,
     selectedCommitSummary,

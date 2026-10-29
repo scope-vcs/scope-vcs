@@ -101,6 +101,15 @@ pub(crate) async fn list_requests(
         .requests()
         .request_stack_parents(&repo, viewer_user_id.as_deref(), &requests)
         .await?;
+    let mut diff_stats = crate::use_cases::request_diff_stats::readable_request_diff_stats(
+        &state,
+        &repo,
+        &requests
+            .iter()
+            .map(|request| request.id.clone())
+            .collect::<Vec<_>>(),
+    )
+    .await?;
     let requests = requests
         .into_iter()
         .map(|request| {
@@ -112,15 +121,18 @@ pub(crate) async fn list_requests(
                 .get(&request.id)
                 .copied()
                 .unwrap_or(RequestReviewsOutcome::Clear);
-            let parent = parents.remove(&request.id);
+            let facts = RequestListItemFacts {
+                outcomes: RequestGateOutcomes { checks, reviews },
+                parent: parents.remove(&request.id),
+                diff_stat: diff_stats.remove(&request.id),
+            };
             request_list_item_response(
                 request,
                 &RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false),
                 &repo.views,
                 current_main_oid.clone(),
-                RequestGateOutcomes { checks, reviews },
                 repo.record.lifecycle_state,
-                parent,
+                facts,
             )
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
@@ -150,9 +162,11 @@ pub(crate) async fn get_request(
 ) -> Result<Json<RequestDetailResponse>, ApiError> {
     let snapshot =
         super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    let diff_stat = super::request_state::diff_stat(&state, &snapshot).await?;
     Ok(Json(super::request_state::detail_response(
         &snapshot,
         super::request_state::viewer(&snapshot),
+        diff_stat,
     )?))
 }
 

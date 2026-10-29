@@ -511,6 +511,13 @@ pub(super) async fn persist_request_ref_revision(
                 staging_repo,
             )
             .await;
+            crate::use_cases::request_diff_stats::record_published_revision_diff_stat(
+                state,
+                &incarnation,
+                &mutation.request,
+                &mutation.revision,
+            )
+            .await;
         }
         Err(error) => {
             if let Some(pool_pack) = persisted.pool_pack {

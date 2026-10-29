@@ -69,7 +69,7 @@ function App() {
           navigation={navigation}
           onCloseDiff={navigation.closeDiff}
           onDiffScroll={() => {}}
-          onSelectFile={(selected) => setSelection({ path: selected.path, visibilityId: null })}
+          onSelectFile={(path) => setSelection({ path, visibilityId: null })}
           onSelectVisibility={(change) => setSelection({ path: change.path, visibilityId: change.id })}
           selectedFilePath={selection.path}
           selectedVisibilityId={selection.visibilityId}

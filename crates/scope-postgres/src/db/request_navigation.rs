@@ -78,12 +78,6 @@ struct AncestorId {
     id: String,
 }
 
-#[derive(FromQueryResult)]
-struct CurrentRevision {
-    request_id: String,
-    id: String,
-}
-
 async fn nodes_for_rows<C: ConnectionTrait>(
     conn: &C,
     rows: Vec<RequestListRow>,
@@ -91,15 +85,8 @@ async fn nodes_for_rows<C: ConnectionTrait>(
     if rows.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let placeholders = (1..=rows.len())
-        .map(|index| format!("${index}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let revisions = CurrentRevision::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        format!("SELECT DISTINCT ON (request_id) request_id, id FROM scope_request_revisions WHERE request_id IN ({placeholders}) ORDER BY request_id, position DESC, id DESC"),
-        rows.iter().map(|row| row.id.clone().into()).collect::<Vec<sea_orm::Value>>(),
-    )).all(conn).await.map_err(PostgresError::internal)?.into_iter().map(|row| (row.request_id, row.id)).collect::<BTreeMap<_, _>>();
+    let request_ids = rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>();
+    let revisions = super::request_revision_rows::current_revision_ids(conn, &request_ids).await?;
     Ok(rows
         .into_iter()
         .map(|row| {

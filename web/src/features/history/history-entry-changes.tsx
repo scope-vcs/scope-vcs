@@ -54,7 +54,7 @@ export function HistoryEntryChanges({
   function select(path: ChangedPath) {
     const [target] = changedPathTargets(path)
     if (!target) return
-    if (target.kind === 'file') onSelectFile(target.file)
+    if (target.kind === 'file') onSelectFile(target.file.path)
     else onSelectVisibility(target.change)
     if (path.group) setOpenGroups((open) => new Set(open).add(path.group))
     navigation.setOpen(false)

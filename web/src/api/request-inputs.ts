@@ -1,5 +1,6 @@
 import { parseRepoParams, parseRepoViewInput } from './repo-params'
 import { parseFilePath } from './file-path-input'
+import { parseReviewDiffRenderBudget } from './review-diff-budget-input'
 import type { ApproveRequestChecksInput, RequestParams } from './types'
 import type { RequestDiscussionLineRange } from './types.generated'
 import type { RequestActionInput } from '../features/requests/request-actions-api'
@@ -87,6 +88,7 @@ export function parseLoadRequestRevisionDiffInput(input: unknown) {
   const data = object(input)
   return {
     ...parseRequestParams(data),
+    budget: parseReviewDiffRenderBudget(data.budget),
     comparison: parseRequestComparison(data.comparison),
     commit_oid: data.comparison === 'commit' ? id(data.commit_oid, 'commit_oid') : optionalId(data.commit_oid, 'commit_oid'),
     revision_id: id(data.revision_id, 'revision_id'),

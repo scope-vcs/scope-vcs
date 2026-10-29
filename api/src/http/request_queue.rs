@@ -1,8 +1,8 @@
 use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
     responses::{
-        RequestGateOutcomes, recorded_actor_response, request_actor_summary_response,
-        request_list_item_response, request_list_row_subject,
+        RequestGateOutcomes, RequestListItemFacts, recorded_actor_response,
+        request_actor_summary_response, request_list_item_response, request_list_row_subject,
     },
 };
 use crate::auth::scope::require_scope_user;
@@ -142,6 +142,12 @@ pub(crate) async fn request_queue(
         .requests()
         .request_stack_parents(&repo, viewer_user_id.as_deref(), &rows)
         .await?;
+    let mut diff_stats = crate::use_cases::request_diff_stats::readable_request_diff_stats(
+        &state,
+        &repo,
+        &rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
+    )
+    .await?;
     let requests = page
         .rows
         .into_iter()
@@ -180,9 +186,12 @@ pub(crate) async fn request_queue(
                     &viewer,
                     &repo.views,
                     current_main_oid.clone(),
-                    RequestGateOutcomes { checks, reviews },
                     repo.record.lifecycle_state,
-                    parents.remove(&request_id),
+                    RequestListItemFacts {
+                        outcomes: RequestGateOutcomes { checks, reviews },
+                        parent: parents.remove(&request_id),
+                        diff_stat: diff_stats.remove(&request_id),
+                    },
                 )?,
                 author,
                 attention: attention_response(

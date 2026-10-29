@@ -64,6 +64,10 @@ pub use checks::{
     request_checks_outcome, request_head_awaits_evaluation, retains_request_branch_for_carrier,
     review_delivery_belongs_to_request, review_request_comment_body, review_request_marker,
 };
+mod diff_stat;
+pub use diff_stat::{
+    DiffStat, FileDiffStat, FileLineChanges, RevisionDiffStat, RevisionDiffStatBuilder,
+};
 mod revisions;
 pub use revisions::{RequestRevision, select_request_review_revision};
 mod identity;

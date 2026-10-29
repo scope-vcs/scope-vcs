@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { CommitFileResponse, FileChangeKind } from '@/api/types.generated'
+import type { FileChangeKind, HistoryEntryFileResponse } from '@/api/types.generated'
 import {
   changedPathFilterCounts,
   changedPaths,
@@ -14,7 +14,7 @@ import {
   type HistoryVisibilityChange,
 } from './changed-paths-model'
 
-function file(path: string, kind: FileChangeKind = 'Modified'): CommitFileResponse {
+function file(path: string, kind: FileChangeKind = 'Modified'): HistoryEntryFileResponse {
   return { path, kind, old_mode: null, new_mode: null, old_oid: 'a', new_oid: 'b', label: 'private' }
 }
 

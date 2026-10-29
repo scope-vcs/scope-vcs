@@ -12,8 +12,8 @@ import './styles.css'
 
 const head = 'b'.repeat(40)
 const base = 'a'.repeat(40)
-const parentFile = { path: '/src/parent.ts', kind: 'Added', old_oid: null, new_oid: base, old_mode: null, new_mode: '100644', label: 'public' }
-const files = [{ path: '/src/child.ts', kind: 'Added', old_oid: null, new_oid: head, old_mode: null, new_mode: '100644', label: 'private' }]
+const parentFile = { path: '/src/parent.ts', kind: 'Added', old_oid: null, new_oid: base, old_mode: null, new_mode: '100644', label: 'public', lines: { kind: 'binary' } }
+const files = [{ path: '/src/child.ts', kind: 'Added', old_oid: null, new_oid: head, old_mode: null, new_mode: '100644', label: 'private', lines: { kind: 'text', additions: 22, deletions: 4 } }]
 const revision = {
   base: { kind: 'request', request_id: 'parent', revision_id: 'parent-revision', head_oid: base }, base_version: 1,
   id: 'child-revision', position: 2, actor: null, old_head_oid: base, new_head_oid: head,

@@ -3,7 +3,6 @@ import { FileWorkbench } from '@/components/file-workbench'
 import { useRef, useState, type ReactNode } from 'react'
 import { ReviewFileDiffDrawer, type ReviewDiffAnnotations } from '../review/review-file-diff-drawer'
 import type { CommitFileDiffState } from './history-state'
-import type { CommitFileResponse } from '@/api/types.generated'
 
 export type ChangedFilesProps = {
   diffAnnotations?: ReviewDiffAnnotations
@@ -13,7 +12,7 @@ export type ChangedFilesProps = {
   onCloseDiff: () => void
   onDiffScroll: (scrollTop: number) => void
   onRetryDiff?: () => void
-  onSelectFile: (file: CommitFileResponse) => void
+  onSelectFile: (path: string) => void
   selectedFilePath: string | null
 }
 
@@ -54,6 +53,7 @@ export function ChangedFilesWorkbench({
         context={diffContext}
         diff={fileDiffState.diff}
         error={fileDiffState.error}
+        fullRender={fileDiffState.status === 'loaded' ? fileDiffState.fullRender : null}
         loading={fileDiffState.status === 'loading'}
         onClose={navigation.closeDiff}
         onRetry={onRetryDiff}

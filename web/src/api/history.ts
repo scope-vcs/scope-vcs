@@ -81,5 +81,5 @@ export async function loadHistoryEntryFileDiffForRequest(
     { auth: 'optional', signal },
   )
 
-  return renderReviewFileDiff(diff, signal)
+  return renderReviewFileDiff(diff, data.budget, signal)
 }

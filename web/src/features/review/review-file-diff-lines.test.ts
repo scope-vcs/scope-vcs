@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { Worker } from 'node:worker_threads'
-import { REVIEW_FILE_DIFF_RENDER_BUDGET } from './review-file-diff-render-contract'
+import { REVIEW_FILE_DIFF_RENDER_BUDGETS } from './review-file-diff-render-contract'
 import { diffLineSide, renderedDiffLines } from './review-file-diff-lines'
 import { runReviewFileDiffWorker } from './review-file-diff-worker-pool'
 
@@ -15,9 +15,9 @@ test('rendered diff lines follow each side of the prerendered diff, including co
   try {
     result = await runReviewFileDiffWorker(worker, {
       budget: {
-        maxHunks: REVIEW_FILE_DIFF_RENDER_BUDGET.maxHunks,
-        maxOutputBytes: REVIEW_FILE_DIFF_RENDER_BUDGET.maxOutputBytes,
-        maxRenderedLines: REVIEW_FILE_DIFF_RENDER_BUDGET.maxRenderedLines,
+        maxHunks: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxHunks,
+        maxOutputBytes: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxOutputBytes,
+        maxRenderedLines: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxRenderedLines,
       },
       newText,
       oldText,
