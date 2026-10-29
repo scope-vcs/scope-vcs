@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
+import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
 
 test('accepted summaries and reconnects reconcile the retained request queue without restarting the stream', async t => {
   const { base, errors, page } = await openFixture(t, 'repo-refresh', { aliases: [fixtureClerk], timeout: 5_000 })

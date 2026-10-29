@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, openFixture } from './support/fixture-server.mjs'
+import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
 
 test('a reply resent with a different quote is a new attempt', async (t) => {
   const { base, errors, page } = await openFixture(t, 'request-reply', { aliases: [fixtureClerk], timeout: 30_000 })

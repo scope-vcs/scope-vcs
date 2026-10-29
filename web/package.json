@@ -17,7 +17,7 @@
     "check:resource-boundary": "node --test scripts/resource-boundary.test.mjs scripts/callback-assertions.test.mjs && node scripts/check-resource-boundary.mjs",
     "generate:api-contract": "node scripts/generate-api-contract.mjs",
     "test": "node scripts/prepare-test-output.mjs && tsc -p tsconfig.test.json && TZ=UTC node --test \".test-output/**/*.test.js\" scripts/dev-runner-connections.test.mjs",
-    "test:smoke": "node --test \"smoke/**/*.spec.mjs\"",
+    "test:smoke": "node --test \"smoke/components/*.spec.mjs\"; components=$?; node --test \"smoke/*.spec.mjs\" && exit $components",
     "test:journey": "node --test \"journeys/**/*.spec.mjs\"",
     "typecheck": "tsc --noEmit",
     "check:hooks": "node --test scripts/check-hooks.test.mjs && oxlint -c .oxlintrc.json src",

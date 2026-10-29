@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { openFixture } from './support/fixture-server.mjs'
+import { openFixture } from '../support/fixture-server.mjs'
 
 const screenshot = async (page, name) => {
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {

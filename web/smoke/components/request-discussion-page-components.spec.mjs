@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { openFixture } from './support/fixture-server.mjs'
+import { openFixture } from '../support/fixture-server.mjs'
 
 test('a refresh that finds the discussion retained keeps the open composer', async (t) => {
   const { base, errors, page } = await openFixture(t, 'request-discussion-page')
