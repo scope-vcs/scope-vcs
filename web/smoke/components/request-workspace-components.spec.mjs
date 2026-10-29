@@ -39,9 +39,40 @@ test('request rows exchange age and actions and restore the selected view across
     getComputedStyle(node).borderTopWidth), '0px')
   await waitOpacity(age, '1')
   await waitOpacity(actions, '0')
+  const diffStat = row.locator('.request-workspace-row-diff-stat')
+  const diffStats = () => page.locator('.request-workspace-row').evaluateAll((rows) => rows.map((node) => {
+    const stat = node.querySelector('.request-workspace-row-diff-stat')
+    if (!stat || getComputedStyle(stat).display === 'none') return null
+    const statBox = stat.getBoundingClientRect()
+    const label = node.querySelector('.request-workspace-row-meta > span:first-child')
+    return {
+      text: stat.querySelector('[aria-hidden="true"]').textContent,
+      title: stat.title,
+      clear: label.getBoundingClientRect().right <= statBox.left
+        && statBox.right <= node.querySelector('time').getBoundingClientRect().left,
+    }
+  }))
+  assert.deepEqual(await diffStats(), [
+    { text: '+2.4k −41', title: '2,480 additions, 41 deletions across 6 files', clear: true },
+    { text: '3 files', title: '3 files changed, no line changes', clear: true },
+    null,
+  ])
+  const widthHandle = page.getByRole('separator', { name: 'Requests sidebar width' })
+  await widthHandle.focus()
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 330)
+  assert.deepEqual(await diffStats(), [null, null, null])
+  await page.keyboard.press('End')
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 360)
+  await page.mouse.move(700, 400)
+  await page.getByRole('searchbox').focus()
+  await waitOpacity(diffStat, '1')
   const rowBounds = await row.boundingBox()
   await row.hover()
   await waitOpacity(age, '0')
+  await waitOpacity(diffStat, '0')
   await waitOpacity(actions, '1')
   assert.deepEqual(await row.boundingBox(), rowBounds)
   assert.equal(await age.evaluate((node) => getComputedStyle(node).transitionDuration), '0.15s')
@@ -212,11 +243,12 @@ test('request rows exchange age and actions and restore the selected view across
   assert(await age.evaluate((node) => parseFloat(getComputedStyle(node).transitionDuration) <= 0.00001))
   await page.setViewportSize({ width: 390, height: 844 })
   await waitOpacity(age, '0')
+  await waitOpacity(diffStat, '0')
   await waitOpacity(actions, '1')
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   assert.equal(await page.locator('[data-request-id="request-2"] time').evaluate((node) =>
     getComputedStyle(node).opacity), '1')
-  const label = await row.locator('.request-workspace-row-meta > span').boundingBox()
+  const label = await row.locator('.request-workspace-row-meta > span:first-child').boundingBox()
   const buttons = await actions.boundingBox()
   assert(label.x + label.width < buttons.x)
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {

@@ -1,9 +1,11 @@
 import { PanelState } from '@/components/empty-state'
 import { historyCommitTitle } from '@/features/history/history-row-labels'
 import type { CommitDetailState } from '@/features/history/history-state'
+import { DiffStatSummary } from '@/components/diff-stat'
 import { FileSystemTree } from '@/components/file-system-tree'
 import { Badge } from '@/components/ui/badge'
 import { GitCommit, TriangleAlert } from 'lucide-react'
+import { diffStatOfFiles } from '@/lib/diff-stat'
 import type { ReactNode } from 'react'
 import { ChangedFilesWorkbench, useChangedFileNavigation, type ChangedFilesProps } from './changed-files-workbench'
 
@@ -36,6 +38,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
 
   const commit = commitState.commit
   const filesTruncated = commit.files_truncated
+  const diffStat = diffStatOfFiles(commit)
   return (
     <div className="scope-content-enter min-w-0">
       <div className="border-b border-border px-(--app-inset) py-4">
@@ -48,6 +51,12 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
             <>
               <span aria-hidden>·</span>
               <span>{commit.author}</span>
+            </>
+          )}
+          {diffStat && (
+            <>
+              <span aria-hidden>·</span>
+              <DiffStatSummary detail="exact" stat={diffStat} />
             </>
           )}
         </div>
@@ -72,6 +81,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
             selectedFilePath={selectedFilePath}
           />
         )}
+        selectedFileLines={commit.files.find((file) => file.path === selectedFilePath)?.lines ?? null}
         emptyFilesMessage={filesTruncated
           ? `${commit.change_count} changed files are outside the bounded file list.`
           : 'No file changes in this commit.'}
