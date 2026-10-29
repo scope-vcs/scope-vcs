@@ -41,7 +41,7 @@ const ssrSources = await Promise.all(
     .map((path) => readFile(path, 'utf8')),
 )
 const prerenderSource = ssrSources.find((source) =>
-  source.includes('scope.review-file-diff-renderer-v1')
+  source.includes('scope.review-file-diff-renderer-v2')
 )
 assert.ok(prerenderSource, 'review diff server renderer was not emitted')
 assert.match(
