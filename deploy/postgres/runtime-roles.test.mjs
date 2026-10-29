@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -9,19 +9,22 @@ import { grants, renderPolicy, tables } from './runtime-roles.mjs';
 import { candidateMigrationVersion, renderRuntimeRoleAudit } from './audit-runtime-roles.mjs';
 import { localClusterSkip, pgBin } from './test-cluster.mjs';
 
-const migrationsDir = new URL('../../crates/scope-postgres/src/migrations/', import.meta.url);
-const baselineMigration = 'm0084_current_schema_baseline.sql';
-const appliedMigrations = ['m0084_request_review_bases.rs', 'm0085_request_check_identity.rs', 'm0086_private_request_stacks.rs',
-  'm0090_job_traceparents.rs', 'm0094_github_carrier_pull_requests.rs', 'm0095_github_review_imports.rs',
-  'm0096_github_review_bot_gate.rs', 'm0099_request_object_pool.rs', 'm0100_head_only_run_sources.rs',
-  'm0101_main_pool_packs.rs', 'm0104_request_revision_diff_stats.rs'];
+const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
+const migrationTest = 'db::migration_tests::runtime_role_cluster::runtime_role_cluster_receives_the_production_migrations';
 
-test('every table-creating migration after the baseline is applied to the role inventory', () => {
-  const creators = readdirSync(migrationsDir)
-    .filter((name) => /^m\d+_.+\.rs$/.test(name) && name > baselineMigration
-      && /CREATE TABLE/.test(readFileSync(new URL(name, migrationsDir), 'utf8')));
-  assert.deepEqual(creators.filter((name) => !appliedMigrations.includes(name)), []);
-});
+function applyProductionMigrations(dir, role) {
+  const migration = spawnSync('cargo', ['test', '-p', 'scope-postgres', '--lib',
+    migrationTest, '--', '--exact', '--nocapture'], {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      SCOPE_RUNTIME_ROLE_MIGRATION_URL: `postgres://${role}@localhost/postgres?host=${encodeURIComponent(dir)}`,
+    },
+    encoding: 'utf8', timeout: 600_000, maxBuffer: 10 * 1024 * 1024,
+  });
+  assert.equal(migration.status, 0, `${migration.stdout}\n${migration.stderr}`);
+  assert.match(migration.stdout, new RegExp(`test ${migrationTest} \\.\\.\\. ok`));
+}
 
 test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClusterSkip }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'scope-role-test-'));
@@ -41,14 +44,10 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     execFileSync(join(pgBin, 'initdb'), ['-D', data, '-U', 'postgres', '--auth=trust', '--no-locale'], { stdio: 'pipe' });
     execFileSync(join(pgBin, 'pg_ctl'), ['-D', data, '-l', join(dir, 'log'), '-o', `-k ${dir} -c listen_addresses=''`, '-w', 'start'], { stdio: 'pipe' });
     started = true;
-    const baseline = readFileSync(new URL(baselineMigration, migrationsDir), 'utf8');
-    query(baseline);
-    for (const filename of appliedMigrations) {
-      const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
-      query(`BEGIN; ${source.match(/r#"([\s\S]*?)"#/)[1]} COMMIT;`);
-    }
-    query('CREATE TABLE seaql_migrations (version text PRIMARY KEY);');
-    const actual = query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename").stdout.trim().split('\n');
+    applyProductionMigrations(dir, 'postgres');
+    query(`DELETE FROM seaql_migrations WHERE version = '${candidateMigrationVersion}';`);
+    const actual = query(`SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f') ORDER BY c.relname`).stdout.trim().split('\n');
     assert.deepEqual(actual, tables);
     query(renderPolicy());
     query('GRANT SELECT (id) ON scope_cli_sessions TO scope_media_worker;');
@@ -60,7 +59,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query(renderRuntimeRoleAudit(), 'scope_migrator');
     query('CREATE TABLE old_pending_relation(id int);', 'scope_migrator');
     query(renderRuntimeRoleAudit(), 'scope_migrator');
-    query(`INSERT INTO seaql_migrations(version) VALUES ('${candidateMigrationVersion}');`);
+    query(`INSERT INTO seaql_migrations(version, applied_at) VALUES ('${candidateMigrationVersion}', 0);`);
     const auditFails = (pattern, audit = renderRuntimeRoleAudit()) => {
       const result = spawnSync(join(pgBin, 'psql'), ['-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
         '-h', dir, '-U', 'scope_migrator', '-d', 'postgres'], { input: audit, encoding: 'utf8' });
@@ -138,7 +137,7 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query('UPDATE scope_request_events SET id = id;', 'scope_run_worker', false);
     const workerRoleTest = spawnSync('cargo', ['test', '-p', 'scope-postgres', '--lib',
       'worker_role_rebuilds_repository_history', '--', '--nocapture'], {
-      cwd: fileURLToPath(new URL('../../', import.meta.url)),
+      cwd: repositoryRoot,
       env: {
         ...process.env,
         SCOPE_WORKER_ROLE_TEST_ADMIN_URL: `postgres://postgres@localhost/postgres?host=${encodeURIComponent(dir)}`,
@@ -197,12 +196,7 @@ test('roles-only bootstrap lets the migration login build and grant an empty dat
     query(renderPolicy({ mode: 'roles' }));
     query(renderPolicy({ mode: 'roles' }));
     query('CREATE TABLE early(id int);', 'scope_api', false);
-    query(readFileSync(new URL(baselineMigration, migrationsDir), 'utf8'), 'scope_migrator');
-    for (const filename of appliedMigrations) {
-      const source = readFileSync(new URL(filename, migrationsDir), 'utf8');
-      query(`BEGIN; ${source.match(/r#"([\s\S]*?)"#/)[1]} COMMIT;`, 'scope_migrator');
-    }
-    query('CREATE TABLE seaql_migrations (version text PRIMARY KEY);', 'scope_migrator');
+    applyProductionMigrations(dir, 'scope_migrator');
     query('SELECT * FROM scope_request_media_attachments;', 'scope_media_worker', false);
     query(renderPolicy({ mode: 'grants' }), 'scope_migrator');
     query('SELECT * FROM scope_request_media_attachments;', 'scope_media_worker');

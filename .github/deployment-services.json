@@ -320,6 +320,9 @@
     "media-api": {
       "files": [
         "dev/media-smoke.mjs",
+        ".github/scripts/media-smoke-fixtures.sh",
+        ".github/workflows/scope-integration-ci.yml",
+        ".github/actions/install-media-codecs/action.yml",
         "dev/local-stack.sh",
         "dev/scope-dev",
         "dev/cargo-target-dir",

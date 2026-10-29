@@ -9,6 +9,9 @@ on:
       run_cli:
         type: boolean
         required: true
+      run_media_smoke:
+        type: boolean
+        required: true
     secrets:
       CLERK_DEVELOPMENT_PUBLISHABLE_KEY:
         required: false
@@ -26,7 +29,7 @@ jobs:
   integration:
     name: Seeded local stack integration
     if: >-
-      (inputs.run_web || inputs.run_cli) &&
+      (inputs.run_web || inputs.run_cli || inputs.run_media_smoke) &&
       (github.event_name != 'pull_request' ||
       (github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'dependabot[bot]'))
@@ -66,8 +69,8 @@ jobs:
         with:
           toolchain: 1.98.1
 
-      - name: Cache Rust dependencies for web smoke
-        if: inputs.run_web && !inputs.run_cli
+      - name: Cache Rust dependencies for the local stack
+        if: ${{ !inputs.run_cli }}
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-bin: false
@@ -135,8 +138,8 @@ jobs:
             "$CLERK_DEVELOPMENT_PUBLISHABLE_KEY" \
             "$CLERK_DEVELOPMENT_SECRET_KEY" > web/.env.local
 
-      - name: Configure fake Clerk for CLI-only integration
-        if: inputs.run_cli && !inputs.run_web
+      - name: Configure fake Clerk without the browser lane
+        if: ${{ !inputs.run_web }}
         shell: bash
         run: |
           clerk_host='scope-e2e.clerk.accounts.dev$'
@@ -192,6 +195,24 @@ jobs:
           SCOPE_API_URL: http://localhost:8080
         run: ./dev/checks/integration cli
 
+      - name: Run media smoke
+        if: inputs.run_media_smoke && !cancelled() && steps.projections.outcome == 'success'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          fixture_dir="$(mktemp -d "${RUNNER_TEMP}/scope-media-fixtures.XXXXXX")"
+          bash .github/scripts/media-smoke-fixtures.sh "$fixture_dir"
+          SCOPE_MEDIA_SMOKE_TOKEN="$(curl -fsS -X POST http://localhost:8080/v1/dev/cli-session/dev | jq -er '.session_token')" \
+            node dev/media-smoke.mjs \
+              --api http://localhost:8080 \
+              --media-origin http://localhost:8083 \
+              --repo dev/update-demo \
+              --source-sha "$SOURCE_SHA" \
+              --file "$fixture_dir/fixture.png" \
+              --file "$fixture_dir/fixture.mp4" \
+              --require-video
+
       - name: Upload local stack logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -220,7 +241,7 @@ jobs:
   journey:
     name: Signed-in contribution journey
     if: >-
-      (inputs.run_web || inputs.run_cli) &&
+      (inputs.run_web || inputs.run_cli || inputs.run_media_smoke) &&
       (github.event_name != 'pull_request' ||
       (github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'dependabot[bot]'))

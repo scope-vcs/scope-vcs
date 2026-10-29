@@ -572,10 +572,10 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
     'runner-image': ['runner_image'],
     'server-validation': ['backend', 'web'],
     'cli-validation': ['cli'],
-    'integration-validation': ['web', 'cli'],
+    'integration-validation': ['web', 'cli', 'media_smoke'],
   };
-  for (const mask of Array.from({ length: 16 }, (_, i) => i)) {
-    const inputs = Object.fromEntries(['runner_image', 'backend', 'web', 'cli'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
+  for (const mask of Array.from({ length: 32 }, (_, i) => i)) {
+    const inputs = Object.fromEntries(['runner_image', 'backend', 'web', 'cli', 'media_smoke'].map((key, index) => [key, String(Boolean(mask & (1 << index)))]));
     inputs.reuse_artifacts = false;
     inputs.validate_server = true;
     const needs = Object.fromEntries(Object.entries(selectedBy).map(([name, keys]) => [name, {

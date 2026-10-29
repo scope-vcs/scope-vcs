@@ -18,6 +18,9 @@ on:
       cli_distribution:
         type: string
         default: "false"
+      media_smoke:
+        type: string
+        default: "false"
       validate_server:
         type: boolean
         default: true
@@ -83,11 +86,12 @@ jobs:
 
   integration-validation:
     name: Integration validation
-    if: ${{ !inputs.reuse_artifacts && (inputs.web == 'true' || inputs.cli == 'true') }}
+    if: ${{ !inputs.reuse_artifacts && (inputs.web == 'true' || inputs.cli == 'true' || inputs.media_smoke == 'true') }}
     uses: ./.github/workflows/scope-integration-ci.yml
     with:
       run_web: ${{ inputs.web == 'true' }}
       run_cli: ${{ inputs.cli == 'true' }}
+      run_media_smoke: ${{ inputs.media_smoke == 'true' }}
     secrets: inherit
 
   production-validation-gate:
@@ -112,7 +116,7 @@ jobs:
             (inputs.runner_image != 'true' || needs.runner-image.result == 'success') &&
             (!inputs.validate_server || needs.server-validation.result == 'success') &&
             (inputs.cli != 'true' || needs.cli-validation.result == 'success') &&
-            ((inputs.web != 'true' && inputs.cli != 'true') ||
+            ((inputs.web != 'true' && inputs.cli != 'true' && inputs.media_smoke != 'true') ||
             needs.integration-validation.result == 'success')) }}
         run: |
           test "$VALIDATIONS_PASSED" = true

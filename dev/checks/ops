@@ -7,6 +7,7 @@ bash -n .github/scripts/scan-image.sh
 bash -n .github/scripts/deploy-preview-railway.sh .github/scripts/preview-comment.sh
 node --check .github/scripts/deploy-railway-image.mjs
 node --check dev/media-smoke.mjs
+bash -n .github/scripts/media-smoke-fixtures.sh
 python3 -m unittest dev/test_local_process.py dev/test_local_stack.py dev/test_local_identity.py
 bash -n .github/scripts/deploy-staging-railway.sh
 bash -n .github/scripts/staging-git-smoke.sh

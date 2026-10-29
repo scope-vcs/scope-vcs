@@ -26,6 +26,7 @@ mod request_review_bases;
 mod request_stacks;
 mod run_attempt_active_indexes;
 mod run_state_constraints;
+mod runtime_role_cluster;
 mod stack_auto_merge;
 
 pub(super) async fn isolated_database() -> (
