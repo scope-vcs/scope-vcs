@@ -297,15 +297,9 @@ fn process_exit_removes_only_its_registered_databases() {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         };
-        execute(
-            &admin,
-            format!(
-                "DROP DATABASE {} WITH (FORCE)",
-                quote_pg_ident(&external_name)
-            ),
-        )
-        .await
-        .unwrap();
+        drop_once_backends_are_terminable(&admin, &external_name)
+            .await
+            .unwrap();
         admin.close().await.unwrap();
         databases
     });
