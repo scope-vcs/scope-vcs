@@ -1,5 +1,6 @@
 import type {
   ReviewDiffBinarySide,
+  ReviewDiffRenderBudget,
   ReviewDiffTextSide,
   ReviewFileDiff,
 } from '@/api/types'
@@ -28,6 +29,7 @@ import {
   type ReviewDiffLine,
   type ReviewDiffLineRange,
 } from './review-file-diff-lines'
+import type { ReviewDiffFullRender } from './review-file-diff-resource'
 
 export type ReviewDiffAnnotations = {
   fileNotes: ReactNode
@@ -43,6 +45,7 @@ export function ReviewFileDiffDrawer({
   context,
   diff,
   error,
+  fullRender,
   loading,
   onClose,
   onRetry,
@@ -56,6 +59,7 @@ export function ReviewFileDiffDrawer({
   context?: ReactNode
   diff: ReviewFileDiff | null
   error: string | null
+  fullRender: ReviewDiffFullRender | null
   loading: boolean
   onClose?: () => void
   onRetry?: () => void
@@ -140,7 +144,7 @@ export function ReviewFileDiffDrawer({
               {annotations?.fileNotes}
               {diff?.presentation.kind === 'html'
                 ? <PrerenderedDiff annotations={annotations} html={diff.presentation.html} />
-                : <ReviewFileDiffFallback diff={diff} />}
+                : <ReviewFileDiffFallback diff={diff} fullRender={fullRender} />}
             </>
           )}
         </div>
@@ -149,7 +153,13 @@ export function ReviewFileDiffDrawer({
   )
 }
 
-function ReviewFileDiffFallback({ diff }: { diff: ReviewFileDiff | null }) {
+function ReviewFileDiffFallback({
+  diff,
+  fullRender,
+}: {
+  diff: ReviewFileDiff | null
+  fullRender: ReviewDiffFullRender | null
+}) {
   return diff?.presentation.kind === 'mixed' ? (
     <MixedContentDiffState
       binary={diff.presentation.binary}
@@ -158,7 +168,7 @@ function ReviewFileDiffFallback({ diff }: { diff: ReviewFileDiff | null }) {
   ) : diff?.presentation.kind === 'binary' ? (
     <BinaryDiffState sides={diff.presentation.sides} />
   ) : diff?.presentation.kind === 'omitted' ? (
-    <OmittedDiffState reason={diff.presentation.reason} />
+    <OmittedDiffState budget={diff.presentation.budget} fullRender={fullRender} />
   ) : (
     <PanelState>
       <FileText className="size-5" />
@@ -304,14 +314,30 @@ function BinarySummary({ sides }: { sides: ReviewDiffBinarySide[] }) {
 }
 
 function OmittedDiffState({
-  reason,
+  budget,
+  fullRender,
 }: {
-  reason: Extract<ReviewFileDiff['presentation'], { kind: 'omitted' }>['reason']
+  budget: ReviewDiffRenderBudget
+  fullRender: ReviewDiffFullRender | null
 }) {
   return (
-    <PanelState>
+    <PanelState busy={fullRender?.pending}>
       <FileText className="size-5" />
-      <span>{reviewFileDiffOmittedLabel(reason)}</span>
+      <span>{reviewFileDiffOmittedLabel(budget)}</span>
+      {fullRender && (
+        <Button
+          disabled={fullRender.pending}
+          onClick={fullRender.start}
+          size="sm"
+          type="button"
+          variant="secondary"
+        >
+          {fullRender.pending ? 'Rendering diff…' : 'Render diff'}
+        </Button>
+      )}
+      {fullRender?.error && (
+        <span className="text-xs text-danger-strong" role="alert">{fullRender.error}</span>
+      )}
     </PanelState>
   )
 }

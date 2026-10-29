@@ -1,5 +1,6 @@
 import { parseRepoParams } from './repo-params'
 import { parseFilePath } from './file-path-input'
+import { parseReviewDiffRenderBudget } from './review-diff-budget-input'
 import { parseViewId } from './repo-views'
 import type {
   HistoryEntryDetailInput,
@@ -35,6 +36,7 @@ export function parseHistoryEntryFileDiffInput(input: unknown): HistoryEntryFile
   const data = input as Partial<HistoryEntryFileDiffInput> | null
   return {
     ...parseHistoryEntryDetailInput(input),
+    budget: parseReviewDiffRenderBudget(data?.budget),
     path: parseFilePath(data?.path),
     visibility_change: parseVisibilityChange(data?.visibility_change),
   }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Worker } from 'node:worker_threads'
-import { REVIEW_FILE_DIFF_RENDER_BUDGET } from './review-file-diff-render-contract'
+import { REVIEW_FILE_DIFF_RENDER_BUDGETS } from './review-file-diff-render-contract'
 import { ReviewDiffTransientError } from './review-file-diff-renderer'
 import { createReviewFileDiffWorkerPool } from './review-file-diff-worker-pool'
 
@@ -23,7 +23,7 @@ const READY_DELAY_MS = 1_000
 const RENDER_AFTER_READY_DEADLINE_MS = 750
 
 function input(newText = 'text') {
-  return { budget: REVIEW_FILE_DIFF_RENDER_BUDGET, oldText: '', newText, path: 'fixture.ts' }
+  return { budget: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard, oldText: '', newText, path: 'fixture.ts' }
 }
 
 test('reuses idle workers and rejects overload without a queue', async (t) => {

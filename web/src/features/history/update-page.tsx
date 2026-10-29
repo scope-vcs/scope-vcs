@@ -1,4 +1,4 @@
-import type { RepoParams } from '@/api/types'
+import type { RepoParams, ReviewDiffRenderBudget } from '@/api/types'
 import type {
   CommitFileResponse,
   HistoryEntryDetailResponse,
@@ -6,6 +6,7 @@ import type {
 import { WorkbenchPane } from '@/components/page-header'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import { useReviewFileDiffResource } from '@/features/review/review-file-diff-resource'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { loadHistoryEntry, loadHistoryEntryFileDiff } from '@/routes/-repo-history-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
@@ -117,8 +118,9 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
       })
     : null
   const loadDiff = useCallback(
-    (signal: AbortSignal) => loadHistoryEntryFileDiff({
+    (budget: ReviewDiffRenderBudget, signal: AbortSignal) => loadHistoryEntryFileDiff({
       data: {
+        budget,
         view,
         entry: entryId,
         owner,
@@ -130,7 +132,7 @@ function useUpdatePageModel({ initialEntry, initialEntryScope, params, search }:
     }),
     [view, entryId, owner, repoName, selectedFilePath, selectedVisibilityId],
   )
-  const diffResource = useCachedResource({
+  const diffResource = useReviewFileDiffResource({
     fallbackError: 'This file diff is unavailable.',
     identity: diffIdentity,
     load: loadDiff,

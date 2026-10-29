@@ -1,9 +1,9 @@
 import { Worker } from 'node:worker_threads'
-import { REVIEW_FILE_DIFF_RENDER_BUDGET } from './review-file-diff-render-contract'
+import { REVIEW_FILE_DIFF_RENDERER_LIMITS } from './review-file-diff-render-contract'
 import { createReviewFileDiffRenderer } from './review-file-diff-renderer'
 import { createReviewFileDiffWorkerPool } from './review-file-diff-worker-pool'
 
-const rendererKey = Symbol.for('scope.review-file-diff-renderer-v1')
+const rendererKey = Symbol.for('scope.review-file-diff-renderer-v2')
 const host = globalThis as unknown as Record<
   symbol,
   ReturnType<typeof createReviewFileDiffRenderer> | undefined
@@ -14,5 +14,5 @@ export const renderReviewFileDiff = host[rendererKey] ??= createReviewFileDiffRe
     import.meta.env.PROD
       ? new URL('../_workers/review-file-diff-render-worker.mjs', import.meta.url)
       : new URL('./review-file-diff-render-worker.ts', import.meta.url),
-  ), REVIEW_FILE_DIFF_RENDER_BUDGET.maxConcurrentRenders, REVIEW_FILE_DIFF_RENDER_BUDGET.startupDeadlineMs),
+  ), REVIEW_FILE_DIFF_RENDERER_LIMITS.maxConcurrentRenders, REVIEW_FILE_DIFF_RENDERER_LIMITS.startupDeadlineMs),
 })

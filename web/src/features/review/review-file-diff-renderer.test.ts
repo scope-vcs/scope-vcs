@@ -6,7 +6,8 @@ import { Worker } from 'node:worker_threads'
 import type { ReviewFileDiffResponse } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import {
-  REVIEW_FILE_DIFF_RENDER_BUDGET,
+  REVIEW_FILE_DIFF_RENDER_BUDGETS,
+  REVIEW_FILE_DIFF_RENDERER_LIMITS,
   type ReviewFileDiffWorkerInput,
   reviewFileTextMetrics,
 } from './review-file-diff-render-contract'
@@ -41,34 +42,39 @@ test('counts UTF-8 bytes, lines, and the longest line exactly', () => {
   })
 })
 
-test('rejects input and line amplification before worker admission', async () => {
-  let renders = 0
-  const render = createReviewFileDiffRenderer({
-    isolatedRender: async () => {
-      renders += 1
-      return { kind: 'empty' }
-    },
-  })
+test('rejects input and line amplification before worker admission until a full render is requested', async () => {
+  const isolatedRender = mock.fn(async (
+    _input: ReviewFileDiffWorkerInput,
+    _deadlineMs: number,
+  ) => ({ kind: 'omitted' as const, reason: 'lines' as const }))
+  const render = createReviewFileDiffRenderer({ isolatedRender })
+  const standard = REVIEW_FILE_DIFF_RENDER_BUDGETS.standard
+  const amplified = [
+    { diff: textDiff('', 'x'.repeat(standard.maxInputBytes + 1)), reason: 'input' },
+    { diff: textDiff('', 'x'.repeat(standard.maxInputLineBytes + 1)), reason: 'input' },
+    { diff: textDiff('', 'x\n'.repeat(10_000)), reason: 'lines' },
+  ] as const
 
-  const bytes = await render(textDiff('', 'x'.repeat(
-    REVIEW_FILE_DIFF_RENDER_BUDGET.maxInputBytes + 1,
-  )))
-  assert.deepEqual(bytes.presentation, { kind: 'omitted', reason: 'input' })
+  for (const { diff, reason } of amplified) {
+    const result = await render(diff, 'standard')
+    assert.deepEqual(result.presentation, { budget: 'standard', kind: 'omitted', reason })
+  }
+  assert.equal(isolatedRender.mock.callCount(), 0)
 
-  const longLine = await render(textDiff('', 'x'.repeat(
-    REVIEW_FILE_DIFF_RENDER_BUDGET.maxInputLineBytes + 1,
-  )))
-  assert.deepEqual(longLine.presentation, { kind: 'omitted', reason: 'input' })
-
-  const lines = await render(textDiff('', 'x\n'.repeat(10_000)))
-  assert.deepEqual(lines.presentation, { kind: 'omitted', reason: 'lines' })
-  assert.equal(renders, 0)
+  for (const { diff } of amplified) {
+    const result = await render(diff, 'full')
+    assert.deepEqual(result.presentation, { budget: 'full', kind: 'omitted', reason: 'lines' })
+  }
+  assert.equal(isolatedRender.mock.callCount(), amplified.length)
+  const [input, deadlineMs] = isolatedRender.mock.calls[0]?.arguments ?? []
+  assert.equal(deadlineMs, REVIEW_FILE_DIFF_RENDER_BUDGETS.full.deadlineMs)
+  assert.equal(input?.budget.maxRenderedLines, REVIEW_FILE_DIFF_RENDER_BUDGETS.full.maxRenderedLines)
 })
 
 test('bounds mixed content without returning raw transport fields', async () => {
   const isolatedRender = mock.fn(async () => ({ kind: 'empty' as const }))
   const render = createReviewFileDiffRenderer({ isolatedRender })
-  const source = '😀'.repeat(REVIEW_FILE_DIFF_RENDER_BUDGET.maxMixedTextBytes)
+  const source = '😀'.repeat(REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes)
   const result = await render({
     kind: 'Modified',
     new_content: { kind: 'text', text: source },
@@ -76,7 +82,7 @@ test('bounds mixed content without returning raw transport fields', async () => 
     old_content: { kind: 'binary', oid: 'abc123', size_bytes: 42 },
     old_mode: '100644',
     path: '/fixture.dat',
-  })
+  }, 'standard')
 
   assert.equal(isolatedRender.mock.callCount(), 0)
   assert.equal(result.presentation.kind, 'mixed')
@@ -86,11 +92,11 @@ test('bounds mixed content without returning raw transport fields', async () => 
   assert.equal(result.presentation.text[0]?.truncated, true)
   assert.ok(
     Buffer.byteLength(result.presentation.text[0]?.content ?? '') <=
-      REVIEW_FILE_DIFF_RENDER_BUDGET.maxMixedTextBytes,
+      REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes,
   )
   assert.ok(
     Buffer.byteLength(JSON.stringify(result)) <
-      REVIEW_FILE_DIFF_RENDER_BUDGET.maxMixedTextBytes + 1_024,
+      REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes + 1_024,
   )
 })
 
@@ -104,10 +110,10 @@ test('admits no queue and allows retry after a transient busy failure', async ()
     state,
   })
 
-  const first = render(textDiff('a', 'b'))
-  const second = render(textDiff('c', 'd'))
+  const first = render(textDiff('a', 'b'), 'standard')
+  const second = render(textDiff('c', 'd'), 'standard')
   await assert.rejects(
-    render(textDiff('e', 'f')),
+    render(textDiff('e', 'f'), 'standard'),
     (error: unknown) => error instanceof ReviewDiffTransientError &&
       error.failure === 'busy',
   )
@@ -115,7 +121,7 @@ test('admits no queue and allows retry after a transient busy failure', async ()
 
   releases.shift()?.()
   await first
-  const retry = render(textDiff('e', 'f'))
+  const retry = render(textDiff('e', 'f'), 'standard')
   assert.equal(releases.length, 2)
   releases.shift()?.()
   releases.shift()?.()
@@ -127,7 +133,7 @@ test('does not publish transient busy or deadline failures to a cache', async ()
   const isolatedRender = mock.fn(async () => ({ kind: 'empty' as const }))
   const busyRender = createReviewFileDiffRenderer({
     isolatedRender,
-    state: { active: REVIEW_FILE_DIFF_RENDER_BUDGET.maxConcurrentRenders },
+    state: { active: REVIEW_FILE_DIFF_RENDERER_LIMITS.maxConcurrentRenders },
   })
   const deadlineRender = createReviewFileDiffRenderer({
     isolatedRender: async () => {
@@ -135,10 +141,10 @@ test('does not publish transient busy or deadline failures to a cache', async ()
     },
   })
 
-  await assertTransientNotPublished(() => busyRender(textDiff('a', 'b')), 'busy')
+  await assertTransientNotPublished(() => busyRender(textDiff('a', 'b'), 'standard'), 'busy')
   assert.equal(isolatedRender.mock.callCount(), 0)
   await assertTransientNotPublished(
-    () => deadlineRender(textDiff('a', 'b')),
+    () => deadlineRender(textDiff('a', 'b'), 'standard'),
     'deadline',
   )
 })
@@ -182,7 +188,7 @@ test('bounds text excerpts without splitting UTF-8 characters', () => {
   })
 })
 
-test('caches presentation by content and language, retaining current diff metadata', async () => {
+test('caches presentation by content, language, and budget, retaining current diff metadata', async () => {
   let renders = 0
   const render = createReviewFileDiffRenderer({
     isolatedRender: async () => {
@@ -191,13 +197,15 @@ test('caches presentation by content and language, retaining current diff metada
     },
   })
   const original = textDiff('a', 'b')
-  await render(original)
-  const changedMode = await render({ ...original, new_mode: '100755' })
+  await render(original, 'standard')
+  const changedMode = await render({ ...original, new_mode: '100755' }, 'standard')
   assert.equal(renders, 1)
   assert.equal(changedMode.new_mode, '100755')
-  await render({ ...original, path: '/fixture.rs' })
-  await render(textDiff('a', 'c'))
+  await render({ ...original, path: '/fixture.rs' }, 'standard')
+  await render(textDiff('a', 'c'), 'standard')
   assert.equal(renders, 3)
+  await render(original, 'full')
+  assert.equal(renders, 4)
 })
 
 test('bounds cached presentation bytes and excludes canceled work', async () => {
@@ -209,13 +217,13 @@ test('bounds cached presentation bytes and excludes canceled work', async () => 
     },
   })
   for (let index = 0; index < 17; index += 1) {
-    await render(textDiff('a', `${index}`))
+    await render(textDiff('a', `${index}`), 'standard')
   }
-  await render(textDiff('a', '0'))
+  await render(textDiff('a', '0'), 'standard')
   assert.equal(renders, 18)
   const controller = new AbortController()
   controller.abort()
-  await assert.rejects(render(textDiff('a', '0'), controller.signal), { name: 'AbortError' })
+  await assert.rejects(render(textDiff('a', '0'), 'standard', controller.signal), { name: 'AbortError' })
   assert.equal(renders, 18)
 })
 
@@ -226,9 +234,9 @@ function workerInput(
 ): ReviewFileDiffWorkerInput {
   return {
     budget: {
-      maxHunks: REVIEW_FILE_DIFF_RENDER_BUDGET.maxHunks,
-      maxOutputBytes: REVIEW_FILE_DIFF_RENDER_BUDGET.maxOutputBytes,
-      maxRenderedLines: REVIEW_FILE_DIFF_RENDER_BUDGET.maxRenderedLines,
+      maxHunks: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxHunks,
+      maxOutputBytes: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxOutputBytes,
+      maxRenderedLines: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxRenderedLines,
       ...budgetOverrides,
     },
     newText,

@@ -1,7 +1,7 @@
 import { createApiClient } from '@/api/client'
 import { requestRoute } from './paths'
 import { renderReviewFileDiff } from '@/features/review/review-file-diff-prerender'
-import type { ApproveRequestChecksInput, ReviewFileDiff, RequestParams } from './types'
+import type { ApproveRequestChecksInput, ReviewDiffRenderBudget, ReviewFileDiff, RequestParams } from './types'
 import type {
   RequestChecksResponse,
   RequestComparisonMode,
@@ -91,6 +91,7 @@ export async function loadRequestRevisionsForRequest(
 export type { RequestComparisonMode } from './types.generated'
 
 export type LoadRequestRevisionDiffInput = RequestParams & {
+  budget: ReviewDiffRenderBudget
   comparison: RequestComparisonMode
   commit_oid?: string
   revision_id: string
@@ -117,7 +118,7 @@ export async function loadRequestRevisionFileDiffForRequest(
     ReviewFileDiffResponseValidator,
     { auth: 'optional', signal },
   )
-  return renderReviewFileDiff(diff, signal)
+  return renderReviewFileDiff(diff, data.budget, signal)
 }
 
 export type LoadRequestRevisionCommitInput = RequestParams & {
@@ -126,7 +127,7 @@ export type LoadRequestRevisionCommitInput = RequestParams & {
 }
 
 export async function loadRequestRevisionCommitFileDiffForRequest(
-  data: LoadRequestRevisionCommitInput & { path: string },
+  data: LoadRequestRevisionCommitInput & { budget: ReviewDiffRenderBudget; path: string },
   signal?: AbortSignal,
 ): Promise<ReviewFileDiff> {
   const path = requestRevisionCommitRoute(
@@ -139,7 +140,7 @@ export async function loadRequestRevisionCommitFileDiffForRequest(
     { auth: 'optional', signal },
   )
 
-  return renderReviewFileDiff(diff, signal)
+  return renderReviewFileDiff(diff, data.budget, signal)
 }
 
 function requestQueuePath(data: LoadRequestQueueInput) {
