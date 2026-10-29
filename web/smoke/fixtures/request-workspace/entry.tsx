@@ -17,8 +17,13 @@ const titles = [
   'Stop unevaluated request heads from merging',
   'Request without available actions',
 ]
+const diffStats = [
+  { additions: 2_480, deletions: 41, changed_files: 6 },
+  { additions: 0, deletions: 0, changed_files: 3 },
+  null,
+]
 const items = titles.map((title, index) => ({
-  request: { id: `request-${index}`, title, base: { kind: 'main', review_base_oid: 'a'.repeat(40) }, base_version: 1, stack_status: 'main', stack_depth: 1 },
+  request: { id: `request-${index}`, title, base: { kind: 'main', review_base_oid: 'a'.repeat(40) }, base_version: 1, stack_status: 'main', stack_depth: 1, diff_stat: diffStats[index] },
   author: { handle: 'adam' },
   attention: { group: 'needs_you', reason: 'authored', can_set_aside: index < 2 },
   attention_at_unix: Math.floor(Date.now() / 1000) - index * 480,

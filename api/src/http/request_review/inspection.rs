@@ -5,13 +5,12 @@ use scope_domain::views::{ViewId, Views};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout, truncated_stderr};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    io::{BufRead, BufReader, Read},
+    io::{BufReader, Read},
     process::Command,
 };
 
 const MAX_REQUEST_COMMIT_IDENTITY_BYTES: usize = 64 * 1024;
 const MAX_REQUEST_COMMIT_METADATA_BYTES: usize = 64 * 1024;
-const MAX_REQUEST_DIFF_FIELD_BYTES: usize = 64 * 1024;
 
 pub(super) fn request_commit_first_parent(
     raw_repo: &FsPath,
@@ -40,6 +39,7 @@ pub(super) fn inspect_comparison_files(
         "--no-commit-id",
         "-r",
         "--raw",
+        "--numstat",
         "-z",
         "--no-renames",
         "--abbrev=64",
@@ -60,24 +60,54 @@ pub(super) fn inspect_comparison_files(
         "reading request comparison files",
         move |stdout, _cancellation| {
             let mut reader = BufReader::new(stdout);
-            let mut files = Vec::new();
+            let mut readable = BTreeMap::new();
+            let mut changes = 0usize;
+            let mut counted = 0usize;
             let mut incomplete = false;
-            while let Some(header) = read_nul_field_bounded(&mut reader)? {
-                validate_request_diff_header(&header)?;
-                let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
-                    ApiError::internal_message("request comparison diff is missing a path")
-                })?;
-                if path.truncated || files.len() == file_limit {
-                    incomplete = true;
+            let mut files = Vec::new();
+            while let Some(field) = read_nul_field_bounded(&mut reader)? {
+                if counted == 0 && field.bytes.starts_with(b":") {
+                    validate_request_diff_header(&field)?;
+                    let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
+                        ApiError::internal_message("request comparison diff is missing a path")
+                    })?;
+                    let index = changes;
+                    changes += 1;
+                    if path.truncated || readable.len() == file_limit {
+                        incomplete = true;
+                        continue;
+                    }
+                    match inspect_raw_request_change(
+                        &field.bytes,
+                        &path.bytes,
+                        &policy,
+                        &views,
+                        &access,
+                    )? {
+                        Some(change) => {
+                            readable.insert(index, change);
+                        }
+                        None => incomplete = true,
+                    }
                     continue;
                 }
-                let mut raw = header.bytes;
-                raw.push(0);
-                raw.extend(path.bytes);
-                raw.push(0);
-                let inspected = inspect_request_changes(&raw, &policy, &views, &access)?;
-                incomplete |= inspected.hidden;
-                files.extend(inspected.files.into_iter().map(request_file_response));
+                let index = counted;
+                counted += 1;
+                let Some(change) = readable.remove(&index) else {
+                    continue;
+                };
+                let (lines, path) = parse_numstat_entry(&field.bytes)?;
+                if !field.truncated && path != change.path.as_bytes() {
+                    return Err(ApiError::internal_message(
+                        "request comparison line counts are out of order",
+                    ));
+                }
+                files.push(request_file_response(change.with_lines(lines)));
+            }
+            if counted != changes {
+                return Err(ApiError::internal_message(
+                    "request comparison line counts do not match its changes",
+                ));
             }
             files.sort_by(|left, right| left.path.cmp(&right.path));
             Ok((files, incomplete))
@@ -118,8 +148,8 @@ fn inspect_request_commit_with_identity(
     commit_oid: &str,
     identity: RequestCommitIdentity,
 ) -> Result<InspectedRequestCommit, ApiError> {
-    let changes = inspect_request_changes(
-        &request_commit_changes(raw_repo, commit_oid)?,
+    let changes = inspect_counted_request_changes(
+        &request_counted_commit_changes(raw_repo, commit_oid)?,
         policy,
         views,
         &access,
@@ -351,45 +381,6 @@ fn request_path_is_visible(
     let path = std::str::from_utf8(raw_path).map_err(ApiError::bad_request)?;
     let scope_path = ScopePath::parse(format!("/{path}")).map_err(ApiError::bad_request)?;
     Ok(policy.can_read(&scope_path, view, views))
-}
-
-struct BoundedNulField {
-    bytes: Vec<u8>,
-    truncated: bool,
-}
-
-fn read_nul_field_bounded(reader: &mut impl BufRead) -> Result<Option<BoundedNulField>, ApiError> {
-    let mut bytes = Vec::new();
-    let mut truncated = false;
-    loop {
-        let available = reader.fill_buf().map_err(|error| {
-            ApiError::infrastructure_unavailable(format!(
-                "reading request identity diff failed: {error}"
-            ))
-        })?;
-        if available.is_empty() {
-            if bytes.is_empty() && !truncated {
-                return Ok(None);
-            }
-            return Err(ApiError::internal_message(
-                "request identity diff ended inside a field",
-            ));
-        }
-        let consumed = available
-            .iter()
-            .position(|byte| *byte == 0)
-            .map_or(available.len(), |position| position + 1);
-        let content =
-            &available[..consumed.saturating_sub(usize::from(available[consumed - 1] == 0))];
-        let remaining = MAX_REQUEST_DIFF_FIELD_BYTES.saturating_sub(bytes.len());
-        bytes.extend_from_slice(&content[..content.len().min(remaining)]);
-        truncated |= content.len() > remaining;
-        let terminated = available[consumed - 1] == 0;
-        reader.consume(consumed);
-        if terminated {
-            return Ok(Some(BoundedNulField { bytes, truncated }));
-        }
-    }
 }
 
 fn request_commit_identity(

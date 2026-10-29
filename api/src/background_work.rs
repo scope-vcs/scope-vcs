@@ -18,6 +18,7 @@ pub(crate) struct BackgroundWakeups {
     pub(crate) github_review_imports: Notify,
     pub(crate) github_run_imports: Notify,
     pub(crate) invite_emails: Notify,
+    pub(crate) request_diff_stats: Notify,
 }
 
 pub(crate) type WakeupSelector = fn(&BackgroundWakeups) -> &Notify;
@@ -74,6 +75,7 @@ impl AppState {
         work.start_git_segment_recovery();
         work.start_request_check_recovery();
         work.start_request_auto_merge();
+        work.start_request_diff_stat_backfill();
         work
     }
 }

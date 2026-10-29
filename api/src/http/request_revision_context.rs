@@ -191,6 +191,13 @@ pub(crate) async fn publish(
             crate::repo_events::RepoChangeReason::RequestRevised,
         )
         .await;
+    crate::use_cases::request_diff_stats::record_published_revision_diff_stat(
+        &state,
+        &incarnation,
+        &mutation.request,
+        &mutation.revision,
+    )
+    .await;
     if let Err(error) = crate::use_cases::request_checks::checks_view(
         &state,
         &snapshot.repository.record,
@@ -206,6 +213,7 @@ pub(crate) async fn publish(
         request: super::request_state::detail_response(
             &accepted,
             super::request_state::viewer(&accepted),
+            None,
         )?
         .request,
         revision_id: mutation.revision.id,

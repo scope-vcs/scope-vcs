@@ -4,7 +4,7 @@ import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
 import { cn } from '@/lib/utils'
 import { ArrowRight } from 'lucide-react'
 import type { RepoViews } from '@/api/repo-views'
-import type { CommitFileResponse, ViewId } from '@/api/types.generated'
+import type { ViewId } from '@/api/types.generated'
 import { changedPathTargets, type ChangedPath, type HistoryVisibilityChange } from './changed-paths-model'
 import { transitionPathLabel } from './views-transition-model'
 
@@ -17,7 +17,7 @@ export function ChangedPathContext({
   selectedVisibilityId,
   view,
 }: {
-  onSelectFile: (file: CommitFileResponse) => void
+  onSelectFile: (path: string) => void
   onSelectVisibility: (change: HistoryVisibilityChange) => void
   path: ChangedPath
   selectedVisibilityId: string | null
@@ -37,7 +37,7 @@ export function ChangedPathContext({
           onValueChange={(value) => {
             const target = targets.find((target) =>
               (target.kind === 'file' ? CODE_TARGET : target.change.id) === value)
-            if (target?.kind === 'file') onSelectFile(target.file)
+            if (target?.kind === 'file') onSelectFile(target.file.path)
             else if (target) onSelectVisibility(target.change)
           }}
           type="single"

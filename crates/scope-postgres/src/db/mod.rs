@@ -78,6 +78,7 @@ mod request_auto_merge;
 mod request_check_commits;
 mod request_check_recovery;
 mod request_checks;
+mod request_diff_stats;
 mod request_discussion_actors;
 mod request_discussion_commands;
 mod request_discussion_rows;

@@ -1,8 +1,8 @@
 import type { VisibilityState } from '@/api/types'
 import type {
-  CommitFileResponse,
   FileChangeKind,
   HistoryEntryDetailResponse,
+  HistoryEntryFileResponse,
 } from '@/api/types.generated'
 import { normalizeFilePath } from '../../components/file-system-tree-model'
 
@@ -13,14 +13,14 @@ export type ChangedPath = {
   group: string
   directory: string
   name: string
-  file: CommitFileResponse | null
+  file: HistoryEntryFileResponse | null
   visibility: HistoryVisibilityChange[]
 }
 
 export type ChangedPathFilter = 'all' | 'visibility' | FileChangeKind
 
 export type ChangedPathTarget =
-  | { kind: 'file'; file: CommitFileResponse }
+  | { kind: 'file'; file: HistoryEntryFileResponse }
   | { kind: 'visibility'; change: HistoryVisibilityChange }
 
 export type ChangedPathGroup = { name: string; paths: ChangedPath[] }
@@ -29,7 +29,7 @@ const FILTER_ORDER: ChangedPathFilter[] = ['all', 'visibility', 'Added', 'Modifi
 const SMALL_CHANGE_LIMIT = 20
 
 export function changedPaths(
-  files: readonly CommitFileResponse[],
+  files: readonly HistoryEntryFileResponse[],
   changes: readonly HistoryVisibilityChange[] = [],
 ): ChangedPath[] {
   const byPath = new Map<string, ChangedPath>()

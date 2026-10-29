@@ -220,6 +220,26 @@ pub struct RequestListResponse {
 pub struct RequestDetailResponse {
     pub stack_navigation: RequestStackNavigationResponse,
     pub request: RequestSummaryResponse,
+    /// Null until the current revision's line counts are recorded, or when the viewer's readable files cannot be counted.
+    pub diff_stat: Option<RequestDiffStatResponse>,
+}
+
+/// Line counts over the files the viewer can read in a request's current revision, counted like GitHub: every changed file counts and binary files add no lines.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RequestDiffStatResponse {
+    pub additions: u64,
+    pub deletions: u64,
+    pub changed_files: u64,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(rename_all = "lowercase"))]
+pub enum FileLineChangesResponse {
+    Text { additions: u64, deletions: u64 },
+    Binary,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -368,6 +388,8 @@ pub struct RequestListItemResponse {
     pub submitted_at_unix: Option<u64>,
     pub updated_at_unix: u64,
     pub mergeability: RequestMergeabilityResponse,
+    /// Null until the current revision's line counts are recorded, or when the viewer's readable files cannot be counted.
+    pub diff_stat: Option<RequestDiffStatResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -484,6 +506,7 @@ pub struct CommitFileResponse {
     pub old_oid: Option<String>,
     pub new_oid: Option<String>,
     pub label: ViewId,
+    pub lines: FileLineChangesResponse,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

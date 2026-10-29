@@ -7,7 +7,7 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{RequestDetailResponse, RequestStateResponse};
-use scope_domain::requests::RequestViewer;
+use scope_domain::requests::{DiffStat, RequestViewer};
 use scope_postgres::db::RequestStateSnapshot;
 
 pub(crate) async fn get(
@@ -17,13 +17,14 @@ pub(crate) async fn get(
 ) -> Result<Json<RequestStateResponse>, ApiError> {
     let snapshot = load(&state, &headers, &owner, &repo_name, &request_id).await?;
     let viewer = viewer(&snapshot);
+    let diff_stat = diff_stat(&state, &snapshot).await?;
     Ok(Json(RequestStateResponse {
         viewer: snapshot
             .viewer_user_id
             .as_deref()
             .map(|id| super::responses::request_actor_summary_response(id, &snapshot.users))
             .transpose()?,
-        detail: detail_response(&snapshot, viewer.clone())?,
+        detail: detail_response(&snapshot, viewer.clone(), diff_stat)?,
         checks: super::request_checks::snapshot_response(
             &state,
             &snapshot,
@@ -55,6 +56,21 @@ pub(crate) async fn load(
         .map_err(Into::into)
 }
 
+pub(crate) async fn diff_stat(
+    state: &AppState,
+    snapshot: &RequestStateSnapshot,
+) -> Result<Option<DiffStat>, ApiError> {
+    Ok(
+        crate::use_cases::request_diff_stats::readable_request_diff_stats(
+            state,
+            &snapshot.repository,
+            std::slice::from_ref(&snapshot.request.id),
+        )
+        .await?
+        .remove(&snapshot.request.id),
+    )
+}
+
 pub(crate) fn viewer(snapshot: &RequestStateSnapshot) -> RequestViewer<'_> {
     RequestViewer::new(
         snapshot.repository.access.clone(),
@@ -66,6 +82,7 @@ pub(crate) fn viewer(snapshot: &RequestStateSnapshot) -> RequestViewer<'_> {
 pub(crate) fn detail_response(
     snapshot: &RequestStateSnapshot,
     viewer: RequestViewer<'_>,
+    diff_stat: Option<DiffStat>,
 ) -> Result<RequestDetailResponse, ApiError> {
     let checks = scope_domain::requests::request_checks_outcome(
         &snapshot.request.id,
@@ -74,6 +91,7 @@ pub(crate) fn detail_response(
         &snapshot.results,
     );
     Ok(RequestDetailResponse {
+        diff_stat: diff_stat.map(super::responses::diff_stat_response),
         stack_navigation: scope_api_contract::RequestStackNavigationResponse {
             parent: snapshot
                 .stack_navigation

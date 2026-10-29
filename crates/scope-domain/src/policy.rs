@@ -60,13 +60,16 @@ impl ScopePath {
         &self.0
     }
 
-    fn is_ancestor_of(&self, other: &ScopePath) -> bool {
-        self.0 == "/"
-            || other.0 == self.0
-            || other
-                .0
-                .strip_prefix(self.0.as_str())
-                .is_some_and(|suffix| suffix.starts_with('/'))
+    fn self_and_ancestors(&self) -> impl Iterator<Item = &str> {
+        let path = self.0.as_str();
+        let parents = path.rmatch_indices('/').map(move |(separator, _)| {
+            if separator == 0 {
+                "/"
+            } else {
+                &path[..separator]
+            }
+        });
+        std::iter::once(path).chain(parents.filter(move |parent| *parent != path))
     }
 }
 
@@ -107,7 +110,24 @@ impl LabelRule {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Policy {
     default: ViewId,
+    #[serde(deserialize_with = "deserialize_rules")]
     rules: Vec<LabelRule>,
+}
+
+fn deserialize_rules<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<LabelRule>, D::Error> {
+    Ok(rules_by_path(Vec::<LabelRule>::deserialize(deserializer)?))
+}
+
+fn rules_by_path(rules: impl IntoIterator<Item = LabelRule>) -> Vec<LabelRule> {
+    rules
+        .into_iter()
+        .map(|rule| (rule.path, rule.view))
+        .collect::<BTreeMap<_, _>>()
+        .into_iter()
+        .map(|(path, view)| LabelRule { path, view })
+        .collect()
 }
 
 impl Policy {
@@ -163,11 +183,16 @@ impl Policy {
         Ok(())
     }
 
-    fn effective_rule(&self, path: &ScopePath) -> Option<&LabelRule> {
+    fn rule_at(&self, path: &str) -> Option<&LabelRule> {
         self.rules
-            .iter()
-            .filter(|rule| rule.path.is_ancestor_of(path))
-            .max_by_key(|rule| rule.path.as_str().len())
+            .binary_search_by(|rule| rule.path.as_str().cmp(path))
+            .ok()
+            .map(|index| &self.rules[index])
+    }
+
+    fn effective_rule(&self, path: &ScopePath) -> Option<&LabelRule> {
+        path.self_and_ancestors()
+            .find_map(|ancestor| self.rule_at(ancestor))
     }
 
     pub fn label(&self, path: &ScopePath, views: &Views) -> ViewId {
@@ -199,32 +224,28 @@ impl Policy {
                 .or_default()
                 .extend([old_label, new_label]);
         }
-        let rules = paths
-            .iter()
-            .map(|path| {
-                let view = if history.live_paths.contains(path)
-                    || self.rules.iter().any(|rule| rule.path == *path)
-                {
-                    self.label(path, config.views())
-                } else if let Some(labels) = historical_labels.get(path) {
-                    (**labels
-                        .iter()
-                        .find(|label| !config.views().shows(reader, path, label))
-                        .or_else(|| labels.first())
-                        .expect("accepted path history has labels"))
-                    .clone()
-                } else {
-                    config.label_for_path(path)
-                };
-                LabelRule {
-                    path: path.clone(),
-                    view,
-                }
-            })
-            .collect();
+        let rules = paths.iter().map(|path| {
+            let view = if history.live_paths.contains(path) || self.rule_at(path.as_str()).is_some()
+            {
+                self.label(path, config.views())
+            } else if let Some(labels) = historical_labels.get(path) {
+                (**labels
+                    .iter()
+                    .find(|label| !config.views().shows(reader, path, label))
+                    .or_else(|| labels.first())
+                    .expect("accepted path history has labels"))
+                .clone()
+            } else {
+                config.label_for_path(path)
+            };
+            LabelRule {
+                path: path.clone(),
+                view,
+            }
+        });
         Self {
             default: config.views().full().clone(),
-            rules,
+            rules: rules_by_path(rules),
         }
     }
 
@@ -252,18 +273,9 @@ impl Policy {
     }
 
     pub fn join_rules(self, rules: impl IntoIterator<Item = LabelRule>) -> Self {
-        let rules = self
-            .rules
-            .into_iter()
-            .chain(rules)
-            .map(|rule| (rule.path, rule.view))
-            .collect::<BTreeMap<_, _>>()
-            .into_iter()
-            .map(|(path, view)| LabelRule { path, view })
-            .collect();
         Self {
             default: self.default,
-            rules,
+            rules: rules_by_path(self.rules.into_iter().chain(rules)),
         }
     }
 }

@@ -15,8 +15,9 @@ use crate::{
             RequestBlobContent, RequestDiffRange, request_blob_content, request_diff_file,
         },
         request_revision_inspection::{
-            InspectedRequestChange, commit_belongs_to_revision, inspect_request_changes,
-            request_commit_changes, request_revision_commit_oids,
+            BoundedNulField, InspectedRequestChange, commit_belongs_to_revision,
+            inspect_counted_request_changes, inspect_raw_request_change, parse_numstat_entry,
+            read_nul_field_bounded, request_counted_commit_changes, request_revision_commit_oids,
         },
         scope_path_input::normalized_scope_path,
     },
@@ -27,14 +28,17 @@ use axum::{
     http::HeaderMap,
 };
 use scope_api_contract::{
-    CommitFileResponse, GitOid, RequestComparisonMode, RequestComparisonResponse,
-    RequestRevisionCommitResponse, RequestRevisionInspectionState, RequestRevisionListResponse,
-    RequestRevisionResponse,
+    CommitFileResponse, FileLineChangesResponse, GitOid, RequestComparisonMode,
+    RequestComparisonResponse, RequestRevisionCommitResponse, RequestRevisionInspectionState,
+    RequestRevisionListResponse, RequestRevisionResponse,
 };
 use scope_domain::{
     policy::ScopePath,
     repository::access::RepositoryAccess,
-    requests::{Request, RequestComparison, RequestRevision, select_request_review_revision},
+    requests::{
+        FileLineChanges, Request, RequestComparison, RequestRevision,
+        select_request_review_revision,
+    },
 };
 use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
@@ -505,7 +509,8 @@ struct InspectedRequestCommits {
     inspection: RequestRevisionInspectionState,
 }
 
-fn request_file_response(file: InspectedRequestChange) -> CommitFileResponse {
+fn request_file_response(change: InspectedRequestChange) -> CommitFileResponse {
+    let InspectedRequestChange { file, lines } = change;
     CommitFileResponse {
         path: file.path,
         kind: file.kind.into(),
@@ -514,6 +519,16 @@ fn request_file_response(file: InspectedRequestChange) -> CommitFileResponse {
         old_oid: file.old_oid,
         new_oid: file.new_oid,
         label: file.label.into(),
+        lines: match lines {
+            FileLineChanges::Text {
+                additions,
+                deletions,
+            } => FileLineChangesResponse::Text {
+                additions,
+                deletions,
+            },
+            FileLineChanges::Binary => FileLineChangesResponse::Binary,
+        },
     }
 }
 
