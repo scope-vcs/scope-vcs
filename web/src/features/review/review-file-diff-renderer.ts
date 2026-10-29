@@ -1,6 +1,7 @@
 import type {
   ReviewDiffBinarySide,
   ReviewDiffPresentation,
+  ReviewDiffRenderBudget,
   ReviewDiffTextSide,
   ReviewFileDiff,
 } from '../../api/types'
@@ -11,8 +12,8 @@ import type {
 import { createHash } from 'node:crypto'
 import { createBoundedCache } from '../../lib/bounded-cache'
 import {
-  REVIEW_FILE_DIFF_RENDER_BUDGET,
-  type ReviewFileDiffRenderBudget,
+  REVIEW_FILE_DIFF_RENDER_BUDGETS,
+  REVIEW_FILE_DIFF_RENDERER_LIMITS,
   type ReviewFileDiffWorkerInput,
   type ReviewFileDiffWorkerResult,
   reviewFileTextMetrics,
@@ -35,29 +36,29 @@ type IsolatedReviewDiffRender = (
   signal?: AbortSignal,
 ) => Promise<ReviewFileDiffWorkerResult>
 
-type ReviewDiffAdmissionState = { active: number }
+type ReviewDiffAdmissionState = Record<ReviewDiffRenderBudget, number>
 
 export function createReviewFileDiffRenderer({
   isolatedRender,
-  state = { active: 0 },
+  state = { full: 0, standard: 0 },
 }: {
   isolatedRender: IsolatedReviewDiffRender
   state?: ReviewDiffAdmissionState
 }) {
-  const budget = REVIEW_FILE_DIFF_RENDER_BUDGET
-  const presentations = createBoundedCache<string, ReviewFileDiffWorkerResult>({
+  const presentations = createBoundedCache<string, Exclude<ReviewFileDiffWorkerResult, { kind: 'error' }>>({
     maxEntries: 64,
     maxWeight: 8 * 1024 * 1024,
     weightOf: (result) => result.kind === 'html' ? result.html.length * 2 : 64,
   })
-  const rendererIdentity = JSON.stringify(['pierre-1.2.11-v1', budget])
   return async function renderReviewFileDiff(
     diff: ReviewFileDiffResponse,
+    budgetName: ReviewDiffRenderBudget,
     signal?: AbortSignal,
   ): Promise<ReviewFileDiff> {
     signal?.throwIfAborted()
+    const budget = REVIEW_FILE_DIFF_RENDER_BUDGETS[budgetName]
     const base = reviewFileDiffBase(diff)
-    const contentPresentation = nonTextPresentation(diff, budget)
+    const contentPresentation = nonTextPresentation(diff)
     if (contentPresentation) {
       return { ...base, presentation: contentPresentation }
     }
@@ -71,21 +72,25 @@ export function createReviewFileDiffRenderer({
       Math.max(oldMetrics.maxLineBytes, newMetrics.maxLineBytes) >
         budget.maxInputLineBytes
     ) {
-      return { ...base, presentation: { kind: 'omitted', reason: 'input' } }
+      return { ...base, presentation: { budget: budgetName, kind: 'omitted', reason: 'input' } }
     }
     if (oldMetrics.lines + newMetrics.lines > budget.maxInputLines) {
-      return { ...base, presentation: { kind: 'omitted', reason: 'lines' } }
+      return { ...base, presentation: { budget: budgetName, kind: 'omitted', reason: 'lines' } }
     }
-    const key = createHash('sha256')
-      .update(JSON.stringify([rendererIdentity, diff.path, oldText, newText]))
-      .digest('hex')
-    const cached = presentations.get(key)
-    if (cached && cached.kind !== 'error') return { ...base, presentation: cached }
-    if (state.active >= budget.maxConcurrentRenders) {
+    const key = budget.cachePresentations
+      ? createHash('sha256')
+          .update(JSON.stringify([RENDERER_VERSION, budget, diff.path, oldText, newText]))
+          .digest('hex')
+      : null
+    const cached = key === null ? undefined : presentations.get(key)
+    if (cached) {
+      return { ...base, presentation: budgetedPresentation(cached, budgetName) }
+    }
+    if (state[budgetName] >= budget.maxConcurrentRenders) {
       throw new ReviewDiffTransientError('busy')
     }
 
-    state.active += 1
+    state[budgetName] += 1
     try {
       const presentation = await isolatedRender({
         budget: {
@@ -101,12 +106,21 @@ export function createReviewFileDiffRenderer({
       if (presentation.kind === 'error') {
         throw new Error('This file diff could not be rendered.')
       }
-      presentations.set(key, presentation)
-      return { ...base, presentation }
+      if (key !== null) presentations.set(key, presentation)
+      return { ...base, presentation: budgetedPresentation(presentation, budgetName) }
     } finally {
-      state.active -= 1
+      state[budgetName] -= 1
     }
   }
+}
+
+const RENDERER_VERSION = 'pierre-1.6.1-v2'
+
+function budgetedPresentation(
+  result: Exclude<ReviewFileDiffWorkerResult, { kind: 'error' }>,
+  budget: ReviewDiffRenderBudget,
+): ReviewDiffPresentation {
+  return result.kind === 'omitted' ? { ...result, budget } : result
 }
 
 function reviewFileDiffBase(diff: ReviewFileDiffResponse) {
@@ -120,12 +134,11 @@ function reviewFileDiffBase(diff: ReviewFileDiffResponse) {
 
 function nonTextPresentation(
   diff: ReviewFileDiffResponse,
-  budget: ReviewFileDiffRenderBudget,
 ): ReviewDiffPresentation | null {
   const binary = binarySides(diff)
   if (binary.length === 0) return null
 
-  const text = textSides(diff, budget.maxMixedTextBytes)
+  const text = textSides(diff, REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes)
   return text.length > 0
     ? { binary, kind: 'mixed', text }
     : { kind: 'binary', sides: binary }

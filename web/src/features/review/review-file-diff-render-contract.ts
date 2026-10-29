@@ -1,22 +1,52 @@
-import type { ReviewDiffOmittedReason } from '../../api/types'
+import type { ReviewDiffOmittedReason, ReviewDiffRenderBudget } from '../../api/types'
 
-export const REVIEW_FILE_DIFF_RENDER_BUDGET = Object.freeze({
-  deadlineMs: 1_500,
-  startupDeadlineMs: 10_000,
-  maxConcurrentRenders: 2,
-  maxHunks: 64,
-  maxInputBytes: 256 * 1024,
-  maxInputLineBytes: 16 * 1024,
-  maxInputLines: 4_000,
+export const REVIEW_FILE_DIFF_RENDERER_LIMITS = Object.freeze({
   maxMixedTextBytes: 64 * 1024,
-  maxOutputBytes: 256 * 1024,
-  maxRenderedLines: 800,
+  startupDeadlineMs: 10_000,
 })
 
-export type ReviewFileDiffRenderBudget = Readonly<Record<
-  keyof typeof REVIEW_FILE_DIFF_RENDER_BUDGET,
-  number
->>
+export type ReviewFileDiffRenderBudget = Readonly<{
+  cachePresentations: boolean
+  deadlineMs: number
+  maxConcurrentRenders: number
+  maxHunks: number
+  maxInputBytes: number
+  maxInputLineBytes: number
+  maxInputLines: number
+  maxOutputBytes: number
+  maxRenderedLines: number
+}>
+
+export const REVIEW_FILE_DIFF_RENDER_BUDGETS: Readonly<Record<
+  ReviewDiffRenderBudget,
+  ReviewFileDiffRenderBudget
+>> = Object.freeze({
+  full: Object.freeze({
+    cachePresentations: false,
+    deadlineMs: 10_000,
+    maxConcurrentRenders: 1,
+    maxHunks: 2_000,
+    maxInputBytes: 2 * 1024 * 1024,
+    maxInputLineBytes: 1024 * 1024,
+    maxInputLines: 200_000,
+    maxOutputBytes: 8 * 1024 * 1024,
+    maxRenderedLines: 20_000,
+  }),
+  standard: Object.freeze({
+    cachePresentations: true,
+    deadlineMs: 1_500,
+    maxConcurrentRenders: 2,
+    maxHunks: 64,
+    maxInputBytes: 256 * 1024,
+    maxInputLineBytes: 16 * 1024,
+    maxInputLines: 4_000,
+    maxOutputBytes: 256 * 1024,
+    maxRenderedLines: 800,
+  }),
+})
+
+export const REVIEW_FILE_DIFF_MAX_WORKERS = Object.values(REVIEW_FILE_DIFF_RENDER_BUDGETS)
+  .reduce((workers, budget) => workers + budget.maxConcurrentRenders, 0)
 
 export type ReviewFileDiffWorkerInput = {
   budget: Pick<

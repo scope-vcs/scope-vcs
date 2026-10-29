@@ -53,6 +53,8 @@ export type ReviewDiffTextSide = {
 
 export type ReviewDiffOmittedReason = 'hunks' | 'input' | 'lines' | 'output'
 
+export type ReviewDiffRenderBudget = 'full' | 'standard'
+
 export type ReviewDiffPresentation =
   | { kind: 'binary'; sides: ReviewDiffBinarySide[] }
   | { kind: 'empty' }
@@ -62,7 +64,11 @@ export type ReviewDiffPresentation =
       kind: 'mixed'
       text: ReviewDiffTextSide[]
     }
-  | { kind: 'omitted'; reason: ReviewDiffOmittedReason }
+  | {
+      budget: ReviewDiffRenderBudget
+      kind: 'omitted'
+      reason: ReviewDiffOmittedReason
+    }
 
 export type ReviewFileDiff = Pick<
   ReviewFileDiffResponse,
@@ -182,6 +188,7 @@ export type HistoryEntryDetailInput = RepoParams & HistoryEntryRequest & {
   entry: string
 }
 export type HistoryEntryFileDiffInput = RepoParams & Omit<HistoryEntryFileDiffRequest, 'commit_oid'> & {
+  budget: ReviewDiffRenderBudget
   entry: string
 }
 

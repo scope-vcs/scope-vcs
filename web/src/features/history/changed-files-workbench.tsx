@@ -54,6 +54,7 @@ export function ChangedFilesWorkbench({
         context={diffContext}
         diff={fileDiffState.diff}
         error={fileDiffState.error}
+        fullRender={fileDiffState.status === 'loaded' ? fileDiffState.fullRender : null}
         loading={fileDiffState.status === 'loading'}
         onClose={navigation.closeDiff}
         onRetry={onRetryDiff}

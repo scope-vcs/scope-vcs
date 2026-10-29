@@ -1,4 +1,4 @@
-import type { ReviewDiffOmittedReason, ReviewFileDiff } from '../../api/types'
+import type { ReviewDiffRenderBudget, ReviewFileDiff } from '../../api/types'
 
 export function reviewFileDiffEmptyLabel(diff: ReviewFileDiff | null) {
   const modeChange = reviewFileDiffModeChangeLabel(diff)
@@ -15,8 +15,8 @@ export function reviewFileDiffModeChangeLabel(diff: ReviewFileDiff | null) {
   return `Mode ${diff.old_mode} → ${diff.new_mode}`
 }
 
-export function reviewFileDiffOmittedLabel(reason: ReviewDiffOmittedReason) {
-  return reason === 'output'
-    ? 'Rendered diff is too large to display'
-    : 'Diff is too large to render'
+export function reviewFileDiffOmittedLabel(budget: ReviewDiffRenderBudget) {
+  return budget === 'standard'
+    ? 'This diff is too large to show automatically'
+    : 'This diff is too large to render'
 }

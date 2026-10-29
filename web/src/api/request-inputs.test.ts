@@ -23,7 +23,7 @@ test('files preserve significant whitespace and reject invalid path values', () 
     assert.throws(() => parsers.parseRepoFileInput({ ...request, view: 'agent', path }))
   }
   assert.throws(() => parsers.parseRepoFileInput({ ...request, path: '/file' }), /Unsupported view/)
-  assert.equal(parsers.parseLoadRequestRevisionDiffInput({ ...request, revision_id: 'rev', commit_oid: 'oid', path: '/a' }).path, '/a')
+  assert.equal(parsers.parseLoadRequestRevisionDiffInput({ ...request, budget: 'standard', revision_id: 'rev', commit_oid: 'oid', path: '/a' }).path, '/a')
 })
 
 test('pagination and booleans reject coercion, overflow, and invalid bounds', () => {

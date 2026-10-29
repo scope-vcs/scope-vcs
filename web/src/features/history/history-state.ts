@@ -1,5 +1,8 @@
 import type { CommitDetail, ReviewFileDiff } from '@/api/types'
-import type { CachedResource } from '@/lib/use-cached-resource'
+import type {
+  ReviewDiffFullRender,
+  ReviewFileDiffResource,
+} from '@/features/review/review-file-diff-resource'
 
 export type CommitDetailState =
   | { commit: null; error: null; status: 'idle' }
@@ -9,11 +12,11 @@ export type CommitDetailState =
 export type CommitFileDiffState =
   | { diff: null; error: null; status: 'idle' }
   | { diff: null; error: null; status: 'loading' }
-  | { diff: ReviewFileDiff; error: null; status: 'loaded' }
+  | { diff: ReviewFileDiff; error: null; fullRender: ReviewDiffFullRender | null; status: 'loaded' }
   | { diff: null; error: string; status: 'failed' }
 
 export function resourceToDiffState(
-  resource: CachedResource<ReviewFileDiff>,
+  resource: ReviewFileDiffResource,
 ): CommitFileDiffState {
   switch (resource.status) {
     case 'idle':
@@ -21,7 +24,7 @@ export function resourceToDiffState(
     case 'loading':
       return { diff: null, error: null, status: 'loading' }
     case 'loaded':
-      return { diff: resource.value, error: null, status: 'loaded' }
+      return { diff: resource.value, error: null, fullRender: resource.fullRender, status: 'loaded' }
     case 'failed':
       return { diff: null, error: resource.error, status: 'failed' }
   }

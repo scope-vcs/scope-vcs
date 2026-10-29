@@ -27,9 +27,12 @@ test('validates direct history entry and file diff requests', () => {
   assert.equal(parseHistoryEntryDetailInput({
     entry: ' update-100 ', owner: 'scope', repo: 'vcs',
   }).entry, 'update-100')
-  assert.equal(parseHistoryEntryFileDiffInput({
-    entry: 'update-100', owner: 'scope', path: ' /README.md ', repo: 'vcs',
-  }).path, ' /README.md ')
+  const fileDiff = { budget: 'full', entry: 'update-100', owner: 'scope', path: ' /README.md ', repo: 'vcs' }
+  assert.equal(parseHistoryEntryFileDiffInput(fileDiff).path, ' /README.md ')
+  assert.equal(parseHistoryEntryFileDiffInput(fileDiff).budget, 'full')
+  for (const budget of [undefined, 'huge', true]) {
+    assert.throws(() => parseHistoryEntryFileDiffInput({ ...fileDiff, budget }), /budget/)
+  }
   assert.throws(
     () => parseHistoryEntryDetailInput({ entry: ' ', owner: 'scope', repo: 'vcs' }),
     /history entry id is required/,
@@ -37,7 +40,7 @@ test('validates direct history entry and file diff requests', () => {
 })
 
 test('history diffs preserve filename whitespace and reject invalid paths', () => {
-  const input = { entry: 'update-100', owner: 'scope', repo: 'vcs' }
+  const input = { budget: 'standard', entry: 'update-100', owner: 'scope', repo: 'vcs' }
   for (const path of ['/trailing-space.txt ', '/ leading-space.txt', '/tab\t.txt']) {
     assert.equal(parseHistoryEntryFileDiffInput({ ...input, path }).path, path)
   }
@@ -54,7 +57,7 @@ test('defaults to pushes and merges and validates the independent feed', () => {
 })
 
 test('preserves an exact visibility effect selector without adding one to content diffs', () => {
-  const request = { owner: 'scope', repo: 'vcs', entry: 'push-1', path: '/same.ts' }
+  const request = { budget: 'standard', owner: 'scope', repo: 'vcs', entry: 'push-1', path: '/same.ts' }
   assert.equal(parseHistoryEntryFileDiffInput(request).visibility_change, null)
   assert.equal(parseHistoryEntryFileDiffInput({ ...request, visibility_change: ' change-2 ' }).visibility_change, 'change-2')
   assert.throws(() => parseHistoryEntryFileDiffInput({ ...request, visibility_change: 12 }), /visibility change id/)
