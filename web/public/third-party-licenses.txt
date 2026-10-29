@@ -4364,20 +4364,20 @@ Repository: {"type": "git", "url": "https://github.com/npm/node-semver.git"}
 LICENSE: text 0ae52fe329ccfd23fedbd688361bd0dedaf5cae3e3516eb2ad17831f2d8b347c
 
 ==============================================================================
-seroval 1.6.7
+seroval 1.6.12
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/seroval/-/seroval-1.6.7.tgz
+Source: https://registry.npmjs.org/seroval/-/seroval-1.6.12.tgz
 
 Published author metadata: "Alexis Munsayac"
 Repository: {"url": "https://github.com/lxsmnsyc/seroval.git", "type": "git"}
 LICENSE: text 2bd8a2c61751fc47dcd214f864b6fcdbcb518995fbf497c81a06c3bfe8d1d9d4
 
 ==============================================================================
-seroval-plugins 1.6.7
+seroval-plugins 1.6.12
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/seroval-plugins/-/seroval-plugins-1.6.7.tgz
+Source: https://registry.npmjs.org/seroval-plugins/-/seroval-plugins-1.6.12.tgz
 
 Published author metadata: "Alexis Munsayac"
 Repository: {"url": "https://github.com/lxsmnsyc/seroval.git", "type": "git"}
