@@ -15,15 +15,22 @@ fn detail_lines_render_the_request_summary() {
     .unwrap();
 
     let rendered = request_detail_lines(
-        &request,
-        &scope_api_contract::RequestStackNavigationResponse {
-            parent: None,
-            ancestors: Vec::new(),
-            ancestors_unavailable: false,
-            children: scope_api_contract::RequestChildrenPageResponse {
-                requests: Vec::new(),
-                next_cursor: None,
+        &scope_api_contract::RequestDetailResponse {
+            request,
+            stack_navigation: scope_api_contract::RequestStackNavigationResponse {
+                parent: None,
+                ancestors: Vec::new(),
+                ancestors_unavailable: false,
+                children: scope_api_contract::RequestChildrenPageResponse {
+                    requests: Vec::new(),
+                    next_cursor: None,
+                },
             },
+            diff_stat: Some(scope_api_contract::RequestDiffStatResponse {
+                additions: 128,
+                deletions: 41,
+                changed_files: 6,
+            }),
         },
         &Views::builtin(),
     );
@@ -34,6 +41,7 @@ fn detail_lines_render_the_request_summary() {
             "open       fix-refs (req_one) — Fix request refs · head bbbbbbb",
             "  lifecycle: open · submitted",
             "  branch: fix-refs · base Public main aaaaaaa · head bbbbbbb",
+            "  changes: +128 -41 across 6 files",
             "  stack: depth 1 · Main",
             "  review base: main @ aaaaaaa",
             "  description: Atomic updates",

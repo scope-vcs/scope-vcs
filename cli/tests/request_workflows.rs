@@ -293,6 +293,51 @@ fn request_diff_defaults_to_the_server_pinned_layer_manifest() {
 }
 
 #[test]
+fn request_diff_stat_reads_line_counts_from_the_file_list_without_fetching_contents() {
+    let dir = TempDir::new("request-diff-stat");
+    let server = FixtureServer::start();
+    let human_diff = |extra: &[&str]| {
+        let output = server
+            .command(dir.path())
+            .args([
+                "--repo",
+                "owner/repo",
+                "request",
+                "diff",
+                "--request",
+                "req_one",
+            ])
+            .args(extra)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+
+    let stat = human_diff(&["--stat"]);
+    assert!(
+        stat.ends_with(
+            "Request req_one, revision rev_old (request)\n space name.txt | +1 -1\n 1 file changed, +1 -1\n"
+        ),
+        "{stat}"
+    );
+    assert!(
+        !server
+            .seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|uri| uri.contains("file-diff")),
+        "{:?}",
+        server.seen.lock().unwrap()
+    );
+
+    let full = human_diff(&[]);
+    assert!(full.contains("+server-layer\n"), "{full}");
+    assert!(full.ends_with("\n 1 file changed, +1 -1\n"), "{full}");
+}
+
+#[test]
 fn request_diff_rejects_a_commit_absent_from_visible_revision_inspection() {
     let dir = TempDir::new("request-absent-commit");
     let server = FixtureServer::start();

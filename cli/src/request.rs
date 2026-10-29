@@ -37,6 +37,7 @@ mod restack;
 mod stack;
 use discussion::{DiscussionMutation, discussion_mutation};
 mod inspect;
+mod line_counts;
 mod local;
 pub(crate) use local::{RequestComparison, RequestContext, resolve_request_comparison_ref};
 mod outcome;
@@ -197,17 +198,12 @@ fn show_request_status(
             &context.target.repo,
             &request_id,
         )?;
-        human_lines.extend(request_detail_lines(
-            &detail.request,
-            &detail.stack_navigation,
-            &context.views,
-        ));
+        human_lines.extend(request_detail_lines(&detail, &context.views));
         return Ok(RequestCommandOutcome::new(
             "request.status",
             RequestCommandResult::Detail(Box::new(DetailResult {
                 repo: context.repo,
-                request: detail.request,
-                stack_navigation: detail.stack_navigation,
+                detail,
                 activity: None,
                 auto_merge: None,
                 review_bots: None,

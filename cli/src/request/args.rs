@@ -433,6 +433,11 @@ pub(super) struct RequestDiffArgs {
         help = "Show the old and new content for this file"
     )]
     pub(super) path: Option<String>,
+    #[arg(
+        long,
+        help = "Show added and deleted line counts per file instead of file content"
+    )]
+    pub(super) stat: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, ValueEnum)]

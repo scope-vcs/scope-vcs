@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use args::{RequestCheckoutArgs, RequestCiArgs, RequestDiffArgs};
-use scope_api_contract::RequestRevisionInspectionState;
+use scope_api_contract::{CommitFileResponse, RequestRevisionInspectionState};
 
 pub(super) fn checkout_request(
     git_repo: &GitRepo,
@@ -253,8 +253,9 @@ pub(super) fn diff_request(
     let mut files = Vec::new();
     if let Some(revision) = selected {
         lines.push(format!(
-            "Request {request_id}, revision {}",
-            terminal_text(&revision.id)
+            "Request {request_id}, revision {} ({})",
+            terminal_text(&revision.id),
+            comparison_mode.wire()
         ));
         let inspection = revisions
             .comparison
@@ -266,88 +267,62 @@ pub(super) fn diff_request(
                 inspection
             ));
         }
-        if let Some(comparison) = &revisions.comparison {
-            for changed in comparison.files.iter().filter(|file| {
-                args.path.as_ref().is_none_or(|path| {
-                    path.trim_start_matches('/') == file.path.trim_start_matches('/')
-                })
-            }) {
-                let diff = request_file_diff(
-                    api,
-                    RequestFileDiffParams {
-                        target,
-                        revision: &comparison.revision_id,
-                        commit: args.commit.as_deref(),
-                        comparison: comparison_mode.wire(),
-                        path: &changed.path,
-                    },
-                )?;
-                lines.extend(super::diff::file_diff_lines(&diff));
-                files.push(InspectedFile {
-                    commit_oid: comparison
-                        .head_oid
-                        .as_ref()
-                        .map(ToString::to_string)
-                        .unwrap_or_default(),
-                    diff,
-                });
-            }
-        }
-        for commit in revision.commits.iter().filter(|commit| {
-            revisions.comparison.is_none()
-                && args.commit.as_deref().is_none_or(|oid| commit.oid == oid)
-        }) {
-            lines.push(format!(
-                "{} {}",
-                short_oid(&commit.oid),
-                terminal_text(&commit.message)
-            ));
-            if args.path.is_none() || comparison_mode == args::ComparisonArg::Push {
-                for changed in commit.files.iter().filter(|file| {
-                    args.path.as_ref().is_none_or(|path| {
-                        path.trim_start_matches('/') == file.path.trim_start_matches('/')
-                    })
-                }) {
-                    let diff = request_file_diff(
-                        api,
-                        RequestFileDiffParams {
-                            target,
-                            revision: &revision.id,
-                            commit: Some(&commit.oid),
-                            comparison: comparison_mode.wire(),
-                            path: &changed.path,
-                        },
-                    )?;
-                    lines.extend(super::diff::file_diff_lines(&diff));
-                    files.push(InspectedFile {
-                        commit_oid: commit.oid.clone(),
-                        diff,
-                    });
+        let entries = diff_entries(
+            &revisions,
+            revision,
+            DiffSelection {
+                commit: args.commit.as_deref(),
+                path: args.path.as_deref(),
+            },
+            comparison_mode,
+        );
+        let stat =
+            super::line_counts::DiffStat::new(entries.iter().filter_map(|entry| match entry {
+                DiffEntry::File { file, .. } => Some(*file),
+                DiffEntry::Line(_) | DiffEntry::Unlisted { .. } => None,
+            }));
+        for entry in entries {
+            let (source, commit_oid, path) = match entry {
+                DiffEntry::Line(line) => {
+                    lines.push(line);
+                    continue;
                 }
-            }
-            if commit.files_truncated {
-                lines.push("  File list is truncated.".to_string());
-            }
-        }
-        if revisions.comparison.is_none()
-            && let (Some(commit), Some(path)) = (args.commit.as_deref(), args.path.as_deref())
-        {
+                DiffEntry::File { file, .. } if args.stat => {
+                    lines.push(stat.row(file));
+                    continue;
+                }
+                DiffEntry::Unlisted { path, .. } if args.stat => {
+                    lines.push(format!(
+                        "  {} is not in the server's file list.",
+                        terminal_text(path)
+                    ));
+                    continue;
+                }
+                DiffEntry::File {
+                    source,
+                    commit_oid,
+                    file,
+                } => (source, commit_oid, file.path.as_str()),
+                DiffEntry::Unlisted {
+                    source,
+                    commit_oid,
+                    path,
+                } => (source, commit_oid, path),
+            };
             let diff = request_file_diff(
                 api,
                 RequestFileDiffParams {
                     target,
-                    revision: &revision.id,
-                    commit: Some(commit),
+                    revision: source.revision,
+                    commit: source.commit,
                     comparison: comparison_mode.wire(),
                     path,
                 },
             )?;
             lines.extend(super::diff::file_diff_lines(&diff));
-            files.push(InspectedFile {
-                commit_oid: commit.to_string(),
-                diff,
-            });
+            files.push(InspectedFile { commit_oid, diff });
         }
+        lines.extend(stat.summary());
     } else {
         lines.push("No visible request revisions.".to_string());
     }
@@ -361,6 +336,119 @@ pub(super) fn diff_request(
         }),
         lines,
     ))
+}
+
+#[derive(Clone, Copy)]
+struct DiffSelection<'a> {
+    commit: Option<&'a str>,
+    path: Option<&'a str>,
+}
+
+#[derive(Clone, Copy)]
+struct DiffSource<'a> {
+    revision: &'a str,
+    commit: Option<&'a str>,
+}
+
+enum DiffEntry<'a> {
+    Line(String),
+    File {
+        source: DiffSource<'a>,
+        commit_oid: String,
+        file: &'a CommitFileResponse,
+    },
+    Unlisted {
+        source: DiffSource<'a>,
+        commit_oid: String,
+        path: &'a str,
+    },
+}
+
+fn diff_entries<'a>(
+    revisions: &'a scope_api_contract::RequestRevisionListResponse,
+    revision: &'a scope_api_contract::RequestRevisionResponse,
+    selection: DiffSelection<'a>,
+    comparison_mode: args::ComparisonArg,
+) -> Vec<DiffEntry<'a>> {
+    let DiffSelection { commit, path } = selection;
+    let path_matches = |file: &&CommitFileResponse| {
+        path.is_none_or(|path| path.trim_start_matches('/') == file.path.trim_start_matches('/'))
+    };
+    let mut entries = Vec::new();
+    if let Some(comparison) = &revisions.comparison {
+        let source = DiffSource {
+            revision: &comparison.revision_id,
+            commit,
+        };
+        let commit_oid = comparison
+            .head_oid
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        entries.extend(
+            comparison
+                .files
+                .iter()
+                .filter(path_matches)
+                .map(|file| DiffEntry::File {
+                    source,
+                    commit_oid: commit_oid.clone(),
+                    file,
+                }),
+        );
+        return entries;
+    }
+    for listed_commit in revision
+        .commits
+        .iter()
+        .filter(|candidate| commit.is_none_or(|oid| candidate.oid == oid))
+    {
+        entries.push(DiffEntry::Line(format!(
+            "{} {}",
+            short_oid(&listed_commit.oid),
+            terminal_text(&listed_commit.message)
+        )));
+        if path.is_none() || comparison_mode == args::ComparisonArg::Push {
+            let source = DiffSource {
+                revision: &revision.id,
+                commit: Some(&listed_commit.oid),
+            };
+            entries.extend(listed_commit.files.iter().filter(path_matches).map(|file| {
+                DiffEntry::File {
+                    source,
+                    commit_oid: listed_commit.oid.clone(),
+                    file,
+                }
+            }));
+        }
+        if listed_commit.files_truncated {
+            entries.push(DiffEntry::Line("  File list is truncated.".to_string()));
+        }
+    }
+    if let (Some(commit), Some(path)) = (commit, path) {
+        let source = DiffSource {
+            revision: &revision.id,
+            commit: Some(commit),
+        };
+        let listed = revision
+            .commits
+            .iter()
+            .find(|candidate| candidate.oid == commit)
+            .and_then(|candidate| candidate.files.iter().find(path_matches));
+        entries.push(match listed {
+            Some(file) => DiffEntry::File {
+                source,
+                commit_oid: commit.to_string(),
+                file,
+            },
+            None => DiffEntry::Unlisted {
+                source,
+                commit_oid: commit.to_string(),
+                path,
+            },
+        });
+    }
+    entries
 }
 
 pub(super) fn request_ci(
