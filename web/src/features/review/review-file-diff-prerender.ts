@@ -1,5 +1,8 @@
 import { Worker } from 'node:worker_threads'
-import { REVIEW_FILE_DIFF_RENDERER_LIMITS } from './review-file-diff-render-contract'
+import {
+  REVIEW_FILE_DIFF_MAX_WORKERS,
+  REVIEW_FILE_DIFF_RENDERER_LIMITS,
+} from './review-file-diff-render-contract'
 import { createReviewFileDiffRenderer } from './review-file-diff-renderer'
 import { createReviewFileDiffWorkerPool } from './review-file-diff-worker-pool'
 
@@ -14,5 +17,5 @@ export const renderReviewFileDiff = host[rendererKey] ??= createReviewFileDiffRe
     import.meta.env.PROD
       ? new URL('../_workers/review-file-diff-render-worker.mjs', import.meta.url)
       : new URL('./review-file-diff-render-worker.ts', import.meta.url),
-  ), REVIEW_FILE_DIFF_RENDERER_LIMITS.maxConcurrentRenders, REVIEW_FILE_DIFF_RENDERER_LIMITS.startupDeadlineMs),
+  ), REVIEW_FILE_DIFF_MAX_WORKERS, REVIEW_FILE_DIFF_RENDERER_LIMITS.startupDeadlineMs),
 })

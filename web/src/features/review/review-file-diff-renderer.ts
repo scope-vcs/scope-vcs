@@ -36,11 +36,11 @@ type IsolatedReviewDiffRender = (
   signal?: AbortSignal,
 ) => Promise<ReviewFileDiffWorkerResult>
 
-type ReviewDiffAdmissionState = { active: number }
+type ReviewDiffAdmissionState = Record<ReviewDiffRenderBudget, number>
 
 export function createReviewFileDiffRenderer({
   isolatedRender,
-  state = { active: 0 },
+  state = { full: 0, standard: 0 },
 }: {
   isolatedRender: IsolatedReviewDiffRender
   state?: ReviewDiffAdmissionState
@@ -80,15 +80,15 @@ export function createReviewFileDiffRenderer({
     const key = createHash('sha256')
       .update(JSON.stringify([RENDERER_VERSION, budget, diff.path, oldText, newText]))
       .digest('hex')
-    const cached = presentations.get(key)
+    const cached = budget.cachePresentations ? presentations.get(key) : undefined
     if (cached && cached.kind !== 'error') {
       return { ...base, presentation: budgetedPresentation(cached, budgetName) }
     }
-    if (state.active >= REVIEW_FILE_DIFF_RENDERER_LIMITS.maxConcurrentRenders) {
+    if (state[budgetName] >= budget.maxConcurrentRenders) {
       throw new ReviewDiffTransientError('busy')
     }
 
-    state.active += 1
+    state[budgetName] += 1
     try {
       const presentation = await isolatedRender({
         budget: {
@@ -104,10 +104,10 @@ export function createReviewFileDiffRenderer({
       if (presentation.kind === 'error') {
         throw new Error('This file diff could not be rendered.')
       }
-      presentations.set(key, presentation)
+      if (budget.cachePresentations) presentations.set(key, presentation)
       return { ...base, presentation: budgetedPresentation(presentation, budgetName) }
     } finally {
-      state.active -= 1
+      state[budgetName] -= 1
     }
   }
 }

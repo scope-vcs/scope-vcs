@@ -100,9 +100,9 @@ test('bounds mixed content without returning raw transport fields', async () => 
   )
 })
 
-test('admits no queue and allows retry after a transient busy failure', async () => {
+test('admits no queue, keeps full renders out of standard slots, and allows retry after a transient busy failure', async () => {
   const releases: Array<() => void> = []
-  const state = { active: 0 }
+  const state = { full: 0, standard: 0 }
   const render = createReviewFileDiffRenderer({
     isolatedRender: () => new Promise((resolveRender) => {
       releases.push(() => resolveRender({ kind: 'empty' }))
@@ -119,6 +119,16 @@ test('admits no queue and allows retry after a transient busy failure', async ()
   )
   assert.equal(releases.length, 2)
 
+  const full = render(textDiff('g', 'h'), 'full')
+  await assert.rejects(
+    render(textDiff('i', 'j'), 'full'),
+    (error: unknown) => error instanceof ReviewDiffTransientError &&
+      error.failure === 'busy',
+  )
+  assert.equal(releases.length, 3)
+  releases.pop()?.()
+  await full
+
   releases.shift()?.()
   await first
   const retry = render(textDiff('e', 'f'), 'standard')
@@ -126,14 +136,14 @@ test('admits no queue and allows retry after a transient busy failure', async ()
   releases.shift()?.()
   releases.shift()?.()
   await Promise.all([second, retry])
-  assert.equal(state.active, 0)
+  assert.deepEqual(state, { full: 0, standard: 0 })
 })
 
 test('does not publish transient busy or deadline failures to a cache', async () => {
   const isolatedRender = mock.fn(async () => ({ kind: 'empty' as const }))
   const busyRender = createReviewFileDiffRenderer({
     isolatedRender,
-    state: { active: REVIEW_FILE_DIFF_RENDERER_LIMITS.maxConcurrentRenders },
+    state: { full: 0, standard: REVIEW_FILE_DIFF_RENDER_BUDGETS.standard.maxConcurrentRenders },
   })
   const deadlineRender = createReviewFileDiffRenderer({
     isolatedRender: async () => {
@@ -188,7 +198,7 @@ test('bounds text excerpts without splitting UTF-8 characters', () => {
   })
 })
 
-test('caches presentation by content, language, and budget, retaining current diff metadata', async () => {
+test('caches standard presentations by content and language, retaining current diff metadata, and renders full presentations each time', async () => {
   let renders = 0
   const render = createReviewFileDiffRenderer({
     isolatedRender: async () => {
@@ -205,7 +215,8 @@ test('caches presentation by content, language, and budget, retaining current di
   await render(textDiff('a', 'c'), 'standard')
   assert.equal(renders, 3)
   await render(original, 'full')
-  assert.equal(renders, 4)
+  await render(original, 'full')
+  assert.equal(renders, 5)
 })
 
 test('bounds cached presentation bytes and excludes canceled work', async () => {
