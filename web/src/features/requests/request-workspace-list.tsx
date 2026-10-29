@@ -2,7 +2,9 @@ import type { RepoParams } from '@/api/types'
 import type { RequestQueueItemResponse, RequestQueueSection } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { DiffStatSummary } from '@/components/diff-stat'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
+import { diffStatWithChanges } from '@/lib/diff-stat'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useUnixClock } from '@/lib/use-unix-clock'
 import { cn } from '@/lib/utils'
@@ -208,6 +210,7 @@ function RequestWorkspaceRow({
   const unread = requestHasNewActivity(item)
   const mergeStep = rail ? REQUEST_MERGE_STEP_LABELS[item.next_step] : undefined
   const stackParent = requestStackParentLabel(item)
+  const diffStat = diffStatWithChanges(request.diff_stat)
   const canSetAside = section === 'active' && attention.can_set_aside
   const actions = [
     { action: 'settle', label: 'Settle', icon: Check, visible: canSetAside },
@@ -306,13 +309,22 @@ function RequestWorkspaceRow({
                 )}
               </span>
             </span>
-            <time
-              className="request-workspace-row-age ml-auto shrink-0 text-xs text-muted-foreground"
-              dateTime={new Date(item.attention_at_unix * 1_000).toISOString()}
-              suppressHydrationWarning
-            >
-              {requestAgeLabel(item.attention_at_unix, nowUnix, hydrated)}
-            </time>
+            <span className="ml-auto flex shrink-0 items-center text-muted-foreground">
+              {diffStat && (
+                <DiffStatSummary
+                  className="request-workspace-row-diff-stat text-[11.5px]"
+                  detail="compact"
+                  stat={diffStat}
+                />
+              )}
+              <time
+                className="request-workspace-row-age text-xs"
+                dateTime={new Date(item.attention_at_unix * 1_000).toISOString()}
+                suppressHydrationWarning
+              >
+                {requestAgeLabel(item.attention_at_unix, nowUnix, hydrated)}
+              </time>
+            </span>
           </span>
         </span>
       </Link>

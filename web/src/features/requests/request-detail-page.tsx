@@ -270,6 +270,8 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
               <ArrowLeft aria-hidden="true" className="size-3.5" /> Requests
             </Link>
           )}
+          diffStat={state.detail.diff_stat}
+          params={{ ...params, requestId: request.id }}
           request={request}
           viewName={requestViewName}
         />

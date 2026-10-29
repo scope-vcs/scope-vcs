@@ -3,6 +3,7 @@ import { FileWorkbench } from '@/components/file-workbench'
 import { useRef, useState, type ReactNode } from 'react'
 import { ReviewFileDiffDrawer, type ReviewDiffAnnotations } from '../review/review-file-diff-drawer'
 import type { CommitFileDiffState } from './history-state'
+import type { FileLineChangesResponse } from '@/api/types.generated'
 
 export type ChangedFilesProps = {
   diffAnnotations?: ReviewDiffAnnotations
@@ -31,9 +32,10 @@ const DIFF_PANE_CLASS = 'h-[70vh] min-h-[340px] max-h-[720px] min-w-0 overflow-h
 
 export function ChangedFilesWorkbench({
   diffAnnotations, diffIdentity, diffScrollTop, fileDiffState, onDiffScroll, onRetryDiff,
-  selectedFilePath, navigation, navigationLabel, navigator, toolbar, diffActions, diffContext,
-  emptyFilesMessage, emptyPreviewMessage,
+  selectedFilePath, selectedFileLines = null, navigation, navigationLabel, navigator, toolbar,
+  diffActions, diffContext, emptyFilesMessage, emptyPreviewMessage,
 }: Omit<ChangedFilesProps, 'onCloseDiff' | 'onSelectFile'> & {
+  selectedFileLines?: FileLineChangesResponse | null
   navigation: ReturnType<typeof useChangedFileNavigation>
   navigationLabel: string
   navigator: ReactNode
@@ -54,6 +56,7 @@ export function ChangedFilesWorkbench({
         diff={fileDiffState.diff}
         error={fileDiffState.error}
         fullRender={fileDiffState.status === 'loaded' ? fileDiffState.fullRender : null}
+        lines={selectedFileLines}
         loading={fileDiffState.status === 'loading'}
         onClose={navigation.closeDiff}
         onRetry={onRetryDiff}

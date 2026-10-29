@@ -1,7 +1,10 @@
-import type { RequestSummaryResponse } from '@/api/types.generated'
+import type { RequestDiffStatResponse, RequestSummaryResponse } from '@/api/types.generated'
+import { DiffStatSummary } from '@/components/diff-stat'
+import { diffStatWithChanges } from '@/lib/diff-stat'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Link } from '@tanstack/react-router'
 import { Check, Copy } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
@@ -12,16 +15,21 @@ import { actorHandle } from './request-actor'
 export function RequestDetailHeader({
   actions,
   backLink,
+  diffStat,
+  params,
   request,
   viewName,
 }: {
   actions?: ReactNode
   backLink: ReactNode
+  diffStat: RequestDiffStatResponse | null
+  params: { owner: string; repo: string; requestId: string }
   request: RequestSummaryResponse
   viewName: string
 }) {
   const workspace = useRequestWorkspace()
   const queueItem = workspace?.selected ?? null
+  const changes = diffStatWithChanges(diffStat)
 
   return (
     <header className="request-detail-header px-(--app-inset) pb-2 pt-3 min-[701px]:pt-6">
@@ -39,6 +47,16 @@ export function RequestDetailHeader({
             <CopyBranchButton branch={request.name} />
           </span>
           <span className="min-w-0 truncate">{viewName} view</span>
+          {changes && (
+            <Link
+              className="rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              params={params}
+              search={{}}
+              to="/$owner/$repo/requests/$requestId/changes"
+            >
+              <DiffStatSummary detail="exact" stat={changes} />
+            </Link>
+          )}
           {queueItem ? (
             <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <span className="font-medium text-foreground">{actorHandle(queueItem.author)}</span>

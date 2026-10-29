@@ -4,6 +4,8 @@ import type {
   ReviewDiffTextSide,
   ReviewFileDiff,
 } from '@/api/types'
+import type { FileLineChangesResponse } from '@/api/types.generated'
+import { FileLineCounts } from '@/components/diff-stat'
 import { PanelState } from '@/components/empty-state'
 import { normalizeFilePath } from '@/components/file-system-tree-model'
 import { PendingSurface } from '@/components/pending-surface'
@@ -46,6 +48,7 @@ export function ReviewFileDiffDrawer({
   diff,
   error,
   fullRender,
+  lines = null,
   loading,
   onClose,
   onRetry,
@@ -60,6 +63,7 @@ export function ReviewFileDiffDrawer({
   diff: ReviewFileDiff | null
   error: string | null
   fullRender: ReviewDiffFullRender | null
+  lines?: FileLineChangesResponse | null
   loading: boolean
   onClose?: () => void
   onRetry?: () => void
@@ -98,7 +102,7 @@ export function ReviewFileDiffDrawer({
                 ? null
                 : error
                   ? 'Diff unavailable'
-                  : reviewFileDiffModeChangeLabel(diff) ?? 'Diff'}
+                  : <DiffSubtitle lines={lines} modeChange={reviewFileDiffModeChangeLabel(diff)} />}
             </div>
           </div>
           {actions}
@@ -342,3 +346,12 @@ function OmittedDiffState({
   )
 }
 
+function DiffSubtitle({ lines, modeChange }: { lines: FileLineChangesResponse | null; modeChange: string | null }) {
+  if (!lines) return modeChange ?? 'Diff'
+  return (
+    <>
+      {modeChange && `${modeChange} · `}
+      <FileLineCounts lines={lines} />
+    </>
+  )
+}
