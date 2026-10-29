@@ -45,7 +45,7 @@ export function createReviewFileDiffRenderer({
   isolatedRender: IsolatedReviewDiffRender
   state?: ReviewDiffAdmissionState
 }) {
-  const presentations = createBoundedCache<string, ReviewFileDiffWorkerResult>({
+  const presentations = createBoundedCache<string, Exclude<ReviewFileDiffWorkerResult, { kind: 'error' }>>({
     maxEntries: 64,
     maxWeight: 8 * 1024 * 1024,
     weightOf: (result) => result.kind === 'html' ? result.html.length * 2 : 64,
@@ -77,11 +77,13 @@ export function createReviewFileDiffRenderer({
     if (oldMetrics.lines + newMetrics.lines > budget.maxInputLines) {
       return { ...base, presentation: { budget: budgetName, kind: 'omitted', reason: 'lines' } }
     }
-    const key = createHash('sha256')
-      .update(JSON.stringify([RENDERER_VERSION, budget, diff.path, oldText, newText]))
-      .digest('hex')
-    const cached = budget.cachePresentations ? presentations.get(key) : undefined
-    if (cached && cached.kind !== 'error') {
+    const key = budget.cachePresentations
+      ? createHash('sha256')
+          .update(JSON.stringify([RENDERER_VERSION, budget, diff.path, oldText, newText]))
+          .digest('hex')
+      : null
+    const cached = key === null ? undefined : presentations.get(key)
+    if (cached) {
       return { ...base, presentation: budgetedPresentation(cached, budgetName) }
     }
     if (state[budgetName] >= budget.maxConcurrentRenders) {
@@ -104,7 +106,7 @@ export function createReviewFileDiffRenderer({
       if (presentation.kind === 'error') {
         throw new Error('This file diff could not be rendered.')
       }
-      if (budget.cachePresentations) presentations.set(key, presentation)
+      if (key !== null) presentations.set(key, presentation)
       return { ...base, presentation: budgetedPresentation(presentation, budgetName) }
     } finally {
       state[budgetName] -= 1

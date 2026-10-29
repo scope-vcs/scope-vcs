@@ -48,24 +48,30 @@ test('rejects input and line amplification before worker admission until a full 
     _deadlineMs: number,
   ) => ({ kind: 'omitted' as const, reason: 'lines' as const }))
   const render = createReviewFileDiffRenderer({ isolatedRender })
-  const standard = REVIEW_FILE_DIFF_RENDER_BUDGETS.standard
-  const amplified = [
-    { diff: textDiff('', 'x'.repeat(standard.maxInputBytes + 1)), reason: 'input' },
-    { diff: textDiff('', 'x'.repeat(standard.maxInputLineBytes + 1)), reason: 'input' },
-    { diff: textDiff('', 'x\n'.repeat(10_000)), reason: 'lines' },
-  ] as const
+  const amplified = (name: 'full' | 'standard') => {
+    const budget = REVIEW_FILE_DIFF_RENDER_BUDGETS[name]
+    const side = `${'x'.repeat(1_024)}\n`.repeat(Math.ceil(budget.maxInputBytes / 2 / 1_025))
+    return [
+      { diff: textDiff(side, side), reason: 'input' },
+      { diff: textDiff('', 'x'.repeat(budget.maxInputLineBytes + 1)), reason: 'input' },
+      { diff: textDiff('', '\n'.repeat(budget.maxInputLines + 1)), reason: 'lines' },
+    ] as const
+  }
 
-  for (const { diff, reason } of amplified) {
-    const result = await render(diff, 'standard')
-    assert.deepEqual(result.presentation, { budget: 'standard', kind: 'omitted', reason })
+  for (const budget of ['standard', 'full'] as const) {
+    for (const { diff, reason } of amplified(budget)) {
+      const result = await render(diff, budget)
+      assert.deepEqual(result.presentation, { budget, kind: 'omitted', reason })
+    }
   }
   assert.equal(isolatedRender.mock.callCount(), 0)
 
-  for (const { diff } of amplified) {
+  const standard = amplified('standard')
+  for (const { diff } of standard) {
     const result = await render(diff, 'full')
     assert.deepEqual(result.presentation, { budget: 'full', kind: 'omitted', reason: 'lines' })
   }
-  assert.equal(isolatedRender.mock.callCount(), amplified.length)
+  assert.equal(isolatedRender.mock.callCount(), standard.length)
   const [input, deadlineMs] = isolatedRender.mock.calls[0]?.arguments ?? []
   assert.equal(deadlineMs, REVIEW_FILE_DIFF_RENDER_BUDGETS.full.deadlineMs)
   assert.equal(input?.budget.maxRenderedLines, REVIEW_FILE_DIFF_RENDER_BUDGETS.full.maxRenderedLines)
