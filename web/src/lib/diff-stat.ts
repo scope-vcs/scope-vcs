@@ -32,7 +32,11 @@ export function diffStatHasLines({ additions, deletions }: DiffStat): boolean {
   return additions + deletions > 0
 }
 
-export function diffStatOfFiles(files: readonly CommitFileResponse[]): DiffStat {
+export function diffStatOfFiles({ files, files_truncated }: {
+  files: readonly CommitFileResponse[]
+  files_truncated: boolean
+}): DiffStat | null {
+  if (files_truncated || files.length === 0) return null
   return files.reduce<DiffStat>(
     (stat, { lines }) => lines.kind === 'text'
       ? { ...stat, additions: stat.additions + lines.additions, deletions: stat.deletions + lines.deletions }

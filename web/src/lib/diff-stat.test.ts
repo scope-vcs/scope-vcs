@@ -53,12 +53,28 @@ test('file totals sum text lines and count binary files without lines', () => {
     label: 'public',
     lines,
   })
+  const files = [
+    file('a.ts', { kind: 'text', additions: 22, deletions: 4 }),
+    file('logo.png', { kind: 'binary' }),
+    file('b.ts', { kind: 'text', additions: 3, deletions: 10 }),
+  ]
   assert.deepEqual(
-    diffStatOfFiles([
-      file('a.ts', { kind: 'text', additions: 22, deletions: 4 }),
-      file('logo.png', { kind: 'binary' }),
-      file('b.ts', { kind: 'text', additions: 3, deletions: 10 }),
-    ]),
+    diffStatOfFiles({ files, files_truncated: false }),
     { additions: 25, deletions: 14, changed_files: 3 },
   )
+  assert.equal(diffStatOfFiles({ files: [], files_truncated: false }), null)
+})
+
+test('a bounded file list has no total because its files understate the change', () => {
+  const file: CommitFileResponse = {
+    path: 'a.ts',
+    kind: 'Modified',
+    old_mode: null,
+    new_mode: null,
+    old_oid: null,
+    new_oid: null,
+    label: 'public',
+    lines: { kind: 'text', additions: 22, deletions: 4 },
+  }
+  assert.equal(diffStatOfFiles({ files: [file], files_truncated: true }), null)
 })

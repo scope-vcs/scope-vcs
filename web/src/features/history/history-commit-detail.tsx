@@ -38,6 +38,7 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
 
   const commit = commitState.commit
   const filesTruncated = commit.files_truncated
+  const diffStat = diffStatOfFiles(commit)
   return (
     <div className="scope-content-enter min-w-0">
       <div className="border-b border-border px-(--app-inset) py-4">
@@ -52,10 +53,10 @@ export function CommitDetailPanel(props: CommitDetailPanelProps) {
               <span>{commit.author}</span>
             </>
           )}
-          {commit.files.length > 0 && (
+          {diffStat && (
             <>
               <span aria-hidden>·</span>
-              <DiffStatSummary detail="exact" stat={diffStatOfFiles(commit.files)} />
+              <DiffStatSummary detail="exact" stat={diffStat} />
             </>
           )}
         </div>
