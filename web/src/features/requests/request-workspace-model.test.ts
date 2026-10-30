@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   requestAgeLabel,
   requestAttentionHeat,
+  resolveCustomSnooze,
   requestSnoozeLandingLabel,
   requestSnoozeUntil,
 } from './request-workspace-model'
@@ -45,3 +46,33 @@ test('the menu words each landing as a clock today and a weekday later', () => {
   assert.equal(requestSnoozeLandingLabel('next_week', wednesday), 'Mon 9:00 AM')
 })
 
+test('a custom date is a local wall clock that must exist and be in the future', () => {
+  const now = new Date(2026, 8, 14, 14, 30)
+  assert.equal(
+    resolveCustomSnooze({ mode: 'date', date: '2026-09-15', time: '09:15' }, now),
+    new Date(2026, 8, 15, 9, 15).getTime() / 1_000,
+  )
+  for (const [date, time] of [
+    ['2026-09-14', '14:30'],
+    ['2026-09-13', '09:00'],
+    ['2027-02-29', '09:00'],
+    ['2026-13-01', '09:00'],
+    ['2026-09-15', '24:00'],
+    ['2026-09-15', '09:60'],
+    ['', '09:00'],
+    ['2026-09-15', ''],
+  ]) {
+    assert.equal(resolveCustomSnooze({ mode: 'date', date, time }, now), null, `${date} ${time}`)
+  }
+})
+
+test('a custom duration counts elapsed time from confirmation', () => {
+  const now = new Date(2026, 8, 14, 14, 30)
+  const nowUnix = now.getTime() / 1_000
+  assert.equal(resolveCustomSnooze({ mode: 'duration', amount: '45', unit: 'minutes' }, now), nowUnix + 45 * 60)
+  assert.equal(resolveCustomSnooze({ mode: 'duration', amount: '1.5', unit: 'hours' }, now), nowUnix + 90 * 60)
+  assert.equal(resolveCustomSnooze({ mode: 'duration', amount: '2', unit: 'days' }, now), nowUnix + 48 * 3_600)
+  for (const amount of ['', '0', '-1', 'NaN', 'Infinity', '1e300', '0.000001']) {
+    assert.equal(resolveCustomSnooze({ mode: 'duration', amount, unit: 'hours' }, now), null, amount)
+  }
+})

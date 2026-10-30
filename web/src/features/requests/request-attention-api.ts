@@ -7,7 +7,7 @@ import {
 } from '@/api/validators.generated'
 
 export type RequestAttentionCommand =
-  { action: 'claim' | 'release' | 'restore' | 'settle' } | { action: 'snooze'; until_unix: number }
+  { action: 'acknowledge' | 'claim' | 'release' | 'restore' | 'settle' } | { action: 'snooze'; until_unix: number }
 
 export function updateRequestAttentionForRequest(input: RequestAttentionInput) {
   const { owner, repo, request_id, ...body } = input

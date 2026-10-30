@@ -228,6 +228,26 @@ Repository: {"type": "git", "url": "git+https://github.com/clerk/javascript.git"
 LICENSE: text 980a9657026db6567616515b6a9eb52ee6d360924359df43c1e56cacf0058a7d
 
 ==============================================================================
+@date-fns/tz 1.5.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@date-fns/tz/-/tz-1.5.0.tgz
+
+Published author metadata: "Sasha Koss <koss@nocorp.me>"
+Repository: {"type": "git", "url": "git+https://github.com/date-fns/date-fns.git"}
+LICENSE.md: text fc4b4b7053f3e1304b6fc1a265065dacc2bfac5cce0627814d4a299138e23145
+
+==============================================================================
+@daypicker/react 10.0.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@daypicker/react/-/react-10.0.2.tgz
+
+Published author metadata: "Giampaolo Bellavite <io@gpbl.dev>"
+Repository: {"type": "git", "url": "git+https://github.com/gpbl/react-day-picker.git", "directory": "packages/react"}
+LICENSE: text f17b33b61e50718ae266dcfb940deee45476f334f1ce143284f9392d9f05e7d5
+
+==============================================================================
 @floating-ui/core 1.7.5
 Declared license: MIT
 Selected license: MIT
@@ -2649,6 +2669,15 @@ Repository: {"type": "git", "url": "https://github.com/d3/d3-zoom.git"}
 LICENSE: text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1
 
 ==============================================================================
+date-fns 4.4.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/date-fns/-/date-fns-4.4.0.tgz
+
+Repository: "https://github.com/date-fns/date-fns"
+LICENSE.md: text e09ccac2a81189df86a236db919e824b0e68dbb7082016a6b0cef4255c5f9908
+
+==============================================================================
 db0 0.4.1
 Declared license: MIT
 Selected license: MIT
@@ -4154,6 +4183,16 @@ Source: https://registry.npmjs.org/react/-/react-19.3.0.tgz
 
 Repository: {"type": "git", "url": "https://github.com/react/react.git", "directory": "packages/react"}
 LICENSE: text cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173
+
+==============================================================================
+react-day-picker 10.0.2
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/react-day-picker/-/react-day-picker-10.0.2.tgz
+
+Published author metadata: "Giampaolo Bellavite <io@gpbl.dev>"
+Repository: {"type": "git", "url": "git+https://github.com/gpbl/react-day-picker.git", "directory": "packages/react-day-picker"}
+LICENSE: text f17b33b61e50718ae266dcfb940deee45476f334f1ce143284f9392d9f05e7d5
 
 ==============================================================================
 react-dom 19.3.0
@@ -7594,23 +7633,7 @@ The MIT License (MIT)
 
 Copyright (c) 2012 Paul Miller (https://paulmillr.com), Elan Shanker
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the “Software”), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+[Shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf]
 
 --- text bca9eeb35a863ceb7581123ac807ecb7ec18df45df51e360033278904e5bb15e ---
 MIT License
@@ -10487,6 +10510,13 @@ Copyright (c) 2012-2019 Thorsten Lorenz, Paul Miller (https://paulmillr.com)
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text e09ccac2a81189df86a236db919e824b0e68dbb7082016a6b0cef4255c5f9908 ---
+MIT License
+
+Copyright (c) 2021 Sasha Koss and Lesha Koss https://kossnocorp.mit-license.org
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text e11634cfe7bf46d5b0f86a9aba3791badad32990b1e35cfc6f29e042b01a58df ---
 (The MIT License)
 
@@ -10653,6 +10683,13 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--- text f17b33b61e50718ae266dcfb940deee45476f334f1ce143284f9392d9f05e7d5 ---
+The MIT License (MIT)
+
+Copyright (c) 2014-2026 Giampaolo Bellavite <io@gpbl.dev> and contributors
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
 --- text f1af5ef31b74f29c53ba3e1c2b62d1edea5422bed478441bac5d2cd0504cc8ab ---
 Copyright Mike Bostock, 2012-2016
@@ -10841,6 +10878,13 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--- text fc4b4b7053f3e1304b6fc1a265065dacc2bfac5cce0627814d4a299138e23145 ---
+MIT License
+
+Copyright © 2024 Sasha Koss
+
+[Shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf]
 
 --- text fdd854c84f367147ac4376837dee5002b0d2db39e8effed810ebc48f9bb70318 ---
 MIT License
@@ -11128,6 +11172,13 @@ Permission is hereby granted, free of charge, to any person
 > WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 > FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 > OTHER DEALINGS IN THE SOFTWARE.
+
+--- shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf ---
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 --- shared terms cde2e49ad5ddcda284af6dfc512965bb2e9e4f94726f6bd6493b85ff8460b7a9 ---
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:

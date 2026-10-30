@@ -49,7 +49,7 @@ fn reason_label(item: &RequestQueueItemResponse) -> String {
         Reason::Unclaimed => "Waiting for a reviewer".to_string(),
         Reason::NewActivity => "New reply or revision".to_string(),
         Reason::Restored => "Back in your queue".to_string(),
-        Reason::SnoozeExpired => "Snooze ended".to_string(),
+        Reason::SnoozeExpired => "Woke".to_string(),
         Reason::Waiting => "Waiting for a reply".to_string(),
         Reason::Snoozed => match item.attention.snoozed_until_unix {
             Some(until) => format!("Snoozed until {}", local_time_label(until)),

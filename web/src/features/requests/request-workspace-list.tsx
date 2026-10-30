@@ -46,6 +46,7 @@ export type RequestWorkspaceListProps = {
   onRetry: () => void
   onLoadMore: () => void
   onAction: (item: RequestQueueItemResponse, command: RequestAttentionCommand) => void
+  onCustomSnooze: (item: RequestQueueItemResponse) => void
   params: RepoParams
   pendingId: string | null
   selectedId?: string
@@ -179,6 +180,7 @@ function RequestWorkspaceRow({
   item,
   section,
   onAction,
+  onCustomSnooze,
   params,
   pendingId,
   selectedId,
@@ -190,7 +192,7 @@ function RequestWorkspaceRow({
   revealOrder,
   stackOpen,
   stackSize,
-}: Pick<RequestWorkspaceListProps, 'onAction' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
+}: Pick<RequestWorkspaceListProps, 'onAction' | 'onCustomSnooze' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
   placement: RequestStackPlacement
@@ -252,6 +254,9 @@ function RequestWorkspaceRow({
       <Link
         aria-current={selected ? 'page' : undefined}
         className="request-workspace-row-link"
+        onClick={() => {
+          if (attention.reason === 'snooze_expired') onAction(item, { action: 'acknowledge' })
+        }}
         params={{ ...params, requestId: request.id }}
         preload="intent"
         search={(current) => ({ view: current.view })}
@@ -346,6 +351,7 @@ function RequestWorkspaceRow({
           {canSetAside && (
             <RequestSnoozeMenu
               disabled={pending}
+              onCustomSnooze={() => onCustomSnooze(item)}
               onSnooze={(until_unix) => onAction(item, { action: 'snooze', until_unix })}
               requestId={request.id}
             />

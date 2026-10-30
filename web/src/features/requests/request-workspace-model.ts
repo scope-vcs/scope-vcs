@@ -18,7 +18,7 @@ const REASONS: Record<RequestAttentionReason, string> = {
   unclaimed: 'Waiting for a reviewer',
   new_activity: 'New reply or revision',
   restored: 'Back in your queue',
-  snooze_expired: 'Snooze ended',
+  snooze_expired: 'Woke',
   waiting: 'Waiting for a reply',
   snoozed: 'Snoozed',
   settled: 'Settled for now',
@@ -117,4 +117,31 @@ export function requestSnoozeUntil(value: RequestSnoozeOption, now = new Date())
 export function requestSnoozeLandingLabel(value: RequestSnoozeOption, now: Date): string {
   const until = requestSnoozeUntil(value, now)
   return value === 'hour' ? formatUnixClockTime(until, true) : formatUnixWeekdayTime(until, true)
+}
+
+export type CustomSnoozeInput =
+  | { mode: 'date'; date: string; time: string }
+  | { mode: 'duration'; amount: string; unit: 'minutes' | 'hours' | 'days' }
+
+export function resolveCustomSnooze(input: CustomSnoozeInput, now: Date): number | null {
+  let wake: Date
+  if (input.mode === 'duration') {
+    const amount = Number(input.amount)
+    if (!Number.isFinite(amount) || amount <= 0) return null
+    wake = new Date(now.getTime() + amount * { minutes: MINUTE, hours: HOUR, days: DAY }[input.unit] * 1_000)
+  } else {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || !/^\d{2}:\d{2}$/.test(input.time)) return null
+    wake = new Date(`${input.date}T${input.time}:00`)
+    if (localSnoozeDate(wake) !== input.date || localSnoozeTime(wake) !== input.time) return null
+  }
+  const until = Math.floor(wake.getTime() / 1_000)
+  return Number.isFinite(until) && until > now.getTime() / 1_000 ? until : null
+}
+
+export function localSnoozeDate(date: Date): string {
+  return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+export function localSnoozeTime(date: Date): string {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }

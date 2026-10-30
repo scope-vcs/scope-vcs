@@ -296,6 +296,73 @@ test('the viewing-as picker names the current view and switches views from its m
   assert.deepEqual(errors, [])
 })
 
+test('pressing a woke row acknowledges it once and custom snooze confirms a chosen time', async (t) => {
+  const { page, base, errors } = await workspacePage(t)
+  const noon = new Date()
+  noon.setHours(12, 0, 0, 0)
+  await page.clock.setFixedTime(noon)
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto(new URL('/adam/demo/requests', base).href)
+  const row = page.locator('[data-request-id="request-1"]')
+  await row.getByRole('link').waitFor()
+  await page.evaluate(() => {
+    const [first, second, third] = window.fixtureItems
+    const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
+    const woke = { ...second, attention: { ...second.attention, reason: 'snooze_expired' } }
+    window.setQueue({ pages: { active: { ...empty, requests: [first, woke, third] }, unclaimed: empty, set_aside: empty, done: empty }, maintainer: true, loading: false })
+  })
+  await row.getByText('Woke').waitFor()
+  await page.locator('[data-request-id="request-0"]').getByRole('link').click()
+  assert.deepEqual(await page.evaluate(() => window.attentionCommands), [])
+  await row.getByRole('link').click()
+  assert.deepEqual(await page.evaluate(() => window.attentionCommands), [{ id: 'request-1', action: 'acknowledge' }])
+
+  await page.evaluate(() => window.attentionCommands.splice(0))
+  await page.locator('[data-request-id="request-0"]').hover()
+  await page.getByRole('button', { name: 'Snooze request request-0' }).click()
+  await page.getByRole('menuitem', { name: 'Custom…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Custom snooze' })
+  await dialog.waitFor()
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
+    await page.getByRole('button', { name: /^Date/ }).click()
+    await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.custom-snooze.png` })
+    await page.getByRole('button', { name: /^Date/ }).click()
+  }
+  await dialog.getByLabel('Time').fill('00:00')
+  await dialog.getByRole('button', { name: 'Snooze', exact: true }).click()
+  await dialog.getByRole('alert').getByText('Choose a valid date and time in the future.').waitFor()
+  await dialog.getByRole('radio', { name: 'Duration' }).click()
+  await dialog.getByLabel('Snooze for').fill('0')
+  await dialog.getByRole('button', { name: 'Snooze', exact: true }).click()
+  await dialog.getByRole('alert').getByText('Enter a positive duration.').waitFor()
+  await dialog.getByRole('button', { name: 'Increase duration' }).click()
+  await dialog.getByLabel('Unit').selectOption('days')
+  await dialog.getByRole('button', { name: 'Snooze', exact: true }).click()
+  await dialog.waitFor({ state: 'detached' })
+  assert.deepEqual(await page.evaluate(() => window.attentionCommands), [
+    { id: 'request-0', action: 'snooze', until_unix: noon.getTime() / 1_000 + 86_400 },
+  ])
+
+  await page.locator('[data-request-id="request-0"]').hover()
+  await page.getByRole('button', { name: 'Snooze request request-0' }).click()
+  await page.getByRole('menuitem', { name: 'Custom…' }).click()
+  await page.setViewportSize({ width: 640, height: 360 })
+  await page.getByRole('button', { name: /^Date/ }).click()
+  const calendar = dialog.getByRole('dialog', { name: 'Choose snooze date' })
+  await calendar.locator('[data-day]:not([data-disabled]) button').last().click()
+  await calendar.waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: /^Date/ }).click()
+  await calendar.waitFor()
+  await page.keyboard.press('Escape')
+  await calendar.waitFor({ state: 'detached' })
+  assert.equal(await dialog.isVisible(), true, 'Escape closes the calendar before the dialog')
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.getByRole('button', { name: /^Date/ }).click()
+  const [dialogBox, calendarBox] = [await dialog.boundingBox(), await calendar.boundingBox()]
+  assert(calendarBox.x + calendarBox.width <= dialogBox.x + dialogBox.width, 'the calendar stays inside a narrow dialog')
+  assert.deepEqual(errors, [])
+})
+
 test('constrained menus keep keyboard targets visible and stay open while scrolling', async (t) => {
   const { page, base, errors } = await workspacePage(t)
   await page.setViewportSize({ width: 1280, height: 150 })

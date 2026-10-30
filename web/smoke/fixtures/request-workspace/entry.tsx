@@ -4,6 +4,7 @@ import { createRootRoute, createRoute, createRouter, Link, Outlet, RouterProvide
 import { RepoShell } from '@/components/repo-shell'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
 import { RepoViewingAsPicker } from '@/features/repo-detail/use-viewing-as'
+import { RequestCustomSnoozeDialog } from '@/features/requests/request-custom-snooze-dialog'
 import { RequestWorkspaceSidebar } from '@/features/requests/request-workspace-sidebar'
 import { RequestWorkspaceShell } from '@/features/requests/request-workspace-shell'
 import type { RepoLiveState } from '@/api/types'
@@ -33,6 +34,8 @@ const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
 const pages = { active: { ...empty, requests: items }, unclaimed: empty, set_aside: empty, done: empty }
 const subscribe = () => () => {}
 const noop = () => {}
+const attentionCommands: unknown[] = []
+Object.assign(window, { attentionCommands, fixtureItems: items })
 
 function Repository() {
   const { owner, repo } = useParams({ strict: false })
@@ -55,15 +58,21 @@ function Workspace() {
   const [collapsed, setCollapsed] = useState(false)
   const [queue, setQueue] = useState<{ pages: RequestQueuePages | undefined; maintainer: boolean | null; loading: boolean }>({ pages, maintainer: true, loading: false })
   const [query, setQuery] = useState('')
+  const [customSnooze, setCustomSnooze] = useState<RequestQueueItemResponse | null>(null)
   Object.assign(window, { setQueue, setQuery })
   return <RequestWorkspaceShell collapsed={collapsed} detailOpenOnMobile={Boolean(requestId)}
     onCollapsedChange={setCollapsed} sidebar={
       <RequestWorkspaceSidebar pages={queue.pages} collapsed={collapsed} onCollapsedChange={setCollapsed}
         query={query} onSearch={setQuery} loading={queue.loading} skeleton={!queue.pages} error={null} actionError={null}
-        maintainer={queue.maintainer} onRetry={noop} onLoadMore={noop} onAction={noop}
+        maintainer={queue.maintainer} onRetry={noop} onLoadMore={noop}
+        onAction={(item, command) => attentionCommands.push({ id: item.request.id, ...command })} onCustomSnooze={setCustomSnooze}
         params={{ owner: owner!, repo: repo! }} pendingId={null} selectedId={requestId}
         focus={false} onFocusToggle={noop} viewingAs={<RepoViewingAsPicker compact />} />
-    }><Outlet /></RequestWorkspaceShell>
+    }>
+    <Outlet />
+    {customSnooze && <RequestCustomSnoozeDialog onClose={() => setCustomSnooze(null)}
+      onSnooze={(until_unix) => attentionCommands.push({ id: customSnooze.request.id, action: 'snooze', until_unix })} />}
+  </RequestWorkspaceShell>
 }
 
 function Request() {

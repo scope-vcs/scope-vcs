@@ -531,7 +531,7 @@ group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttention
  */
 revision: number, can_claim: boolean, can_set_aside: boolean, can_restore: boolean, can_release: boolean, };
 
-export type RequestAttentionActionRequest = { "action": "claim", expected_activity_version: number, } | { "action": "wait", expected_activity_version: number, } | { "action": "settle", expected_activity_version: number, } | { "action": "snooze", expected_activity_version: number, until_unix: number, } | { "action": "restore", expected_activity_version: number, } | { "action": "release", expected_activity_version: number, };
+export type RequestAttentionActionRequest = { "action": "claim", expected_activity_version: number, } | { "action": "wait", expected_activity_version: number, } | { "action": "settle", expected_activity_version: number, } | { "action": "snooze", expected_activity_version: number, until_unix: number, } | { "action": "restore", expected_activity_version: number, } | { "action": "release", expected_activity_version: number, } | { "action": "acknowledge", expected_activity_version: number, };
 
 export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null,
 /**
