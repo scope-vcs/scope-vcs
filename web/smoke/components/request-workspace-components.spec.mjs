@@ -351,6 +351,15 @@ test('pressing a woke row acknowledges it once and custom snooze confirms a chos
   const calendar = dialog.getByRole('dialog', { name: 'Choose snooze date' })
   await calendar.locator('[data-day]:not([data-disabled]) button').last().click()
   await calendar.waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: /^Date/ }).click()
+  await calendar.waitFor()
+  await page.keyboard.press('Escape')
+  await calendar.waitFor({ state: 'detached' })
+  assert.equal(await dialog.isVisible(), true, 'Escape closes the calendar before the dialog')
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.getByRole('button', { name: /^Date/ }).click()
+  const [dialogBox, calendarBox] = [await dialog.boundingBox(), await calendar.boundingBox()]
+  assert(calendarBox.x + calendarBox.width <= dialogBox.x + dialogBox.width, 'the calendar stays inside a narrow dialog')
   assert.deepEqual(errors, [])
 })
 

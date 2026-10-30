@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  localSnoozeDate,
-  localSnoozeTime,
   requestAgeLabel,
   requestAttentionHeat,
   resolveCustomSnooze,
@@ -77,10 +75,4 @@ test('a custom duration counts elapsed time from confirmation', () => {
   for (const amount of ['', '0', '-1', 'NaN', 'Infinity', '1e300', '0.000001']) {
     assert.equal(resolveCustomSnooze({ mode: 'duration', amount, unit: 'hours' }, now), null, amount)
   }
-})
-
-test('local snooze fields do not shift through UTC', () => {
-  const date = new Date(2026, 0, 2, 3, 4)
-  assert.equal(localSnoozeDate(date), '2026-01-02')
-  assert.equal(localSnoozeTime(date), '03:04')
 })

@@ -6,7 +6,7 @@ import { Select } from '@/components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import * as Dialog from '@radix-ui/react-dialog'
 import { CalendarIcon, Minus, Plus } from 'lucide-react'
-import { useId, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import {
   localSnoozeDate,
   localSnoozeTime,
@@ -26,6 +26,7 @@ export function RequestCustomSnoozeDialog({
   onSnooze: (until: number) => void
 }) {
   const id = useId()
+  const dateField = useRef<HTMLDivElement>(null)
   const [initial] = useState(() => new Date(Date.now() + HOUR_MS))
   const [mode, setMode] = useState<CustomSnoozeInput['mode']>('date')
   const [date, setDate] = useState(initial)
@@ -61,7 +62,12 @@ export function RequestCustomSnoozeDialog({
     >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 gap-5 content-start [@media(max-height:760px)]:top-4 [@media(max-height:760px)]:h-[calc(100dvh-2rem)] [@media(max-height:760px)]:translate-y-0 [@media(max-height:760px)]:overflow-y-auto rounded-lg border border-[var(--border-strong)] bg-popover p-6 text-popover-foreground shadow-[var(--shadow-pop)] outline-none">
+        <Dialog.Content
+          onEscapeKeyDown={(event) => {
+            if (dateField.current?.querySelector('dialog')) event.preventDefault()
+          }}
+          className="fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 gap-5 content-start [@media(max-height:760px)]:top-4 [@media(max-height:760px)]:max-h-[calc(100dvh-2rem)] [@media(max-height:760px)]:has-[dialog]:h-[calc(100dvh-2rem)] [@media(max-height:760px)]:translate-y-0 [@media(max-height:760px)]:overflow-y-auto rounded-lg border border-[var(--border-strong)] bg-popover p-4 text-popover-foreground sm:p-6 shadow-[var(--shadow-pop)] outline-none"
+        >
           <div className="grid gap-1.5">
             <Dialog.Title className="text-base font-semibold leading-6">Custom snooze</Dialog.Title>
             <Dialog.Description className="text-sm leading-5 text-muted-foreground">
@@ -83,8 +89,8 @@ export function RequestCustomSnoozeDialog({
               <ToggleGroupItem value="duration">Duration</ToggleGroupItem>
             </ToggleGroup>
             {mode === 'date' ? (
-              <div className="grid grid-cols-2 gap-3">
-                <div className={LABEL_CLASS}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className={LABEL_CLASS} ref={dateField}>
                   <span id={`${id}-date`}>Date</span>
                   <Popover
                     align="start"
@@ -136,7 +142,7 @@ export function RequestCustomSnoozeDialog({
                 </label>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className={LABEL_CLASS}>
                   <label htmlFor={`${id}-amount`}>Snooze for</label>
                   <span className="flex items-center gap-1">

@@ -10,3 +10,10 @@ test('a custom date inside the spring-forward gap is rejected', async () => {
     null,
   )
 })
+
+test('local snooze fields do not shift through UTC', async () => {
+  const { localSnoozeDate, localSnoozeTime } = await import('./request-workspace-model')
+  const date = new Date(2026, 0, 2, 20, 4)
+  assert.equal(localSnoozeDate(date), '2026-01-02')
+  assert.equal(localSnoozeTime(date), '20:04')
+})

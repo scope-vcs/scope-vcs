@@ -29,7 +29,7 @@ function CalendarChevron({ orientation }: { orientation?: 'left' | 'right' | 'up
 export function Calendar(props: ComponentProps<typeof DayPicker>) {
   return (
     <DayPicker
-      className="w-fit [--cell-size:--spacing(9)]"
+      className="w-fit [--cell-size:--spacing(8)] sm:[--cell-size:--spacing(9)]"
       classNames={CLASS_NAMES}
       components={{ Chevron: CalendarChevron }}
       showOutsideDays
