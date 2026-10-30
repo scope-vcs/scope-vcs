@@ -27,11 +27,14 @@ Set autoreview's timeout to 15 minutes with `--engine-timeout-seconds 900`. Do i
 This repository dogfoods Scope. GitHub remains the source of truth for merges,
 CI gating, deploys, and releases.
 
-Maintainers mirror every branch they push to GitHub, every PR they open, and
-every merge to main to their `scope` remote, following the dogfood-scope skill
-from their personal agent skills. The skill is not part of this repository, and
-contributors without it or without a `scope` remote have nothing to mirror. A
-Scope failure never blocks GitHub delivery; it is noted in the PR description.
+Maintainers deliver each change as one PR, opened from its Scope request's
+`scope/requests/<id>` branch so that Scope adopts it instead of opening a second
+PR for the same commit, and mirror every merge to main to their `scope` remote.
+Both follow the dogfood-scope skill from their personal agent skills. The skill
+is not part of this repository, and contributors without it or without a `scope`
+remote open ordinary PRs and have nothing to mirror. A Scope failure never blocks
+GitHub delivery: the change goes out as an ordinary PR, and the failure is noted
+in the PR description.
 
 Checks on this repository's Scope requests come from its GitHub Actions
 workflows on `scope/requests/<id>`. Do not start Scope runs.
@@ -58,7 +61,7 @@ unrepresentable state. Evidence and proof for this audit are in
 | Avoid compatibility layers in pre-alpha; maintainer means owner or member. | Domain authorization tests cover access. Compatibility and terminology choices still require review. |
 | Do not edit root README without explicit authorization; involve the operator in new behavior. | Operator context and review; no source-only check can establish authorization. |
 | Record failed checks before retrying without a repair. | Release-flake issue workflow; no local retry interceptor. |
-| Mirror GitHub delivery to Scope, keep Scope main downstream, and do not start Scope runs. | `dogfood-scope` skill and contribution workflow; not enforced by compilation. |
+| Open one PR per change from its request's branch, keep Scope main downstream, and do not start Scope runs. | `dogfood-scope` skill and contribution workflow; not enforced by compilation. |
 | Keep releases separate from pushes and merges. | GitHub release workflows. |
 | Review with the configured timeout and verify before committing. | Autoreview and shared `dev/checks` commands; review invocation remains an agent responsibility. |
 
