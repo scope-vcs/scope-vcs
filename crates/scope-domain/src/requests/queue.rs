@@ -189,6 +189,13 @@ impl RequestAttention {
     fn next_revision(existing: Option<&Self>) -> u64 {
         existing.map_or(1, |attention| attention.revision + 1)
     }
+
+    fn snooze_ended(&self, now_unix: u64) -> bool {
+        self.state == RequestAttentionState::Snoozed
+            && self
+                .snoozed_until_unix
+                .is_some_and(|until| until <= now_unix)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -207,6 +214,7 @@ pub enum RequestAttentionAction {
     Snooze { until_unix: u64 },
     Restore,
     Release,
+    Acknowledge,
 }
 
 #[derive(Clone, Debug)]
@@ -299,6 +307,18 @@ pub fn apply_request_attention_action(
             claim: None,
         });
     }
+    if matches!(input.action, RequestAttentionAction::Acknowledge) {
+        if input
+            .existing_attention
+            .is_some_and(|attention| !attention.snooze_ended(input.now_unix))
+        {
+            return Err(DomainError::conflict("request has no ended snooze"));
+        }
+        return Ok(RequestAttentionMutation {
+            attention: None,
+            claim: input.existing_claim.cloned(),
+        });
+    }
 
     let (state, reason, snoozed_until_unix) = match input.action {
         RequestAttentionAction::Claim => {
@@ -343,7 +363,9 @@ pub fn apply_request_attention_action(
             RequestAttentionReason::Restored,
             None,
         ),
-        RequestAttentionAction::Release => unreachable!("release returns early"),
+        RequestAttentionAction::Release | RequestAttentionAction::Acknowledge => {
+            unreachable!("release and acknowledge return early")
+        }
     };
     let claim =
         match input.action {

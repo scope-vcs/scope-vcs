@@ -139,6 +139,50 @@ fn snooze_expiry_is_active_without_rewriting_the_checkpoint() {
 }
 
 #[test]
+fn acknowledging_clears_only_an_ended_snooze_and_keeps_the_claim() {
+    let request = open_request();
+    let claim = RequestClaim {
+        request_id: request.id.clone(),
+        claimer_user_id: "other-maintainer".into(),
+        claimed_at_unix: 1,
+        updated_at_unix: 1,
+    };
+    let mut snoozed = attention(&request, RequestAttentionState::Snoozed);
+    snoozed.snoozed_until_unix = Some(10);
+    let acknowledge = |existing_attention, now_unix| {
+        apply_request_attention_action(ApplyRequestAttentionInput {
+            request: &request,
+            actor_user_id: "maintainer",
+            actor_is_maintainer: true,
+            expected_activity_version: request.activity_version,
+            existing_attention,
+            existing_claim: Some(&claim),
+            action: RequestAttentionAction::Acknowledge,
+            now_unix,
+        })
+    };
+
+    for existing_attention in [Some(&snoozed), None] {
+        assert_eq!(
+            acknowledge(existing_attention, 10).unwrap(),
+            RequestAttentionMutation {
+                attention: None,
+                claim: Some(claim.clone())
+            }
+        );
+    }
+    assert_eq!(
+        acknowledge(Some(&snoozed), 9).unwrap_err().kind,
+        DomainErrorKind::Conflict
+    );
+    let active = attention(&request, RequestAttentionState::Active);
+    assert_eq!(
+        acknowledge(Some(&active), 10).unwrap_err().kind,
+        DomainErrorKind::Conflict
+    );
+}
+
+#[test]
 fn another_maintainers_claim_is_set_aside_and_cannot_be_reclaimed() {
     let request = open_request();
     let claim = RequestClaim {

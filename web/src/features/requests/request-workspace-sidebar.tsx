@@ -72,6 +72,7 @@ export function RequestWorkspaceSidebar({
   onRetry,
   onLoadMore,
   onAction,
+  onCustomSnooze,
   params,
   pendingId,
   selectedId,
@@ -80,7 +81,7 @@ export function RequestWorkspaceSidebar({
   viewingAs,
 }: Pick<
   RequestWorkspaceListProps,
-  'loading' | 'skeleton' | 'error' | 'onRetry' | 'onAction' | 'pendingId' | 'selectedId'
+  'loading' | 'skeleton' | 'error' | 'onRetry' | 'onAction' | 'onCustomSnooze' | 'pendingId' | 'selectedId'
 > & {
   focus: boolean
   onFocusToggle: () => void
@@ -214,6 +215,7 @@ export function RequestWorkspaceSidebar({
     error,
     onRetry,
     onAction,
+    onCustomSnooze,
     params,
     pendingId,
     selectedId,

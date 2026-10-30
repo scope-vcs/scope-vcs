@@ -31,6 +31,7 @@ test('only settle, snooze and restore apply in the browser', () => {
   assert.equal(isInstantCommand({ action: 'restore' }), true)
   assert.equal(isInstantCommand({ action: 'claim' }), false)
   assert.equal(isInstantCommand({ action: 'release' }), false)
+  assert.equal(isInstantCommand({ action: 'acknowledge' }), false)
 })
 
 test('a settled row leaves active at once and heads set aside', () => {

@@ -36,6 +36,7 @@ export function RequestsPagePending({ children }: { children?: ReactNode }) {
             maintainer={isSignedIn === false ? false : null}
             onAction={ignore}
             onCollapsedChange={changeCollapsed}
+            onCustomSnooze={ignore}
             onFocusToggle={ignore}
             onLoadMore={ignore}
             onRetry={ignore}

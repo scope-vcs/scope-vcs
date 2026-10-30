@@ -76,4 +76,7 @@ pub enum RequestAttentionActionRequest {
     Release {
         expected_activity_version: u64,
     },
+    Acknowledge {
+        expected_activity_version: u64,
+    },
 }

@@ -12,10 +12,12 @@ export function RequestSnoozeMenu({
   requestId,
   disabled,
   onSnooze,
+  onCustomSnooze,
 }: {
   requestId: string
   disabled: boolean
   onSnooze: (until: number) => void
+  onCustomSnooze: () => void
 }) {
   const [openedAt, setOpenedAt] = useState<Date | null>(null)
   const menu = useAnchoredMenu({
@@ -56,6 +58,17 @@ export function RequestSnoozeMenu({
             </span>
           </button>
         ))}
+        <button
+          className="mt-1 w-full rounded-sm border-t border-border px-2 py-1.5 text-left text-xs hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+          onClick={() => {
+            menu.hide()
+            onCustomSnooze()
+          }}
+          role="menuitem"
+          type="button"
+        >
+          Custom…
+        </button>
       </div>
     </>
   )

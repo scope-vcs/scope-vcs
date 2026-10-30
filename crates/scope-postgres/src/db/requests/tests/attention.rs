@@ -491,4 +491,23 @@ async fn reactivated_and_expired_requests_sort_before_older_active_pages() {
         expired.rows[0].attention.reason,
         RequestAttentionReason::SnoozeExpired
     );
+
+    let acknowledged = set_attention(
+        &store,
+        &incoming.request,
+        RequestAttentionAction::Acknowledge,
+        41,
+    )
+    .await;
+    assert_ne!(
+        acknowledged.attention.reason,
+        RequestAttentionReason::SnoozeExpired
+    );
+    assert!(
+        queue(&store, RequestQueueSection::Active, 41)
+            .await
+            .rows
+            .iter()
+            .all(|row| row.attention.reason != RequestAttentionReason::SnoozeExpired)
+    );
 }

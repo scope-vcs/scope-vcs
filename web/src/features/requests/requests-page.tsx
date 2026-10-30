@@ -1,4 +1,5 @@
 import type { RepoParams } from '@/api/types'
+import type { RequestQueueItemResponse } from '@/api/types.generated'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { useParams } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
@@ -21,6 +22,7 @@ import {
   saveRequestWorkspaceCollapsed,
 } from './request-workspace-collapse'
 import { applyAttentionMoves } from './request-attention-moves'
+import { RequestCustomSnoozeDialog } from './request-custom-snooze-dialog'
 import { useRequestAttentionActions } from './use-request-attention-actions'
 import { useRequestQueue } from './use-request-queue'
 
@@ -60,6 +62,7 @@ function RequestWorkspaceContent({
   const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
   const [focus, setFocus] = useState(false)
   const [draft, setDraft] = useState<string | null>(null)
+  const [customSnoozeItem, setCustomSnoozeItem] = useState<RequestQueueItemResponse | null>(null)
   useEffect(() => {
     document.documentElement.toggleAttribute('data-focus', focus)
     return () => document.documentElement.removeAttribute('data-focus')
@@ -120,6 +123,7 @@ function RequestWorkspaceContent({
           skeleton={!queue.value || (queue.refreshing && queue.value.query !== queue.value.requestedQuery)}
           maintainer={maintainer}
           onAction={(item, command) => void act(item, command)}
+          onCustomSnooze={setCustomSnoozeItem}
           onCollapsedChange={changeCollapsed}
           onFocusToggle={toggleFocus}
           onLoadMore={(section) => {
@@ -153,6 +157,12 @@ function RequestWorkspaceContent({
       >
         {children}
       </RequestWorkspaceProvider>
+      {customSnoozeItem && (
+        <RequestCustomSnoozeDialog
+          onClose={() => setCustomSnoozeItem(null)}
+          onSnooze={(until_unix) => void act(customSnoozeItem, { action: 'snooze', until_unix })}
+        />
+      )}
     </RequestWorkspaceShell>
   )
 }

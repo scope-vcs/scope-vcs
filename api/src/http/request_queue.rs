@@ -257,6 +257,12 @@ pub(crate) async fn apply_attention(
             scope_domain::requests::RequestAttentionAction::Release,
             expected_activity_version,
         ),
+        RequestAttentionActionRequest::Acknowledge {
+            expected_activity_version,
+        } => (
+            scope_domain::requests::RequestAttentionAction::Acknowledge,
+            expected_activity_version,
+        ),
     };
     let result = state
         .metadata
