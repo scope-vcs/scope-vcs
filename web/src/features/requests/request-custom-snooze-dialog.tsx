@@ -61,7 +61,7 @@ export function RequestCustomSnoozeDialog({
     >
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 gap-5 [@media(max-height:760px)]:top-4 [@media(max-height:760px)]:translate-y-0 rounded-lg border border-[var(--border-strong)] bg-popover p-6 text-popover-foreground shadow-[var(--shadow-pop)] outline-none">
+        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 gap-5 content-start [@media(max-height:760px)]:top-4 [@media(max-height:760px)]:h-[calc(100dvh-2rem)] [@media(max-height:760px)]:translate-y-0 [@media(max-height:760px)]:overflow-y-auto rounded-lg border border-[var(--border-strong)] bg-popover p-6 text-popover-foreground shadow-[var(--shadow-pop)] outline-none">
           <div className="grid gap-1.5">
             <Dialog.Title className="text-base font-semibold leading-6">Custom snooze</Dialog.Title>
             <Dialog.Description className="text-sm leading-5 text-muted-foreground">

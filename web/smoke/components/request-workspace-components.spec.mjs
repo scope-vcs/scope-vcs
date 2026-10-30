@@ -298,6 +298,9 @@ test('the viewing-as picker names the current view and switches views from its m
 
 test('pressing a woke row acknowledges it once and custom snooze confirms a chosen time', async (t) => {
   const { page, base, errors } = await workspacePage(t)
+  const noon = new Date()
+  noon.setHours(12, 0, 0, 0)
+  await page.clock.setFixedTime(noon)
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(new URL('/adam/demo/requests', base).href)
   const row = page.locator('[data-request-id="request-1"]')
@@ -334,12 +337,20 @@ test('pressing a woke row acknowledges it once and custom snooze confirms a chos
   await dialog.getByRole('alert').getByText('Enter a positive duration.').waitFor()
   await dialog.getByRole('button', { name: 'Increase duration' }).click()
   await dialog.getByLabel('Unit').selectOption('days')
-  const before = Math.floor(Date.now() / 1_000)
   await dialog.getByRole('button', { name: 'Snooze', exact: true }).click()
   await dialog.waitFor({ state: 'detached' })
-  const [{ id, action, until_unix: until }] = await page.evaluate(() => window.attentionCommands)
-  assert.deepEqual([id, action], ['request-0', 'snooze'])
-  assert(until >= before + 86_400 && until <= Math.floor(Date.now() / 1_000) + 86_400)
+  assert.deepEqual(await page.evaluate(() => window.attentionCommands), [
+    { id: 'request-0', action: 'snooze', until_unix: noon.getTime() / 1_000 + 86_400 },
+  ])
+
+  await page.locator('[data-request-id="request-0"]').hover()
+  await page.getByRole('button', { name: 'Snooze request request-0' }).click()
+  await page.getByRole('menuitem', { name: 'Custom…' }).click()
+  await page.setViewportSize({ width: 640, height: 360 })
+  await page.getByRole('button', { name: /^Date/ }).click()
+  const calendar = dialog.getByRole('dialog', { name: 'Choose snooze date' })
+  await calendar.locator('[data-day]:not([data-disabled]) button').last().click()
+  await calendar.waitFor({ state: 'detached' })
   assert.deepEqual(errors, [])
 })
 

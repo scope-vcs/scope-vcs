@@ -87,6 +87,10 @@ export function useRequestAttentionActions(
 
   async function act(item: RequestQueueItemResponse, command: RequestAttentionCommand) {
     if (isInstantCommand(command)) return moveNow(item, command)
+    if (command.action === 'acknowledge') {
+      await mutate(item.request.id, command, item.attention.activity_version)
+      return
+    }
     if (!identity || inFlight.current) return
     const requestId = item.request.id
     setMoves((current) => current.filter((move) => move.item.request.id !== requestId))
