@@ -103,14 +103,7 @@ impl PublicStack {
             "fetch public main",
         )
         .unwrap();
-        git_stdout_text(
-            &self.source,
-            &["rev-parse", "FETCH_HEAD"],
-            "read public main",
-        )
-        .unwrap()
-        .trim()
-        .to_string()
+        ref_head(&self.source, "FETCH_HEAD")
     }
 
     async fn comparison(&self, revision: Option<&str>) -> serde_json::Value {

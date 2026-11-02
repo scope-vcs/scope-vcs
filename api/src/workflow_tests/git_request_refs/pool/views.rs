@@ -311,6 +311,7 @@ async fn view_shelf(state: &AppState) -> PathBuf {
         &repo.incarnation(),
         &repo.repo_config,
         &ViewId::public(),
+        None,
     )
     .await
     .unwrap()

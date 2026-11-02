@@ -24,15 +24,12 @@ async fn read_view_cache_shares_authorized_output_across_users() {
     let first = first.unwrap();
     let second = second.unwrap();
     assert_eq!(first.as_ref(), second.as_ref());
-    let anonymous = git_upload_pack_repo_for_request(
+    let anonymous = fetch_folder(
         &state,
         &HeaderMap::new(),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
         &scope_domain::views::ViewId::public(),
     )
-    .await
-    .unwrap();
+    .await;
     assert_eq!(first.as_ref(), anonymous.as_ref());
     assert_eq!(
         fs::read_dir(state.repository_engine.cache_root())
@@ -59,24 +56,9 @@ async fn read_view_cache_keeps_draft_visibility_separate() {
     let author = authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
     let contributor =
         authorization_headers(bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL));
-    let author_view = git_upload_pack_repo_for_request(
-        &state,
-        &author,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &scope_domain::views::ViewId::public(),
-    )
-    .await
-    .unwrap();
-    let contributor_view = git_upload_pack_repo_for_request(
-        &state,
-        &contributor,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &scope_domain::views::ViewId::public(),
-    )
-    .await
-    .unwrap();
+    let author_view = fetch_folder(&state, &author, &scope_domain::views::ViewId::public()).await;
+    let contributor_view =
+        fetch_folder(&state, &contributor, &scope_domain::views::ViewId::public()).await;
     assert_ne!(author_view.as_ref(), contributor_view.as_ref());
     assert!(
         git_stdout_text(
@@ -152,17 +134,8 @@ async fn read_view_omits_an_unreadable_request_snapshot_until_storage_recovers()
         readable: readable.clone(),
     });
     let author = &authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
-    let read = |state: AppState| async move {
-        git_upload_pack_repo_for_request(
-            &state,
-            author,
-            TEST_REPO_OWNER,
-            TEST_REPO_NAME,
-            &ViewId::public(),
-        )
-        .await
-        .unwrap()
-    };
+    let read =
+        |state: AppState| async move { fetch_folder(&state, author, &ViewId::public()).await };
 
     let degraded = read(state.clone()).await;
     assert!(
@@ -176,14 +149,5 @@ async fn read_view_omits_an_unreadable_request_snapshot_until_storage_recovers()
 
     state.object_store = readable;
     let recovered = read(state).await;
-    assert_eq!(
-        git_stdout_text(
-            recovered.as_ref(),
-            &["rev-parse", REQUEST_REF],
-            "restored request ref"
-        )
-        .unwrap()
-        .trim(),
-        head
-    );
+    assert_eq!(ref_head(recovered.as_ref(), REQUEST_REF), head);
 }

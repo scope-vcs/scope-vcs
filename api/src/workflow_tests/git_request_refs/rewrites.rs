@@ -70,10 +70,7 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
         "fetch moved public main",
     )
     .unwrap();
-    let public_main = git_stdout_text(&source, &["rev-parse", "FETCH_HEAD"], "read public main")
-        .unwrap()
-        .trim()
-        .to_string();
+    let public_main = ref_head(&source, "FETCH_HEAD");
     rewrite_history(&source, &["rebase", "FETCH_HEAD"]);
     let rebased_head = git_head_oid(&source);
     lease_push(&source, &remote, REQUEST_REF, &first_head);

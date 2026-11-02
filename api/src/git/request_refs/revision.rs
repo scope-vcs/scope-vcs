@@ -40,16 +40,16 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
         .then(|| state.repository_engine.lease_repository(incarnation))
         .transpose()?;
     let shelf = if full {
-        full_object_repos(state, incarnation, &config, request)
+        ensure_full_object_repos(state, incarnation, &config, request)
             .await?
             .shared
     } else {
-        super::view_pool::revision_object_repo(
+        super::view_pool::view_object_repo(
             state,
             incarnation,
             &config,
             &request.view,
-            &request.id,
+            Some(&request.id),
         )
         .await?
     };
@@ -66,7 +66,7 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
             let _main_lease = main_for_install;
             let (_canonical, full) = if full {
                 let canonical = lease_canonical(&state_for_install, &incarnation).await?;
-                let repos = full_object_repos(
+                let repos = ensure_full_object_repos(
                     &state_for_install,
                     &incarnation,
                     &config,
@@ -272,7 +272,8 @@ async fn copy_full_scope_revision(
         return Ok(());
     }
     let main = lease_canonical(state, install.incarnation).await?;
-    let full = full_object_repos(state, install.incarnation, install.config, request).await?;
+    let full =
+        ensure_full_object_repos(state, install.incarnation, install.config, request).await?;
     let source = if shares_objects(request, install.config) {
         &full.shared
     } else {
@@ -365,7 +366,7 @@ fn restore_revision(
     }
 }
 
-async fn full_object_repos(
+async fn ensure_full_object_repos(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     config: &scope_domain::repo_config::RepoConfig,

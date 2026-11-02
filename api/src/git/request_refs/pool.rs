@@ -304,7 +304,7 @@ async fn install_staged_pool_pack(
             if config.object_generation() != generation {
                 return Err(ApiError::conflict("request object generation changed"));
             }
-            Some(super::view_pool::view_object_repo(state, incarnation, config, view).await?)
+            Some(super::view_pool::view_object_repo(state, incarnation, config, view, None).await?)
         }
         _ if !shared && !request.is_author(pusher_id) => return Ok(()),
         _ => None,

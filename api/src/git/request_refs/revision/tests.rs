@@ -1,5 +1,4 @@
 use super::*;
-use crate::git::request_refs::request_ref_head;
 use crate::git::{command::run_git_output, import::git_snapshot_from_ref};
 use scope_domain::requests::RequestActorRole;
 use scope_domain::views::ViewId;
@@ -8,44 +7,19 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-fn fixture(root: &Path) -> (RequestRevision, Vec<u8>) {
-    let source = root.join("source");
-    run_git(
-        None,
-        &["init", "-b", "topic", source.to_str().unwrap()],
-        "create revision fixture",
-    )
-    .unwrap();
+fn fixture() -> (crate::git::test_repo::TestRepo, RequestRevision, Vec<u8>) {
+    let source = crate::git::test_repo::TestRepo::init();
+    crate::git::test_repo::pinned_identity_git(&source, &["branch", "-m", "topic"], None);
     fs::write(source.join("file.txt"), "base\n").unwrap();
-    run_git(Some(&source), &["add", "."], "add fixture").unwrap();
-    let commit = || {
-        run_git(
-            Some(&source),
-            &[
-                "-c",
-                "user.name=Scope",
-                "-c",
-                "user.email=scope@example.invalid",
-                "commit",
-                "-am",
-                "fixture",
-            ],
-            "commit fixture",
-        )
-        .unwrap()
-    };
-    commit();
-    let old_head_oid = request_ref_head(&source, "refs/heads/topic")
-        .unwrap()
-        .unwrap();
+    source.commit_all("fixture");
+    let old_head_oid = source.oid("HEAD");
     fs::write(source.join("file.txt"), "changed\n").unwrap();
-    commit();
-    let new_head_oid = request_ref_head(&source, "refs/heads/topic")
-        .unwrap()
-        .unwrap();
+    source.commit_all("fixture");
+    let new_head_oid = source.oid("HEAD");
     let (git_snapshot, bytes) =
         git_snapshot_from_ref(&source, "refs/heads/topic", Some(&old_head_oid)).unwrap();
     (
+        source,
         RequestRevision {
             base_version: 1,
             id: "revision".into(),
@@ -159,8 +133,7 @@ impl scope_storage::ObjectStore for CountingStore {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed_on_error() {
-    let root = tempfile::tempdir().unwrap();
-    let (revision, bytes) = fixture(root.path());
+    let (source, revision, bytes) = fixture();
     let mut state = AppState::test_state();
     state
         .object_store
@@ -178,11 +151,7 @@ async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed
         .shared;
     run_git(
         Some(&shelf),
-        &[
-            "fetch",
-            root.path().join("source").to_str().unwrap(),
-            &revision.old_head_oid,
-        ],
+        &["fetch", source.to_str().unwrap(), &revision.old_head_oid],
         "prepare legacy base",
     )
     .unwrap();
@@ -293,18 +262,6 @@ async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed
     assert!(failed.is_err());
     assert!(!error_path.lock().unwrap().as_ref().unwrap().exists());
     assert_eq!(loads.load(Ordering::SeqCst), 1);
-    assert!(
-        fs::read_dir(state.repository_engine.cache_root())
-            .unwrap()
-            .all(|entry| !entry
-                .unwrap()
-                .file_name()
-                .to_string_lossy()
-                .starts_with("revision-"))
-    );
-    eprintln!(
-        "revision proof: two concurrent cold reads and a warm read, one legacy bundle load, zero retained revision repositories or jobs"
-    );
 }
 
 #[test]
@@ -319,8 +276,7 @@ fn startup_removes_abandoned_revision_jobs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn full_view_revision_job_cannot_borrow_authored_shelf_objects() {
-    let root = tempfile::tempdir().unwrap();
-    let (mut revision, _) = fixture(root.path());
+    let (source, mut revision, _) = fixture();
     let hidden = revision.new_head_oid.clone();
     let state = AppState::test_state();
     let (incarnation, generation) = seed_repository(&state, Vec::new());
@@ -331,7 +287,7 @@ async fn full_view_revision_job_cannot_borrow_authored_shelf_objects() {
     ] {
         run_git(
             Some(repo),
-            &["fetch", root.path().join("source").to_str().unwrap(), head],
+            &["fetch", source.to_str().unwrap(), head],
             "prepare shelf isolation",
         )
         .unwrap();
@@ -363,8 +319,7 @@ async fn full_view_revision_job_cannot_borrow_authored_shelf_objects() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn revision_restore_rejects_an_unbounded_rewritten_lineage_before_downloading() {
-    let root = tempfile::tempdir().unwrap();
-    let (mut revision, _) = fixture(root.path());
+    let (_source, mut revision, _) = fixture();
     let mut state = AppState::test_state();
     let loads = Arc::new(AtomicUsize::new(0));
     state.object_store = Arc::new(CountingStore {

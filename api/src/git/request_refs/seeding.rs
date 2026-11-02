@@ -138,7 +138,7 @@ pub(crate) async fn attach_view_request_refs_from_pool(
     staging_repo: &FsPath,
     view_bases: RequestViewBases,
 ) -> Result<(), ApiError> {
-    let repo = super::view_pool::view_object_repo(state, incarnation, config, view).await?;
+    let repo = super::view_pool::view_object_repo(state, incarnation, config, view, None).await?;
     let missing = missing_request_heads(&repo, requests.to_vec()).await?;
     install_request_pool_packs(
         state,
