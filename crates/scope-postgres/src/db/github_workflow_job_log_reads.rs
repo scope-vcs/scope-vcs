@@ -31,6 +31,7 @@ const LOG_READS: GitHubReadQueue = GitHubReadQueue {
     joined_on: " AND job.github_job_id = read.github_job_id",
     returning: "job.repo_id, job.github_repository_id, job.github_run_id, read.github_job_id, read.attempts",
     label: "GitHub job log read",
+    leases: false,
 };
 
 impl RepositoryStore {

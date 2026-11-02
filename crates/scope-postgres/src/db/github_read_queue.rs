@@ -9,6 +9,7 @@ pub(super) struct GitHubReadQueue {
     pub joined_on: &'static str,
     pub returning: &'static str,
     pub label: &'static str,
+    pub leases: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,6 +29,16 @@ pub(super) fn prefixed_columns(columns: &str, prefix: &str) -> String {
         .join(", ")
 }
 
+pub(super) fn delivery_restarts_backoff(table: &str) -> String {
+    format!(
+        "attempts = CASE WHEN {table}.lease_until_unix > EXCLUDED.next_attempt_at_unix
+                         THEN {table}.attempts ELSE 0 END,
+         next_attempt_at_unix = CASE WHEN {table}.lease_until_unix > EXCLUDED.next_attempt_at_unix
+                         THEN {table}.next_attempt_at_unix
+                         ELSE least({table}.next_attempt_at_unix, EXCLUDED.next_attempt_at_unix) END"
+    )
+}
+
 impl GitHubReadQueue {
     pub(super) async fn claim_due<R: FromQueryResult>(
         &self,
@@ -43,7 +54,13 @@ impl GitHubReadQueue {
             joined_on,
             returning,
             label,
+            leases,
         } = self;
+        let lease = if *leases {
+            ", lease_until_unix = $2"
+        } else {
+            ""
+        };
         let due_key = key.join(", ");
         let matches_due = key
             .iter()
@@ -55,7 +72,7 @@ impl GitHubReadQueue {
             DatabaseBackend::Postgres,
             format!(
                 "UPDATE {table} read
-                    SET attempts = read.attempts + 1, next_attempt_at_unix = $2
+                    SET attempts = read.attempts + 1, next_attempt_at_unix = $2{lease}
                    FROM (SELECT {due_key}
                            FROM {table}
                           WHERE next_attempt_at_unix <= $1
@@ -118,8 +135,13 @@ impl GitHubReadQueue {
             None => format!("DELETE FROM {table} WHERE {claimed}"),
             Some(retry_at) => {
                 values.push(u64_to_i64(retry_at, &format!("{} time", self.label))?.into());
+                let lease = if self.leases {
+                    ", lease_until_unix = 0"
+                } else {
+                    ""
+                };
                 format!(
-                    "UPDATE {table} SET next_attempt_at_unix = ${} WHERE {claimed}",
+                    "UPDATE {table} SET next_attempt_at_unix = ${}{lease} WHERE {claimed}",
                     values.len()
                 )
             }

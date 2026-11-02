@@ -20,9 +20,13 @@ impl MigrationTrait for Migration {
                  CHECK (lease_until_unix >= 0);
              ALTER TABLE scope_github_workflow_run_reads
                  ADD COLUMN read_id bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
-                 ADD COLUMN generation bigint NOT NULL DEFAULT 0 CHECK (generation >= 0);
+                 ADD COLUMN generation bigint NOT NULL DEFAULT 0 CHECK (generation >= 0),
+                 ADD COLUMN lease_until_unix bigint NOT NULL DEFAULT 0
+                 CHECK (lease_until_unix >= 0);
              ALTER TABLE scope_github_workflow_job_reads
-                 ADD COLUMN run_attempt integer NOT NULL DEFAULT 1 CHECK (run_attempt > 0);",
+                 ADD COLUMN run_attempt integer NOT NULL DEFAULT 1 CHECK (run_attempt > 0),
+                 ADD COLUMN lease_until_unix bigint NOT NULL DEFAULT 0
+                 CHECK (lease_until_unix >= 0);",
             )
             .await?;
         Ok(())

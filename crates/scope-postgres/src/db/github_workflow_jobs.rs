@@ -1,7 +1,7 @@
 use super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
-    github_read_queue::GitHubReadQueue,
+    github_read_queue::{GitHubReadQueue, delivery_restarts_backoff},
     integer_columns::{
         i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u32_to_i32, u64_to_i64,
     },
@@ -63,6 +63,7 @@ const JOB_READS: GitHubReadQueue = GitHubReadQueue {
     returning: "read.read_id, read.repo_id, read.github_repository_id, read.github_run_id, \
         read.attempts, read.generation, read.run_attempt",
     label: "GitHub jobs read",
+    leases: true,
 };
 
 impl RepositoryStore {
@@ -74,13 +75,49 @@ impl RepositoryStore {
         run_attempt: u32,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
+        self.queue_job_read(
+            String::new(),
+            (repo_id, github_repository_id, github_run_id),
+            run_attempt,
+            now_unix,
+        )
+        .await
+    }
+
+    pub async fn queue_delivered_github_workflow_job_read(
+        &self,
+        repo_id: &str,
+        github_repository_id: u64,
+        github_run_id: u64,
+        run_attempt: u32,
+        now_unix: u64,
+    ) -> Result<(), PostgresError> {
+        self.queue_job_read(
+            format!(
+                ", {}",
+                delivery_restarts_backoff("scope_github_workflow_job_reads")
+            ),
+            (repo_id, github_repository_id, github_run_id),
+            run_attempt,
+            now_unix,
+        )
+        .await
+    }
+
+    async fn queue_job_read(
+        &self,
+        requeue: String,
+        (repo_id, github_repository_id, github_run_id): (&str, u64, u64),
+        run_attempt: u32,
+        now_unix: u64,
+    ) -> Result<(), PostgresError> {
         self.db.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "INSERT INTO scope_github_workflow_job_reads (repo_id, github_repository_id, github_run_id, attempts, generation, next_attempt_at_unix, run_attempt)
+            format!("INSERT INTO scope_github_workflow_job_reads (repo_id, github_repository_id, github_run_id, attempts, generation, next_attempt_at_unix, run_attempt)
              VALUES ($1, $2, $3, 0, 0, $4, $5)
              ON CONFLICT (repo_id, github_repository_id, github_run_id)
              DO UPDATE SET generation = scope_github_workflow_job_reads.generation + 1,
-                           run_attempt = greatest(scope_github_workflow_job_reads.run_attempt, EXCLUDED.run_attempt)",
+                           run_attempt = greatest(scope_github_workflow_job_reads.run_attempt, EXCLUDED.run_attempt){requeue}"),
             [repo_id.into(), u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
              u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
              u64_to_i64(now_unix, "GitHub jobs read time")?.into(),

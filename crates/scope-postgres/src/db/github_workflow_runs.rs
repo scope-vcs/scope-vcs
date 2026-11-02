@@ -1,7 +1,7 @@
 use super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
-    github_read_queue::GitHubReadQueue,
+    github_read_queue::{GitHubReadQueue, delivery_restarts_backoff},
     integer_columns::{
         i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u32_to_i32, u64_to_i64,
     },
@@ -110,6 +110,7 @@ const RUN_READS: GitHubReadQueue = GitHubReadQueue {
     joined_on: "",
     returning: "read.read_id, read.generation, read.repo_id, read.github_repository_id, read.github_run_id, read.attempts",
     label: "GitHub workflow run read",
+    leases: true,
 };
 
 const REQUEST_JOIN: &str = "LEFT JOIN scope_requests request
@@ -138,11 +139,15 @@ impl RepositoryStore {
         self.db
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "INSERT INTO scope_github_workflow_run_reads (repo_id, github_repository_id,
-                    github_run_id, attempts, next_attempt_at_unix)
-                 VALUES ($1, $2, $3, 0, $4)
-                 ON CONFLICT (repo_id, github_repository_id, github_run_id)
-                 DO UPDATE SET generation = scope_github_workflow_run_reads.generation + 1",
+                format!(
+                    "INSERT INTO scope_github_workflow_run_reads (repo_id, github_repository_id,
+                        github_run_id, attempts, next_attempt_at_unix)
+                     VALUES ($1, $2, $3, 0, $4)
+                     ON CONFLICT (repo_id, github_repository_id, github_run_id)
+                     DO UPDATE SET generation = scope_github_workflow_run_reads.generation + 1,
+                     {}",
+                    delivery_restarts_backoff("scope_github_workflow_run_reads")
+                ),
                 [
                     repo_id.into(),
                     u64_to_i64(github_repository_id, "GitHub repository id")?.into(),

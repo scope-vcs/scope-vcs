@@ -472,3 +472,47 @@ async fn an_expired_reader_cannot_release_a_newer_generation_claim() {
         4
     );
 }
+
+#[tokio::test]
+async fn a_delivery_restarts_a_failed_jobs_read_that_a_page_view_leaves_waiting() {
+    let store = postgres_store();
+    let repositories = store.repositories();
+    repositories
+        .save_github_workflow_run(REPO, 42, &run("main"))
+        .await
+        .unwrap();
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 100)
+        .await
+        .unwrap();
+    let failed = repositories
+        .claim_due_github_workflow_job_reads(100, 400, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    repositories
+        .finish_github_workflow_job_read(&failed, Some(5_000), 110)
+        .await
+        .unwrap();
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 120)
+        .await
+        .unwrap();
+    assert!(
+        repositories
+            .claim_due_github_workflow_job_reads(120, 500, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    repositories
+        .queue_delivered_github_workflow_job_read(REPO, 42, 9, 1, 130)
+        .await
+        .unwrap();
+    let restarted = repositories
+        .claim_due_github_workflow_job_reads(130, 500, 10)
+        .await
+        .unwrap()
+        .remove(0);
+    assert_eq!(restarted.attempts, 1);
+}

@@ -41,7 +41,7 @@ pub(crate) async fn queue_jobs_for_delivery(
         return Ok(());
     };
     repositories
-        .queue_github_workflow_job_read(
+        .queue_delivered_github_workflow_job_read(
             &connection.repository_id,
             github_repository_id,
             run_id,
