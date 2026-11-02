@@ -59,16 +59,18 @@ test('an uploaded file keeps its stable markdown reference until the draft is cl
 })
 
 test('session restore keeps text, completed ids, and an incomplete operation for reselection', () => {
-  const original = globalThis.sessionStorage
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
   const values = new Map<string, string>()
-  Object.defineProperty(globalThis, 'sessionStorage', {
+  Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
-      getItem: (key: string) => values.get(key) ?? null,
-      key: (index: number) => [...values.keys()][index] ?? null,
-      get length() { return values.size },
-      removeItem: (key: string) => values.delete(key),
-      setItem: (key: string, value: string) => values.set(key, value),
+      sessionStorage: {
+        getItem: (key: string) => values.get(key) ?? null,
+        key: (index: number) => [...values.keys()][index] ?? null,
+        get length() { return values.size },
+        removeItem: (key: string) => values.delete(key),
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
     },
   })
   try {
@@ -93,7 +95,8 @@ test('session restore keeps text, completed ids, and an incomplete operation for
     assert.equal(resumed?.operationId, pending.operationId)
   } finally {
     resetRequestAttachmentDraftManager()
-    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: original })
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
   }
 })
 
