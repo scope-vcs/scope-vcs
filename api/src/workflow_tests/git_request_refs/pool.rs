@@ -216,20 +216,8 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
     let replica_objects = object_repos(&replica, &test_owner_id()).await.shared;
     assert!(has_commit(&replica_objects, &behind_head));
     assert_eq!(
-        git_stdout_text(
-            &replica_objects,
-            &["rev-parse", "refs/scope/seeded/long"],
-            "read the replica's bundle restore",
-        )
-        .unwrap()
-        .trim(),
-        git_stdout_text(
-            &source,
-            &["rev-parse", &format!("{restored_head}^")],
-            "read the restored head"
-        )
-        .unwrap()
-        .trim()
+        ref_head(&replica_objects, "refs/scope/seeded/long"),
+        ref_head(&source, &format!("{restored_head}^"))
     );
 }
 

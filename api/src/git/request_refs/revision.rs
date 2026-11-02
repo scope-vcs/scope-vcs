@@ -1,4 +1,7 @@
-use super::{download_snapshot, fetch_bundle_into, request_ref_head, request_ref_oid_is_commit};
+use super::{
+    BundleRef, download_snapshot, fetch_bundle_into_ref, request_ref_head,
+    request_ref_oid_is_commit,
+};
 use crate::{
     error::ApiError,
     git::{
@@ -105,8 +108,7 @@ where
                                 state_for_build.object_store.as_ref(),
                                 &revision_for_build.git_snapshot,
                                 bundle,
-                            )?
-                            .map_err(ApiError::from)
+                            )
                         },
                     )
                 })
@@ -175,9 +177,12 @@ fn build_revision(
     )?;
     let bundle = temporary.join("revision.bundle");
     download(&bundle)?;
-    fetch_bundle_into(
+    fetch_bundle_into_ref(
         &temporary,
-        request_ref,
+        BundleRef {
+            source: request_ref,
+            destination: request_ref,
+        },
         &bundle,
         base_repo,
         "importing request revision",

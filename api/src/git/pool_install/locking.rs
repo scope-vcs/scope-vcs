@@ -20,26 +20,27 @@ pub(crate) async fn write_shelf<T: Send + 'static>(
 }
 
 async fn lock_shelf(path: &Path) -> Result<OwnedMutexGuard<()>, ApiError> {
-    let lock = shelf_lock(path)?;
+    let lock = {
+        type Locks = BTreeMap<PathBuf, Weak<AsyncMutex<()>>>;
+        static LOCKS: OnceLock<Mutex<Locks>> = OnceLock::new();
+        let mut locks = LOCKS
+            .get_or_init(Mutex::default)
+            .lock()
+            .map_err(|_| ApiError::internal_message("fetch shelf locks poisoned"))?;
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        let lock = locks.entry(path.to_path_buf()).or_default();
+        match lock.upgrade() {
+            Some(lock) => lock,
+            None => {
+                let created = Arc::new(AsyncMutex::new(()));
+                *lock = Arc::downgrade(&created);
+                created
+            }
+        }
+    };
     tokio::time::timeout(Duration::from_secs(2), lock.lock_owned())
         .await
         .map_err(|_| ApiError::infrastructure_unavailable("Git object shelf is busy; retry fetch"))
-}
-
-fn shelf_lock(path: &Path) -> Result<Arc<AsyncMutex<()>>, ApiError> {
-    type Locks = BTreeMap<PathBuf, Weak<AsyncMutex<()>>>;
-    static LOCKS: OnceLock<Mutex<Locks>> = OnceLock::new();
-    let mut locks = LOCKS
-        .get_or_init(Mutex::default)
-        .lock()
-        .map_err(|_| ApiError::internal_message("fetch shelf locks poisoned"))?;
-    locks.retain(|_, lock| lock.strong_count() > 0);
-    if let Some(lock) = locks.get(path).and_then(Weak::upgrade) {
-        return Ok(lock);
-    }
-    let lock = Arc::new(AsyncMutex::new(()));
-    locks.insert(path.to_path_buf(), Arc::downgrade(&lock));
-    Ok(lock)
 }
 
 #[cfg(test)]

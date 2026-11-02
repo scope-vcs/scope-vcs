@@ -1,32 +1,6 @@
 use super::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fetch_folders_are_temporary_and_do_not_reuse_a_ref_cache() {
-    let state = test_state_with_request().await;
-    let author = authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
-    let public = ViewId::public();
-    let first =
-        git_upload_pack_repo_for_request(&state, &author, TEST_REPO_OWNER, TEST_REPO_NAME, &public)
-            .await
-            .unwrap();
-    let second =
-        git_upload_pack_repo_for_request(&state, &author, TEST_REPO_OWNER, TEST_REPO_NAME, &public)
-            .await
-            .unwrap();
-    assert_ne!(first.as_ref(), second.as_ref());
-    assert_eq!(
-        git_stdout_text(&first, &["show-ref"], "first fetch refs").unwrap(),
-        git_stdout_text(&second, &["show-ref"], "second fetch refs").unwrap()
-    );
-    let first_path = first.as_ref().to_path_buf();
-    let second_path = second.as_ref().to_path_buf();
-    drop(first);
-    drop(second);
-    assert!(!first_path.exists());
-    assert!(!second_path.exists());
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fetch_folders_keep_draft_visibility_separate() {
     let state = test_state_with_request().await;
     insert_public_contributor(&state).await;
@@ -35,24 +9,15 @@ async fn fetch_folders_keep_draft_visibility_separate() {
     let author = authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
     let contributor =
         authorization_headers(bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL));
-    let author_view = git_upload_pack_repo_for_request(
-        &state,
-        &author,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &scope_domain::views::ViewId::public(),
-    )
-    .await
-    .unwrap();
-    let contributor_view = git_upload_pack_repo_for_request(
-        &state,
-        &contributor,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &scope_domain::views::ViewId::public(),
-    )
-    .await
-    .unwrap();
+    let author_view = fetch_folder(&state, &author, &scope_domain::views::ViewId::public()).await;
+    let contributor_view =
+        fetch_folder(&state, &contributor, &scope_domain::views::ViewId::public()).await;
+    let repeat = fetch_folder(&state, &author, &ViewId::public()).await;
+    assert_ne!(author_view.as_ref(), repeat.as_ref());
+    assert_eq!(
+        git_stdout_text(&author_view, &["show-ref"], "first fetch refs").unwrap(),
+        git_stdout_text(&repeat, &["show-ref"], "repeat fetch refs").unwrap(),
+    );
     assert_ne!(author_view.as_ref(), contributor_view.as_ref());
     assert!(
         git_stdout_text(
@@ -123,6 +88,15 @@ async fn fetch_folders_keep_draft_visibility_separate() {
             .operator_diagnostic()
             .contains("unauthorized alternate")
     );
+    let paths = [
+        author_view.as_ref().to_path_buf(),
+        contributor_view.as_ref().to_path_buf(),
+        repeat.as_ref().to_path_buf(),
+    ];
+    drop(author_view);
+    drop(contributor_view);
+    drop(repeat);
+    assert!(paths.iter().all(|path| !path.exists()));
 }
 
 struct SnapshotReadFails {
@@ -220,17 +194,8 @@ async fn fetch_omits_an_unreadable_pack_and_snapshot_then_restores_the_legacy_sn
         readable: readable.clone(),
     });
     let author = &authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
-    let read = |state: AppState| async move {
-        git_upload_pack_repo_for_request(
-            &state,
-            author,
-            TEST_REPO_OWNER,
-            TEST_REPO_NAME,
-            &ViewId::public(),
-        )
-        .await
-        .unwrap()
-    };
+    let read =
+        |state: AppState| async move { fetch_folder(&state, author, &ViewId::public()).await };
 
     let degraded = read(state.clone()).await;
     assert!(
@@ -244,29 +209,11 @@ async fn fetch_omits_an_unreadable_pack_and_snapshot_then_restores_the_legacy_sn
 
     state.object_store = readable;
     let recovered = read(state.clone()).await;
-    assert_eq!(
-        git_stdout_text(
-            recovered.as_ref(),
-            &["rev-parse", "refs/heads/legacy"],
-            "restored request ref"
-        )
-        .unwrap()
-        .trim(),
-        head
-    );
+    assert_eq!(ref_head(recovered.as_ref(), "refs/heads/legacy"), head);
     state.object_store = Arc::new(SnapshotReadFails {
         snapshot_key: scope_storage::object_key(&snapshot),
         readable: state.object_store.clone(),
     });
     let reused = read(state.clone()).await;
-    assert_eq!(
-        git_stdout_text(
-            &reused,
-            &["rev-parse", "refs/heads/legacy"],
-            "retained legacy head"
-        )
-        .unwrap()
-        .trim(),
-        head
-    );
+    assert_eq!(ref_head(&reused, "refs/heads/legacy"), head);
 }

@@ -96,11 +96,7 @@ impl RepositoryStore {
             ))
             .await?
             .into_iter()
-            .filter_map(|row| match decode_head(row) {
-                Ok(Some(head)) => Some(Ok(head)),
-                Ok(None) => None,
-                Err(error) => Some(Err(error)),
-            })
+            .filter_map(|row| decode_head(row).transpose())
             .collect()
     }
 }

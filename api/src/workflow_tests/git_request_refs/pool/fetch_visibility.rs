@@ -159,23 +159,6 @@ async fn retained_requests_recheck_revoked_invites_and_anonymous_access() {
 
 async fn advertise_request(state: &AppState, bearer: Option<&str>, head: &str) {
     let headers = bearer.map(authorization_headers).unwrap_or_default();
-    let folder = git_upload_pack_repo_for_request(
-        state,
-        &headers,
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &ViewId::public(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        git_stdout_text(
-            &folder,
-            &["rev-parse", REQUEST_REF],
-            "read request advertisement"
-        )
-        .unwrap()
-        .trim(),
-        head
-    );
+    let folder = fetch_folder(state, &headers, &ViewId::public()).await;
+    assert_eq!(ref_head(&folder, REQUEST_REF), head);
 }

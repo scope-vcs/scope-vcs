@@ -70,20 +70,13 @@ impl RequestStore {
             insert_request_event_row(&tx, event).await?;
         }
         insert_revision(&tx, &mutation.revision).await?;
-        if let Some(pack) = &objects.pool_pack {
-            if !pack.belongs_to_request(&mutation.request) {
-                return Err(PostgresError::internal_message(
-                    "Git pool pack does not belong to the recorded revision",
-                ));
-            }
-            super::git_segments::register_git_pool_pack(
-                &tx,
-                &mutation.request.repo_id,
-                pack,
-                now_unix,
-            )
-            .await?;
-        }
+        super::git_segments::register_request_pool_pack(
+            &tx,
+            &mutation.request,
+            &objects.pool_pack,
+            now_unix,
+        )
+        .await?;
         let auto_merge_position = mutation
             .events
             .last()

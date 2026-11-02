@@ -1,29 +1,8 @@
 use super::request_ref_oid_is_commit;
 use crate::{error::ApiError, git::command::run_git, state::AppState};
 use scope_domain::content::SourceBlob;
-use scope_storage::{ObjectStore, ObjectStoreError, write_source_blob_to};
+use scope_storage::{ObjectStore, write_source_blob_to};
 use std::{fs, path::Path as FsPath};
-pub(super) fn fetch_snapshot_into(
-    state: &AppState,
-    repo: &FsPath,
-    request_ref: &str,
-    snapshot: &SourceBlob,
-    base_repo: Option<&FsPath>,
-    action: &str,
-) -> Result<Result<(), ObjectStoreError>, ApiError> {
-    fetch_snapshot_into_ref(
-        state,
-        repo,
-        BundleRef {
-            source: request_ref,
-            destination: request_ref,
-        },
-        snapshot,
-        base_repo,
-        action,
-    )
-}
-
 pub(super) struct BundleRef<'a> {
     pub(super) source: &'a str,
     pub(super) destination: &'a str,
@@ -36,56 +15,33 @@ pub(super) fn fetch_snapshot_into_ref(
     snapshot: &SourceBlob,
     base_repo: Option<&FsPath>,
     action: &str,
-) -> Result<Result<(), ObjectStoreError>, ApiError> {
+) -> Result<(), ApiError> {
     let bundle = tempfile::Builder::new()
         .prefix("snapshot-")
         .suffix(".bundle.tmp")
         .tempfile_in(repo)
         .map_err(ApiError::internal)?;
     let bundle_path = bundle.path();
-    download_snapshot(state.object_store.as_ref(), snapshot, bundle_path).and_then(|stored| {
-        match stored {
-            Ok(()) => {
-                fetch_bundle_into_ref(repo, bundle_ref, bundle_path, base_repo, action).map(Ok)
-            }
-            Err(error) => Ok(Err(error)),
-        }
-    })
+    download_snapshot(state.object_store.as_ref(), snapshot, bundle_path)?;
+    fetch_bundle_into_ref(repo, bundle_ref, bundle_path, base_repo, action)
 }
 
 pub(super) fn download_snapshot(
     objects: &dyn ObjectStore,
     snapshot: &SourceBlob,
     path: &FsPath,
-) -> Result<Result<(), ObjectStoreError>, ApiError> {
+) -> Result<(), ApiError> {
     crate::git::blocking::block_on(async {
         let mut file = tokio::fs::File::create(path)
             .await
             .map_err(ApiError::internal)?;
-        Ok(write_source_blob_to(objects, snapshot, &mut file).await)
+        write_source_blob_to(objects, snapshot, &mut file)
+            .await
+            .map_err(ApiError::from)
     })
 }
 
-pub(super) fn fetch_bundle_into(
-    repo: &FsPath,
-    request_ref: &str,
-    bundle: &FsPath,
-    base_repo: Option<&FsPath>,
-    action: &str,
-) -> Result<(), ApiError> {
-    fetch_bundle_into_ref(
-        repo,
-        BundleRef {
-            source: request_ref,
-            destination: request_ref,
-        },
-        bundle,
-        base_repo,
-        action,
-    )
-}
-
-fn fetch_bundle_into_ref(
+pub(super) fn fetch_bundle_into_ref(
     repo: &FsPath,
     bundle_ref: BundleRef<'_>,
     bundle: &FsPath,

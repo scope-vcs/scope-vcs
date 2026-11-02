@@ -6,7 +6,7 @@ use crate::{
         cache::GitRepoHandle,
         command::{git_command_output, git_ref_listing, run_git},
         pool_install::{present_commits, write_shelf},
-        request_refs::{RequestViewBases, attach_readable_request_refs, request_ref_head},
+        request_refs::{RequestViewBases, attach_visible_request_refs, request_ref_head},
     },
     state::AppState,
 };
@@ -45,8 +45,8 @@ pub(super) async fn attach_refs(
             if present.contains(&request.head_oid) {
                 continue;
             }
-            match attach_readable_request_refs(&state, std::slice::from_ref(request), &folder, &bases) {
-                Ok(unreadable) if unreadable.is_empty() => {
+            match attach_visible_request_refs(&state, std::slice::from_ref(request), &folder, &bases) {
+                Ok(()) => {
                     if request_ref_head(&folder, &canonical_request_ref(&request.name))?.as_deref()
                         == Some(request.head_oid.as_str()) {
                         present.insert(request.head_oid.clone());
@@ -55,7 +55,6 @@ pub(super) async fn attach_refs(
                         }
                     }
                 }
-                Ok(_) => {}
                 Err(error) => tracing::warn!(request_id = request.id, request_name = request.name,
                     error = %error.operator_diagnostic(), "omitting unreadable request from Git fetch"),
             }

@@ -55,15 +55,12 @@ async fn cold_fetch_advertises_and_installs_only_active_request_heads() {
         heads.push(head);
     }
     let replica = state.replica_for_tests();
-    let folder = git_upload_pack_repo_for_request(
+    let folder = fetch_folder(
         &replica,
         &authorization_headers(bearer_header()),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
         &ViewId::private(),
     )
-    .await
-    .unwrap();
+    .await;
     let refs = git_stdout_text(
         &folder,
         &["for-each-ref", "--format=%(refname)"],
@@ -290,15 +287,12 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
     .await;
     assert_eq!(closed.status(), StatusCode::OK);
     let replica = state.replica_for_tests();
-    let folder = git_upload_pack_repo_for_request(
+    let folder = fetch_folder(
         &replica,
         &authorization_headers(bearer_header()),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
         &ViewId::private(),
     )
-    .await
-    .unwrap();
+    .await;
     let refs = git_stdout_text(
         &folder,
         &["for-each-ref", "--format=%(refname)"],
