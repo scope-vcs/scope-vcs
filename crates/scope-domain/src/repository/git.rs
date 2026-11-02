@@ -1,3 +1,5 @@
+pub const GIT_FETCH_ADVERTISEMENT_RETENTION_SECONDS: u64 = 3600;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 

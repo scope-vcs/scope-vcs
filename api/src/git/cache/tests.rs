@@ -134,6 +134,8 @@ fn derived_repository_counts_toward_the_budget_and_is_leased_while_in_use() {
     assert!(derived_path.exists());
     assert!(!inactive_path.exists());
     drop(lease);
+    registry.prune().unwrap();
+    assert!(!derived_path.exists());
     let _ = fs::remove_dir_all(root);
 }
 
@@ -268,7 +270,6 @@ fn concurrent_builds_coalesce_in_every_cache_namespace() {
     for namespace in [
         GitDerivedCacheNamespace::Projection,
         GitDerivedCacheNamespace::Repository,
-        GitDerivedCacheNamespace::RequestReadView,
     ] {
         let coordinator = Arc::new(GitDerivedCacheCoordinator::default());
         let ready = Arc::new(AtomicBool::new(false));

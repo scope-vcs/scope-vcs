@@ -30,12 +30,3 @@ pub(crate) async fn request_view_bases(
     }
     Ok(bases)
 }
-
-pub(crate) fn share_request_view_bases(
-    bases: &RequestViewBases,
-) -> Result<RequestViewBases, ApiError> {
-    bases
-        .iter()
-        .map(|(view, base)| Ok((view.clone(), base.share()?)))
-        .collect()
-}

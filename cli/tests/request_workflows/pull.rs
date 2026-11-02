@@ -131,4 +131,58 @@ exec "$SCOPE_TEST_REAL_GIT" "$@"
     );
     assert_eq!(untracked["result"]["branch_moved"], false);
     assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), local_head);
+    run_git(dir.path(), ["config", "branch.local-alias.remote", "scope"]);
+    run_git(
+        dir.path(),
+        ["config", "branch.local-alias.merge", "refs/heads/fix-one"],
+    );
+    run_git(bare.path(), ["update-ref", "-d", "refs/heads/fix-one"]);
+    let terminal = success(command().args(["--json", "pull"]).output().unwrap());
+    assert_eq!(terminal["result"]["branch_moved"], false);
+    assert!(terminal["result"]["refs_after"]["fix-one"].is_null());
+    assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), local_head);
+}
+
+#[test]
+fn checkout_reports_terminal_requests_before_fetching_their_retired_ref() {
+    let dir = TempDir::new("request-checkout-terminal");
+    create_repo_with_head(dir.path());
+    let head = git_stdout(dir.path(), ["rev-parse", "HEAD"]);
+    run_git(
+        dir.path(),
+        [
+            "remote",
+            "add",
+            "scope",
+            "https://scopevcs.com/git/public/owner/repo",
+        ],
+    );
+    for state in ["Closed", "Merged"] {
+        let mut detail = request();
+        detail["state"] = state.into();
+        detail["permissions"]["can_pull_branch"] = true.into();
+        let server = FixtureServer::with_request(detail);
+        run_git(
+            dir.path(),
+            [
+                "remote",
+                "set-url",
+                "scope",
+                &format!("{}/git/public/owner/repo", server.server.api_url),
+            ],
+        );
+        let output = server
+            .command(dir.path())
+            .args(["--json", "request", "checkout", "--request", "req_one"])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let output = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.contains("no longer advertised"), "{output}");
+        assert_eq!(git_stdout(dir.path(), ["rev-parse", "HEAD"]), head);
+    }
 }

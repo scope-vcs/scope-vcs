@@ -382,23 +382,38 @@ pub(crate) async fn git_upload_pack_rpc(
         Ok(permit) => permit,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
-    let repo_path =
-        match git_upload_pack_repo_for_request(&state, &headers, &org, &repo_name, &view).await {
-            Ok(repo_path) => repo_path,
-            Err(error) => return git_upload_pack_error(error.into_public_message()),
-        };
     let body = match to_bytes(request.into_body(), MAX_UPLOAD_PACK_BYTES).await {
         Ok(body) => body,
         Err(error) => {
             return git_upload_pack_error(format!("git upload-pack body is too large: {error}"));
         }
     };
+    let decode_headers = headers.clone();
     let (body, permit) = match blocking::run(move || {
-        decode_git_request_body(&headers, body, MAX_UPLOAD_PACK_BYTES).map(|body| (body, permit))
+        decode_git_request_body(&decode_headers, body, MAX_UPLOAD_PACK_BYTES)
+            .map(|body| (body, permit))
     })
     .await
     {
         Ok(body) => body,
+        Err(error) => return git_upload_pack_error(error.into_public_message()),
+    };
+
+    let wants = match upload::wanted_heads(&body) {
+        Ok(wants) => wants,
+        Err(error) => return git_upload_pack_error(error.into_public_message()),
+    };
+    let repo_path = match upload::fetch_folder::prepare(
+        &state,
+        &headers,
+        &org,
+        &repo_name,
+        &view,
+        Some(&wants),
+    )
+    .await
+    {
+        Ok(repo) => repo,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
 

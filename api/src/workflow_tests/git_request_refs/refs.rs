@@ -40,7 +40,7 @@ async fn public_view_clone_fetches_named_public_requests_without_joining() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn closed_public_request_remains_fetchable_as_read_only_history() {
+async fn closed_public_request_is_not_advertised_and_remains_read_only() {
     let state = test_state_with_request().await;
     insert_public_contributor(&state).await;
     state
@@ -76,7 +76,7 @@ async fn closed_public_request_remains_fetchable_as_read_only_history() {
             &["rev-parse", "refs/remotes/origin/request-branch"],
             "read closed request ref",
         )
-        .is_ok()
+        .is_err()
     );
     fs::write(checkout.join("closed.txt"), "closed request edit\n").unwrap();
     run_git(Some(&checkout), &["add", "closed.txt"], "stage closed edit").unwrap();

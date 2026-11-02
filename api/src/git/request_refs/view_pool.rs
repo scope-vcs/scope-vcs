@@ -18,6 +18,16 @@ pub(crate) async fn view_object_repo(
     config: &RepoConfig,
     view: &ViewId,
 ) -> Result<PathBuf, ApiError> {
+    view_object_repo_for_reader(state, incarnation, config, view, None).await
+}
+
+pub(crate) async fn view_object_repo_for_reader(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &ViewId,
+    reader: Option<&str>,
+) -> Result<PathBuf, ApiError> {
     if view == config.views.full() || config.views.get(view).is_none() {
         return Err(ApiError::not_found("restricted view not found"));
     }
@@ -29,8 +39,12 @@ pub(crate) async fn view_object_repo(
         config.object_generation(),
         hex::encode(&Sha256::digest(view.as_str().as_bytes())[..16])
     );
+    let reader = reader.map(|reader| hex::encode(&Sha256::digest(reader.as_bytes())[..16]));
     crate::git::blocking::run(move || {
-        let shelf = super::ensure_local_bare_repo(root.join(format!("{key}.git")))?;
+        let shelf_key = reader
+            .map(|reader| format!("{key}-fetch-{reader}"))
+            .unwrap_or_else(|| key.clone());
+        let shelf = super::ensure_local_bare_repo(root.join(format!("{shelf_key}.git")))?;
         let head = git_stdout_text(
             &projection,
             &["rev-parse", "HEAD"],

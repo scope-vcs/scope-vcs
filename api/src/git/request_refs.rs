@@ -34,12 +34,12 @@ use std::{
 
 mod ancestry;
 mod pack_consolidation;
-mod pool;
+pub(super) mod pool;
 mod revision;
 mod seeding;
 mod snapshot;
 mod view_bases;
-mod view_pool;
+pub(super) mod view_pool;
 pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
     ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
@@ -54,7 +54,7 @@ pub(crate) use seeding::{
 #[cfg(test)]
 use snapshot::bundle_prerequisites;
 use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};
-pub(crate) use view_bases::{RequestViewBases, request_view_bases, share_request_view_bases};
+pub(crate) use view_bases::{RequestViewBases, request_view_bases};
 #[cfg(test)]
 pub(crate) use view_pool::view_object_repo;
 

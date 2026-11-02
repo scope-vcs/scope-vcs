@@ -21,5 +21,6 @@
   "m0102_projection_file_symlinks.rs": "10bf6acc3b7fa038269cb8bfa4f853f725d685443da44edd619e8a36ca50f809",
   "m0103_review_request_times.rs": "a6af6b28336dd6aac9f6acaa076d917da4f6299d876ded622a50a9419e26e4f6",
   "m0104_request_revision_diff_stats.rs": "3ae7cc1dda565afc2b004a1c127e7a468b6666ceba58c75313066e2207b76795",
-  "m0105_view_pool_packs.rs": "69aa06177a329aa92b52b481f8f3b3176f3352bc97a56e09fb623256b731c6e7"
+  "m0105_view_pool_packs.rs": "69aa06177a329aa92b52b481f8f3b3176f3352bc97a56e09fb623256b731c6e7",
+  "m0106_git_fetch_advertisements.rs": "ee30a45c5102728cc78381e8c9d6ce77d69343600518c590d93c3ec81c5074d0"
 }

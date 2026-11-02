@@ -61,12 +61,12 @@ pub(crate) fn request_object_repos(
     Ok(RequestObjectRepos { shared, authored })
 }
 
-pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
+pub(crate) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
     request_visible_to_every_maintainer(&request.view, request.is_submitted(), &config.views)
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum PoolRepos<'a> {
+pub(crate) enum PoolRepos<'a> {
     Full {
         repos: &'a RequestObjectRepos,
         actor_user_id: &'a str,
@@ -77,13 +77,13 @@ pub(super) enum PoolRepos<'a> {
     },
 }
 
-pub(super) struct PoolInstall<'a> {
-    pub(super) incarnation: &'a RepositoryIncarnation,
-    pub(super) config: &'a RepoConfig,
-    pub(super) repos: PoolRepos<'a>,
+pub(crate) struct PoolInstall<'a> {
+    pub(crate) incarnation: &'a RepositoryIncarnation,
+    pub(crate) config: &'a RepoConfig,
+    pub(crate) repos: PoolRepos<'a>,
 }
 
-pub(super) async fn install_request_pool_packs(
+pub(crate) async fn install_request_pool_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
     missing: &[Request],

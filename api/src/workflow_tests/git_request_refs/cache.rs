@@ -1,61 +1,37 @@
 use super::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_view_cache_shares_authorized_output_across_users() {
+async fn fetch_folders_are_temporary_and_do_not_reuse_a_ref_cache() {
     let state = test_state_with_request().await;
-    insert_public_contributor(&state).await;
-    state
-        .metadata
-        .requests()
-        .mutate_request_for_tests(REQUEST_ID, |request| {
-            request.submitted_at_unix = Some(3);
-            request.updated_at_unix = 3;
-        })
-        .await
-        .unwrap();
     let author = authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
-    let contributor =
-        authorization_headers(bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL));
-    let public = scope_domain::views::ViewId::public();
-    let read = |headers| {
-        git_upload_pack_repo_for_request(&state, headers, TEST_REPO_OWNER, TEST_REPO_NAME, &public)
-    };
-    let (first, second) = tokio::join!(read(&author), read(&contributor));
-    let first = first.unwrap();
-    let second = second.unwrap();
-    assert_eq!(first.as_ref(), second.as_ref());
-    let anonymous = git_upload_pack_repo_for_request(
-        &state,
-        &HeaderMap::new(),
-        TEST_REPO_OWNER,
-        TEST_REPO_NAME,
-        &scope_domain::views::ViewId::public(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(first.as_ref(), anonymous.as_ref());
+    let public = ViewId::public();
+    let first =
+        git_upload_pack_repo_for_request(&state, &author, TEST_REPO_OWNER, TEST_REPO_NAME, &public)
+            .await
+            .unwrap();
+    let second =
+        git_upload_pack_repo_for_request(&state, &author, TEST_REPO_OWNER, TEST_REPO_NAME, &public)
+            .await
+            .unwrap();
+    assert_ne!(first.as_ref(), second.as_ref());
     assert_eq!(
-        fs::read_dir(state.repository_engine.cache_root())
-            .unwrap()
-            .filter_map(Result::ok)
-            .filter(|entry| entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("read-view-"))
-            .count(),
-        1
+        git_stdout_text(&first, &["show-ref"], "first fetch refs").unwrap(),
+        git_stdout_text(&second, &["show-ref"], "second fetch refs").unwrap()
     );
-    let marker = first.as_ref().join("cache-reuse-proof");
-    fs::write(&marker, "original build").unwrap();
-    let reused = read(&contributor).await.unwrap();
-    assert_eq!(first.as_ref(), reused.as_ref());
-    assert_eq!(fs::read_to_string(marker).unwrap(), "original build");
+    let first_path = first.as_ref().to_path_buf();
+    let second_path = second.as_ref().to_path_buf();
+    drop(first);
+    drop(second);
+    assert!(!first_path.exists());
+    assert!(!second_path.exists());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_view_cache_keeps_draft_visibility_separate() {
+async fn fetch_folders_keep_draft_visibility_separate() {
     let state = test_state_with_request().await;
     insert_public_contributor(&state).await;
+    let (_source, _remote, _server, draft) =
+        request_checkout(&state, "fetch-draft-isolation").await;
     let author = authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
     let contributor =
         authorization_headers(bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL));
@@ -94,6 +70,59 @@ async fn read_view_cache_keeps_draft_visibility_separate() {
         )
         .is_err()
     );
+    assert!(
+        run_git_output(
+            Some(&author_view),
+            &["cat-file", "-e", &draft],
+            "author draft object"
+        )
+        .unwrap()
+        .status
+        .success()
+    );
+    assert!(
+        !run_git_output(
+            Some(&contributor_view),
+            &["cat-file", "-e", &draft],
+            "other author draft object"
+        )
+        .unwrap()
+        .status
+        .success()
+    );
+    let alternate = fs::read_to_string(contributor_view.join("objects/info/alternates")).unwrap();
+    let shelf = FsPath::new(alternate.lines().next().unwrap())
+        .parent()
+        .unwrap();
+    let shared = crate::git::request_refs::request_object_repos(
+        &state,
+        &test_repo_incarnation(),
+        &find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+            .await
+            .unwrap()
+            .repo_config
+            .object_generation(),
+        &test_owner_id(),
+    )
+    .unwrap()
+    .shared;
+    let mut borrowed = fs::read_to_string(shelf.join("objects/info/alternates")).unwrap();
+    borrowed.push_str(&format!("{}\n", shared.join("objects").display()));
+    fs::write(shelf.join("objects/info/alternates"), borrowed).unwrap();
+    let error = git_upload_pack_repo_for_request(
+        &state,
+        &contributor,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &ViewId::public(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        error
+            .operator_diagnostic()
+            .contains("unauthorized alternate")
+    );
 }
 
 struct SnapshotReadFails {
@@ -127,25 +156,64 @@ impl ObjectStore for SnapshotReadFails {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_view_omits_an_unreadable_request_snapshot_until_storage_recovers() {
-    let mut state = test_state_with_request().await;
-    let (_source, _remote, _server, head) =
+async fn fetch_omits_an_unreadable_pack_and_snapshot_then_restores_the_legacy_snapshot_once() {
+    let state = test_state_with_request().await;
+    let (source, _remote, _server, head) =
         request_checkout(&state, "read-view-unreadable-snapshot").await;
-    let snapshot = stored_request(&state, REQUEST_ID)
+    let mut legacy = stored_request(&state, REQUEST_ID).await;
+    run_git(
+        Some(&source),
+        &["update-ref", "refs/heads/legacy", &head],
+        "seed legacy snapshot ref",
+    )
+    .unwrap();
+    let (snapshot, bytes) =
+        crate::git::import::git_snapshot_from_ref(&source, "refs/heads/legacy", None).unwrap();
+    state
+        .object_store
+        .put(&scope_storage::object_key(&snapshot), bytes)
         .await
-        .git_snapshot
         .unwrap();
-    for entry in fs::read_dir(state.repository_engine.cache_root()).unwrap() {
-        let path = entry.unwrap().path();
-        if path
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .starts_with("read-view-")
-        {
-            fs::remove_dir_all(path).unwrap();
-        }
-    }
+    legacy.name = "legacy".to_string();
+    legacy.git_snapshot = Some(snapshot.clone());
+    state
+        .metadata
+        .requests()
+        .mutate_request_for_tests(REQUEST_ID, |request| {
+            request.submitted_at_unix = Some(request.updated_at_unix);
+            request.closed_at_unix = Some(request.updated_at_unix);
+            request.closed_by_user_id = Some(test_owner_id());
+        })
+        .await
+        .unwrap();
+    legacy.id = "req_legacy".to_string();
+    state
+        .metadata
+        .requests()
+        .insert_request_for_tests(legacy.clone())
+        .await
+        .unwrap();
+    state
+        .metadata
+        .repositories()
+        .register_main_pool_pack_for_tests(
+            TEST_REPO_ID,
+            &scope_domain::repository::git::GitPoolPack {
+                id: "broken-fetch-pack".to_string(),
+                owner: scope_domain::repository::git::GitPoolPackOwner::Request {
+                    request_id: legacy.id.clone(),
+                    scope: scope_domain::repository::git::RequestPackScope::View(ViewId::public()),
+                },
+                head_oid: legacy.head_oid.clone(),
+                prerequisites: Vec::new(),
+                storage: scope_domain::repository::git::GitPoolPackStorage::Inline {
+                    sealed: vec![0],
+                },
+            },
+        )
+        .await
+        .unwrap();
+    let mut state = state.replica_for_tests();
     let readable = state.object_store.clone();
     state.object_store = Arc::new(SnapshotReadFails {
         snapshot_key: scope_storage::object_key(&snapshot),
@@ -168,19 +236,34 @@ async fn read_view_omits_an_unreadable_request_snapshot_until_storage_recovers()
     assert!(
         git_stdout_text(
             degraded.as_ref(),
-            &["rev-parse", "--verify", REQUEST_REF],
+            &["rev-parse", "--verify", "refs/heads/legacy"],
             "omitted request ref"
         )
         .is_err()
     );
 
     state.object_store = readable;
-    let recovered = read(state).await;
+    let recovered = read(state.clone()).await;
     assert_eq!(
         git_stdout_text(
             recovered.as_ref(),
-            &["rev-parse", REQUEST_REF],
+            &["rev-parse", "refs/heads/legacy"],
             "restored request ref"
+        )
+        .unwrap()
+        .trim(),
+        head
+    );
+    state.object_store = Arc::new(SnapshotReadFails {
+        snapshot_key: scope_storage::object_key(&snapshot),
+        readable: state.object_store.clone(),
+    });
+    let reused = read(state.clone()).await;
+    assert_eq!(
+        git_stdout_text(
+            &reused,
+            &["rev-parse", "refs/heads/legacy"],
+            "retained legacy head"
         )
         .unwrap()
         .trim(),
