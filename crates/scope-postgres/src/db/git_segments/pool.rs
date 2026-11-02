@@ -159,12 +159,7 @@ where
         Ok(PooledRequestPack {
             id: row.try_get("", "id").map_err(read)?,
             request_id: row.try_get("", "request_id").map_err(read)?,
-            scope: match row.try_get::<Option<String>>("", "view_id").map_err(read)? {
-                Some(view) => {
-                    RequestPackScope::View(ViewId::parse(&view).map_err(PostgresError::internal)?)
-                }
-                None => RequestPackScope::Full,
-            },
+            scope: request_pack_scope(row)?,
             head_oid: row.try_get("", "head_oid").map_err(read)?,
             prerequisites: row.try_get("", "prerequisites").map_err(read)?,
             request_view: ViewId::parse(&row.try_get::<String>("", "request_view").map_err(read)?)
@@ -357,4 +352,42 @@ pub(in crate::db) async fn request_pack_ids<C: ConnectionTrait>(
     .into_iter()
     .map(|row| row.try_get("", "id").map_err(PostgresError::internal))
     .collect()
+}
+
+pub(in crate::db) async fn lock_pool_pack_versions<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    pack_ids: &[String],
+) -> Result<Vec<GitPoolPack>, PostgresError> {
+    if pack_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    conn.query_all_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        "SELECT * FROM scope_git_pool_packs WHERE repo_id = $1 AND id = ANY($2) ORDER BY id FOR SHARE",
+        [repo_id.into(), pack_ids.to_vec().into()],
+    )).await?.iter().map(|row| {
+        let storage = pool_pack_storage(row)?;
+        match row.try_get::<Option<String>>("", "request_id").map_err(PostgresError::internal)? {
+            None => Ok(listed_main_pool_pack(row)?.with_storage(storage)),
+            Some(request_id) => Ok(GitPoolPack {
+                id: row.try_get("", "id").map_err(PostgresError::internal)?,
+                owner: GitPoolPackOwner::Request { request_id, scope: request_pack_scope(row)? },
+                head_oid: row.try_get("", "head_oid").map_err(PostgresError::internal)?,
+                prerequisites: row.try_get("", "prerequisites").map_err(PostgresError::internal)?,
+                storage,
+            }),
+        }
+    }).collect()
+}
+
+fn request_pack_scope(row: &QueryResult) -> Result<RequestPackScope, PostgresError> {
+    match row
+        .try_get::<Option<String>>("", "view_id")
+        .map_err(PostgresError::internal)?
+    {
+        Some(view) => Ok(RequestPackScope::View(
+            ViewId::parse(&view).map_err(PostgresError::internal)?,
+        )),
+        None => Ok(RequestPackScope::Full),
+    }
 }

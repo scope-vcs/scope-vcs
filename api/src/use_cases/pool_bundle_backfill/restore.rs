@@ -183,11 +183,7 @@ pub(super) async fn verify(
         .await?
     };
     let within_reader_limits = needed.iter().all(|pack| allowed.contains(&pack.id));
-    let mut pack_ids = needed
-        .iter()
-        .map(|pack| pack.id.clone())
-        .collect::<Vec<_>>();
-    pack_ids.sort();
+    let verified_packs = needed.clone();
     let mut fresh = state.clone();
     fresh.git_segment_store = Arc::new(
         state
@@ -233,7 +229,7 @@ pub(super) async fn verify(
         .collect();
     Ok(BundleBackfillVerification {
         restored,
-        pack_ids,
+        packs: verified_packs,
         request_pack_ids,
         reader_request_capacities,
     })

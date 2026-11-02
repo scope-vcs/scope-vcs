@@ -66,7 +66,7 @@ impl BundleBackfillSource {
 
 pub struct BundleBackfillVerification {
     pub restored: VerifiedPoolRestore,
-    pub pack_ids: Vec<String>,
+    pub packs: Vec<GitPoolPack>,
     pub request_pack_ids: Vec<String>,
     pub reader_request_capacities: std::collections::BTreeMap<String, usize>,
 }
@@ -214,13 +214,6 @@ impl RepositoryStore {
         let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, incarnation.repository_id()).await?;
         acquire_aggregate_lock(&tx, "request", &claim.source.request_id).await?;
-        let owned = tx.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "SELECT token FROM scope_pool_bundle_backfill_lease WHERE singleton AND token = $1 FOR UPDATE",
-            [claim.token.clone().into()],
-        )).await?.is_some();
-        if !owned {
-            return Ok(false);
-        }
         let Some(repo) =
             super::entities::repository::Entity::find_by_id(incarnation.repository_id())
                 .one(&tx)
@@ -257,6 +250,46 @@ impl RepositoryStore {
                 "backfill pack does not belong to revision",
             ));
         }
+        let mut verified_packs = verification.packs.iter().collect::<Vec<_>>();
+        verified_packs.sort_by(|left, right| left.id.cmp(&right.id));
+        let pack_ids = verified_packs
+            .iter()
+            .map(|pack| pack.id.clone())
+            .collect::<Vec<_>>();
+        if let Some(staged) = pack
+            && verified_packs
+                .iter()
+                .any(|verified| verified.id == staged.id && *verified != staged)
+        {
+            return Ok(false);
+        }
+        let expected = verified_packs
+            .into_iter()
+            .filter(|verified| pack.is_none_or(|staged| staged.id != verified.id))
+            .cloned()
+            .collect::<Vec<_>>();
+        let existing_ids = expected
+            .iter()
+            .map(|pack| pack.id.clone())
+            .collect::<Vec<_>>();
+        let locked = super::git_segments::pool::lock_pool_pack_versions(
+            &tx,
+            &claim.source.repo_id,
+            &existing_ids,
+        )
+        .await?;
+        if locked != expected {
+            return Err(PostgresError::conflict(
+                "pool packs changed after restore verification",
+            ));
+        }
+        let owned = tx.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "SELECT token FROM scope_pool_bundle_backfill_lease WHERE singleton AND token = $1 FOR UPDATE",
+            [claim.token.clone().into()],
+        )).await?.is_some();
+        if !owned {
+            return Ok(false);
+        }
         let missing = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -282,13 +315,6 @@ impl RepositoryStore {
         if current_packs != verification.request_pack_ids {
             return Ok(false);
         }
-        let present = tx.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-            "SELECT count(*) AS count FROM scope_git_pool_packs WHERE repo_id = $1 AND id = ANY($2)",
-            [claim.source.repo_id.clone().into(), verification.pack_ids.clone().into()],
-        )).await?.unwrap().try_get::<i64>("", "count")?;
-        if present as usize != verification.pack_ids.len() {
-            return Ok(false);
-        }
         tx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO scope_pool_bundle_backfill_verifications
                 (source_id, request_id, head_oid, old_head_oid, audience, incarnation_id, repo_config,
@@ -302,7 +328,7 @@ impl RepositoryStore {
             [claim.source.source_id.clone().into(), claim.source.request_id.clone().into(),
                 claim.source.head_oid.clone().into(), claim.source.old_head_oid.clone().into(),
                 revision_request.view.as_str().into(), incarnation.incarnation_id().into(), repo.repo_config.into(),
-                verification.pack_ids.clone().into(), verification.request_pack_ids.clone().into(),
+                pack_ids.into(), verification.request_pack_ids.clone().into(),
                 serde_json::to_value(&verification.reader_request_capacities).map_err(PostgresError::internal)?.into(),
                 u64_to_i64(now_unix, "backfill verification time")?.into()],
         )).await?;

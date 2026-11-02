@@ -101,6 +101,19 @@ async fn pool_bundle_backfill_serializes_replicas_recovers_crashes_and_reports_f
         .unwrap()
         .unwrap()
         .repo_config;
+    let supporting = GitPoolPack {
+        id: "supporting".into(),
+        owner: scope_domain::repository::git::GitPoolPackOwner::Request {
+            request_id: request.id.clone(),
+            scope: scope_domain::repository::git::RequestPackScope::View(request.view.clone()),
+        },
+        head_oid: "older-head".into(),
+        prerequisites: vec![],
+        storage: scope_domain::repository::git::GitPoolPackStorage::Inline { sealed: vec![1] },
+    };
+    register_git_pool_pack(store.db.as_ref(), &claim.source.repo_id, &supporting, 87010)
+        .await
+        .unwrap();
     let pack = GitPoolPack {
         id: "backfilled".into(),
         owner: scope_domain::repository::git::GitPoolPackOwner::Request {
@@ -120,8 +133,8 @@ async fn pool_bundle_backfill_serializes_replicas_recovers_crashes_and_reports_f
         }
         .verify()
         .unwrap(),
-        pack_ids: vec![pack.id.clone()],
-        request_pack_ids: vec![pack.id.clone()],
+        packs: vec![pack.clone(), supporting.clone()],
+        request_pack_ids: vec![pack.id.clone(), supporting.id.clone()],
         reader_request_capacities: [(claim.source.request_id.clone(), 16)]
             .into_iter()
             .collect(),
@@ -139,11 +152,37 @@ async fn pool_bundle_backfill_serializes_replicas_recovers_crashes_and_reports_f
             .await
             .is_err()
     );
+    store.db.execute_unprepared("UPDATE scope_git_pool_packs SET sealed_pack = decode('02', 'hex') WHERE id = 'supporting'").await.unwrap();
+    assert!(
+        repositories
+            .complete_pool_bundle_backfill(
+                &claim,
+                &repo.incarnation(),
+                &config.object_generation(),
+                Some(&pack),
+                &verification,
+                87010,
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(report(store.db.as_ref()).await.unwrap().total.done, 0);
+    store.db.execute_unprepared("UPDATE scope_git_pool_packs SET sealed_pack = decode('01', 'hex') WHERE id = 'supporting'").await.unwrap();
     let held = store.db.begin().await.unwrap();
     acquire_aggregate_lock(&held, "request", &claim.source.request_id)
         .await
         .unwrap();
     let blocker = super::super::locks::backend_pid(&held).await;
+    let lease = store.db.begin().await.unwrap();
+    lease
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT token FROM scope_pool_bundle_backfill_lease WHERE singleton FOR UPDATE"
+                .to_string(),
+        ))
+        .await
+        .unwrap();
+    let lease_pid = super::super::locks::backend_pid(&lease).await;
     let repositories_for_completion = repositories.clone();
     let incarnation = repo.incarnation();
     let generation = config.object_generation();
@@ -162,8 +201,31 @@ async fn pool_bundle_backfill_serializes_replicas_recovers_crashes_and_reports_f
     });
     super::super::locks::wait_for_transaction_waiter(&store, blocker).await;
     held.commit().await.unwrap();
+    let publication_pid = super::super::locks::wait_for_transaction_waiter(&store, lease_pid).await;
+    let database = store.db.clone();
+    let update = tokio::spawn(async move {
+        database.execute_unprepared("UPDATE scope_git_pool_packs SET prerequisites = ARRAY['changed-prerequisite']::text[] WHERE id = 'supporting'").await.unwrap();
+    });
+    super::super::locks::wait_for_transaction_waiter(&store, publication_pid).await;
+    lease.commit().await.unwrap();
     let (claim, pack, verification, completed) = completion.await.unwrap();
     assert!(completed.unwrap());
+    update.await.unwrap();
+    assert_eq!(report(store.db.as_ref()).await.unwrap().total.done, 0);
+    store.db.execute_unprepared("UPDATE scope_git_pool_packs SET prerequisites = ARRAY[]::text[] WHERE id = 'supporting'").await.unwrap();
+    assert!(
+        repositories
+            .complete_pool_bundle_backfill(
+                &claim,
+                &repo.incarnation(),
+                &config.object_generation(),
+                None,
+                &verification,
+                87010,
+            )
+            .await
+            .unwrap()
+    );
     assert!(
         !repositories
             .complete_pool_bundle_backfill(
