@@ -98,6 +98,14 @@ pub enum RequestPackScope {
 }
 
 impl RequestPackScope {
+    pub fn for_view(view: &crate::views::ViewId, full_view: &crate::views::ViewId) -> Self {
+        if view == full_view {
+            Self::Full
+        } else {
+            Self::View(view.clone())
+        }
+    }
+
     pub fn view(&self) -> Option<&crate::views::ViewId> {
         match self {
             Self::Full => None,

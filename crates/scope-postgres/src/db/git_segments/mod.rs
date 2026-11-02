@@ -1,5 +1,5 @@
 mod ledger;
-mod pool;
+pub(super) mod pool;
 mod publication;
 mod retirement;
 

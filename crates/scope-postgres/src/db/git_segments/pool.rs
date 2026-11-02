@@ -341,3 +341,20 @@ where
     }
     Ok(())
 }
+
+pub(in crate::db) async fn request_pack_ids<C: ConnectionTrait>(
+    conn: &C,
+    request_id: &str,
+    view: &ViewId,
+) -> Result<Vec<String>, PostgresError> {
+    conn.query_all_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT id FROM scope_git_pool_packs WHERE request_id = $1
+            AND view_id IS NOT DISTINCT FROM NULLIF($2, 'private') ORDER BY id",
+        [request_id.into(), view.as_str().into()],
+    ))
+    .await?
+    .into_iter()
+    .map(|row| row.try_get("", "id").map_err(PostgresError::internal))
+    .collect()
+}

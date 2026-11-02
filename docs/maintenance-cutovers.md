@@ -242,32 +242,56 @@ Railway source upload.
 
 ## Pool bundle backfill
 
-Before removing bundle readers or deleting stored bundles, run the read-only
+Before removing request bundle readers or deleting request bundles, run the read-only
 `scope-maintenance pool-bundle-backfill` command with the maintenance database
 connection. The JSON contains repository counts and `total`: `done` counts
-revisions with a pack in the required ownership scope, `needing_backfill` counts
-unattempted revisions, and `failed` counts revisions whose last attempt failed.
-`remaining` includes both pending and failed revisions. The report also lists
-failure reasons and attempt times. Request snapshots without a revision row
-count as a revision until their head has a pack. Repositories with no stored
-bundle revisions have no work to report.
+revisions with a durable successful pool restore verification, `needing_backfill`
+counts revisions awaiting verification or conversion, and `failed` counts
+revisions whose last attempt failed. `remaining` includes pending and failed
+revisions. The report lists failure reasons and attempt times. A pack row alone
+never counts as done, including packs written by live pushes. Request snapshots
+without a revision row count too, with the request's recorded review base as
+old head.
 
-The API background runner converts one bundle at a time, with at least thirty
-seconds between attempts across all replicas. A ten-minute database lease
-recovers interrupted attempts; a dedicated session fence keeps a long-running
-attempt exclusive even after that deadline. Failures retry after one day and
-continue to count as remaining until a pack is recorded. Corrupt or missing
-bundles require operator recovery of the original object, followed by the next
-retry. No maintenance command starts the backfill or changes its state.
+Verification starts with an empty Git repository and copies only reachable main
+or view-main history. It reads pack bytes through the production reader's fetch
+and install code, with an empty segment cache and no bundles or request shelves.
+It installs the dependency chain behind the revision and its old head, then
+checks that both commits exist and `git rev-list --objects` traverses both
+histories. Missing prerequisites, corrupt packs, missing segment objects and the
+request reader's pack limit are failures. The verifier can install a chain longer
+than the reader limit to inspect it, but cannot mark it done. Receipts bind the
+source, heads, scope, repository incarnation, configuration and supporting packs.
+Removing or changing supporting packs invalidates their receipts. Adding packs
+beyond the verified reader capacity requires verification again.
 
-The backfill verifies the stored bundle, restores its declared prerequisites
-from main or its view and the request's existing packs, and stages it through the
-live push pack writer. Pack publication rechecks the repository incarnation and
-object generation. Restricted requests receive view-owned packs. Temporary
-repositories are discarded; the backfill does not install request packs on
-shared shelves. Existing bundles and readers remain in place.
+The API processes one revision at a time, with at least thirty seconds between
+attempts across replicas. A ten-minute lease recovers interrupted attempts; a
+dedicated session fence keeps a long attempt exclusive after that deadline.
+Failures retry after one day. Idle replicas wait one hour between passes, and
+the lease's indexed availability and scan flag avoid rescanning completed
+revisions until sources change or a failure becomes due. Request, revision, repository and pack changes wake the durable
+lease for the next pass. Materialization permits cover Git work, including main
+and view materialization through their existing owners; they do not cover bundle
+downloads, segment uploads or receipt writes.
 
-The cutover gate is `total.remaining == 0` and `total.failed == 0` on production.
-A successful development or preview report does not satisfy that gate. Migration
-`m0106_pool_bundle_backfill` follows the view-pack migration in PR #865 and may
-need renumbering when the stack lands.
+Conversion imports the bundle and builds a pack through the live push writer,
+excluding available old-head and view-main history. Restricted requests receive
+view-owned packs. Publication takes the request lock and rechecks scope,
+incarnation and object generation. Temporary repositories are discarded and
+bundles remain available. No maintenance command starts or changes the backfill.
+
+This report covers stored request revisions and request snapshots only. Its JSON
+`coverage` and `excluded_objects` fields state this boundary. It does **not** cover
+objects held by `RunSource::EphemeralGitBundle` or
+`RunSource::RequestGitSnapshot`. Both are retained independently by `run_source`
+object references until run retention removes them, including a request snapshot
+shared with a run. A zero report does not authorize removing either run source
+reader, deleting run-owned bundles, or deleting every object in the Git bundle
+namespace. Any request bundle deletion must preserve objects with surviving
+`run_source` references and use the existing reference-aware cleanup path.
+
+The request-bundle cutover gate is `total.remaining == 0` and `total.failed == 0`
+on production. A successful development or preview report does not satisfy that
+gate. Migration `m0106_pool_bundle_backfill` follows the view-pack migration in
+PR #865.

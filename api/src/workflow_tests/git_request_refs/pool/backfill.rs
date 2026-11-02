@@ -4,7 +4,7 @@ use crate::{
 };
 use scope_domain::requests::{RecordRequestRevisionInput, RequestRevisionGitFacts};
 
-fn empty_repo() -> tempfile::TempDir {
+pub(super) fn empty_repo() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
     run_git(
         None,
@@ -15,7 +15,7 @@ fn empty_repo() -> tempfile::TempDir {
     directory
 }
 
-async fn save_bundle_revision(
+pub(super) async fn save_bundle_revision(
     state: &AppState,
     request_id: &str,
     source: &FsPath,
@@ -23,7 +23,14 @@ async fn save_bundle_revision(
 ) -> String {
     let request = stored_request(state, request_id).await;
     let head = git_head_oid(source);
-    let (snapshot, bytes) = git_snapshot_from_ref(source, "refs/heads/topic", base).unwrap();
+    let request_ref = scope_domain::requests::canonical_request_ref(&request.name);
+    run_git(
+        Some(source),
+        &["update-ref", &request_ref, &head],
+        "name stored bundle request ref",
+    )
+    .unwrap();
+    let (snapshot, bytes) = git_snapshot_from_ref(source, &request_ref, base).unwrap();
     state
         .object_store
         .put(&scope_storage::object_key(&snapshot), bytes)
@@ -61,7 +68,7 @@ async fn save_bundle_revision(
     head
 }
 
-async fn stored_packs(
+pub(super) async fn stored_packs(
     state: &AppState,
     request_id: &str,
 ) -> Vec<scope_domain::repository::git::GitPoolPack> {
@@ -136,6 +143,13 @@ async fn pool_bundle_backfill_preserves_rewritten_history_and_thin_main_prerequi
     for now in [100, 130, 160] {
         assert!(backfill_one_bundle(&replica, &|| Ok(now)).await.unwrap());
     }
+    let verified = state
+        .metadata
+        .admin()
+        .pool_bundle_backfill_report_for_tests()
+        .await
+        .unwrap();
+    assert!(verified.failures.is_empty(), "{:?}", verified.failures);
     let before_rerun = stored_packs(&state, &request_id).await;
     assert!(!backfill_one_bundle(&state, &|| Ok(190)).await.unwrap());
     assert_eq!(stored_packs(&state, &request_id).await, before_rerun);
@@ -149,6 +163,19 @@ async fn pool_bundle_backfill_preserves_rewritten_history_and_thin_main_prerequi
         scope_domain::repository::git::GitPoolPackStorage::Inline { .. }
     )));
     let empty = empty_repo();
+    crate::git::pool_install::install_main_head(
+        &replica,
+        &test_repo_incarnation(),
+        empty.path(),
+        find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+            .await
+            .unwrap()
+            .git_head
+            .as_ref()
+            .unwrap(),
+    )
+    .await
+    .unwrap();
     let installed = install_chain(
         &replica,
         &test_repo_incarnation(),
@@ -192,8 +219,8 @@ async fn pool_bundle_backfill_preserves_rewritten_history_and_thin_main_prerequi
     assert!(has_commit(empty_thin.path(), &git_head_oid(&source)));
     let report = state
         .metadata
-        .repositories()
-        .pool_bundle_backfill_report()
+        .admin()
+        .pool_bundle_backfill_report_for_tests()
         .await
         .unwrap();
     assert_eq!(
@@ -203,9 +230,6 @@ async fn pool_bundle_backfill_preserves_rewritten_history_and_thin_main_prerequi
             report.total.failed
         ),
         (0, 4, 0)
-    );
-    eprintln!(
-        "backfill proof: 4 historical revisions, including a force replacement and a thin bundle requiring main; 3 packs installed into an empty repository; repeat wrote 0 packs"
     );
 }
 
@@ -246,6 +270,7 @@ async fn pool_bundle_backfill_reports_bad_bundles_and_keeps_view_packs_off_share
         .view_repo(&state, repo.repo_config.views(), &ViewId::public())
         .await
         .unwrap();
+    let view_main = git_head_oid(&view);
     let public_source = clone_test_repo(&view, "backfill-public-source", false);
     run_git(
         Some(&public_source),
@@ -260,8 +285,8 @@ async fn pool_bundle_backfill_reports_bad_bundles_and_keeps_view_packs_off_share
     }
     let report = state
         .metadata
-        .repositories()
-        .pool_bundle_backfill_report()
+        .admin()
+        .pool_bundle_backfill_report_for_tests()
         .await
         .unwrap();
     assert_eq!(
@@ -274,6 +299,7 @@ async fn pool_bundle_backfill_reports_bad_bundles_and_keeps_view_packs_off_share
     );
     assert!(!report.failures[0].reason.is_empty());
     let packs = stored_packs(&state, REQUEST_ID).await;
+    assert!(packs[0].prerequisites.contains(&view_main));
     assert!(
         matches!(&packs[0].owner, scope_domain::repository::git::GitPoolPackOwner::Request {
         scope: scope_domain::repository::git::RequestPackScope::View(view), ..
@@ -281,6 +307,17 @@ async fn pool_bundle_backfill_reports_bad_bundles_and_keeps_view_packs_off_share
     );
     let replica = state.replica_for_tests();
     let empty = empty_repo();
+    run_git(
+        Some(empty.path()),
+        &[
+            "fetch",
+            "--no-tags",
+            view.to_str().unwrap(),
+            "+HEAD:refs/heads/main",
+        ],
+        "install view main before thin pack",
+    )
+    .unwrap();
     assert_eq!(
         install_chain(&replica, &test_repo_incarnation(), empty.path(), packs)
             .await
@@ -297,11 +334,11 @@ async fn pool_bundle_backfill_reports_bad_bundles_and_keeps_view_packs_off_share
         .delete(&scope_storage::object_key(&revision.git_snapshot))
         .await
         .unwrap();
-    assert!(!backfill_one_bundle(&state, &|| Ok(86530)).await.unwrap());
+    assert!(backfill_one_bundle(&state, &|| Ok(86530)).await.unwrap());
     let missing = state
         .metadata
-        .repositories()
-        .pool_bundle_backfill_report()
+        .admin()
+        .pool_bundle_backfill_report_for_tests()
         .await
         .unwrap();
     assert_eq!(missing.total.failed, 1);

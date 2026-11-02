@@ -7,6 +7,7 @@ use crate::use_cases::git_receive::{
 use std::collections::BTreeSet;
 
 mod backfill;
+mod backfill_verification;
 mod views;
 
 async fn prepare_owner_push(state: &AppState, request_ref: &str) -> PathBuf {
@@ -128,6 +129,28 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
     )
     .unwrap();
     fs::remove_dir_all(rematerialized).unwrap();
+    let before = state
+        .metadata
+        .admin()
+        .pool_bundle_backfill_report_for_tests()
+        .await
+        .unwrap();
+    assert_eq!((before.total.done, before.total.remaining), (0, 3));
+    for now in [100, 130, 160] {
+        assert!(
+            crate::use_cases::pool_bundle_backfill::backfill_one_bundle(&replica, &|| Ok(now))
+                .await
+                .unwrap()
+        );
+    }
+    let after = state
+        .metadata
+        .admin()
+        .pool_bundle_backfill_report_for_tests()
+        .await
+        .unwrap();
+    assert_eq!((after.total.done, after.total.remaining), (3, 0));
+    assert_eq!(pooled_heads(&state, &request_id).await.len(), 3);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

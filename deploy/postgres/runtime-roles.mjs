@@ -9,7 +9,7 @@ export const mediaTables = names(`request_media_abandoned_objects request_media_
   request_media_processing_jobs request_media_processing_objects request_media_retry_operations
   request_media_upload_parts`);
 const repositoryTables = names(`file_changes git_compaction_jobs git_heads git_pool_packs
-  git_segment_uploads pool_bundle_backfill_lease pool_bundle_backfill_failures
+  git_segment_uploads pool_bundle_backfill_lease pool_bundle_backfill_failures pool_bundle_backfill_verifications
   live_files logical_commits metadata_locks object_references
   orphan_object_jobs outbox_jobs projection_files projection_read_models push_trigger_evaluations
   repo_storage_cleanup_jobs repositories repository_first_push_tokens repository_git_push_tokens
@@ -54,6 +54,8 @@ export const grants = {
     visibility_change_sets visibility_changes requests request_revisions users request_check_evaluations`)),
     scope_repository_history_payloads: ['SELECT', 'INSERT', 'DELETE'],
     scope_repository_history_entries: ['SELECT', 'INSERT'],
+    scope_pool_bundle_backfill_lease: ['SELECT', 'UPDATE'],
+    scope_pool_bundle_backfill_verifications: ['SELECT', 'DELETE'],
     scope_requests: ['SELECT', 'UPDATE'],
     scope_request_auto_merge_intents: ['SELECT', 'UPDATE'],
     scope_request_events: ['SELECT', 'INSERT'],

@@ -24,6 +24,10 @@ pub(crate) struct BackgroundWakeups {
 pub(crate) type WakeupSelector = fn(&BackgroundWakeups) -> &Notify;
 
 pub(crate) enum Cadence {
+    AfterActivity {
+        active_delay: Duration,
+        idle_delay: Duration,
+    },
     AfterPass {
         delay: Duration,
         wakeup: Option<WakeupSelector>,
@@ -106,6 +110,17 @@ impl BackgroundWork {
         });
     }
 
+    pub(crate) fn spawn_with_activity<F, Fut>(&mut self, spec: BackgroundLoop, pass: F)
+    where
+        F: Fn(AppState) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<bool, ApiError>> + Send + 'static,
+    {
+        self.spawn_with_activity_progress(spec, (), move |state, ()| {
+            let attempt = pass(state);
+            async move { ((), attempt.await) }
+        });
+    }
+
     pub(crate) fn spawn_with_progress<P, F, Fut>(
         &mut self,
         spec: BackgroundLoop,
@@ -115,6 +130,21 @@ impl BackgroundWork {
         P: Clone + Send + 'static,
         F: Fn(AppState, P) -> Fut + Send + 'static,
         Fut: Future<Output = (P, Result<(), ApiError>)> + Send + 'static,
+    {
+        self.spawn_with_activity_progress(spec, initial, move |state, progress| {
+            let attempt = pass(state, progress);
+            async move {
+                let (progress, result) = attempt.await;
+                (progress, result.map(|()| true))
+            }
+        });
+    }
+
+    fn spawn_with_activity_progress<P, F, Fut>(&mut self, spec: BackgroundLoop, initial: P, pass: F)
+    where
+        P: Clone + Send + 'static,
+        F: Fn(AppState, P) -> Fut + Send + 'static,
+        Fut: Future<Output = (P, Result<bool, ApiError>)> + Send + 'static,
     {
         let BackgroundLoop {
             name,
@@ -135,6 +165,7 @@ impl BackgroundWork {
                 let unchanged = progress.clone();
                 let attempt = pass(state.clone(), progress.clone());
                 let gated = matches!(readiness, Readiness::SchemaRequired);
+                let mut active = true;
                 match tokio::spawn(async move {
                     if gated
                         && let Err(error) = readiness_state.metadata.admin().readiness_check().await
@@ -147,6 +178,7 @@ impl BackgroundWork {
                 {
                     Ok((next, result)) => {
                         progress = next;
+                        active = result.as_ref().copied().unwrap_or(true);
                         if let Err(error) = result {
                             tracing::warn!(
                                 task = name,
@@ -163,7 +195,7 @@ impl BackgroundWork {
                 }
                 tokio::select! {
                     _ = stopped.changed() => break,
-                    _ = schedule.after_pass(&state) => {},
+                    _ = schedule.after_pass(&state, active) => {},
                 }
             }
         });
@@ -172,6 +204,10 @@ impl BackgroundWork {
 }
 
 enum Schedule {
+    AfterActivity {
+        active_delay: Duration,
+        idle_delay: Duration,
+    },
     AfterPass {
         delay: Duration,
         wakeup: Option<WakeupSelector>,
@@ -182,6 +218,13 @@ enum Schedule {
 impl Schedule {
     fn new(cadence: Cadence) -> Self {
         match cadence {
+            Cadence::AfterActivity {
+                active_delay,
+                idle_delay,
+            } => Self::AfterActivity {
+                active_delay,
+                idle_delay,
+            },
             Cadence::AfterPass { delay, wakeup } => Self::AfterPass { delay, wakeup },
             Cadence::Fixed {
                 period,
@@ -200,7 +243,15 @@ impl Schedule {
         }
     }
 
-    async fn after_pass(&self, state: &AppState) {
+    async fn after_pass(&self, state: &AppState, active: bool) {
+        if let Self::AfterActivity {
+            active_delay,
+            idle_delay,
+        } = self
+        {
+            tokio::time::sleep(if active { *active_delay } else { *idle_delay }).await;
+            return;
+        }
         let Self::AfterPass { delay, wakeup } = self else {
             return;
         };

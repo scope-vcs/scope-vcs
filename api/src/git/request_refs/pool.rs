@@ -28,7 +28,7 @@ use std::{
     path::{Path as FsPath, PathBuf},
 };
 
-const MAX_POOL_PACKS_PER_REQUEST: usize = 16;
+use scope_domain::repository::bundle_backfill::REQUEST_POOL_PACK_LIMIT;
 
 #[derive(Clone)]
 pub(crate) struct RequestObjectRepos {
@@ -169,7 +169,7 @@ async fn install_missing_request_packs(
     Ok(installed)
 }
 
-fn packs_to_catch_up(
+pub(crate) fn packs_to_catch_up(
     objects_repo: &FsPath,
     packs: Vec<PooledRequestPack>,
 ) -> Result<Vec<PooledRequestPack>, ApiError> {
@@ -187,7 +187,7 @@ fn packs_to_catch_up(
     }
     Ok(missing
         .into_iter()
-        .filter(|pack| per_request[&pack.request_id] <= MAX_POOL_PACKS_PER_REQUEST)
+        .filter(|pack| per_request[&pack.request_id] <= REQUEST_POOL_PACK_LIMIT)
         .collect())
 }
 

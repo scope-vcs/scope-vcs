@@ -268,6 +268,13 @@ impl AdminStore {
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    pub async fn pool_bundle_backfill_report_for_tests(
+        &self,
+    ) -> Result<super::PoolBundleBackfillReport, PostgresError> {
+        super::pool_bundle_backfill::report(self.db.as_ref()).await
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn execute_for_tests(&self, sql: &str) -> Result<(), PostgresError> {
         self.db.execute_unprepared(sql).await?;
         Ok(())

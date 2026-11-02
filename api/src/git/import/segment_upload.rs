@@ -4,11 +4,6 @@ use std::time::Duration;
 
 const GIT_SEGMENT_UPLOAD_HEARTBEAT: Duration = Duration::from_secs(60);
 
-pub(super) enum RemoteCleanup {
-    Attempt,
-    Deferred,
-}
-
 pub(crate) struct GitSegmentUploadHeartbeat {
     task: tokio::task::JoinHandle<()>,
 }
@@ -87,7 +82,6 @@ pub(crate) async fn best_effort_delete_staged_git_segment(
         repository_id,
         &staged.segment.segment_id,
         &staged.object_key,
-        RemoteCleanup::Attempt,
     )
     .await;
     if let Err(error) = state.git_segment_store.delete_local(staged).await {
@@ -105,7 +99,6 @@ pub(super) async fn best_effort_delete_git_segment_identity(
     repository_id: &str,
     segment_id: &str,
     object_key: &str,
-    remote_cleanup: RemoteCleanup,
 ) {
     let now = crate::persistence::unix_now().unwrap_or(0);
     let abandoned = match state
@@ -125,14 +118,6 @@ pub(super) async fn best_effort_delete_git_segment_identity(
             repository_id,
             segment_id,
             "Git segment may already be published; leaving remote bytes untouched"
-        );
-        return;
-    }
-    if matches!(remote_cleanup, RemoteCleanup::Deferred) {
-        tracing::warn!(
-            repository_id,
-            segment_id,
-            "Git segment cleanup deferred after process timeout"
         );
         return;
     }

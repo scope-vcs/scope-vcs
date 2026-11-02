@@ -15,7 +15,7 @@ pub(crate) use self::pushed_tree::{
     git_changed_tree_entries_until, validate_pushed_commit_range, validate_pushed_tree,
 };
 pub(crate) use self::repo_io::git_snapshot_from_ref;
-pub(crate) use self::repo_io::{StagedGitPack, stage_git_pack};
+pub(crate) use self::repo_io::{StagedGitPack, stage_git_pack_file};
 #[cfg(test)]
 pub(crate) use self::repo_io::{git_push_from_repo, git_refs};
 #[cfg(test)]

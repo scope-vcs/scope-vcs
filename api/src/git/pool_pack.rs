@@ -2,7 +2,7 @@ use crate::{
     error::ApiError,
     git::{
         command::git_command_output,
-        import::{StagedGitPack, best_effort_delete_staged_git_segment, stage_git_pack},
+        import::{StagedGitPack, best_effort_delete_staged_git_segment, stage_git_pack_file},
     },
     persistence_ids::generate_prefixed_id,
     state::AppState,
@@ -124,8 +124,12 @@ pub(crate) async fn stage_pool_pack(
         .collect::<Vec<_>>();
     let files = {
         let staging_repo = staging_repo.to_path_buf();
-        let revisions = revisions.clone();
-        crate::git::blocking::run(move || write_pool_pack_files(&staging_repo, &revisions)).await?
+        let permit = state.runtime_budgets.wait_git_materialization().await?;
+        crate::git::blocking::run(move || {
+            let _permit = permit;
+            write_pool_pack_files(&staging_repo, &revisions)
+        })
+        .await?
     };
     let bytes = fs::metadata(&files.pack).map_err(ApiError::internal)?.len();
     let max_object_bytes = state
@@ -158,8 +162,7 @@ pub(crate) async fn stage_pool_pack(
             LocalPoolPack::Files(files),
         )
     } else {
-        drop(files);
-        let staged = stage_git_pack(state, repository_id, staging_repo, &revisions).await?;
+        let staged = stage_git_pack_file(state, repository_id, &files.pack).await?;
         let segment = staged.staged_segment.segment.clone();
         (
             segment.segment_id.clone(),

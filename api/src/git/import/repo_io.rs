@@ -1,14 +1,11 @@
 use super::segment_upload::{
-    GitSegmentUploadHeartbeat, RemoteCleanup, begin_git_segment_upload,
-    best_effort_delete_git_segment_identity, best_effort_delete_staged_git_segment,
+    GitSegmentUploadHeartbeat, begin_git_segment_upload, best_effort_delete_git_segment_identity,
+    best_effort_delete_staged_git_segment,
 };
 use crate::{
     error::ApiError,
     git::{
-        command::{
-            git_ref_listing, git_stdout_text, prepare_git_subprocess, record_git_exit, run_git,
-            truncated_git_stderr,
-        },
+        command::{git_ref_listing, git_stdout_text, run_git},
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
     },
     state::AppState,
@@ -17,10 +14,9 @@ use scope_domain::content::SourceBlob;
 use scope_domain::repository::git::{GitHead, GitPoolPackStorage};
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git::{PreparedGitPush, prepare_git_push};
-use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
+use scope_storage::StagedGitSegment;
 use scope_storage::{ContentObjectKind, content_object_for_bytes};
-use scope_storage::{GitStorageError, StagedGitSegment};
-use std::{path::Path as FsPath, process::Command, time::Instant};
+use std::{path::Path as FsPath, time::Instant};
 
 pub(super) struct PushedCommit {
     pub(super) message: String,
@@ -83,113 +79,37 @@ pub(crate) struct StagedGitPack {
     pub(crate) _upload_heartbeat: GitSegmentUploadHeartbeat,
 }
 
-pub(crate) async fn stage_git_pack(
+pub(crate) async fn stage_git_pack_file(
     state: &AppState,
     repository_id: &str,
-    repo: &FsPath,
-    revisions: &[String],
+    path: &FsPath,
 ) -> Result<StagedGitPack, ApiError> {
-    let ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
-    let storage_limits = state.runtime_budgets.git_storage_limits();
-    let revisions = revisions
-        .iter()
-        .map(|revision| format!("{revision}\n"))
-        .collect::<String>();
-    let mut command = Command::new("git");
-    command
-        .current_dir(repo)
-        .args(["pack-objects", "--revs", "--stdout"]);
-    let git_span = prepare_git_subprocess(&mut command)?;
+    let _ingest_permit = state.runtime_budgets.try_git_segment_ingest()?;
+    let source = std::fs::File::open(path).map_err(ApiError::internal)?;
     let (reservation, upload_heartbeat) = begin_git_segment_upload(state, repository_id).await?;
     let segment_id = reservation.segment_id.clone();
     let object_key = reservation.object_key.clone();
-    let segment_store = state.git_segment_store.clone();
-    let repository_id_for_ingest = repository_id.to_string();
-    let timeout = state.runtime_budgets.git_command_timeout();
-    let parent_span = tracing::Span::current();
-    let output = tokio::task::spawn_blocking(move || {
-        let _entered = parent_span.enter();
-        let _ingest_permit = ingest_permit;
-        let runtime = tokio::runtime::Handle::current();
-        let _entered = git_span.enter();
-        let output = run_with_stdout(
-            &mut command,
-            Some(revisions.into_bytes()),
-            ProcessLimits::new(timeout),
-            "creating incremental Git pack",
-            move |stdout, cancellation| {
-                runtime.block_on(segment_store.ingest_reserved_blocking_reader(
-                    &repository_id_for_ingest,
-                    reservation,
-                    stdout,
-                    storage_limits.max_object_bytes() as u64,
-                    Some(cancellation),
-                ))
-            },
-        );
-        if let Ok(output) = &output {
-            record_git_exit(&git_span, output.status);
-        }
-        output
-    })
-    .await;
-    let output = match output {
-        Ok(output) => output,
+    let staged_segment = match state
+        .git_segment_store
+        .ingest_reserved_blocking_reader(
+            repository_id,
+            reservation,
+            source,
+            state
+                .runtime_budgets
+                .git_storage_limits()
+                .max_object_bytes() as u64,
+            None,
+        )
+        .await
+    {
+        Ok(staged) => staged,
         Err(error) => {
-            best_effort_delete_git_segment_identity(
-                state,
-                repository_id,
-                &segment_id,
-                &object_key,
-                RemoteCleanup::Attempt,
-            )
-            .await;
-            return Err(ApiError::internal(error));
+            best_effort_delete_git_segment_identity(state, repository_id, &segment_id, &object_key)
+                .await;
+            return Err(ApiError::infrastructure_unavailable(error.to_string()));
         }
     };
-    let output = match output {
-        Ok(output) => output,
-        Err(error) => {
-            let remote_cleanup = if matches!(
-                &error,
-                StreamingProcessError::Process(error) if error.is_timeout()
-            ) {
-                RemoteCleanup::Deferred
-            } else {
-                RemoteCleanup::Attempt
-            };
-            best_effort_delete_git_segment_identity(
-                state,
-                repository_id,
-                &segment_id,
-                &object_key,
-                remote_cleanup,
-            )
-            .await;
-            return Err(match error {
-                StreamingProcessError::Process(error) => {
-                    ApiError::infrastructure_unavailable(error.to_string())
-                }
-                StreamingProcessError::Consumer(GitStorageError::PlaintextLimitExceeded {
-                    ..
-                }) => ApiError::payload_too_large(format!(
-                    "Git pack exceeds the {} byte repository storage limit",
-                    storage_limits.max_object_bytes()
-                )),
-                StreamingProcessError::Consumer(error) => {
-                    ApiError::infrastructure_unavailable(error.to_string())
-                }
-            });
-        }
-    };
-    let staged_segment = output.value;
-    if !output.status.success() {
-        best_effort_delete_staged_git_segment(state, repository_id, &staged_segment).await;
-        return Err(ApiError::infrastructure_unavailable(format!(
-            "creating incremental Git pack: {}",
-            truncated_git_stderr(&output.stderr).trim()
-        )));
-    }
     if let Err(error) = state
         .metadata
         .repositories()

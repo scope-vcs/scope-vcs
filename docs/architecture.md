@@ -301,7 +301,12 @@ view shelf, keeping other authors' drafts unreachable. The shelf borrows a
 self-contained projection owner that fetches each new view head incrementally,
 since ordinary projection caches can borrow canonical objects. Changing view configuration abandons the old shelf.
 Full-view push shelves retain their shared and per-author ownership; readers
-continue using bundles in this migration slice.
+continue using bundles in this migration slice. Historical revision bundles are
+converted by the leased backfill worker. Its report counts only durable proofs
+that a fresh repository can recover both revision heads and connected history
+through the production pool installer and main or view main, within reader limits.
+A matching pack row is insufficient. Run-owned bundle retention remains separate;
+see `docs/maintenance-cutovers.md` for the report's coverage and deletion gate.
 
 `scope-domain::repository::git::GitHead` owns the current Git coordinates and
 its opaque `GitFrontier` digest. Push and merge transactions compare that typed

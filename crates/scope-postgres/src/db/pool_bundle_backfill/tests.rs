@@ -25,7 +25,7 @@ async fn pool_bundle_backfill_serializes_replicas_recovers_crashes_and_reports_f
     register_git_pool_pack(store.db.as_ref(), "owner/repo", &full_pack, 1)
         .await
         .unwrap();
-    let before = repositories.pool_bundle_backfill_report().await.unwrap();
+    let before = report(store.db.as_ref()).await.unwrap();
     assert_eq!(before.total.needing_backfill, 1);
     let claim = repositories
         .claim_pool_bundle_backfill("first", 10)
@@ -53,14 +53,14 @@ async fn pool_bundle_backfill_serializes_replicas_recovers_crashes_and_reports_f
         .unwrap()
         .unwrap();
     repositories
-        .fail_pool_bundle_backfill(&claim, "bundle missing", 610)
+        .fail_pool_bundle_backfill(&claim, "bundle\0 missing", 610)
         .await
         .unwrap();
     repositories
         .release_pool_bundle_backfill(claim, 610)
         .await
         .unwrap();
-    let failed = repositories.pool_bundle_backfill_report().await.unwrap();
+    let failed = report(store.db.as_ref()).await.unwrap();
     assert_eq!(
         failed.total,
         BundleBackfillCounts {
@@ -111,25 +111,67 @@ async fn pool_bundle_backfill_serializes_replicas_recovers_crashes_and_reports_f
         prerequisites: vec![],
         storage: scope_domain::repository::git::GitPoolPackStorage::Inline { sealed: vec![1] },
     };
+    let verification = BundleBackfillVerification {
+        restored: scope_domain::repository::bundle_backfill::PoolRestoreFacts {
+            head_present: true,
+            old_head_present: true,
+            connected: true,
+            within_reader_limits: true,
+        }
+        .verify()
+        .unwrap(),
+        pack_ids: vec![pack.id.clone()],
+        request_pack_ids: vec![pack.id.clone()],
+        reader_request_capacities: [(claim.source.request_id.clone(), 16)]
+            .into_iter()
+            .collect(),
+    };
     assert!(
         repositories
             .complete_pool_bundle_backfill(
                 &claim,
                 &repo.incarnation(),
                 &config.object_generation(),
-                &pack,
-                87010
+                Some(&full_pack),
+                &verification,
+                87010,
             )
             .await
-            .unwrap()
+            .is_err()
     );
+    let held = store.db.begin().await.unwrap();
+    acquire_aggregate_lock(&held, "request", &claim.source.request_id)
+        .await
+        .unwrap();
+    let blocker = super::super::locks::backend_pid(&held).await;
+    let repositories_for_completion = repositories.clone();
+    let incarnation = repo.incarnation();
+    let generation = config.object_generation();
+    let completion = tokio::spawn(async move {
+        let result = repositories_for_completion
+            .complete_pool_bundle_backfill(
+                &claim,
+                &incarnation,
+                &generation,
+                Some(&pack),
+                &verification,
+                87010,
+            )
+            .await;
+        (claim, pack, verification, result)
+    });
+    super::super::locks::wait_for_transaction_waiter(&store, blocker).await;
+    held.commit().await.unwrap();
+    let (claim, pack, verification, completed) = completion.await.unwrap();
+    assert!(completed.unwrap());
     assert!(
         !repositories
             .complete_pool_bundle_backfill(
                 &claim,
                 &repo.incarnation(),
                 &config.object_generation(),
-                &pack,
+                Some(&pack),
+                &verification,
                 87010
             )
             .await
@@ -146,7 +188,7 @@ async fn pool_bundle_backfill_serializes_replicas_recovers_crashes_and_reports_f
             .unwrap()
             .is_none()
     );
-    let after = repositories.pool_bundle_backfill_report().await.unwrap();
+    let after = report(store.db.as_ref()).await.unwrap();
     assert_eq!(
         after.total,
         BundleBackfillCounts {

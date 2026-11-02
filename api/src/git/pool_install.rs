@@ -102,13 +102,41 @@ pub(crate) async fn install_chain(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     objects_repo: &FsPath,
+    pending: Vec<GitPoolPack>,
+) -> Result<usize, ApiError> {
+    install_chain_inner(state, incarnation, objects_repo, pending, false).await
+}
+
+pub(crate) async fn install_chain_for_verification(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    objects_repo: &FsPath,
+    pending: Vec<GitPoolPack>,
+) -> Result<usize, ApiError> {
+    install_chain_inner(state, incarnation, objects_repo, pending, true).await
+}
+
+async fn install_chain_inner(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    objects_repo: &FsPath,
     mut pending: Vec<GitPoolPack>,
+    strict: bool,
 ) -> Result<usize, ApiError> {
     let mut installed_total = 0;
     loop {
         let (installable, waiting) = {
             let objects_repo = objects_repo.to_path_buf();
-            crate::git::blocking::run(move || installable_packs(&objects_repo, pending)).await?
+            let permit = if strict {
+                Some(state.runtime_budgets.wait_git_materialization().await?)
+            } else {
+                None
+            };
+            crate::git::blocking::run(move || {
+                let _permit = permit;
+                installable_packs(&objects_repo, pending)
+            })
+            .await?
         };
         if installable.is_empty() {
             break;
@@ -121,13 +149,27 @@ pub(crate) async fn install_chain(
         let mut installed = 0;
         while let Some((pack, fetched)) = fetched.next().await {
             let result = match fetched {
-                Ok(fetched) => install_fetched(state, objects_repo, fetched)
-                    .await
-                    .map_err(|error| ("install", error)),
+                Ok(fetched) => {
+                    let _permit = if strict {
+                        Some(state.runtime_budgets.wait_git_materialization().await?)
+                    } else {
+                        None
+                    };
+                    install_fetched(state, objects_repo, fetched)
+                        .await
+                        .map_err(|error| ("install", error))
+                }
                 Err(error) => Err(("fetch", error)),
             };
             match result {
                 Ok(()) => installed += 1,
+                Err((step, error)) if strict => {
+                    return Err(ApiError::infrastructure_unavailable(format!(
+                        "pool pack {} {step}: {}",
+                        pack.id,
+                        error.operator_diagnostic()
+                    )));
+                }
                 Err((step, error)) => tracing::warn!(
                     repository_id = incarnation.repository_id(),
                     pack_id = pack.id,
