@@ -8,7 +8,8 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::{
-    github_workflow_jobs::GitHubJobsRead, github_workflow_runs::GitHubWorkflowRun,
+    github_workflow_jobs::{GitHubJobsRead, github_delivery_retry_at},
+    github_workflow_runs::GitHubWorkflowRun,
     requests::GitHubBranch,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
@@ -146,13 +147,18 @@ impl RepositoryStore {
                      ON CONFLICT (repo_id, github_repository_id, github_run_id)
                      DO UPDATE SET generation = scope_github_workflow_run_reads.generation + 1,
                      {}",
-                    delivery_shortens_backoff("scope_github_workflow_run_reads")
+                    delivery_shortens_backoff("scope_github_workflow_run_reads", "$5")
                 ),
                 [
                     repo_id.into(),
                     u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
                     u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
                     u64_to_i64(now_unix, "GitHub workflow run read time")?.into(),
+                    u64_to_i64(
+                        github_delivery_retry_at(now_unix),
+                        "GitHub workflow run read time",
+                    )?
+                    .into(),
                 ],
             ))
             .await?;

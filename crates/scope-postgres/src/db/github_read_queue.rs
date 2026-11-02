@@ -29,14 +29,11 @@ pub(super) fn prefixed_columns(columns: &str, prefix: &str) -> String {
         .join(", ")
 }
 
-const DELIVERY_RETRY_FLOOR_SECS: u64 = 60;
-
-pub(super) fn delivery_shortens_backoff(table: &str) -> String {
+pub(super) fn delivery_shortens_backoff(table: &str, retry_by: &str) -> String {
     format!(
         "next_attempt_at_unix = CASE WHEN {table}.lease_until_unix > EXCLUDED.next_attempt_at_unix
                          THEN {table}.next_attempt_at_unix
-                         ELSE least({table}.next_attempt_at_unix,
-                                    EXCLUDED.next_attempt_at_unix + {DELIVERY_RETRY_FLOOR_SECS}) END"
+                         ELSE least({table}.next_attempt_at_unix, {retry_by}) END"
     )
 }
 

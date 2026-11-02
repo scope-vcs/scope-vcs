@@ -120,9 +120,14 @@ pub fn github_jobs_not_read_yet(
 }
 
 const MISSING_RUN_READ_ATTEMPTS: u32 = 4;
+const DELIVERY_RETRY_FLOOR_SECS: u64 = 60;
 
 pub fn github_jobs_retry_at(attempts: u32, now_unix: u64) -> u64 {
     github_retry_at(attempts.clamp(1, 4), now_unix).unwrap_or(now_unix.saturating_add(30 * 60))
+}
+
+pub fn github_delivery_retry_at(now_unix: u64) -> u64 {
+    now_unix.saturating_add(DELIVERY_RETRY_FLOOR_SECS)
 }
 
 pub fn github_missing_run_read_is_final(attempts: u32) -> bool {
@@ -345,6 +350,11 @@ mod tests {
     fn a_pending_jobs_read_keeps_retrying_after_the_normal_github_limit() {
         assert_eq!(github_jobs_retry_at(1, 100), 130);
         assert_eq!(github_jobs_retry_at(5, 100), 1900);
+    }
+
+    #[test]
+    fn a_delivery_waits_a_minute_before_retrying_a_failed_read() {
+        assert_eq!(github_delivery_retry_at(100), 160);
     }
 
     #[test]

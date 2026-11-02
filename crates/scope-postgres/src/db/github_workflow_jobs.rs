@@ -7,8 +7,10 @@ use super::{
     },
 };
 use crate::error::PostgresError;
-use scope_domain::github_workflow_jobs::{GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob};
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
+use scope_domain::github_workflow_jobs::{
+    GitHubJobLog, GitHubJobLogState, GitHubWorkflowJob, github_delivery_retry_at,
+};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
 
 #[derive(FromQueryResult)]
 struct JobRow {
@@ -76,7 +78,7 @@ impl RepositoryStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         self.queue_job_read(
-            String::new(),
+            None,
             (repo_id, github_repository_id, github_run_id),
             run_attempt,
             now_unix,
@@ -93,10 +95,7 @@ impl RepositoryStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         self.queue_job_read(
-            format!(
-                ", {}",
-                delivery_shortens_backoff("scope_github_workflow_job_reads")
-            ),
+            Some(github_delivery_retry_at(now_unix)),
             (repo_id, github_repository_id, github_run_id),
             run_attempt,
             now_unix,
@@ -106,11 +105,27 @@ impl RepositoryStore {
 
     async fn queue_job_read(
         &self,
-        requeue: String,
+        retry_by_unix: Option<u64>,
         (repo_id, github_repository_id, github_run_id): (&str, u64, u64),
         run_attempt: u32,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
+        let requeue = retry_by_unix.map_or(String::new(), |_| {
+            format!(
+                ", {}",
+                delivery_shortens_backoff("scope_github_workflow_job_reads", "$6")
+            )
+        });
+        let mut values: Vec<Value> = vec![
+            repo_id.into(),
+            u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+            u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
+            u64_to_i64(now_unix, "GitHub jobs read time")?.into(),
+            u32_to_i32(run_attempt, "GitHub run attempt")?.into(),
+        ];
+        if let Some(retry_by_unix) = retry_by_unix {
+            values.push(u64_to_i64(retry_by_unix, "GitHub jobs read time")?.into());
+        }
         self.db.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!("INSERT INTO scope_github_workflow_job_reads (repo_id, github_repository_id, github_run_id, attempts, generation, next_attempt_at_unix, run_attempt)
@@ -118,10 +133,7 @@ impl RepositoryStore {
              ON CONFLICT (repo_id, github_repository_id, github_run_id)
              DO UPDATE SET generation = scope_github_workflow_job_reads.generation + 1,
                            run_attempt = greatest(scope_github_workflow_job_reads.run_attempt, EXCLUDED.run_attempt){requeue}"),
-            [repo_id.into(), u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
-             u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
-             u64_to_i64(now_unix, "GitHub jobs read time")?.into(),
-             u32_to_i32(run_attempt, "GitHub run attempt")?.into()],
+            values,
         )).await?;
         Ok(())
     }
