@@ -298,8 +298,8 @@ packs in the revision transaction. Restricted pushes record the pack's view and
 install it only on that view's shelf under the repository's object generation.
 A restricted staging repository copies only authorized request heads from its
 view shelf, keeping other authors' drafts unreachable. The shelf borrows a
-self-contained copy of the view's projection, since ordinary projection caches
-can borrow canonical objects. Changing view configuration abandons the old shelf.
+self-contained projection owner that fetches each new view head incrementally,
+since ordinary projection caches can borrow canonical objects. Changing view configuration abandons the old shelf.
 Full-view push shelves retain their shared and per-author ownership; readers
 continue using bundles in this migration slice.
 

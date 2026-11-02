@@ -1,14 +1,16 @@
 use crate::{
     error::ApiError,
     git::{
-        command::git_stdout_text, repository_git::RepositoryGit,
-        staging::add_receive_pack_alternate, storage::request_objects_root,
+        command::{git_stdout_text, run_git},
+        repository_git::RepositoryGit,
+        staging::add_receive_pack_alternate,
+        storage::request_objects_root,
     },
     state::AppState,
 };
 use scope_domain::{repo_config::RepoConfig, repository::RepositoryIncarnation, views::ViewId};
 use sha2::{Digest, Sha256};
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 pub(crate) async fn view_object_repo(
     state: &AppState,
@@ -34,23 +36,24 @@ pub(crate) async fn view_object_repo(
             &["rev-parse", "HEAD"],
             "reading view shelf projection head",
         )?;
-        let base = root.join(format!("{key}-{}.git", head.trim()));
-        if !base.join("objects").is_dir() {
-            let temporary = tempfile::Builder::new()
-                .prefix(".view-base-")
-                .tempdir_in(&root)
-                .map_err(ApiError::internal)?;
-            let prepared = temporary.path().join("projection.git");
-            super::clone_without_shared_objects(
-                &projection,
-                &prepared,
-                "isolating view shelf projection objects",
-            )?;
-            if let Err(error) = fs::rename(&prepared, &base)
-                && !base.join("objects").is_dir()
-            {
-                return Err(ApiError::internal(error));
-            }
+        let head = head.trim();
+        let base = super::ensure_local_bare_repo(root.join(format!("{key}-projection.git")))?;
+        let retained = format!("refs/scope/projections/{head}");
+        if super::request_ref_head(&base, &retained)?.as_deref() != Some(head)
+            && let Err(error) = run_git(
+                Some(&base),
+                &[
+                    "fetch",
+                    "--no-tags",
+                    "--no-write-fetch-head",
+                    projection.to_string_lossy().as_ref(),
+                    &format!("+{head}:{retained}"),
+                ],
+                "updating isolated view projection objects",
+            )
+            && super::request_ref_head(&base, &retained)?.as_deref() != Some(head)
+        {
+            return Err(error);
         }
         add_receive_pack_alternate(&shelf, &base.join("objects"))?;
         Ok(shelf)

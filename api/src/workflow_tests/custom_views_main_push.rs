@@ -165,6 +165,7 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
     .await
     .unwrap();
     assert!(contains_commit(&shelf, &head, &head));
+    let projection_objects = fs::read_to_string(shelf.join("objects/info/alternates")).unwrap();
     assert_eq!(request.view, view("agent"));
     assert_eq!(request.title, "Main push from agent-member");
     assert_eq!(request.state(), RequestState::Open);
@@ -194,11 +195,29 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
         live_file_content(&state, "/src/main.rs").await.as_deref(),
         Some("fn main() { run() }\n")
     );
+    let projected_main = checkout.fetch_main();
+    assert!(contains_commit(&checkout.path, &head, &projected_main));
+    let repo = super::custom_views::stored_repo(&state).await;
+    let updated_shelf = crate::git::request_refs::view_object_repo(
+        &state,
+        &repo.incarnation(),
+        &repo.repo_config,
+        &view("agent"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        fs::read_to_string(updated_shelf.join("objects/info/alternates")).unwrap(),
+        projection_objects
+    );
+    let projection_base = FsPath::new(projection_objects.trim()).parent().unwrap();
     assert!(contains_commit(
-        &checkout.path,
-        &head,
-        &checkout.fetch_main()
+        projection_base,
+        &projected_main,
+        &projected_main
     ));
+    let canonical = &repo.git_head.as_ref().unwrap().head_oid;
+    assert!(!contains_commit(projection_base, canonical, canonical));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
