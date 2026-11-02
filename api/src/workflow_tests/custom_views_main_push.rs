@@ -295,7 +295,18 @@ async fn the_request_transaction_refuses_a_stale_main_push() {
                     .await
                     .repo_config
                     .object_generation(),
-                pool_pack: None,
+                pool_pack: scope_domain::repository::git::GitPoolPack {
+                    id: "stale-pack".to_string(),
+                    owner: scope_domain::repository::git::GitPoolPackOwner::Request {
+                        request_id: "req_stale".to_string(),
+                        scope: scope_domain::repository::git::RequestPackScope::View(view("agent")),
+                    },
+                    head_oid: head,
+                    prerequisites: vec![agent_main_before.clone()],
+                    storage: scope_domain::repository::git::GitPoolPackStorage::Inline {
+                        sealed: vec![],
+                    },
+                },
             },
         )
         .await

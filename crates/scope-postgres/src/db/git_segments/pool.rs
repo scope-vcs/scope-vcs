@@ -45,6 +45,20 @@ impl ListedMainPoolPack {
     }
 }
 
+pub(in crate::db) async fn register_request_pool_pack<C: ConnectionTrait>(
+    conn: &C,
+    request: &scope_domain::requests::Request,
+    pack: &GitPoolPack,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    if !pack.belongs_to_request(request) {
+        return Err(PostgresError::internal_message(
+            "Git pool pack does not belong to the recorded revision",
+        ));
+    }
+    register_git_pool_pack(conn, &request.repo_id, pack, now_unix).await
+}
+
 pub(in crate::db) async fn register_git_pool_pack<C>(
     conn: &C,
     repo_id: &str,
