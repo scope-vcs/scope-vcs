@@ -239,3 +239,35 @@ maintenance SSH key in the corresponding GitHub environments. The runtime source
 comes from `deploy/railway/maintenance.Dockerfile`; updates to its base image or
 packages require dispatching this workflow. It uses image deployment rather than
 Railway source upload.
+
+## Pool bundle backfill
+
+Before removing bundle readers or deleting stored bundles, run the read-only
+`scope-maintenance pool-bundle-backfill` command with the maintenance database
+connection. The JSON contains repository counts and `total`: `done` counts
+revisions with a pack in the required ownership scope, `needing_backfill` counts
+unattempted revisions, and `failed` counts revisions whose last attempt failed.
+`remaining` includes both pending and failed revisions. The report also lists
+failure reasons and attempt times. Request snapshots without a revision row
+count as a revision until their head has a pack. Repositories with no stored
+bundle revisions have no work to report.
+
+The API background runner converts one bundle at a time, with at least thirty
+seconds between attempts across all replicas. A ten-minute database lease
+recovers interrupted attempts; a dedicated session fence keeps a long-running
+attempt exclusive even after that deadline. Failures retry after one day and
+continue to count as remaining until a pack is recorded. Corrupt or missing
+bundles require operator recovery of the original object, followed by the next
+retry. No maintenance command starts the backfill or changes its state.
+
+The backfill verifies the stored bundle, restores its declared prerequisites
+from main or its view and the request's existing packs, and stages it through the
+live push pack writer. Pack publication rechecks the repository incarnation and
+object generation. Restricted requests receive view-owned packs. Temporary
+repositories are discarded; the backfill does not install request packs on
+shared shelves. Existing bundles and readers remain in place.
+
+The cutover gate is `total.remaining == 0` and `total.failed == 0` on production.
+A successful development or preview report does not satisfy that gate. Migration
+`m0106_pool_bundle_backfill` follows the view-pack migration in PR #865 and may
+need renumbering when the stack lands.

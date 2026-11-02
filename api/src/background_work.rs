@@ -76,6 +76,7 @@ impl AppState {
         work.start_request_check_recovery();
         work.start_request_auto_merge();
         work.start_request_diff_stat_backfill();
+        work.start_pool_bundle_backfill();
         work
     }
 }

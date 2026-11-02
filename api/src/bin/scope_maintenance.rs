@@ -1,7 +1,8 @@
 use api::native_runs_maintenance::{NativeRunsCommand, run_native_runs_command_for_maintenance};
 use scope_postgres::db::{
     MigrationLimits, apply_maintenance_migrations, migration_plan, migration_preflight,
-    terminate_metadata_writer_sessions, verify_schema, verify_writer_fence_available,
+    pool_bundle_backfill_report_for_maintenance, terminate_metadata_writer_sessions, verify_schema,
+    verify_writer_fence_available,
 };
 
 const USAGE: &str = r#"usage: scope-maintenance <command>
@@ -15,6 +16,7 @@ commands:
   drain-writers               terminate sessions holding the shared writer fence
   validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
+  pool-bundle-backfill        report remaining, done and failed bundle revisions (read-only)
   native-runs list            list the accounts whose repositories may use native runs
   native-runs add <handle> [note]
                               list an account, or replace its note
@@ -58,6 +60,15 @@ async fn main() -> anyhow::Result<()> {
     let database_url = maintenance_database_url()?;
 
     match command.as_str() {
+        "pool-bundle-backfill" => {
+            verify_schema(database_url.clone()).await?;
+            println!(
+                "{}",
+                serde_json::to_string(
+                    &pool_bundle_backfill_report_for_maintenance(database_url).await?
+                )?
+            );
+        }
         "preflight" => {
             println!(
                 "{}",
