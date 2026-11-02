@@ -474,7 +474,7 @@ async fn an_expired_reader_cannot_release_a_newer_generation_claim() {
 }
 
 #[tokio::test]
-async fn a_delivery_restarts_a_failed_jobs_read_that_a_page_view_leaves_waiting() {
+async fn a_delivery_shortens_a_failed_jobs_read_backoff_that_a_page_view_keeps() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
@@ -509,10 +509,17 @@ async fn a_delivery_restarts_a_failed_jobs_read_that_a_page_view_leaves_waiting(
         .queue_delivered_github_workflow_job_read(REPO, 42, 9, 1, 130)
         .await
         .unwrap();
+    assert!(
+        repositories
+            .claim_due_github_workflow_job_reads(189, 500, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     let restarted = repositories
-        .claim_due_github_workflow_job_reads(130, 500, 10)
+        .claim_due_github_workflow_job_reads(190, 500, 10)
         .await
         .unwrap()
         .remove(0);
-    assert_eq!(restarted.attempts, 1);
+    assert_eq!(restarted.attempts, 2);
 }

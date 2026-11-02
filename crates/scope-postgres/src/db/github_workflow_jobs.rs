@@ -1,7 +1,7 @@
 use super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
-    github_read_queue::{GitHubReadQueue, delivery_restarts_backoff},
+    github_read_queue::{GitHubReadQueue, delivery_shortens_backoff},
     integer_columns::{
         i32_to_u32, i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u32_to_i32, u64_to_i64,
     },
@@ -95,7 +95,7 @@ impl RepositoryStore {
         self.queue_job_read(
             format!(
                 ", {}",
-                delivery_restarts_backoff("scope_github_workflow_job_reads")
+                delivery_shortens_backoff("scope_github_workflow_job_reads")
             ),
             (repo_id, github_repository_id, github_run_id),
             run_attempt,

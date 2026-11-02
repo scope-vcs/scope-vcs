@@ -228,7 +228,7 @@ async fn queued_run_deliveries_survive_inflight_reads_and_expired_claims() {
 }
 
 #[tokio::test]
-async fn a_delivery_restarts_a_failed_run_read_but_waits_for_a_live_claim() {
+async fn a_delivery_shortens_a_failed_run_read_backoff_but_waits_for_a_live_claim() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
@@ -249,20 +249,27 @@ async fn a_delivery_restarts_a_failed_run_read_but_waits_for_a_live_claim() {
         .queue_github_workflow_run_read(REPO, 42, 9, 120)
         .await
         .unwrap();
+    assert!(
+        repositories
+            .claim_due_github_workflow_run_reads(179, 500, 20)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     let restarted = repositories
-        .claim_due_github_workflow_run_reads(120, 500, 20)
+        .claim_due_github_workflow_run_reads(180, 500, 20)
         .await
         .unwrap()
         .pop()
         .unwrap();
-    assert_eq!(restarted.attempts, 1);
+    assert_eq!(restarted.attempts, 2);
     repositories
-        .queue_github_workflow_run_read(REPO, 42, 9, 130)
+        .queue_github_workflow_run_read(REPO, 42, 9, 190)
         .await
         .unwrap();
     assert!(
         repositories
-            .claim_due_github_workflow_run_reads(130, 600, 20)
+            .claim_due_github_workflow_run_reads(499, 600, 20)
             .await
             .unwrap()
             .is_empty()

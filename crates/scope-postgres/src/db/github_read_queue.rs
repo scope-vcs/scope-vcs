@@ -29,13 +29,14 @@ pub(super) fn prefixed_columns(columns: &str, prefix: &str) -> String {
         .join(", ")
 }
 
-pub(super) fn delivery_restarts_backoff(table: &str) -> String {
+const DELIVERY_RETRY_FLOOR_SECS: u64 = 60;
+
+pub(super) fn delivery_shortens_backoff(table: &str) -> String {
     format!(
-        "attempts = CASE WHEN {table}.lease_until_unix > EXCLUDED.next_attempt_at_unix
-                         THEN {table}.attempts ELSE 0 END,
-         next_attempt_at_unix = CASE WHEN {table}.lease_until_unix > EXCLUDED.next_attempt_at_unix
+        "next_attempt_at_unix = CASE WHEN {table}.lease_until_unix > EXCLUDED.next_attempt_at_unix
                          THEN {table}.next_attempt_at_unix
-                         ELSE least({table}.next_attempt_at_unix, EXCLUDED.next_attempt_at_unix) END"
+                         ELSE least({table}.next_attempt_at_unix,
+                                    EXCLUDED.next_attempt_at_unix + {DELIVERY_RETRY_FLOOR_SECS}) END"
     )
 }
 
