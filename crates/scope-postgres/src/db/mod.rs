@@ -153,7 +153,7 @@ pub use git_compaction::{GitCompactionCandidate, GitCompactionClaim};
 pub use git_push_reads::{GitPushCredentials, GitPushState};
 pub use git_segments::{ListedMainPoolPack, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
-pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
+pub use github_check_runs::GitHubCheckCommit;
 pub use github_connections::GitHubConnectionRead;
 pub use github_pushes::GitHubPushStanding;
 pub use github_read_queue::GitHubJobOutcome;

@@ -107,22 +107,6 @@ impl GitHubApp {
             .map(|jobs| jobs.into_iter().filter_map(Job::into_domain).collect()))
     }
 
-    pub(crate) async fn workflow_job(
-        &self,
-        installation_id: u64,
-        full_name: &str,
-        job_id: u64,
-    ) -> Result<Option<GitHubWorkflowJob>, ApiError> {
-        Ok(self
-            .installation_get::<Job>(
-                installation_id,
-                &format!("/repos/{full_name}/actions/jobs/{job_id}"),
-                "/repos/{owner}/{repo}/actions/jobs/{job_id}",
-            )
-            .await?
-            .and_then(Job::into_domain))
-    }
-
     pub(crate) async fn job_log(
         &self,
         installation_id: u64,

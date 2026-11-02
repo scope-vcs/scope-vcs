@@ -35,6 +35,7 @@ const SELECT_JOB: &str = "github_job_id, github_run_id, run_attempt, name, statu
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowJobReadJob {
+    pub run_attempt: u32,
     pub read_id: u64,
     pub repo_id: String,
     pub github_repository_id: u64,
@@ -45,6 +46,7 @@ pub struct GitHubWorkflowJobReadJob {
 
 #[derive(FromQueryResult)]
 struct JobReadRow {
+    run_attempt: i32,
     read_id: i64,
     repo_id: String,
     github_repository_id: i64,
@@ -59,7 +61,7 @@ const JOB_READS: GitHubReadQueue = GitHubReadQueue {
     joined: "",
     joined_on: "",
     returning: "read.read_id, read.repo_id, read.github_repository_id, read.github_run_id, \
-        read.attempts, read.generation",
+        read.attempts, read.generation, read.run_attempt",
     label: "GitHub jobs read",
 };
 
@@ -69,17 +71,20 @@ impl RepositoryStore {
         repo_id: &str,
         github_repository_id: u64,
         github_run_id: u64,
+        run_attempt: u32,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         self.db.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "INSERT INTO scope_github_workflow_job_reads (repo_id, github_repository_id, github_run_id, attempts, generation, next_attempt_at_unix)
-             VALUES ($1, $2, $3, 0, 0, $4)
+            "INSERT INTO scope_github_workflow_job_reads (repo_id, github_repository_id, github_run_id, attempts, generation, next_attempt_at_unix, run_attempt)
+             VALUES ($1, $2, $3, 0, 0, $4, $5)
              ON CONFLICT (repo_id, github_repository_id, github_run_id)
-             DO UPDATE SET generation = scope_github_workflow_job_reads.generation + 1",
+             DO UPDATE SET generation = scope_github_workflow_job_reads.generation + 1,
+                           run_attempt = greatest(scope_github_workflow_job_reads.run_attempt, EXCLUDED.run_attempt)",
             [repo_id.into(), u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
              u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
-             u64_to_i64(now_unix, "GitHub jobs read time")?.into()],
+             u64_to_i64(now_unix, "GitHub jobs read time")?.into(),
+             u32_to_i32(run_attempt, "GitHub run attempt")?.into()],
         )).await?;
         Ok(())
     }
@@ -96,6 +101,7 @@ impl RepositoryStore {
             .into_iter()
             .map(|row| {
                 Ok(GitHubWorkflowJobReadJob {
+                    run_attempt: i32_to_u32(row.run_attempt, "GitHub run attempt")?,
                     read_id: i64_to_u64(row.read_id, "GitHub jobs read id")?,
                     repo_id: row.repo_id,
                     github_repository_id: i64_to_u64(
@@ -123,24 +129,13 @@ impl RepositoryStore {
             u32_to_i32(job.attempts, "GitHub jobs read attempts")?.into(),
             u64_to_i64(job.read_id, "GitHub jobs read id")?.into(),
         ];
-        if retry_at_unix.is_none() {
-            let mut values = claim.clone();
-            values.push(u64_to_i64(job.generation, "GitHub jobs read generation")?.into());
-            JOB_READS
-                .finish(
-                    self.db.as_ref(),
-                    &["attempts", "read_id", "generation"],
-                    values,
-                    None,
-                )
-                .await?;
-        }
         JOB_READS
-            .finish(
+            .finish_generation(
                 self.db.as_ref(),
-                &["attempts", "read_id"],
                 claim,
-                Some(retry_at_unix.unwrap_or(now_unix)),
+                job.generation,
+                retry_at_unix,
+                now_unix,
             )
             .await
     }

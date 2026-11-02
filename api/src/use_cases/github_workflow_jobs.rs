@@ -24,44 +24,33 @@ pub(crate) struct GitHubRunJobs {
 enum QueuedJobsRead {
     Saved,
     Missing,
-    ClaimLost,
+    Retry,
 }
 
-pub(crate) async fn refresh_job_for_delivery(
+pub(crate) async fn queue_jobs_for_delivery(
     state: &AppState,
     github_repository_id: u64,
-    job_id: u64,
+    run_id: u64,
+    run_attempt: u32,
 ) -> Result<(), ApiError> {
-    let Some(connection) = state
-        .metadata
-        .repositories()
+    let repositories = state.metadata.repositories();
+    let Some(connection) = repositories
         .github_connection_for_github_repository(github_repository_id)
         .await?
     else {
         return Ok(());
     };
-    let Some(job) = state
-        .github_app()?
-        .workflow_job(
-            connection.installation_id,
-            &connection.github_full_name,
-            job_id,
-        )
-        .await?
-    else {
-        return Ok(());
-    };
-    state
-        .metadata
-        .repositories()
-        .save_github_workflow_jobs(
+    repositories
+        .queue_github_workflow_job_read(
             &connection.repository_id,
-            connection.github_repository_id,
-            std::slice::from_ref(&job),
+            github_repository_id,
+            run_id,
+            run_attempt,
+            unix_now()?,
         )
         .await?;
-    github_job_logs::prefetch(state, std::slice::from_ref(&job), unix_now()?).await?;
-    publish(state, &connection, job.github_run_id).await
+    state.wakeups.github_job_reads.notify_one();
+    Ok(())
 }
 
 pub(crate) async fn run_jobs(
@@ -88,6 +77,7 @@ pub(crate) async fn run_jobs(
                 &connection.repository_id,
                 connection.github_repository_id,
                 run.github_run_id,
+                run.run_attempt,
                 now_unix,
             )
             .await?;
@@ -132,14 +122,21 @@ pub(crate) async fn retry_github_workflow_job_reads_once(
             .filter(|connection| connection.is_connected_to(job.github_repository_id));
         let outcome = match &connection {
             Some(connection) => {
-                read_queued_jobs(state, connection, job.github_run_id, claimed_at).await
+                read_queued_jobs(
+                    state,
+                    connection,
+                    job.github_run_id,
+                    job.run_attempt,
+                    claimed_at,
+                )
+                .await
             }
             None => Ok(QueuedJobsRead::Missing),
         };
         let finished_at = clock();
         let retry_at = match &outcome {
             Ok(QueuedJobsRead::Missing | QueuedJobsRead::Saved) => None,
-            Ok(QueuedJobsRead::ClaimLost) => Some(github_jobs_retry_at(job.attempts, finished_at)),
+            Ok(QueuedJobsRead::Retry) => Some(github_jobs_retry_at(job.attempts, finished_at)),
             Err(error) => {
                 tracing::warn!(
                     run_id = job.github_run_id,
@@ -165,19 +162,36 @@ async fn read_queued_jobs(
     state: &AppState,
     connection: &GitHubConnection,
     run_id: u64,
+    run_attempt: u32,
     now_unix: u64,
 ) -> Result<QueuedJobsRead, ApiError> {
     let repositories = state.metadata.repositories();
-    let Some(detail) = repositories
+    let mut detail = repositories
         .github_workflow_run(
             &connection.repository_id,
             connection.github_repository_id,
             run_id,
         )
-        .await?
-    else {
-        return Ok(QueuedJobsRead::Missing);
+        .await?;
+    if detail
+        .as_ref()
+        .is_none_or(|detail| detail.read.run.run_attempt < run_attempt)
+    {
+        super::github_workflow_runs::read_workflow_run(state, connection, run_id).await?;
+        detail = repositories
+            .github_workflow_run(
+                &connection.repository_id,
+                connection.github_repository_id,
+                run_id,
+            )
+            .await?;
+    }
+    let Some(detail) = detail else {
+        return Ok(QueuedJobsRead::Retry);
     };
+    if detail.read.run.run_attempt < run_attempt {
+        return Ok(QueuedJobsRead::Retry);
+    }
     let claimed = GitHubJobsRead {
         run_attempt: detail.read.run.run_attempt,
         read_at_unix: now_unix,
@@ -191,7 +205,7 @@ async fn read_queued_jobs(
         )
         .await?
     {
-        return Ok(QueuedJobsRead::ClaimLost);
+        return Ok(QueuedJobsRead::Retry);
     }
     match read_run_jobs(state, connection, &detail.read.run).await {
         Ok(()) => Ok(QueuedJobsRead::Saved),

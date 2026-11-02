@@ -137,14 +137,14 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
         "workflow_job",
         "in_progress",
         GITHUB_REPOSITORY_ID,
-        serde_json::json!({ "id": 901, "run_id": RUN_ID }),
+        serde_json::json!({ "id": 901, "run_id": RUN_ID, "run_attempt": 1 }),
     )
     .await;
     assert_eq!(read_logs(state, 0).await, 1);
     let finished = opened_run(state).await;
     assert_eq!(finished["jobs"][0]["conclusion"], "failure");
     assert_eq!(finished["jobs"][0]["steps"][1]["status"], "completed");
-    assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 2);
 
     let repositories = state.metadata.repositories();
     let read = repositories
@@ -169,14 +169,14 @@ async fn a_github_run_opens_on_the_run_page_with_its_jobs_and_finished_logs() {
     );
     let stored = opened_run(state).await;
     assert_eq!(stored["jobs"][0]["conclusion"], "failure");
-    assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 2);
     assert_eq!(
         retry_github_workflow_job_reads_once(state, unix_now())
             .await
             .unwrap(),
         1
     );
-    assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 2);
+    assert_eq!(fake.job_list_reads.load(Ordering::SeqCst), 3);
 
     let prefetched = fake.job_log_reads.load(Ordering::SeqCst);
     assert_eq!(
@@ -363,7 +363,7 @@ async fn a_failed_jobs_long_log_is_read_when_it_finishes_and_only_its_end_is_dow
         "workflow_job",
         "in_progress",
         GITHUB_REPOSITORY_ID,
-        serde_json::json!({ "id": 907, "run_id": RUN_ID }),
+        serde_json::json!({ "id": 907, "run_id": RUN_ID, "run_attempt": 1 }),
     )
     .await;
     assert_eq!(read_logs(state, 0).await, 1);

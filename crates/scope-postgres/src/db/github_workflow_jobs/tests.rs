@@ -269,7 +269,7 @@ async fn a_newer_jobs_read_survives_completion_of_an_active_read() {
         .await
         .unwrap();
     repositories
-        .queue_github_workflow_job_read(REPO, 42, 9, 100)
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 100)
         .await
         .unwrap();
     let first = repositories
@@ -278,7 +278,11 @@ async fn a_newer_jobs_read_survives_completion_of_an_active_read() {
         .unwrap()
         .remove(0);
     repositories
-        .queue_github_workflow_job_read(REPO, 42, 9, 101)
+        .queue_github_workflow_job_read(REPO, 42, 9, 2, 101)
+        .await
+        .unwrap();
+    repositories
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 101)
         .await
         .unwrap();
     repositories
@@ -299,6 +303,7 @@ async fn a_newer_jobs_read_survives_completion_of_an_active_read() {
         .unwrap()
         .remove(0);
     assert_ne!(first.generation, second.generation);
+    assert_eq!(second.run_attempt, 2);
     repositories
         .finish_github_workflow_job_read(&second, None, 101)
         .await
@@ -322,7 +327,7 @@ async fn a_failed_jobs_read_keeps_its_backoff_when_the_run_is_queued_again() {
         .await
         .unwrap();
     repositories
-        .queue_github_workflow_job_read(REPO, 42, 9, 100)
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 100)
         .await
         .unwrap();
     let failing = repositories
@@ -331,7 +336,7 @@ async fn a_failed_jobs_read_keeps_its_backoff_when_the_run_is_queued_again() {
         .unwrap()
         .remove(0);
     repositories
-        .queue_github_workflow_job_read(REPO, 42, 9, 140)
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 140)
         .await
         .unwrap();
     repositories
@@ -360,7 +365,7 @@ async fn a_stale_reader_cannot_finish_a_recreated_jobs_read() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
-        .queue_github_workflow_job_read(REPO, 42, 9, 100)
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 100)
         .await
         .unwrap();
     let stale = repositories
@@ -378,7 +383,7 @@ async fn a_stale_reader_cannot_finish_a_recreated_jobs_read() {
         .await
         .unwrap();
     repositories
-        .queue_github_workflow_job_read(REPO, 42, 9, 201)
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 201)
         .await
         .unwrap();
     let current = repositories
@@ -415,7 +420,7 @@ async fn an_expired_reader_cannot_release_a_newer_generation_claim() {
     let store = postgres_store();
     let repositories = store.repositories();
     repositories
-        .queue_github_workflow_job_read(REPO, 42, 9, 100)
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 100)
         .await
         .unwrap();
     let expired = repositories
@@ -429,7 +434,7 @@ async fn an_expired_reader_cannot_release_a_newer_generation_claim() {
         .unwrap()
         .remove(0);
     repositories
-        .queue_github_workflow_job_read(REPO, 42, 9, 201)
+        .queue_github_workflow_job_read(REPO, 42, 9, 1, 201)
         .await
         .unwrap();
     repositories

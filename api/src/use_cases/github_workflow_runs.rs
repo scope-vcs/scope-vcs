@@ -3,12 +3,11 @@ use scope_domain::{
     github_connection::GitHubConnection,
     requests::{GitHubBranch, github_retry_at},
 };
-use scope_postgres::db::GitHubWorkflowRunReadJob;
 
 const READ_BATCH_SIZE: u64 = 20;
 const READ_LEASE_SECS: u64 = 5 * 60;
 
-pub(crate) async fn refresh_workflow_run_for_delivery(
+pub(crate) async fn queue_workflow_run_for_delivery(
     state: &AppState,
     github_repository_id: u64,
     run_id: u64,
@@ -29,26 +28,8 @@ pub(crate) async fn refresh_workflow_run_for_delivery(
             now_unix,
         )
         .await?;
-    let job = GitHubWorkflowRunReadJob {
-        repo_id: connection.repository_id.clone(),
-        github_repository_id,
-        github_run_id: run_id,
-        attempts: 0,
-    };
-    match read_workflow_run(state, &connection, run_id).await {
-        Ok(()) => Ok(repositories
-            .finish_github_workflow_run_read(&job, None)
-            .await?),
-        Err(error) => {
-            tracing::warn!(
-                github_repository_id,
-                run_id,
-                error = %error.operator_diagnostic(),
-                "reading a GitHub workflow run for a delivery failed; it is read again later"
-            );
-            Ok(())
-        }
-    }
+    state.wakeups.github_check_reads.notify_one();
+    Ok(())
 }
 
 pub(crate) async fn retry_github_workflow_run_reads_once(
@@ -63,6 +44,9 @@ pub(crate) async fn retry_github_workflow_run_reads_once(
             READ_BATCH_SIZE,
         )
         .await?;
+    if jobs.len() as u64 == READ_BATCH_SIZE {
+        state.wakeups.github_check_reads.notify_one();
+    }
     let mut answered = 0;
     for job in jobs {
         let connection = repositories
@@ -92,13 +76,13 @@ pub(crate) async fn retry_github_workflow_run_reads_once(
             }
         };
         repositories
-            .finish_github_workflow_run_read(&job, retry_at)
+            .finish_github_workflow_run_read(&job, retry_at, now_unix)
             .await?;
     }
     Ok(answered)
 }
 
-async fn read_workflow_run(
+pub(super) async fn read_workflow_run(
     state: &AppState,
     connection: &GitHubConnection,
     run_id: u64,

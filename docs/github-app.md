@@ -539,8 +539,9 @@ whether the server has a GitHub App (`configured`). A connected repository
 without runs yet links maintainers to Test connection in the CI settings.
 
 Runs are stored in `scope_github_workflow_runs`. A `workflow_run` delivery for
-a connected repository makes Scope read `GET /repos/{owner}/{repo}/actions/runs/{id}`
-and store what GitHub answers. A stored run only moves forward: a later
+a connected repository durably queues a read of
+`GET /repos/{owner}/{repo}/actions/runs/{id}`. The background reader stores
+what GitHub answers. A stored run only moves forward: a later
 attempt (a re-run on GitHub) replaces it, and within an attempt a read never
 moves it back from completed or replaces a newer one, even when GitHub dates
 both reads to the same second. The read is kept in
@@ -562,8 +563,11 @@ Scope's own run ids start with `run_`, so the two never collide.
 and its jobs, and `…/jobs/{job_id}/log` the end of a finished job's log.
 
 Jobs come from GitHub's Actions API and are stored in
-`scope_github_workflow_jobs`. A `workflow_job` delivery reads that job again
-and sends a `GitHubWorkflowRunChanged` repository event, which the run's open
+`scope_github_workflow_jobs`. A `workflow_job` delivery durably queues a read
+of its run's jobs. Deliveries for the same run coalesce and retain the newest
+requested attempt. The background reader refreshes an older stored run first
+and sends a
+`GitHubWorkflowRunChanged` repository event, which the run's open
 pages use to refresh in place. Opening a run reads all of its jobs when Scope
 never read them for the run's current attempt, when the run is still going or
 lists no jobs and the last read is 30 seconds old, or when the run finished
@@ -647,7 +651,14 @@ a connect is either seen by the connect or finds the new link.
 
 Check deliveries for repositories or commits Scope does not watch (no request
 evaluation and no running connection test uses them) are acknowledged with
-204, and a failed read is left to the reconciler.
+204. Watched check deliveries durably mark the commit's evidence unsettled
+and queue a background read before returning 204. Workflow run and job
+reads use the existing leased queues, coalescing repeat deliveries for the
+same run. Wakeups start the readers promptly; expired claims recover work
+after a process stops. A delivery during a read stays pending until another
+read lands, so the merge gate cannot use stale results. Database failures
+are returned to GitHub for redelivery. Installation and repository visibility
+events keep their synchronous confirmation because they change access.
 
 ## Local development
 

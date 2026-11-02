@@ -18,6 +18,7 @@ mod public_repositories;
 mod review_bot_gate;
 mod review_imports;
 mod run_page;
+mod webhook_reads;
 
 pub(in crate::workflow_tests) const REQUIRED_CHECK: &str = "ci / test";
 

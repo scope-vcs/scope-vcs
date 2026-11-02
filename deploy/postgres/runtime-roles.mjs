@@ -16,8 +16,8 @@ const repositoryTables = names(`file_changes git_compaction_jobs git_heads git_p
   repository_invite_emails repository_landing_files repository_members repository_workflow_catalogs repository_workflow_files visibility_change_sets
   visibility_changes workflow_revisions dependency_analyses dependency_reports dependency_analysis_jobs
   github_connections github_required_checks github_pushes github_pull_requests
-  github_setup_checks github_workflow_runs github_workflow_run_reads github_run_import_counts
-  github_run_imports github_workflow_jobs github_workflow_job_logs github_workflow_job_reads github_workflow_job_log_reads`);
+  github_setup_checks github_workflow_runs github_run_import_counts
+  github_run_imports github_workflow_jobs github_workflow_job_logs github_workflow_job_log_reads`);
 const runTables = names(`run_attempt_cache_setups run_attempt_caches run_attempt_steps run_attempts
   runs run_jobs run_logs`);
 const nativeRunsTables = names('native_runs_accounts');
@@ -25,12 +25,13 @@ const collaborationTables = names(`request_discussion_read_states request_discus
   request_discussions request_events request_invitees request_ratings request_revisions requests
   request_claims request_attention_states request_check_evaluations request_auto_merge_intents
   request_revision_context_receipts request_revision_diff_stats request_revision_diff_files
-  github_check_runs github_check_refreshes github_accounts github_review_imports
+  github_check_runs github_accounts github_review_imports
   github_review_bots github_imported_comments github_review_bot_statuses`);
+const githubReadTables = names(`github_check_refreshes github_workflow_run_reads github_workflow_job_reads`);
 const authTables = names(`auth_identities cli_browser_logins cli_device_logins cli_exchange_grants
   cli_sessions clerk_user_deletions users`);
 export const tables = [...cacheTables, ...mediaTables, ...repositoryTables, ...runTables,
-  ...nativeRunsTables, ...collaborationTables, ...authTables, 'seaql_migrations'].sort();
+  ...nativeRunsTables, ...collaborationTables, ...githubReadTables, ...authTables, 'seaql_migrations'].sort();
 const crud = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 function policy(write, read = [], lock = []) {
   return Object.fromEntries([
@@ -42,7 +43,7 @@ function policy(write, read = [], lock = []) {
 }
 export const grants = {
   scope_api: policy([...repositoryTables, ...runTables, ...nativeRunsTables, ...collaborationTables,
-    ...authTables, ...mediaTables, ...cacheTables]),
+    ...authTables, ...mediaTables, ...cacheTables, ...githubReadTables]),
   scope_run_worker: { ...policy([...names(`git_compaction_jobs git_pool_packs git_segment_uploads
     metadata_locks object_references orphan_object_jobs outbox_jobs projection_files
     projection_read_models push_trigger_evaluations repo_storage_cleanup_jobs workflow_revisions

@@ -174,6 +174,9 @@ async fn request_check_deliveries_refresh_a_running_setup_test_of_the_same_commi
     )
     .await;
     assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+    crate::use_cases::github_check_results::reconcile_github_checks_once(&state, unix_now())
+        .await
+        .unwrap();
     let after = setup_check(&state).await;
     assert_eq!(after["state"], "waiting");
     assert_eq!(after["check_names"], serde_json::json!(["test"]));

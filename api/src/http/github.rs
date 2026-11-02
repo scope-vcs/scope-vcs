@@ -492,7 +492,7 @@ pub(crate) async fn receive_github_webhook(
             workflow_run_id,
         } => {
             if let Some(run_id) = workflow_run_id {
-                github_workflow_runs::refresh_workflow_run_for_delivery(
+                github_workflow_runs::queue_workflow_run_for_delivery(
                     &state,
                     github_repository_id,
                     run_id,
@@ -500,35 +500,33 @@ pub(crate) async fn receive_github_webhook(
                 )
                 .await?;
             }
-            if let Err(error) = github_check_results::refresh_checks_for_delivery(
+            github_check_results::queue_checks_for_delivery(
                 &state,
                 github_repository_id,
                 &commit_oid,
             )
-            .await
-            {
-                tracing::warn!(
-                    github_repository_id,
-                    commit_oid,
-                    error = %error.operator_diagnostic(),
-                    "reading GitHub checks for a delivery failed"
-                );
-            }
+            .await?;
         }
         GitHubWebhookEvent::WorkflowJobChanged {
             github_repository_id,
-            job_id,
+            run_id,
+            run_attempt,
+            commit_oid,
         } => {
-            if let Err(error) =
-                github_workflow_jobs::refresh_job_for_delivery(&state, github_repository_id, job_id)
-                    .await
-            {
-                tracing::warn!(
+            github_workflow_jobs::queue_jobs_for_delivery(
+                &state,
+                github_repository_id,
+                run_id,
+                run_attempt,
+            )
+            .await?;
+            if let Some(commit_oid) = commit_oid {
+                github_check_results::queue_checks_for_delivery(
+                    &state,
                     github_repository_id,
-                    job_id,
-                    error = %error.operator_diagnostic(),
-                    "reading a GitHub job for a delivery failed"
-                );
+                    &commit_oid,
+                )
+                .await?;
             }
         }
         GitHubWebhookEvent::RepositoryVisibilityChanged {

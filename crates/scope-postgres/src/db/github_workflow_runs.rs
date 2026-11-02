@@ -35,6 +35,8 @@ struct WorkflowRunRow {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubWorkflowRunReadJob {
+    pub read_id: u64,
+    pub generation: u64,
     pub repo_id: String,
     pub github_repository_id: u64,
     pub github_run_id: u64,
@@ -43,6 +45,8 @@ pub struct GitHubWorkflowRunReadJob {
 
 #[derive(FromQueryResult)]
 struct ReadJobRow {
+    read_id: i64,
+    generation: i64,
     repo_id: String,
     github_repository_id: i64,
     github_run_id: i64,
@@ -104,7 +108,7 @@ const RUN_READS: GitHubReadQueue = GitHubReadQueue {
     key: &["repo_id", "github_repository_id", "github_run_id"],
     joined: "",
     joined_on: "",
-    returning: "read.repo_id, read.github_repository_id, read.github_run_id, read.attempts",
+    returning: "read.read_id, read.generation, read.repo_id, read.github_repository_id, read.github_run_id, read.attempts",
     label: "GitHub workflow run read",
 };
 
@@ -137,7 +141,8 @@ impl RepositoryStore {
                 "INSERT INTO scope_github_workflow_run_reads (repo_id, github_repository_id,
                     github_run_id, attempts, next_attempt_at_unix)
                  VALUES ($1, $2, $3, 0, $4)
-                 ON CONFLICT DO NOTHING",
+                 ON CONFLICT (repo_id, github_repository_id, github_run_id)
+                 DO UPDATE SET generation = scope_github_workflow_run_reads.generation + 1",
                 [
                     repo_id.into(),
                     u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
@@ -162,6 +167,8 @@ impl RepositoryStore {
             .into_iter()
             .map(|row| {
                 Ok(GitHubWorkflowRunReadJob {
+                    read_id: i64_to_u64(row.read_id, "GitHub run read id")?,
+                    generation: i64_to_u64(row.generation, "GitHub run read generation")?,
                     repo_id: row.repo_id,
                     github_repository_id: i64_to_u64(
                         row.github_repository_id,
@@ -179,17 +186,22 @@ impl RepositoryStore {
         &self,
         job: &GitHubWorkflowRunReadJob,
         retry_at_unix: Option<u64>,
+        now_unix: u64,
     ) -> Result<(), PostgresError> {
+        let claim = vec![
+            job.repo_id.clone().into(),
+            u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
+            u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
+            u32_to_i32(job.attempts, "GitHub workflow run read attempts")?.into(),
+            u64_to_i64(job.read_id, "GitHub workflow run read id")?.into(),
+        ];
         RUN_READS
-            .finish(
+            .finish_generation(
                 self.db.as_ref(),
-                &[],
-                vec![
-                    job.repo_id.clone().into(),
-                    u64_to_i64(job.github_repository_id, "GitHub repository id")?.into(),
-                    u64_to_i64(job.github_run_id, "GitHub workflow run id")?.into(),
-                ],
+                claim,
+                job.generation,
                 retry_at_unix,
+                now_unix,
             )
             .await
     }
@@ -271,8 +283,8 @@ impl RepositoryStore {
         .map(|row| {
             let jobs_read = match (row.jobs_read_attempt, row.jobs_read_at_unix) {
                 (Some(attempt), Some(read_at)) => Some(GitHubJobsRead {
-                    run_attempt: i32_to_u32(attempt, "GitHub jobs read attempt")?,
-                    read_at_unix: i64_to_u64(read_at, "GitHub jobs read time")?,
+                    run_attempt: i32_to_u32(attempt, "GitHub workflow run read attempt")?,
+                    read_at_unix: i64_to_u64(read_at, "GitHub workflow run read time")?,
                 }),
                 _ => None,
             };
@@ -294,11 +306,11 @@ impl RepositoryStore {
         next: Option<GitHubJobsRead>,
     ) -> Result<bool, PostgresError> {
         let attempt = |read: Option<GitHubJobsRead>| {
-            read.map(|read| u32_to_i32(read.run_attempt, "GitHub jobs read attempt"))
+            read.map(|read| u32_to_i32(read.run_attempt, "GitHub workflow run read attempt"))
                 .transpose()
         };
         let read_at = |read: Option<GitHubJobsRead>| {
-            read.map(|read| u64_to_i64(read.read_at_unix, "GitHub jobs read time"))
+            read.map(|read| u64_to_i64(read.read_at_unix, "GitHub workflow run read time"))
                 .transpose()
         };
         let result = self

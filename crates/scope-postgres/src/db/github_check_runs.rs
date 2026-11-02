@@ -16,19 +16,10 @@ pub struct GitHubCheckCommit {
     pub commit_oid: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GitHubCheckRefreshCandidate {
-    pub commit: GitHubCheckCommit,
-    pub request_id: String,
-    pub head_oid: String,
-}
-
 #[derive(FromQueryResult)]
 struct CandidateRow {
     repo_id: String,
     github_repository_id: i64,
-    request_id: String,
-    head_oid: String,
     tested_oid: String,
 }
 
@@ -43,6 +34,29 @@ impl GitHubCheckCommit {
 }
 
 impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_github_check_refresh"))]
+    pub async fn queue_github_check_refresh(
+        &self,
+        commit: &GitHubCheckCommit,
+        now_unix: u64,
+    ) -> Result<(), PostgresError> {
+        let mut values = commit.key_values()?;
+        values.push(u64_to_i64(now_unix, "GitHub check refresh time")?.into());
+        self.db
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "INSERT INTO scope_github_check_refreshes (repo_id, github_repository_id,
+                commit_oid, next_read_at_unix, started_reads, applied_read)
+             VALUES ($1, $2, $3, $4, 1, 0)
+             ON CONFLICT (repo_id, github_repository_id, commit_oid) DO UPDATE
+                SET started_reads = scope_github_check_refreshes.started_reads + 1,
+                    next_read_at_unix = least(scope_github_check_refreshes.next_read_at_unix, $4)",
+                values,
+            ))
+            .await?;
+        Ok(())
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_github_check_read"))]
     pub async fn start_github_check_read(
         &self,
@@ -263,12 +277,13 @@ impl RequestStore {
         &self,
         now_unix: u64,
         limit: u64,
-    ) -> Result<Vec<GitHubCheckRefreshCandidate>, PostgresError> {
+    ) -> Result<Vec<GitHubCheckCommit>, PostgresError> {
         CandidateRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
-            SELECT request.repo_id, connection.github_repository_id, evaluation.request_id,
-                   evaluation.head_oid, evaluation.tested_oid
+            SELECT repo_id, github_repository_id, tested_oid FROM (
+            SELECT request.repo_id, connection.github_repository_id, evaluation.tested_oid,
+                   coalesce(refresh.next_read_at_unix, 0) AS due_at
               FROM scope_request_check_evaluations evaluation
               JOIN scope_requests request
                 ON request.id = evaluation.request_id
@@ -286,7 +301,20 @@ impl RequestStore {
                AND request.merged_at_unix IS NULL
                AND request.closed_at_unix IS NULL
                AND coalesce(refresh.next_read_at_unix, 0) <= $1
-             ORDER BY coalesce(refresh.next_read_at_unix, 0), evaluation.request_id
+               AND coalesce(refresh.lease_until_unix, 0) <= $1
+            UNION
+            SELECT refresh.repo_id, refresh.github_repository_id, refresh.commit_oid,
+                   refresh.next_read_at_unix AS due_at
+              FROM scope_github_check_refreshes refresh
+              JOIN scope_github_connections connection
+                ON connection.repo_id = refresh.repo_id
+               AND connection.github_repository_id = refresh.github_repository_id
+               AND connection.status = 'Connected'
+             WHERE refresh.started_reads > refresh.applied_read
+               AND refresh.next_read_at_unix <= $1 AND refresh.lease_until_unix <= $1
+            ) candidates
+             GROUP BY repo_id, github_repository_id, tested_oid
+             ORDER BY min(due_at), repo_id, github_repository_id, tested_oid
              LIMIT $2
             "#,
             [
@@ -298,17 +326,10 @@ impl RequestStore {
         .await?
         .into_iter()
         .map(|row| {
-            Ok(GitHubCheckRefreshCandidate {
-                commit: GitHubCheckCommit {
-                    repo_id: row.repo_id,
-                    github_repository_id: i64_to_u64(
-                        row.github_repository_id,
-                        "GitHub repository id",
-                    )?,
-                    commit_oid: row.tested_oid,
-                },
-                request_id: row.request_id,
-                head_oid: row.head_oid,
+            Ok(GitHubCheckCommit {
+                repo_id: row.repo_id,
+                github_repository_id: i64_to_u64(row.github_repository_id, "GitHub repository id")?,
+                commit_oid: row.tested_oid,
             })
         })
         .collect()
@@ -331,11 +352,13 @@ impl RequestStore {
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_github_check_refreshes (repo_id, github_repository_id,
-                    commit_oid, next_read_at_unix, started_reads, applied_read)
-                 VALUES ($1, $2, $3, $4, 0, 0)
+                    commit_oid, next_read_at_unix, started_reads, applied_read, lease_until_unix)
+                 VALUES ($1, $2, $3, $4, 0, 0, $4)
                  ON CONFLICT (repo_id, github_repository_id, commit_oid) DO UPDATE
-                    SET next_read_at_unix = EXCLUDED.next_read_at_unix
+                    SET next_read_at_unix = EXCLUDED.next_read_at_unix,
+                        lease_until_unix = EXCLUDED.lease_until_unix
                   WHERE scope_github_check_refreshes.next_read_at_unix <= $5
+                    AND scope_github_check_refreshes.lease_until_unix <= $5
                  RETURNING 1 AS claimed",
                 values,
             ))
@@ -348,14 +371,20 @@ impl RequestStore {
         &self,
         commit: &GitHubCheckCommit,
         next_read_at_unix: u64,
+        lease_until_unix: u64,
     ) -> Result<(), PostgresError> {
         let mut values = commit.key_values()?;
         values.push(u64_to_i64(next_read_at_unix, "GitHub check refresh time")?.into());
+        values.push(u64_to_i64(lease_until_unix, "GitHub check lease time")?.into());
         self.db
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "UPDATE scope_github_check_refreshes SET next_read_at_unix = $4
-                  WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3",
+                "UPDATE scope_github_check_refreshes
+                    SET next_read_at_unix = CASE WHEN started_reads = applied_read THEN $4
+                                                ELSE next_read_at_unix END,
+                        lease_until_unix = 0
+                  WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3
+                    AND lease_until_unix = $5",
                 values,
             ))
             .await?;

@@ -525,12 +525,23 @@ async fn apply_github_result(store: &super::super::MetadataStore, passed: bool) 
 
 #[tokio::test]
 async fn manual_merge_rejects_check_reads_that_changed_after_preparation() {
-    for change in ["in-flight", "failed", "new-passing-read", "expired"] {
+    for change in [
+        "queued",
+        "in-flight",
+        "failed",
+        "new-passing-read",
+        "expired",
+    ] {
         let store = merge_store_with_github(true).await;
         apply_github_result(&store, true).await;
         let prepared = merge_preparation(&store).await;
         let mut command = merge_command(&store, "user_owner", prepared).await;
         match change {
+            "queued" => store
+                .requests()
+                .queue_github_check_refresh(&github_commit(), 5)
+                .await
+                .unwrap(),
             "in-flight" => {
                 store
                     .requests()

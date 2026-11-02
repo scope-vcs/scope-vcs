@@ -59,6 +59,7 @@ fAFIvg2Ihs8lJFryn8Z/kFk=
 
 #[derive(Default)]
 pub(super) struct FakeGitHub {
+    pub(super) api_requests: AtomicUsize,
     pub(super) user_installations: Mutex<Vec<u64>>,
     pub(super) user_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
     pub(super) installation_repositories: Mutex<Vec<(u64, serde_json::Value)>>,
@@ -352,16 +353,6 @@ impl FakeGitHub {
             .insert(job_id, log.map(str::to_string));
     }
 
-    fn job(&self, job_id: u64) -> Option<serde_json::Value> {
-        self.workflow_jobs
-            .lock()
-            .unwrap()
-            .values()
-            .flatten()
-            .find(|job| job["id"] == job_id)
-            .cloned()
-    }
-
     pub(super) fn report_check_runs(&self, commit_oid: &str, runs: Vec<serde_json::Value>) {
         self.check_runs
             .lock()
@@ -562,7 +553,7 @@ impl FakeGitHub {
                 "/repos/{owner}/{name}/actions/runs/{id}/attempts/{attempt}/jobs",
                 get(
                     |AxumState(fake): AxumState<Arc<FakeGitHub>>,
-                     AxumPath((_, _, id, _)): AxumPath<(String, String, u64, u32)>,
+                     AxumPath((_, _, id, attempt)): AxumPath<(String, String, u64, u32)>,
                      AxumQuery(query): AxumQuery<HashMap<String, String>>| async move {
                         fake.job_list_reads.fetch_add(1, Ordering::SeqCst);
                         if fake.job_list_unavailable.load(Ordering::SeqCst) {
@@ -570,23 +561,12 @@ impl FakeGitHub {
                         }
                         let jobs = if query["page"] == "1" {
                             fake.workflow_jobs.lock().unwrap().get(&id).cloned().unwrap_or_default()
+                                .into_iter().filter(|job| job["run_attempt"].as_u64() == Some(u64::from(attempt))).collect()
                         } else {
                             Vec::new()
                         };
                         Json(serde_json::json!({ "total_count": jobs.len(), "jobs": jobs }))
                             .into_response()
-                    },
-                ),
-            )
-            .route(
-                "/repos/{owner}/{name}/actions/jobs/{id}",
-                get(
-                    |AxumState(fake): AxumState<Arc<FakeGitHub>>,
-                     AxumPath((_, _, id)): AxumPath<(String, String, u64)>| async move {
-                        fake.job(id).map_or_else(
-                            || StatusCode::NOT_FOUND.into_response(),
-                            |job| Json(job).into_response(),
-                        )
                     },
                 ),
             )
@@ -647,6 +627,15 @@ impl FakeGitHub {
             )
             .merge(reviews::routes())
             .merge(pulls::routes())
+            .layer(axum::middleware::from_fn_with_state(
+                Arc::clone(&self),
+                async |AxumState(fake): AxumState<Arc<FakeGitHub>>,
+                       request: axum::extract::Request,
+                       next: axum::middleware::Next| {
+                    fake.api_requests.fetch_add(1, Ordering::SeqCst);
+                    next.run(request).await
+                },
+            ))
             .with_state(self);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -754,6 +743,37 @@ pub(super) async fn deliver_event(
     )
     .await;
     assert_eq!(delivery.status(), StatusCode::NO_CONTENT);
+    if matches!(
+        event,
+        "workflow_run" | "check_run" | "check_suite" | "workflow_job"
+    ) {
+        use crate::use_cases::{github_check_results, github_workflow_jobs, github_workflow_runs};
+        let now = unix_now();
+        github_workflow_runs::retry_github_workflow_run_reads_once(state, now)
+            .await
+            .unwrap();
+        github_workflow_jobs::retry_github_workflow_job_reads_once(state, now)
+            .await
+            .unwrap();
+        if let Some(connection) = state
+            .metadata
+            .repositories()
+            .github_connection_for_github_repository(github_repository_id)
+            .await
+            .unwrap()
+            && let Some(sha) = subject.get("head_sha").and_then(serde_json::Value::as_str)
+            && state
+                .metadata
+                .requests()
+                .github_commit_is_watched(&connection.repository_id, sha)
+                .await
+                .unwrap()
+        {
+            github_check_results::reconcile_github_checks_once(state, now)
+                .await
+                .unwrap();
+        }
+    }
 }
 
 pub(super) async fn github_api(

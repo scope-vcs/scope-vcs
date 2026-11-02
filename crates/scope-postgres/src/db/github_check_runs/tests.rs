@@ -190,7 +190,7 @@ async fn the_reconciler_takes_a_commit_once_until_its_next_read_is_due() {
             .unwrap()
     );
     requests
-        .schedule_github_check_refresh(&commit, 700)
+        .schedule_github_check_refresh(&commit, 700, 220)
         .await
         .unwrap();
     assert!(
@@ -202,6 +202,96 @@ async fn the_reconciler_takes_a_commit_once_until_its_next_read_is_due() {
     assert!(
         requests
             .claim_github_check_refresh(&commit, 700, 820)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn a_delivery_during_a_read_stays_due_without_stealing_the_lease() {
+    let store = postgres_store();
+    let requests = store.requests();
+    let commit = GitHubCheckCommit {
+        repo_id: "owner/repo".into(),
+        github_repository_id: 42,
+        commit_oid: "a".repeat(40),
+    };
+    requests
+        .queue_github_check_refresh(&commit, 100)
+        .await
+        .unwrap();
+    assert!(
+        requests
+            .claim_github_check_refresh(&commit, 100, 220)
+            .await
+            .unwrap()
+    );
+    let read = requests.start_github_check_read(&commit).await.unwrap();
+    requests
+        .queue_github_check_refresh(&commit, 101)
+        .await
+        .unwrap();
+    assert!(
+        !requests
+            .claim_github_check_refresh(&commit, 101, 221)
+            .await
+            .unwrap()
+    );
+    requests
+        .apply_github_check_read(
+            &commit,
+            read,
+            100,
+            &[run(1, GitHubCheckConclusion::Success)],
+        )
+        .await
+        .unwrap();
+    requests
+        .schedule_github_check_refresh(&commit, 700, 220)
+        .await
+        .unwrap();
+    assert_eq!(
+        requests
+            .settled_github_check_read_started_at(&commit)
+            .await
+            .unwrap(),
+        None
+    );
+    assert!(
+        requests
+            .claim_github_check_refresh(&commit, 102, 222)
+            .await
+            .unwrap()
+    );
+    requests
+        .schedule_github_check_refresh(&commit, 900, 220)
+        .await
+        .unwrap();
+    assert!(
+        !requests
+            .claim_github_check_refresh(&commit, 103, 223)
+            .await
+            .unwrap()
+    );
+    let next = requests.start_github_check_read(&commit).await.unwrap();
+    requests
+        .apply_github_check_read(&commit, next, 102, &[])
+        .await
+        .unwrap();
+    requests
+        .schedule_github_check_refresh(&commit, 702, 222)
+        .await
+        .unwrap();
+    assert_eq!(
+        requests
+            .settled_github_check_read_started_at(&commit)
+            .await
+            .unwrap(),
+        Some(102)
+    );
+    assert!(
+        !requests
+            .claim_github_check_refresh(&commit, 104, 224)
             .await
             .unwrap()
     );

@@ -518,13 +518,13 @@ async fn a_late_renewal_onto_the_same_private_main_queues_no_second_push() {
     assert!(
         candidates
             .iter()
-            .all(|candidate| candidate.commit.commit_oid != old.tested_oid)
+            .all(|candidate| candidate.commit_oid != old.tested_oid)
     );
     assert!(
         candidates
             .iter()
-            .any(|candidate| candidate.request_id == REQUEST_ID
-                && candidate.commit.commit_oid == renewed.tested_oid)
+            .any(|candidate| candidate.repo_id == TEST_REPO_ID
+                && candidate.commit_oid == renewed.tested_oid)
     );
 
     let late = state

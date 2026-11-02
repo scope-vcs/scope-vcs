@@ -13,15 +13,14 @@ use scope_domain::{
     },
 };
 use scope_postgres::db::GitHubCheckCommit;
-use std::{collections::BTreeSet, time::Duration};
-use tokio::time::MissedTickBehavior;
+use std::time::Duration;
 
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
 const PENDING_REFRESH_SECS: u64 = 2 * 60;
 const SETTLED_REFRESH_SECS: u64 = 10 * 60;
 const RECONCILE_BATCH_SIZE: u64 = 20;
 
-pub(crate) async fn refresh_checks_for_delivery(
+pub(crate) async fn queue_checks_for_delivery(
     state: &AppState,
     github_repository_id: u64,
     commit_oid: &str,
@@ -42,7 +41,13 @@ pub(crate) async fn refresh_checks_for_delivery(
     {
         return Ok(());
     }
-    refresh_commit_checks(state, &connection, commit_oid).await
+    state
+        .metadata
+        .requests()
+        .queue_github_check_refresh(&check_commit(&connection, commit_oid), unix_now()?)
+        .await?;
+    state.wakeups.github_check_reads.notify_one();
+    Ok(())
 }
 
 pub(crate) async fn confirm_recent_github_checks(
@@ -174,13 +179,11 @@ pub(crate) async fn reconcile_github_checks_once(
     let candidates = requests
         .github_check_refresh_candidates(now_unix, RECONCILE_BATCH_SIZE)
         .await?;
-    let mut examined = BTreeSet::new();
+    if candidates.len() as u64 == RECONCILE_BATCH_SIZE {
+        state.wakeups.github_check_reads.notify_one();
+    }
     let mut refreshed = 0;
-    for candidate in candidates {
-        let commit = &candidate.commit;
-        if !examined.insert((commit.repo_id.clone(), commit.commit_oid.clone())) {
-            continue;
-        }
+    for commit in &candidates {
         if !requests
             .claim_github_check_refresh(
                 commit,
@@ -212,14 +215,18 @@ pub(crate) async fn reconcile_github_checks_once(
                 continue;
             }
         }
-        if !any_checks_pending(state, commit).await? {
-            requests
-                .schedule_github_check_refresh(
-                    commit,
-                    now_unix.saturating_add(SETTLED_REFRESH_SECS),
-                )
-                .await?;
-        }
+        let next_read_at = if any_checks_pending(state, commit).await? {
+            now_unix.saturating_add(PENDING_REFRESH_SECS)
+        } else {
+            now_unix.saturating_add(SETTLED_REFRESH_SECS)
+        };
+        requests
+            .schedule_github_check_refresh(
+                commit,
+                next_read_at,
+                now_unix.saturating_add(PENDING_REFRESH_SECS),
+            )
+            .await?;
     }
     Ok(refreshed)
 }
@@ -250,9 +257,9 @@ impl BackgroundWork {
         self.spawn(
             BackgroundLoop {
                 name: "GitHub check reconciliation",
-                cadence: Cadence::Fixed {
-                    period: RECONCILE_INTERVAL,
-                    missed_ticks: MissedTickBehavior::Skip,
+                cadence: Cadence::AfterPass {
+                    delay: RECONCILE_INTERVAL,
+                    wakeup: Some(|wakeups| &wakeups.github_check_reads),
                 },
                 readiness: Readiness::SchemaRequired,
             },

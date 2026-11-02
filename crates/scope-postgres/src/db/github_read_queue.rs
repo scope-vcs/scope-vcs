@@ -75,6 +75,29 @@ impl GitHubReadQueue {
         .await?)
     }
 
+    pub(super) async fn finish_generation(
+        &self,
+        conn: &impl ConnectionTrait,
+        claim: Vec<Value>,
+        generation: u64,
+        retry_at_unix: Option<u64>,
+        now_unix: u64,
+    ) -> Result<(), PostgresError> {
+        if retry_at_unix.is_none() {
+            let mut values = claim.clone();
+            values.push(u64_to_i64(generation, "GitHub read generation")?.into());
+            self.finish(conn, &["attempts", "read_id", "generation"], values, None)
+                .await?;
+        }
+        self.finish(
+            conn,
+            &["attempts", "read_id"],
+            claim,
+            Some(retry_at_unix.unwrap_or(now_unix)),
+        )
+        .await
+    }
+
     pub(super) async fn finish(
         &self,
         conn: &impl ConnectionTrait,

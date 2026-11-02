@@ -10,6 +10,7 @@ use tokio::{
 pub(crate) struct BackgroundWakeups {
     pub(crate) auto_merge: Notify,
     pub(crate) clerk_user_deletion: Notify,
+    pub(crate) github_check_reads: Notify,
     pub(crate) github_job_logs: Notify,
     pub(crate) github_job_reads: Notify,
     pub(crate) github_pull_requests: Notify,

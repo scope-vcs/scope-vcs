@@ -297,7 +297,7 @@ async fn retargeted_child_requires_fresh_github_confirmation_before_automatic_la
             head,
             vec![check_run(run_id, REQUIRED_CHECK, head, Some("success"))],
         );
-        crate::use_cases::github_check_results::refresh_checks_for_delivery(
+        crate::use_cases::github_check_results::queue_checks_for_delivery(
             &fixture.state,
             GITHUB_REPOSITORY_ID,
             head,
@@ -305,6 +305,12 @@ async fn retargeted_child_requires_fresh_github_confirmation_before_automatic_la
         .await
         .unwrap();
     }
+    crate::use_cases::github_check_results::reconcile_github_checks_once(
+        &fixture.state,
+        unix_now(),
+    )
+    .await
+    .unwrap();
     let enabled = authorize_layer(&fixture.state, &fixture.child_id).await;
     assert_eq!(enabled["intent"]["status"], "Active");
     let reviewed_checks = fixture

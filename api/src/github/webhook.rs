@@ -40,7 +40,9 @@ pub(crate) enum GitHubWebhookEvent {
     },
     WorkflowJobChanged {
         github_repository_id: u64,
-        job_id: u64,
+        run_id: u64,
+        run_attempt: u32,
+        commit_oid: Option<String>,
     },
     RepositoryVisibilityChanged {
         github_repository_id: u64,
@@ -157,7 +159,9 @@ impl GitHubWebhookEvent {
             "workflow_job" => match (payload.repository, payload.workflow_job) {
                 (Some(repository), Some(job)) => Self::WorkflowJobChanged {
                     github_repository_id: repository.id,
-                    job_id: job.id,
+                    run_id: job.run_id,
+                    run_attempt: job.run_attempt,
+                    commit_oid: job.head_sha.filter(|sha| is_commit_oid(sha)),
                 },
                 _ => Self::Ignored,
             },
@@ -228,7 +232,7 @@ struct Payload {
     check_run: Option<ChecksSubject>,
     check_suite: Option<ChecksSubject>,
     workflow_run: Option<ChecksSubject>,
-    workflow_job: Option<Id>,
+    workflow_job: Option<JobSubject>,
     pull_request: Option<PullRequestSubject>,
     issue: Option<IssueSubject>,
     comment: Option<CommentSubject>,
@@ -260,6 +264,13 @@ struct PullRequestBranch {
 #[derive(Deserialize)]
 struct Id {
     id: u64,
+}
+
+#[derive(Deserialize)]
+struct JobSubject {
+    run_id: u64,
+    run_attempt: u32,
+    head_sha: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -466,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn job_events_name_the_repository_and_job_to_read_again() {
+    fn job_events_name_the_repository_and_run_to_read_again() {
         let parse = |body: serde_json::Value| {
             GitHubWebhookEvent::parse("workflow_job", body.to_string().as_bytes()).unwrap()
         };
@@ -474,11 +485,13 @@ mod tests {
             parse(serde_json::json!({
                 "action": "in_progress",
                 "repository": { "id": 42 },
-                "workflow_job": { "id": 7, "run_id": 9 },
+                "workflow_job": { "id": 7, "run_id": 9, "run_attempt": 1 },
             })),
             GitHubWebhookEvent::WorkflowJobChanged {
                 github_repository_id: 42,
-                job_id: 7
+                run_id: 9,
+                run_attempt: 1,
+                commit_oid: None
             }
         );
         assert_eq!(
