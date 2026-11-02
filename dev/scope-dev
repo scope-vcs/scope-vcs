@@ -154,8 +154,8 @@ esac
 use_slot "$(recorded_slot)"
 CLAIM_TOKEN="$(cat "$CLAIM_FILE" 2>/dev/null || true)"
 
-if [[ -d "$HOME/.local/share/scope-vcs-tools/node-24/bin" ]]; then
-  export PATH="$HOME/.local/share/scope-vcs-tools/node-24/bin:$PATH"
+if [[ -d "$HOME/.local/share/scope-vcs-tools/node-26/bin" ]]; then
+  export PATH="$HOME/.local/share/scope-vcs-tools/node-26/bin:$PATH"
 fi
 if [[ -d "$HOME/.cargo/bin" ]]; then
   export PATH="$HOME/.cargo/bin:$PATH"
