@@ -273,3 +273,34 @@ async fn webhook_bursts_acknowledge_without_github_and_recover_expired_reads() {
         1
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_job_delivery_for_a_deleted_run_stops_retrying() {
+    let request = owner_request("github-deleted-run-jobs", &[REQUIRED_CHECK]).await;
+    let (state, head) = (&request.state, request.head());
+    let response = webhook(
+        state,
+        "workflow_job",
+        serde_json::json!({
+            "action": "completed",
+            "repository": {"id": GITHUB_REPOSITORY_ID},
+            "workflow_job": {"id": 901, "run_id": 900, "run_attempt": 1, "head_sha": head},
+        }),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let repositories = state.metadata.repositories();
+    let far_future = unix_now() + 30 * 24 * 60 * 60;
+    for read in 0..4 {
+        let now = far_future + read * 2 * 60 * 60;
+        github_workflow_jobs::retry_github_workflow_job_reads_once(state, now)
+            .await
+            .unwrap();
+    }
+    let unread = repositories
+        .claim_due_github_workflow_job_reads(far_future * 2, far_future * 2 + 60, 1)
+        .await
+        .unwrap();
+    assert!(unread.is_empty());
+}

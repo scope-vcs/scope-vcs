@@ -119,8 +119,14 @@ pub fn github_jobs_not_read_yet(
         && (read_queued || !last_read.is_some_and(|read| read.run_attempt == run.run_attempt))
 }
 
+const MISSING_RUN_READ_ATTEMPTS: u32 = 4;
+
 pub fn github_jobs_retry_at(attempts: u32, now_unix: u64) -> u64 {
     github_retry_at(attempts.clamp(1, 4), now_unix).unwrap_or(now_unix.saturating_add(30 * 60))
+}
+
+pub fn github_missing_run_read_is_final(attempts: u32) -> bool {
+    attempts >= MISSING_RUN_READ_ATTEMPTS
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -339,6 +345,12 @@ mod tests {
     fn a_pending_jobs_read_keeps_retrying_after_the_normal_github_limit() {
         assert_eq!(github_jobs_retry_at(1, 100), 130);
         assert_eq!(github_jobs_retry_at(5, 100), 1900);
+    }
+
+    #[test]
+    fn a_run_github_cannot_find_gets_a_bounded_grace_period() {
+        assert!(!github_missing_run_read_is_final(3));
+        assert!(github_missing_run_read_is_final(4));
     }
 
     #[test]

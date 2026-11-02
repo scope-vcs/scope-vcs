@@ -57,7 +57,7 @@ pub(crate) async fn retry_github_workflow_run_reads_once(
             None => None,
             Some(connection) => {
                 match read_workflow_run(state, &connection, job.github_run_id).await {
-                    Ok(()) => {
+                    Ok(_) => {
                         answered += 1;
                         None
                     }
@@ -82,11 +82,17 @@ pub(crate) async fn retry_github_workflow_run_reads_once(
     Ok(answered)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum WorkflowRunRead {
+    Saved,
+    Gone,
+}
+
 pub(super) async fn read_workflow_run(
     state: &AppState,
     connection: &GitHubConnection,
     run_id: u64,
-) -> Result<(), ApiError> {
+) -> Result<WorkflowRunRead, ApiError> {
     let Some(run) = state
         .github_app()?
         .workflow_run(
@@ -96,9 +102,10 @@ pub(super) async fn read_workflow_run(
         )
         .await?
     else {
-        return Ok(());
+        return Ok(WorkflowRunRead::Gone);
     };
-    save_runs(state, connection, &[run]).await
+    save_runs(state, connection, &[run]).await?;
+    Ok(WorkflowRunRead::Saved)
 }
 
 pub(crate) async fn refresh_branch_workflow_runs(

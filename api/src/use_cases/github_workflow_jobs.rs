@@ -1,11 +1,11 @@
-use super::github_job_logs;
+use super::{github_job_logs, github_workflow_runs::WorkflowRunRead};
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
     github_connection::GitHubConnection,
     github_workflow_jobs::{
         GitHubJobsRead, GitHubWorkflowJob, github_jobs_need_read, github_jobs_not_read_yet,
-        github_jobs_retry_at,
+        github_jobs_retry_at, github_missing_run_read_is_final,
     },
     github_workflow_runs::GitHubWorkflowRun,
 };
@@ -125,8 +125,8 @@ pub(crate) async fn retry_github_workflow_job_reads_once(
                 read_queued_jobs(
                     state,
                     connection,
-                    job.github_run_id,
-                    job.run_attempt,
+                    (job.github_run_id, job.run_attempt),
+                    job.attempts,
                     claimed_at,
                 )
                 .await
@@ -161,8 +161,8 @@ pub(crate) async fn retry_github_workflow_job_reads_once(
 async fn read_queued_jobs(
     state: &AppState,
     connection: &GitHubConnection,
-    run_id: u64,
-    run_attempt: u32,
+    (run_id, run_attempt): (u64, u32),
+    read_attempts: u32,
     now_unix: u64,
 ) -> Result<QueuedJobsRead, ApiError> {
     let repositories = state.metadata.repositories();
@@ -177,7 +177,11 @@ async fn read_queued_jobs(
         .as_ref()
         .is_none_or(|detail| detail.read.run.run_attempt < run_attempt)
     {
-        super::github_workflow_runs::read_workflow_run(state, connection, run_id).await?;
+        let read =
+            super::github_workflow_runs::read_workflow_run(state, connection, run_id).await?;
+        if read == WorkflowRunRead::Gone && github_missing_run_read_is_final(read_attempts) {
+            return Ok(QueuedJobsRead::Missing);
+        }
         detail = repositories
             .github_workflow_run(
                 &connection.repository_id,
