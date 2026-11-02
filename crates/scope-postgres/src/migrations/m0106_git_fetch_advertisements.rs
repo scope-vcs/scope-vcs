@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
                 view_id text NOT NULL,
                 reader_id text NOT NULL,
                 head_oid text NOT NULL,
-                request jsonb,
+                requests jsonb,
                 expires_at_unix bigint NOT NULL,
                 PRIMARY KEY (repo_id, generation, view_id, reader_id, head_oid)
             );

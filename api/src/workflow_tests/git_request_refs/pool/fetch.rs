@@ -182,3 +182,121 @@ async fn a_rewritten_request_advertised_on_one_replica_is_fetchable_on_another()
     assert!(!denied.windows(4).any(|bytes| bytes == b"PACK"));
     assert!(String::from_utf8_lossy(&denied).contains("outside the visible refs"));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents() {
+    let (state, main, _) =
+        super::super::super::push_intent_completion::published_git_fixture("fetch-closed-parent")
+            .await;
+    let source = clone_test_repo(&main, "fetch-closed-parent-source", false);
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    configure_bearer_header(&source, &remote, &bearer_header());
+    let parent_id = start_request(&state, "closed-parent").await;
+    run_git(
+        Some(&source),
+        &["checkout", "-B", "closed-parent", "origin/main"],
+        "create parent request",
+    )
+    .unwrap();
+    push_change(
+        &source,
+        &remote,
+        "refs/heads/closed-parent",
+        "request.txt",
+        "parent",
+        "parent",
+    )
+    .unwrap();
+    let head = git_head_oid(&source);
+    let requests = state.metadata.requests();
+    requests
+        .mutate_request_for_tests(&parent_id, |request| {
+            request.submitted_at_unix = Some(request.updated_at_unix);
+        })
+        .await
+        .unwrap();
+    let parent = requests
+        .request_for_tests(&parent_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let revision = requests
+        .request_revision_with_head(&parent_id, &head)
+        .await
+        .unwrap()
+        .unwrap();
+    let child = api_request(
+        router(state.clone()),
+        "POST",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests"),
+        Some(&bearer_header()),
+        Some(
+            &serde_json::json!({
+                "name": "open-child",
+                "view": "private",
+                "base": {
+                    "kind": "request",
+                    "request_id": parent.id,
+                    "revision_id": revision.id,
+                    "head_oid": head,
+                },
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+    assert_eq!(child.status(), StatusCode::OK);
+    let child = response_json(child).await["request"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let child = requests.request_for_tests(&child).await.unwrap().unwrap();
+    let reader = scope_postgres::db::GitFetchReader {
+        repo_id: &parent.repo_id,
+        generation: "shared-head",
+        view: &ViewId::private(),
+        user_id: None,
+    };
+    let repositories = state.metadata.repositories();
+    let now = unix_now();
+    repositories
+        .record_git_fetch_advertisement(&reader, "main", &[parent.clone(), child], now)
+        .await
+        .unwrap();
+    let advertised = repositories
+        .advertised_git_fetch_heads(&reader, std::slice::from_ref(&head), now)
+        .await
+        .unwrap();
+    assert_eq!(advertised[0].1.as_ref().map(Vec::len), Some(2));
+    let closed = api_request(
+        router(state.clone()),
+        "DELETE",
+        &format!("/v1/repos/{TEST_REPO_ID}/requests/{parent_id}"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(closed.status(), StatusCode::OK);
+    let replica = state.replica_for_tests();
+    let folder = git_upload_pack_repo_for_request(
+        &replica,
+        &authorization_headers(bearer_header()),
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        &ViewId::private(),
+    )
+    .await
+    .unwrap();
+    let refs = git_stdout_text(
+        &folder,
+        &["for-each-ref", "--format=%(refname)"],
+        "fetch advertised refs",
+    )
+    .unwrap();
+    assert_eq!(
+        refs.lines().collect::<Vec<_>>(),
+        ["refs/heads/main", "refs/heads/open-child"]
+    );
+    assert!(has_commit(&folder, &head));
+}

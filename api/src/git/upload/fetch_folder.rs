@@ -4,7 +4,7 @@ use crate::{
     git::{
         blocking,
         cache::GitRepoHandle,
-        command::{git_command_output, git_stdout_text, run_git},
+        command::{git_command_output, git_ref_listing, git_stdout_text, run_git},
         pool_install::present_commits,
         repository_git::RepositoryGit,
         request_refs::{
@@ -23,7 +23,7 @@ use crate::{
 };
 use axum::http::HeaderMap;
 use scope_domain::{
-    requests::{RequestViewer, canonical_request_ref, request_policy},
+    requests::{Request, RequestViewer, canonical_request_ref, request_policy},
     views::ViewId,
 };
 use scope_postgres::db::GitFetchReader;
@@ -54,21 +54,28 @@ pub(crate) async fn prepare(
         view,
         user_id: user.as_deref(),
     };
+    let readable = |request: &Request, invitee: bool| {
+        let decision = request_policy(
+            request,
+            RequestViewer::new(access.clone(), user.as_deref(), invitee),
+            &views,
+        );
+        decision.exact_visible && views.may_read(view, &request.view)
+    };
     let mut requests = state
         .metadata
         .requests()
         .git_fetch_requests(reader.repo_id, reader.user_id)
         .await?
         .into_iter()
-        .filter_map(|(request, invitee)| {
-            let decision = request_policy(
-                &request,
-                RequestViewer::new(access.clone(), user.as_deref(), invitee),
-                &views,
-            );
-            (decision.exact_visible && views.may_read(view, &request.view)).then_some(request)
-        })
+        .filter_map(|(request, invitee)| readable(&request, invitee).then_some(request))
         .collect::<Vec<_>>();
+    let parents = terminal_parents(state, &requests, user.as_deref(), &readable).await?;
+    let unadvertised = parents
+        .iter()
+        .map(|request| request.id.clone())
+        .collect::<BTreeSet<_>>();
+    requests.splice(0..0, parents);
     let advertised = if let Some(wants) = wants {
         state
             .metadata
@@ -80,23 +87,30 @@ pub(crate) async fn prepare(
     };
     let current = requests.clone();
     let mut retained = Vec::new();
-    for (oid, request) in advertised {
-        match request {
-            Some(old)
-                if current
+    for (oid, advertised_requests) in advertised {
+        let Some(advertised_requests) = advertised_requests else {
+            retained.push(oid);
+            continue;
+        };
+        let still_readable = advertised_requests
+            .into_iter()
+            .filter(|old| {
+                current
                     .iter()
-                    .any(|request| request.id == old.id && request.view == old.view) =>
+                    .any(|request| request.id == old.id && request.view == old.view)
+            })
+            .collect::<Vec<_>>();
+        if still_readable.is_empty() {
+            continue;
+        }
+        retained.push(oid);
+        for old in still_readable {
+            if !requests
+                .iter()
+                .any(|request| request.head_oid == old.head_oid)
             {
-                retained.push(oid);
-                if !requests
-                    .iter()
-                    .any(|request| request.head_oid == old.head_oid)
-                {
-                    requests.push(old);
-                }
+                requests.push(old);
             }
-            None => retained.push(oid),
-            _ => {}
         }
     }
     let full = view == views.full();
@@ -267,7 +281,7 @@ pub(crate) async fn prepare(
             }
         }
         let present = present_commits(&working, requests_for_restore.iter().map(|request| request.head_oid.as_str()).chain(retained.iter().map(String::as_str)))?;
-        let attached = requests_for_restore.into_iter().filter(|request| {
+        let attached = requests_for_restore.into_iter().filter(|request| !unadvertised.contains(&request.id)).filter(|request| {
             if present.contains(&request.head_oid) { true } else {
                 tracing::warn!(request_id = request.id, request_name = request.name, "omitting unavailable request from Git fetch");
                 false
@@ -277,6 +291,11 @@ pub(crate) async fn prepare(
         let mut named = BTreeSet::new();
         for request in &attached {
             if named.insert(request.name.clone()) { refs.push_str(&format!("update {} {}\n", canonical_request_ref(&request.name), request.head_oid)); }
+        }
+        for (refname, _) in git_ref_listing(&working, &["refs/heads"], "reading restored fetch refs")? {
+            if refname != "refs/heads/main" && !named.iter().any(|name| canonical_request_ref(name) == refname) {
+                refs.push_str(&format!("delete {refname}\n"));
+            }
         }
         for oid in retained {
             if present.contains(&oid) { refs.push_str(&format!("update refs/scope/fetch/{oid} {oid}\n")); }
@@ -292,6 +311,48 @@ pub(crate) async fn prepare(
             .await?;
     }
     Ok(folder)
+}
+
+async fn terminal_parents(
+    state: &AppState,
+    requests: &[Request],
+    user: Option<&str>,
+    readable: &impl Fn(&Request, bool) -> bool,
+) -> Result<Vec<Request>, ApiError> {
+    let store = state.metadata.requests();
+    let mut known = requests
+        .iter()
+        .map(|request| request.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut pending = requests
+        .iter()
+        .filter(|request| request.git_snapshot.is_none())
+        .filter_map(|request| request.base.parent_request_id())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let mut parents = Vec::new();
+    while let Some(id) = pending.pop() {
+        if !known.insert(id.clone()) {
+            continue;
+        }
+        let Some(parent) = store.request_by_id(&id).await? else {
+            continue;
+        };
+        let invitee = match user {
+            Some(user) => store.request_is_invitee(&id, user).await?,
+            None => false,
+        };
+        if !readable(&parent, invitee) {
+            continue;
+        }
+        if parent.git_snapshot.is_none()
+            && let Some(next) = parent.base.parent_request_id()
+        {
+            pending.push(next.to_string());
+        }
+        parents.push(parent);
+    }
+    Ok(parents)
 }
 
 fn shelf_lock(path: &Path) -> Result<Arc<tokio::sync::Mutex<()>>, ApiError> {
