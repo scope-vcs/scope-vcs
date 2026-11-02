@@ -44,9 +44,12 @@ pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
     ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
 };
-pub(crate) use pool::retain_staged_pool_pack;
 #[cfg(test)]
-pub(crate) use pool::{RequestObjectRepos, request_object_repos};
+pub(crate) use pool::request_object_repos;
+pub(crate) use pool::{
+    PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs,
+    retain_staged_pool_pack,
+};
 pub(crate) use revision::with_request_revision_store_repo;
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,

@@ -28,8 +28,6 @@ use std::{
     path::{Path as FsPath, PathBuf},
 };
 
-const MAX_POOL_PACKS_PER_REQUEST: usize = 16;
-
 #[derive(Clone)]
 pub(crate) struct RequestObjectRepos {
     pub(crate) shared: PathBuf,
@@ -66,7 +64,7 @@ pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum PoolRepos<'a> {
+pub(crate) enum PoolRepos<'a> {
     Full {
         repos: &'a RequestObjectRepos,
         actor_user_id: &'a str,
@@ -77,10 +75,10 @@ pub(super) enum PoolRepos<'a> {
     },
 }
 
-pub(super) struct PoolInstall<'a> {
-    pub(super) incarnation: &'a RepositoryIncarnation,
-    pub(super) config: &'a RepoConfig,
-    pub(super) repos: PoolRepos<'a>,
+pub(crate) struct PoolInstall<'a> {
+    pub(crate) incarnation: &'a RepositoryIncarnation,
+    pub(crate) config: &'a RepoConfig,
+    pub(crate) repos: PoolRepos<'a>,
 }
 
 pub(super) async fn install_request_pool_packs(
@@ -88,11 +86,12 @@ pub(super) async fn install_request_pool_packs(
     install: &PoolInstall<'_>,
     missing: &[Request],
 ) {
-    if missing.is_empty() {
-        return;
-    }
     let started = std::time::Instant::now();
-    match install_missing_request_packs(state, install, missing).await {
+    let heads = missing
+        .iter()
+        .map(|request| request.head_oid.clone())
+        .collect::<Vec<_>>();
+    match install_missing_request_packs(state, install, missing, &heads).await {
         Ok(installed) => tracing::info!(
             repository_id = install.incarnation.repository_id(),
             requests = missing.len(),
@@ -108,37 +107,34 @@ pub(super) async fn install_request_pool_packs(
     }
 }
 
-async fn install_missing_request_packs(
+pub(crate) async fn install_missing_request_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
     missing: &[Request],
+    heads: &[String],
 ) -> Result<usize, ApiError> {
     let repository_id = install.incarnation.repository_id();
     let request_ids = missing
         .iter()
         .map(|request| request.id.clone())
         .collect::<Vec<_>>();
-    let listed = state
+    let mut listed = state
         .metadata
         .repositories()
         .git_pool_packs_for_requests(repository_id, &request_ids)
         .await?;
-    let mut by_repo = BTreeMap::<&FsPath, Vec<PooledRequestPack>>::new();
-    for listed in listed {
-        if let Some(repo) = pack_target(install, &listed) {
-            by_repo.entry(repo).or_default().push(listed);
-        }
-    }
-    let mut needed = Vec::new();
-    for (repo, packs) in by_repo {
-        let objects_repo = repo.to_path_buf();
-        let packs =
-            crate::git::blocking::run(move || packs_to_catch_up(&objects_repo, packs)).await?;
-        needed.push((repo, packs));
-    }
+    let read_repo = match install.repos {
+        PoolRepos::Full { repos, .. } => repos.authored.as_path(),
+        PoolRepos::View { repo, .. } => repo,
+    };
+    listed.retain(|pack| pack_target(install, pack).is_some());
+    let target = read_repo.to_path_buf();
+    let heads = heads.to_vec();
+    let needed =
+        crate::git::blocking::run(move || packs_to_catch_up(&target, listed, heads)).await?;
     let pack_ids = needed
         .iter()
-        .flat_map(|(_, packs)| packs.iter().map(|pack| pack.id.clone()))
+        .map(|pack| pack.id.clone())
         .collect::<Vec<_>>();
     let mut storage = state
         .metadata
@@ -147,8 +143,17 @@ async fn install_missing_request_packs(
         .await?
         .into_iter()
         .collect::<BTreeMap<_, _>>();
+    let mut by_repo = BTreeMap::<(bool, &FsPath), Vec<PooledRequestPack>>::new();
+    for listed in needed {
+        if let Some(repo) = pack_target(install, &listed) {
+            by_repo
+                .entry((repo == read_repo, repo))
+                .or_default()
+                .push(listed);
+        }
+    }
     let mut installed = 0;
-    for (repo, packs) in needed {
+    for ((_, repo), packs) in by_repo {
         let packs = packs
             .into_iter()
             .filter_map(|listed| {
@@ -172,23 +177,32 @@ async fn install_missing_request_packs(
 fn packs_to_catch_up(
     objects_repo: &FsPath,
     packs: Vec<PooledRequestPack>,
+    mut heads: Vec<String>,
 ) -> Result<Vec<PooledRequestPack>, ApiError> {
     let present = present_commits(
         objects_repo,
-        packs.iter().map(|pack| pack.head_oid.as_str()),
+        packs
+            .iter()
+            .flat_map(|pack| std::iter::once(&pack.head_oid).chain(&pack.prerequisites))
+            .map(String::as_str),
     )?;
-    let missing = packs
-        .into_iter()
-        .filter(|pack| !present.contains(&pack.head_oid))
-        .collect::<Vec<_>>();
-    let mut per_request = BTreeMap::<String, usize>::new();
-    for pack in &missing {
-        *per_request.entry(pack.request_id.clone()).or_default() += 1;
+    let mut by_head = BTreeMap::<String, Vec<PooledRequestPack>>::new();
+    for pack in packs {
+        by_head.entry(pack.head_oid.clone()).or_default().push(pack);
     }
-    Ok(missing
-        .into_iter()
-        .filter(|pack| per_request[&pack.request_id] <= MAX_POOL_PACKS_PER_REQUEST)
-        .collect())
+    let mut needed = Vec::new();
+    while let Some(head) = heads.pop() {
+        if present.contains(&head) {
+            continue;
+        }
+        if let Some(packs) = by_head.remove(&head) {
+            for pack in packs {
+                heads.extend(pack.prerequisites.iter().cloned());
+                needed.push(pack);
+            }
+        }
+    }
+    Ok(needed)
 }
 
 fn pack_target<'a>(install: &PoolInstall<'a>, listed: &PooledRequestPack) -> Option<&'a FsPath> {

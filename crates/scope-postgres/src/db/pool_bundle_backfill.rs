@@ -10,7 +10,6 @@ use sea_orm::{DatabaseBackend, EntityTrait, FromQueryResult, Statement, Transact
 pub struct BundleSource {
     pub repo_id: String,
     pub request_id: String,
-    pub view: String,
     pub head_oid: String,
     pub old_head_oid: String,
     pub git_snapshot: sea_orm::JsonValue,
@@ -21,11 +20,11 @@ impl RepositoryStore {
         BundleSource::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "WITH sources AS (
                 SELECT r.repo_id, r.id AS request_id, v.new_head_oid AS head_oid, v.old_head_oid,
-                    v.git_snapshot, v.position, r.stack_depth, r.audience AS view
+                    v.git_snapshot, v.position, r.stack_depth
                 FROM scope_request_revisions v JOIN scope_requests r ON r.id = v.request_id
                 UNION ALL
                 SELECT r.repo_id, r.id, r.head_oid, r.review_base_oid, r.git_snapshot,
-                    9223372036854775807, r.stack_depth, r.audience
+                    9223372036854775807, r.stack_depth
                 FROM scope_requests r WHERE r.git_snapshot IS NOT NULL
                     AND NOT EXISTS (SELECT 1 FROM scope_request_revisions v
                         WHERE v.request_id = r.id AND v.new_head_oid = r.head_oid)

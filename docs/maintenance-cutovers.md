@@ -242,14 +242,29 @@ Railway source upload.
 
 ## Pool bundle backfill
 
-Before deleting stored request bundles in a later PR, stop writers and run
-`scope-maintenance pool-bundle-backfill` with the maintenance database connection
-and the API's object storage and encryption configuration. This operator-run
-command scans stored revisions in batches of 32, keeps no progress state, and is
-safe to rerun. `--dry-run` verifies without publishing packs.
+Before deleting stored request bundles in a later PR, stop Git writes and worker
+writers while keeping the API deployment containing this change available for SSH.
+Run the one-shot mode in that API container, first without publishing packs:
+
+```sh
+railway ssh --project 45dd67fa-6d69-48ad-9680-1313d41b4490 --environment production --service scope-api -- /app/bin/scope-vcs pool-bundle-backfill --dry-run
+railway ssh --project 45dd67fa-6d69-48ad-9680-1313d41b4490 --environment production --service scope-api -- /app/bin/scope-vcs pool-bundle-backfill
+```
+
+Use the intended preview or staging environment instead of `production` to rehearse.
+This mode exits without starting HTTP or background workers. It uses the API's
+`scope_api` database role, which can write pool packs, segment uploads and object
+references, plus its existing `SCOPE_BUCKET_*`, `SCOPE_OBJECT_ENCRYPTION_KEY` and
+other API settings. The API image includes Git and writable `/app/.scope`; its
+configured `SCOPE_DATA_DIR` takes precedence. The maintenance service lacks the
+full API environment, so do not run this mode there or use its migrator credentials.
+The command scans stored revisions in batches of 32, keeps no progress state, and
+is safe to rerun.
 
 Each revision first restores into an empty repository through the reader's pool
-pack installer, using only pool packs and the main copy or view base. Missing
+pack selection and installer, using the request's authorized lineage packs and
+main copy or view base. Only chains behind the required heads are installed; there
+is no pack-count cutoff. Long cold reads may take longer than a bundle restore. Missing
 revisions import their bundle and publish a pack through the live push writer,
 then repeat the empty-repository check. Verification requires both the head and
 old head and their connected history. Restricted packs stay view-scoped and are

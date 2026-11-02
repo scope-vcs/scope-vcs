@@ -3,21 +3,27 @@ use crate::{
     git::{
         blocking,
         command::{git_stdout_text, run_git},
-        pool_install::install_chain,
         pool_pack::{PoolPackRevision, stage_pool_pack},
         repository_git::RepositoryGit,
-        request_refs::{bundle_prerequisites, download_snapshot, ensure_local_bare_repo},
+        request_refs::{
+            PoolInstall, PoolRepos, RequestObjectRepos, bundle_prerequisites, download_snapshot,
+            ensure_local_bare_repo, install_missing_request_packs,
+        },
         staging::add_receive_pack_alternate,
     },
     state::AppState,
 };
-use scope_domain::repository::git::{GitPoolPack, GitPoolPackOwner, RequestPackScope};
+use scope_domain::repository::git::{GitPoolPackOwner, RequestPackScope};
 use scope_postgres::db::BundleSource;
 use std::collections::BTreeMap;
 
-pub async fn run_pool_bundle_backfill(database_url: String, dry_run: bool) -> anyhow::Result<()> {
-    let state = AppState::for_bundle_backfill(database_url).await?;
-    let counts = backfill(&state, dry_run).await;
+pub async fn run_pool_bundle_backfill(arguments: &[String]) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        arguments.is_empty() || arguments == ["--dry-run"],
+        "usage: scope-vcs pool-bundle-backfill [--dry-run]\nExcludes run-owned RunSource::EphemeralGitBundle and RunSource::RequestGitSnapshot bundles"
+    );
+    let state = AppState::for_bundle_backfill(crate::config::database_url_from_env()?).await?;
+    let counts = backfill(&state, !arguments.is_empty()).await;
     state.shutdown().await;
     let counts = counts.map_err(|e| anyhow::anyhow!(e.into_operator_diagnostic()))?;
     anyhow::ensure!(counts[2] == 0, "pool bundle verification failed");
@@ -74,7 +80,13 @@ async fn backfill_revision(
         .await?
         .ok_or_else(|| ApiError::not_found("backfill repository missing"))?;
     let git = RepositoryGit::of_push_state(&context);
-    let view = scope_domain::views::ViewId::parse(&rev.view).map_err(ApiError::internal)?;
+    let request = state
+        .metadata
+        .requests()
+        .request_by_id(&rev.request_id)
+        .await?
+        .ok_or_else(|| ApiError::not_found("backfill request missing"))?;
+    let view = request.view.clone();
     let base = git
         .view_repo(state, context.repo_config.views(), &view)
         .await?;
@@ -85,19 +97,35 @@ async fn backfill_revision(
     };
     let heads = vec![rev.head_oid.clone(), rev.old_head_oid.clone()];
     for repaired in [false, true] {
-        let packs = repos.bundle_packs(&rev.repo_id, &scope, &heads).await?;
         let directory =
             tempfile::tempdir_in(state.data_dir.as_ref()).map_err(ApiError::internal)?;
         let path = directory.path().join("rev.git");
         let target = path.clone();
         let base_path = base.to_path_buf();
         git_work(state, move || {
+            let shared = ensure_local_bare_repo(target.with_extension("shared.git"))?;
+            add_receive_pack_alternate(&shared, &base_path.join("objects"))?;
             let target = ensure_local_bare_repo(target)?;
-            add_receive_pack_alternate(&target, &base_path.join("objects"))
+            add_receive_pack_alternate(&target, &shared.join("objects"))
         })
         .await?;
-        let needed = packs_supplying(packs, heads.clone());
-        install_chain(state, &git.incarnation, &path, needed).await?;
+        let targets = RequestObjectRepos {
+            shared: path.with_extension("shared.git"),
+            authored: path.clone(),
+        };
+        let install = PoolInstall {
+            incarnation: &git.incarnation,
+            config: &context.repo_config,
+            repos: match &scope {
+                RequestPackScope::Full => PoolRepos::Full {
+                    repos: &targets,
+                    actor_user_id: request.author_user_id.as_deref().unwrap_or_default(),
+                },
+                RequestPackScope::View(view) => PoolRepos::View { view, repo: &path },
+            },
+        };
+        install_missing_request_packs(state, &install, std::slice::from_ref(&request), &heads)
+            .await?;
         let target = path.clone();
         let wanted = heads.clone();
         let verified = git_work(state, move || {
@@ -123,9 +151,8 @@ async fn backfill_revision(
         })
         .await?;
         let needed: Vec<_> = prerequisites.iter().chain(&heads[1..]).cloned().collect();
-        let packs = repos.bundle_packs(&rev.repo_id, &scope, &needed).await?;
-        let needed = packs_supplying(packs, needed);
-        install_chain(state, &git.incarnation, &path, needed).await?;
+        install_missing_request_packs(state, &install, std::slice::from_ref(&request), &needed)
+            .await?;
         let import_path = path.clone();
         let base_path = base.to_path_buf();
         let main = git_work(state, move || {
@@ -162,21 +189,6 @@ async fn backfill_revision(
         staged.finish(state).await;
     }
     unreachable!()
-}
-
-fn packs_supplying(packs: Vec<GitPoolPack>, mut commits: Vec<String>) -> Vec<GitPoolPack> {
-    let mut remaining = packs
-        .into_iter()
-        .map(|p| (p.head_oid.clone(), p))
-        .collect::<BTreeMap<_, _>>();
-    let mut needed = Vec::new();
-    while let Some(commit) = commits.pop() {
-        if let Some(pack) = remaining.remove(&commit) {
-            commits.extend(pack.prerequisites.iter().cloned());
-            needed.push(pack);
-        }
-    }
-    needed
 }
 
 async fn git_work<T: Send + 'static>(

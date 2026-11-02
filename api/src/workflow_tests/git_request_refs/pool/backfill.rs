@@ -1,9 +1,6 @@
 use super::*;
 use crate::use_cases::pool_bundle_backfill::backfill;
-use scope_domain::{
-    repository::git::RequestPackScope,
-    requests::{RecordRequestRevisionInput, RequestRevisionGitFacts},
-};
+use scope_domain::requests::{RecordRequestRevisionInput, RequestRevisionGitFacts};
 
 async fn save_revision(state: &AppState, id: &str, source: &FsPath) -> String {
     let request = stored_request(state, id).await;
@@ -36,7 +33,7 @@ async fn save_revision(state: &AppState, id: &str, source: &FsPath) -> String {
                 contained_main_oid: None,
                 contained_main_descends_from_base: false,
             },
-            event_id: format!("event_{head}"),
+            event_id: format!("event_{id}_{}", request.updated_at_unix),
             body: None,
             now_unix: request.updated_at_unix + 1,
             new_base: None,
@@ -61,18 +58,30 @@ async fn pool_bundle_backfill_verifies_long_chains_stacks_corruption_privacy_and
     assert!(pooled_heads(&state, &parent).await.is_empty());
     assert_eq!(backfill(&state, false).await.unwrap(), [17, 17, 0]);
     let store = state.metadata.repositories();
-    let before = store
-        .bundle_packs(TEST_REPO_ID, &RequestPackScope::Full, &[])
+    assert_eq!(backfill(&state, false).await.unwrap(), [17, 0, 0]);
+    let shadow = start_request(&state, "other-author").await;
+    insert_member_user(&state).await;
+    state.metadata.admin().execute_for_tests(&format!("WITH draft AS (UPDATE scope_requests SET author_user_id = '{}', head_oid = (SELECT head_oid FROM scope_requests WHERE id = '{parent}') WHERE id = '{shadow}') UPDATE scope_git_pool_packs SET request_id = '{shadow}' WHERE request_id = '{parent}'", member_user_id())).await.unwrap();
+    assert_eq!(backfill(&state, true).await.unwrap(), [0, 0, 17]);
+    state
+        .metadata
+        .admin()
+        .execute_for_tests(&format!(
+            "UPDATE scope_git_pool_packs SET request_id = '{parent}' WHERE request_id = '{shadow}'"
+        ))
         .await
         .unwrap();
-    assert_eq!(backfill(&state, false).await.unwrap(), [17, 0, 0]);
-    assert_eq!(
-        store
-            .bundle_packs(TEST_REPO_ID, &RequestPackScope::Full, &[])
-            .await
-            .unwrap(),
-        before
-    );
+    let (origin, _server) = spawn_test_server(&state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    configure_bearer_header(&source, &remote, &bearer_header());
+    run_git(Some(&source), &["reset", "--hard", "HEAD~1"], "return to B").unwrap();
+    run_git(
+        Some(&source),
+        &["push", "--force", &remote, "HEAD:refs/heads/parent"],
+        "force push B",
+    )
+    .unwrap();
+    assert_eq!(backfill(&state, true).await.unwrap(), [18, 0, 0]);
     let pin = requests
         .latest_request_revision(&parent)
         .await
@@ -82,9 +91,6 @@ async fn pool_bundle_backfill_verifies_long_chains_stacks_corruption_privacy_and
     let child = super::super::super::requests::start_private_request(&state, "child", Some(serde_json::json!({
         "kind": "request", "request_id": parent, "revision_id": pin.id, "head_oid": pin.new_head_oid,
     }))).await;
-    let (origin, _server) = spawn_test_server(&state).await;
-    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
-    configure_bearer_header(&source, &remote, &bearer_header());
     push_change(
         &source,
         &remote,
@@ -94,7 +100,8 @@ async fn pool_bundle_backfill_verifies_long_chains_stacks_corruption_privacy_and
         "child",
     )
     .unwrap();
-    assert_eq!(backfill(&state, false).await.unwrap(), [18, 0, 0]);
+    state.metadata.admin().execute_for_tests(&format!("UPDATE scope_requests SET base_kind = 'Main', parent_request_id = NULL, parent_revision_id = NULL, parent_head_oid = NULL, stack_status = 'main', stack_depth = 1 WHERE id = '{child}'")).await.unwrap();
+    assert_eq!(backfill(&state, false).await.unwrap(), [19, 0, 0]);
     state
         .metadata
         .admin()
@@ -103,10 +110,10 @@ async fn pool_bundle_backfill_verifies_long_chains_stacks_corruption_privacy_and
         ))
         .await
         .unwrap();
-    assert_eq!(backfill(&state, true).await.unwrap(), [0, 0, 18]);
-    assert_eq!(backfill(&state, false).await.unwrap(), [18, 17, 0]);
+    assert_eq!(backfill(&state, true).await.unwrap(), [0, 0, 19]);
+    assert_eq!(backfill(&state, false).await.unwrap(), [19, 17, 0]);
     state.metadata.admin().execute_for_tests(&format!("UPDATE scope_git_pool_packs SET sealed_pack = decode('00', 'hex') WHERE request_id = '{child}'")).await.unwrap();
-    assert_eq!(backfill(&state, true).await.unwrap(), [17, 0, 1]);
+    assert_eq!(backfill(&state, true).await.unwrap(), [18, 0, 1]);
     let bad = stored_request(&state, &child).await.git_snapshot.unwrap();
     state
         .object_store
@@ -127,9 +134,9 @@ async fn pool_bundle_backfill_verifies_long_chains_stacks_corruption_privacy_and
     let first_public = save_revision(&state, REQUEST_ID, &public).await;
     commit_file(&public, "public.txt", "next public\n");
     let public_head = save_revision(&state, REQUEST_ID, &public).await;
-    assert_eq!(backfill(&state, false).await.unwrap(), [19, 2, 1]);
+    assert_eq!(backfill(&state, false).await.unwrap(), [20, 2, 1]);
     let packs = store
-        .bundle_packs(TEST_REPO_ID, &RequestPackScope::View(ViewId::public()), &[])
+        .git_pool_packs_for_requests(TEST_REPO_ID, &[REQUEST_ID.to_string()])
         .await
         .unwrap();
     assert_eq!(packs.len(), 2);

@@ -15,10 +15,6 @@ commands:
   drain-writers               terminate sessions holding the shared writer fence
   validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
-  pool-bundle-backfill [--dry-run]
-                              verify stored request revisions; repair pool packs unless dry-run
-                              excludes run-owned RunSource::EphemeralGitBundle and
-                              RunSource::RequestGitSnapshot bundles
   native-runs list            list the accounts whose repositories may use native runs
   native-runs add <handle> [note]
                               list an account, or replace its note
@@ -48,14 +44,6 @@ async fn main() -> anyhow::Result<()> {
             run_native_runs_command_for_maintenance(database_url, command).await?
         );
         return Ok(());
-    }
-    if command == "pool-bundle-backfill" {
-        if !arguments.is_empty() && arguments != ["--dry-run"] {
-            anyhow::bail!(USAGE);
-        }
-        let database_url = maintenance_database_url()?;
-        verify_schema(database_url.clone()).await?;
-        return api::run_pool_bundle_backfill(database_url, !arguments.is_empty()).await;
     }
     if !arguments.is_empty() {
         anyhow::bail!(USAGE);
