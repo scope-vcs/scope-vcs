@@ -3,7 +3,7 @@ use crate::{
     error::ApiError,
     git::{
         command::{git_stdout_text, run_git},
-        pool_install::install_chain,
+        pool_install::{install_chain, present_commits},
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
         repository_git::RepositoryGit,
         request_refs::{bundle_prerequisites, download_snapshot},
@@ -116,9 +116,28 @@ async fn backfill_claim(
         Ok((directory, prerequisites, base, permit))
     })
     .await?;
-    let scope = RequestPackScope::for_push(request.view == *config.views.full(), &request.view);
-    let packs = request_packs(state, &request, &scope).await?;
-    install_chain(state, &incarnation, &path, packs).await?;
+    let scope = if request.view == *config.views.full() {
+        RequestPackScope::Full
+    } else {
+        RequestPackScope::View(request.view.clone())
+    };
+    let missing = {
+        let path = path.clone();
+        let prerequisites = prerequisites.clone();
+        crate::git::blocking::run(move || {
+            let present = present_commits(&path, prerequisites.iter().map(String::as_str))?;
+            Ok(prerequisites
+                .into_iter()
+                .filter(|oid| !present.contains(oid))
+                .collect::<Vec<_>>())
+        })
+        .await?
+    };
+    if !missing.is_empty() {
+        let packs = request_packs(state, &request, &scope).await?;
+        let packs = packs_supplying(packs, missing);
+        install_chain(state, &incarnation, &path, packs).await?;
+    }
     let import_path = path.clone();
     let head = claim.source.head_oid.clone();
     let directory = crate::git::blocking::run(move || {
@@ -215,6 +234,21 @@ async fn persist_staged(
     }
 }
 
+fn packs_supplying(packs: Vec<GitPoolPack>, mut commits: Vec<String>) -> Vec<GitPoolPack> {
+    let mut remaining = packs
+        .into_iter()
+        .map(|pack| (pack.head_oid.clone(), pack))
+        .collect::<BTreeMap<_, _>>();
+    let mut needed = Vec::new();
+    while let Some(commit) = commits.pop() {
+        if let Some(pack) = remaining.remove(&commit) {
+            commits.extend(pack.prerequisites.iter().cloned());
+            needed.push(pack);
+        }
+    }
+    needed
+}
+
 async fn request_packs(
     state: &AppState,
     request: &Request,
@@ -252,4 +286,38 @@ async fn request_packs(
             })
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use scope_domain::repository::git::GitPoolPackStorage;
+
+    fn pack(head: &str, prerequisites: &[&str]) -> GitPoolPack {
+        GitPoolPack {
+            id: head.to_string(),
+            owner: GitPoolPackOwner::Request {
+                request_id: "request".to_string(),
+                scope: RequestPackScope::Full,
+            },
+            head_oid: head.to_string(),
+            prerequisites: prerequisites.iter().map(ToString::to_string).collect(),
+            storage: GitPoolPackStorage::Inline { sealed: Vec::new() },
+        }
+    }
+
+    #[test]
+    fn only_the_chain_behind_a_missing_commit_loads() {
+        let packs = vec![
+            pack("first", &["main"]),
+            pack("second", &["first"]),
+            pack("unrelated", &["main"]),
+        ];
+        let mut heads = packs_supplying(packs, vec!["second".to_string()])
+            .into_iter()
+            .map(|pack| pack.head_oid)
+            .collect::<Vec<_>>();
+        heads.sort();
+        assert_eq!(heads, ["first", "second"]);
+    }
 }
