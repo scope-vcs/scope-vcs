@@ -48,6 +48,7 @@ pub(crate) struct RequestStagingRepo {
     pub(crate) seed: GitRepoHandle,
     pub(crate) seeded: SeededRequestRefs,
     pub(crate) object_generation: String,
+    pub(crate) full_view: bool,
 }
 
 #[derive(Default)]
@@ -198,6 +199,7 @@ pub(crate) async fn prepare_request_staging_repo(
         seed: seed_repo,
         seeded,
         object_generation: context.repo_config.object_generation(),
+        full_view: seeds_canonical_main,
     })
 }
 
@@ -356,6 +358,7 @@ pub(super) async fn git_push_context(
 pub(super) struct RequestRevisionStaging<'a> {
     pub(super) repo: &'a Path,
     pub(super) object_generation: String,
+    pub(super) full_view: bool,
 }
 
 #[tracing::instrument(skip_all, name = "use_case.git_receive.request_revision")]
@@ -373,6 +376,7 @@ pub(super) async fn persist_request_ref_revision(
     let RequestRevisionStaging {
         repo: staging_repo,
         object_generation,
+        full_view,
     } = staging;
     let expected_incarnation = access.incarnation();
     let actor_user_id = access.author_id();
@@ -423,12 +427,11 @@ pub(super) async fn persist_request_ref_revision(
         .old_head_oid
         .clone()
         .or_else(|| Some(request.head_oid.clone()));
-    let views = context.repo_config.views();
-    let scope = RequestPackScope::for_push(
-        address_view.unwrap_or(views.full()) == views.full()
-            && context.access.reads_full_view(views),
-        &request.view,
-    );
+    let scope = if full_view {
+        RequestPackScope::Full
+    } else {
+        RequestPackScope::View(request.view.clone())
+    };
     let persisted = persist_request_ref(
         state,
         &git,

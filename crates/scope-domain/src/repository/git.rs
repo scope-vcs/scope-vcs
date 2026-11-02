@@ -100,14 +100,6 @@ pub enum RequestPackScope {
 }
 
 impl RequestPackScope {
-    pub fn for_push(reads_full_view: bool, view: &crate::views::ViewId) -> Self {
-        if reads_full_view {
-            Self::Full
-        } else {
-            Self::View(view.clone())
-        }
-    }
-
     pub fn view(&self) -> Option<&crate::views::ViewId> {
         match self {
             Self::Full => None,
