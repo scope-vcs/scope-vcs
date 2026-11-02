@@ -169,15 +169,6 @@ impl RepositoryGitCache {
         let mut caches = repository_cache_directories(&self.root)?;
         let now = SystemTime::now();
         prune_stale_materializations(&self.root, now, STALE_MATERIALIZATION_MAX_IDLE)?;
-        caches.retain(|entry| {
-            if entry.path.file_name().and_then(|name| name.to_str()).is_some_and(|name| name.starts_with("read-view-") && name.ends_with(".git")) {
-                match evict_unleased(&entry.path, remove_dir_if_exists) {
-                    Ok(true) => false,
-                    Ok(false) => true,
-                    Err(error) => { tracing::warn!(error = %error.operator_diagnostic(), "removing obsolete Git read view failed"); true }
-                }
-            } else { true }
-        });
         caches.sort_by_key(|entry| entry.last_used);
 
         let mut retained_bytes = caches
@@ -279,7 +270,14 @@ fn prune_stale_materializations(
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !name.ends_with(".tmp") || !path.is_dir() {
+        if !path.is_dir() {
+            continue;
+        }
+        if name.starts_with("fetch-") {
+            evict_unleased(&path, remove_dir_if_exists)?;
+            continue;
+        }
+        if !name.ends_with(".tmp") {
             continue;
         }
         let modified = entry

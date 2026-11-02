@@ -120,7 +120,7 @@ fn stale_temporary_materialization_is_removed() {
 fn derived_repository_counts_toward_the_budget_and_is_leased_while_in_use() {
     let root = temp_cache_root("git-cache-derived");
     let registry = RepositoryGitCache::new(root.clone(), 50).unwrap();
-    let derived_path = root.join("read-view-derived.git");
+    let derived_path = root.join("reader-shelf.git");
     fs::create_dir_all(&derived_path).unwrap();
     fs::write(derived_path.join("pack"), [0_u8; 40]).unwrap();
     let lease = registry.lease_derived(derived_path.clone()).unwrap();
@@ -134,7 +134,7 @@ fn derived_repository_counts_toward_the_budget_and_is_leased_while_in_use() {
     assert!(derived_path.exists());
     assert!(!inactive_path.exists());
     drop(lease);
-    registry.prune().unwrap();
+    registry.prune_to(0).unwrap();
     assert!(!derived_path.exists());
     let _ = fs::remove_dir_all(root);
 }
@@ -569,4 +569,29 @@ fn recursive_eviction_does_not_block_other_leases_or_delete_a_replacement() {
     assert!(path.join("new").exists());
     assert!(!path.join("old").exists());
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn abandoned_fetch_folders_are_swept_without_removing_a_live_fetch() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let abandoned = root.join("fetch-abandoned");
+    fs::create_dir(&abandoned).unwrap();
+    fs::write(abandoned.join("snapshot"), [0_u8; 40]).unwrap();
+    let registry = RepositoryGitCache::new(root.to_path_buf(), 1_000).unwrap();
+    assert!(!abandoned.exists());
+    let live = GitRepoHandle::temporary(
+        tempfile::Builder::new()
+            .prefix("fetch-")
+            .tempdir_in(root)
+            .unwrap(),
+        Vec::new(),
+    )
+    .unwrap();
+    let abandoned = root.join("fetch-interrupted");
+    fs::create_dir(&abandoned).unwrap();
+    registry.prune().unwrap();
+    assert!(!abandoned.exists());
+    assert!(live.is_dir());
+    drop(live);
 }

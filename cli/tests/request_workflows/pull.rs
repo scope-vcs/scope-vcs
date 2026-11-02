@@ -160,7 +160,7 @@ fn checkout_reports_terminal_requests_before_fetching_their_retired_ref() {
     for state in ["Closed", "Merged"] {
         let mut detail = request();
         detail["state"] = state.into();
-        detail["permissions"]["can_pull_branch"] = true.into();
+        detail["permissions"]["can_pull_branch"] = false.into();
         let server = FixtureServer::with_request(detail);
         run_git(
             dir.path(),

@@ -2,14 +2,7 @@ use super::request_ref_oid_is_commit;
 use crate::{error::ApiError, git::command::run_git, state::AppState};
 use scope_domain::content::SourceBlob;
 use scope_storage::{ObjectStore, ObjectStoreError, write_source_blob_to};
-use sha2::{Digest, Sha256};
-use std::{
-    fs,
-    path::Path as FsPath,
-    sync::atomic::{AtomicU64, Ordering},
-};
-
-static SNAPSHOT_DOWNLOAD: AtomicU64 = AtomicU64::new(1);
+use std::{fs, path::Path as FsPath};
 pub(super) fn fetch_snapshot_into(
     state: &AppState,
     repo: &FsPath,
@@ -44,26 +37,20 @@ pub(super) fn fetch_snapshot_into_ref(
     base_repo: Option<&FsPath>,
     action: &str,
 ) -> Result<Result<(), ObjectStoreError>, ApiError> {
-    let bundle_path = repo.with_extension(format!(
-        "snapshot-{}-{}-{}.bundle.tmp",
-        hex::encode(
-            &Sha256::digest(format!("{}:{}", bundle_ref.destination, snapshot.sha256).as_bytes())
-                [..8]
-        ),
-        std::process::id(),
-        SNAPSHOT_DOWNLOAD.fetch_add(1, Ordering::Relaxed),
-    ));
-    let result =
-        download_snapshot(state.object_store.as_ref(), snapshot, &bundle_path).and_then(|stored| {
-            match stored {
-                Ok(()) => {
-                    fetch_bundle_into_ref(repo, bundle_ref, &bundle_path, base_repo, action).map(Ok)
-                }
-                Err(error) => Ok(Err(error)),
+    let bundle = tempfile::Builder::new()
+        .prefix("snapshot-")
+        .suffix(".bundle.tmp")
+        .tempfile_in(repo)
+        .map_err(ApiError::internal)?;
+    let bundle_path = bundle.path();
+    download_snapshot(state.object_store.as_ref(), snapshot, bundle_path).and_then(|stored| {
+        match stored {
+            Ok(()) => {
+                fetch_bundle_into_ref(repo, bundle_ref, bundle_path, base_repo, action).map(Ok)
             }
-        });
-    let _ = fs::remove_file(&bundle_path);
-    result
+            Err(error) => Ok(Err(error)),
+        }
+    })
 }
 
 pub(super) fn download_snapshot(

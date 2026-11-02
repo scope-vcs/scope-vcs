@@ -254,14 +254,14 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
     let child = requests.request_for_tests(&child).await.unwrap().unwrap();
     let reader = scope_postgres::db::GitFetchReader {
         repo_id: &parent.repo_id,
-        generation: "shared-head",
+        visibility_fingerprint: "shared-head",
         view: &ViewId::private(),
         user_id: None,
     };
     let repositories = state.metadata.repositories();
     let now = unix_now();
     repositories
-        .record_git_fetch_advertisement(&reader, "main", &[parent.clone()], now)
+        .record_git_fetch_advertisement(&reader, "main", std::slice::from_ref(&parent), now)
         .await
         .unwrap();
     repositories
@@ -269,14 +269,17 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
         .await
         .unwrap();
     repositories
-        .record_git_fetch_advertisement(&reader, "main", &[parent.clone()], now)
+        .record_git_fetch_advertisement(&reader, "main", std::slice::from_ref(&parent), now)
         .await
         .unwrap();
     let advertised = repositories
         .advertised_git_fetch_heads(&reader, std::slice::from_ref(&head), now)
         .await
         .unwrap();
-    assert_eq!(advertised[0].1.as_ref().map(Vec::len), Some(2));
+    let scope_domain::requests::GitFetchHead::Requests(requests) = &advertised[0].1 else {
+        panic!("request head was saved as main")
+    };
+    assert_eq!(requests.len(), 2);
     let closed = api_request(
         router(state.clone()),
         "DELETE",

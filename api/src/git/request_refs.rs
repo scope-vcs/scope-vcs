@@ -572,7 +572,10 @@ fn ensure_local_bare_repo(repo: PathBuf) -> Result<PathBuf, ApiError> {
     }
 }
 
-fn request_ref_head(store_repo: &FsPath, request_ref: &str) -> Result<Option<String>, ApiError> {
+pub(crate) fn request_ref_head(
+    store_repo: &FsPath,
+    request_ref: &str,
+) -> Result<Option<String>, ApiError> {
     if !store_repo.exists() {
         return Ok(None);
     }

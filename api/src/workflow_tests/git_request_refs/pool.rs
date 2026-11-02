@@ -7,6 +7,7 @@ use crate::use_cases::git_receive::{
 use std::collections::BTreeSet;
 
 mod fetch;
+mod fetch_visibility;
 mod views;
 
 async fn prepare_owner_push(state: &AppState, request_ref: &str) -> PathBuf {

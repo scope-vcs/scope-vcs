@@ -52,31 +52,10 @@ impl RequestStore {
         repository_id: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Vec<(scope_domain::requests::Request, bool)>, PostgresError> {
-        use scope_domain::requests::RequestState;
-        use sea_orm::Condition;
-        let mut states = Condition::any();
-        for state in [
-            RequestState::Draft,
-            RequestState::Open,
-            RequestState::Closed,
-            RequestState::Merged,
-        ] {
-            if !state.advertised_in_git() {
-                continue;
-            }
-            let mut condition = Condition::all();
-            condition = condition.add(entities::request::Column::MergedAtUnix.is_null());
-            condition = condition.add(entities::request::Column::ClosedAtUnix.is_null());
-            condition = condition.add(match state {
-                RequestState::Draft => entities::request::Column::SubmittedAtUnix.is_null(),
-                RequestState::Open => entities::request::Column::SubmittedAtUnix.is_not_null(),
-                _ => unreachable!(),
-            });
-            states = states.add(condition);
-        }
         let rows = entities::request::Entity::find()
             .filter(entities::request::Column::RepoId.eq(repository_id))
-            .filter(states)
+            .filter(entities::request::Column::MergedAtUnix.is_null())
+            .filter(entities::request::Column::ClosedAtUnix.is_null())
             .order_by_asc(entities::request::Column::Name)
             .all(self.db.as_ref())
             .await?;

@@ -271,7 +271,7 @@ async fn install_staged_pool_pack(
     shared: bool,
     pool_pack: &StagedPoolPack,
 ) -> Result<(), ApiError> {
-    let view_path = match &pool_pack.pack.owner {
+    let view_lease = match &pool_pack.pack.owner {
         GitPoolPackOwner::Request {
             scope: RequestPackScope::View(view),
             ..
@@ -279,7 +279,7 @@ async fn install_staged_pool_pack(
             if config.object_generation() != generation {
                 return Err(ApiError::conflict("request object generation changed"));
             }
-            Some(super::view_pool::view_object_repo(state, incarnation, config, view).await?)
+            Some(super::view_pool::view_object_repo(state, incarnation, config, view, None).await?)
         }
         _ => None,
     };
@@ -289,6 +289,7 @@ async fn install_staged_pool_pack(
         let generation = generation.to_string();
         let pusher_id = pusher_id.to_string();
         let pack = pool_pack.pack.clone();
+        let view_path = view_lease.as_ref().map(|repo| repo.as_ref().to_path_buf());
         crate::git::blocking::run(move || {
             let objects_repo = match view_path {
                 Some(repo) => repo,

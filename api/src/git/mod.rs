@@ -378,15 +378,24 @@ pub(crate) async fn git_upload_pack_rpc(
         Ok(view) => view,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
+    if let Err(error) = authorized_git_read(&state, &headers, &org, &repo_name, &view).await {
+        return git_error_response(error);
+    }
     let permit = match state.runtime_budgets.admit_upload_pack().await {
         Ok(permit) => permit,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
-    let body = match to_bytes(request.into_body(), MAX_UPLOAD_PACK_BYTES).await {
-        Ok(body) => body,
-        Err(error) => {
+    let body = match tokio::time::timeout(
+        state.runtime_budgets.git_command_timeout(),
+        to_bytes(request.into_body(), MAX_UPLOAD_PACK_BYTES),
+    )
+    .await
+    {
+        Ok(Ok(body)) => body,
+        Ok(Err(error)) => {
             return git_upload_pack_error(format!("git upload-pack body is too large: {error}"));
         }
+        Err(_) => return git_upload_pack_error("Git upload-pack body read timed out; retry fetch"),
     };
     let decode_headers = headers.clone();
     let (body, permit) = match blocking::run(move || {

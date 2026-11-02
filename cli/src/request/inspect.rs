@@ -24,16 +24,10 @@ pub(super) fn checkout_request(
         )
         .into());
     }
-    if matches!(
-        detail.request.state,
-        scope_api_contract::RequestState::Closed | scope_api_contract::RequestState::Merged
-    ) {
-        return Err(crate::error::CliError::usage("closed and merged request branches are no longer advertised; use the existing local branch or fetch main").into());
-    }
     if !detail.request.permissions.can_pull_branch {
         return Err(crate::error::CliError::new(ErrorResponse::new(
             ErrorCode::Forbidden,
-            "you do not have permission to check out this request branch",
+            "request branch is unavailable or no longer advertised; use an existing local branch or fetch main",
         ))
         .into());
     }

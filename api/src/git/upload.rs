@@ -311,7 +311,7 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
     let (required, haves) = reachable.value;
     if !required.is_empty() {
         return Err(ApiError::bad_request(
-            "Git object is outside the visible refs",
+            "Git object is outside the visible refs; refs may have changed, retry fetch",
         ));
     }
     let mut filtered = Vec::with_capacity(request.len());
