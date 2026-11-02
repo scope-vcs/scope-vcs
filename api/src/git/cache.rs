@@ -268,10 +268,6 @@ fn prune_stale_materializations(
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.starts_with("revision-") && name.ends_with(".git") && path.is_dir() {
-            evict_unleased(&path, remove_dir_if_exists)?;
-            continue;
-        }
         if !name.ends_with(".tmp") || !path.is_dir() {
             continue;
         }

@@ -98,6 +98,42 @@ fn request_fixture() -> Request {
     }
 }
 
+fn seed_repository(
+    state: &AppState,
+    revisions: Vec<RequestRevision>,
+) -> (RepositoryIncarnation, String) {
+    let owner = scope_domain::account::UserAccount {
+        id: "owner".into(),
+        handle: "owner".into(),
+        email: "owner@example.invalid".into(),
+        email_verified: true,
+    };
+    let repo = scope_domain::repository::Repository::new(
+        &owner,
+        "repo",
+        ViewId::private(),
+        "repoi_revision",
+    )
+    .unwrap();
+    let incarnation = repo.record.incarnation();
+    let generation = repo.repo_config.object_generation();
+    state
+        .metadata
+        .admin()
+        .seed_catalog_for_tests(scope_postgres::db::CatalogFixture {
+            users: std::collections::BTreeMap::from([(owner.id.clone(), owner)]),
+            repositories: std::collections::BTreeMap::from([(repo.record.id.clone(), repo)]),
+            requests: std::collections::BTreeMap::from([("request".into(), request_fixture())]),
+            request_revisions: revisions
+                .into_iter()
+                .map(|revision| (revision.id.clone(), revision))
+                .collect(),
+            ..Default::default()
+        })
+        .unwrap();
+    (incarnation, generation)
+}
+
 struct CountingStore {
     inner: Arc<dyn scope_storage::ObjectStore>,
     loads: Arc<AtomicUsize>,
@@ -136,9 +172,12 @@ async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed
         inner: state.object_store.clone(),
         loads: loads.clone(),
     });
-    let base = super::super::ensure_local_bare_repo(root.path().join("base.git")).unwrap();
+    let (incarnation, generation) = seed_repository(&state, Vec::new());
+    let shelf = request_object_repos(&state, &incarnation, &generation, "owner")
+        .unwrap()
+        .shared;
     run_git(
-        Some(&base),
+        Some(&shelf),
         &[
             "fetch",
             root.path().join("source").to_str().unwrap(),
@@ -147,19 +186,16 @@ async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed
         "prepare legacy base",
     )
     .unwrap();
-    let shelf = super::super::ensure_local_bare_repo(root.path().join("shelf.git")).unwrap();
-    add_receive_pack_alternate(&shelf, &base.join("objects")).unwrap();
     let mut broken = revision.clone();
     broken.git_snapshot.sha256 = "0".repeat(64);
-    let failed_state = state.clone();
-    let failed_shelf = shelf.clone();
     assert!(
-        crate::git::blocking::run(move || restore_revision(
-            &failed_state,
-            &failed_shelf,
-            "refs/heads/topic",
-            &broken
-        ))
+        with_request_revision_store_repo(
+            &state,
+            &incarnation,
+            &request_fixture(),
+            &broken,
+            |_, _| Ok(())
+        )
         .await
         .is_err()
     );
@@ -168,32 +204,13 @@ async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed
     let read = || {
         let state = state.clone();
         let revision = revision.clone();
-        let shelf = shelf.clone();
+        let incarnation = incarnation.clone();
         async move {
-            let install_state = state.clone();
-            let install_shelf = shelf.clone();
-            let install_revision = revision.clone();
-            state
-                .repository_engine
-                .install_request_objects(&shelf, revision_heads(&revision), move || async move {
-                    crate::git::blocking::run(move || {
-                        restore_revision(
-                            &install_state,
-                            &install_shelf,
-                            "refs/heads/topic",
-                            &install_revision,
-                        )
-                    })
-                    .await
-                })
-                .await
-                .unwrap();
-            inspect_revision(
+            with_request_revision_store_repo(
                 &state,
-                &shelf,
+                &incarnation,
                 &request_fixture(),
                 &revision,
-                None,
                 move |repo, revision| {
                     let result = run_git_output(
                         Some(repo),
@@ -224,12 +241,49 @@ async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed
     }
     let error_path = Arc::new(std::sync::Mutex::new(None));
     let captured = error_path.clone();
-    let failed: Result<(), ApiError> = inspect_revision(
+    state
+        .metadata
+        .repositories()
+        .mutate_repository_for_tests("owner/repo", |repo| {
+            repo.bump_content_version();
+            repo.git_head = Some(scope_domain::repository::git::GitHead::new(
+                "f".repeat(40),
+                1,
+                1,
+            ));
+        })
+        .await
+        .unwrap();
+    let canonical = state.repository_engine.repository_path(&incarnation);
+    super::super::ensure_local_bare_repo(canonical.clone()).unwrap();
+    let canonical_for_read = canonical.clone();
+    let engine = state.repository_engine.clone();
+    let incarnation_for_read = incarnation.clone();
+    with_request_revision_store_repo(
         &state,
-        &shelf,
+        &incarnation,
         &request_fixture(),
         &revision,
-        None,
+        move |_, _| {
+            if engine
+                .delete_repository_cache(&incarnation_for_read)
+                .unwrap()
+                || !canonical_for_read.exists()
+            {
+                return Err(ApiError::internal_message(
+                    "canonical lease was lost during the read",
+                ));
+            }
+            Ok(())
+        },
+    )
+    .await
+    .unwrap();
+    let failed: Result<(), ApiError> = with_request_revision_store_repo(
+        &state,
+        &RepositoryIncarnation::new("owner/repo", "repoi_revision").unwrap(),
+        &request_fixture(),
+        &revision,
         move |repo, _| {
             *captured.lock().unwrap() = Some(repo.to_path_buf());
             Err(ApiError::bad_request("inspection failed"))
@@ -251,4 +305,94 @@ async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed
     eprintln!(
         "revision proof: two concurrent cold reads and a warm read, one legacy bundle load, zero retained revision repositories or jobs"
     );
+}
+
+#[test]
+fn startup_removes_abandoned_revision_jobs() {
+    let root = tempfile::tempdir().unwrap();
+    let abandoned = root.path().join("git-jobs/revision-abandoned");
+    fs::create_dir_all(&abandoned).unwrap();
+    fs::write(abandoned.join("objects"), "abandoned").unwrap();
+    sweep_revision_jobs(root.path()).unwrap();
+    assert!(!abandoned.exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn full_view_revision_job_cannot_borrow_authored_shelf_objects() {
+    let root = tempfile::tempdir().unwrap();
+    let (mut revision, _) = fixture(root.path());
+    let hidden = revision.new_head_oid.clone();
+    let state = AppState::test_state();
+    let (incarnation, generation) = seed_repository(&state, Vec::new());
+    let repos = request_object_repos(&state, &incarnation, &generation, "owner").unwrap();
+    for (repo, head) in [
+        (&repos.shared, &revision.old_head_oid),
+        (&repos.authored, &hidden),
+    ] {
+        run_git(
+            Some(repo),
+            &["fetch", root.path().join("source").to_str().unwrap(), head],
+            "prepare shelf isolation",
+        )
+        .unwrap();
+    }
+    revision.new_head_oid = revision.old_head_oid.clone();
+    let (readable, leaked) = with_request_revision_store_repo(
+        &state,
+        &incarnation,
+        &request_fixture(),
+        &revision,
+        move |job, revision| {
+            let present = present_commits(
+                job,
+                [&revision.new_head_oid, &hidden]
+                    .into_iter()
+                    .map(String::as_str),
+            )?;
+            Ok((
+                present.contains(&revision.new_head_oid),
+                present.contains(&hidden),
+            ))
+        },
+    )
+    .await
+    .unwrap();
+    assert!(readable);
+    assert!(!leaked, "full-view shared job reached an author's draft");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revision_restore_rejects_an_unbounded_rewritten_lineage_before_downloading() {
+    let root = tempfile::tempdir().unwrap();
+    let (mut revision, _) = fixture(root.path());
+    let mut state = AppState::test_state();
+    let loads = Arc::new(AtomicUsize::new(0));
+    state.object_store = Arc::new(CountingStore {
+        inner: state.object_store.clone(),
+        loads: loads.clone(),
+    });
+    let mut revisions = Vec::new();
+    for position in 1..=17 {
+        revision.id = format!("revision-{position}");
+        revision.position = position;
+        revision.old_head_oid = format!("{:040x}", position - 1);
+        revision.new_head_oid = format!("{position:040x}");
+        revisions.push(revision.clone());
+    }
+    let (incarnation, _) = seed_repository(&state, revisions);
+    let result = with_request_revision_store_repo(
+        &state,
+        &incarnation,
+        &request_fixture(),
+        &revision,
+        |_, _| Ok(()),
+    )
+    .await;
+    assert!(
+        result
+            .unwrap_err()
+            .operator_diagnostic()
+            .contains("16 revision limit")
+    );
+    assert_eq!(loads.load(Ordering::SeqCst), 0);
 }

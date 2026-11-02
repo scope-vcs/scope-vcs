@@ -21,12 +21,7 @@ pub(crate) async fn view_object_repo(
     let base = view_projection_object_repo(state, incarnation, config, view).await?;
     let root = request_objects_root(state, incarnation);
     let key = view_pool_key(config, view);
-    crate::git::blocking::run(move || {
-        let shelf = super::ensure_local_bare_repo(root.join(format!("{key}.git")))?;
-        add_receive_pack_alternate(&shelf, &base.join("objects"))?;
-        Ok(shelf)
-    })
-    .await
+    open_shelf(root, key, base).await
 }
 
 pub(super) async fn revision_object_repo(
@@ -43,6 +38,10 @@ pub(super) async fn revision_object_repo(
         view_pool_key(config, view),
         hex::encode(&Sha256::digest(request_id.as_bytes())[..16])
     );
+    open_shelf(root, key, base).await
+}
+
+async fn open_shelf(root: PathBuf, key: String, base: PathBuf) -> Result<PathBuf, ApiError> {
     crate::git::blocking::run(move || {
         let shelf = super::ensure_local_bare_repo(root.join(format!("{key}.git")))?;
         add_receive_pack_alternate(&shelf, &base.join("objects"))?;

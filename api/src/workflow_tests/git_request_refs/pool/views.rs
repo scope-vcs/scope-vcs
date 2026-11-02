@@ -180,6 +180,10 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
         .await
         .unwrap();
     let mixed_replica = state.replica_for_tests();
+    let busy = mixed_replica
+        .runtime_budgets
+        .try_git_materialization()
+        .unwrap();
     let expected = revision.new_head_oid.clone();
     let hidden = canonical.clone();
     let (job, readable, hidden_reachable) =
@@ -201,6 +205,7 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
     assert!(!job.exists());
     assert!(readable);
     assert!(!hidden_reachable);
+    drop(busy);
     let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();

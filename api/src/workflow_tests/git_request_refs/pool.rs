@@ -173,7 +173,7 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
         super::super::push_intent_completion::published_git_fixture("request-pool-long").await;
     let replica = state.replica_for_tests();
     let bearer = bearer_header();
-    start_request(&state, "long").await;
+    let request_id = start_request(&state, "long").await;
     let request_ref = "refs/heads/long";
     let (first_origin, _first_server) = spawn_test_server(&state).await;
     let (second_origin, _second_server) = spawn_test_server(&replica).await;
@@ -206,6 +206,30 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
     let restored_head = push(&second_remote, 20);
     let behind_head = push(&first_remote, 21);
     push(&second_remote, 22);
+
+    let cold = state.replica_for_tests();
+    let request = stored_request(&cold, &request_id).await;
+    let revision = cold
+        .metadata
+        .requests()
+        .latest_request_revision(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let error = crate::git::request_refs::with_request_revision_store_repo(
+        &cold,
+        &test_repo_incarnation(),
+        &request,
+        &revision,
+        |_, _| Ok(()),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        error
+            .operator_diagnostic()
+            .contains("16 remaining pack limit")
+    );
 
     let pushing_objects = object_repos(&state, &test_owner_id()).await.shared;
     let packs = fs::read_dir(pushing_objects.join("objects/pack"))

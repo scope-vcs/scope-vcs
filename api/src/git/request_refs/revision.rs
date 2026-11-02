@@ -1,6 +1,7 @@
 use super::{
     pool::{
-        PoolInstall, PoolRepos, install_missing_request_packs, request_object_repos, shares_objects,
+        MAX_POOL_PACKS_PER_REQUEST, PoolInstall, PoolRepos, RequestObjectRepos, RequestPackLimit,
+        install_missing_request_packs, request_object_repos, shares_objects,
     },
     snapshot::{BundleRef, fetch_snapshot_into_ref},
 };
@@ -15,7 +16,7 @@ use crate::{
 };
 use scope_domain::{
     repository::RepositoryIncarnation,
-    requests::{Request, RequestRevision, canonical_request_ref},
+    requests::{Request, RequestBase, RequestRevision, canonical_request_ref},
 };
 use std::{fs, path::Path};
 
@@ -34,50 +35,23 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
         .repositories()
         .repository_object_config(incarnation)
         .await?;
-    let mut main = None;
-    let (shelf, full) = if &request.view == config.views.full() {
-        if let Some(head) = state
-            .metadata
-            .repositories()
-            .repository_content_source(incarnation)
+    let full = &request.view == config.views.full();
+    let main = full
+        .then(|| state.repository_engine.lease_repository(incarnation))
+        .transpose()?;
+    let shelf = if full {
+        full_object_repos(state, incarnation, &config, request)
             .await?
-        {
-            main = Some(
-                state
-                    .repository_engine
-                    .materialize_repository(state, incarnation, &head)
-                    .await?,
-            );
-        }
-        let state = state.clone();
-        let incarnation = incarnation.clone();
-        let generation = config.object_generation();
-        let author = request
-            .author_user_id
-            .clone()
-            .unwrap_or_else(|| request.id.clone());
-        let repos = crate::git::blocking::run(move || {
-            request_object_repos(&state, &incarnation, &generation, &author)
-        })
-        .await?;
-        let shelf = if shares_objects(request, &config) {
-            repos.shared.clone()
-        } else {
-            repos.authored.clone()
-        };
-        (shelf, Some(repos))
+            .shared
     } else {
-        (
-            super::view_pool::revision_object_repo(
-                state,
-                incarnation,
-                &config,
-                &request.view,
-                &request.id,
-            )
-            .await?,
-            None,
+        super::view_pool::revision_object_repo(
+            state,
+            incarnation,
+            &config,
+            &request.view,
+            &request.id,
         )
+        .await?
     };
     let main_for_install = main.as_ref().map(GitRepoHandle::share).transpose()?;
     let state_for_install = state.clone();
@@ -89,20 +63,27 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     state
         .repository_engine
         .install_request_objects(&shelf, heads, move || async move {
-            let _main = main_for_install;
-            let _permit = state_for_install
-                .runtime_budgets
-                .try_git_materialization()?;
+            let _main_lease = main_for_install;
+            let (_canonical, full) = if full {
+                let canonical = lease_canonical(&state_for_install, &incarnation).await?;
+                let repos = full_object_repos(
+                    &state_for_install,
+                    &incarnation,
+                    &config,
+                    &request_for_install,
+                )
+                .await?;
+                (canonical, Some(repos))
+            } else {
+                (None, None)
+            };
             let install = PoolInstall {
                 incarnation: &incarnation,
                 config: &config,
                 repos: match &full {
                     Some(repos) => PoolRepos::Full {
                         repos,
-                        actor_user_id: request_for_install
-                            .author_user_id
-                            .as_deref()
-                            .unwrap_or(&request_for_install.id),
+                        actor_user_id: request_for_install.object_author_id(),
                     },
                     None => PoolRepos::View {
                         view: &request_for_install.view,
@@ -110,13 +91,6 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
                     },
                 },
             };
-            install_missing_request_packs(
-                &state_for_install,
-                &install,
-                std::slice::from_ref(&request_for_install),
-                None,
-            )
-            .await?;
             restore_revision_lineage(
                 &state_for_install,
                 &target,
@@ -131,11 +105,16 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
 }
 
 fn revision_heads(revision: &RequestRevision) -> Vec<String> {
-    [&revision.new_head_oid, &revision.old_head_oid]
-        .into_iter()
-        .filter(|oid| oid.as_str() != EMPTY_GIT_OID)
-        .cloned()
-        .collect()
+    [
+        &revision.new_head_oid,
+        &revision.old_head_oid,
+        revision.base.review_base_oid(),
+        &revision.main_ancestor_oid,
+    ]
+    .into_iter()
+    .filter(|oid| *oid != EMPTY_GIT_OID)
+    .map(|oid| oid.to_string())
+    .collect()
 }
 
 async fn restore_revision_lineage(
@@ -145,54 +124,125 @@ async fn restore_revision_lineage(
     revision: &RequestRevision,
     install: &PoolInstall<'_>,
 ) -> Result<(), ApiError> {
-    let mut pending = vec![revision.clone()];
-    loop {
-        let current = pending.last().expect("revision lineage is nonempty");
-        let old = &current.old_head_oid;
-        let present = {
-            let shelf = shelf.to_path_buf();
-            let old = old.clone();
-            crate::git::blocking::run(move || {
-                present_commits(&shelf, std::iter::once(old.as_str()))
+    let mut pending = vec![(request.clone(), revision.clone(), false)];
+    let mut visited = std::collections::BTreeSet::new();
+    let mut remaining_packs = MAX_POOL_PACKS_PER_REQUEST;
+    while let Some((request, revision, restoring)) = pending.pop() {
+        if restoring {
+            let target = shelf.to_path_buf();
+            let heads = revision_heads(&revision);
+            if crate::git::blocking::run(move || {
+                present_commits(&target, heads.iter().map(String::as_str))
+                    .map(|present| heads.iter().all(|head| present.contains(head)))
             })
             .await?
-        };
-        if old == EMPTY_GIT_OID || old == &current.new_head_oid || present.contains(old) {
-            break;
+            {
+                continue;
+            }
+            install_revision_packs(state, install, &request, &mut remaining_packs).await?;
+            copy_full_scope_revision(
+                state,
+                install,
+                shelf,
+                &request,
+                &revision,
+                &mut remaining_packs,
+            )
+            .await?;
+            let state = state.clone();
+            let shelf = shelf.to_path_buf();
+            let request_ref = canonical_request_ref(&request.name);
+            let permit = state.runtime_budgets.try_git_materialization()?;
+            crate::git::blocking::run(move || {
+                let _permit = permit;
+                restore_revision(&state, &shelf, &request_ref, &revision)
+            })
+            .await?;
+            continue;
         }
-        let Some(previous) = state
-            .metadata
-            .requests()
-            .latest_request_revision_through(&request.id, current.position.saturating_sub(1))
-            .await?
-        else {
-            break;
-        };
-        if &previous.new_head_oid != old {
-            break;
+        if !visited.insert(revision.id.clone()) {
+            continue;
         }
-        pending.push(previous);
-    }
-    for revision in pending.into_iter().rev() {
+        if visited.len() > MAX_POOL_PACKS_PER_REQUEST {
+            return Err(ApiError::payload_too_large(
+                "request revision restore exceeds the 16 revision limit",
+            ));
+        }
+        install_revision_packs(state, install, &request, &mut remaining_packs).await?;
+        let heads = revision_heads(&revision);
         let target = shelf.to_path_buf();
-        let head = revision.new_head_oid.clone();
         let present = crate::git::blocking::run(move || {
-            present_commits(&target, std::iter::once(head.as_str()))
+            present_commits(&target, heads.iter().map(String::as_str))
         })
         .await?;
-        if !present.contains(&revision.new_head_oid) {
-            install_missing_request_packs(state, install, std::slice::from_ref(request), None)
-                .await?;
-            copy_full_scope_revision(state, install, shelf, request, &revision).await?;
+        pending.push((request.clone(), revision.clone(), true));
+        if revision.old_head_oid != EMPTY_GIT_OID
+            && revision.old_head_oid != revision.new_head_oid
+            && !present.contains(&revision.old_head_oid)
+            && let Some(previous) = state
+                .metadata
+                .requests()
+                .latest_request_revision_through(&request.id, revision.position.saturating_sub(1))
+                .await?
+            && previous.new_head_oid == revision.old_head_oid
+        {
+            pending.push((request.clone(), previous, false));
         }
-        let state = state.clone();
-        let shelf = shelf.to_path_buf();
-        let request_ref = canonical_request_ref(&request.name);
-        crate::git::blocking::run(move || {
-            restore_revision(&state, &shelf, &request_ref, &revision)
-        })
-        .await?;
+        if let RequestBase::Request {
+            request_id,
+            revision_id,
+            head_oid,
+        } = &revision.base
+            && !present.contains(head_oid)
+        {
+            let parent = state
+                .metadata
+                .requests()
+                .request_by_id(request_id)
+                .await?
+                .filter(|parent| {
+                    parent.repo_id == request.repo_id
+                        && parent.view == request.view
+                        && (shares_objects(parent, install.config)
+                            || parent.object_author_id() == request.object_author_id())
+                })
+                .ok_or_else(|| {
+                    ApiError::infrastructure_unavailable(
+                        "request revision stack base is unavailable",
+                    )
+                })?;
+            let base = state
+                .metadata
+                .requests()
+                .request_revision(request_id, revision_id)
+                .await?
+                .filter(|base| &base.new_head_oid == head_oid)
+                .ok_or_else(|| {
+                    ApiError::infrastructure_unavailable(
+                        "request revision stack base is unavailable",
+                    )
+                })?;
+            pending.push((parent, base, false));
+        }
     }
+    Ok(())
+}
+
+async fn install_revision_packs(
+    state: &AppState,
+    install: &PoolInstall<'_>,
+    request: &Request,
+    remaining_packs: &mut usize,
+) -> Result<(), ApiError> {
+    let _permit = state.runtime_budgets.try_git_materialization()?;
+    let installed = install_missing_request_packs(
+        state,
+        install,
+        std::slice::from_ref(request),
+        RequestPackLimit::Total(*remaining_packs),
+    )
+    .await?;
+    *remaining_packs = remaining_packs.saturating_sub(installed.attempted);
     Ok(())
 }
 
@@ -202,6 +252,7 @@ async fn copy_full_scope_revision(
     shelf: &Path,
     request: &Request,
     revision: &RequestRevision,
+    remaining_packs: &mut usize,
 ) -> Result<(), ApiError> {
     if !matches!(install.repos, PoolRepos::View { .. }) {
         return Ok(());
@@ -220,66 +271,44 @@ async fn copy_full_scope_revision(
     }) {
         return Ok(());
     }
-    let main = match state
-        .metadata
-        .repositories()
-        .repository_content_source(install.incarnation)
-        .await?
-    {
-        Some(head) => Some(
-            state
-                .repository_engine
-                .materialize_repository(state, install.incarnation, &head)
-                .await?,
-        ),
-        None => None,
-    };
-    let full = {
-        let state = state.clone();
-        let incarnation = install.incarnation.clone();
-        let generation = install.config.object_generation();
-        let author = request
-            .author_user_id
-            .clone()
-            .unwrap_or_else(|| request.id.clone());
-        crate::git::blocking::run(move || {
-            request_object_repos(&state, &incarnation, &generation, &author)
-        })
-        .await?
-    };
+    let main = lease_canonical(state, install.incarnation).await?;
+    let full = full_object_repos(state, install.incarnation, install.config, request).await?;
     let source = if shares_objects(request, install.config) {
         &full.shared
     } else {
         &full.authored
     };
-    copy_revision_heads(shelf, source, revision_heads(revision)).await?;
-    install_missing_request_packs(
+    copy_revision_heads(state, shelf, source, revision_heads(revision)).await?;
+    install_revision_packs(
         state,
         &PoolInstall {
             incarnation: install.incarnation,
             config: install.config,
             repos: PoolRepos::Full {
                 repos: &full,
-                actor_user_id: request.author_user_id.as_deref().unwrap_or(&request.id),
+                actor_user_id: request.object_author_id(),
             },
         },
-        std::slice::from_ref(request),
-        None,
+        request,
+        remaining_packs,
     )
     .await?;
-    copy_revision_heads(source, shelf, revision_heads(revision)).await?;
+    copy_revision_heads(state, source, shelf, revision_heads(revision)).await?;
     drop(main);
     Ok(())
 }
 
 async fn copy_revision_heads(
+    state: &AppState,
     source: &Path,
     target: &Path,
     heads: Vec<String>,
 ) -> Result<(), ApiError> {
     let source = source.to_path_buf();
     let target = target.to_path_buf();
+    let permit = state.runtime_budgets.try_git_materialization()?;
     crate::git::blocking::run(move || {
+        let _permit = permit;
         let present = present_commits(&source, heads.iter().map(String::as_str))?;
         let retained = present_commits(&target, heads.iter().map(String::as_str))?;
         for head in heads
@@ -333,6 +362,49 @@ fn restore_revision(
         Err(ApiError::infrastructure_unavailable(
             "request revision shelf is missing comparison commits",
         ))
+    }
+}
+
+async fn full_object_repos(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &scope_domain::repo_config::RepoConfig,
+    request: &Request,
+) -> Result<RequestObjectRepos, ApiError> {
+    let state = state.clone();
+    let incarnation = incarnation.clone();
+    let generation = config.object_generation();
+    let author = request.object_author_id().to_string();
+    crate::git::blocking::run(move || {
+        request_object_repos(&state, &incarnation, &generation, &author)
+    })
+    .await
+}
+
+async fn lease_canonical(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+) -> Result<Option<GitRepoHandle>, ApiError> {
+    match state
+        .metadata
+        .repositories()
+        .repository_content_source(incarnation)
+        .await?
+    {
+        Some(head) => state
+            .repository_engine
+            .materialize_repository(state, incarnation, &head)
+            .await
+            .map(Some),
+        None => Ok(None),
+    }
+}
+
+pub(crate) fn sweep_revision_jobs(data_dir: &Path) -> std::io::Result<()> {
+    match fs::remove_dir_all(data_dir.join("git-jobs")) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 

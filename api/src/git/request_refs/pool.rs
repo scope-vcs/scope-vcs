@@ -28,7 +28,7 @@ use std::{
     path::{Path as FsPath, PathBuf},
 };
 
-const MAX_POOL_PACKS_PER_REQUEST: usize = 16;
+pub(super) const MAX_POOL_PACKS_PER_REQUEST: usize = 16;
 
 #[derive(Clone)]
 pub(crate) struct RequestObjectRepos {
@@ -92,13 +92,18 @@ pub(super) async fn install_request_pool_packs(
         return;
     }
     let started = std::time::Instant::now();
-    match install_missing_request_packs(state, install, missing, Some(MAX_POOL_PACKS_PER_REQUEST))
-        .await
+    match install_missing_request_packs(
+        state,
+        install,
+        missing,
+        RequestPackLimit::PerRequest(MAX_POOL_PACKS_PER_REQUEST),
+    )
+    .await
     {
-        Ok(installed) => tracing::info!(
+        Ok(result) => tracing::info!(
             repository_id = install.incarnation.repository_id(),
             requests = missing.len(),
-            installed,
+            installed = result.installed,
             duration_ms = started.elapsed().as_millis(),
             "request pool packs installed"
         ),
@@ -110,12 +115,23 @@ pub(super) async fn install_request_pool_packs(
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum RequestPackLimit {
+    PerRequest(usize),
+    Total(usize),
+}
+
+pub(super) struct InstalledRequestPacks {
+    pub(super) installed: usize,
+    pub(super) attempted: usize,
+}
+
 pub(super) async fn install_missing_request_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
     missing: &[Request],
-    limit_per_request: Option<usize>,
-) -> Result<usize, ApiError> {
+    limit: RequestPackLimit,
+) -> Result<InstalledRequestPacks, ApiError> {
     let repository_id = install.incarnation.repository_id();
     let request_ids = missing
         .iter()
@@ -135,16 +151,23 @@ pub(super) async fn install_missing_request_packs(
     let mut needed = Vec::new();
     for (repo, packs) in by_repo {
         let objects_repo = repo.to_path_buf();
-        let packs = crate::git::blocking::run(move || {
-            packs_to_catch_up(&objects_repo, packs, limit_per_request)
-        })
-        .await?;
+        let packs =
+            crate::git::blocking::run(move || packs_to_catch_up(&objects_repo, packs, limit))
+                .await?;
         needed.push((repo, packs));
     }
     let pack_ids = needed
         .iter()
         .flat_map(|(_, packs)| packs.iter().map(|pack| pack.id.clone()))
         .collect::<Vec<_>>();
+    let attempted = pack_ids.len();
+    if let RequestPackLimit::Total(limit) = limit
+        && attempted > limit
+    {
+        return Err(ApiError::payload_too_large(format!(
+            "request revision restore exceeds the {limit} remaining pack limit"
+        )));
+    }
     let mut storage = state
         .metadata
         .repositories()
@@ -171,13 +194,16 @@ pub(super) async fn install_missing_request_packs(
             .collect();
         installed += install_chain(state, install.incarnation, repo, packs).await?;
     }
-    Ok(installed)
+    Ok(InstalledRequestPacks {
+        installed,
+        attempted,
+    })
 }
 
 fn packs_to_catch_up(
     objects_repo: &FsPath,
     packs: Vec<PooledRequestPack>,
-    limit_per_request: Option<usize>,
+    limit: RequestPackLimit,
 ) -> Result<Vec<PooledRequestPack>, ApiError> {
     let present = present_commits(
         objects_repo,
@@ -193,7 +219,10 @@ fn packs_to_catch_up(
     }
     Ok(missing
         .into_iter()
-        .filter(|pack| limit_per_request.is_none_or(|limit| per_request[&pack.request_id] <= limit))
+        .filter(|pack| match limit {
+            RequestPackLimit::PerRequest(limit) => per_request[&pack.request_id] <= limit,
+            RequestPackLimit::Total(_) => true,
+        })
         .collect())
 }
 

@@ -79,27 +79,7 @@ pub(super) fn download_snapshot(
     })
 }
 
-#[cfg(test)]
-pub(super) fn fetch_bundle_into(
-    repo: &FsPath,
-    request_ref: &str,
-    bundle: &FsPath,
-    base_repo: Option<&FsPath>,
-    action: &str,
-) -> Result<(), ApiError> {
-    fetch_bundle_into_ref(
-        repo,
-        BundleRef {
-            source: request_ref,
-            destination: request_ref,
-        },
-        bundle,
-        base_repo,
-        action,
-    )
-}
-
-fn fetch_bundle_into_ref(
+pub(super) fn fetch_bundle_into_ref(
     repo: &FsPath,
     bundle_ref: BundleRef<'_>,
     bundle: &FsPath,

@@ -110,6 +110,13 @@ impl RepositoryEngine {
         self.cache.remove(incarnation)
     }
 
+    pub(crate) fn lease_repository(
+        self: &Arc<Self>,
+        incarnation: &RepositoryIncarnation,
+    ) -> Result<GitRepoHandle, ApiError> {
+        self.cache.lease(incarnation)
+    }
+
     pub(crate) fn lease_derived(
         self: &Arc<Self>,
         path: PathBuf,

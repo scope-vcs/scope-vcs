@@ -47,13 +47,13 @@ use ancestry::{
 pub(crate) use pool::retain_staged_pool_pack;
 #[cfg(test)]
 pub(crate) use pool::{RequestObjectRepos, request_object_repos};
-pub(crate) use revision::with_request_revision_store_repo;
+pub(crate) use revision::{sweep_revision_jobs, with_request_revision_store_repo};
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,
 };
 use snapshot::fetch_snapshot_into;
 #[cfg(test)]
-use snapshot::{bundle_prerequisites, fetch_bundle_into};
+use snapshot::{BundleRef, bundle_prerequisites, fetch_bundle_into_ref};
 pub(crate) use view_bases::{RequestViewBases, request_view_bases, share_request_view_bases};
 #[cfg(test)]
 pub(crate) use view_pool::view_object_repo;
