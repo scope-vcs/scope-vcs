@@ -234,6 +234,29 @@ async fn pool_bundle_backfill_keeps_the_gate_closed_when_a_reader_cannot_install
         "start long pack chain",
     )
     .unwrap();
+    let skipped = stage_pool_pack(
+        &state,
+        TEST_REPO_ID,
+        &source,
+        PoolPackRevision {
+            owner: GitPoolPackOwner::Request {
+                request_id: request_id.clone(),
+                scope: RequestPackScope::Full,
+            },
+            head_oid: main.clone(),
+            prerequisites: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let skipped_id = skipped.pack.id.clone();
+    state
+        .metadata
+        .repositories()
+        .register_main_pool_pack_for_tests(TEST_REPO_ID, &skipped.pack)
+        .await
+        .unwrap();
+    skipped.finish(&state).await;
     let mut previous = main;
     for position in 0..17 {
         commit_file(&source, "chain.txt", &format!("revision {position}\n"));
@@ -261,6 +284,38 @@ async fn pool_bundle_backfill_keeps_the_gate_closed_when_a_reader_cannot_install
             .unwrap();
         staged.finish(&state).await;
         previous = head;
+        if position == 15 {
+            for attempt in 0..16 {
+                assert!(
+                    backfill_one_bundle(&state, &|| Ok(100 + attempt * 30))
+                        .await
+                        .unwrap()
+                );
+            }
+            let readable = state
+                .metadata
+                .admin()
+                .pool_bundle_backfill_report_for_tests()
+                .await
+                .unwrap();
+            assert_eq!((readable.total.done, readable.total.remaining), (16, 0));
+            state
+                .metadata
+                .admin()
+                .execute_for_tests(&format!(
+                    "UPDATE scope_git_pool_packs SET head_oid = '{}' WHERE id = '{skipped_id}'",
+                    "f".repeat(40)
+                ))
+                .await
+                .unwrap();
+            let changed = state
+                .metadata
+                .admin()
+                .pool_bundle_backfill_report_for_tests()
+                .await
+                .unwrap();
+            assert_eq!((changed.total.done, changed.total.remaining), (0, 16));
+        }
     }
     let before = state
         .metadata
@@ -271,7 +326,7 @@ async fn pool_bundle_backfill_keeps_the_gate_closed_when_a_reader_cannot_install
     assert_eq!((before.total.done, before.total.remaining), (0, 17));
     for position in 0..17 {
         assert!(
-            backfill_one_bundle(&state, &|| Ok(100 + position * 30))
+            backfill_one_bundle(&state, &|| Ok(1000 + position * 30))
                 .await
                 .unwrap()
         );

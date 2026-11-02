@@ -165,7 +165,7 @@ pub(super) async fn verify(
             .collect::<std::collections::BTreeSet<_>>()
     };
     let needed = packs_supplying(
-        packs,
+        &packs,
         vec![
             claim.source.head_oid.clone(),
             claim.source.old_head_oid.clone(),
@@ -183,7 +183,6 @@ pub(super) async fn verify(
         .await?
     };
     let within_reader_limits = needed.iter().all(|pack| allowed.contains(&pack.id));
-    let verified_packs = needed.clone();
     let mut fresh = state.clone();
     fresh.git_segment_store = Arc::new(
         state
@@ -220,34 +219,40 @@ pub(super) async fn verify(
         .map_err(ApiError::infrastructure_unavailable)
     })
     .await?;
-    let reader_request_capacities = request_pack_counts
+    let reader_request_capacities: BTreeMap<_, _> = request_pack_counts
         .into_iter()
         .filter(|(request_id, _)| {
             request_id == &claim.source.request_id || needed_request_ids.contains(request_id)
         })
         .map(|(request_id, count)| (request_id, restored.maximum_request_pack_count(count)))
         .collect();
+    let reader_packs = packs
+        .into_iter()
+        .filter(|pack| match &pack.owner {
+            GitPoolPackOwner::Request { request_id, .. } => {
+                reader_request_capacities.contains_key(request_id)
+            }
+            GitPoolPackOwner::Main { .. } => false,
+        })
+        .collect();
     Ok(BundleBackfillVerification {
         restored,
-        packs: verified_packs,
+        packs: reader_packs,
         request_pack_ids,
         reader_request_capacities,
     })
 }
 
-pub(super) fn packs_supplying(
-    packs: Vec<GitPoolPack>,
-    mut commits: Vec<String>,
-) -> Vec<GitPoolPack> {
+pub(super) fn packs_supplying(packs: &[GitPoolPack], mut commits: Vec<String>) -> Vec<GitPoolPack> {
     let mut remaining = packs
-        .into_iter()
+        .iter()
         .map(|pack| (pack.head_oid.clone(), pack))
         .collect::<BTreeMap<_, _>>();
     let mut needed = Vec::new();
     while let Some(commit) = commits.pop() {
         if let Some(pack) = remaining.remove(&commit) {
             commits.extend(pack.prerequisites.iter().cloned());
-            needed.push(pack);
+            needed.push(pack.clone());
         }
     }
     needed

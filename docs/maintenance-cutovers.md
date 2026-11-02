@@ -262,7 +262,9 @@ histories. Missing prerequisites, corrupt packs, missing segment objects and the
 request reader's pack limit are failures. The verifier can install a chain longer
 than the reader limit to inspect it, but cannot mark it done. Receipts bind the
 source, heads, scope, repository incarnation, configuration and supporting packs.
-Publication compares the restored pack metadata under row locks through commit.
+Publication compares all pack metadata used to decide reader eligibility and
+restore history under row locks through commit. This includes packs skipped
+because their heads were already in main; they can affect the reader limit.
 Removing or changing supporting packs invalidates their receipts. Adding packs
 beyond the verified reader capacity requires verification again.
 

@@ -146,8 +146,9 @@ async fn backfill_claim(
         let mut supply = missing;
         supply.push(claim.source.old_head_oid.clone());
         let packs = restore::with_storage(state, &request.repo_id, listed.clone()).await?;
-        install_chain_for_verification(state, &incarnation, &path, packs_supplying(packs, supply))
-            .await?;
+        let needed_packs = packs_supplying(&packs, supply);
+        drop(packs);
+        install_chain_for_verification(state, &incarnation, &path, needed_packs).await?;
         let import_path = path.clone();
         let head = claim.source.head_oid.clone();
         let old_head = claim.source.old_head_oid.clone();
@@ -268,7 +269,7 @@ mod tests {
             pack("second", &["first"]),
             pack("unrelated", &["main"]),
         ];
-        let mut heads = packs_supplying(packs, vec!["second".to_string()])
+        let mut heads = packs_supplying(&packs, vec!["second".to_string()])
             .into_iter()
             .map(|pack| pack.head_oid)
             .collect::<Vec<_>>();
