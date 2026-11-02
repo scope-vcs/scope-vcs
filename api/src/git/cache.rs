@@ -164,9 +164,9 @@ impl RepositoryGitCache {
     }
 
     pub(crate) fn prune_to(&self, max_bytes: u64) -> Result<(), ApiError> {
-        let mut caches = repository_cache_directories(&self.root)?;
         let now = SystemTime::now();
         prune_stale_materializations(&self.root, now, STALE_MATERIALIZATION_MAX_IDLE)?;
+        let mut caches = repository_cache_directories(&self.root)?;
         caches.sort_by_key(|entry| entry.last_used);
 
         let mut retained_bytes = caches
@@ -268,6 +268,10 @@ fn prune_stale_materializations(
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
+        if name.starts_with("revision-") && name.ends_with(".git") && path.is_dir() {
+            evict_unleased(&path, remove_dir_if_exists)?;
+            continue;
+        }
         if !name.ends_with(".tmp") || !path.is_dir() {
             continue;
         }

@@ -92,7 +92,9 @@ pub(super) async fn install_request_pool_packs(
         return;
     }
     let started = std::time::Instant::now();
-    match install_missing_request_packs(state, install, missing).await {
+    match install_missing_request_packs(state, install, missing, Some(MAX_POOL_PACKS_PER_REQUEST))
+        .await
+    {
         Ok(installed) => tracing::info!(
             repository_id = install.incarnation.repository_id(),
             requests = missing.len(),
@@ -108,10 +110,11 @@ pub(super) async fn install_request_pool_packs(
     }
 }
 
-async fn install_missing_request_packs(
+pub(super) async fn install_missing_request_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
     missing: &[Request],
+    limit_per_request: Option<usize>,
 ) -> Result<usize, ApiError> {
     let repository_id = install.incarnation.repository_id();
     let request_ids = missing
@@ -132,8 +135,10 @@ async fn install_missing_request_packs(
     let mut needed = Vec::new();
     for (repo, packs) in by_repo {
         let objects_repo = repo.to_path_buf();
-        let packs =
-            crate::git::blocking::run(move || packs_to_catch_up(&objects_repo, packs)).await?;
+        let packs = crate::git::blocking::run(move || {
+            packs_to_catch_up(&objects_repo, packs, limit_per_request)
+        })
+        .await?;
         needed.push((repo, packs));
     }
     let pack_ids = needed
@@ -172,6 +177,7 @@ async fn install_missing_request_packs(
 fn packs_to_catch_up(
     objects_repo: &FsPath,
     packs: Vec<PooledRequestPack>,
+    limit_per_request: Option<usize>,
 ) -> Result<Vec<PooledRequestPack>, ApiError> {
     let present = present_commits(
         objects_repo,
@@ -187,7 +193,7 @@ fn packs_to_catch_up(
     }
     Ok(missing
         .into_iter()
-        .filter(|pack| per_request[&pack.request_id] <= MAX_POOL_PACKS_PER_REQUEST)
+        .filter(|pack| limit_per_request.is_none_or(|limit| per_request[&pack.request_id] <= limit))
         .collect())
 }
 

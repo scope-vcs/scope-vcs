@@ -62,7 +62,45 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
     .unwrap();
     let submitted_head = git_head_oid(&source);
     submit_request(router(state.clone()), &request_id, &bearer).await;
-    let _ = fs::remove_dir_all(prepare_owner_push(&replica, request_ref).await);
+    let request = stored_request(&state, &request_id).await;
+    let revision = state
+        .metadata
+        .requests()
+        .latest_request_revision(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    replica
+        .object_store
+        .delete(&scope_storage::object_key(&revision.git_snapshot))
+        .await
+        .unwrap();
+    let job = crate::git::request_refs::with_request_revision_store_repo(
+        &replica,
+        &test_repo_incarnation(),
+        &request,
+        &revision,
+        |job, revision| {
+            run_git(
+                Some(job),
+                &["diff", &revision.old_head_oid, &revision.new_head_oid],
+                "read pooled revision",
+            )?;
+            Ok(job.to_path_buf())
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!job.exists());
+    assert!(
+        fs::read_dir(replica.repository_engine.cache_root())
+            .unwrap()
+            .all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("revision-"))
+    );
     push_change(
         &source,
         &first_remote,

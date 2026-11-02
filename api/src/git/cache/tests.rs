@@ -62,9 +62,12 @@ fn idle_repository_is_retained_while_the_cache_fits_its_byte_budget() {
         .set_times(fs::FileTimes::new().set_modified(SystemTime::UNIX_EPOCH))
         .unwrap();
 
+    let obsolete = root.join("revision-obsolete.git");
+    fs::create_dir(&obsolete).unwrap();
     registry.prune().unwrap();
 
     assert!(repo_path.exists());
+    assert!(!obsolete.exists());
     let _ = fs::remove_dir_all(root);
 }
 

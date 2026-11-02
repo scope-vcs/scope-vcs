@@ -51,9 +51,9 @@ pub(crate) use revision::with_request_revision_store_repo;
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,
 };
+use snapshot::fetch_snapshot_into;
 #[cfg(test)]
-use snapshot::bundle_prerequisites;
-use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};
+use snapshot::{bundle_prerequisites, fetch_bundle_into};
 pub(crate) use view_bases::{RequestViewBases, request_view_bases, share_request_view_bases};
 #[cfg(test)]
 pub(crate) use view_pool::view_object_repo;

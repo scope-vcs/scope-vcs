@@ -300,8 +300,14 @@ A restricted staging repository copies only authorized request heads from its
 view shelf, keeping other authors' drafts unreachable. The shelf borrows a
 self-contained projection owner that fetches each new view head incrementally,
 since ordinary projection caches can borrow canonical objects. Changing view configuration abandons the old shelf.
-Full-view push shelves retain their shared and per-author ownership; readers
-continue using bundles in this migration slice.
+Full-view push shelves retain their shared and per-author ownership. Revision
+reads create temporary jobs that borrow those shelves. Restricted revision reads
+borrow a request-specific shelf backed only by the isolated view projection,
+so another author's draft on the broader view shelf remains unreachable by ID.
+Concurrent reads share missing-object installation. Pool chains provide both
+comparison heads, including rewritten old heads; legacy bundles restore once
+onto the shelf. Jobs are removed after inspection, including errors. Obsolete
+per-revision repositories are removed by cache pruning.
 
 `scope-domain::repository::git::GitHead` owns the current Git coordinates and
 its opaque `GitFrontier` digest. Push and merge transactions compare that typed

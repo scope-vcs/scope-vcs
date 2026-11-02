@@ -18,19 +18,61 @@ pub(crate) async fn view_object_repo(
     config: &RepoConfig,
     view: &ViewId,
 ) -> Result<PathBuf, ApiError> {
+    let base = view_projection_object_repo(state, incarnation, config, view).await?;
+    let root = request_objects_root(state, incarnation);
+    let key = view_pool_key(config, view);
+    crate::git::blocking::run(move || {
+        let shelf = super::ensure_local_bare_repo(root.join(format!("{key}.git")))?;
+        add_receive_pack_alternate(&shelf, &base.join("objects"))?;
+        Ok(shelf)
+    })
+    .await
+}
+
+pub(super) async fn revision_object_repo(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &ViewId,
+    request_id: &str,
+) -> Result<PathBuf, ApiError> {
+    let base = view_projection_object_repo(state, incarnation, config, view).await?;
+    let root = request_objects_root(state, incarnation);
+    let key = format!(
+        "{}-request-{}",
+        view_pool_key(config, view),
+        hex::encode(&Sha256::digest(request_id.as_bytes())[..16])
+    );
+    crate::git::blocking::run(move || {
+        let shelf = super::ensure_local_bare_repo(root.join(format!("{key}.git")))?;
+        add_receive_pack_alternate(&shelf, &base.join("objects"))?;
+        Ok(shelf)
+    })
+    .await
+}
+
+fn view_pool_key(config: &RepoConfig, view: &ViewId) -> String {
+    format!(
+        "{}-view-{}",
+        config.object_generation(),
+        hex::encode(&Sha256::digest(view.as_str().as_bytes())[..16])
+    )
+}
+
+async fn view_projection_object_repo(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &ViewId,
+) -> Result<PathBuf, ApiError> {
     if view == config.views.full() || config.views.get(view).is_none() {
         return Err(ApiError::not_found("restricted view not found"));
     }
     let git = RepositoryGit::load(state, incarnation).await?;
     let projection = git.view_repo(state, config.views(), view).await?;
     let root = request_objects_root(state, incarnation);
-    let key = format!(
-        "{}-view-{}",
-        config.object_generation(),
-        hex::encode(&Sha256::digest(view.as_str().as_bytes())[..16])
-    );
+    let key = view_pool_key(config, view);
     crate::git::blocking::run(move || {
-        let shelf = super::ensure_local_bare_repo(root.join(format!("{key}.git")))?;
         let head = git_stdout_text(
             &projection,
             &["rev-parse", "HEAD"],
@@ -55,8 +97,7 @@ pub(crate) async fn view_object_repo(
         {
             return Err(error);
         }
-        add_receive_pack_alternate(&shelf, &base.join("objects"))?;
-        Ok(shelf)
+        Ok(base)
     })
     .await
 }

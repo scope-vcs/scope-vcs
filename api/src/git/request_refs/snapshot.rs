@@ -79,6 +79,7 @@ pub(super) fn download_snapshot(
     })
 }
 
+#[cfg(test)]
 pub(super) fn fetch_bundle_into(
     repo: &FsPath,
     request_ref: &str,

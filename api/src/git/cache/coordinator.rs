@@ -14,7 +14,7 @@ pub(crate) enum GitDerivedCacheNamespace {
     Projection,
     Repository,
     RequestReadView,
-    RequestRevision,
+    RequestObjects,
     RunSource,
 }
 
