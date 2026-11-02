@@ -261,7 +261,15 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
     let repositories = state.metadata.repositories();
     let now = unix_now();
     repositories
-        .record_git_fetch_advertisement(&reader, "main", &[parent.clone(), child], now)
+        .record_git_fetch_advertisement(&reader, "main", &[parent.clone()], now)
+        .await
+        .unwrap();
+    repositories
+        .record_git_fetch_advertisement(&reader, "main", &[child], now)
+        .await
+        .unwrap();
+    repositories
+        .record_git_fetch_advertisement(&reader, "main", &[parent.clone()], now)
         .await
         .unwrap();
     let advertised = repositories

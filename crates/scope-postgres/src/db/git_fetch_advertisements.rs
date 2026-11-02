@@ -52,7 +52,15 @@ impl RepositoryStore {
              FROM jsonb_to_recordset($5) AS refs(head_oid text, requests jsonb)
              ON CONFLICT (repo_id, generation, view_id, reader_id, head_oid)
              DO UPDATE SET requests = CASE WHEN scope_git_fetch_advertisements.requests IS NULL
-                 OR EXCLUDED.requests IS NULL THEN NULL ELSE EXCLUDED.requests END,
+                 OR EXCLUDED.requests IS NULL THEN NULL ELSE (
+                     SELECT jsonb_agg(merged.request) FROM (
+                         SELECT DISTINCT ON (saved.request->>'id') saved.request
+                         FROM jsonb_array_elements(
+                             scope_git_fetch_advertisements.requests || EXCLUDED.requests
+                         ) WITH ORDINALITY AS saved(request, position)
+                         ORDER BY saved.request->>'id', saved.position DESC
+                     ) merged
+                 ) END,
                  expires_at_unix = EXCLUDED.expires_at_unix",
             [reader.repo_id.into(), reader.generation.into(), reader.view.as_str().into(),
              reader.user_id.unwrap_or_default().into(), serde_json::Value::Array(refs).into(),
