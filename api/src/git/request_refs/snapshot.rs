@@ -72,10 +72,13 @@ pub(crate) fn download_snapshot(
     path: &FsPath,
 ) -> Result<Result<(), ObjectStoreError>, ApiError> {
     crate::git::blocking::block_on(async {
+        use tokio::io::AsyncWriteExt;
         let mut file = tokio::fs::File::create(path)
             .await
             .map_err(ApiError::internal)?;
-        Ok(write_source_blob_to(objects, snapshot, &mut file).await)
+        let result = write_source_blob_to(objects, snapshot, &mut file).await;
+        file.flush().await.map_err(ApiError::internal)?;
+        Ok(result)
     })
 }
 

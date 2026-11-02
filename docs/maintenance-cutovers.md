@@ -242,32 +242,21 @@ Railway source upload.
 
 ## Pool bundle backfill
 
-Before removing bundle readers or deleting stored bundles, run the read-only
-`scope-maintenance pool-bundle-backfill` command with the maintenance database
-connection. The JSON contains repository counts and `total`: `done` counts
-revisions with a pack in the required ownership scope, `needing_backfill` counts
-unattempted revisions, and `failed` counts revisions whose last attempt failed.
-`remaining` includes both pending and failed revisions. The report also lists
-failure reasons and attempt times. Request snapshots without a revision row
-count as a revision until their head has a pack. Repositories with no stored
-bundle revisions have no work to report.
+Before deleting stored request bundles in a later PR, stop writers and run
+`scope-maintenance pool-bundle-backfill` with the maintenance database connection
+and the API's object storage and encryption configuration. This operator-run
+command scans stored revisions in batches of 32, keeps no progress state, and is
+safe to rerun. `--dry-run` verifies without publishing packs.
 
-The API background runner converts one bundle at a time, with at least thirty
-seconds between attempts across all replicas. A ten-minute database lease
-recovers interrupted attempts; a dedicated session fence keeps a long-running
-attempt exclusive even after that deadline. Failures retry after one day and
-continue to count as remaining until a pack is recorded. Corrupt or missing
-bundles require operator recovery of the original object, followed by the next
-retry. No maintenance command starts the backfill or changes its state.
+Each revision first restores into an empty repository through the reader's pool
+pack installer, using only pool packs and the main copy or view base. Missing
+revisions import their bundle and publish a pack through the live push writer,
+then repeat the empty-repository check. Verification requires both the head and
+old head and their connected history. Restricted packs stay view-scoped and are
+never installed on shared shelves. Failures print a reason for each revision;
+repository and total summaries print verified, repaired, and failed counts.
+The command exits nonzero if any revision fails. Delete request bundles and this
+command only after a production invocation exits zero.
 
-The backfill verifies the stored bundle, restores its declared prerequisites
-from main or its view and the request's existing packs, and stages it through the
-live push pack writer. Pack publication rechecks the repository incarnation and
-object generation. Restricted requests receive view-owned packs. Temporary
-repositories are discarded; the backfill does not install request packs on
-shared shelves. Existing bundles and readers remain in place.
-
-The cutover gate is `total.remaining == 0` and `total.failed == 0` on production.
-A successful development or preview report does not satisfy that gate. Migration
-`m0106_pool_bundle_backfill` follows the view-pack migration in PR #865 and may
-need renumbering when the stack lands.
+This command does not cover run-owned bundles from
+`RunSource::EphemeralGitBundle` or `RunSource::RequestGitSnapshot`.

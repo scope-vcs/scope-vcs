@@ -59,11 +59,8 @@ mod native_runs;
 mod object_references;
 mod outbox;
 mod pool_bundle_backfill;
+pub use pool_bundle_backfill::BundleSource;
 mod projection_read_models;
-pub use pool_bundle_backfill::{
-    BundleBackfillClaim, BundleBackfillSource, PoolBundleBackfillReport,
-    pool_bundle_backfill_report_for_maintenance,
-};
 mod push_triggers;
 mod repo_change_notifications;
 mod repo_collaboration;

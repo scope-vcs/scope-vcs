@@ -516,7 +516,7 @@ fn ensure_request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<(), ApiE
     Err(ApiError::bad_request(REQUEST_REF_COMMIT_ERROR))
 }
 
-fn ensure_local_bare_repo(repo: PathBuf) -> Result<PathBuf, ApiError> {
+pub(crate) fn ensure_local_bare_repo(repo: PathBuf) -> Result<PathBuf, ApiError> {
     if repo.join("objects").is_dir() {
         return Ok(repo);
     }

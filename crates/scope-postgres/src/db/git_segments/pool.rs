@@ -289,6 +289,29 @@ fn pool_pack_storage(row: &QueryResult) -> Result<GitPoolPackStorage, PostgresEr
 }
 
 impl crate::db::RepositoryStore {
+    pub async fn bundle_packs(
+        &self,
+        repo_id: &str,
+        scope: &RequestPackScope,
+        heads: &[String],
+    ) -> Result<Vec<GitPoolPack>, PostgresError> {
+        self.db.query_all_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "WITH RECURSIVE needed(head_oid) AS (
+                SELECT unnest($4::text[]) UNION
+                SELECT unnest(p.prerequisites) FROM scope_git_pool_packs p JOIN needed n USING (head_oid)
+                WHERE p.repo_id = $1 AND p.view_id IS NOT DISTINCT FROM $2
+             ) SELECT p.* FROM scope_git_pool_packs p JOIN scope_requests r ON r.id = p.request_id
+             WHERE p.repo_id = $1 AND p.view_id IS NOT DISTINCT FROM $2
+             AND r.audience = $3 AND (cardinality($4::text[]) = 0 OR p.head_oid IN (SELECT head_oid FROM needed))
+             ORDER BY p.created_at_unix, p.id",
+            [repo_id.into(), scope.view().map(|v| v.as_str().to_string()).into(), scope.view().map_or("private", |v| v.as_str()).into(), heads.to_vec().into()],
+        )).await?.iter().map(|row| Ok(GitPoolPack {
+            id: row.try_get("", "id")?,
+            owner: GitPoolPackOwner::Request { request_id: row.try_get("", "request_id")?, scope: scope.clone() },
+            head_oid: row.try_get("", "head_oid")?, prerequisites: row.try_get("", "prerequisites")?, storage: pool_pack_storage(row)?,
+        })).collect()
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_pool_packs_for_requests"))]
     pub async fn git_pool_packs_for_requests(
         &self,

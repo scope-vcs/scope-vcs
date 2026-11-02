@@ -1,8 +1,7 @@
 use api::native_runs_maintenance::{NativeRunsCommand, run_native_runs_command_for_maintenance};
 use scope_postgres::db::{
     MigrationLimits, apply_maintenance_migrations, migration_plan, migration_preflight,
-    pool_bundle_backfill_report_for_maintenance, terminate_metadata_writer_sessions, verify_schema,
-    verify_writer_fence_available,
+    terminate_metadata_writer_sessions, verify_schema, verify_writer_fence_available,
 };
 
 const USAGE: &str = r#"usage: scope-maintenance <command>
@@ -16,7 +15,10 @@ commands:
   drain-writers               terminate sessions holding the shared writer fence
   validate-workflow-catalogs  validate pre-migration workflow inputs
   apply                       apply all pending migrations behind the writer fence
-  pool-bundle-backfill        report remaining, done and failed bundle revisions (read-only)
+  pool-bundle-backfill [--dry-run]
+                              verify stored request revisions; repair pool packs unless dry-run
+                              excludes run-owned RunSource::EphemeralGitBundle and
+                              RunSource::RequestGitSnapshot bundles
   native-runs list            list the accounts whose repositories may use native runs
   native-runs add <handle> [note]
                               list an account, or replace its note
@@ -47,6 +49,14 @@ async fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     }
+    if command == "pool-bundle-backfill" {
+        if !arguments.is_empty() && arguments != ["--dry-run"] {
+            anyhow::bail!(USAGE);
+        }
+        let database_url = maintenance_database_url()?;
+        verify_schema(database_url.clone()).await?;
+        return api::run_pool_bundle_backfill(database_url, !arguments.is_empty()).await;
+    }
     if !arguments.is_empty() {
         anyhow::bail!(USAGE);
     }
@@ -60,15 +70,6 @@ async fn main() -> anyhow::Result<()> {
     let database_url = maintenance_database_url()?;
 
     match command.as_str() {
-        "pool-bundle-backfill" => {
-            verify_schema(database_url.clone()).await?;
-            println!(
-                "{}",
-                serde_json::to_string(
-                    &pool_bundle_backfill_report_for_maintenance(database_url).await?
-                )?
-            );
-        }
         "preflight" => {
             println!(
                 "{}",

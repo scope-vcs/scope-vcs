@@ -1,243 +1,173 @@
 use crate::{
-    background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness},
     error::ApiError,
     git::{
+        blocking,
         command::{git_stdout_text, run_git},
-        pool_install::{install_chain, present_commits},
-        pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
+        pool_install::install_chain,
+        pool_pack::{PoolPackRevision, stage_pool_pack},
         repository_git::RepositoryGit,
-        request_refs::{bundle_prerequisites, download_snapshot},
+        request_refs::{bundle_prerequisites, download_snapshot, ensure_local_bare_repo},
         staging::add_receive_pack_alternate,
     },
-    persistence_ids::generate_prefixed_id,
     state::AppState,
 };
-use scope_domain::{
-    repository::git::{GitPoolPack, GitPoolPackOwner, RequestPackScope},
-    requests::Request,
-};
-use scope_postgres::db::BundleBackfillClaim;
-use std::{collections::BTreeMap, time::Duration};
+use scope_domain::repository::git::{GitPoolPack, GitPoolPackOwner, RequestPackScope};
+use scope_postgres::db::BundleSource;
+use std::collections::BTreeMap;
 
-type Clock<'a> = &'a (dyn Fn() -> Result<u64, ApiError> + Sync);
-
-impl BackgroundWork {
-    pub(crate) fn start_pool_bundle_backfill(&mut self) {
-        self.spawn(
-            BackgroundLoop {
-                name: "pool bundle backfill",
-                cadence: Cadence::AfterPass {
-                    delay: Duration::from_secs(30),
-                    wakeup: None,
-                },
-                readiness: Readiness::SchemaRequired,
-            },
-            |state| async move { backfill_one_bundle(&state, &crate::persistence::unix_now).await },
-        );
-    }
+pub async fn run_pool_bundle_backfill(database_url: String, dry_run: bool) -> anyhow::Result<()> {
+    let state = AppState::for_bundle_backfill(database_url).await?;
+    let counts = backfill(&state, dry_run).await;
+    state.shutdown().await;
+    let counts = counts.map_err(|e| anyhow::anyhow!(e.into_operator_diagnostic()))?;
+    anyhow::ensure!(counts[2] == 0, "pool bundle verification failed");
+    Ok(())
 }
 
-pub(crate) async fn backfill_one_bundle(
-    state: &AppState,
-    current_time: Clock<'_>,
-) -> Result<bool, ApiError> {
-    let now_unix = current_time()?;
-    let repositories = state.metadata.repositories();
-    let token = generate_prefixed_id("pool_backfill")?;
-    let Some(claim) = repositories
-        .claim_pool_bundle_backfill(&token, now_unix)
-        .await?
-    else {
-        return Ok(false);
-    };
-    let recorded = match backfill_claim(state, &claim, current_time).await {
-        Ok(recorded) => recorded,
-        Err(error) => {
-            tracing::warn!(source_id = claim.source.source_id, error = %error.operator_diagnostic(), "pool bundle backfill failed");
-            repositories
-                .fail_pool_bundle_backfill(&claim, error.operator_diagnostic(), current_time()?)
-                .await?;
-            false
+pub(crate) async fn backfill(state: &AppState, dry_run: bool) -> Result<[u64; 3], ApiError> {
+    let store = state.metadata.repositories();
+    let mut repos = BTreeMap::<String, [u64; 3]>::new();
+    let mut offset = 0;
+    loop {
+        let revisions = store.bundle_batch(offset).await?;
+        if revisions.is_empty() {
+            break;
         }
-    };
-    repositories
-        .release_pool_bundle_backfill(claim, current_time()?)
-        .await?;
-    Ok(recorded)
+        offset += revisions.len() as u64;
+        for rev in revisions {
+            let counts = repos.entry(rev.repo_id.clone()).or_default();
+            match backfill_revision(state, &rev, dry_run).await {
+                Ok(repaired) => {
+                    counts[0] += 1;
+                    counts[1] += u64::from(repaired);
+                }
+                Err(error) => {
+                    counts[2] += 1;
+                    let reason = error.into_operator_diagnostic();
+                    println!("{} {} failed: {reason}", rev.repo_id, rev.head_oid);
+                }
+            }
+        }
+    }
+    let total = repos
+        .values()
+        .fold([0; 3], |a, b| std::array::from_fn(|i| a[i] + b[i]));
+    repos.insert("total".into(), total);
+    for (repo, [verified, repaired, failed]) in repos {
+        println!("{repo}: verified={verified} repaired={repaired} failed={failed}");
+    }
+    Ok(total)
 }
 
-async fn backfill_claim(
+async fn backfill_revision(
     state: &AppState,
-    claim: &BundleBackfillClaim,
-    current_time: Clock<'_>,
+    rev: &BundleSource,
+    dry_run: bool,
 ) -> Result<bool, ApiError> {
-    let repo = state
-        .metadata
-        .repositories()
-        .repository_record(&claim.source.repo_id)
+    let repos = state.metadata.repositories();
+    let repo = repos
+        .repository_record(&rev.repo_id)
         .await?
-        .ok_or_else(|| ApiError::not_found("backfill repository not found"))?;
-    let config = state
-        .metadata
-        .repositories()
+        .ok_or_else(|| ApiError::not_found("backfill repository missing"))?;
+    let context = repos
         .git_push_state(&repo.owner_handle, &repo.name, &repo.owner_user_id)
         .await?
-        .ok_or_else(|| ApiError::not_found("backfill repository not found"))?
-        .repo_config;
-    let request = state
-        .metadata
-        .requests()
-        .request_by_id(&claim.source.request_id)
-        .await?
-        .ok_or_else(|| ApiError::not_found("backfill request not found"))?;
-    let incarnation = repo.incarnation();
-    let git = RepositoryGit::load(state, &incarnation).await?;
-    let base = git.view_repo(state, config.views(), &request.view).await?;
-    let directory = tempfile::Builder::new()
-        .prefix("pool-backfill-")
-        .tempdir_in(state.data_dir.as_ref())
-        .map_err(ApiError::internal)?;
-    let path = directory.path().join("revision.git");
-    let snapshot = claim.source.snapshot()?;
-    let state_for_import = state.clone();
-    let import_path = path.clone();
-    let permit = state.runtime_budgets.wait_git_materialization().await?;
-    let (directory, prerequisites, _base, _permit) = crate::git::blocking::run(move || {
-        run_git(
-            None,
-            &["init", "--bare", import_path.to_string_lossy().as_ref()],
-            "initializing bundle backfill",
-        )?;
-        add_receive_pack_alternate(&import_path, &base.join("objects"))?;
-        let bundle = directory.path().join("revision.bundle");
-        download_snapshot(state_for_import.object_store.as_ref(), &snapshot, &bundle)?
-            .map_err(ApiError::from)?;
-        let prerequisites = bundle_prerequisites(&bundle)?;
-        Ok((directory, prerequisites, base, permit))
-    })
-    .await?;
-    let scope = if request.view == *config.views.full() {
+        .ok_or_else(|| ApiError::not_found("backfill repository missing"))?;
+    let git = RepositoryGit::of_push_state(&context);
+    let view = scope_domain::views::ViewId::parse(&rev.view).map_err(ApiError::internal)?;
+    let base = git
+        .view_repo(state, context.repo_config.views(), &view)
+        .await?;
+    let scope = if &view == context.repo_config.views().full() {
         RequestPackScope::Full
     } else {
-        RequestPackScope::View(request.view.clone())
+        RequestPackScope::View(view)
     };
-    let missing = {
-        let path = path.clone();
-        let prerequisites = prerequisites.clone();
-        crate::git::blocking::run(move || {
-            let present = present_commits(&path, prerequisites.iter().map(String::as_str))?;
-            Ok(prerequisites
-                .into_iter()
-                .filter(|oid| !present.contains(oid))
-                .collect::<Vec<_>>())
+    let heads = vec![rev.head_oid.clone(), rev.old_head_oid.clone()];
+    for repaired in [false, true] {
+        let packs = repos.bundle_packs(&rev.repo_id, &scope, &heads).await?;
+        let directory =
+            tempfile::tempdir_in(state.data_dir.as_ref()).map_err(ApiError::internal)?;
+        let path = directory.path().join("rev.git");
+        let target = path.clone();
+        let base_path = base.to_path_buf();
+        git_work(state, move || {
+            let target = ensure_local_bare_repo(target)?;
+            add_receive_pack_alternate(&target, &base_path.join("objects"))
         })
-        .await?
-    };
-    if !missing.is_empty() {
-        let packs = request_packs(state, &request, &scope).await?;
-        let packs = packs_supplying(packs, missing);
-        install_chain(state, &incarnation, &path, packs).await?;
-    }
-    let import_path = path.clone();
-    let head = claim.source.head_oid.clone();
-    let directory = crate::git::blocking::run(move || {
-        let bundle = directory.path().join("revision.bundle");
-        run_git(
-            Some(&import_path),
-            &["bundle", "verify", bundle.to_string_lossy().as_ref()],
-            "verifying backfill bundle prerequisites",
-        )?;
-        let heads = git_stdout_text(
-            &import_path,
-            &["bundle", "list-heads", bundle.to_string_lossy().as_ref()],
-            "reading backfill bundle heads",
-        )?;
-        if !heads
-            .lines()
-            .any(|line| line.split_ascii_whitespace().next() == Some(head.as_str()))
-        {
-            return Err(ApiError::infrastructure_unavailable(
-                "bundle does not advertise its recorded revision head",
-            ));
+        .await?;
+        let needed = packs_supplying(packs, heads.clone());
+        install_chain(state, &git.incarnation, &path, needed).await?;
+        let target = path.clone();
+        let wanted = heads.clone();
+        let verified = git_work(state, move || {
+            let args = ["fsck", "--connectivity-only", &wanted[0], &wanted[1]];
+            run_git(Some(&target), &args, "verify connectivity")
+        })
+        .await;
+        if verified.is_ok() {
+            return Ok(repaired);
         }
-        run_git(
-            Some(&import_path),
-            &["bundle", "unbundle", bundle.to_string_lossy().as_ref()],
-            "unbundling backfill revision",
-        )?;
-        let actual = git_stdout_text(
-            &import_path,
-            &["rev-parse", "--verify", &format!("{head}^{{commit}}")],
-            "verifying backfill revision head",
-        )?;
-        if actual.trim() != head {
-            return Err(ApiError::infrastructure_unavailable(
-                "bundle does not contain its recorded revision head",
-            ));
+        if dry_run || repaired {
+            verified?;
         }
-        Ok(directory)
-    })
-    .await?;
-    let staged = stage_pool_pack(
-        state,
-        &claim.source.repo_id,
-        &path,
-        PoolPackRevision {
+        let bundle = directory.path().join("rev.bundle");
+        let snapshot =
+            serde_json::from_value(rev.git_snapshot.clone()).map_err(ApiError::internal)?;
+        let objects = state.object_store.clone();
+        let destination = bundle.clone();
+        let prerequisites = blocking::run(move || {
+            download_snapshot(objects.as_ref(), &snapshot, &destination)?
+                .map_err(ApiError::from)?;
+            bundle_prerequisites(&destination)
+        })
+        .await?;
+        let needed: Vec<_> = prerequisites.iter().chain(&heads[1..]).cloned().collect();
+        let packs = repos.bundle_packs(&rev.repo_id, &scope, &needed).await?;
+        let needed = packs_supplying(packs, needed);
+        install_chain(state, &git.incarnation, &path, needed).await?;
+        let import_path = path.clone();
+        let base_path = base.to_path_buf();
+        let main = git_work(state, move || {
+            run_git(
+                Some(&import_path),
+                &["bundle", "unbundle", bundle.to_str().unwrap()],
+                "import bundle",
+            )?;
+            let main = git_stdout_text(&base_path, &["rev-parse", "HEAD"], "read main")?;
+            Ok(main.trim().to_string())
+        })
+        .await?;
+        let mut prerequisites = vec![rev.old_head_oid.clone(), main];
+        prerequisites.sort();
+        prerequisites.dedup();
+        let pack = PoolPackRevision {
             owner: GitPoolPackOwner::Request {
-                request_id: request.id.clone(),
-                scope,
+                request_id: rev.request_id.clone(),
+                scope: scope.clone(),
             },
-            head_oid: claim.source.head_oid.clone(),
+            head_oid: rev.head_oid.clone(),
             prerequisites,
-        },
-    )
-    .await?;
-    let result = persist_staged(
-        state,
-        claim,
-        &incarnation,
-        &config.object_generation(),
-        staged,
-        current_time()?,
-    )
-    .await;
-    drop(directory);
-    result
-}
-
-async fn persist_staged(
-    state: &AppState,
-    claim: &BundleBackfillClaim,
-    incarnation: &scope_domain::repository::RepositoryIncarnation,
-    generation: &str,
-    staged: StagedPoolPack,
-    now_unix: u64,
-) -> Result<bool, ApiError> {
-    match state
-        .metadata
-        .repositories()
-        .complete_pool_bundle_backfill(claim, incarnation, generation, &staged.pack, now_unix)
-        .await
-    {
-        Ok(true) => {
-            staged.finish(state).await;
-            Ok(true)
+        };
+        let staged = stage_pool_pack(state, &rev.repo_id, &path, pack).await?;
+        let generation = context.repo_config.object_generation();
+        let now = crate::persistence::unix_now()?;
+        if let Err(error) = repos
+            .retain_bundle_pool_pack(&git.incarnation, &generation, &staged.pack, now)
+            .await
+        {
+            staged.discard(state, &rev.repo_id).await;
+            return Err(error.into());
         }
-        Ok(false) => {
-            staged.discard(state, incarnation.repository_id()).await;
-            Ok(false)
-        }
-        Err(error) => {
-            staged.discard(state, incarnation.repository_id()).await;
-            Err(error.into())
-        }
+        staged.finish(state).await;
     }
+    unreachable!()
 }
 
 fn packs_supplying(packs: Vec<GitPoolPack>, mut commits: Vec<String>) -> Vec<GitPoolPack> {
     let mut remaining = packs
         .into_iter()
-        .map(|pack| (pack.head_oid.clone(), pack))
+        .map(|p| (p.head_oid.clone(), p))
         .collect::<BTreeMap<_, _>>();
     let mut needed = Vec::new();
     while let Some(commit) = commits.pop() {
@@ -249,75 +179,14 @@ fn packs_supplying(packs: Vec<GitPoolPack>, mut commits: Vec<String>) -> Vec<Git
     needed
 }
 
-async fn request_packs(
+async fn git_work<T: Send + 'static>(
     state: &AppState,
-    request: &Request,
-    scope: &RequestPackScope,
-) -> Result<Vec<GitPoolPack>, ApiError> {
-    let listed = state
-        .metadata
-        .repositories()
-        .git_pool_packs_for_requests(&request.repo_id, std::slice::from_ref(&request.id))
-        .await?;
-    let ids = listed
-        .iter()
-        .map(|pack| pack.id.clone())
-        .collect::<Vec<_>>();
-    let mut storage = state
-        .metadata
-        .repositories()
-        .git_pool_pack_storage(&request.repo_id, &ids)
-        .await?
-        .into_iter()
-        .collect::<BTreeMap<_, _>>();
-    Ok(listed
-        .into_iter()
-        .filter(|pack| &pack.scope == scope)
-        .filter_map(|pack| {
-            storage.remove(&pack.id).map(|storage| GitPoolPack {
-                id: pack.id,
-                owner: GitPoolPackOwner::Request {
-                    request_id: pack.request_id,
-                    scope: pack.scope,
-                },
-                head_oid: pack.head_oid,
-                prerequisites: pack.prerequisites,
-                storage,
-            })
-        })
-        .collect())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use scope_domain::repository::git::GitPoolPackStorage;
-
-    fn pack(head: &str, prerequisites: &[&str]) -> GitPoolPack {
-        GitPoolPack {
-            id: head.to_string(),
-            owner: GitPoolPackOwner::Request {
-                request_id: "request".to_string(),
-                scope: RequestPackScope::Full,
-            },
-            head_oid: head.to_string(),
-            prerequisites: prerequisites.iter().map(ToString::to_string).collect(),
-            storage: GitPoolPackStorage::Inline { sealed: Vec::new() },
-        }
-    }
-
-    #[test]
-    fn only_the_chain_behind_a_missing_commit_loads() {
-        let packs = vec![
-            pack("first", &["main"]),
-            pack("second", &["first"]),
-            pack("unrelated", &["main"]),
-        ];
-        let mut heads = packs_supplying(packs, vec!["second".to_string()])
-            .into_iter()
-            .map(|pack| pack.head_oid)
-            .collect::<Vec<_>>();
-        heads.sort();
-        assert_eq!(heads, ["first", "second"]);
-    }
+    work: impl FnOnce() -> Result<T, ApiError> + Send + 'static,
+) -> Result<T, ApiError> {
+    let permit = state.runtime_budgets.wait_git_materialization().await?;
+    blocking::run(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
 }
