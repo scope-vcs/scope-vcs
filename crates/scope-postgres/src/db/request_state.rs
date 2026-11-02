@@ -17,6 +17,8 @@ use scope_domain::{
     },
 };
 use sea_orm::DatabaseTransaction;
+
+mod rows;
 use std::collections::{BTreeMap, HashMap};
 
 pub struct RequestStateSnapshot {
@@ -83,20 +85,12 @@ impl RequestStore {
     ) -> Result<RequestStateSnapshot, PostgresError> {
         for _ in 0..3 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-            let repository = super::repository_access::repository_access(
-                &tx,
-                &repo_id(owner, name),
-                viewer_user_id,
-            )
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-            let projection = super::projection_read_models::live_projection_read_model(
-                &tx,
-                &repository.record.id,
-                repository.record.content_version,
-                &repository.access.view,
-            )
-            .await?;
+            let read =
+                super::repository_access::load_access(&tx, &repo_id(owner, name), viewer_user_id)
+                    .await?
+                    .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+            let projection = read.projection(&read.context.access.view).cloned();
+            let repository = read.context;
             if projection.is_none()
                 && repository.record.lifecycle_state == RepoLifecycleState::Ready
                 && repository.can_read_view(&repository.access.view)
@@ -143,16 +137,11 @@ async fn read_request_state(
     ) {
         return Err(PostgresError::not_found("repo not found"));
     }
-    let request = super::request_rows::request_by_id(&tx, request_id)
+    let row = rows::load(&tx, &repository.record.id, request_id, viewer_user_id)
         .await?
-        .filter(|request| request.repo_id == repository.record.id)
         .ok_or_else(|| PostgresError::not_found("request not found"))?;
-    let is_invitee = match viewer_user_id {
-        Some(user_id) => {
-            super::request_invitees::request_is_invitee(&tx, request_id, user_id).await?
-        }
-        None => false,
-    };
+    let request = row.request()?;
+    let is_invitee = row.is_invitee()?;
     let viewer = RequestViewer::new(repository.access.clone(), viewer_user_id, is_invitee);
     let policy = request_policy(&request, viewer, &repository.views);
     if !policy.exact_visible {
@@ -163,32 +152,14 @@ async fn read_request_state(
     } else {
         Vec::new()
     };
-    let evaluation =
-        super::request_checks::evaluation_for_head(&tx, request_id, &request.head_oid).await?;
+    let evaluation = row.evaluation()?;
     let results =
         super::request_checks::request_check_results(&tx, &request.repo_id, evaluation.as_ref())
             .await?;
-    let revision =
-        super::request_revision_rows::latest_revision_for_request(&tx, request_id).await?;
-    let auto_merge = super::request_auto_merge::latest_intent(&tx, request_id).await?;
-    let auto_merge_actor_access = match auto_merge.as_ref().filter(|intent| intent.is_active()) {
-        Some(intent) => super::repository_access::repository_access(
-            &tx,
-            &request.repo_id,
-            Some(&intent.actor_user_id),
-        )
-        .await?
-        .map(|context| context.access),
-        None => None,
-    };
-    let users = super::auth::load_users_by_ids(
-        &tx,
-        auto_merge
-            .iter()
-            .map(|intent| intent.actor_user_id.clone())
-            .chain(viewer_user_id.map(str::to_string)),
-    )
-    .await?;
+    let revision = row.revision()?;
+    let auto_merge = row.auto_merge()?;
+    let auto_merge_actor_access = row.auto_merge_actor_access(&repository, auto_merge.as_ref())?;
+    let users = row.users()?;
     let github_connection =
         super::github_connections::repository_github_connection(&tx, &request.repo_id).await?;
     let github_push = super::github_pushes::latest_github_push(&tx, request_id).await?;
@@ -229,8 +200,7 @@ async fn read_request_state(
         None => HashMap::new(),
     };
     let current_main_oid = if &repository.access.view == repository.views.full() {
-        super::request_check_commits::canonical_main_oid(&tx, &request.repo_id)
-            .await?
+        row.canonical_main_oid()?
             .or_else(|| projection.and_then(|projection| projection.head_oid))
     } else {
         projection.and_then(|projection| projection.head_oid)

@@ -1,5 +1,8 @@
-use super::integer_columns;
 use super::{RepositoryStore, begin_metadata_read_snapshot, entities};
+use super::{
+    integer_columns,
+    joined_rows::{joined, prefixed_columns},
+};
 use crate::error::PostgresError;
 use scope_domain::{
     repository::{
@@ -10,8 +13,8 @@ use scope_domain::{
     views::ViewId,
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, FromQueryResult, QueryFilter,
-    QuerySelect,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait,
+    FromQueryResult, IdenStatic, QueryFilter, QuerySelect, Statement,
 };
 
 #[derive(FromQueryResult)]
@@ -43,14 +46,28 @@ impl RepositoryStore {
         name: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RepositoryAccessContext>, PostgresError> {
-        let Some((tx, context)) = self
-            .begin_read_access_snapshot(&repo_id(owner, name), viewer_user_id)
-            .await?
-        else {
-            return Ok(None);
-        };
-        tx.commit().await?;
-        Ok(Some(context))
+        for _ in 0..3 {
+            let Some(read) =
+                load_access(self.db.as_ref(), &repo_id(owner, name), viewer_user_id).await?
+            else {
+                return Ok(None);
+            };
+            let Some(public_files_visible) = read.public_files_visible() else {
+                self.ensure_live_projection_read_models(
+                    &read.context.incarnation(),
+                    read.context.views.anyone().expect("public view exists"),
+                )
+                .await?;
+                continue;
+            };
+            return Ok(read
+                .context
+                .can_read(public_files_visible)
+                .then_some(read.context));
+        }
+        Err(PostgresError::conflict(
+            "repository kept changing while reading access; retry",
+        ))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_read_policy"))]
@@ -99,36 +116,29 @@ impl RepositoryStore {
     ) -> Result<Option<(DatabaseTransaction, RepositoryAccessContext, bool)>, PostgresError> {
         for _ in 0..3 {
             let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-            let Some(context) = repository_access(&tx, repo_id, viewer_user_id).await? else {
+            let Some(read) = load_access(&tx, repo_id, viewer_user_id).await? else {
                 tx.commit().await?;
                 return Ok(None);
             };
-            let public_files_visible = if context.access.actor
+            if read.context.access.actor
                 == scope_domain::repository::access::RepositoryActor::Public
-                && context.record.lifecycle_state
+                && read.context.record.lifecycle_state
                     == scope_domain::repository::RepoLifecycleState::Ready
+                && read.context.views.anyone().is_none()
             {
-                let Some(public_view) = context.views.anyone() else {
-                    tx.commit().await?;
-                    return Ok(None);
-                };
-                let Some(view) = super::projection_read_models::live_projection_read_model(
-                    &tx,
-                    &context.record.id,
-                    context.record.content_version,
-                    public_view,
+                tx.commit().await?;
+                return Ok(None);
+            }
+            let Some(public_files_visible) = read.public_files_visible() else {
+                tx.commit().await?;
+                self.ensure_live_projection_read_models(
+                    &read.context.incarnation(),
+                    read.context.views.anyone().expect("public view exists"),
                 )
-                .await?
-                else {
-                    tx.commit().await?;
-                    self.ensure_live_projection_read_models(&context.incarnation(), public_view)
-                        .await?;
-                    continue;
-                };
-                view.visible_files
-            } else {
-                false
+                .await?;
+                continue;
             };
+            let context = read.context;
             return Ok(Some((tx, context, public_files_visible)));
         }
         Err(PostgresError::conflict(
@@ -143,10 +153,7 @@ impl RepositoryStore {
         name: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RepositoryAccessContext>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let context = repository_access(&tx, &repo_id(owner, name), viewer_user_id).await?;
-        tx.commit().await?;
-        Ok(context)
+        repository_access(self.db.as_ref(), &repo_id(owner, name), viewer_user_id).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_record"))]
@@ -250,39 +257,125 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
     repo_id: &str,
     viewer_user_id: Option<&str>,
 ) -> Result<Option<RepositoryAccessContext>, PostgresError> {
-    let Some(record) = load_repo_record(conn, repo_id).await? else {
+    Ok(load_access(conn, repo_id, viewer_user_id)
+        .await?
+        .map(|read| read.context))
+}
+
+pub(super) struct RepositoryAccessRead {
+    pub context: RepositoryAccessContext,
+    projections: Vec<entities::projection_read_model::Model>,
+}
+
+impl RepositoryAccessRead {
+    pub fn projection(&self, view: &ViewId) -> Option<&entities::projection_read_model::Model> {
+        self.projections.iter().find(|row| {
+            row.audience == view.as_str()
+                && row.current()
+                && u64::try_from(row.repo_version).ok() == Some(self.context.record.content_version)
+        })
+    }
+
+    fn public_files_visible(&self) -> Option<bool> {
+        if self.context.access.actor != scope_domain::repository::access::RepositoryActor::Public
+            || self.context.record.lifecycle_state
+                != scope_domain::repository::RepoLifecycleState::Ready
+        {
+            return Some(false);
+        }
+        let Some(view) = self.context.views.anyone() else {
+            return Some(false);
+        };
+        self.projection(view)
+            .map(|projection| projection.visible_files)
+    }
+}
+
+pub(super) async fn load_access<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<Option<RepositoryAccessRead>, PostgresError> {
+    let rows = conn
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            access_sql(),
+            [repo_id.into(), viewer_user_id.into()],
+        ))
+        .await?;
+    let Some(row) = rows.first() else {
         return Ok(None);
     };
-    let access = match viewer_user_id {
-        None => RepositoryAccess::public(),
-        Some(user_id) => {
-            let permissions = if user_id == record.owner_user_id {
-                None
-            } else {
-                entities::repository_member::Entity::find_by_id((
-                    repo_id.to_string(),
-                    user_id.to_string(),
-                ))
-                .one(conn)
-                .await?
-                .map(entities::repository_member::Model::try_into_domain)
-                .transpose()?
-                .map(|member| member.permissions)
-            };
-            repository_access_for_user_id(
-                &record.owner_user_id,
-                record.lifecycle_state,
-                permissions,
-                user_id,
-            )
-        }
+    let record = AccessRow::from_query_result(row, "r_")?.try_into_domain()?;
+    let permissions = if joined(row, "m_repo_id")? {
+        Some(
+            entities::repository_member::Model::from_query_result(row, "m_")?
+                .try_into_domain()?
+                .permissions,
+        )
+    } else {
+        None
     };
-    let views = super::projection_read_models::repository_views(conn, repo_id).await?;
-    Ok(Some(RepositoryAccessContext {
-        record,
-        access,
-        views,
+    let access = viewer_user_id.map_or_else(RepositoryAccess::public, |user_id| {
+        repository_access_for_user_id(
+            &record.owner_user_id,
+            record.lifecycle_state,
+            permissions,
+            user_id,
+        )
+    });
+    let config: scope_domain::repo_config::RepoConfig =
+        super::decode_json(row.try_get("", "repo_config")?)?;
+    let projections = rows
+        .iter()
+        .filter_map(|row| match joined(row, "p_repo_id") {
+            Ok(true) => Some(
+                entities::projection_read_model::Model::from_query_result(row, "p_")
+                    .map_err(PostgresError::from),
+            ),
+            Ok(false) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(RepositoryAccessRead {
+        context: RepositoryAccessContext {
+            record,
+            access,
+            views: config.views,
+        },
+        projections,
     }))
+}
+
+fn access_columns() -> [entities::repository::Column; 10] {
+    use entities::repository::Column;
+    [
+        Column::Id,
+        Column::IncarnationId,
+        Column::OwnerHandle,
+        Column::Name,
+        Column::OwnerUserId,
+        Column::Description,
+        Column::WebsiteUrl,
+        Column::PublicationState,
+        Column::ChangeVersion,
+        Column::ContentVersion,
+    ]
+}
+
+fn access_sql() -> &'static str {
+    static SQL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SQL.get_or_init(|| format!(
+        "SELECT {}, repo.repo_config, {}, {}
+         FROM scope_repositories repo
+         LEFT JOIN scope_repository_members member
+           ON member.repo_id = repo.id AND member.user_id = $2 AND member.user_id <> repo.owner_user_id
+         LEFT JOIN scope_projection_read_models projection ON projection.repo_id = repo.id
+         WHERE repo.id = $1",
+        access_columns().iter().map(|column| format!("repo.\"{0}\" AS \"r_{0}\"", column.as_str())).collect::<Vec<_>>().join(", "),
+        prefixed_columns::<entities::repository_member::Column>("member", "m_"),
+        prefixed_columns::<entities::projection_read_model::Column>("projection", "p_"),
+    ))
 }
 
 async fn load_policy_config<C: ConnectionTrait>(
@@ -321,18 +414,7 @@ pub(super) async fn load_repo_record<C: ConnectionTrait>(
     use entities::repository::{Column, Entity};
     let Some(row) = Entity::find()
         .select_only()
-        .columns([
-            Column::Id,
-            Column::IncarnationId,
-            Column::OwnerHandle,
-            Column::Name,
-            Column::OwnerUserId,
-            Column::Description,
-            Column::WebsiteUrl,
-            Column::PublicationState,
-            Column::ChangeVersion,
-            Column::ContentVersion,
-        ])
+        .columns(access_columns())
         .filter(Column::Id.eq(repo_id))
         .into_model::<AccessRow>()
         .one(conn)
@@ -340,24 +422,30 @@ pub(super) async fn load_repo_record<C: ConnectionTrait>(
     else {
         return Ok(None);
     };
-    Ok(Some(RepoRecord {
-        id: row.id,
-        incarnation_id: row.incarnation_id,
-        owner_handle: row.owner_handle,
-        name: row.name,
-        owner_user_id: row.owner_user_id,
-        description: row.description,
-        website_url: row.website_url,
-        lifecycle_state: entities::decode_enum(row.publication_state)?,
-        change_version: integer_columns::i64_to_u64(
-            row.change_version,
-            "repository change version",
-        )?,
-        content_version: integer_columns::i64_to_u64(
-            row.content_version,
-            "repository content version",
-        )?,
-    }))
+    row.try_into_domain().map(Some)
+}
+
+impl AccessRow {
+    fn try_into_domain(self) -> Result<RepoRecord, PostgresError> {
+        Ok(RepoRecord {
+            id: self.id,
+            incarnation_id: self.incarnation_id,
+            owner_handle: self.owner_handle,
+            name: self.name,
+            owner_user_id: self.owner_user_id,
+            description: self.description,
+            website_url: self.website_url,
+            lifecycle_state: entities::decode_enum(self.publication_state)?,
+            change_version: integer_columns::i64_to_u64(
+                self.change_version,
+                "repository change version",
+            )?,
+            content_version: integer_columns::i64_to_u64(
+                self.content_version,
+                "repository content version",
+            )?,
+        })
+    }
 }
 
 fn ensure_current_context(

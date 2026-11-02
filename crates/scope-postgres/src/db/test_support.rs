@@ -41,6 +41,8 @@ use {
 
 #[cfg(test)]
 pub(super) mod fixtures;
+#[cfg(test)]
+pub(super) mod read_budget;
 
 #[cfg(any(test, feature = "test-support"))]
 mod database_templates;

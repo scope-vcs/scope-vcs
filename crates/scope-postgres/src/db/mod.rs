@@ -46,6 +46,7 @@ mod github_workflow_runs;
 mod history_reads;
 mod history_rows;
 mod integer_columns;
+mod joined_rows;
 mod json;
 mod landing_files;
 mod locks;

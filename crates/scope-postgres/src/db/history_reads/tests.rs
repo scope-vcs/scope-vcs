@@ -424,6 +424,14 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
         created_at_unix: 1,
         updated_at_unix: 1,
     });
+    repo.collaboration.members.push(RepositoryMember {
+        user_id: "restricted".into(),
+        permissions: RepositoryMemberPermissions {
+            view: ViewId::public(),
+            ..repo.collaboration.members[0].permissions.clone()
+        },
+        ..repo.collaboration.members[0].clone()
+    });
     store
         .repositories()
         .replace_repository_for_tests(repo.clone())
@@ -433,18 +441,34 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
         None,
         Some("history_owner"),
         Some("member"),
+        Some("restricted"),
         Some("outsider"),
     ] {
-        let narrow = store
-            .repositories()
-            .repository_read_access("owner", "history", user)
-            .await
-            .unwrap()
-            .unwrap();
+        let narrow = crate::db::test_support::read_budget::assert_round_trips(
+            1,
+            store
+                .repositories()
+                .repository_read_access("owner", "history", user),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         let expected = user
             .map(|user| repo.access_for_user_id(user))
             .unwrap_or_else(scope_domain::repository::access::RepositoryAccess::public);
         assert_eq!(narrow.access, expected);
+        let unrestricted = crate::db::test_support::read_budget::assert_round_trips(
+            1,
+            store
+                .repositories()
+                .repository_access("owner", "history", user),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(unrestricted.record, narrow.record);
+        assert_eq!(unrestricted.access, expected);
+        assert_eq!(unrestricted.views, narrow.views);
         if user.is_none() {
             let public = store
                 .repositories()
@@ -469,6 +493,42 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
             );
         }
     }
+    assert!(
+        crate::db::test_support::read_budget::assert_round_trips(
+            1,
+            store
+                .repositories()
+                .repository_read_access("missing", "history", None)
+        )
+        .await
+        .unwrap()
+        .is_none()
+    );
+    let repositories = store.repositories();
+    let (snapshot, before) = crate::db::test_support::read_budget::assert_round_trips(
+        3,
+        repositories.begin_read_access_snapshot("owner/history", Some("restricted")),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    store.db.execute_unprepared("DELETE FROM scope_repository_members WHERE repo_id = 'owner/history' AND user_id = 'restricted'").await.unwrap();
+    let retained = super::super::repository_access::repository_access(
+        &snapshot,
+        "owner/history",
+        Some("restricted"),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(retained.access, before.access);
+    let refreshed = repositories
+        .repository_access("owner", "history", Some("restricted"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(refreshed.access, before.access);
+    snapshot.commit().await.unwrap();
     assert!(
         scope_domain::projection_views::has_visible_projected_non_control_files(
             &repo,
@@ -510,6 +570,23 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
             .await
             .unwrap()
             .is_some()
+    );
+    store.db.execute_unprepared("UPDATE scope_repositories SET publication_state = 'Ready', repo_config = jsonb_set(repo_config, '{views}', (SELECT jsonb_agg(view) FROM jsonb_array_elements(repo_config->'views') view WHERE view->>'id' = 'private')) WHERE id = 'owner/history'").await.unwrap();
+    assert!(
+        store
+            .repositories()
+            .git_read_source("owner", "history", None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        store
+            .repositories()
+            .repository_read_access("owner", "history", None)
+            .await
+            .unwrap()
+            .is_none()
     );
 }
 

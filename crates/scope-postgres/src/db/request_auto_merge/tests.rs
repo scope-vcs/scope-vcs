@@ -35,6 +35,18 @@ async fn recording_configuration_error_stops_matching_active_intent_immediately(
         .await
         .unwrap();
 
+    let snapshot = requests
+        .request_state_snapshot("owner", "repo", "req_1", Some("user_owner"))
+        .await
+        .unwrap();
+    assert_eq!(
+        snapshot.auto_merge.as_ref().unwrap().id,
+        "intent_config_error"
+    );
+    assert!(snapshot.auto_merge_actor_access.unwrap().is_maintainer());
+    assert!(snapshot.users.contains_key("user_owner"));
+    assert_eq!(snapshot.revision.as_ref().unwrap().id, revision);
+
     requests
         .record_request_checks(RecordRequestChecksCommand {
             expected_canonical_main_oid: store
@@ -73,6 +85,19 @@ async fn recording_configuration_error_stops_matching_active_intent_immediately(
         Some(RequestAutoMergeStopReason::ChecksConfigurationError)
     );
     assert_eq!(stopped.updated_at_unix, 8);
+    let snapshot = requests
+        .request_state_snapshot("owner", "repo", "req_1", Some("user_owner"))
+        .await
+        .unwrap();
+    assert_eq!(
+        snapshot.evaluation.unwrap(),
+        requests
+            .request_check_evaluation("req_1", &"a".repeat(40))
+            .await
+            .unwrap()
+            .unwrap()
+    );
+    assert!(snapshot.auto_merge_actor_access.is_none());
 }
 
 #[tokio::test]
