@@ -148,9 +148,12 @@ fn validate_isolated_shelf(shelf: &Path) -> Result<(), ApiError> {
         .and_then(|name| name.split_once("-fetch-"))
         .map(|(name, _)| name)
         .ok_or_else(|| ApiError::internal_message("invalid restricted fetch shelf"))?;
-    let expected = shelf
-        .with_file_name(format!("{name}-projection.git"))
-        .join("objects");
+    let expected = fs::canonicalize(
+        shelf
+            .with_file_name(format!("{name}-projection.git"))
+            .join("objects"),
+    )
+    .map_err(ApiError::internal)?;
     if alternates.lines().collect::<Vec<_>>() != [expected.to_string_lossy().as_ref()]
         || expected.join("info/alternates").exists()
     {
@@ -159,4 +162,26 @@ fn validate_isolated_shelf(shelf: &Path) -> Result<(), ApiError> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_isolated_shelf_passes_under_a_symlinked_data_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let real = root.path().join("real");
+        let objects = real.join("view-projection.git/objects");
+        let info = real.join("view-fetch-reader.git/objects/info");
+        fs::create_dir_all(&objects).unwrap();
+        fs::create_dir_all(&info).unwrap();
+        let link = root.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let stored = fs::canonicalize(&objects).unwrap();
+        fs::write(info.join("alternates"), format!("{}\n", stored.display())).unwrap();
+        validate_isolated_shelf(&link.join("view-fetch-reader.git")).unwrap();
+        fs::write(info.join("alternates"), "/elsewhere/objects\n").unwrap();
+        assert!(validate_isolated_shelf(&link.join("view-fetch-reader.git")).is_err());
+    }
 }

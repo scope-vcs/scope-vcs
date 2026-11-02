@@ -37,7 +37,11 @@ pub(super) async fn attach_refs(
             requests.iter().map(|request| request.head_oid.as_str())
                 .chain(retained.iter().map(String::as_str)),
         )?;
-        for request in &requests {
+        let snapshots_first = requests
+            .iter()
+            .filter(|request| request.git_snapshot.is_some())
+            .chain(requests.iter().filter(|request| request.git_snapshot.is_none()));
+        for request in snapshots_first {
             if present.contains(&request.head_oid) {
                 continue;
             }
