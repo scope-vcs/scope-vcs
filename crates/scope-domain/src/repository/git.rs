@@ -67,15 +67,51 @@ pub struct GitPoolPack {
     pub storage: GitPoolPackStorage,
 }
 
+impl GitPoolPack {
+    pub fn belongs_to_request(&self, request: &crate::requests::Request) -> bool {
+        self.head_oid == request.head_oid
+            && matches!(
+                &self.owner,
+                GitPoolPackOwner::Request { request_id, scope }
+                    if request_id == &request.id
+                        && scope.view().is_none_or(|view| view == &request.view)
+            )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitPoolPackOwner {
     Request {
         request_id: String,
+        scope: RequestPackScope,
     },
     Main {
         first_sequence: u64,
         last_sequence: u64,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RequestPackScope {
+    Full,
+    View(crate::views::ViewId),
+}
+
+impl RequestPackScope {
+    pub fn for_push(reads_full_view: bool, view: &crate::views::ViewId) -> Self {
+        if reads_full_view {
+            Self::Full
+        } else {
+            Self::View(view.clone())
+        }
+    }
+
+    pub fn view(&self) -> Option<&crate::views::ViewId> {
+        match self {
+            Self::Full => None,
+            Self::View(view) => Some(view),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -280,6 +316,7 @@ mod tests {
         wrong_head.head_oid = "head-6".to_string();
         let mut request_owned = main_pack(5, 5);
         request_owned.owner = GitPoolPackOwner::Request {
+            scope: crate::repository::git::RequestPackScope::Full,
             request_id: "request".to_string(),
         };
         for (pack, error) in [

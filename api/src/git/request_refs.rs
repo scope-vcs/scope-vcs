@@ -15,7 +15,10 @@ use crate::{
 use scope_domain::{
     content::SourceBlob,
     repo_config::RepoConfig,
-    repository::{RepositoryIncarnation, git::GitPoolPackOwner},
+    repository::{
+        RepositoryIncarnation,
+        git::{GitPoolPackOwner, RequestPackScope},
+    },
     requests::{
         Request, RequestRevisionGitFacts, canonical_request_ref,
         request_main_ancestor_after_revision,
@@ -36,6 +39,7 @@ mod revision;
 mod seeding;
 mod snapshot;
 mod view_bases;
+mod view_pool;
 pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
     ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
@@ -44,11 +48,15 @@ pub(crate) use pool::retain_staged_pool_pack;
 #[cfg(test)]
 pub(crate) use pool::{RequestObjectRepos, request_object_repos};
 pub(crate) use revision::with_request_revision_store_repo;
-pub(crate) use seeding::{DeferredRequestObjects, attach_request_refs_from_pool};
+pub(crate) use seeding::{
+    DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,
+};
 #[cfg(test)]
 use snapshot::bundle_prerequisites;
 use snapshot::{download_snapshot, fetch_bundle_into, fetch_snapshot_into};
 pub(crate) use view_bases::{RequestViewBases, request_view_bases, share_request_view_bases};
+#[cfg(test)]
+pub(crate) use view_pool::view_object_repo;
 
 pub(crate) const REQUEST_REF_DELETE_ERROR: &str = "Scope does not accept request branch deletes";
 pub(crate) const REQUEST_REF_SINGLE_UPDATE_ERROR: &str =
@@ -337,13 +345,7 @@ pub(crate) struct PersistedRequestRef {
     pub(crate) git_snapshot: SourceBlob,
     pub(crate) git_facts: RequestRevisionGitFacts,
     pub(crate) fence: scope_postgres::db::ContentRefFence,
-    pub(crate) pool_pack: Option<StagedPoolPack>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RequestObjectSharing {
-    Pool,
-    Private,
+    pub(crate) pool_pack: StagedPoolPack,
 }
 
 pub(crate) async fn persist_request_ref(
@@ -353,7 +355,7 @@ pub(crate) async fn persist_request_ref(
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
-    sharing: RequestObjectSharing,
+    scope: RequestPackScope,
 ) -> Result<PersistedRequestRef, ApiError> {
     let path = staging_repo.to_path_buf();
     let base_oid = request.base.review_base_oid().to_string();
@@ -381,6 +383,10 @@ pub(crate) async fn persist_request_ref(
             .await?,
         )
     };
+    let pool_main_oid = match &scope {
+        RequestPackScope::Full => accepted_main_oid.clone(),
+        RequestPackScope::View(_) => main_oid.clone(),
+    };
     let prepared = {
         let path = staging_repo.to_path_buf();
         let request = request.clone();
@@ -393,6 +399,7 @@ pub(crate) async fn persist_request_ref(
                 RequestMainTips {
                     accepted: accepted_main_oid.as_deref(),
                     view: main_oid.as_deref(),
+                    pool: pool_main_oid.as_deref(),
                 },
             )
         })
@@ -404,31 +411,20 @@ pub(crate) async fn persist_request_ref(
         snapshot_bytes,
         pool_prerequisites,
     } = prepared;
-    let pool_pack = match sharing {
-        RequestObjectSharing::Pool => Some(
-            stage_pool_pack(
-                state,
-                git.incarnation.repository_id(),
-                staging_repo,
-                PoolPackRevision {
-                    owner: GitPoolPackOwner::Request {
-                        request_id: request.id.clone(),
-                    },
-                    head_oid: update.new_head_oid.clone(),
-                    prerequisites: pool_prerequisites,
-                },
-            )
-            .await?,
-        ),
-        RequestObjectSharing::Private => None,
-    };
-    let discard_pool_pack = |pool_pack: Option<StagedPoolPack>| async {
-        if let Some(pool_pack) = pool_pack {
-            pool_pack
-                .discard(state, git.incarnation.repository_id())
-                .await;
-        }
-    };
+    let pool_pack = stage_pool_pack(
+        state,
+        git.incarnation.repository_id(),
+        staging_repo,
+        PoolPackRevision {
+            owner: GitPoolPackOwner::Request {
+                request_id: request.id.clone(),
+                scope,
+            },
+            head_oid: update.new_head_oid.clone(),
+            prerequisites: pool_prerequisites,
+        },
+    )
+    .await?;
     let fence = match state
         .metadata
         .acquire_content_ref_fence(std::slice::from_ref(&git_snapshot.content_ref))
@@ -436,13 +432,17 @@ pub(crate) async fn persist_request_ref(
     {
         Ok(fence) => fence,
         Err(error) => {
-            discard_pool_pack(pool_pack).await;
+            pool_pack
+                .discard(state, git.incarnation.repository_id())
+                .await;
             return Err(error.into());
         }
     };
     let object_key = scope_storage::object_key(&git_snapshot);
     if let Err(error) = state.object_store.put(&object_key, snapshot_bytes).await {
-        discard_pool_pack(pool_pack).await;
+        pool_pack
+            .discard(state, git.incarnation.repository_id())
+            .await;
         fence.release().await;
         return Err(error.into());
     }
@@ -464,6 +464,7 @@ struct PreparedRequestRef {
 struct RequestMainTips<'a> {
     accepted: Option<&'a str>,
     view: Option<&'a str>,
+    pool: Option<&'a str>,
 }
 
 fn prepare_request_ref_snapshot(
@@ -492,7 +493,7 @@ fn prepare_request_ref_snapshot(
     )?;
     let (git_snapshot, snapshot_bytes) =
         git_snapshot_from_ref(staging_repo, &update.request_ref, snapshot_base)?;
-    let pool_prerequisites = [Some(logical_old_head), main_tips.accepted]
+    let pool_prerequisites = [Some(logical_old_head), main_tips.pool]
         .into_iter()
         .flatten()
         .filter(|oid| *oid != EMPTY_GIT_OID)

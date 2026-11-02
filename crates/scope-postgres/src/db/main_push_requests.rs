@@ -19,6 +19,7 @@ impl RequestStore {
     pub async fn start_main_push_request(
         &self,
         input: StartMainPushRequestInput,
+        objects: super::PushedRevisionObjects,
     ) -> Result<MainPushRequestOutcome, PostgresError> {
         let tx = self.db.begin().await?;
         acquire_aggregate_lock(&tx, "repository", &input.repo_id).await?;
@@ -30,6 +31,9 @@ impl RequestStore {
                 "repository was recreated since the push started",
             ));
         }
+        super::requests::ensure_object_generation(&tx, &input.repo_id, &objects.object_generation)
+            .await?;
+        let now_unix = input.now_unix;
         let facts = MainPushRequestFacts {
             request_id_exists: request_by_id(&tx, &input.id).await?.is_some(),
             request_with_name: request_by_name(&tx, &input.repo_id, &input.name).await?,
@@ -66,6 +70,20 @@ impl RequestStore {
             insert_request_event_row(&tx, event).await?;
         }
         insert_revision(&tx, &mutation.revision).await?;
+        if let Some(pack) = &objects.pool_pack {
+            if !pack.belongs_to_request(&mutation.request) {
+                return Err(PostgresError::internal_message(
+                    "Git pool pack does not belong to the recorded revision",
+                ));
+            }
+            super::git_segments::register_git_pool_pack(
+                &tx,
+                &mutation.request.repo_id,
+                pack,
+                now_unix,
+            )
+            .await?;
+        }
         let auto_merge_position = mutation
             .events
             .last()

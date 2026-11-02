@@ -15,9 +15,10 @@ use scope_domain::{
     repo_config::RepoConfig,
     repository::{
         RepositoryIncarnation,
-        git::{GitPoolPack, GitPoolPackOwner},
+        git::{GitPoolPack, GitPoolPackOwner, RequestPackScope},
     },
     requests::{Request, request_visible_to_every_maintainer},
+    views::ViewId,
 };
 use scope_postgres::db::PooledRequestPack;
 use sha2::{Digest, Sha256};
@@ -64,11 +65,22 @@ pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
     request_visible_to_every_maintainer(&request.view, request.is_submitted(), &config.views)
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum PoolRepos<'a> {
+    Full {
+        repos: &'a RequestObjectRepos,
+        actor_user_id: &'a str,
+    },
+    View {
+        view: &'a ViewId,
+        repo: &'a FsPath,
+    },
+}
+
 pub(super) struct PoolInstall<'a> {
     pub(super) incarnation: &'a RepositoryIncarnation,
     pub(super) config: &'a RepoConfig,
-    pub(super) repos: &'a RequestObjectRepos,
-    pub(super) actor_user_id: &'a str,
+    pub(super) repos: PoolRepos<'a>,
 }
 
 pub(super) async fn install_request_pool_packs(
@@ -144,6 +156,7 @@ async fn install_missing_request_packs(
                     id: listed.id,
                     owner: GitPoolPackOwner::Request {
                         request_id: listed.request_id,
+                        scope: listed.scope,
                     },
                     head_oid: listed.head_oid,
                     prerequisites: listed.prerequisites,
@@ -179,15 +192,35 @@ fn packs_to_catch_up(
 }
 
 fn pack_target<'a>(install: &PoolInstall<'a>, listed: &PooledRequestPack) -> Option<&'a FsPath> {
-    let views = &install.config.views;
-    if request_visible_to_every_maintainer(&listed.request_view, listed.request_submitted, views) {
-        Some(&install.repos.shared)
-    } else if views.get(&listed.request_view).is_some()
-        && listed.request_author_id.as_deref() == Some(install.actor_user_id)
-    {
-        Some(&install.repos.authored)
-    } else {
-        None
+    match (&install.repos, &listed.scope) {
+        (PoolRepos::View { view, repo }, RequestPackScope::View(pack_view))
+            if *view == pack_view && &listed.request_view == pack_view =>
+        {
+            Some(repo)
+        }
+        (
+            PoolRepos::Full {
+                repos,
+                actor_user_id,
+            },
+            RequestPackScope::Full,
+        ) => {
+            let views = &install.config.views;
+            if request_visible_to_every_maintainer(
+                &listed.request_view,
+                listed.request_submitted,
+                views,
+            ) {
+                Some(&repos.shared)
+            } else if views.get(&listed.request_view).is_some()
+                && listed.request_author_id.as_deref() == Some(*actor_user_id)
+            {
+                Some(&repos.authored)
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 
@@ -200,10 +233,18 @@ pub(crate) async fn retain_staged_pool_pack(
     pool_pack: StagedPoolPack,
 ) {
     let shared = shares_objects(request, config);
-    if (shared || request.is_author(pusher_id))
+    if (matches!(
+        &pool_pack.pack.owner,
+        GitPoolPackOwner::Request {
+            scope: RequestPackScope::View(_),
+            ..
+        }
+    ) || shared
+        || request.is_author(pusher_id))
         && let Err(error) = install_staged_pool_pack(
             state,
             incarnation,
+            config,
             generation,
             pusher_id,
             shared,
@@ -224,11 +265,24 @@ pub(crate) async fn retain_staged_pool_pack(
 async fn install_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
     generation: &str,
     pusher_id: &str,
     shared: bool,
     pool_pack: &StagedPoolPack,
 ) -> Result<(), ApiError> {
+    let view_path = match &pool_pack.pack.owner {
+        GitPoolPackOwner::Request {
+            scope: RequestPackScope::View(view),
+            ..
+        } => {
+            if config.object_generation() != generation {
+                return Err(ApiError::conflict("request object generation changed"));
+            }
+            Some(super::view_pool::view_object_repo(state, incarnation, config, view).await?)
+        }
+        _ => None,
+    };
     let (objects_repo, installable) = {
         let state = state.clone();
         let incarnation = incarnation.clone();
@@ -236,8 +290,14 @@ async fn install_staged_pool_pack(
         let pusher_id = pusher_id.to_string();
         let pack = pool_pack.pack.clone();
         crate::git::blocking::run(move || {
-            let repos = request_object_repos(&state, &incarnation, &generation, &pusher_id)?;
-            let objects_repo = if shared { repos.shared } else { repos.authored };
+            let objects_repo = match view_path {
+                Some(repo) => repo,
+                None => {
+                    let repos =
+                        request_object_repos(&state, &incarnation, &generation, &pusher_id)?;
+                    if shared { repos.shared } else { repos.authored }
+                }
+            };
             let (installable, _) = installable_packs(&objects_repo, vec![pack])?;
             Ok((objects_repo, !installable.is_empty()))
         })

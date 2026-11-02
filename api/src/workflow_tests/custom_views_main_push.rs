@@ -143,6 +143,28 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
         .await
         .unwrap()
         .unwrap();
+    let packs = state
+        .metadata
+        .repositories()
+        .git_pool_packs_for_requests(TEST_REPO_ID, std::slice::from_ref(&request.id))
+        .await
+        .unwrap();
+    assert_eq!(packs.len(), 1);
+    assert_eq!(
+        packs[0].scope,
+        scope_domain::repository::git::RequestPackScope::View(view("agent"))
+    );
+    assert_eq!(packs[0].head_oid, head);
+    let repo = super::custom_views::stored_repo(&state).await;
+    let shelf = crate::git::request_refs::view_object_repo(
+        &state,
+        &repo.incarnation(),
+        &repo.repo_config,
+        &view("agent"),
+    )
+    .await
+    .unwrap();
+    assert!(contains_commit(&shelf, &head, &head));
     assert_eq!(request.view, view("agent"));
     assert_eq!(request.title, "Main push from agent-member");
     assert_eq!(request.state(), RequestState::Open);
@@ -244,10 +266,19 @@ async fn the_request_transaction_refuses_a_stale_main_push() {
     let stale = state
         .metadata
         .requests()
-        .start_main_push_request(StartMainPushRequestInput {
-            repository_incarnation_id: incarnation_id,
-            ..concurrent_push(&landed, "req_stale", &next_name, &agent_main_before)
-        })
+        .start_main_push_request(
+            StartMainPushRequestInput {
+                repository_incarnation_id: incarnation_id,
+                ..concurrent_push(&landed, "req_stale", &next_name, &agent_main_before)
+            },
+            scope_postgres::db::PushedRevisionObjects {
+                object_generation: super::custom_views::stored_repo(&state)
+                    .await
+                    .repo_config
+                    .object_generation(),
+                pool_pack: None,
+            },
+        )
         .await
         .unwrap_err();
     assert_eq!(

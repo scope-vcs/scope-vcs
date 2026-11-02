@@ -320,6 +320,9 @@ async fn complete_inner(
                 repo_name,
                 staging_repo,
                 view_main_push::ViewMainPush {
+                    object_generation: preparation.object_generation.ok_or_else(|| {
+                        ApiError::internal_message("view push has no object generation")
+                    })?,
                     author_id,
                     incarnation,
                     view,

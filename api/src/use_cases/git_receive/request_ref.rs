@@ -4,8 +4,8 @@ use crate::{
         cache::GitRepoHandle,
         repository_git::RepositoryGit,
         request_refs::{
-            DeferredRequestObjects, RequestObjectSharing, RequestRefUpdate,
-            attach_request_refs_from_pool, attach_visible_request_refs,
+            DeferredRequestObjects, RequestRefUpdate, attach_request_refs_from_pool,
+            attach_view_request_refs_from_pool, attach_visible_request_refs,
             create_request_receive_pack_staging_repo, install_request_receive_pack_hook,
             persist_request_ref, request_view_bases, retain_staged_pool_pack,
         },
@@ -17,7 +17,7 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    repository::{RepoLifecycleState, access::RepositoryAccess},
+    repository::{RepoLifecycleState, access::RepositoryAccess, git::RequestPackScope},
     requests::{
         RecordRequestRevisionInput, Request, RequestCheckReviewer, RequestViewer,
         canonical_request_ref, request_policy,
@@ -290,11 +290,15 @@ async fn seed_editable_request_refs_for_repo(
         )
         .await?
     } else {
-        let state = state.clone();
-        let staging_path = staging_repo.to_path_buf();
-        crate::git::blocking::run(move || {
-            attach_visible_request_refs(&state, &refs_for, &staging_path, &view_bases)
-        })
+        attach_view_request_refs_from_pool(
+            state,
+            &context.incarnation,
+            &context.repo_config,
+            address_view,
+            &refs_for,
+            staging_repo,
+            view_bases,
+        )
         .await?;
         return Ok(SeededRequestRefs::default());
     };
@@ -420,13 +424,11 @@ pub(super) async fn persist_request_ref_revision(
         .clone()
         .or_else(|| Some(request.head_oid.clone()));
     let views = context.repo_config.views();
-    let sharing = if address_view.unwrap_or(views.full()) == views.full()
-        && context.access.reads_full_view(views)
-    {
-        RequestObjectSharing::Pool
-    } else {
-        RequestObjectSharing::Private
-    };
+    let scope = RequestPackScope::for_push(
+        address_view.unwrap_or(views.full()) == views.full()
+            && context.access.reads_full_view(views),
+        &request.view,
+    );
     let persisted = persist_request_ref(
         state,
         &git,
@@ -434,7 +436,7 @@ pub(super) async fn persist_request_ref_revision(
         staging_repo,
         &published_request,
         &update,
-        sharing,
+        scope,
     )
     .await?;
     let expected_base_version = publication
@@ -465,10 +467,7 @@ pub(super) async fn persist_request_ref_revision(
             child_facts,
             PushedRevisionObjects {
                 object_generation: object_generation.clone(),
-                pool_pack: persisted
-                    .pool_pack
-                    .as_ref()
-                    .map(|pool_pack| pool_pack.pack.clone()),
+                pool_pack: Some(persisted.pool_pack.pack.clone()),
             },
         )
         .await;
@@ -486,17 +485,15 @@ pub(super) async fn persist_request_ref_revision(
                 .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised)
                 .await;
             persisted.fence.release().await;
-            if let Some(pool_pack) = persisted.pool_pack {
-                retain_staged_pool_pack(
-                    state,
-                    &incarnation,
-                    (&context.repo_config, &object_generation),
-                    actor_user_id,
-                    &mutation.request,
-                    pool_pack,
-                )
-                .await;
-            }
+            retain_staged_pool_pack(
+                state,
+                &incarnation,
+                (&context.repo_config, &object_generation),
+                actor_user_id,
+                &mutation.request,
+                persisted.pool_pack,
+            )
+            .await;
             crate::use_cases::request_checks::best_effort_evaluate_request_checks(
                 state,
                 &git,
@@ -520,9 +517,10 @@ pub(super) async fn persist_request_ref_revision(
             .await;
         }
         Err(error) => {
-            if let Some(pool_pack) = persisted.pool_pack {
-                pool_pack.discard(state, incarnation.repository_id()).await;
-            }
+            persisted
+                .pool_pack
+                .discard(state, incarnation.repository_id())
+                .await;
             crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
                 state,
                 std::slice::from_ref(&persisted.git_snapshot),
