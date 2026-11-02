@@ -1,4 +1,4 @@
-function browserSessionStorage() {
+export function browserSessionStorage() {
   return typeof window === 'undefined' ? null : window.sessionStorage
 }
 

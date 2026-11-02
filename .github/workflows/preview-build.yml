@@ -46,7 +46,7 @@ jobs:
       - name: Install Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 24
+          node-version: 26
 
       - name: Render the revision's runtime role grants
         run: node deploy/postgres/runtime-roles.mjs --grants-only > preview-role-grants.sql
