@@ -575,7 +575,7 @@ async fn close_draft_request_deletes_request_and_events() {
                     .unwrap()
                     .repo_config
                     .object_generation(),
-                pool_pack: Some(pool_pack.clone()),
+                pool_pack: pool_pack.clone(),
             },
         )
         .await
