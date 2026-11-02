@@ -258,6 +258,8 @@ references, plus its existing `SCOPE_BUCKET_*`, `SCOPE_OBJECT_ENCRYPTION_KEY` an
 other API settings. The API image includes Git and writable `/app/.scope`; its
 configured `SCOPE_DATA_DIR` takes precedence. The maintenance service lacks the
 full API environment, so do not run this mode there or use its migrator credentials.
+The API binary cap is bounded at 59 MiB for this temporary mode; the maintenance
+cap stays at 26 MiB. Remove the extra API allowance when this command is deleted.
 The command scans stored revisions in batches of 32, keeps no progress state, and
 is safe to rerun.
 
