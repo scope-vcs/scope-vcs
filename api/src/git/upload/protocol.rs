@@ -1,4 +1,4 @@
-use super::{upload_pack_packets, wanted_heads};
+use super::{upload_pack_oid, upload_pack_packets};
 use crate::error::ApiError;
 use axum::http::HeaderMap;
 use scope_domain::requests::GitFetchAsk;
@@ -40,7 +40,14 @@ impl GitProtocol {
         match (self, command) {
             (Self::V0, _) | (Self::V2, Some(FETCH_COMMAND)) => {
                 return Ok(GitFetchAsk::Transfer {
-                    wants: wanted_heads(request)?,
+                    wants: packets
+                        .iter()
+                        .filter_map(|packet| packet.payload.strip_prefix(b"want "))
+                        .map(|object| {
+                            upload_pack_oid(object)
+                                .map(|oid| String::from_utf8_lossy(&oid).into_owned())
+                        })
+                        .collect::<Result<_, _>>()?,
                 });
             }
             (Self::V2, Some(LS_REFS_COMMAND)) => {}

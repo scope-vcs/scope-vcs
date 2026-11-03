@@ -241,14 +241,6 @@ fn upload_pack_oid(object: &[u8]) -> Result<Vec<u8>, ApiError> {
     Ok(oid.to_ascii_lowercase())
 }
 
-pub(super) fn wanted_heads(request: &[u8]) -> Result<Vec<String>, ApiError> {
-    upload_pack_packets(request)?
-        .into_iter()
-        .filter_map(|packet| packet.payload.strip_prefix(b"want "))
-        .map(|object| upload_pack_oid(object).map(|oid| String::from_utf8_lossy(&oid).into_owned()))
-        .collect()
-}
-
 fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec<u8>, ApiError> {
     let mut required = BTreeSet::new();
     let mut haves = BTreeSet::new();

@@ -30,23 +30,22 @@ pub(super) async fn readable_requests(
             reader.view,
         )
     };
-    let (included, excluded): (Vec<_>, Vec<_>) = state
+    let mut requests = Vec::new();
+    let mut current = Vec::new();
+    for (request, invitee) in state
         .metadata
         .requests()
         .git_fetch_requests(reader.repo_id, reader.user_id)
         .await?
-        .into_iter()
-        .filter(|(request, invitee)| readable(request, *invitee))
-        .partition(|(request, invitee)| ask.includes(request, reader.user_id, *invitee));
-    let mut requests = included
-        .into_iter()
-        .map(|(request, _)| request)
-        .collect::<Vec<_>>();
-    let current = excluded
-        .into_iter()
-        .map(|(request, _)| request)
-        .chain(requests.iter().cloned())
-        .collect::<Vec<_>>();
+    {
+        if !readable(&request, invitee) {
+            continue;
+        }
+        if ask.includes(&request, reader.user_id, invitee) {
+            requests.push(request.clone());
+        }
+        current.push(request);
+    }
     let parents = terminal_parents(state, &requests, reader.user_id, &readable).await?;
     let unadvertised = parents
         .iter()
