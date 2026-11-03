@@ -1,4 +1,5 @@
 use super::{RequestStore, entities};
+use crate::db::data_scope::DataScope;
 use crate::error::PostgresError;
 use scope_domain::requests::{REQUEST_BRANCH_MUTABLE_STATES, RequestState};
 use sea_orm::{
@@ -25,7 +26,8 @@ impl RequestStore {
             .fold(Condition::any(), |condition, state| {
                 condition.add(request_state_condition(state))
             });
-        entities::request::Entity::find()
+        let tx = self.db.begin(DataScope::Repository(repository_id)).await?;
+        let rows = entities::request::Entity::find()
             .filter(entities::request::Column::RepoId.eq(repository_id))
             .filter(lifecycle)
             .column_as(
@@ -38,9 +40,10 @@ impl RequestStore {
             )
             .order_by_asc(entities::request::Column::Id)
             .into_model::<BranchMutableRequestRow>()
-            .all(self.db.as_ref())
-            .await?
-            .into_iter()
+            .all(&tx)
+            .await?;
+        tx.commit().await?;
+        rows.into_iter()
             .map(|row| Ok((row.request.try_into_domain()?, row.is_invitee)))
             .collect()
     }
