@@ -61,7 +61,7 @@ pub(crate) fn request_object_repos(
     Ok(RequestObjectRepos { shared, authored })
 }
 
-pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
+pub(crate) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
     request_visible_to_every_maintainer(&request.view, request.is_submitted(), &config.views)
 }
 
@@ -77,7 +77,7 @@ pub(crate) struct PoolInstall<'a> {
     pub(crate) repos: PoolRepos<'a>,
 }
 
-pub(super) async fn install_request_pool_packs(
+pub(crate) async fn install_request_pool_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
     missing: &[Request],
@@ -237,25 +237,15 @@ pub(crate) async fn retain_staged_pool_pack(
     request: &Request,
     pool_pack: StagedPoolPack,
 ) {
-    let shared = shares_objects(request, config);
-    if (matches!(
-        &pool_pack.pack.owner,
-        GitPoolPackOwner::Request {
-            scope: RequestPackScope::View(_),
-            ..
-        }
-    ) || shared
-        || request.is_author(pusher_id))
-        && let Err(error) = install_staged_pool_pack(
-            state,
-            incarnation,
-            config,
-            generation,
-            pusher_id,
-            shared,
-            &pool_pack,
-        )
-        .await
+    if let Err(error) = install_staged_pool_pack(
+        state,
+        incarnation,
+        (config, generation),
+        pusher_id,
+        request,
+        &pool_pack,
+    )
+    .await
     {
         tracing::warn!(
             repository_id = incarnation.repository_id(),
@@ -270,13 +260,13 @@ pub(crate) async fn retain_staged_pool_pack(
 async fn install_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
-    config: &RepoConfig,
-    generation: &str,
+    (config, generation): (&RepoConfig, &str),
     pusher_id: &str,
-    shared: bool,
+    request: &Request,
     pool_pack: &StagedPoolPack,
 ) -> Result<(), ApiError> {
-    let view_path = match &pool_pack.pack.owner {
+    let shared = shares_objects(request, config);
+    let view_lease = match &pool_pack.pack.owner {
         GitPoolPackOwner::Request {
             scope: RequestPackScope::View(view),
             ..
@@ -290,6 +280,7 @@ async fn install_staged_pool_pack(
                     .objects,
             )
         }
+        _ if !shared && !request.is_author(pusher_id) => return Ok(()),
         _ => None,
     };
     let (objects_repo, installable) = {
@@ -298,6 +289,7 @@ async fn install_staged_pool_pack(
         let generation = generation.to_string();
         let pusher_id = pusher_id.to_string();
         let pack = pool_pack.pack.clone();
+        let view_path = view_lease.as_ref().map(|repo| repo.as_ref().to_path_buf());
         blocking::run(move || {
             let objects_repo = match view_path {
                 Some(repo) => repo,

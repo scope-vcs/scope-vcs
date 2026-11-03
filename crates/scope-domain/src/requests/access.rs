@@ -164,7 +164,7 @@ pub fn request_policy(
         can_wait_after_reply: can_discuss && maintainer && open,
         can_transition_discussion: discussion_visible && authenticated && (!full_view || !terminal),
         can_edit_identity: exact_visible && !terminal && (author || maintainer),
-        can_pull_branch: exact_visible,
+        can_pull_branch: exact_visible && request.state().advertised_in_git(),
         can_push_branch: branch_mutable,
         can_submit: exact_visible && !submitted && author,
         can_manage_invitees: exact_visible && anyone_view && !terminal && (author || maintainer),

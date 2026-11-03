@@ -124,6 +124,7 @@ async fn upload_pack_capacity_exhaustion_happens_before_materialization() {
         git_admission_wait: Duration::ZERO,
         ..Default::default()
     });
+    replace_test_repo(&state, repo_with_readme(&state)).await;
 
     let response = router(state)
         .oneshot(

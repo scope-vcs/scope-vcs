@@ -99,7 +99,7 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
         response_json(changed).await
     );
     let next_shelf = view_shelf(&state).await;
-    assert_ne!(first_shelf, next_shelf);
+    assert_ne!(first_shelf.as_ref(), next_shelf.as_ref());
     assert!(!has_commit(&next_shelf, &second));
 }
 
@@ -109,7 +109,10 @@ async fn restricted_receive_pack_cannot_resolve_shared_shelf_objects_by_id() {
     let (source, _remote, _server, old) = request_checkout(&state, "view-pool-graft-source").await;
     let shared = object_repos(&state, &test_owner_id()).await.shared;
     let shelf = view_shelf(&state).await;
-    for (label, objects) in [("shared", &shared), ("unreadable-view-draft", &shelf)] {
+    for (label, objects) in [
+        ("shared", shared.as_path()),
+        ("unreadable-view-draft", shelf.as_ref()),
+    ] {
         let hidden = git_input(
             objects,
             &["hash-object", "-w", "--stdin"],
@@ -164,7 +167,7 @@ async fn restricted_receive_pack_cannot_resolve_shared_shelf_objects_by_id() {
     }
 }
 
-async fn view_shelf(state: &AppState) -> PathBuf {
+async fn view_shelf(state: &AppState) -> crate::git::cache::GitRepoHandle {
     let repo = find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
@@ -173,6 +176,7 @@ async fn view_shelf(state: &AppState) -> PathBuf {
         &repo.incarnation(),
         &repo.repo_config,
         &ViewId::public(),
+        None,
     )
     .await
     .unwrap()

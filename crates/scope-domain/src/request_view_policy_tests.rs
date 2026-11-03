@@ -120,6 +120,7 @@ fn completed_agent_request_discussions_behave_like_the_anyone_view() {
         Some("reader"),
     )
     .permissions;
+    assert!(!permissions.can_pull_branch);
     assert!(permissions.can_open_discussion);
     assert!(permissions.can_transition_discussion);
     request.view = ViewId::private();

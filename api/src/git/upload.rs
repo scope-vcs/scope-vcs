@@ -2,18 +2,12 @@ use crate::{
     config::{AWAITING_FIRST_PUSH_GIT_ERROR, GIT_UPLOAD_PACK},
     error::ApiError,
     git::{
-        cache::{GitDerivedCacheNamespace, GitRepoHandle},
+        cache::GitRepoHandle,
         command::{
             git_command_output, git_command_output_with_timeout, prepare_git_subprocess,
             record_git_exit, truncated_git_stderr,
         },
         git_read_scope_user,
-        repository_git::RepositoryGit,
-        request_refs::{
-            RequestViewBases, attach_readable_request_refs, request_view_bases,
-            share_request_view_bases,
-        },
-        storage::repository_storage_key,
     },
     runtime_budgets::{RuntimeBudgets, RuntimePermit},
     state::AppState,
@@ -27,32 +21,21 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use scope_domain::{
-    repository::access::RepositoryActor,
-    repository::{RepoLifecycleState, RepositoryIncarnation},
-    requests::{Request, RequestViewer, request_policy},
-    views::ViewId,
+    repository::RepoLifecycleState, repository::access::RepositoryActor, views::ViewId,
 };
-use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_postgres::db::GitReadSource;
 use std::{
     collections::BTreeSet,
-    fs,
     io::{BufRead, BufReader, Read},
     path::Path as FsPath,
     process::Command,
-    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 use tracing::Instrument as _;
-mod read_view_identity;
-mod read_view_omissions;
-mod read_view_seed;
+pub(super) mod fetch_folder;
 #[cfg(test)]
-mod read_view_tests;
-use read_view_identity::GitReadViewIdentity;
-use read_view_seed::seed_request_refs_from_read_views;
-static GIT_READ_VIEW_CACHE_ATTEMPT: AtomicU64 = AtomicU64::new(1);
+mod fetch_tests;
 
 pub(crate) async fn authorized_git_read(
     state: &AppState,
@@ -111,245 +94,7 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     repo_name: &str,
     view: &ViewId,
 ) -> Result<GitRepoHandle, ApiError> {
-    let (source, viewer_user_id) =
-        authorized_git_read(state, headers, owner, repo_name, view).await?;
-    let repo_id = source.context.record.id.clone();
-    let access = source.context.access.clone();
-    let views = source.context.views.clone();
-    let git = RepositoryGit::of_read_source(source);
-    let private_view = view == views.full();
-    let base_repo = match git.git_head.as_ref() {
-        Some(head) if private_view => {
-            state
-                .repository_engine
-                .materialize_repository(state, &git.incarnation, head)
-                .await?
-        }
-        _ => git.view_repo(state, &views, view).await?,
-    };
-    let mut requests = Vec::new();
-    for (request, is_invitee) in state
-        .metadata
-        .requests()
-        .requests_with_invitee_status(&repo_id, viewer_user_id.as_deref())
-        .await?
-    {
-        let decision = request_policy(
-            &request,
-            RequestViewer::new(access.clone(), viewer_user_id.as_deref(), is_invitee),
-            &views,
-        );
-        if decision.exact_visible && views.may_read(view, &request.view) {
-            requests.push(request);
-        }
-    }
-    requests.sort_by(|left, right| left.name.cmp(&right.name));
-    let view_bases = request_view_bases(state, &git, &views, &requests, view).await?;
-    git_read_view_repo(state, &git.incarnation, base_repo, view_bases, &requests).await
-}
-
-async fn git_read_view_repo(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    base_repo: GitRepoHandle,
-    view_bases: RequestViewBases,
-    requests: &[Request],
-) -> Result<GitRepoHandle, ApiError> {
-    let mut attached = requests.to_vec();
-    loop {
-        let ReadViewFailure { error, unreadable } = match build_git_read_view(
-            state,
-            incarnation,
-            base_repo.share()?,
-            share_request_view_bases(&view_bases)?,
-            &attached,
-        )
-        .await
-        {
-            Ok(read_view) => return Ok(read_view),
-            Err(failure) => failure,
-        };
-        if unreadable.is_empty() {
-            return Err(error);
-        }
-        attached.retain(|request| !unreadable.contains(&request.name));
-    }
-}
-
-struct ReadViewFailure {
-    error: ApiError,
-    unreadable: Vec<String>,
-}
-
-impl From<ApiError> for ReadViewFailure {
-    fn from(error: ApiError) -> Self {
-        Self {
-            error,
-            unreadable: Vec::new(),
-        }
-    }
-}
-
-async fn build_git_read_view(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    base_repo: GitRepoHandle,
-    view_bases: RequestViewBases,
-    requests: &[Request],
-) -> Result<GitRepoHandle, ReadViewFailure> {
-    if requests.is_empty() {
-        return Ok(base_repo);
-    }
-    let base_repo_path = base_repo.as_ref().to_path_buf();
-    let view_base_paths = view_bases
-        .iter()
-        .map(|(view, base)| (view.clone(), base.as_ref().to_path_buf()))
-        .collect::<Vec<_>>();
-    let (main_oid, view_main_oids) = tokio::task::spawn_blocking(move || {
-        let head = |path: &FsPath| {
-            git_command_output(
-                Command::new("git")
-                    .arg("--git-dir")
-                    .arg(path)
-                    .arg("rev-parse")
-                    .arg(format!("refs/heads/{DEFAULT_GIT_BRANCH}")),
-                None,
-            )
-        };
-        Ok::<_, ApiError>((
-            head(&base_repo_path)?,
-            view_base_paths
-                .into_iter()
-                .map(|(view, path)| Ok((view, head(&path)?)))
-                .collect::<Result<Vec<_>, ApiError>>()?,
-        ))
-    })
-    .await
-    .map_err(|error| {
-        ApiError::internal_message(format!("Git read-view identity task failed: {error}"))
-    })??;
-    let cache_key = GitReadViewIdentity::from_authorized_output(
-        incarnation,
-        &main_oid,
-        &view_main_oids,
-        requests,
-    )
-    .cache_key();
-    let cache_root = state.repository_engine.cache_root().to_path_buf();
-    let read_view_prefix = repository_storage_key(incarnation);
-    let read_view_name = format!("read-view-{read_view_prefix}-{cache_key}");
-    let repo_path = cache_root.join(format!("{read_view_name}.git"));
-    let repo_path_for_ready = repo_path.clone();
-    let is_ready = move || repo_path_for_ready.join("objects").is_dir();
-    let state_for_build = state.clone();
-    let base_repo_for_build = base_repo.share()?;
-    let view_bases_for_build = share_request_view_bases(&view_bases)?;
-    let requests_for_build = requests.to_vec();
-    let cache_root_for_build = cache_root.clone();
-    let repo_path_for_build = repo_path.clone();
-    let repository_id = incarnation.repository_id().to_string();
-    let read_view_name_for_build = read_view_name.clone();
-    let read_view_name_for_record = read_view_name.clone();
-    let read_view = state.repository_engine.materialize_derived(
-        incarnation,
-        GitDerivedCacheNamespace::RequestReadView,
-        cache_key.clone(),
-        &repo_path,
-        is_ready,
-        move || async move {
-            let (unreadable, result) = match state_for_build.runtime_budgets.try_git_materialization() {
-                Err(error) => (Vec::new(), Err(error)),
-                Ok(permit) => tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    let attempt = GIT_READ_VIEW_CACHE_ATTEMPT.fetch_add(1, Ordering::Relaxed);
-                    let temp_path = cache_root_for_build.join(format!(
-                        "{read_view_name_for_build}.{}.{}.tmp",
-                        std::process::id(),
-                        attempt
-                    ));
-                    let mut unreadable = Vec::new();
-                    let result = (|| {
-                        if temp_path.exists() {
-                            fs::remove_dir_all(&temp_path).map_err(ApiError::internal)?;
-                        }
-                        git_command_output(
-                            Command::new("git")
-                                .arg("clone")
-                                .arg("--bare")
-                                .arg(base_repo_for_build.as_ref())
-                                .arg(&temp_path),
-                            None,
-                        )?;
-                        let seeded = seed_request_refs_from_read_views(
-                            &state_for_build.repository_engine,
-                            &read_view_prefix,
-                            &requests_for_build,
-                            &temp_path,
-                        )?;
-                        let unattached: Vec<Request> = requests_for_build
-                            .iter()
-                            .filter(|request| !seeded.contains(&request.name))
-                            .cloned()
-                            .collect();
-                        tracing::info!(
-                            repository_id,
-                            seeded_refs = seeded.len(),
-                            snapshot_downloads = unattached
-                                .iter()
-                                .filter(|request| request.git_snapshot.is_some())
-                                .count(),
-                            "attaching request refs to Git read view"
-                        );
-                        unreadable = attach_readable_request_refs(
-                            &state_for_build,
-                            &unattached,
-                            &temp_path,
-                            &view_bases_for_build,
-                        )?;
-                        if !unreadable.is_empty() {
-                            return Err(ApiError::infrastructure_unavailable(format!(
-                                "Git read view needs request snapshots storage could not serve: {}",
-                                unreadable.join(", ")
-                            )));
-                        }
-                        match fs::rename(&temp_path, &repo_path_for_build) {
-                            Ok(()) => Ok(()),
-                            Err(error) if repo_path_for_build.join("objects").is_dir() => {
-                                tracing::debug!(%error, path = %repo_path_for_build.display(), "using externally-created Git read view cache");
-                                Ok(())
-                            }
-                            Err(error) => Err(ApiError::internal(error)),
-                        }
-                    })();
-                    let _ = fs::remove_dir_all(&temp_path);
-                    (unreadable, result)
-                })
-                .await
-                .unwrap_or_else(|error| {
-                    (
-                        Vec::new(),
-                        Err(ApiError::internal_message(format!(
-                            "Git read-view materialization task failed: {error}"
-                        ))),
-                    )
-                }),
-            };
-            if result.is_err() {
-                read_view_omissions::record_failed_build(&read_view_name_for_record, unreadable);
-            }
-            result
-        },
-    )
-    .await
-    .map_err(|error| ReadViewFailure {
-        error,
-        unreadable: read_view_omissions::unreadable_requests(&read_view_name),
-    })?;
-    Ok(view_bases
-        .into_values()
-        .fold(read_view.with_dependency(base_repo), |read_view, base| {
-            read_view.with_dependency(base)
-        }))
+    fetch_folder::prepare(state, headers, owner, repo_name, view, None).await
 }
 
 pub(crate) async fn git_upload_pack_response(
@@ -440,13 +185,17 @@ pub(crate) async fn git_upload_pack_response(
         .into_response())
 }
 
-fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec<u8>, ApiError> {
-    let mut required = BTreeSet::new();
-    let mut haves = BTreeSet::new();
-    let mut have_packets = Vec::new();
+struct UploadPackPacket<'a> {
+    start: usize,
+    end: usize,
+    payload: &'a [u8],
+}
+
+fn upload_pack_packets(request: &[u8]) -> Result<Vec<UploadPackPacket<'_>>, ApiError> {
+    let mut packets = Vec::new();
     let mut offset = 0;
     while offset < request.len() {
-        let packet_start = offset;
+        let start = offset;
         let header = request
             .get(offset..offset + 4)
             .ok_or_else(|| ApiError::bad_request("malformed Git upload-pack packet"))?;
@@ -465,23 +214,50 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
             .get(offset..offset + length - 4)
             .ok_or_else(|| ApiError::bad_request("malformed Git upload-pack packet"))?;
         offset += length - 4;
-        let required_object = payload
+        packets.push(UploadPackPacket {
+            start,
+            end: offset,
+            payload,
+        });
+    }
+    Ok(packets)
+}
+
+fn upload_pack_oid(object: &[u8]) -> Result<Vec<u8>, ApiError> {
+    let oid = object
+        .split(|byte| matches!(byte, b' ' | b'\n' | 0))
+        .next()
+        .unwrap_or_default();
+    if oid.len() != 40 || !oid.iter().all(u8::is_ascii_hexdigit) {
+        return Err(ApiError::bad_request("malformed Git upload-pack object ID"));
+    }
+    Ok(oid.to_ascii_lowercase())
+}
+
+pub(super) fn wanted_heads(request: &[u8]) -> Result<Vec<String>, ApiError> {
+    upload_pack_packets(request)?
+        .into_iter()
+        .filter_map(|packet| packet.payload.strip_prefix(b"want "))
+        .map(|object| upload_pack_oid(object).map(|oid| String::from_utf8_lossy(&oid).into_owned()))
+        .collect()
+}
+
+fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec<u8>, ApiError> {
+    let mut required = BTreeSet::new();
+    let mut haves = BTreeSet::new();
+    let mut have_packets = Vec::new();
+    for packet in upload_pack_packets(request)? {
+        let required_object = packet
+            .payload
             .strip_prefix(b"want ")
-            .or_else(|| payload.strip_prefix(b"shallow "));
-        if let Some(object) = required_object.or_else(|| payload.strip_prefix(b"have ")) {
-            let oid = object
-                .split(|byte| matches!(byte, b' ' | b'\n' | 0))
-                .next()
-                .unwrap_or_default();
-            if oid.len() != 40 || !oid.iter().all(u8::is_ascii_hexdigit) {
-                return Err(ApiError::bad_request("malformed Git upload-pack object ID"));
-            }
+            .or_else(|| packet.payload.strip_prefix(b"shallow "));
+        if let Some(object) = required_object.or_else(|| packet.payload.strip_prefix(b"have ")) {
+            let oid = upload_pack_oid(object)?;
             if required_object.is_some() {
-                required.insert(oid.to_ascii_lowercase());
+                required.insert(oid);
             } else {
-                let oid = oid.to_ascii_lowercase();
                 haves.insert(oid.clone());
-                have_packets.push((packet_start, offset, oid));
+                have_packets.push((packet.start, packet.end, oid));
             }
         }
     }
@@ -535,7 +311,7 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
     let (required, haves) = reachable.value;
     if !required.is_empty() {
         return Err(ApiError::bad_request(
-            "Git object is outside the visible refs",
+            "Git object is outside the visible refs; refs may have changed, retry fetch",
         ));
     }
     let mut filtered = Vec::with_capacity(request.len());

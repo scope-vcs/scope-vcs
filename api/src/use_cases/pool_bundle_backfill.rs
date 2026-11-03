@@ -165,7 +165,7 @@ pub(crate) async fn backfill_revision(
             let objects = state.object_store.clone();
             let destination = bundle.clone();
             let prerequisites = blocking::run(move || {
-                download_snapshot(objects.as_ref(), &snapshot, &destination)??;
+                download_snapshot(objects.as_ref(), &snapshot, &destination)?;
                 bundle_prerequisites(&destination)
             })
             .await?;

@@ -364,10 +364,7 @@ async fn a_full_view_push_reaches_every_advertised_request_head() {
         .view_repo(&state, context.repo_config.views(), &ViewId::private())
         .await
         .unwrap();
-    let full_head = git_stdout_text(&full_repo, &["rev-parse", "refs/heads/main"], "full head")
-        .unwrap()
-        .trim()
-        .to_string();
+    let full_head = ref_head(&full_repo, "refs/heads/main");
     let public_head = stored_request(&state, REQUEST_ID).await.head_oid;
     assert_ne!(full_head, public_head);
     state

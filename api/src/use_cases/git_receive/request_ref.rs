@@ -470,7 +470,7 @@ pub(super) async fn persist_request_ref_revision(
             child_facts,
             PushedRevisionObjects {
                 object_generation: object_generation.clone(),
-                pool_pack: Some(persisted.pool_pack.pack.clone()),
+                pool_pack: persisted.pool_pack.pack.clone(),
             },
         )
         .await;

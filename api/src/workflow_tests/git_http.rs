@@ -455,3 +455,28 @@ pub(super) async fn first_push_fixture(
     configure_push_intent_header(&state, &source, &remote, &test_owner_id()).await;
     (state, source, server, recording)
 }
+
+#[tokio::test]
+async fn unauthenticated_upload_pack_refuses_without_reading_the_body() {
+    let state = test_state_with_repo();
+    let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let observed = polled.clone();
+    let body = Body::from_stream(futures_util::stream::poll_fn(move |_| {
+        observed.store(true, std::sync::atomic::Ordering::SeqCst);
+        std::task::Poll::<Option<Result<axum::body::Bytes, std::io::Error>>>::Ready(Some(Err(
+            std::io::Error::other("body must not be read"),
+        )))
+    }));
+    let response = router(state)
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri(format!("/git/private/{TEST_REPO_ID}/git-upload-pack"))
+                .body(body)
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(!polled.load(std::sync::atomic::Ordering::SeqCst));
+}

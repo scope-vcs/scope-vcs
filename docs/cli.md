@@ -503,3 +503,10 @@ and download URLs, publishes the complete release together, generates installers
 with the correct URL, and supplies equivalent deployment verification. No such
 replacement is wired into the deployment graph today. Keep this small service
 until that cutover is implemented and verified.
+
+Git fetch advertises main and visible active requests. Closed and merged request
+branches are no longer advertised. `scope request checkout` reports this before
+fetching a terminal request; use its existing local branch or fetch main instead.
+An active child already contains its pinned parent's commit, including after the
+parent closes or merges, so checking out that child does not need a terminal
+parent branch.
