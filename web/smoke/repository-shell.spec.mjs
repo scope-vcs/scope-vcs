@@ -7,6 +7,7 @@ import {
   baseUrl,
   repoPath,
   trackPageSettle,
+  waitForClientHydration,
   withBlankPage,
   within,
   withPage,
@@ -17,14 +18,14 @@ test('repository shell renders before the initial file is ready', async () => {
   for (const scenario of [
     {
       content: (page) => page.locator('iframe[title="README.html preview"]'),
-      path: repoPath,
+      path: `${repoPath}/code`,
       requestPath: 'README.html',
     },
     {
       content: (page) => page.locator('pre code').filter({
         hasText: 'export function greet',
       }),
-      path: `${repoPath}?file=src%2Fapp.ts`,
+      path: `${repoPath}/code?file=src%2Fapp.ts`,
       requestPath: 'src/app.ts',
     },
   ]) {
@@ -32,7 +33,7 @@ test('repository shell renders before the initial file is ready', async () => {
   }
 })
 
-test('opening a repository shows the code skeleton while the repository loads', async () => {
+test('opening a repository shows the Home skeleton while the repository loads', async () => {
   await withPage('/licenses', async (page) => {
     const held = []
     await page.route('**/_serverFn/**', (route) => {
@@ -40,10 +41,10 @@ test('opening a repository shows the code skeleton while the repository loads', 
       else void route.continue()
     })
     await page.evaluate((href) => { void globalThis.__TSR_ROUTER__.navigate({ href }) }, repoPath)
-    await page.getByText('Loading repository files', { exact: true }).waitFor({ state: 'attached' })
+    await page.getByText('Loading repository README', { exact: true }).waitFor({ state: 'attached' })
     assert(held.length > 0)
     await Promise.all(held.map((route) => route.continue()))
-    await assertCurrentRepoSection(page, 'Code')
+    await assertCurrentRepoSection(page, 'Home')
   })
 })
 
@@ -88,6 +89,10 @@ test('public direct Runs access is explicit and exposes no operations', async ()
   })
 })
 
+function primaryNavigationLink(page) {
+  return page.getByRole('navigation', { name: 'Primary' }).getByRole('link').first()
+}
+
 async function assertShellBeforeFileReady({ content, path, requestPath }) {
   let fileRequests = 0
   let settled
@@ -104,12 +109,13 @@ async function assertShellBeforeFileReady({ content, path, requestPath }) {
     await withPage(
       path,
       async (page) => {
+        await waitForClientHydration(primaryNavigationLink(page))
         await within(
           fileRequestStarted,
           10_000,
           `${requestPath} request did not start`,
         )
-        await assertCurrentRepoSection(page, 'Code')
+        await assertCurrentRepoSection(page, 'Home')
         await assertPageHeading(page, 'Code')
         await page.getByLabel('Repository file navigator').waitFor()
         await page

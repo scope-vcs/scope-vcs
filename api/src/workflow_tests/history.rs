@@ -423,6 +423,16 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
     assert_eq!(public["kind"], "Added");
     assert_eq!(public["old_content"], serde_json::Value::Null);
     assert_text_content(&public["new_content"], "public release");
+    let at_update = api_request(
+        router(state.clone()),
+        "GET",
+        &format!("/v1/repos/owner/repo/files/content?update={public_id}&view=public&path=notes.md"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(at_update.status(), StatusCode::OK);
+    assert_text_content(&response_json(at_update).await["content"], "public release");
 
     let private_list = api_request(
         router(state.clone()),
@@ -432,10 +442,34 @@ async fn public_commit_diff_does_not_leak_private_old_content() {
         None,
     )
     .await;
-    let private_id = response_json(private_list).await["entries"][0]["source_id"]
+    let private_list = response_json(private_list).await;
+    let private_id = private_list["entries"][0]["source_id"]
         .as_str()
         .unwrap()
         .to_string();
+    let draft_id = private_list["entries"][1]["source_id"].as_str().unwrap();
+    let hidden_draft = api_request(
+        router(state.clone()),
+        "GET",
+        &format!("/v1/repos/owner/repo/files/content?update={draft_id}&view=public&path=notes.md"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(hidden_draft.status(), StatusCode::NOT_FOUND);
+    let owner_draft = api_request(
+        router(state.clone()),
+        "GET",
+        &format!("/v1/repos/owner/repo/files/content?update={draft_id}&view=private&path=notes.md"),
+        Some(&bearer_header()),
+        None,
+    )
+    .await;
+    assert_eq!(owner_draft.status(), StatusCode::OK);
+    assert_text_content(
+        &response_json(owner_draft).await["content"],
+        "private draft",
+    );
     let private = api_request(
         router(state),
         "GET",

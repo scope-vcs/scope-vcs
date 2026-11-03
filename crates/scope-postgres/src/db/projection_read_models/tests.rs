@@ -254,6 +254,7 @@ async fn an_include_change_folds_into_one_boundary_commit_on_top_of_the_resumed_
                 feed: HistoryFeed::All,
                 before: None,
                 entry_source_id: None,
+                search: None,
                 limit: 50,
             })
             .await

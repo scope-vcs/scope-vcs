@@ -25,11 +25,13 @@ export function ApplicationTopbar({
   facts = EMPTY_FACTS,
   items = EMPTY_ITEMS,
   repository,
+  search,
 }: {
   contextLabel?: string
   facts?: TopbarFact[]
   items?: TopbarItem[]
   repository?: { owner: string; repo: string }
+  search?: ReactNode
 }) {
   return (
     <header className="application-topbar sticky top-0 z-40 border-b border-border bg-card">
@@ -44,6 +46,7 @@ export function ApplicationTopbar({
 
         {repository ? (
           <RepositoryIdentity
+            compact={Boolean(search)}
             facts={facts}
             owner={repository.owner}
             repo={repository.repo}
@@ -53,6 +56,12 @@ export function ApplicationTopbar({
             {contextLabel}
           </span>
         ) : null}
+
+        {search && (
+          <div className="order-5 mb-2 min-w-0 basis-full md:order-none md:mx-auto md:mb-0 md:max-w-[32rem] md:flex-1 md:basis-auto">
+            {search}
+          </div>
+        )}
 
         {items.length > 0 && (
           <nav
@@ -84,16 +93,18 @@ export function ApplicationTopbar({
 }
 
 function RepositoryIdentity({
+  compact,
   facts,
   owner,
   repo,
 }: {
+  compact: boolean
   facts: TopbarFact[]
   owner: string
   repo: string
 }) {
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+    <div className={cn('flex min-w-0 flex-1 items-center gap-2 text-sm', compact && 'md:flex-none')}>
       <div className="flex min-w-0 items-baseline gap-1.5">
         <Link
           className="max-w-[90px] truncate text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:max-w-[130px]"

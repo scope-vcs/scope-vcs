@@ -27,6 +27,7 @@ import { Route as OwnerRepoRequestsRouteImport } from './routes/$owner.$repo.req
 import { Route as OwnerRepoRunsRouteImport } from './routes/$owner.$repo.runs'
 import { Route as OwnerRepoSettingsRouteImport } from './routes/$owner.$repo.settings'
 import { Route as OwnerRepoCodeIndexRouteImport } from './routes/$owner.$repo._code.index'
+import { Route as OwnerRepoCodeCodeRouteImport } from './routes/$owner.$repo._code.code'
 import { Route as OwnerRepoRequestsIndexRouteImport } from './routes/$owner.$repo.requests.index'
 import { Route as OwnerRepoRequestsRequestIdRouteImport } from './routes/$owner.$repo.requests.$requestId'
 import { Route as OwnerRepoRunsIndexRouteImport } from './routes/$owner.$repo.runs.index'
@@ -126,6 +127,11 @@ const OwnerRepoCodeIndexRoute = OwnerRepoCodeIndexRouteImport.update({
   path: '/',
   getParentRoute: () => OwnerRepoCodeRoute,
 } as any)
+const OwnerRepoCodeCodeRoute = OwnerRepoCodeCodeRouteImport.update({
+  id: '/code',
+  path: '/code',
+  getParentRoute: () => OwnerRepoCodeRoute,
+} as any)
 const OwnerRepoRequestsIndexRoute = OwnerRepoRequestsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -193,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/$owner/$repo/requests': typeof OwnerRepoRequestsRouteWithChildren
   '/$owner/$repo/runs': typeof OwnerRepoRunsRouteWithChildren
   '/$owner/$repo/settings': typeof OwnerRepoSettingsRoute
+  '/$owner/$repo/code': typeof OwnerRepoCodeCodeRoute
   '/$owner/$repo/requests/$requestId': typeof OwnerRepoRequestsRequestIdRouteWithChildren
   '/$owner/$repo/runs/$runId': typeof OwnerRepoRunsRunIdRoute
   '/$owner/$repo/updates/$entryId': typeof OwnerRepoUpdatesEntryIdRoute
@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
   '/sign-up/$': typeof SignUpSplatRoute
   '/$owner': typeof OwnerIndexRoute
   '/$owner/$repo/settings': typeof OwnerRepoSettingsRoute
+  '/$owner/$repo/code': typeof OwnerRepoCodeCodeRoute
   '/$owner/$repo/requests/$requestId': typeof OwnerRepoRequestsRequestIdDiscussionIndexRoute
   '/$owner/$repo/runs/$runId': typeof OwnerRepoRunsRunIdRoute
   '/$owner/$repo/updates/$entryId': typeof OwnerRepoUpdatesEntryIdRoute
@@ -244,6 +252,7 @@ export interface FileRoutesById {
   '/$owner/$repo/requests': typeof OwnerRepoRequestsRouteWithChildren
   '/$owner/$repo/runs': typeof OwnerRepoRunsRouteWithChildren
   '/$owner/$repo/settings': typeof OwnerRepoSettingsRoute
+  '/$owner/$repo/_code/code': typeof OwnerRepoCodeCodeRoute
   '/$owner/$repo/requests/$requestId': typeof OwnerRepoRequestsRequestIdRouteWithChildren
   '/$owner/$repo/runs/$runId': typeof OwnerRepoRunsRunIdRoute
   '/$owner/$repo/updates/$entryId': typeof OwnerRepoUpdatesEntryIdRoute
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/$owner/$repo/requests'
     | '/$owner/$repo/runs'
     | '/$owner/$repo/settings'
+    | '/$owner/$repo/code'
     | '/$owner/$repo/requests/$requestId'
     | '/$owner/$repo/runs/$runId'
     | '/$owner/$repo/updates/$entryId'
@@ -298,6 +308,7 @@ export interface FileRouteTypes {
     | '/sign-up/$'
     | '/$owner'
     | '/$owner/$repo/settings'
+    | '/$owner/$repo/code'
     | '/$owner/$repo/requests/$requestId'
     | '/$owner/$repo/runs/$runId'
     | '/$owner/$repo/updates/$entryId'
@@ -324,6 +335,7 @@ export interface FileRouteTypes {
     | '/$owner/$repo/requests'
     | '/$owner/$repo/runs'
     | '/$owner/$repo/settings'
+    | '/$owner/$repo/_code/code'
     | '/$owner/$repo/requests/$requestId'
     | '/$owner/$repo/runs/$runId'
     | '/$owner/$repo/updates/$entryId'
@@ -478,6 +490,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRepoCodeIndexRouteImport
       parentRoute: typeof OwnerRepoCodeRoute
     }
+    '/$owner/$repo/_code/code': {
+      id: '/$owner/$repo/_code/code'
+      path: '/code'
+      fullPath: '/$owner/$repo/code'
+      preLoaderRoute: typeof OwnerRepoCodeCodeRouteImport
+      parentRoute: typeof OwnerRepoCodeRoute
+    }
     '/$owner/$repo/requests/': {
       id: '/$owner/$repo/requests/'
       path: '/'
@@ -545,10 +564,12 @@ declare module '@tanstack/react-router' {
 }
 
 interface OwnerRepoCodeRouteChildren {
+  OwnerRepoCodeCodeRoute: typeof OwnerRepoCodeCodeRoute
   OwnerRepoCodeIndexRoute: typeof OwnerRepoCodeIndexRoute
 }
 
 const OwnerRepoCodeRouteChildren: OwnerRepoCodeRouteChildren = {
+  OwnerRepoCodeCodeRoute: OwnerRepoCodeCodeRoute,
   OwnerRepoCodeIndexRoute: OwnerRepoCodeIndexRoute,
 }
 

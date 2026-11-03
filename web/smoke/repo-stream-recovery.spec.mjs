@@ -30,7 +30,7 @@ test('an interrupted stream recovers through failed reloads without replacing re
       return route.continue()
     })
   }
-  await withPage(repoPath, async (page) => {
+  await withPage(`${repoPath}/code`, async (page) => {
     const activity = page.getByLabel('Latest repository change', { exact: true })
     const navigator = page.getByLabel('Repository file navigator', { exact: true })
     await activity.waitFor()

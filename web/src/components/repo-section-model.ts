@@ -1,9 +1,9 @@
 import type { RepositoryActor } from '@/api/types.generated'
 
-type RepoSection = 'code' | 'requests' | 'runs' | 'settings'
+type RepoSection = 'home' | 'requests' | 'runs' | 'settings'
 
 export const REPO_SECTIONS = [
-  { key: 'code', label: 'Code', to: '/$owner/$repo' },
+  { key: 'home', label: 'Home', to: '/$owner/$repo' },
   { key: 'requests', label: 'Requests', to: '/$owner/$repo/requests' },
   { key: 'runs', label: 'Runs', to: '/$owner/$repo/runs' },
   { key: 'settings', label: 'Settings', to: '/$owner/$repo/settings' },
@@ -27,5 +27,5 @@ export function activeRepoSection(
   if (matches('/$owner/$repo/settings')) return 'settings'
   if (matches('/$owner/$repo/runs')) return 'runs'
   if (matches('/$owner/$repo/requests')) return 'requests'
-  return 'code'
+  return 'home'
 }
