@@ -53,7 +53,7 @@ pub(super) async fn readable_requests(
         .collect::<BTreeSet<_>>();
     requests.splice(0..0, parents);
     let advertised = match ask {
-        GitFetchAsk::Transfer { wants } => {
+        GitFetchAsk::Transfer { wants, .. } => {
             state
                 .metadata
                 .repositories()

@@ -40,6 +40,9 @@ impl GitProtocol {
         match (self, command) {
             (Self::V0, _) | (Self::V2, Some(FETCH_COMMAND)) => {
                 return Ok(GitFetchAsk::Transfer {
+                    shallow: packets
+                        .iter()
+                        .any(|packet| packet.payload.starts_with(b"shallow ")),
                     wants: packets
                         .iter()
                         .filter_map(|packet| packet.payload.strip_prefix(b"want "))
@@ -120,7 +123,8 @@ mod tests {
         assert_eq!(
             v2.upload_pack_ask(&fetch).unwrap(),
             GitFetchAsk::Transfer {
-                wants: vec![want.clone()]
+                wants: vec![want.clone()],
+                shallow: false,
             }
         );
         let object_info = request(&[
@@ -136,7 +140,8 @@ mod tests {
                 .upload_pack_ask(&ls_refs)
                 .unwrap(),
             GitFetchAsk::Transfer {
-                wants: Default::default()
+                wants: Default::default(),
+                shallow: false,
             }
         );
     }

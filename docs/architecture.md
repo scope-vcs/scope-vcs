@@ -400,14 +400,16 @@ requests `GitFetchAsk` in `scope-domain/src/requests/git_fetch.rs` selects. A
 listing shows the reader's own requests and those they are invited to, plus any
 other visible request whose exact ref the client names in a protocol v2
 `ls-refs` prefix. A transfer attaches the same default set plus visible requests
-whose heads it wants. Protocol v2 discovery returns capabilities from an empty
-folder, so a plain `git fetch` no longer grows with other authors' requests.
-Protocol v0 clients see only the default set. Full-view readers borrow canonical, shared and authored shelves;
-restricted readers borrow only isolated projections and reader shelves. Pool
-installation and legacy bundle restoration retain request objects on shelves.
-Unreadable requests are omitted with their request identity in the server log.
-Dropping the last folder handle removes the folder, including on streaming errors
-and disconnects. Pruning also removes retired read-view caches.
+whose heads it wants. A transfer that reports shallow boundaries attaches every
+visible request, because a boundary may sit anywhere in another request's
+history. Protocol v2 discovery returns capabilities from an empty folder, so a
+plain `git fetch` no longer grows with other authors' requests. Protocol v0
+clients see only the default set. Full-view readers borrow canonical, shared and
+authored shelves; restricted readers borrow only isolated projections and reader
+shelves. Pool installation and legacy bundle restoration retain request objects
+on shelves. Unreadable requests are omitted with their request identity in the
+server log. Dropping the last folder handle removes the folder, including on
+streaming errors and disconnects. Pruning also removes retired read-view caches.
 
 Postgres retains the heads offered to each reader and view for one hour, scoped
 to the current object generation. Upload-pack can restore an advertised revision
