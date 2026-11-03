@@ -17,7 +17,7 @@ use crate::{
     state::AppState,
 };
 use axum::http::HeaderMap;
-use scope_domain::views::ViewId;
+use scope_domain::{requests::GitFetchAsk, views::ViewId};
 use scope_postgres::db::GitFetchReader;
 
 pub(crate) async fn prepare(
@@ -26,7 +26,7 @@ pub(crate) async fn prepare(
     owner: &str,
     repo_name: &str,
     view: &ViewId,
-    wants: Option<&[String]>,
+    ask: &GitFetchAsk,
 ) -> Result<GitRepoHandle, ApiError> {
     let (source, user) = authorized_git_read(state, headers, owner, repo_name, view).await?;
     let config = source.repo_config.clone();
@@ -40,7 +40,7 @@ pub(crate) async fn prepare(
         view,
         user_id: user.as_deref(),
     };
-    let selection = requests::readable_requests(state, &reader, &access, &views, wants).await?;
+    let selection = requests::readable_requests(state, &reader, &access, &views, ask).await?;
     let full = view == views.full();
     let base = match git.git_head.as_ref() {
         Some(head) if full => {
@@ -56,34 +56,7 @@ pub(crate) async fn prepare(
         blocking::run(move || git_main_oid(&base, "reading fetch main")).await?
     };
     let bases = request_view_bases(state, &git, &views, &selection.requests, view).await?;
-    let directory = tempfile::Builder::new()
-        .prefix("fetch-")
-        .tempdir_in(state.repository_engine.cache_root())
-        .map_err(ApiError::internal)?;
-    let folder = GitRepoHandle::temporary(directory, vec![base.share()?])?;
-    {
-        let folder = folder.share()?;
-        blocking::run(move || {
-            run_git(
-                None,
-                &[
-                    "init",
-                    "--bare",
-                    "--quiet",
-                    folder
-                        .to_str()
-                        .ok_or_else(|| ApiError::internal_message("invalid fetch path"))?,
-                ],
-                "initializing fetch folder",
-            )?;
-            run_git(
-                Some(&folder),
-                &["symbolic-ref", "HEAD", "refs/heads/main"],
-                "setting fetch head",
-            )
-        })
-        .await?;
-    }
+    let folder = new_folder(state, vec![base.share()?]).await?;
     let objects = objects::install_objects(
         state,
         &git,
@@ -111,12 +84,55 @@ pub(crate) async fn prepare(
         .fold(folder, GitRepoHandle::with_dependency);
     let attached =
         refs::attach_refs(state, &folder, selection, bases, &main_oid, objects.shelves).await?;
-    if wants.is_none() {
+    if ask.is_listing() {
         state
             .metadata
             .repositories()
             .record_git_fetch_advertisement(&reader, &main_oid, &attached, unix_now()?)
             .await?;
     }
+    Ok(folder)
+}
+
+pub(crate) async fn capabilities(
+    state: &AppState,
+    headers: &HeaderMap,
+    owner: &str,
+    repo_name: &str,
+    view: &ViewId,
+) -> Result<GitRepoHandle, ApiError> {
+    authorized_git_read(state, headers, owner, repo_name, view).await?;
+    new_folder(state, Vec::new()).await
+}
+
+async fn new_folder(
+    state: &AppState,
+    dependencies: Vec<GitRepoHandle>,
+) -> Result<GitRepoHandle, ApiError> {
+    let directory = tempfile::Builder::new()
+        .prefix("fetch-")
+        .tempdir_in(state.repository_engine.cache_root())
+        .map_err(ApiError::internal)?;
+    let folder = GitRepoHandle::temporary(directory, dependencies)?;
+    let path = folder.share()?;
+    blocking::run(move || {
+        run_git(
+            None,
+            &[
+                "init",
+                "--bare",
+                "--quiet",
+                path.to_str()
+                    .ok_or_else(|| ApiError::internal_message("invalid fetch path"))?,
+            ],
+            "initializing fetch folder",
+        )?;
+        run_git(
+            Some(&path),
+            &["symbolic-ref", "HEAD", "refs/heads/main"],
+            "setting fetch head",
+        )
+    })
+    .await?;
     Ok(folder)
 }

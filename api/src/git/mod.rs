@@ -46,7 +46,7 @@ use axum::{
 };
 use flate2::read::GzDecoder;
 use receive_protocol::{advertise_additional_refs, read_receive_pack_commands};
-use scope_domain::views::ViewId;
+use scope_domain::{requests::GitFetchAsk, views::ViewId};
 use serde::Deserialize;
 use std::{
     fs,
@@ -186,12 +186,29 @@ pub(crate) async fn git_info_refs(
                 Ok(permit) => permit,
                 Err(error) => return git_advertisement_error(error.into_public_message()),
             };
-            match git_upload_pack_repo_for_request(&state, &headers, &org, &repo, &view).await {
+            let protocol = GitProtocol::of(&headers);
+            let folder = match protocol {
+                GitProtocol::V2 => {
+                    upload::fetch_folder::capabilities(&state, &headers, &org, &repo, &view).await
+                }
+                GitProtocol::V0 => {
+                    git_upload_pack_repo_for_request(
+                        &state,
+                        &headers,
+                        &org,
+                        &repo,
+                        &view,
+                        &GitFetchAsk::listing(),
+                    )
+                    .await
+                }
+            };
+            match folder {
                 Ok(repo_path) => {
                     let timeout = state.runtime_budgets.git_command_timeout();
                     match blocking::run(move || {
                         let _permit = permit;
-                        Ok(git_upload_pack_advertisement(&repo_path, timeout))
+                        Ok(git_upload_pack_advertisement(&repo_path, protocol, timeout))
                     })
                     .await
                     {
@@ -408,17 +425,13 @@ pub(crate) async fn git_upload_pack_rpc(
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
 
-    let wants = match upload::wanted_heads(&body) {
-        Ok(wants) => wants,
+    let protocol = GitProtocol::of(&headers);
+    let ask = match protocol.upload_pack_ask(&body) {
+        Ok(ask) => ask,
         Err(error) => return git_upload_pack_error(error.into_public_message()),
     };
     let repo_path = match upload::fetch_folder::prepare(
-        &state,
-        &headers,
-        &org,
-        &repo_name,
-        &view,
-        Some(&wants),
+        &state, &headers, &org, &repo_name, &view, &ask,
     )
     .await
     {
@@ -429,6 +442,7 @@ pub(crate) async fn git_upload_pack_rpc(
     match git_upload_pack_response(
         repo_path,
         &body,
+        protocol,
         state.runtime_budgets.git_command_timeout(),
         permit,
     )
