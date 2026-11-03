@@ -1,5 +1,5 @@
 import type { RepoParams } from '@/api/types'
-import type { HistoryFeed, ViewId } from '@/api/types.generated'
+import type { HistoryFeed, RequestQueueSection, ViewId } from '@/api/types.generated'
 import { loadHistoryPage } from '@/routes/-repo-history-actions'
 import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
 import { appendHistoryPage } from '../history/history-pagination'
@@ -29,8 +29,45 @@ export async function loadRepositorySearch(
   return {
     history: history.entries,
     historyCursor: history.next_cursor,
+    requestCursors: Object.fromEntries(sections.flatMap((section, index) => {
+      const cursor = pages[index].next_cursor
+      return cursor ? [[section, cursor]] : []
+    })),
     requests: pages.flatMap((page) => page.requests),
   }
+}
+
+export async function loadMoreRepositorySearchRequests({
+  identity,
+  params: { owner, repo },
+  query,
+  view,
+}: {
+  identity: string
+  params: RepoParams
+  query: string
+  view: ViewId
+}) {
+  const snapshot = repositorySearchResource.getSnapshot(identity)
+  const current = snapshot.value
+  if (!current) return
+  const pending = Object.entries(current.requestCursors) as [RequestQueueSection, string][]
+  if (!pending.length) return
+  const pages = await Promise.all(pending.map(([section, cursor]) => loadRequestQueuePage({
+    data: { cursor, owner, repo, search: query || null, section, view },
+  })))
+  const known = new Set(current.requests.map((item) => item.request.id))
+  repositorySearchResource.writeIfUnchanged(identity, snapshot, {
+    ...current,
+    requestCursors: Object.fromEntries(pending.flatMap(([section], index) => {
+      const cursor = pages[index].next_cursor
+      return cursor ? [[section, cursor]] : []
+    })),
+    requests: [
+      ...current.requests,
+      ...pages.flatMap((page) => page.requests).filter((item) => !known.has(item.request.id)),
+    ],
+  }, snapshot.version ?? '')
 }
 
 export async function loadOlderRepositorySearchHistory({

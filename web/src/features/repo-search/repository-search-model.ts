@@ -1,4 +1,4 @@
-import type { HistoryEntrySummaryResponse, HistoryFeed, RepoFileResponse, RequestQueueItemResponse } from '../../api/types.generated'
+import type { HistoryEntrySummaryResponse, HistoryFeed, RepoFileResponse, RequestQueueItemResponse, RequestQueueSection } from '../../api/types.generated'
 import { displayRouteFilePath } from '../../lib/route-file'
 import { matchingRepositoryFiles } from '../repo-detail/repository-file-navigation'
 import type { RepositoryVersion } from '../repo-detail/repository-version'
@@ -8,6 +8,7 @@ export type RepositorySearchFilter = 'all' | 'requests' | 'updates' | 'visibilit
 export type RepositorySearchResults = {
   history: HistoryEntrySummaryResponse[]
   historyCursor: string | null
+  requestCursors: Partial<Record<RequestQueueSection, string>>
   requests: RequestQueueItemResponse[]
 }
 
@@ -71,7 +72,7 @@ export function repositorySearchGroups({
       label: needle || filter === 'requests' ? 'Requests' : 'Versions',
       rows: [
         ...(showsMain ? [{ id: 'main', kind: 'main' } as const] : []),
-        ...requests.slice(0, limit),
+        ...(filter === 'all' ? requests.slice(0, limit) : requests),
       ],
       total: requests.length + (showsMain ? 1 : 0),
     })

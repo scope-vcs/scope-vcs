@@ -32,7 +32,7 @@ import {
 } from './repository-search-model'
 import { repositorySearchIdentity, repositorySearchResource } from './repository-search-cache'
 import { REPOSITORY_SEARCH_INPUT_ID, useRepositorySearch } from './repository-search-context'
-import { loadOlderRepositorySearchHistory, loadRepositorySearch } from './repository-search-resource'
+import { loadMoreRepositorySearchRequests, loadOlderRepositorySearchHistory, loadRepositorySearch } from './repository-search-resource'
 
 const FILTERS: { label: string; value: RepositorySearchFilter }[] = [
   { label: 'All', value: 'all' },
@@ -42,7 +42,7 @@ const FILTERS: { label: string; value: RepositorySearchFilter }[] = [
   { label: 'Files', value: 'files' },
 ]
 const SEARCH_DELAY_MS = 200
-const EMPTY_RESULTS = { history: [], historyCursor: null, requests: [] }
+const EMPTY_RESULTS = { history: [], historyCursor: null, requestCursors: {}, requests: [] }
 const PAGE_SEARCH_ROUTE = /\/(?:updates\/|requests\/[^/]+\/changes(?:\/|$))/
 
 export function RepositorySearch({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
@@ -59,7 +59,7 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
   const [settledQuery, setSettledQuery] = useState('')
   const { filter, setFilter } = useRepositorySearch()
   const [activeIndex, setActiveIndex] = useState(0)
-  const [older, setOlder] = useState<{ error: string | null; loading: boolean }>({ error: null, loading: false })
+  const [more, setMore] = useState<{ error: string | null; loading: boolean }>({ error: null, loading: false })
   const rootRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const listId = useId()
@@ -135,22 +135,24 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
 
   const settled = found.status === 'loaded' && search === settledQuery
   const failure = found.error ? found : files.error ? files : null
-  const canLoadOlder = feed !== 'all' && Boolean(found.value?.historyCursor)
+  const pagingRequests = filter === 'requests'
+  const canLoadMore = pagingRequests
+    ? Object.keys(found.value?.requestCursors ?? {}).length > 0
+    : feed !== 'all' && Boolean(found.value?.historyCursor)
 
-  async function loadOlder() {
+  async function loadMore() {
     if (!searchIdentity) return
-    setOlder({ error: null, loading: true })
+    setMore({ error: null, loading: true })
+    const request = { identity: searchIdentity, params, query: settledQuery, view }
     try {
-      await loadOlderRepositorySearchHistory({
-        feed,
-        identity: searchIdentity,
-        params,
-        query: settledQuery,
-        view,
-      })
-      setOlder({ error: null, loading: false })
+      if (pagingRequests) await loadMoreRepositorySearchRequests(request)
+      else await loadOlderRepositorySearchHistory({ ...request, feed })
+      setMore({ error: null, loading: false })
     } catch (error) {
-      setOlder({ error: resourceErrorMessage(error, 'Older history is unavailable.'), loading: false })
+      setMore({
+        error: resourceErrorMessage(error, pagingRequests ? 'More requests are unavailable.' : 'Older history is unavailable.'),
+        loading: false,
+      })
     }
   }
 
@@ -250,12 +252,12 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
                 {settled ? 'No matches.' : 'Searching…'}
               </output>
             )}
-            {canLoadOlder && (
+            {canLoadMore && (
               <div className="flex items-center gap-3 px-3 py-2 text-xs">
-                <Button disabled={older.loading} onClick={() => void loadOlder()} size="sm" type="button" variant="secondary">
-                  Load older
+                <Button disabled={more.loading} onClick={() => void loadMore()} size="sm" type="button" variant="secondary">
+                  {pagingRequests ? 'Load more' : 'Load older'}
                 </Button>
-                {older.error && <span className="text-danger-strong" role="alert">{older.error}</span>}
+                {more.error && <span className="text-danger-strong" role="alert">{more.error}</span>}
               </div>
             )}
           </div>

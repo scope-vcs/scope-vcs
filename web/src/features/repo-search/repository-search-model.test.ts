@@ -18,7 +18,7 @@ function groups(filter: RepositorySearchFilter, query: string) {
     files: [...files],
     filter,
     query,
-    results: { history: [push, merge, visibility, views], historyCursor: null, requests: [request] },
+    results: { history: [push, merge, visibility, views], historyCursor: null, requestCursors: {}, requests: [request] },
     version: { kind: 'main' },
   })
 }
@@ -49,6 +49,18 @@ test('history filters ask the server for their feed, so older matches are not cu
   assert.equal(repositorySearchFeed('updates'), 'updates')
   assert.equal(repositorySearchFeed('visibility'), 'visibility')
   assert.equal(repositorySearchFeed('requests'), 'all')
+})
+
+test('the Requests filter shows every loaded request so paging can reach later matches', () => {
+  const many = Array.from({ length: 40 }, (_, index) => ({ request: { id: `req_${index}` } }) as RequestQueueItemResponse)
+  const [requests] = repositorySearchGroups({
+    files: [],
+    filter: 'requests',
+    query: 'req',
+    results: { history: [], historyCursor: null, requestCursors: {}, requests: many },
+    version: { kind: 'main' },
+  })
+  assert.equal(requests?.rows.length, 40)
 })
 
 test('the Files filter lists files without a query', () => {

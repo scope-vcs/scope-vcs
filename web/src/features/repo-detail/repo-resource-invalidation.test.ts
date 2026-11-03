@@ -39,7 +39,7 @@ function seed() {
   historyFeedResource.write('viewer-a\0public\0all', { entries: [], next_cursor: null })
   repositorySearchResource.clear()
   for (const scope of ['viewer-a', 'viewer-b']) {
-    repositorySearchResource.write(repositorySearchIdentity(scope, 'public', '', 'all'), { history: [], historyCursor: null, requests: [] }, '0')
+    repositorySearchResource.write(repositorySearchIdentity(scope, 'public', '', 'all'), { history: [], historyCursor: null, requestCursors: {}, requests: [] }, '0')
   }
 }
 
