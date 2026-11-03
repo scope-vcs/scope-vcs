@@ -23,7 +23,6 @@ use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
-    scope_domain::repository::git::GitPoolPackOwner,
     scope_domain::requests::{
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
         RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request,
@@ -322,18 +321,14 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
-        if let Some(pack) = pushed.as_ref().and_then(|pushed| pushed.pool_pack.as_ref()) {
-            let owned_by_request = matches!(
-                &pack.owner,
-                GitPoolPackOwner::Request { request_id } if *request_id == mutation.request.id
-            );
-            if !owned_by_request || pack.head_oid != mutation.request.head_oid {
-                return Err(PostgresError::internal_message(
-                    "Git pool pack does not belong to the recorded revision",
-                ));
-            }
-            super::git_segments::register_git_pool_pack(&tx, &repo.record.id, pack, now_unix)
-                .await?;
+        if let Some(objects) = &pushed {
+            super::git_segments::register_request_pool_pack(
+                &tx,
+                &mutation.request,
+                &objects.pool_pack,
+                now_unix,
+            )
+            .await?;
         }
         super::request_checks::clear_current_evaluation(&tx, &mutation.request.id).await?;
         let mutation = if let Some(stored) = active_auto_merge {
@@ -490,10 +485,10 @@ impl RequestStore {
 #[derive(Clone, Debug)]
 pub struct PushedRevisionObjects {
     pub object_generation: String,
-    pub pool_pack: Option<scope_domain::repository::git::GitPoolPack>,
+    pub pool_pack: scope_domain::repository::git::GitPoolPack,
 }
 
-async fn ensure_object_generation<C: sea_orm::ConnectionTrait>(
+pub(super) async fn ensure_object_generation<C: sea_orm::ConnectionTrait>(
     tx: &C,
     repo_id: &str,
     expected: &str,

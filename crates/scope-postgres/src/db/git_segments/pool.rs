@@ -2,7 +2,9 @@ use super::publish_git_segment;
 use crate::db::integer_columns::{i32_to_u32, i64_to_u64, u32_to_i32, u64_to_i64};
 use crate::error::PostgresError;
 use scope_domain::{
-    repository::git::{GitPoolPack, GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef},
+    repository::git::{
+        GitPoolPack, GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef, RequestPackScope,
+    },
     views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, Value};
@@ -14,6 +16,7 @@ pub struct PooledRequestPack {
     pub head_oid: String,
     pub prerequisites: Vec<String>,
     pub request_view: ViewId,
+    pub scope: RequestPackScope,
     pub request_author_id: Option<String>,
     pub request_submitted: bool,
 }
@@ -40,6 +43,20 @@ impl ListedMainPoolPack {
             storage,
         }
     }
+}
+
+pub(in crate::db) async fn register_request_pool_pack<C: ConnectionTrait>(
+    conn: &C,
+    request: &scope_domain::requests::Request,
+    pack: &GitPoolPack,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    if !pack.belongs_to_request(request) {
+        return Err(PostgresError::internal_message(
+            "Git pool pack does not belong to the recorded revision",
+        ));
+    }
+    register_git_pool_pack(conn, &request.repo_id, pack, now_unix).await
 }
 
 pub(in crate::db) async fn register_git_pool_pack<C>(
@@ -80,28 +97,31 @@ where
             )
         }
     };
-    let (request_id, first_sequence, last_sequence): (Value, Value, Value) = match &pack.owner {
-        GitPoolPackOwner::Request { request_id } => (
-            Some(request_id.clone()).into(),
-            Option::<i64>::None.into(),
-            Option::<i64>::None.into(),
-        ),
-        GitPoolPackOwner::Main {
-            first_sequence,
-            last_sequence,
-        } => (
-            Option::<String>::None.into(),
-            Some(u64_to_i64(*first_sequence, "Git main pack first sequence")?).into(),
-            Some(u64_to_i64(*last_sequence, "Git main pack last sequence")?).into(),
-        ),
-    };
+    let (request_id, first_sequence, last_sequence, view_id): (Value, Value, Value, Value) =
+        match &pack.owner {
+            GitPoolPackOwner::Request { request_id, scope } => (
+                Some(request_id.clone()).into(),
+                Option::<i64>::None.into(),
+                Option::<i64>::None.into(),
+                scope.view().map(|view| view.as_str().to_string()).into(),
+            ),
+            GitPoolPackOwner::Main {
+                first_sequence,
+                last_sequence,
+            } => (
+                Option::<String>::None.into(),
+                Some(u64_to_i64(*first_sequence, "Git main pack first sequence")?).into(),
+                Some(u64_to_i64(*last_sequence, "Git main pack last sequence")?).into(),
+                Option::<String>::None.into(),
+            ),
+        };
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_git_pool_packs (
              id, repo_id, request_id, head_oid, prerequisites, sealed_pack, segment_id,
              segment_sha256, segment_plaintext_bytes, segment_encoding_version, created_at_unix,
-             first_sequence, last_sequence
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+             first_sequence, last_sequence, view_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
         [
             pack.id.clone().into(),
             repo_id.into(),
@@ -116,6 +136,7 @@ where
             u64_to_i64(now_unix, "Git pool pack registration time")?.into(),
             first_sequence,
             last_sequence,
+            view_id,
         ],
     ))
     .await?;
@@ -136,7 +157,7 @@ where
     let read = PostgresError::internal;
     conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT packs.id, packs.request_id, packs.head_oid, packs.prerequisites,
+        "SELECT packs.id, packs.request_id, packs.head_oid, packs.prerequisites, packs.view_id,
                 requests.audience AS request_view,
                 requests.author_user_id AS request_author_id,
                 requests.submitted_at_unix IS NOT NULL AS request_submitted
@@ -152,6 +173,12 @@ where
         Ok(PooledRequestPack {
             id: row.try_get("", "id").map_err(read)?,
             request_id: row.try_get("", "request_id").map_err(read)?,
+            scope: match row.try_get::<Option<String>>("", "view_id").map_err(read)? {
+                Some(view) => {
+                    RequestPackScope::View(ViewId::parse(&view).map_err(PostgresError::internal)?)
+                }
+                None => RequestPackScope::Full,
+            },
             head_oid: row.try_get("", "head_oid").map_err(read)?,
             prerequisites: row.try_get("", "prerequisites").map_err(read)?,
             request_view: ViewId::parse(&row.try_get::<String>("", "request_view").map_err(read)?)

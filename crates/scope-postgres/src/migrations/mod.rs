@@ -20,6 +20,7 @@ mod m0101_main_pool_packs;
 mod m0102_projection_file_symlinks;
 mod m0103_review_request_times;
 mod m0104_request_revision_diff_stats;
+mod m0105_view_pool_packs;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -152,6 +153,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         },
         RegisteredMigration {
             migration: Box::new(m0104_request_revision_diff_stats::Migration),
+            metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0105_view_pool_packs::Migration),
             metadata_restore_safe: true,
         },
     ]

@@ -13,6 +13,7 @@ use scope_git::DEFAULT_GIT_BRANCH;
 use scope_postgres::db::GitPushState;
 use std::{
     fs,
+    io::Write as _,
     path::{Path as FsPath, PathBuf},
 };
 
@@ -171,7 +172,17 @@ pub(crate) fn add_receive_pack_alternate(
         return Ok(());
     }
     lines.push_str(&format!("{}\n", objects.display()));
-    fs::write(alternates, lines).map_err(ApiError::internal)
+    let directory = alternates
+        .parent()
+        .ok_or_else(|| ApiError::internal_message("alternates file has no directory"))?;
+    let mut replacement = tempfile::NamedTempFile::new_in(directory).map_err(ApiError::internal)?;
+    replacement
+        .write_all(lines.as_bytes())
+        .map_err(ApiError::internal)?;
+    replacement
+        .persist(&alternates)
+        .map(drop)
+        .map_err(|error| ApiError::internal(error.error))
 }
 
 fn seed_main_head(seed: &FsPath) -> Result<Option<String>, ApiError> {

@@ -2,8 +2,8 @@ use super::{
     RequestViewBases, attach_visible_request_refs,
     pack_consolidation::consolidate_pool_repos,
     pool::{
-        PoolInstall, RequestObjectRepos, install_request_pool_packs, request_object_repos,
-        shares_objects,
+        PoolInstall, PoolRepos, RequestObjectRepos, install_request_pool_packs,
+        request_object_repos, shares_objects,
     },
     snapshot::{BundleRef, fetch_snapshot_into_ref},
 };
@@ -57,8 +57,10 @@ impl DeferredRequestObjects {
             PoolInstall {
                 incarnation: &self.incarnation,
                 config: &self.config,
-                repos: &repos,
-                actor_user_id: &self.actor_user_id,
+                repos: PoolRepos::Full {
+                    repos: &repos,
+                    actor_user_id: &self.actor_user_id,
+                },
             },
             &self.requests,
             staging_repo,
@@ -85,8 +87,10 @@ pub(crate) async fn attach_request_refs_from_pool(
         PoolInstall {
             incarnation,
             config,
-            repos: &repos,
-            actor_user_id,
+            repos: PoolRepos::Full {
+                repos: &repos,
+                actor_user_id,
+            },
         },
         &stored,
         staging_repo,
@@ -125,6 +129,72 @@ pub(crate) async fn attach_request_refs_from_pool(
     })
 }
 
+pub(crate) async fn attach_view_request_refs_from_pool(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &scope_domain::views::ViewId,
+    requests: &[Request],
+    staging_repo: &FsPath,
+    view_bases: RequestViewBases,
+) -> Result<(), ApiError> {
+    let repo = super::view_pool::view_object_repo(state, incarnation, config, view).await?;
+    let missing = missing_request_heads(&repo, requests.to_vec()).await?;
+    install_request_pool_packs(
+        state,
+        &PoolInstall {
+            incarnation,
+            config,
+            repos: PoolRepos::View { view, repo: &repo },
+        },
+        &missing,
+    )
+    .await;
+    let missing = missing_request_heads(&repo, missing).await?;
+    let state = state.clone();
+    let staging_repo = staging_repo.to_path_buf();
+    let requests = requests.to_vec();
+    let view = view.clone();
+    crate::git::blocking::run(move || {
+        let local = missing
+            .into_iter()
+            .filter(|request| request.view == view)
+            .collect::<Vec<_>>();
+        let other = requests
+            .iter()
+            .filter(|request| request.view != view)
+            .cloned()
+            .collect::<Vec<_>>();
+        attach_visible_request_refs(&state, &local, &repo, &view_bases)?;
+        attach_visible_request_refs(&state, &other, &staging_repo, &view_bases)?;
+        let present = present_commits(
+            &repo,
+            requests.iter().map(|request| request.head_oid.as_str()),
+        )?;
+        for request in requests
+            .iter()
+            .filter(|request| request.view == view && present.contains(&request.head_oid))
+        {
+            crate::git::command::run_git(
+                Some(&staging_repo),
+                &[
+                    "fetch",
+                    "--no-tags",
+                    repo.to_string_lossy().as_ref(),
+                    &format!(
+                        "+{}:{}",
+                        request.head_oid,
+                        canonical_request_ref(&request.name)
+                    ),
+                ],
+                "copying authorized request objects from the view shelf",
+            )?;
+        }
+        Ok(())
+    })
+    .await
+}
+
 async fn object_repos(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -153,6 +223,15 @@ async fn provide_request_objects(
     requests: &[Request],
     staging_repo: &FsPath,
 ) -> Result<(), ApiError> {
+    let PoolRepos::Full {
+        repos,
+        actor_user_id,
+    } = install.repos
+    else {
+        return Err(ApiError::internal_message(
+            "full request seeding requires full shelves",
+        ));
+    };
     let missing = missing_request_heads(staging_repo, requests.to_vec()).await?;
     if missing.is_empty() {
         return Ok(());
@@ -162,8 +241,8 @@ async fn provide_request_objects(
     if !missing.is_empty() {
         let state = state.clone();
         let config = install.config.clone();
-        let repos = install.repos.clone();
-        let actor_user_id = install.actor_user_id.to_string();
+        let repos = repos.clone();
+        let actor_user_id = actor_user_id.to_string();
         let staging_repo = staging_repo.to_path_buf();
         crate::git::blocking::run(move || {
             for request in &missing {
@@ -182,7 +261,7 @@ async fn provide_request_objects(
     }
     consolidate_pool_repos(
         install.incarnation.repository_id(),
-        vec![install.repos.shared.clone(), install.repos.authored.clone()],
+        vec![repos.shared.clone(), repos.authored.clone()],
     )
     .await;
     Ok(())
