@@ -27,10 +27,18 @@ function commands(gate, ...args) {
 test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
   const backend = commands('backend');
   assert.ok(backend.includes('cargo deny --locked check advisories'));
-  assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --locked'));
-  assert.ok(backend.includes('cargo test --workspace --locked'));
+  assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --exclude api --locked'));
+  const [apiFilter] = backend.find((command) => command.startsWith('cargo test -p api --locked --lib -- ')).split(' ').slice(-1);
+  assert.ok(backend.includes(`cargo test -p api --locked -- --skip ${apiFilter}`));
   assert.ok(backend.includes('cargo test -p api --features local-dev --locked dev::'));
   assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
+});
+
+test('GitHub runs every backend gate lane exactly once', () => {
+  const workflow = read('.github/workflows/rust-workspace-checks.yml');
+  const testLanes = workflow.match(/lane: \[([^\]]+)\]/)[1].split(', ');
+  const lanes = [workflow.match(/dev\/checks\/backend (lint)$/m)[1], ...testLanes];
+  assert.deepEqual(lanes.flatMap((lane) => commands('backend', lane)).sort(), commands('backend').sort());
 });
 
 test('the backend gate bounds PostgreSQL test concurrency on larger hosts', () => {

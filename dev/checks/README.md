@@ -6,7 +6,7 @@ root, regardless of the caller's working directory.
 
 | Entrypoint | Coverage |
 | --- | --- |
-| `backend` | Workspace formatting, dependency advisories, tests, API test support, local development helpers, Clippy |
+| `backend` | Workspace formatting, dependency advisories, tests, API test support, local development helpers, Clippy; `backend <lane>` runs one of `lint`, `workspace`, `api-git-refs`, `api`, or `features`, which GitHub runs as parallel jobs |
 | `cli` | Standalone formatting, dependency advisories, tests, distribution selector, Clippy |
 | `cli-bundle` | Host release binaries, archive size cap, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
