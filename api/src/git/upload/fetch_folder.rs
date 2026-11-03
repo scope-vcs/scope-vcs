@@ -8,7 +8,7 @@ use crate::{
     git::{
         blocking,
         cache::GitRepoHandle,
-        command::{git_stdout_text, run_git},
+        command::{git_main_oid, run_git},
         repository_git::RepositoryGit,
         request_refs::request_view_bases,
         staging::add_receive_pack_alternate,
@@ -53,14 +53,7 @@ pub(crate) async fn prepare(
     };
     let main_oid = {
         let base = base.share()?;
-        blocking::run(move || {
-            Ok(
-                git_stdout_text(&base, &["rev-parse", "HEAD"], "reading fetch main")?
-                    .trim()
-                    .to_string(),
-            )
-        })
-        .await?
+        blocking::run(move || git_main_oid(&base, "reading fetch main")).await?
     };
     let bases = request_view_bases(state, &git, &views, &selection.requests, view).await?;
     let directory = tempfile::Builder::new()
