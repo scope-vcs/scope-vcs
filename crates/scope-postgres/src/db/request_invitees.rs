@@ -56,25 +56,30 @@ impl RequestStore {
         repository_id: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Vec<(scope_domain::requests::Request, bool)>, PostgresError> {
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(repository_id))
+            .await?;
         let rows = entities::request::Entity::find()
             .filter(entities::request::Column::RepoId.eq(repository_id))
             .filter(entities::request::Column::MergedAtUnix.is_null())
             .filter(entities::request::Column::ClosedAtUnix.is_null())
             .order_by_asc(entities::request::Column::Name)
-            .all(self.db.as_ref())
+            .all(&tx)
             .await?;
         let ids = rows
             .iter()
             .map(|request| request.id.clone())
             .collect::<Vec<_>>();
         let invited = match viewer_user_id {
-            Some(user) if !ids.is_empty() => self.db.query_all_raw(Statement::from_sql_and_values(
+            Some(user) if !ids.is_empty() => tx.query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT request_id FROM scope_request_invitees WHERE user_id = $1 AND request_id = ANY($2)",
                 [user.into(), ids.into()],
             )).await?.into_iter().map(|row| row.try_get("", "request_id").map_err(PostgresError::internal)).collect::<Result<BTreeSet<String>, _>>()?,
             _ => BTreeSet::new(),
         };
+        tx.commit().await?;
         rows.into_iter()
             .map(|row| {
                 let invitee = invited.contains(&row.id);
