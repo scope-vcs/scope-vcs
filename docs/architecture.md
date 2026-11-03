@@ -307,7 +307,9 @@ settings that PostgreSQL row security policies read:
   by GitHub ids, viewer repository listings, account deletion, and migrations.
   `GitHubMirrorOwnership` covers GitHub run, job, and check-run upserts, whose
   rows are keyed by GitHub's global ids and move to the repository currently
-  connected to their GitHub repository.
+  connected to their GitHub repository. `GitHubRepositoryLink` reads which
+  Scope repository a GitHub repository is connected to, so connecting a second
+  Scope repository to it gets the domain's conflict.
 
 Every table with a `repo_id` or `repository_id` column, plus
 `scope_repositories`, enables and forces the `scope_repository_scope` policy
