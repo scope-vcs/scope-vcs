@@ -5,6 +5,7 @@ import { SafeMarkdown } from './safe-markdown'
 import {
   REPOSITORY_MARKDOWN_HEADING_PREFIX,
   resolveRepositoryMarkdownUrl,
+  type RepositoryMarkdownContext,
 } from './repository-markdown'
 
 export function RepositoryMarkdownRenderer({
@@ -13,7 +14,7 @@ export function RepositoryMarkdownRenderer({
   source,
 }: {
   className?: string
-  repository: { markdownPath: string; owner: string; repo: string }
+  repository: RepositoryMarkdownContext
   source: string
 }) {
   return (

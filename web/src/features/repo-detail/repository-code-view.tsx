@@ -4,10 +4,8 @@ import { PanelState } from '@/components/empty-state'
 import { FileWorkbench } from '@/components/file-workbench'
 import { PendingSurface } from '@/components/pending-surface'
 import { isRepositoryHtmlPath } from '@/components/repository-html'
-import { RepositoryHtmlRenderer, type RepositoryHtmlMode } from '@/components/repository-html-renderer'
-import { isRepositoryMarkdownPath } from '@/components/repository-markdown'
+import type { RepositoryHtmlMode } from '@/components/repository-html-renderer'
 import { RepositoryHtmlModeToggle } from '@/components/repository-html-mode-toggle'
-import { RepositoryMarkdownRenderer } from '@/components/repository-markdown-renderer'
 import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
@@ -42,7 +40,9 @@ import {
   SourceCodeSkeleton,
   SourceTabStripSkeleton,
 } from './repository-code-skeletons'
+import { RepositoryFileContent } from './repository-file-content'
 import { RepositoryFileNavigator } from './repository-file-navigator'
+import type { RepositoryVersion } from './repository-version'
 import { useViewingAs } from './use-viewing-as'
 
 const CODE_TAB_SET_ID = 'repository-code-files'
@@ -53,6 +53,7 @@ export function RepositoryCodeView({
   onSelectFilePath,
   params,
   selectedPath,
+  version,
   workspaceTabs,
 }: {
   content: CachedResource<RepoContent>
@@ -60,6 +61,7 @@ export function RepositoryCodeView({
   onSelectFilePath: (path: string) => void
   params: RepoParams
   selectedPath: string | null
+  version: RepositoryVersion
   workspaceTabs: ReturnType<typeof useWorkspaceTabs>
 }) {
   const [navigationOpen, setNavigationOpen] = useState(false)
@@ -100,7 +102,6 @@ export function RepositoryCodeView({
             <div className="scope-content-enter">
               <RepositoryFileNavigator
                 files={tree.files}
-                onOpenNavigation={() => setNavigationOpen(true)}
                 onSelectFile={selectFile}
                 selectedPath={selectedRouteFilePath(
                   tree.files,
@@ -125,7 +126,7 @@ export function RepositoryCodeView({
           availablePaths={availablePaths}
           emptyMessage={tree && !selectedPath
             ? tree.files.length
-              ? 'No README in this view. Browse the files or use Find file to get started.'
+              ? 'No README in this version. Browse the files or use search to get started.'
               : 'Run scope push --main from the CLI to add files to this repository.'
             : 'Select a file to inspect its contents.'}
           error={file.error}
@@ -142,6 +143,7 @@ export function RepositoryCodeView({
           scrollKey={file.identity}
           selectedPath={openPath}
           showVisibility={hasMixedVisibility}
+          version={version}
           workspaceTabs={workspaceTabs}
         />
       </FileWorkbench>
@@ -181,6 +183,7 @@ function SourcePane({
   scrollKey,
   selectedPath,
   showVisibility,
+  version,
   workspaceTabs,
 }: {
   availablePaths: string[]
@@ -196,6 +199,7 @@ function SourcePane({
   scrollKey: string | null
   selectedPath: string | null
   showVisibility: boolean
+  version: RepositoryVersion
   workspaceTabs: ReturnType<typeof useWorkspaceTabs>
 }) {
   const activeTabDomIds = selectedPath
@@ -264,6 +268,7 @@ function SourcePane({
           params={params}
           retry={retry}
           selectedPath={selectedPath}
+          version={version}
         />
       </div>
     </div>
@@ -327,6 +332,7 @@ function SourceContent({
   params,
   retry,
   selectedPath,
+  version,
 }: {
   emptyMessage: string
   error: string | null
@@ -336,6 +342,7 @@ function SourceContent({
   retry: () => void
   selectedPath: string | null
   htmlMode: RepositoryHtmlMode
+  version: RepositoryVersion
 }) {
   if (loading) {
     return (
@@ -382,7 +389,7 @@ function SourceContent({
 
   return (
     <div className="scope-content-enter min-h-full" key={file.oid}>
-      <SourceFileContent file={file} htmlMode={htmlMode} params={params} />
+      <RepositoryFileContent file={file} htmlMode={htmlMode} params={params} version={version} />
     </div>
   )
 }
@@ -423,56 +430,6 @@ function FileMeta({
       />
       {showVisibility && <VisibilityBadge compact visibility={file.label} />}
     </>
-  )
-}
-
-function SourceFileContent({
-  file,
-  htmlMode,
-  params,
-}: {
-  file: RepoFileContentResponse
-  htmlMode: RepositoryHtmlMode
-  params: RepoParams
-}) {
-  if (file.content.kind !== 'text') {
-    return (
-      <PanelState>
-        <FileQuestion className="size-5" />
-        <span>
-          Binary file not rendered ·{' '}
-          {formatBytes(file.content.size_bytes)} ·{' '}
-          {file.content.oid.slice(0, 12)}
-        </span>
-      </PanelState>
-    )
-  }
-
-  if (isRepositoryMarkdownPath(file.path)) {
-    return (
-      <RepositoryMarkdownRenderer
-        repository={{ ...params, markdownPath: file.path }}
-        source={file.content.text}
-      />
-    )
-  }
-
-  if (isRepositoryHtmlPath(file.path)) {
-    return (
-      <RepositoryHtmlRenderer
-        identity={`${file.path}\0${file.oid}`}
-        key={`${file.path}:${file.oid}`}
-        path={file.path}
-        mode={htmlMode}
-        source={file.content.text}
-      />
-    )
-  }
-
-  return (
-    <pre className="min-h-full bg-background p-5 font-mono text-xs leading-5 whitespace-pre text-foreground sm:p-7">
-      <code>{file.content.text}</code>
-    </pre>
   )
 }
 

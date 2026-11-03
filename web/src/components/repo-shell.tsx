@@ -5,12 +5,15 @@ import {
   type TopbarItem,
 } from '@/components/application-topbar'
 import { AppShell } from '@/components/app-shell'
+import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import {
   activeRepoSection,
   pendingRepoSections,
   repoSectionsForActor,
 } from '@/components/repo-section-model'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import { RepositorySearch } from '@/features/repo-search/repository-search'
+import { RepositorySearchProvider } from '@/features/repo-search/repository-search-context'
 import { useRequestReturnLocation } from '@/features/requests/use-request-return-location'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link, useLocation, useRouter } from '@tanstack/react-router'
@@ -48,7 +51,7 @@ export function RepoShell({
       node: (
         <>
           <Link
-            activeOptions={{ exact: section.key === 'code' }}
+            activeOptions={{ exact: section.key === 'home' }}
             aria-current={active === section.key ? 'page' : undefined}
             aria-describedby={section.key === 'requests' && openRequestCount > 0 ? 'repo-open-requests' : undefined}
             className="flex h-full items-center gap-1.5 px-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring md:px-3"
@@ -73,6 +76,7 @@ export function RepoShell({
   )
 
   return (
+    <RepositorySearchProvider>
     <AppShell
       header={() => (
         <ApplicationTopbar
@@ -87,10 +91,12 @@ export function RepoShell({
           ]}
           items={items}
           repository={params}
+          search={repo ? <RepositorySearch params={params} repo={repo} /> : <BlockSkeleton className="h-8 w-full" />}
         />
       )}
     >
       {children}
     </AppShell>
+    </RepositorySearchProvider>
   )
 }

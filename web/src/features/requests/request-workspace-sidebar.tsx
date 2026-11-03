@@ -4,7 +4,6 @@ import type {
   RequestQueuePageResponse,
   RequestQueueSection,
 } from '@/api/types.generated'
-import { NavigationSearch } from '@/components/navigation-search'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 import { cn } from '@/lib/utils'
@@ -62,8 +61,6 @@ export function RequestWorkspaceSidebar({
   pages,
   collapsed,
   onCollapsedChange,
-  query,
-  onSearch,
   loading,
   skeleton,
   error,
@@ -88,8 +85,6 @@ export function RequestWorkspaceSidebar({
   pages: RequestQueuePages | undefined
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
-  query: string
-  onSearch: (query: string) => void
   actionError: string | null
   maintainer: boolean | null
   onLoadMore: (section: RequestQueueSection) => void
@@ -120,10 +115,9 @@ export function RequestWorkspaceSidebar({
   }, [onFocusToggle])
   const close = useCallback(() => {
     setClosing(true)
-    if (query) onSearch('')
     if (document.activeElement instanceof HTMLElement && aside.current?.contains(document.activeElement))
       document.activeElement.blur()
-  }, [onSearch, query])
+  }, [])
   const toggle = state === 'open' ? close : togglePinned
   useEffect(() => {
     if (!closing) return
@@ -208,7 +202,6 @@ export function RequestWorkspaceSidebar({
     })
   }
 
-  const searching = query.trim().length > 0
   const common = {
     loading,
     skeleton,
@@ -240,14 +233,11 @@ export function RequestWorkspaceSidebar({
     rows: new Map(allRows.map((row) => [row.item.request.id, row])),
     selectedId,
   })
-  const nextSection = REQUEST_QUEUE_SECTION_ORDER.find((section) => pages?.[section].next_cursor)
   const activeHasMore = Boolean(pages?.active.next_cursor)
   const activeCount = (value: number) => pages ? `${value}${activeHasMore ? '+' : ''}` : null
   const needsYou = grouped.needs_you
   const caughtUp = Boolean(pages) && !skeleton && needsYou.length === 0 && !activeHasMore
-  const current = searching
-    ? undefined
-    : allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
+  const current = allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
   const moved = (items: QueueRow[]) => Number(current !== undefined && items.includes(current))
   const waiting = grouped.waiting.filter((row) => row !== current)
   const waitingCount = activeCount(grouped.waiting.length - moved(grouped.waiting))
@@ -336,15 +326,6 @@ export function RequestWorkspaceSidebar({
       )}
       <div className="request-workspace-sidebar-inner">
         <div className="request-workspace-sidebar-tools">
-          <NavigationSearch
-            clearLabel="Clear request search"
-            label="Search requests"
-            onChange={onSearch}
-            onOpen={openRail}
-            placeholder="Search requests"
-            status={loading && searching ? 'Searching requests' : undefined}
-            value={query}
-          />
           <Button
             aria-label={state === 'closed' ? 'Expand requests sidebar' : 'Collapse requests sidebar'}
             className="request-workspace-sidebar-toggle text-muted-foreground"
@@ -364,17 +345,7 @@ export function RequestWorkspaceSidebar({
           </p>
         )}
         <div aria-busy={loading} className="request-workspace-scroll">
-          {searching ? (
-            <RequestWorkspaceList
-              {...common}
-              emptyLabel="No matching requests."
-              hasMore={Boolean(nextSection)}
-              items={allRows}
-              onLoadMore={() => {
-                if (nextSection) onLoadMore(nextSection)
-              }}
-            />
-          ) : maintainer === null ? (
+          {maintainer === null ? (
             <section className="request-workspace-needs-you">
               <h2 aria-hidden="true" className="request-workspace-group-label">
                 <span>

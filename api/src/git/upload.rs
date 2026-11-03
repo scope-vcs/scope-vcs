@@ -205,7 +205,9 @@ async fn build_git_read_view(
         .iter()
         .map(|(view, base)| (view.clone(), base.as_ref().to_path_buf()))
         .collect::<Vec<_>>();
+    let parent_span = tracing::Span::current();
     let (main_oid, view_main_oids) = tokio::task::spawn_blocking(move || {
+        let _entered = parent_span.enter();
         let head = |path: &FsPath| {
             git_command_output(
                 Command::new("git")
@@ -257,9 +259,11 @@ async fn build_git_read_view(
         &repo_path,
         is_ready,
         move || async move {
+            let parent_span = tracing::Span::current();
             let (unreadable, result) = match state_for_build.runtime_budgets.try_git_materialization() {
                 Err(error) => (Vec::new(), Err(error)),
                 Ok(permit) => tokio::task::spawn_blocking(move || {
+                    let _entered = parent_span.enter();
                     let _permit = permit;
                     let attempt = GIT_READ_VIEW_CACHE_ATTEMPT.fetch_add(1, Ordering::Relaxed);
                     let temp_path = cache_root_for_build.join(format!(
@@ -362,7 +366,9 @@ pub(crate) async fn git_upload_pack_response(
     let mut request = request.to_vec();
     if repo_path.join("objects/info/alternates").is_file() {
         let validation_repo = repo_path.clone();
+        let parent_span = tracing::Span::current();
         request = tokio::task::spawn_blocking(move || {
+            let _entered = parent_span.enter();
             prepare_upload_pack_request(&validation_repo, &request)
         })
         .await

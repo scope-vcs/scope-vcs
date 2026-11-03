@@ -93,7 +93,9 @@ where
             move || async move {
                 let base_repo = base_repo.await?;
                 let permit = state_for_build.runtime_budgets.try_git_materialization()?;
+                let parent_span = tracing::Span::current();
                 tokio::task::spawn_blocking(move || {
+                    let _entered = parent_span.enter();
                     let _permit = permit;
                     build_revision(
                         &build_path,
@@ -121,7 +123,9 @@ where
         .await?;
     let permit = state.runtime_budgets.wait_git_materialization().await?;
     let revision = revision.clone();
+    let parent_span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _entered = parent_span.enter();
         let _permit = permit;
         action(&repo, &revision)
     })

@@ -6,6 +6,9 @@ use super::{
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
 use crate::views::{ViewId, Views};
 
+pub const REQUEST_BRANCH_MUTABLE_STATES: [RequestState; 2] =
+    [RequestState::Draft, RequestState::Open];
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestViewer<'a> {
     pub access: RepositoryAccess,

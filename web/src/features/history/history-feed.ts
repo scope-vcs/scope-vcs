@@ -2,11 +2,10 @@ import type { RepoParams } from '@/api/types'
 import type { HistoryFeed, ViewId } from '@/api/types.generated'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
-import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
+import { useCachedResource } from '@/lib/use-cached-resource'
 import { loadHistoryPage } from '@/routes/-repo-history-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
-import { useCallback, useState } from 'react'
-import { appendHistoryPage } from './history-pagination'
+import { useCallback } from 'react'
 import { historyFeedResource } from './history-resource-cache'
 
 export function useHistoryFeed({
@@ -42,38 +41,5 @@ export function useHistoryFeed({
     resource: historyFeedResource,
     version,
   })
-  const [older, setOlder] = useState<{ identity: string | null; error: string | null; loading: boolean }>(
-    { identity: null, error: null, loading: false },
-  )
-  const olderState = older.identity === identity ? older : { error: null, loading: false }
-
-  const loadOlder = useCallback(async () => {
-    if (!identity) return
-    const snapshot = historyFeedResource.getSnapshot(identity)
-    const before = snapshot.value?.next_cursor
-    if (!snapshot.value || !before) return
-    setOlder({ identity, error: null, loading: true })
-    try {
-      const page = await loadHistoryPage({
-        data: { view, before, feed, owner, repo: repoName },
-      })
-      historyFeedResource.writeIfUnchanged(
-        identity,
-        snapshot,
-        appendHistoryPage(snapshot.value, page, before),
-        snapshot.version ?? version,
-      )
-      setOlder({ identity, error: null, loading: false })
-    } catch (error) {
-      setOlder({ identity, error: resourceErrorMessage(error, 'Older history is unavailable.'), loading: false })
-    }
-  }, [view, feed, identity, owner, repoName, version])
-
-  return {
-    loadOlder,
-    loadOlderError: olderState.error,
-    loadingOlder: olderState.loading,
-    resource,
-    view,
-  }
+  return { resource, view }
 }

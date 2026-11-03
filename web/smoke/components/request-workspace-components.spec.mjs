@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
+import { fixtureClerk, fixtureRepositorySearch, openFixture } from '../support/fixture-server.mjs'
 
 async function workspacePage(t) {
-  const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk], tailwind: true })
+  const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true })
   const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
   return { page, base, errors, railClosed }
 }
@@ -67,7 +67,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.keyboard.press('End')
   await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 360)
   await page.mouse.move(700, 400)
-  await page.getByRole('searchbox').focus()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).focus()
   await waitOpacity(diffStat, '1')
   const rowBounds = await row.boundingBox()
   await row.hover()
@@ -93,7 +93,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.getByRole('menu').waitFor()
   await waitOpacity(age, '0')
   await page.keyboard.press('Escape')
-  await page.getByRole('searchbox').focus()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).focus()
   await waitOpacity(age, '1')
   await page.locator('[data-request-id="request-2"]').hover()
   assert.equal(await page.locator('[data-request-id="request-2"] time').evaluate((node) =>
@@ -190,7 +190,6 @@ test('request rows exchange age and actions and restore the selected view across
   assert.equal(await sidebar.getAttribute('data-state'), 'closed')
   await openRail()
   assert.deepEqual(await avatars(), closedAvatars)
-  assert.equal((await page.getByRole('searchbox').boundingBox()).x, logo.x)
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-open.png` })
   }
@@ -200,7 +199,6 @@ test('request rows exchange age and actions and restore the selected view across
   await page.keyboard.press('Escape')
   assert.equal(await sidebar.getAttribute('data-state'), 'open')
   assert.equal(await sidebar.getAttribute('data-closing'), 'true')
-  assert.equal(await page.getByRole('searchbox').isVisible(), true)
   await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 })
   await sidebarWidth(88)
   await railClosed()
@@ -219,12 +217,6 @@ test('request rows exchange age and actions and restore the selected view across
   await openRail()
   await row.getByRole('link').click()
   await page.waitForURL(/\/request-0$/)
-  await sidebarWidth(88)
-  await railClosed()
-  await page.keyboard.press('/')
-  await sidebarWidth(360)
-  assert.equal(await page.getByRole('searchbox').evaluate((node) => node === document.activeElement), true)
-  await page.keyboard.press('Escape')
   await sidebarWidth(88)
   await railClosed()
   await page.getByRole('button', { name: 'Expand requests sidebar' }).click()
@@ -482,7 +474,7 @@ test('collapsed request loading keeps its header stable without guessing avatar 
 })
 
 
-test('stack context preserves actionable children and row order when parents are outside the visible section or search', async (t) => {
+test('stack context preserves actionable children and row order when parents are outside the visible section', async (t) => {
   const { page, base, errors } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests', base).href)
   const node = { id: 'parent', name: 'parent', title: 'Safe parent', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
@@ -525,13 +517,6 @@ test('stack context preserves actionable children and row order when parents are
   assert.deepEqual(await lines('d6'), ['chain'])
   assert.equal(await page.locator('[data-request-id="d6"] .request-workspace-row-link').evaluate((node) => node.scrollWidth <= node.clientWidth && node.closest('.request-workspace-sidebar').getBoundingClientRect().right >= node.getBoundingClientRect().right), true)
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), pages)
-  const searched = { ...pages, active: { ...empty, requests: [requests[0]] }, set_aside: empty }
-  await page.evaluate((pages) => { window.setQuery('child'); window.setQueue({ pages, maintainer: true, loading: false }) }, searched)
-  await page.locator('[data-request-id="sibling"]').waitFor({ state: 'detached' })
-  assert.equal(await child.isVisible(), true)
-  assert.deepEqual(await lines('child'), ['elsewhere'])
-  assert.equal(await page.locator('[data-request-id="parent"]').count(), 0)
-  assert.deepEqual(await page.locator('.request-workspace-rows [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId)), ['child'])
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await child.isVisible(), true)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)

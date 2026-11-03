@@ -9,7 +9,7 @@ import {
 const tabletViewport = { width: 1024, height: 768 }
 
 test('workspace tabs retain mouse hover disclosure', async () => {
-  await withPage(repoPath, async (page) => {
+  await withPage(`${repoPath}/code`, async (page) => {
     const firstTab = page.getByRole('tab').first()
     await firstTab.waitFor()
     await waitForClientHydration(firstTab)
@@ -22,7 +22,7 @@ test('workspace tabs retain mouse hover disclosure', async () => {
         to,
         search: { file: 'src/app.ts' },
       })
-    }, repoPath)
+    }, `${repoPath}/code`)
     await page.getByRole('tab', { name: 'src/app.ts', exact: true }).waitFor()
     await page.mouse.move(tabletViewport.width - 1, tabletViewport.height - 1)
     const close = page.getByTitle(`Close ${firstLabel}`, { exact: true })
@@ -39,7 +39,7 @@ test('workspace tabs retain mouse hover disclosure', async () => {
 })
 
 test('workspace tabs close from the keyboard and an accessible control outside the tablist', async () => {
-  await withPage(repoPath, async (page) => {
+  await withPage(`${repoPath}/code`, async (page) => {
     const firstTab = page.getByRole('tab').first()
     await firstTab.waitFor()
     await waitForClientHydration(firstTab)
@@ -52,7 +52,7 @@ test('workspace tabs close from the keyboard and an accessible control outside t
         to,
         search: { file: 'src/app.ts' },
       })
-    }, repoPath)
+    }, `${repoPath}/code`)
     const secondTab = page.getByRole('tab', { name: 'src/app.ts', exact: true })
     await secondTab.waitFor()
     assert.equal(await page.getByRole('tablist').getByRole('button').count(), 0)

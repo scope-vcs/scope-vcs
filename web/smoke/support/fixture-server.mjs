@@ -13,6 +13,7 @@ const webPath = (path) => fileURLToPath(new URL(`../../${path}`, import.meta.url
 
 export const fixturePath = (fixture, path = '.') => webPath(`smoke/fixtures/${fixture}/${path}`)
 export const fixtureClerk = { find: '@clerk/tanstack-react-start', replacement: fixturePath('shared', 'clerk.tsx') }
+export const fixtureRepositorySearch = { find: '@/features/repo-search/repository-search', replacement: fixturePath('shared', 'repository-search.tsx') }
 
 const sharedPage = {
   name: 'scope-shared-fixture-page',

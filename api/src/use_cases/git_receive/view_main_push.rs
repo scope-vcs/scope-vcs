@@ -165,7 +165,7 @@ pub(super) async fn complete_view_main_push(
             },
             scope_postgres::db::PushedRevisionObjects {
                 object_generation: push.object_generation.clone(),
-                pool_pack: Some(persisted.pool_pack.pack.clone()),
+                pool_pack: persisted.pool_pack.pack.clone(),
             },
         )
         .await;
@@ -219,6 +219,7 @@ pub(super) async fn complete_view_main_push(
         &push.incarnation,
         &mutation.request,
         &mutation.revision,
+        None,
     )
     .await;
     Ok(ViewMainPushOutcome::Landed)

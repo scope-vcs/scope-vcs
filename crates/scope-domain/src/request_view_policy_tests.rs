@@ -269,3 +269,37 @@ fn every_full_view_maintainer_sees_exactly_the_requests_shared_across_maintainer
         }
     }
 }
+
+#[test]
+fn branch_mutable_lifecycles_match_requests_any_actor_can_edit() {
+    let views = views_with_agent();
+    for view in [ViewId::public(), ViewId::private(), agent()] {
+        for submitted in [false, true] {
+            for closed in [false, true] {
+                for merged in [false, true] {
+                    let mut request = open_request();
+                    request.view = view.clone();
+                    request.submitted_at_unix = submitted.then_some(20);
+                    request.closed_at_unix = closed.then_some(30);
+                    request.merged_at_unix = merged.then_some(30);
+                    let editable = [
+                        RequestViewer::new(RepositoryAccess::public(), Some("author"), false),
+                        RequestViewer::new(RepositoryAccess::public(), Some("invitee"), true),
+                        RequestViewer::new(
+                            access(RepositoryActor::Member, ViewId::private(), false),
+                            Some("maintainer"),
+                            false,
+                        ),
+                    ]
+                    .into_iter()
+                    .any(|viewer| request_policy(&request, viewer, &views).branch_mutable);
+                    assert_eq!(
+                        editable,
+                        REQUEST_BRANCH_MUTABLE_STATES.contains(&request.state()),
+                        "{view} submitted={submitted} closed={closed} merged={merged}"
+                    );
+                }
+            }
+        }
+    }
+}
