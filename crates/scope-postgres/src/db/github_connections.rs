@@ -86,16 +86,6 @@ impl RepositoryStore {
         still_reachable: impl AsyncFnOnce() -> Result<bool, E>,
     ) -> Result<(GitHubConnection, RepositoryIncarnation), E> {
         let repo_id = command.repository_id.clone();
-        let github_repository_link = {
-            let tx = self
-                .db
-                .begin(DataScope::System(SystemReason::GitHubRepositoryLink))
-                .await
-                .map_err(PostgresError::internal)?;
-            let link = connected_github_repository(&tx, command.github_repository_id, "").await?;
-            tx.commit().await.map_err(PostgresError::internal)?;
-            link
-        };
         let tx = self
             .db
             .begin(DataScope::Repository(&repo_id))
@@ -110,6 +100,17 @@ impl RepositoryStore {
         )
         .await?;
         acquire_installation_lock(&tx, command.installation_id).await?;
+        let github_repository_link = {
+            let link_tx = self
+                .db
+                .begin(DataScope::System(SystemReason::GitHubRepositoryLink))
+                .await
+                .map_err(PostgresError::internal)?;
+            let link =
+                connected_github_repository(&link_tx, command.github_repository_id, "").await?;
+            link_tx.commit().await.map_err(PostgresError::internal)?;
+            link
+        };
         let context = repository_access(&tx, &repo_id, Some(&command.user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;

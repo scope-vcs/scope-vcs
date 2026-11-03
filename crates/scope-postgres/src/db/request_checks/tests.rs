@@ -33,13 +33,16 @@ async fn evaluations_for_heads_match_exact_pairs_without_returning_history() {
 
     let evaluations = store
         .requests()
-        .request_check_evaluations(&[
-            ("request-a".into(), HEAD_A_CURRENT.into()),
-            ("request-b".into(), HEAD_SHARED.into()),
-            ("request-a".into(), HEAD_A_CURRENT.into()),
-            ("request-a".into(), HEAD_B_OLD.into()),
-            ("missing-request".into(), HEAD_MISSING.into()),
-        ])
+        .request_check_evaluations(
+            "owner/repo",
+            &[
+                ("request-a".into(), HEAD_A_CURRENT.into()),
+                ("request-b".into(), HEAD_SHARED.into()),
+                ("request-a".into(), HEAD_A_CURRENT.into()),
+                ("request-a".into(), HEAD_B_OLD.into()),
+                ("missing-request".into(), HEAD_MISSING.into()),
+            ],
+        )
         .await
         .unwrap();
     let mut pairs = evaluations
@@ -48,14 +51,33 @@ async fn evaluations_for_heads_match_exact_pairs_without_returning_history() {
         .collect::<Vec<_>>();
     pairs.sort_unstable();
     assert_eq!(pairs, [("request-a", HEAD_A_CURRENT)]);
+    assert_eq!(
+        store
+            .requests()
+            .request_check_evaluations(
+                "owner/repo",
+                &[
+                    ("missing-request".into(), HEAD_MISSING.into()),
+                    ("request-a".into(), HEAD_A_CURRENT.into()),
+                    ("request-b".into(), HEAD_B_CURRENT.into()),
+                ]
+            )
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
 
     assert!(
         store
             .requests()
-            .request_check_evaluations(&[
-                ("request-a".into(), HEAD_B_OLD.into()),
-                ("request-b".into(), HEAD_A_OLD.into()),
-            ])
+            .request_check_evaluations(
+                "owner/repo",
+                &[
+                    ("request-a".into(), HEAD_B_OLD.into()),
+                    ("request-b".into(), HEAD_A_OLD.into()),
+                ]
+            )
             .await
             .unwrap()
             .is_empty()
@@ -63,7 +85,7 @@ async fn evaluations_for_heads_match_exact_pairs_without_returning_history() {
     assert!(
         store
             .requests()
-            .request_check_evaluations(&[])
+            .request_check_evaluations("owner/repo", &[])
             .await
             .unwrap()
             .is_empty()

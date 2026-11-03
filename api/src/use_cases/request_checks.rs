@@ -199,7 +199,7 @@ pub(crate) async fn checks_outcomes(
     let evaluations = state
         .metadata
         .requests()
-        .request_check_evaluations(&heads)
+        .request_check_evaluations(repo_id, &heads)
         .await?;
     let results = state
         .metadata

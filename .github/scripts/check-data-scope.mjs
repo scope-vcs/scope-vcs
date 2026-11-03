@@ -25,6 +25,24 @@ export const rules = [
     reason: 'open transactions through ScopedDatabase::begin with a DataScope',
   },
   {
+    name: 'raw database connection constructor',
+    pattern: /\b(?:Database|PgConnection|PgPool|PgListener)::connect\w*\b|\bPgPoolOptions\b/,
+    owners: [
+      `${database}/connection.rs`,
+      `${database}/content_fences.rs`,
+      `${database}/maintenance.rs`,
+      `${database}/merge_turns.rs`,
+      `${database}/repo_change_notifications.rs`,
+      `${database}/test_support.rs`,
+      `${database}/test_support/`,
+      `${database}/migration_tests.rs`,
+      `${database}/migration_tests/`,
+      `${migrations}/`,
+    ],
+    tests: true,
+    reason: 'lock, listener, and maintenance connections have named owners; store reads go through ScopedDatabase',
+  },
+  {
     name: 'data scope setting',
     pattern: /\bscope\.(?:repository_id|system_reason)\b/,
     owners: [
@@ -37,13 +55,14 @@ export const rules = [
 ]
 
 const owns = (owners, file) => owners.some((owner) => (owner.endsWith('/') ? file.startsWith(owner) : file === owner))
+const isTestSource = (file) => /(?:^|\/)(?:tests\/|[^/]*tests\.rs$)/.test(file)
 
 export function findViolations(file, contents) {
   const normalized = file.replaceAll('\\', '/')
   if (!normalized.endsWith('.rs')) return []
   const violations = []
   for (const rule of rules) {
-    if (owns(rule.owners, normalized)) continue
+    if (owns(rule.owners, normalized) || (rule.tests && isTestSource(normalized))) continue
     contents.split('\n').forEach((text, index) => {
       if (rule.pattern.test(text)) violations.push({ file: normalized, line: index + 1, rule, text: text.trim() })
     })

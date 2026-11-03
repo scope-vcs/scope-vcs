@@ -71,3 +71,59 @@ async fn turning_main_publication_on_waits_for_a_visibility_change_instead_of_ov
             .publishes_main
     );
 }
+
+#[tokio::test]
+async fn review_connection_rechecks_the_link_after_waiting_for_its_locks() {
+    use crate::db::locks::{backend_pid, wait_for_transaction_waiter};
+    use crate::db::test_support::fixtures::{repository, store_with_repositories, user};
+    use scope_domain::views::ViewId;
+    let owner = user("owner", "owner");
+    let store = store_with_repositories([
+        repository(&owner, "a", ViewId::public()),
+        repository(&owner, "b", ViewId::public()),
+    ]);
+    let command = |id: &str| ConnectGitHubRepository {
+        repository_id: id.into(),
+        installation_id: 7,
+        github_repository_id: 42,
+        github_full_name: "octo/repo".into(),
+        github_private: true,
+        acknowledge_public: false,
+        run_import_count: 0,
+        user_id: "owner".into(),
+        now_unix: 10,
+    };
+    store
+        .repositories()
+        .connect_github_repository(command("owner/a"), async || Ok::<_, PostgresError>(true))
+        .await
+        .unwrap();
+    let blocker = store
+        .db
+        .begin(DataScope::Repository("owner/b"))
+        .await
+        .unwrap();
+    acquire_aggregate_lock(&blocker, "repository", "owner/b")
+        .await
+        .unwrap();
+    let blocker_pid = backend_pid(&blocker).await;
+    let repositories = store.repositories();
+    let connect = command("owner/b");
+    let connecting = tokio::spawn(async move {
+        repositories
+            .connect_github_repository(connect, async || Ok::<_, PostgresError>(true))
+            .await
+    });
+    wait_for_transaction_waiter(&store, blocker_pid).await;
+    store
+        .repositories()
+        .disconnect_github_repository("owner/a", "owner")
+        .await
+        .unwrap();
+    blocker.commit().await.unwrap();
+    let result = connecting.await.unwrap();
+    assert!(
+        result.is_ok(),
+        "the previous connection was removed before the lock was acquired: {result:?}"
+    );
+}

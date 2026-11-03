@@ -321,7 +321,10 @@ only through a parent row are listed in
 column. That test classifies every table from the catalog and fails when a new
 table is neither policy-covered nor reviewed as holding no repository data.
 `.github/scripts/check-data-scope.mjs` rejects raw connections, transactions, and
-scope settings outside the boundary, migrations, and test support. When
+scope settings outside the boundary, migrations, and test support. It also
+rejects connection constructors outside their named owners: the writer pool,
+the external-I/O fence, merge-turn sessions, the change-notification listener,
+maintenance, and tests. When
 `SCOPE_TEST_DATABASE_URL` is a superuser, test databases are owned by and
 connect as `scope_test_row_security`, which cannot bypass row security, so every
 store test runs under the policies.

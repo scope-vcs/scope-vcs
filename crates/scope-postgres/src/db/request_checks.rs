@@ -346,14 +346,15 @@ impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_check_evaluations"))]
     pub async fn request_check_evaluations(
         &self,
+        repo_id: &str,
         heads: &[(String, String)],
     ) -> Result<Vec<RequestCheckEvaluation>, PostgresError> {
-        let Some((anchor, _)) = heads.first() else {
+        if heads.is_empty() {
             return Ok(Vec::new());
-        };
+        }
         let tx = self
             .db
-            .begin_read_snapshot(DataScope::RequestRepository(anchor))
+            .begin_read_snapshot(DataScope::Repository(repo_id))
             .await?;
         let evaluations = entities::request_check_evaluation::Entity::find()
             .filter(head_pairs_condition(heads))

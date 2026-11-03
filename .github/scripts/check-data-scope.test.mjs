@@ -19,6 +19,20 @@ test('rejects raw transactions outside the data scope owner', () => {
   assert.deepEqual(findViolations('crates/scope-postgres/src/db/test_support/fixtures.rs', source), [])
 })
 
+test('rejects raw connection constructors outside their named owners', () => {
+  const source = [
+    'let db = sea_orm::Database::connect(url).await?;',
+    'let connection = sqlx::PgConnection::connect(url).await?;',
+    'let pool = PgPoolOptions::new().connect_lazy(url)?;',
+    'let listener = PgListener::connect(url).await?;',
+  ].join('\n')
+  assert.deepEqual(lines(findViolations('crates/scope-postgres/src/db/requests.rs', source)), [1, 2, 3, 4])
+  assert.deepEqual(lines(findViolations('api/src/use_cases/run_control.rs', source)), [1, 2, 3, 4])
+  assert.deepEqual(findViolations('crates/scope-postgres/src/db/merge_turns.rs', source), [])
+  assert.deepEqual(findViolations('crates/scope-postgres/src/db/outbox/tests.rs', source), [])
+  assert.deepEqual(findViolations('crates/scope-postgres/src/db/transaction_cancellation_tests.rs', source), [])
+})
+
 test('rejects scope settings outside the boundary and its policies', () => {
   const source = "tx.execute_unprepared(\"SELECT set_config('scope.repository_id', 'other', true)\")"
   assert.deepEqual(lines(findViolations('crates/scope-postgres/src/db/outbox.rs', source)), [1])
