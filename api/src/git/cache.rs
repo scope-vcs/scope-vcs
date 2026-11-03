@@ -39,6 +39,7 @@ pub(crate) struct RepositoryGitCache {
 pub(crate) struct GitRepoHandle {
     path: PathBuf,
     _lease: RepositoryGitCacheLease,
+    temporary: Option<Arc<tempfile::TempDir>>,
     dependencies: Vec<GitRepoHandle>,
 }
 
@@ -115,6 +116,7 @@ impl RepositoryGitCache {
         Ok(GitRepoHandle {
             path: path.clone(),
             _lease: RepositoryGitCacheLease { path },
+            temporary: None,
             dependencies: Vec::new(),
         })
     }
@@ -268,7 +270,14 @@ fn prune_stale_materializations(
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !name.ends_with(".tmp") || !path.is_dir() {
+        if !path.is_dir() {
+            continue;
+        }
+        if name.starts_with("fetch-") {
+            evict_unleased(&path, remove_dir_if_exists)?;
+            continue;
+        }
+        if !name.ends_with(".tmp") {
             continue;
         }
         let modified = entry
@@ -295,22 +304,46 @@ impl std::fmt::Debug for GitRepoHandle {
 }
 
 impl GitRepoHandle {
+    pub(crate) fn temporary(
+        directory: tempfile::TempDir,
+        dependencies: Vec<GitRepoHandle>,
+    ) -> Result<Self, ApiError> {
+        let path = directory.path().to_path_buf();
+        let mut users = cache_users()
+            .lock()
+            .map_err(|_| ApiError::internal_message("repository Git cache registry is poisoned"))?;
+        *users.entry(path.clone()).or_default() += 1;
+        Ok(Self {
+            _lease: RepositoryGitCacheLease { path: path.clone() },
+            path,
+            temporary: Some(Arc::new(directory)),
+            dependencies,
+        })
+    }
+
     pub(crate) fn with_dependency(mut self, dependency: GitRepoHandle) -> Self {
         self.dependencies.push(dependency);
         self
     }
 
     pub(crate) fn share(&self) -> Result<GitRepoHandle, ApiError> {
-        let mut users = cache_users()
-            .lock()
-            .map_err(|_| ApiError::internal_message("repository Git cache registry is poisoned"))?;
-        *users.entry(self.path.clone()).or_default() += 1;
+        {
+            let mut users = cache_users().lock().map_err(|_| {
+                ApiError::internal_message("repository Git cache registry is poisoned")
+            })?;
+            *users.entry(self.path.clone()).or_default() += 1;
+        }
         Ok(GitRepoHandle {
             path: self.path.clone(),
             _lease: RepositoryGitCacheLease {
                 path: self.path.clone(),
             },
-            dependencies: Vec::new(),
+            temporary: self.temporary.clone(),
+            dependencies: self
+                .dependencies
+                .iter()
+                .map(Self::share)
+                .collect::<Result<_, _>>()?,
         })
     }
 }

@@ -138,7 +138,7 @@ pub(crate) async fn attach_view_request_refs_from_pool(
     staging_repo: &FsPath,
     view_bases: RequestViewBases,
 ) -> Result<(), ApiError> {
-    let repo = super::view_pool::view_object_repo(state, incarnation, config, view).await?;
+    let repo = super::view_pool::view_object_repo(state, incarnation, config, view, None).await?;
     let missing = missing_request_heads(&repo, requests.to_vec()).await?;
     install_request_pool_packs(
         state,
@@ -306,8 +306,7 @@ fn restore_request_objects(
         snapshot,
         prerequisites_from,
         "restoring request objects",
-    )
-    .and_then(|stored| stored.map_err(ApiError::from));
+    );
     if present_commits(target_repo, std::iter::once(request.head_oid.as_str()))?
         .contains(&request.head_oid)
     {

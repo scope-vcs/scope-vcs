@@ -173,14 +173,34 @@ fn thin_snapshot_takes_its_base_from_the_base_repo() {
         "init target",
     )
     .unwrap();
-    let error = fetch_bundle_into(&target, "refs/heads/topic", &bundle, None, "fetch").unwrap_err();
+    let error = fetch_bundle_into_ref(
+        &target,
+        BundleRef {
+            source: "refs/heads/topic",
+            destination: "refs/heads/topic",
+        },
+        &bundle,
+        None,
+        "fetch",
+    )
+    .unwrap_err();
     assert!(
         error
             .operator_diagnostic()
             .contains("base commit is unavailable")
     );
 
-    fetch_bundle_into(&target, "refs/heads/topic", &bundle, Some(&source), "fetch").unwrap();
+    fetch_bundle_into_ref(
+        &target,
+        BundleRef {
+            source: "refs/heads/topic",
+            destination: "refs/heads/topic",
+        },
+        &bundle,
+        Some(&source),
+        "fetch",
+    )
+    .unwrap();
     assert_eq!(
         request_ref_head(&target, "refs/heads/topic").unwrap(),
         Some(head)

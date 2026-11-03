@@ -344,3 +344,20 @@ fn contributor_user_id() -> String {
 fn member_user_id() -> String {
     scope_postgres::db::scope_user_id_for_auth_identity("clerk", MEMBER_SUBJECT)
 }
+
+async fn fetch_folder(
+    state: &AppState,
+    headers: &HeaderMap,
+    view: &ViewId,
+) -> crate::git::cache::GitRepoHandle {
+    git_upload_pack_repo_for_request(state, headers, TEST_REPO_OWNER, TEST_REPO_NAME, view)
+        .await
+        .unwrap()
+}
+
+fn ref_head(repo: &FsPath, reference: &str) -> String {
+    git_stdout_text(repo, &["rev-parse", reference], "read test ref")
+        .unwrap()
+        .trim()
+        .to_string()
+}

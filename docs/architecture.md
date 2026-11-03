@@ -388,3 +388,17 @@ their own timeouts. The policy gate runs the check.
 
 Executable help is authoritative for command surfaces: `./dev/scope-dev --help`,
 `./dev/check --help`, and `scope-maintenance --help`.
+
+Git reads create a temporary bare fetch folder with main and visible active
+request refs. Full-view readers borrow canonical, shared and authored shelves;
+restricted readers borrow only isolated projections and reader shelves. Pool
+installation and legacy bundle restoration retain request objects on shelves.
+Unreadable requests are omitted with their request identity in the server log.
+Dropping the last folder handle removes the folder, including on streaming errors
+and disconnects. Pruning also removes retired read-view caches.
+
+Postgres retains the heads offered to each reader and view for one hour, scoped
+to the current object generation. Upload-pack can restore an advertised revision
+when a push replaced its head between the two HTTP legs, including on a different
+replica. Saved request heads still require current request visibility. These heads
+become temporary refs for that RPC; arbitrary SHA wants remain disabled.

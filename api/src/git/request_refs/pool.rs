@@ -61,12 +61,12 @@ pub(crate) fn request_object_repos(
     Ok(RequestObjectRepos { shared, authored })
 }
 
-pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
+pub(crate) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
     request_visible_to_every_maintainer(&request.view, request.is_submitted(), &config.views)
 }
 
 #[derive(Clone, Copy)]
-pub(super) enum PoolRepos<'a> {
+pub(crate) enum PoolRepos<'a> {
     Full {
         repos: &'a RequestObjectRepos,
         actor_user_id: &'a str,
@@ -77,13 +77,13 @@ pub(super) enum PoolRepos<'a> {
     },
 }
 
-pub(super) struct PoolInstall<'a> {
-    pub(super) incarnation: &'a RepositoryIncarnation,
-    pub(super) config: &'a RepoConfig,
-    pub(super) repos: PoolRepos<'a>,
+pub(crate) struct PoolInstall<'a> {
+    pub(crate) incarnation: &'a RepositoryIncarnation,
+    pub(crate) config: &'a RepoConfig,
+    pub(crate) repos: PoolRepos<'a>,
 }
 
-pub(super) async fn install_request_pool_packs(
+pub(crate) async fn install_request_pool_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
     missing: &[Request],
@@ -261,7 +261,7 @@ async fn install_staged_pool_pack(
     pool_pack: &StagedPoolPack,
 ) -> Result<(), ApiError> {
     let shared = shares_objects(request, config);
-    let view_path = match &pool_pack.pack.owner {
+    let view_lease = match &pool_pack.pack.owner {
         GitPoolPackOwner::Request {
             scope: RequestPackScope::View(view),
             ..
@@ -269,7 +269,7 @@ async fn install_staged_pool_pack(
             if config.object_generation() != generation {
                 return Err(ApiError::conflict("request object generation changed"));
             }
-            Some(super::view_pool::view_object_repo(state, incarnation, config, view).await?)
+            Some(super::view_pool::view_object_repo(state, incarnation, config, view, None).await?)
         }
         _ if !shared && !request.is_author(pusher_id) => return Ok(()),
         _ => None,
@@ -280,6 +280,7 @@ async fn install_staged_pool_pack(
         let generation = generation.to_string();
         let pusher_id = pusher_id.to_string();
         let pack = pool_pack.pack.clone();
+        let view_path = view_lease.as_ref().map(|repo| repo.as_ref().to_path_buf());
         crate::git::blocking::run(move || {
             let objects_repo = match view_path {
                 Some(repo) => repo,
