@@ -185,7 +185,7 @@ async fn insert_private_request_for_public_user(state: &AppState) {
             base_version: 1,
             main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             head_oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
-            git_snapshot: None,
+            pushed_at_unix: None,
             title: "Former member request".to_string(),
             description_markdown: String::new(),
             activity_version: 0,
@@ -241,7 +241,7 @@ async fn assert_request_branch_unchanged(state: &AppState) {
     let request = stored_request(state, REQUEST_ID).await;
     assert_eq!(request.state(), RequestState::Draft);
     assert_eq!(request.head_oid, request.main_ancestor_oid);
-    assert!(request.git_snapshot.is_none());
+    assert!(request.pushed_at_unix.is_none());
     assert_eq!(request_event_count(state).await, 1);
 }
 

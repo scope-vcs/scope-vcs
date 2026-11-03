@@ -160,7 +160,7 @@ async fn exact_public_parent_landing_preserves_child_review_and_worker_renews_ap
     assert!(
         stored_request(&fixture.state, &fixture.child_id)
             .await
-            .git_snapshot
+            .pushed_at_unix
             .is_some()
     );
     let comparison = fixture.comparison(None).await;

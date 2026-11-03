@@ -101,11 +101,6 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
             );
         }
     }
-    let ready_revisions = catalog
-        .request_revisions
-        .values()
-        .filter(|revision| revision.request_id == "req_demo_ready")
-        .collect::<Vec<_>>();
     let ready = catalog.requests.get("req_demo_ready").unwrap();
     let last_request_event_at = catalog
         .request_events
@@ -116,11 +111,6 @@ async fn seed_catalog_preserves_request_revision_and_merge_invariants() {
         .unwrap();
     assert!(ready.submitted_at_unix.unwrap() > last_request_event_at);
     assert_eq!(ready.updated_at_unix, ready.submitted_at_unix.unwrap());
-    assert!(
-        ready_revisions
-            .iter()
-            .all(|revision| revision.git_snapshot.git_oid == revision.new_head_oid)
-    );
     let accepted = catalog.requests.get("req_demo_accepted").unwrap();
     assert_eq!(accepted.merged_main_oid, accepted.merged_head_oid);
     assert_ne!(

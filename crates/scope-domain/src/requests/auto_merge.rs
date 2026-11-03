@@ -472,7 +472,7 @@ fn request_auto_merge_eligibility(
             "auto-merge can only be enabled for an open request",
         ));
     }
-    if request.git_snapshot.is_none() {
+    if request.pushed_at_unix.is_none() {
         return Err(DomainError::conflict("request branch is unavailable"));
     }
     let Some(revision) = revision else {

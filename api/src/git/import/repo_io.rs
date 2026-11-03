@@ -2,22 +2,26 @@ use super::segment_upload::{
     GitSegmentUploadHeartbeat, RemoteCleanup, begin_git_segment_upload,
     best_effort_delete_git_segment_identity, best_effort_delete_staged_git_segment,
 };
+#[cfg(test)]
+use crate::git::command::run_git;
 use crate::{
     error::ApiError,
     git::{
         command::{
-            git_ref_listing, git_stdout_text, prepare_git_subprocess, record_git_exit, run_git,
+            git_ref_listing, git_stdout_text, prepare_git_subprocess, record_git_exit,
             truncated_git_stderr,
         },
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
     },
     state::AppState,
 };
+#[cfg(test)]
 use scope_domain::content::SourceBlob;
 use scope_domain::repository::git::{GitHead, GitPoolPackStorage};
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git::{PreparedGitPush, prepare_git_push};
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
+#[cfg(test)]
 use scope_storage::{ContentObjectKind, content_object_for_bytes};
 use scope_storage::{GitStorageError, StagedGitSegment};
 use std::{path::Path as FsPath, process::Command, time::Instant};
@@ -254,6 +258,7 @@ pub(crate) async fn git_push_from_repo(
     Ok(StagedGitPush { head, pack })
 }
 
+#[cfg(test)]
 pub(crate) fn git_snapshot_from_ref(
     repo: &FsPath,
     refname: &str,
@@ -277,6 +282,7 @@ pub(crate) fn git_snapshot_from_ref(
     Ok((snapshot, bytes))
 }
 
+#[cfg(test)]
 fn random_bundle_id() -> Result<String, ApiError> {
     let mut bytes = [0_u8; 16];
     getrandom::fill(&mut bytes).map_err(|error| {

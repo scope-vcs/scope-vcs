@@ -358,7 +358,7 @@ async fn cancelled_derived_build_and_active_readers_remain_leased_during_evictio
             engine
                 .materialize_derived(
                     &incarnation,
-                    GitDerivedCacheNamespace::RequestReadView,
+                    GitDerivedCacheNamespace::RequestObjects,
                     "derived".into(),
                     &path,
                     || false,

@@ -6,7 +6,6 @@ use crate::use_cases::git_receive::{
 };
 use std::collections::BTreeSet;
 
-mod backfill;
 mod fetch;
 mod fetch_visibility;
 mod views;
@@ -72,11 +71,6 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
         .latest_request_revision(&request_id)
         .await
         .unwrap()
-        .unwrap();
-    replica
-        .object_store
-        .delete(&scope_storage::object_key(&revision.git_snapshot))
-        .await
         .unwrap();
     let job = crate::git::request_refs::with_request_revision_store_repo(
         &replica,
@@ -507,7 +501,7 @@ async fn a_draft_revision_is_pooled_only_for_its_author() {
     let author_staging = prepare_owner_push(&state, request_ref).await;
     assert!(has_commit(&author_staging, &draft_head));
     let _ = fs::remove_dir_all(author_staging);
-    assert!(has_commit(&repos.authored, &draft_head));
+    assert!(!has_commit(&repos.authored, &draft_head));
     assert!(!has_commit(&repos.shared, &draft_head));
     insert_member_user(&state).await;
     state

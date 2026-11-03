@@ -118,7 +118,7 @@
           "dockerfile": "deploy/railway/prebuilt.Dockerfile",
           "installGit": true,
           "sourceBinary": "api",
-          "maxBytes": 61865984,
+          "maxBytes": 60817408,
           "maintenance": {
             "binary": "scope-maintenance",
             "maxBytes": 27262976

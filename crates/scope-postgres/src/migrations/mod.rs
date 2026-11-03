@@ -22,6 +22,7 @@ mod m0103_review_request_times;
 mod m0104_request_revision_diff_stats;
 mod m0105_view_pool_packs;
 mod m0106_git_fetch_advertisements;
+mod m0107_delete_request_bundles;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -163,6 +164,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
         RegisteredMigration {
             migration: Box::new(m0106_git_fetch_advertisements::Migration),
             metadata_restore_safe: true,
+        },
+        RegisteredMigration {
+            migration: Box::new(m0107_delete_request_bundles::Migration),
+            metadata_restore_safe: false,
         },
     ]
 }

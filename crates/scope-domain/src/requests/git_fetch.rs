@@ -1,11 +1,18 @@
 use super::{Request, RequestViewer, request_policy};
 use crate::views::{ViewId, Views};
-use std::collections::BTreeSet;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GitFetchRequest {
+    pub id: String,
+    pub view: ViewId,
+}
 
 #[derive(Clone, Debug)]
 pub enum GitFetchHead {
     Main,
-    Requests(Vec<Request>),
+    Requests(Vec<GitFetchRequest>),
 }
 
 pub fn request_readable_in_git(
@@ -24,8 +31,8 @@ pub fn retain_git_fetch_heads(
     let current = requests
         .iter()
         .filter(|request| request.state().advertised_in_git())
-        .map(|request| (request.id.clone(), request.view.clone()))
-        .collect::<BTreeSet<_>>();
+        .map(|request| ((request.id.clone(), request.view.clone()), request.clone()))
+        .collect::<BTreeMap<_, _>>();
     let mut retained = Vec::new();
     for (oid, head) in advertised {
         let GitFetchHead::Requests(previous) = head else {
@@ -34,15 +41,14 @@ pub fn retain_git_fetch_heads(
         };
         let mut readable = false;
         for old in previous {
-            if !current.contains(&(old.id.clone(), old.view.clone())) {
+            let Some(current) = current.get(&(old.id, old.view)) else {
                 continue;
-            }
+            };
             readable = true;
-            if !requests
-                .iter()
-                .any(|request| request.head_oid == old.head_oid)
-            {
-                requests.push(old);
+            if !requests.iter().any(|request| request.head_oid == oid) {
+                let mut current = current.clone();
+                current.head_oid = oid.clone();
+                requests.push(current);
             }
         }
         if readable {
@@ -78,11 +84,17 @@ mod tests {
                 "revoked" => Vec::new(),
                 _ => vec![current],
             };
-            let mut saved = vec![old.clone()];
+            let mut saved = vec![GitFetchRequest {
+                id: old.id.clone(),
+                view: old.view.clone(),
+            }];
             if change == "shared-head" {
                 let mut closed = old.clone();
                 closed.id = "closed-association".into();
-                saved.push(closed);
+                saved.push(GitFetchRequest {
+                    id: closed.id,
+                    view: closed.view,
+                });
             }
             let retained = retain_git_fetch_heads(
                 &mut requests,

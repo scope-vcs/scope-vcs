@@ -13,7 +13,7 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    repository::{RepositoryIncarnation, git::RequestPackScope},
+    repository::RepositoryIncarnation,
     requests::{
         MainPushRequestName, MainPushRequestOutcome, Request, RequestCheckReviewer,
         StartMainPushRequestInput, StartRequestFacts, StartRequestInput, canonical_request_ref,
@@ -137,7 +137,6 @@ pub(super) async fn complete_view_main_push(
         staging_repo,
         &request,
         &update,
-        RequestPackScope::View(push.view.clone()),
     )
     .await?;
     let mutation = state
@@ -154,7 +153,7 @@ pub(super) async fn complete_view_main_push(
                 name: request.name.clone(),
                 main_ancestor_oid: view_main_oid,
                 head_oid,
-                git_snapshot: persisted.git_snapshot.clone(),
+
                 git_facts: persisted.git_facts.clone(),
                 started_event_id: generate_prefixed_id("event_request_started")?,
                 revision_event_id: generate_prefixed_id("event_request_revision")?,
@@ -170,21 +169,13 @@ pub(super) async fn complete_view_main_push(
         )
         .await;
     let mutation = match mutation {
-        Ok(MainPushRequestOutcome::Started(mutation)) => {
-            persisted.fence.release().await;
-            mutation
-        }
+        Ok(MainPushRequestOutcome::Started(mutation)) => mutation,
         outcome => {
             persisted
                 .pool_pack
                 .discard(state, push.incarnation.repository_id())
                 .await;
-            crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
-                state,
-                std::slice::from_ref(&persisted.git_snapshot),
-            )
-            .await;
-            persisted.fence.release().await;
+
             return match outcome {
                 Ok(_) => Ok(ViewMainPushOutcome::AlreadyOpen),
                 Err(error) => Err(error.into()),

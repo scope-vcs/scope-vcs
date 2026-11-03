@@ -276,10 +276,6 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
             actor_can_edit: true,
             expected_old_head_oid: Some("head".into()),
             new_head_oid: REQUEST_HEAD.into(),
-            git_snapshot: SourceBlob {
-                git_oid: REQUEST_HEAD.into(),
-                ..source_blob(REQUEST_HEAD)
-            },
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: true,
                 contained_main_oid: None,

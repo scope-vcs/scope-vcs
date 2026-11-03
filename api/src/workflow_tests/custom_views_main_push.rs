@@ -77,7 +77,6 @@ fn concurrent_push(
         name: name.to_string(),
         main_ancestor_oid: main_ancestor_oid.to_string(),
         head_oid: landed.head_oid.clone(),
-        git_snapshot: landed.git_snapshot.clone().unwrap(),
         git_facts: RequestRevisionGitFacts {
             contains_old_head: true,
             contained_main_oid: Some(main_ancestor_oid.to_string()),

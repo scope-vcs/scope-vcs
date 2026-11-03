@@ -46,7 +46,6 @@ mod workflow_tests;
 pub use app::router;
 pub use background_work::BackgroundWork;
 pub use state::AppState;
-pub use use_cases::pool_bundle_backfill::run_pool_bundle_backfill;
 pub use workflow_catalog_validation::validate_repository_workflow_catalogs_for_maintenance;
 
 #[cfg(feature = "type-export")]

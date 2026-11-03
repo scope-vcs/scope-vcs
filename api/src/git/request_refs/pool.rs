@@ -99,7 +99,7 @@ pub(crate) async fn install_request_pool_packs(
         Err(error) => tracing::warn!(
             repository_id = install.incarnation.repository_id(),
             error = %error.operator_diagnostic(),
-            "request pool packs were not installed; missing requests restore from their snapshots"
+            "request pool packs were not installed"
         ),
     }
 }

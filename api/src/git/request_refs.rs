@@ -3,7 +3,7 @@ use crate::{
     error::ApiError,
     git::{
         command::{git_ref_listing, run_git, run_git_output},
-        import::{git_snapshot_from_ref, validate_pushed_commit_range},
+        import::validate_pushed_commit_range,
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
@@ -13,16 +13,12 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    content::SourceBlob,
     repo_config::RepoConfig,
     repository::{
         RepositoryIncarnation,
         git::{GitPoolPackOwner, RequestPackScope},
     },
-    requests::{
-        Request, RequestRevisionGitFacts, canonical_request_ref,
-        request_main_ancestor_after_revision,
-    },
+    requests::{Request, RequestRevisionGitFacts, canonical_request_ref},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{
@@ -36,27 +32,19 @@ mod pack_consolidation;
 pub(super) mod pool;
 mod revision;
 mod seeding;
-mod snapshot;
 mod view_bases;
 pub(super) mod view_pool;
 pub(crate) use ancestry::request_revision_git_facts;
-use ancestry::{
-    ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
-};
+use ancestry::{ensure_request_ref_descends_from_base, request_ref_oid_is_commit};
+#[cfg(test)]
+pub(crate) use pool::RequestObjectRepos;
 #[cfg(test)]
 pub(crate) use pool::request_object_repos;
-pub(crate) use pool::{
-    PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs,
-    retain_staged_pool_pack,
-};
+pub(crate) use pool::retain_staged_pool_pack;
 pub(crate) use revision::{sweep_revision_jobs, with_request_revision_store_repo};
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,
 };
-#[cfg(test)]
-use snapshot::fetch_bundle_into_ref;
-use snapshot::{BundleRef, fetch_snapshot_into_ref};
-pub(crate) use snapshot::{bundle_prerequisites, download_snapshot};
 pub(crate) use view_bases::{RequestViewBases, request_view_bases};
 #[cfg(test)]
 pub(crate) use view_pool::view_object_repos;
@@ -190,70 +178,36 @@ pub(crate) fn create_request_receive_pack_staging_repo(
 }
 
 pub(crate) fn attach_visible_request_refs(
-    state: &AppState,
     requests: &[Request],
     target_repo: &FsPath,
     view_bases: &RequestViewBases,
 ) -> Result<(), ApiError> {
-    for request in requests
-        .iter()
-        .filter(|request| request.git_snapshot.is_some())
-        .chain(
-            requests
-                .iter()
-                .filter(|request| request.git_snapshot.is_none()),
-        )
-    {
-        let request_ref = canonical_request_ref(&request.name);
-        if let Some(snapshot) = request.git_snapshot.as_ref() {
-            fetch_snapshot_into_ref(
-                state,
-                target_repo,
-                BundleRef {
-                    source: &request_ref,
-                    destination: &request_ref,
-                },
-                snapshot,
-                None,
-                "attaching request ref to Git read view",
-            )?;
-        } else {
-            if !request_ref_oid_is_commit(target_repo, &request.head_oid)?
-                && let Some(view_base) = view_bases.get(&request.view)
-            {
-                let temporary_ref = "refs/scope/internal/request-view-base";
-                let refspec = format!("+refs/heads/{DEFAULT_GIT_BRANCH}:{temporary_ref}");
-                run_git(
-                    Some(target_repo),
-                    &["fetch", view_base.to_string_lossy().as_ref(), &refspec],
-                    "attaching request view base to Git read view",
-                )?;
-                run_git(
-                    Some(target_repo),
-                    &["update-ref", "-d", temporary_ref],
-                    "removing temporary request view base ref",
-                )?;
-            }
-            if !request_ref_oid_is_commit(target_repo, &request.head_oid)? {
-                tracing::warn!(
-                    request_id = request.id,
-                    request_name = request.name,
-                    head_oid = request.head_oid,
-                    "omitting snapshotless request whose base commit is unavailable in Git read view"
-                );
-                continue;
-            }
+    for request in requests {
+        if !request_ref_oid_is_commit(target_repo, &request.head_oid)?
+            && let Some(view_base) = view_bases.get(&request.view)
+        {
             run_git(
                 Some(target_repo),
-                &["update-ref", &request_ref, &request.head_oid],
-                "attaching unmodified request ref to Git read view",
+                &[
+                    "fetch",
+                    "--no-tags",
+                    "--no-write-fetch-head",
+                    view_base.to_string_lossy().as_ref(),
+                    &request.head_oid,
+                ],
+                "attaching request base objects",
             )?;
         }
-        let attached_head = request_ref_head(target_repo, &request_ref)?;
-        if attached_head.as_deref() != Some(request.head_oid.as_str()) {
-            return Err(ApiError::infrastructure_unavailable(
-                "request snapshot does not match request metadata",
-            ));
+        if request_ref_oid_is_commit(target_repo, &request.head_oid)? {
+            run_git(
+                Some(target_repo),
+                &[
+                    "update-ref",
+                    &canonical_request_ref(&request.name),
+                    &request.head_oid,
+                ],
+                "attaching request ref",
+            )?;
         }
     }
     Ok(())
@@ -302,9 +256,7 @@ fi
 }
 
 pub(crate) struct PersistedRequestRef {
-    pub(crate) git_snapshot: SourceBlob,
     pub(crate) git_facts: RequestRevisionGitFacts,
-    pub(crate) fence: scope_postgres::db::ContentRefFence,
     pub(crate) pool_pack: StagedPoolPack,
 }
 
@@ -315,7 +267,6 @@ pub(crate) async fn persist_request_ref(
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
-    scope: RequestPackScope,
 ) -> Result<PersistedRequestRef, ApiError> {
     let path = staging_repo.to_path_buf();
     let base_oid = request.base.review_base_oid().to_string();
@@ -329,6 +280,7 @@ pub(crate) async fn persist_request_ref(
     .await?;
     let accepted_main_oid = git.git_head.as_ref().map(|head| head.head_oid.clone());
     let views = repo_config.views();
+    let scope = RequestPackScope::for_view(&request.view, views);
     let main_oid = if &request.view == views.full() {
         accepted_main_oid.clone()
     } else {
@@ -343,7 +295,7 @@ pub(crate) async fn persist_request_ref(
             .await?,
         )
     };
-    let (git_snapshot, git_facts, snapshot_bytes, pool_prerequisites) = {
+    let (git_facts, pool_prerequisites) = {
         let path = staging_repo.to_path_buf();
         let request = request.clone();
         let update = update.clone();
@@ -361,14 +313,6 @@ pub(crate) async fn persist_request_ref(
                 &update.new_head_oid,
                 main_oid.as_deref(),
             )?;
-            let snapshot_base = thin_snapshot_base(
-                request.view.clone(),
-                request_main_ancestor_after_revision(&request, &git_facts),
-                accepted_main_oid.as_deref(),
-                &path,
-            )?;
-            let (git_snapshot, snapshot_bytes) =
-                git_snapshot_from_ref(&path, &update.request_ref, snapshot_base)?;
             let pool_main = match scope {
                 RequestPackScope::Full => accepted_main_oid.as_deref(),
                 RequestPackScope::View(_) => main_oid.as_deref(),
@@ -382,7 +326,7 @@ pub(crate) async fn persist_request_ref(
                 .into_iter()
                 .filter(|oid| request_ref_oid_is_commit(&path, oid).unwrap_or(false))
                 .collect();
-            Ok((git_snapshot, git_facts, snapshot_bytes, pool_prerequisites))
+            Ok((git_facts, pool_prerequisites))
         })
         .await?
     };
@@ -400,32 +344,8 @@ pub(crate) async fn persist_request_ref(
         },
     )
     .await?;
-    let stored = async {
-        let fence = state
-            .metadata
-            .acquire_content_ref_fence(std::slice::from_ref(&git_snapshot.content_ref))
-            .await?;
-        let object_key = scope_storage::object_key(&git_snapshot);
-        if let Err(error) = state.object_store.put(&object_key, snapshot_bytes).await {
-            fence.release().await;
-            return Err(ApiError::from(error));
-        }
-        Ok(fence)
-    }
-    .await;
-    let fence = match stored {
-        Ok(fence) => fence,
-        Err(error) => {
-            pool_pack
-                .discard(state, git.incarnation.repository_id())
-                .await;
-            return Err(error);
-        }
-    };
     Ok(PersistedRequestRef {
-        git_snapshot,
         git_facts,
-        fence,
         pool_pack,
     })
 }

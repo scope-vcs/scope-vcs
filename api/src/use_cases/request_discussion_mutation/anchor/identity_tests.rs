@@ -5,8 +5,6 @@ use crate::git::test_repo::pinned_identity_git as git;
 use axum::http::StatusCode;
 use scope_domain::views::{ViewId, Views};
 use scope_domain::{
-    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-    content_ref::ContentRef,
     policy::{LabelRule, Policy, ScopePath},
     repository::access::RepositoryAccess,
     requests::RequestRevision,
@@ -72,13 +70,6 @@ fn visible_commit_paths_requires_revision_membership_and_full_visibility() {
         },
         main_ancestor_oid: fixture.base.clone(),
         rewrote_history: false,
-        git_snapshot: SourceBlob {
-            content_ref: ContentRef::blob_sha256("snapshot"),
-            sha256: "snapshot".to_string(),
-            git_oid: "snapshot".to_string(),
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            size_bytes: 1,
-        },
         created_at_unix: 1,
     };
     let public_policy = Policy::new(ViewId::public());

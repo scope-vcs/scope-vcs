@@ -198,45 +198,6 @@ async fn request_ref_completion_cannot_cross_repository_recreation() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn failed_request_snapshot_put_leaves_the_request_unchanged() {
-    let mut state = test_state_with_request().await;
-    let (source, _permissioned_remote, server, accepted_head) =
-        request_checkout(&state, "request-ref-put-failure").await;
-    drop(server);
-    state.object_store = Arc::new(PutFailsObjectStore {
-        readable: state.object_store.clone(),
-    });
-    let (origin, _server) = spawn_test_server(&state).await;
-    let permissioned_remote = format!("{origin}/git/private/{TEST_REPO_ID}");
-    configure_bearer_header(
-        &source,
-        &permissioned_remote,
-        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
-    );
-    fs::write(source.join("request.txt"), "rejected request content\n").unwrap();
-    run_git(
-        Some(&source),
-        &["add", "request.txt"],
-        "stage rejected request edit",
-    )
-    .unwrap();
-    commit_all(&source, "rejected request edit");
-
-    let output = run_git_output(
-        Some(&source),
-        &["push", &permissioned_remote, &format!("HEAD:{REQUEST_REF}")],
-        "reject request snapshot storage failure",
-    )
-    .unwrap();
-
-    assert!(!output.status.success());
-    assert_eq!(
-        stored_request(&state, REQUEST_ID).await.head_oid,
-        accepted_head
-    );
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn draft_push_records_revision_activity_without_touching_main() {
     let state = test_state_with_request().await;
     let (source, permissioned_remote, _server, _) =
@@ -271,13 +232,6 @@ async fn draft_push_records_revision_activity_without_touching_main() {
         Some("hello")
     );
     assert_eq!(live_file_content(&state, "/request.txt").await, None);
-    source_blob_bytes(
-        state.object_store.as_ref(),
-        request.git_snapshot.as_ref().unwrap(),
-        usize::MAX,
-    )
-    .await
-    .unwrap();
     fs::remove_dir_all(assert_restored_request_head(&state, &request.head_oid).await).unwrap();
     let app = router(state.clone());
     let request_uri = format!("/v1/repos/{TEST_REPO_ID}/requests/{REQUEST_ID}");
@@ -421,18 +375,6 @@ async fn draft_push_records_revision_activity_without_touching_main() {
         redacted_discussion["discussions"][0]["anchor"]["path"],
         serde_json::Value::Null
     );
-    let revision = state
-        .metadata
-        .requests()
-        .request_revision(REQUEST_ID, revision_id)
-        .await
-        .unwrap()
-        .unwrap();
-    state
-        .object_store
-        .delete(&scope_storage::object_key(&revision.git_snapshot))
-        .await
-        .unwrap();
     let unavailable_anchor = public_get_json(
         &app,
         format!("{request_uri}/timeline?discussion={anchored_id}"),
@@ -518,7 +460,7 @@ async fn active_invitee_can_push_request_ref_but_uninvited_maintainer_cannot() {
             pushed.unwrap();
             let request = stored_request(&state, REQUEST_ID).await;
             assert_eq!(request.head_oid, git_head_oid(&source));
-            assert!(request.git_snapshot.is_some());
+            assert!(request.pushed_at_unix.is_some());
             assert_eq!(request_event_count(&state).await, before_event_count + 1);
         } else {
             pushed.unwrap_err();

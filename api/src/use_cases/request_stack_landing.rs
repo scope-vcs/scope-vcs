@@ -28,7 +28,7 @@ pub(crate) async fn prepare_stack_landing(
         .await?;
     let mut facts = Vec::with_capacity(children.len());
     for child in children {
-        let (snapshot_request, revision) = match state
+        let (revision_request, revision) = match state
             .metadata
             .requests()
             .latest_request_revision(&child.id)
@@ -60,7 +60,7 @@ pub(crate) async fn prepare_stack_landing(
         let fact = with_request_revision_store_repo(
             state,
             incarnation,
-            &snapshot_request,
+            &revision_request,
             &revision,
             move |raw_repo, _| {
                 let internal_ref = format!("refs/scope/internal/stack-landing/{child_id}");

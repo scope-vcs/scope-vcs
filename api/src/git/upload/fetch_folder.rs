@@ -97,9 +97,8 @@ pub(crate) async fn prepare(
         &config,
         view,
         user.as_deref(),
-        &base,
+        (&base, &folder),
         &selection.requests,
-        &folder,
     )
     .await?;
     {
@@ -117,8 +116,7 @@ pub(crate) async fn prepare(
         .leases
         .into_iter()
         .fold(folder, GitRepoHandle::with_dependency);
-    let attached =
-        refs::attach_refs(state, &folder, selection, bases, &main_oid, objects.shelves).await?;
+    let attached = refs::attach_refs(&folder, selection, bases, &main_oid).await?;
     if wants.is_none() {
         state
             .metadata

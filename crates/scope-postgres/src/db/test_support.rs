@@ -626,13 +626,6 @@ async fn seed_catalog_rows(
     }
     for repo in catalog.repositories.values() {
         insert_repository(tx, repo, CATALOG_SEED_NOW_UNIX).await?;
-        for pack in catalog
-            .main_pool_packs
-            .remove(&repo.record.id)
-            .unwrap_or_default()
-        {
-            register_git_pool_pack(tx, &repo.record.id, &pack, CATALOG_SEED_NOW_UNIX).await?;
-        }
         if let Some(landing) = catalog.repository_landing_files.remove(&repo.record.id) {
             let path = scope_domain::policy::ScopePath::parse(
                 scope_domain::landing_file::REPOSITORY_LANDING_FILE_PATH,
@@ -656,6 +649,11 @@ async fn seed_catalog_rows(
     }
     for request in catalog.requests.values() {
         insert_request_row(tx, request).await?;
+    }
+    for (repo_id, packs) in catalog.git_pool_packs {
+        for pack in packs {
+            register_git_pool_pack(tx, &repo_id, &pack, CATALOG_SEED_NOW_UNIX).await?;
+        }
     }
     for revision in catalog.request_revisions.values() {
         insert_revision(tx, revision).await?;

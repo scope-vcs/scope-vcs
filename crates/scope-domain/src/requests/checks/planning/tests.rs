@@ -1,8 +1,6 @@
 use super::*;
 use crate::views::{ViewId, Views};
 use crate::{
-    content::SourceBlob,
-    content_ref::ContentRef,
     requests::{CheckCommitBase, RequestCheckEvaluationState, fixtures::open_request},
     runs::{
         availability::NativeRunsAvailability,
@@ -42,14 +40,17 @@ fn request() -> Request {
         review_base_oid: "f".repeat(40),
     };
     request.head_oid = "a".repeat(40);
-    request.git_snapshot = Some(SourceBlob {
-        content_ref: ContentRef::git_bundle_sha256("b".repeat(64)),
+    request
+}
+
+fn run_source(request: &Request) -> crate::content::SourceBlob {
+    crate::content::SourceBlob {
+        content_ref: crate::content_ref::ContentRef::git_bundle_sha256("b".repeat(64)),
         sha256: "b".repeat(64),
         git_oid: request.head_oid.clone(),
         git_file_mode: "100644".into(),
         size_bytes: 42,
-    });
-    request
+    }
 }
 
 fn private_request() -> Request {
@@ -105,6 +106,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
         for maintainer in [false, true] {
             let plan = RequestCheckPlan::evaluate(
                 &request,
+                Some(&run_source(&request)),
                 &context(&request),
                 AVAILABLE,
                 Ok(&revisions),
@@ -128,6 +130,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                 assert_eq!(plan.evaluation.state, RequestCheckEvaluationState::Started);
                 let repeated = RequestCheckPlan::evaluate(
                     &request,
+                    Some(&run_source(&request)),
                     &context(&request),
                     AVAILABLE,
                     Ok(&revisions),
@@ -143,6 +146,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                 revised_context.revision_id = "revision_2".into();
                 let revised = RequestCheckPlan::evaluate(
                     &request,
+                    Some(&run_source(&request)),
                     &revised_context,
                     AVAILABLE,
                     Ok(&revisions),
@@ -165,6 +169,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                 };
                 let concurrency = RequestCheckPlan::evaluate(
                     &newer_version,
+                    Some(&run_source(&newer_version)),
                     &concurrency_context,
                     AVAILABLE,
                     Ok(&revisions),
@@ -179,10 +184,7 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
                     assert_eq!(run.trigger, RunTrigger::Request);
                     assert_eq!(run.requested_by_user_id.as_deref(), Some("actor"));
                     assert_eq!(run.source.git_oid(), request.head_oid);
-                    assert_eq!(
-                        run.source.request_git_source().map(|(_, base)| base),
-                        (view == ViewId::private()).then_some(request.base.review_base_oid())
-                    );
+                    assert_eq!(run.source.ephemeral_bundle(), Some(&run_source(&request)));
                     assert_eq!(run.created_at_unix, 30);
                 }
             } else {
@@ -198,14 +200,15 @@ fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
 }
 
 #[test]
-fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
+fn empty_and_rejected_workflows_need_no_source_or_runs() {
     let request = Request {
-        git_snapshot: None,
+        pushed_at_unix: None,
         ..request()
     };
     for maintainer in [false, true] {
         let empty = RequestCheckPlan::evaluate(
             &request,
+            Some(&run_source(&request)),
             &context(&request),
             AVAILABLE,
             Ok(&[]),
@@ -220,6 +223,7 @@ fn empty_and_rejected_workflows_need_no_snapshot_or_runs() {
         assert!(empty.runs.is_empty());
         let rejected = RequestCheckPlan::evaluate(
             &request,
+            Some(&run_source(&request)),
             &context(&request),
             AVAILABLE,
             Err("invalid workflow"),
@@ -247,6 +251,7 @@ fn a_repository_without_native_runs_asks_for_no_checks() {
         for maintainer in [false, true] {
             let plan = RequestCheckPlan::evaluate(
                 &request,
+                Some(&run_source(&request)),
                 &context(&request),
                 NativeRunsAvailability::Unavailable,
                 workflows,
@@ -267,6 +272,7 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     let request = request();
     let waiting = RequestCheckPlan::evaluate(
         &request,
+        Some(&run_source(&request)),
         &context(&request),
         AVAILABLE,
         Ok(&revisions),
@@ -281,6 +287,7 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     };
     let approved = RequestCheckPlan::approve(
         &closed,
+        Some(&run_source(&closed)),
         waiting.clone(),
         &revisions,
         reviewer("maintainer"),
@@ -289,6 +296,7 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     .unwrap();
     let immediate = RequestCheckPlan::evaluate(
         &request,
+        Some(&run_source(&request)),
         &context(&request),
         AVAILABLE,
         Ok(&revisions),
@@ -308,6 +316,7 @@ fn approval_after_closing_starts_the_recorded_workflows_in_order() {
     assert!(
         RequestCheckPlan::approve(
             &closed,
+            Some(&run_source(&closed)),
             approved.evaluation,
             &revisions,
             reviewer("maintainer"),
@@ -323,6 +332,7 @@ fn approval_rejects_missing_or_mismatched_revisions_and_invalid_time() {
     let revisions = [revision("test"), revision("lint")];
     let waiting = RequestCheckPlan::evaluate(
         &request,
+        Some(&run_source(&request)),
         &context(&request),
         AVAILABLE,
         Ok(&revisions),
@@ -351,6 +361,7 @@ fn approval_rejects_missing_or_mismatched_revisions_and_invalid_time() {
         assert_eq!(
             RequestCheckPlan::approve(
                 &request,
+                Some(&run_source(&request)),
                 waiting.clone(),
                 revisions,
                 reviewer("actor"),
@@ -364,11 +375,12 @@ fn approval_rejects_missing_or_mismatched_revisions_and_invalid_time() {
 }
 
 #[test]
-fn both_start_paths_reject_missing_or_mismatched_snapshots() {
+fn both_start_paths_reject_unpushed_requests_and_mismatched_run_sources() {
     let revisions = [revision("test")];
     let original = request();
     let waiting = RequestCheckPlan::evaluate(
         &original,
+        Some(&run_source(&original)),
         &context(&original),
         AVAILABLE,
         Ok(&revisions),
@@ -377,21 +389,28 @@ fn both_start_paths_reject_missing_or_mismatched_snapshots() {
     )
     .unwrap()
     .evaluation;
-    let mut mismatched = original.clone();
-    mismatched.git_snapshot.as_mut().unwrap().git_oid = "d".repeat(40);
-    for (request, expected) in [
+    let source = run_source(&original);
+    let mut mismatched = source.clone();
+    mismatched.git_oid = "d".repeat(40);
+    for (request, source, expected) in [
         (
             Request {
-                git_snapshot: None,
-                ..original
+                pushed_at_unix: None,
+                ..original.clone()
             },
+            source,
             "request branch has not been pushed",
         ),
-        (mismatched, "request snapshot does not match its head"),
+        (
+            original,
+            mismatched,
+            "request run source does not match its head",
+        ),
     ] {
         assert_eq!(
             RequestCheckPlan::evaluate(
                 &request,
+                Some(&source),
                 &context(&request),
                 AVAILABLE,
                 Ok(&revisions),
@@ -403,9 +422,16 @@ fn both_start_paths_reject_missing_or_mismatched_snapshots() {
             expected
         );
         assert_eq!(
-            RequestCheckPlan::approve(&request, waiting.clone(), &revisions, reviewer("actor"), 40)
-                .unwrap_err()
-                .message,
+            RequestCheckPlan::approve(
+                &request,
+                Some(&source),
+                waiting.clone(),
+                &revisions,
+                reviewer("actor"),
+                40
+            )
+            .unwrap_err()
+            .message,
             expected
         );
     }
@@ -417,6 +443,7 @@ fn approval_rejects_an_evaluation_from_another_request_or_head() {
     let revisions = [revision("test")];
     let waiting = RequestCheckPlan::evaluate(
         &request,
+        Some(&run_source(&request)),
         &context(&request),
         AVAILABLE,
         Ok(&revisions),
@@ -435,9 +462,16 @@ fn approval_rejects_an_evaluation_from_another_request_or_head() {
             ..waiting.clone()
         };
         assert_eq!(
-            RequestCheckPlan::approve(&request, evaluation, &revisions, reviewer("actor"), 40)
-                .unwrap_err()
-                .message,
+            RequestCheckPlan::approve(
+                &request,
+                Some(&run_source(&request)),
+                evaluation,
+                &revisions,
+                reviewer("actor"),
+                40
+            )
+            .unwrap_err()
+            .message,
             "request check evaluation does not match the request head"
         );
     }
@@ -501,6 +535,7 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
 
     let approved = RequestCheckPlan::approve(
         &request,
+        Some(&run_source(&request)),
         contributor.evaluation.clone(),
         &[],
         reviewer("owner"),
@@ -517,9 +552,15 @@ fn github_checks_are_the_required_names_and_only_maintainer_heads_go_to_github_a
         closed_at_unix: Some(35),
         ..request.clone()
     };
-    let approved_closed =
-        RequestCheckPlan::approve(&closed, contributor.evaluation, &[], reviewer("owner"), 40)
-            .unwrap();
+    let approved_closed = RequestCheckPlan::approve(
+        &closed,
+        Some(&run_source(&closed)),
+        contributor.evaluation,
+        &[],
+        reviewer("owner"),
+        40,
+    )
+    .unwrap();
     assert!(!approved_closed.push_to_github);
 }
 
@@ -565,6 +606,7 @@ fn with_no_required_checks_only_a_maintainers_head_still_runs_the_workflows() {
     assert!(
         !RequestCheckPlan::evaluate(
             &request,
+            Some(&run_source(&request)),
             &context(&request),
             AVAILABLE,
             Ok(&[revision("test")]),
@@ -606,9 +648,15 @@ fn a_public_contribution_tests_its_check_commit_and_waits_for_approval_like_any_
     );
     assert!(!contributor.push_to_github);
 
-    let approved =
-        RequestCheckPlan::approve(&request, contributor.evaluation, &[], reviewer("owner"), 40)
-            .unwrap();
+    let approved = RequestCheckPlan::approve(
+        &request,
+        Some(&run_source(&request)),
+        contributor.evaluation,
+        &[],
+        reviewer("owner"),
+        40,
+    )
+    .unwrap();
     assert_eq!(approved.evaluation.tested_oid, "c".repeat(40));
     assert!(approved.push_to_github);
 
@@ -776,6 +824,7 @@ fn a_check_commit_carries_private_code_and_a_public_head_does_not() {
     );
     let public_head = RequestCheckPlan::evaluate(
         &request,
+        Some(&run_source(&request)),
         &context(&request),
         AVAILABLE,
         Ok(&[revision("test")]),

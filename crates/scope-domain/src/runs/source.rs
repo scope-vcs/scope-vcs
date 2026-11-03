@@ -45,17 +45,6 @@ impl RunSource {
         Ok(Self::EphemeralGitBundle { object })
     }
 
-    pub fn request_git_snapshot(object: SourceBlob, base_oid: String) -> Result<Self, DomainError> {
-        validate_source_blob(&object, "request run source snapshot")?;
-        if !matches!(object.content_ref, ContentRef::GitBundleSha256(_)) {
-            return Err(DomainError::invalid_input(
-                "request run source snapshot must be a Git bundle",
-            ));
-        }
-        validate_git_oid("request run source base", &base_oid)?;
-        Ok(Self::RequestGitSnapshot { object, base_oid })
-    }
-
     pub fn accepted_git_head(
         repository_id: impl Into<String>,
         head: GitHead,

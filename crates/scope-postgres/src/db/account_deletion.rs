@@ -294,6 +294,13 @@ impl AuthStore {
             .map_err(PostgresError::internal)?;
         }
 
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "DELETE FROM scope_git_fetch_advertisements WHERE reader_id = $1",
+            [user_id.into()],
+        ))
+        .await
+        .map_err(PostgresError::internal)?;
         entities::user::Entity::delete_by_id(user_id.to_string())
             .exec(&tx)
             .await
@@ -336,18 +343,12 @@ async fn delete_draft(
             now_unix,
         },
     )?;
-    let CloseRequestMutation::DeletedDraft {
-        request,
-        revisions,
-        orphan_objects,
-        ..
-    } = mutation
-    else {
+    let CloseRequestMutation::DeletedDraft { request, .. } = mutation else {
         return Err(PostgresError::internal_message(
             "an unsubmitted request was closed instead of deleted",
         ));
     };
-    persist_deleted_draft(tx, &request, &revisions, orphan_objects, now_unix).await
+    persist_deleted_draft(tx, &request, now_unix).await
 }
 
 #[cfg(test)]

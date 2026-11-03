@@ -1,7 +1,4 @@
-use super::requests::{
-    fixtures::{source_blob, start_input},
-    *,
-};
+use super::requests::{fixtures::start_input, *};
 use crate::views::ViewId;
 
 fn uploaded_request() -> Request {
@@ -26,7 +23,6 @@ fn uploaded_request() -> Request {
             actor_can_edit: true,
             expected_old_head_oid: None,
             new_head_oid: "head-1".to_string(),
-            git_snapshot: source_blob("head-1"),
             now_unix: 11,
         },
     )
@@ -46,7 +42,7 @@ fn revise(git_facts: RequestRevisionGitFacts) -> RequestRevisionMutation {
             actor_can_edit: true,
             expected_old_head_oid: Some("head-1".to_string()),
             new_head_oid: "head-2".to_string(),
-            git_snapshot: source_blob("head-2"),
+
             git_facts,
             event_id: "event_revision".to_string(),
             body: None,
@@ -68,7 +64,6 @@ fn extending_facts(contained_main_oid: Option<&str>, descends: bool) -> RequestR
 fn revision_records_snapshot_without_manufacturing_a_discussion() {
     let mutation = revise(extending_facts(None, false));
 
-    assert_eq!(mutation.orphan_objects, vec![source_blob("head-1")]);
     assert_eq!(mutation.revision.old_head_oid, "head-1");
     assert_eq!(mutation.revision.new_head_oid, "head-2");
     assert_eq!(mutation.revision.id, mutation.event.id);
@@ -160,7 +155,6 @@ fn revision(id: &str, position: u64) -> RequestRevision {
         },
         main_ancestor_oid: "base".to_string(),
         rewrote_history: false,
-        git_snapshot: source_blob(id),
         created_at_unix: position,
     }
 }

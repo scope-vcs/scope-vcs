@@ -1,7 +1,7 @@
 use super::{RepositoryStore, integer_columns::u64_to_i64};
 use crate::error::PostgresError;
 use scope_domain::{
-    requests::{GitFetchHead, Request},
+    requests::{GitFetchHead, GitFetchRequest, Request},
     views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
@@ -36,11 +36,14 @@ impl RepositoryStore {
                 ],
             ))
             .await?;
-        let mut refs = std::collections::BTreeMap::<&str, Vec<&Request>>::new();
+        let mut refs = std::collections::BTreeMap::<&str, Vec<GitFetchRequest>>::new();
         for request in requests {
             refs.entry(request.head_oid.as_str())
                 .or_default()
-                .push(request);
+                .push(GitFetchRequest {
+                    id: request.id.clone(),
+                    view: request.view.clone(),
+                });
         }
         refs.entry(main_oid).or_default();
         let refs = refs

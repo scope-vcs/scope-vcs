@@ -3,7 +3,7 @@ use crate::views::{ViewId, Views};
 use crate::{
     error::DomainErrorKind,
     repository::access::{RepositoryAccess, RepositoryActor},
-    requests::fixtures::{access, open_request, source_blob, start_input},
+    requests::fixtures::{access, open_request, start_input},
 };
 
 #[test]
@@ -116,7 +116,6 @@ fn open_request_edits_and_revisions_stay_open() {
             actor_can_edit: true,
             expected_old_head_oid: Some("head".to_string()),
             new_head_oid: "head-2".to_string(),
-            git_snapshot: source_blob("head-2"),
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: true,
                 contained_main_oid: None,
@@ -173,16 +172,12 @@ fn policy_keeps_drafts_private_and_open_requests_visible_and_mutable() {
 #[test]
 fn draft_close_deletes_and_open_close_preserves_exact_actor() {
     let draft = pushed_draft();
-    let CloseRequestMutation::DeletedDraft {
-        request,
-        orphan_objects,
-        ..
-    } = close_request(draft, Vec::new(), Vec::new(), close_input("author", false)).unwrap()
+    let CloseRequestMutation::DeletedDraft { request, .. } =
+        close_request(draft, Vec::new(), Vec::new(), close_input("author", false)).unwrap()
     else {
         panic!("draft close must delete the request");
     };
     assert_eq!(request.id, "request_1");
-    assert_eq!(orphan_objects, vec![source_blob("head")]);
 
     let open = open_request();
     let mutation = close_request(

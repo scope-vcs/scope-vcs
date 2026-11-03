@@ -13,7 +13,6 @@ use tracing::Instrument as _;
 pub(crate) enum GitDerivedCacheNamespace {
     Projection,
     Repository,
-    RequestReadView,
     RequestObjects,
     RunSource,
 }

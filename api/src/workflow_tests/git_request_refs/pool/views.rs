@@ -72,16 +72,6 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
     ] {
         git_input(repo, &["hash-object", "-w", "--stdin"], content);
     }
-    let snapshot = revision.git_snapshot.clone();
-    let bundle =
-        scope_storage::source_blob_bytes(state.object_store.as_ref(), &snapshot, 1_048_576)
-            .await
-            .unwrap();
-    replica
-        .object_store
-        .delete(&scope_storage::object_key(&revision.git_snapshot))
-        .await
-        .unwrap();
     let canonical_for_read = canonical.clone();
     let first_for_read = first.clone();
     let second_for_read = second.clone();
@@ -133,11 +123,6 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
     assert!(!staging.join("objects/info/alternates").exists());
     assert!(!has_commit(&staging, &canonical));
     fs::remove_dir_all(staging).unwrap();
-    state
-        .object_store
-        .put(&scope_storage::object_key(&snapshot), bundle)
-        .await
-        .unwrap();
     submit_request(
         router(state.clone()),
         REQUEST_ID,
@@ -172,13 +157,16 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
             .unwrap()
             .iter()
             .any(|pack| pack.head_oid == revision.new_head_oid
-                && pack.scope == RequestPackScope::Full)
+                && pack.scope == RequestPackScope::View(ViewId::public()))
     );
-    state
-        .object_store
-        .delete(&scope_storage::object_key(&revision.git_snapshot))
-        .await
-        .unwrap();
+    let fetch_replica = state.replica_for_tests();
+    let fetch = fetch_folder(
+        &fetch_replica,
+        &authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL)),
+        &ViewId::public(),
+    )
+    .await;
+    assert_eq!(ref_head(&fetch, REQUEST_REF), revision.new_head_oid);
     let mixed_replica = state.replica_for_tests();
     let busy = mixed_replica
         .runtime_budgets

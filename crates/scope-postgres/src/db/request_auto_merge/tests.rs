@@ -6,8 +6,6 @@ use crate::db::{
     test_support::fixtures::source_blob,
 };
 use scope_domain::{
-    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-    content_ref::ContentRef,
     requests::{
         NativeRequestCheck, RecordRequestRevisionInput, RequestAutoMergeIntentStatus, RequestCheck,
         RequestCheckContext, RequestCheckEvaluation, RequestCheckEvaluationState,

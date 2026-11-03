@@ -7,20 +7,6 @@ async fn stacked_revision_read_restores_the_parent_on_a_cold_replica() {
     let child = stack_request(&replica, &fixture.child_id).await;
     let revision = fixture.latest_child_revision().await;
     assert!(!request_objects_root(&replica, &test_repo_incarnation()).exists());
-    let parent_revision = replica
-        .metadata
-        .requests()
-        .latest_request_revision(&fixture.parent_id)
-        .await
-        .unwrap()
-        .unwrap();
-    for snapshot in [&revision.git_snapshot, &parent_revision.git_snapshot] {
-        replica
-            .object_store
-            .delete(&scope_storage::object_key(snapshot))
-            .await
-            .unwrap();
-    }
     let parent_pin = fixture.parent_pin.clone();
     let head = fixture.child_head.clone();
     crate::git::request_refs::with_request_revision_store_repo(

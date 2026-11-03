@@ -40,6 +40,7 @@ pub struct ApproveRequestChecksCommand {
     pub request_id: String,
     pub actor_user_id: String,
     pub reviewed_head_oid: String,
+    pub source: Option<scope_domain::content::SourceBlob>,
     pub now_unix: u64,
 }
 
@@ -204,6 +205,7 @@ impl RequestStore {
             push_to_github,
         } = RequestCheckPlan::approve(
             &request,
+            command.source.as_ref(),
             evaluation,
             &revisions,
             approver,

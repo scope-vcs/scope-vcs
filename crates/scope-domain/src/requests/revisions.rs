@@ -1,5 +1,5 @@
 use super::{Request, RequestEvent};
-use crate::{content::SourceBlob, error::DomainError};
+use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,7 +14,6 @@ pub struct RequestRevision {
     pub base_version: u64,
     pub main_ancestor_oid: String,
     pub rewrote_history: bool,
-    pub git_snapshot: SourceBlob,
     pub created_at_unix: u64,
 }
 
@@ -42,12 +41,8 @@ pub(super) fn revision(
     old_head_oid: String,
     new_head_oid: String,
     rewrote_history: bool,
-) -> Result<RequestRevision, DomainError> {
-    let git_snapshot = request
-        .git_snapshot
-        .clone()
-        .ok_or_else(|| DomainError::conflict("request revision requires an uploaded snapshot"))?;
-    Ok(RequestRevision {
+) -> RequestRevision {
+    RequestRevision {
         id: event.id.clone(),
         request_id: request.id.clone(),
         position: event.position,
@@ -58,7 +53,6 @@ pub(super) fn revision(
         base_version: request.base_version,
         main_ancestor_oid: request.main_ancestor_oid.clone(),
         rewrote_history,
-        git_snapshot,
         created_at_unix: event.created_at_unix,
-    })
+    }
 }

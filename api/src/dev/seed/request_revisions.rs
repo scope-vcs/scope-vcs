@@ -1,13 +1,11 @@
 use super::{
-    SeedGitCommit, SeedObjects, apply_seed_commits, canonical_request_ref, seed_git, seed_git_head,
-    store_seed_bundle,
+    SeedGitCommit, SeedPoolPack, apply_seed_commits, canonical_request_ref, seed_git,
+    seed_git_head, store_seed_request_pack,
 };
 use crate::error::ApiError;
-use scope_domain::content::SourceBlob;
 use std::path::Path;
 
 const REQUEST_NAME: &str = "bounded-retry-timing";
-const BUNDLE_LABEL: &str = "req_demo_ready";
 const RETRY_NAMED_CAP: &str = concat!(
     "const MAX_RETRY_DELAY_MS = 2_000\n\n",
     "/** Returns the retry delay in milliseconds. */\n",
@@ -46,7 +44,7 @@ const RETRY_FINAL: &str = concat!(
 
 pub(super) struct SeedRequestRevision {
     pub head_oid: String,
-    pub snapshot: SourceBlob,
+    pub pack: SeedPoolPack,
     pub note: &'static str,
 }
 
@@ -56,7 +54,8 @@ struct RevisionSpec<'a> {
 }
 
 pub(super) fn seed_bounded_retry_revisions(
-    object_store: &SeedObjects,
+    git_segment_store: &scope_storage::GitSegmentStore,
+    repository_id: &str,
     repo_path: &Path,
     initial_head_oid: &str,
     main_oid: &str,
@@ -97,19 +96,20 @@ pub(super) fn seed_bounded_retry_revisions(
 
     let mut previous_head_oid = initial_head_oid.to_string();
     let mut revisions = Vec::with_capacity(specs.len());
-    for (index, spec) in specs.into_iter().enumerate() {
+    for spec in specs {
         let head_oid = seed_revision(repo_path, spec.commit, &previous_head_oid, main_oid)?;
-        let snapshot = store_seed_bundle(
-            object_store,
+        let pack = store_seed_request_pack(
+            git_segment_store,
+            repository_id,
             repo_path,
-            &format!("{BUNDLE_LABEL}_{}", index + 1),
-            &[&canonical_request_ref(REQUEST_NAME)],
+            "req_demo_ready",
             &head_oid,
+            &scope_domain::views::ViewId::public(),
         )?;
         previous_head_oid = head_oid.clone();
         revisions.push(SeedRequestRevision {
             head_oid,
-            snapshot,
+            pack,
             note: spec.note,
         });
     }

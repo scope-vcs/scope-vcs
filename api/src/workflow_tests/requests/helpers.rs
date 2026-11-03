@@ -59,18 +59,10 @@ async fn create_request(
     view: ViewId,
     head_oid: &str,
 ) {
-    let (role, title, snapshot) = if view.is_private() {
-        (
-            RequestActorRole::Owner,
-            "Owner request",
-            "owner request git snapshot",
-        )
+    let (role, title) = if view.is_private() {
+        (RequestActorRole::Owner, "Owner request")
     } else {
-        (
-            RequestActorRole::Public,
-            "Public request",
-            "public request git snapshot",
-        )
+        (RequestActorRole::Public, "Public request")
     };
     drain_outbox(state, "request-read-test").await;
     let requests = state.metadata.requests();
@@ -93,8 +85,6 @@ async fn create_request(
         })
         .await
         .unwrap();
-    let mut git_snapshot = source_blob(state, snapshot);
-    git_snapshot.git_oid = head_oid.to_string();
     requests
         .record_working_request_upload(RecordWorkingRequestUploadInput {
             request_id: request_id.to_string(),
@@ -102,7 +92,6 @@ async fn create_request(
             actor_can_edit: true,
             expected_old_head_oid: None,
             new_head_oid: head_oid.to_string(),
-            git_snapshot,
             now_unix: 3,
         })
         .await

@@ -456,83 +456,113 @@ async fn evaluate_request_checks(
         .await?;
     let context = RequestCheckContext::for_revision(request, revision)?;
     let now_unix = unix_now()?;
-    let (mut plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref()) {
-        RequestCheckProvider::GitHub => {
-            let required = repositories
-                .github_required_checks(&request.repo_id)
-                .await?;
-            let tested = match GitHubCheckTarget::for_request(request, views) {
-                GitHubCheckTarget::Head => GitHubTestedCommit::Head,
-                GitHubCheckTarget::CheckCommit => check_commit.await?,
-            };
-            (
-                RequestCheckPlan::evaluate_github(
-                    request,
-                    &context,
-                    views,
-                    GitHubRequestChecks {
-                        github_repository_id: connection
-                            .as_ref()
-                            .expect("GitHub provider has a connection")
-                            .github_repository_id,
-                        tested,
-                        required_check_names: &required,
-                    },
-                    reviewing_pusher,
-                    now_unix,
-                )?,
-                Vec::new(),
-            )
-        }
-        RequestCheckProvider::Native => {
-            let native_runs = native_runs_availability(state, request).await?;
-            let revisions = if native_runs.is_available() {
-                native_revisions.await?
-            } else {
-                Ok(Vec::new())
-            };
-            (
-                RequestCheckPlan::evaluate(
-                    request,
-                    &context,
-                    native_runs,
-                    revisions.as_deref().map_err(String::as_str),
-                    reviewing_pusher,
-                    now_unix,
-                )?,
-                revisions.unwrap_or_default(),
-            )
-        }
-    };
-    if plan.evaluation.asks_github() {
-        plan.evaluation.changes_github_workflows =
-            match changes_github_workflow_files(state, &repo, request, &plan.evaluation, views)
-                .await
-            {
-                Ok(changed) => Some(changed),
-                Err(error) => {
-                    tracing::warn!(
-                        request_id = request.id,
-                        error = %error.operator_diagnostic(),
-                        "could not read whether a request changes GitHub workflows"
+    let mut source = None;
+    let result = async {
+        let (mut plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref())
+        {
+            RequestCheckProvider::GitHub => {
+                let required = repositories
+                    .github_required_checks(&request.repo_id)
+                    .await?;
+                let tested = match GitHubCheckTarget::for_request(request, views) {
+                    GitHubCheckTarget::Head => GitHubTestedCommit::Head,
+                    GitHubCheckTarget::CheckCommit => check_commit.await?,
+                };
+                (
+                    RequestCheckPlan::evaluate_github(
+                        request,
+                        &context,
+                        views,
+                        GitHubRequestChecks {
+                            github_repository_id: connection
+                                .as_ref()
+                                .expect("GitHub provider has a connection")
+                                .github_repository_id,
+                            tested,
+                            required_check_names: &required,
+                        },
+                        reviewing_pusher,
+                        now_unix,
+                    )?,
+                    Vec::new(),
+                )
+            }
+            RequestCheckProvider::Native => {
+                let native_runs = native_runs_availability(state, request).await?;
+                let revisions = if native_runs.is_available() {
+                    native_revisions.await?
+                } else {
+                    Ok(Vec::new())
+                };
+                if reviewing_pusher.is_some()
+                    && RequestCheckPlan::starts_on_push(request)
+                    && revisions
+                        .as_ref()
+                        .is_ok_and(|revisions| !revisions.is_empty())
+                {
+                    source = Some(
+                        super::request_check_sources::prepare(
+                            state,
+                            incarnation,
+                            request,
+                            revision,
+                        )
+                        .await?,
                     );
-                    None
                 }
-            };
+                (
+                    RequestCheckPlan::evaluate(
+                        request,
+                        source.as_ref().map(
+                            |source: &super::request_check_sources::PreparedRequestRunSource| {
+                                &source.object
+                            },
+                        ),
+                        &context,
+                        native_runs,
+                        revisions.as_deref().map_err(String::as_str),
+                        reviewing_pusher,
+                        now_unix,
+                    )?,
+                    revisions.unwrap_or_default(),
+                )
+            }
+        };
+        if plan.evaluation.asks_github() {
+            plan.evaluation.changes_github_workflows =
+                match changes_github_workflow_files(state, &repo, request, &plan.evaluation, views)
+                    .await
+                {
+                    Ok(changed) => Some(changed),
+                    Err(error) => {
+                        tracing::warn!(
+                            request_id = request.id,
+                            error = %error.operator_diagnostic(),
+                            "could not read whether a request changes GitHub workflows"
+                        );
+                        None
+                    }
+                };
+        }
+        state
+            .metadata
+            .requests()
+            .record_request_checks(RecordRequestChecksCommand {
+                repository_incarnation: incarnation.clone(),
+                expected_canonical_main_oid,
+                evaluation: plan.evaluation,
+                revisions,
+                runs: plan.runs,
+                push_to_github: plan.push_to_github,
+            })
+            .await
+            .map_err(Into::into)
     }
-    state
-        .metadata
-        .requests()
-        .record_request_checks(RecordRequestChecksCommand {
-            repository_incarnation: incarnation.clone(),
-            expected_canonical_main_oid,
-            evaluation: plan.evaluation,
-            revisions,
-            runs: plan.runs,
-            push_to_github: plan.push_to_github,
-        })
-        .await
-        .map_err(Into::into)
+    .await;
+    match source {
+        Some(source) => source.finish(state, result).await,
+        None => result,
+    }
 }
 
 async fn trusted_main_workflow_revisions(

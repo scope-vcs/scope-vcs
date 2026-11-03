@@ -3,7 +3,7 @@ use crate::{
         DispatchAdmission, MetadataStore, RecordRequestChecksCommand,
         requests::tests::postgres_store,
         test_support::fixtures::{
-            manual_run, manual_workflow, repository, source_blob, store_with_repositories, user,
+            manual_run, manual_workflow, repository, store_with_repositories, user,
         },
     },
     error::{PostgresError, PostgresErrorKind},
@@ -332,7 +332,6 @@ async fn record_check_revision(
             actor_can_edit: true,
             expected_old_head_oid: Some(request.head_oid),
             new_head_oid: head_oid.into(),
-            git_snapshot: source_blob(head_oid, &"b".repeat(64), 1),
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: true,
                 contained_main_oid: None,

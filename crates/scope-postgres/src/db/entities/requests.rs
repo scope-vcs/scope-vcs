@@ -2,6 +2,7 @@ use super::github_accounts::{
     AuthorColumns, author_columns, discussion_author, discussion_resolver, resolver_columns,
 };
 use super::*;
+use scope_domain::policy::ScopePath;
 use scope_domain::requests::{
     CheckCommitBase, Request, RequestActorRole, RequestAttention, RequestAttentionReason,
     RequestAttentionState, RequestBase, RequestCheckEvaluation, RequestClaim, RequestDiffSide,
@@ -11,7 +12,6 @@ use scope_domain::requests::{
     RequestStackStatus,
 };
 use scope_domain::views::ViewId;
-use scope_domain::{content::SourceBlob, policy::ScopePath};
 
 pub mod request;
 

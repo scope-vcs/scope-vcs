@@ -1,4 +1,4 @@
-use crate::{content::SourceBlob, error::DomainError};
+use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,7 +30,7 @@ pub struct Request {
     pub stack_depth: u32,
     pub main_ancestor_oid: String,
     pub head_oid: String,
-    pub git_snapshot: Option<SourceBlob>,
+    pub pushed_at_unix: Option<u64>,
     pub title: String,
     pub description_markdown: String,
     pub activity_version: u64,

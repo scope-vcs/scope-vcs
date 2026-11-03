@@ -79,7 +79,7 @@ revision's comparison. Push inspection retains its existing old-head boundary
 for extensions and saved review-base boundary for rewrites. Commit patches
 retain their first-parent meaning.
 
-`requests/merge_gate.rs` composes lifecycle, access, snapshot, and checks for
+`requests/merge_gate.rs` composes lifecycle, access, pushed-head state, and checks for
 list, detail, manual merge, and auto-merge. Authorized full-view main publication
 uses a separate authority outcome in that evaluator; it does not report request
 checks as passed. Narrow-view main pushes still become ordinary requests.
@@ -293,21 +293,27 @@ explicitly enqueue or perform compensating cleanup when persistence fails.
 A successful Postgres transaction remains the authority for metadata state;
 filesystem and object operations do not invent domain transitions.
 
-Request pushes keep writing bundles for existing readers and also register pool
-packs in the revision transaction. Restricted pushes record the pack's view and
-install it only on that view's shelf under the repository's object generation.
-A restricted staging repository copies only authorized request heads from its
-view shelf, keeping other authors' drafts unreachable. The shelf borrows a
-self-contained projection owner that fetches each new view head incrementally,
-since ordinary projection caches can borrow canonical objects. Changing view configuration abandons the old shelf.
+Request pushes register pool packs in the revision transaction. Packs follow the
+request's view even when pushed through the full-view address. Restricted packs
+stay on isolated view shelves under the repository's object generation.
+Restricted staging repositories copy only authorized request heads from those
+shelves. Each shelf borrows a self-contained projection owner that fetches new
+view heads incrementally. Changing view configuration abandons the old shelf.
+
 Full-view push shelves retain their shared and per-author ownership. Revision
-reads create temporary jobs that borrow those shelves. Restricted revision reads
-borrow a request-specific shelf backed only by the isolated view projection,
-so another author's draft on the broader view shelf remains unreachable by ID.
+reads borrow the shared shelf and install authored packs into a request-specific
+shelf. Restricted revision reads borrow a request-specific shelf backed only by
+the isolated view projection. Other authors' drafts remain unreachable by ID.
 Concurrent reads share missing-object installation. Pool chains provide both
-comparison heads, including rewritten old heads; legacy bundles restore once
-onto the shelf. Jobs are removed after inspection, including errors. Obsolete
-per-revision repositories are removed by cache pruning.
+comparison heads, including rewritten old heads. Temporary inspection jobs are
+removed on success and failure. Cache pruning removes obsolete revision repos.
+
+Request checks build a standalone run-owned bundle from the pool when starting
+runs, so pending and retried runs survive draft deletion. Historical run-owned
+snapshot and ephemeral bundle references remain intact. The request-bundle
+deletion migration excludes every `run_source` reference from its cleanup queue.
+Fetch advertisements retain only request IDs and views; current authorization
+and pool lineage supply historical heads without retaining private draft text.
 
 `scope-domain::repository::git::GitHead` owns the current Git coordinates and
 its opaque `GitFrontier` digest. Push and merge transactions compare that typed
@@ -398,7 +404,7 @@ Executable help is authoritative for command surfaces: `./dev/scope-dev --help`,
 Git reads create a temporary bare fetch folder with main and visible active
 request refs. Full-view readers borrow canonical, shared and authored shelves;
 restricted readers borrow only isolated projections and reader shelves. Pool
-installation and legacy bundle restoration retain request objects on shelves.
+installation retains request objects on shelves.
 Unreadable requests are omitted with their request identity in the server log.
 Dropping the last folder handle removes the folder, including on streaming errors
 and disconnects. Pruning also removes retired read-view caches.
