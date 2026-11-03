@@ -310,15 +310,17 @@ proptest::proptest! {
     }
 
     #[test]
-    fn arbitrary_or_corrupted_workflows_are_rejected_without_panicking(
+    fn arbitrary_or_corrupted_workflows_decode_without_panicking(
         bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..256),
         cut in 0..WORKFLOW.len(),
         splice in "[\\-:{}\\[\\]&*!|>'\"%@`#, \\n\\t]{0,8}",
-        path in "/\\.scope/(runs|workflows)/[a-z./-]{0,12}",
+        path in "/\\.scope/(runs|workflows)/[a-z./-]{0,12}(\\.yml|\\.yaml)?",
     ) {
-        let _ = parse_workflow(&path, &bytes);
+        let valid_path = "/.scope/runs/test.yml";
+        let _ = parse_workflow(valid_path, &bytes);
         let corrupted = format!("{}{}{}", &WORKFLOW[..cut], splice, &WORKFLOW[cut..]);
-        if let Ok(parsed) = parse_workflow(&path, corrupted.as_bytes()) {
+        let _ = parse_workflow(valid_path, corrupted.as_bytes());
+        if let Ok(parsed) = parse_workflow(&path, WORKFLOW.as_bytes()) {
             proptest::prop_assert_eq!(parsed.path().as_str(), path.as_str());
             proptest::prop_assert!(!path.contains("/../") && !path.ends_with("/.."));
         }

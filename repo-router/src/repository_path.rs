@@ -55,17 +55,16 @@ mod tests {
             segments in proptest::collection::vec("(\\PC|/|\\.\\.|[a-z0-9_-]){0,8}", 0..6)
         ) {
             let path = format!("/git/{}", segments.join("/"));
+            let parts = segments.join("/").split('/').map(str::to_owned).collect::<Vec<_>>();
             match repository_key(&path) {
                 Some(key) => {
-                    let parts = path.trim_start_matches("/git/").split('/').collect::<Vec<_>>();
-                    proptest::prop_assert!(is_view_id(parts[0]));
+                    proptest::prop_assert!(is_view_id(&parts[0]));
                     proptest::prop_assert_eq!(key, format!("{}/{}", parts[1], parts[2]));
                     proptest::prop_assert!(!parts[1].is_empty() && !parts[2].is_empty());
                 }
                 None => {
-                    let parts = path.trim_start_matches("/git/").split('/').collect::<Vec<_>>();
                     proptest::prop_assert!(
-                        parts.len() < 3 || !is_view_id(parts[0]) || parts[1].is_empty() || parts[2].is_empty()
+                        parts.len() < 3 || !is_view_id(&parts[0]) || parts[1].is_empty() || parts[2].is_empty()
                     );
                 }
             }
