@@ -35,7 +35,7 @@ async fn github_push_claim_obeys_stack_gate_without_delaying_recovery() {
             request.stack_depth = 2;
         }
         request.stack_status = status;
-        super::super::super::request_rows::save_request_row(store.db.as_ref(), &request)
+        super::super::super::request_rows::save_request_row(&store.db.fixture(), &request)
             .await
             .unwrap();
         let t = std::time::SystemTime::now()
@@ -49,7 +49,7 @@ async fn github_push_claim_obeys_stack_gate_without_delaying_recovery() {
         };
         let branch = scope_domain::requests::GitHubBranch::Request(request.id.clone());
         crate::db::github_pushes::queue_github_push(
-            store.db.as_ref(),
+            &store.db.fixture(),
             &request.repo_id,
             &branch,
             Some(&request.head_oid),
@@ -79,11 +79,11 @@ async fn github_push_claim_obeys_stack_gate_without_delaying_recovery() {
         request.stack_depth = 1;
         request.head_oid = "a".repeat(40);
         request.git_snapshot.as_mut().unwrap().git_oid = request.head_oid.clone();
-        super::super::super::request_rows::save_request_row(store.db.as_ref(), &request)
+        super::super::super::request_rows::save_request_row(&store.db.fixture(), &request)
             .await
             .unwrap();
         crate::db::github_pushes::queue_github_push(
-            store.db.as_ref(),
+            &store.db.fixture(),
             &request.repo_id,
             &branch,
             Some(&request.head_oid),
@@ -130,7 +130,7 @@ async fn github_push_claim_and_completion_wait_for_rewritten_dependencies_then_r
     };
     for request in [&child, &grandchild] {
         crate::db::github_pushes::queue_github_push(
-            store.db.as_ref(),
+            &store.db.fixture(),
             &request.repo_id,
             &scope_domain::requests::GitHubBranch::Request(request.id.clone()),
             Some(&request.head_oid),
@@ -202,7 +202,7 @@ async fn github_push_claim_and_completion_wait_for_rewritten_dependencies_then_r
         .unwrap()
         .request;
     crate::db::github_pushes::queue_github_push(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &recovered.repo_id,
         &scope_domain::requests::GitHubBranch::Request(recovered.id.clone()),
         Some(&recovered.head_oid),

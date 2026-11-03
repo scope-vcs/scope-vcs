@@ -91,7 +91,7 @@ pub(super) async fn wait_for_transaction_waiter(
 ) -> i32 {
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         loop {
-            let waiting = store.db.query_one_raw(Statement::from_sql_and_values(
+            let waiting = store.db.fixture().query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)) LIMIT 1",
                 [blocker_pid.into()],
@@ -112,7 +112,7 @@ pub(super) async fn wait_for_advisory_waiter(
     namespace: &str,
     id: &str,
 ) {
-    let schema = super::content_fences::current_schema(store.db.as_ref())
+    let schema = super::content_fences::current_schema(&store.db)
         .await
         .unwrap();
     let key =
@@ -122,7 +122,7 @@ pub(super) async fn wait_for_advisory_waiter(
             .unwrap();
     tokio::time::timeout(std::time::Duration::from_secs(60), async {
         loop {
-            let waiting = store.db.query_one_raw(Statement::from_sql_and_values(
+            let waiting = store.db.fixture().query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT EXISTS (
                     SELECT 1 FROM pg_locks waiter JOIN pg_locks holder
@@ -144,8 +144,7 @@ pub(super) async fn wait_for_advisory_waiter(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::{MetadataStore, TestDatabaseTarget};
-    use sea_orm::TransactionTrait;
+    use crate::db::{MetadataStore, TestDatabaseTarget, data_scope::DataScope};
     use std::time::Duration;
 
     #[tokio::test]
@@ -153,7 +152,7 @@ mod tests {
         let store =
             MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
                 .unwrap();
-        let seeded = store.db.begin().await.unwrap();
+        let seeded = store.db.begin(DataScope::NoRepository).await.unwrap();
         for id in ["owner/one", "owner/two"] {
             acquire_aggregate_lock(&seeded, "repository", id)
                 .await
@@ -161,7 +160,7 @@ mod tests {
         }
         seeded.commit().await.unwrap();
 
-        let held = store.db.begin().await.unwrap();
+        let held = store.db.begin(DataScope::NoRepository).await.unwrap();
         acquire_aggregate_lock(&held, "repository", "owner/one")
             .await
             .unwrap();
@@ -169,7 +168,7 @@ mod tests {
 
         let same_store = store.clone();
         let same = tokio::spawn(async move {
-            let tx = same_store.db.begin().await.unwrap();
+            let tx = same_store.db.begin(DataScope::NoRepository).await.unwrap();
             acquire_aggregate_lock(&tx, "repository", "owner/one")
                 .await
                 .unwrap();
@@ -177,7 +176,7 @@ mod tests {
         });
         let other_store = store.clone();
         let other = tokio::spawn(async move {
-            let tx = other_store.db.begin().await.unwrap();
+            let tx = other_store.db.begin(DataScope::NoRepository).await.unwrap();
             acquire_aggregate_lock(&tx, "repository", "owner/two")
                 .await
                 .unwrap();
@@ -192,6 +191,7 @@ mod tests {
             loop {
                 let waiting: bool = store
                     .db
+                    .fixture()
                     .query_one_raw(Statement::from_sql_and_values(
                         DatabaseBackend::Postgres,
                         "SELECT EXISTS (

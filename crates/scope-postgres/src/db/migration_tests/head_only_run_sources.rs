@@ -43,8 +43,10 @@ async fn run_and_trigger_sources_keep_only_their_head_and_retained_segments_are_
         "pack_spans": spans,
         "input": {},
     });
-    db.execute_unprepared(
-        r#"
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(
+            r#"
         INSERT INTO scope_users (id, handle, email, email_verified)
         VALUES ('pins-owner', 'pins-owner', 'pins-owner@example.test', TRUE);
         INSERT INTO scope_repositories (
@@ -66,39 +68,44 @@ async fn run_and_trigger_sources_keep_only_their_head_and_retained_segments_are_
         INSERT INTO scope_git_segment_references (segment_id, ref_kind, ref_id)
         VALUES ('segment-old', 'run_source', 'run-pinned');
         "#,
-    )
-    .await
-    .unwrap();
-    db.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "INSERT INTO scope_runs (
+        )
+        .await
+        .unwrap();
+    super::system(&db)
+        .fixture()
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_runs (
             id, idempotency_key, repo_id, workflow_path, workflow_revision_digest, trigger,
             source, state, cancellation_requested, created_at_unix, updated_at_unix
         ) VALUES (
             'run-pinned', 'push-main:1', 'pins-owner/repo', '/.scope/runs/checks.yml',
             repeat('d', 64), 'push-main', $1, 'queued', FALSE, 1, 1
         )",
-        [source.into()],
-    ))
-    .await
-    .unwrap();
-    db.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "INSERT INTO scope_outbox_jobs (
+            [source.into()],
+        ))
+        .await
+        .unwrap();
+    super::system(&db)
+        .fixture()
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_outbox_jobs (
             id, idempotency_key, kind, repo_id, repo_version, payload, state, attempts,
             next_run_at_unix, created_at_unix, updated_at_unix
         ) VALUES (
             'outbox-pinned', 'push_main_trigger_evaluation:pins-owner/repo:1',
             'push_main_trigger_evaluation', 'pins-owner/repo', 1, $1, 'ready', 0, 1, 1, 1
         )",
-        [payload.into()],
-    ))
-    .await
-    .unwrap();
+            [payload.into()],
+        ))
+        .await
+        .unwrap();
 
     migrations::Migrator::up(db.as_ref(), None).await.unwrap();
 
-    let row = db
+    let row = super::system(&db)
+        .fixture()
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT
@@ -130,5 +137,5 @@ async fn run_and_trigger_sources_keep_only_their_head_and_retained_segments_are_
         row.try_get::<String>("", "segment_state").unwrap(),
         "deleting"
     );
-    assert!(!relation_exists(&db, "scope_git_segment_references").await);
+    assert!(!relation_exists(db.as_ref(), "scope_git_segment_references").await);
 }

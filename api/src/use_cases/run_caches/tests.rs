@@ -119,7 +119,7 @@ impl Fixture {
             .unwrap();
         if committed {
             caches
-                .commit_upload(&upload_id, created_at + 1)
+                .commit_upload(&self.repository_id, &upload_id, created_at + 1)
                 .await
                 .unwrap();
         }

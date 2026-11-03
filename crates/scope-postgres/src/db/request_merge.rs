@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     GeneratedIdKind, MergeRequestContentCommand, RequestStore, acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_request_merge},
@@ -15,7 +16,6 @@ use super::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
-    TransactionTrait,
 };
 use {
     crate::error::PostgresError,
@@ -107,7 +107,7 @@ impl RequestStore {
         }
         let started = std::time::Instant::now();
         let commit_unix = first.now_unix;
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let mut landed = Vec::with_capacity(commands.len());
         let mut landed_checks = Vec::with_capacity(commands.len());

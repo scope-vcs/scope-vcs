@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::integer_columns;
 use super::{
     RunStore, acquire_aggregate_lock,
@@ -8,7 +9,6 @@ use crate::error::PostgresError;
 use scope_domain::{content::SourceBlob, runs::run::RunState};
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    TransactionTrait,
     sea_query::{Expr, Query},
 };
 use std::collections::BTreeSet;
@@ -33,7 +33,10 @@ impl RunStore {
         limit: u64,
     ) -> Result<usize, PostgresError> {
         let cutoff = integer_columns::u64_to_i64(completed_before_unix, "run retention cutoff")?;
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::RunRetention))
+            .await?;
         let candidates = entities::run::Entity::find()
             .filter(prunable(cutoff))
             .order_by_asc(entities::run::Column::CompletedAtUnix)
@@ -197,11 +200,11 @@ pub(super) async fn delete_orphaned_workflow_revisions<C: ConnectionTrait>(
 #[cfg(test)]
 mod tests {
     use super::{lock_run_evidence_for_pruning, lock_run_evidence_for_recording};
+    use crate::db::data_scope::DataScope;
     use crate::db::{
         MetadataStore, TestDatabaseTarget,
         locks::{backend_pid, wait_for_transaction_waiter},
     };
-    use sea_orm::TransactionTrait;
     use std::time::Duration;
 
     #[tokio::test]
@@ -209,12 +212,12 @@ mod tests {
         let store =
             MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
                 .unwrap();
-        let seeded = store.db.begin().await.unwrap();
+        let seeded = store.db.begin(DataScope::NoRepository).await.unwrap();
         lock_run_evidence_for_pruning(&seeded).await.unwrap();
         seeded.commit().await.unwrap();
-        let first = store.db.begin().await.unwrap();
+        let first = store.db.begin(DataScope::NoRepository).await.unwrap();
         lock_run_evidence_for_recording(&first).await.unwrap();
-        let second = store.db.begin().await.unwrap();
+        let second = store.db.begin(DataScope::NoRepository).await.unwrap();
         tokio::time::timeout(
             Duration::from_secs(5),
             lock_run_evidence_for_recording(&second),
@@ -226,7 +229,11 @@ mod tests {
         let first_pid = backend_pid(&first).await;
         let pruning_store = store.clone();
         let pruning = tokio::spawn(async move {
-            let tx = pruning_store.db.begin().await.unwrap();
+            let tx = pruning_store
+                .db
+                .begin(DataScope::NoRepository)
+                .await
+                .unwrap();
             lock_run_evidence_for_pruning(&tx).await.unwrap();
             tx.commit().await.unwrap();
         });

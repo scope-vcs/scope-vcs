@@ -1,5 +1,6 @@
 #[cfg(test)]
 use super::MetadataStore;
+use super::data_scope::{DataScope, ScopedDatabase, SystemReason, savepoint};
 use super::{
     GeneratedIdKind, JobStore, acquire_aggregate_lock, entities, generated_ids::generate_id,
     integer_columns, projection_read_models::fold_live_projection_read_models,
@@ -7,7 +8,7 @@ use super::{
 use crate::{error::PostgresError, job_trace::QueuedTrace};
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect,
     sea_query::{Expr, LockBehavior, LockType, OnConflict},
 };
 use std::sync::Arc;
@@ -83,8 +84,7 @@ impl JobStore {
         for _ in 0..limit {
             let (claim_now_unix, claim_now) = outbox_time(current_time)?;
             let Some(job) =
-                claim_next_ready_job(db.as_ref(), worker_id, DEFAULT_JOB_LEASE_SECS, claim_now)
-                    .await?
+                claim_next_ready_job(&db, worker_id, DEFAULT_JOB_LEASE_SECS, claim_now).await?
             else {
                 break;
             };
@@ -99,7 +99,7 @@ impl JobStore {
             );
             job.queued_trace.link(&span);
 
-            let tx = db.begin().await?;
+            let tx = db.begin(DataScope::Repository(&job.repo_id)).await?;
             match execute_outbox_job(&tx, &job, claim_now_unix)
                 .instrument(span.clone())
                 .await
@@ -141,7 +141,7 @@ impl JobStore {
                         );
                     }
                     drop(entered);
-                    fail_outbox_job(db.as_ref(), &job, worker_id, message, completion_now)
+                    fail_outbox_job(&db, &job, worker_id, message, completion_now)
                         .instrument(span)
                         .await?;
                     summary.failed += 1;
@@ -149,7 +149,7 @@ impl JobStore {
             }
         }
         if let Some(completed_at) = last_completion {
-            prune_succeeded_outbox_jobs(db.as_ref(), completed_at).await?;
+            prune_succeeded_outbox_jobs(&db, completed_at).await?;
         }
         Ok(summary)
     }
@@ -157,7 +157,7 @@ impl JobStore {
     #[cfg(any(test, feature = "test-support"))]
     pub async fn outbox_job_counts_for_tests(&self) -> Result<OutboxJobCounts, PostgresError> {
         let rows = entities::outbox_job::Entity::find()
-            .all(self.db.as_ref())
+            .all(&self.db.fixture())
             .await?;
         let mut counts = OutboxJobCounts {
             total: rows.len(),
@@ -203,16 +203,15 @@ where
     Ok(())
 }
 
-async fn claim_next_ready_job<C>(
-    conn: &C,
+async fn claim_next_ready_job(
+    db: &ScopedDatabase,
     worker_id: &str,
     lease_seconds: i64,
     now: i64,
-) -> Result<Option<ClaimedOutboxJob>, PostgresError>
-where
-    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
-{
-    let tx = conn.begin().await?;
+) -> Result<Option<ClaimedOutboxJob>, PostgresError> {
+    let tx = db
+        .begin(DataScope::System(SystemReason::OutboxDispatch))
+        .await?;
     let runnable = Condition::any()
         .add(
             Condition::all()
@@ -278,14 +277,11 @@ where
     }))
 }
 
-async fn execute_outbox_job<C>(
-    conn: &C,
+async fn execute_outbox_job(
+    conn: &DatabaseTransaction,
     job: &ClaimedOutboxJob,
     now_unix: u64,
-) -> Result<Vec<OutboxCreatedRun>, PostgresError>
-where
-    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
-{
+) -> Result<Vec<OutboxCreatedRun>, PostgresError> {
     match job.kind.as_str() {
         PROJECTION_READ_MODEL_REBUILD => {
             rebuild_live_projection_read_models_for_job(conn, job).await?;
@@ -307,14 +303,11 @@ where
     }
 }
 
-async fn rebuild_live_projection_read_models_for_job<C>(
-    conn: &C,
+async fn rebuild_live_projection_read_models_for_job(
+    conn: &DatabaseTransaction,
     job: &ClaimedOutboxJob,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
-{
-    let tx = conn.begin().await?;
+) -> Result<(), PostgresError> {
+    let tx = savepoint(conn).await?;
     acquire_aggregate_lock(&tx, "repository", &job.repo_id).await?;
     let Some(repo) = entities::repository::Entity::find_by_id(job.repo_id.clone())
         .one(&tx)
@@ -391,16 +384,13 @@ where
     Ok(())
 }
 
-async fn fail_outbox_job<C>(
-    conn: &C,
+async fn fail_outbox_job(
+    db: &ScopedDatabase,
     job: &ClaimedOutboxJob,
     worker_id: &str,
     error: String,
     now: i64,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
-{
+) -> Result<(), PostgresError> {
     let attempts = next_retry_attempt(job.attempts)?;
     let terminal = is_terminal_retry_attempt(attempts);
     let next_run_at = if terminal {
@@ -411,7 +401,7 @@ where
     };
     let completed_at_unix = terminal.then_some(now);
     let state = if terminal { JOB_FAILED } else { JOB_READY };
-    let tx = conn.begin().await?;
+    let tx = db.begin(DataScope::Repository(&job.repo_id)).await?;
     let persisted_error = truncate_error(error);
     let failed = entities::outbox_job::Entity::update_many()
         .filter(entities::outbox_job::Column::Id.eq(job.id.clone()))
@@ -466,16 +456,17 @@ where
     tx.commit().await.map_err(PostgresError::internal)
 }
 
-async fn prune_succeeded_outbox_jobs<C>(conn: &C, now: i64) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
+async fn prune_succeeded_outbox_jobs(db: &ScopedDatabase, now: i64) -> Result<(), PostgresError> {
     let cutoff = now.checked_sub(SUCCEEDED_JOB_RETENTION_SECS).unwrap_or(0);
+    let tx = db
+        .begin(DataScope::System(SystemReason::OutboxDispatch))
+        .await?;
     entities::outbox_job::Entity::delete_many()
         .filter(entities::outbox_job::Column::State.eq(JOB_SUCCEEDED))
         .filter(entities::outbox_job::Column::CompletedAtUnix.lte(cutoff))
-        .exec(conn)
+        .exec(&tx)
         .await?;
+    tx.commit().await?;
     Ok(())
 }
 

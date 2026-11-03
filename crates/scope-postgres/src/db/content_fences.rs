@@ -1,7 +1,11 @@
-use super::{RepositoryStore, entities};
+use super::{
+    RepositoryStore,
+    data_scope::{DataScope, ScopedDatabase},
+    entities,
+};
 use crate::error::PostgresError;
 use scope_domain::content_ref::ContentRef;
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement};
+use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement};
 use sqlx::{Connection as _, PgConnection};
 use std::future::Future;
 
@@ -37,7 +41,7 @@ impl RepositoryStore {
         Fut: Future<Output = Result<R, E>>,
         E: From<PostgresError>,
     {
-        let schema = current_schema(self.db.as_ref()).await?;
+        let schema = current_schema(&self.db).await?;
         let connection =
             dedicated_fence_connection(self.postgres_database_url.as_deref(), &schema).await?;
         let lock = sea_orm::sqlx::postgres::PgAdvisoryLock::new(format!(
@@ -59,16 +63,18 @@ impl RepositoryStore {
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_exists"))]
     pub async fn repository_exists(&self, repo_id: &str) -> Result<bool, PostgresError> {
-        entities::repository::Entity::find_by_id(repo_id.to_string())
-            .one(self.db.as_ref())
-            .await
-            .map(|row| row.is_some())
-            .map_err(PostgresError::internal)
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let exists = entities::repository::Entity::find_by_id(repo_id.to_string())
+            .one(&tx)
+            .await?
+            .is_some();
+        tx.commit().await?;
+        Ok(exists)
     }
 }
 
 pub(super) async fn acquire_content_ref_fence(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
     postgres_database_url: Option<&str>,
     content_refs: &[ContentRef],
 ) -> Result<ContentRefFence, PostgresError> {
@@ -124,13 +130,17 @@ pub(super) async fn dedicated_fence_connection(
     Ok(connection)
 }
 
-pub(super) async fn current_schema(db: &DatabaseConnection) -> Result<String, PostgresError> {
-    db.query_one_raw(Statement::from_string(
-        DatabaseBackend::Postgres,
-        "SELECT current_schema() AS schema".to_string(),
-    ))
-    .await?
-    .ok_or_else(|| PostgresError::internal_message("Postgres did not return its schema"))?
-    .try_get::<String>("", "schema")
-    .map_err(PostgresError::internal)
+pub(super) async fn current_schema(db: &ScopedDatabase) -> Result<String, PostgresError> {
+    let tx = db.begin(DataScope::NoRepository).await?;
+    let schema = tx
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT current_schema() AS schema".to_string(),
+        ))
+        .await?
+        .ok_or_else(|| PostgresError::internal_message("Postgres did not return its schema"))?
+        .try_get::<String>("", "schema")
+        .map_err(PostgresError::internal)?;
+    tx.commit().await?;
+    Ok(schema)
 }

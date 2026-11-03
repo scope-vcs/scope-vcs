@@ -54,26 +54,30 @@ fn dispatching_attempt_sql(attempt_id: &str, number: u32, token: char) -> String
 async fn one_job_rejects_a_second_active_attempt() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    db.execute_unprepared(FIXTURE_SQL).await.unwrap();
-    db.execute_unprepared(&dispatching_attempt_sql("attempt-1", 1, 'a'))
+    db.fixture().execute_unprepared(FIXTURE_SQL).await.unwrap();
+    db.fixture()
+        .execute_unprepared(&dispatching_attempt_sql("attempt-1", 1, 'a'))
         .await
         .unwrap();
 
     let error = db
+        .fixture()
         .execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b'))
         .await
         .unwrap_err()
         .to_string();
     assert!(error.contains("idx_scope_run_attempts_active"), "{error}");
-    db.execute_unprepared(
-        "UPDATE scope_run_attempts
+    db.fixture()
+        .execute_unprepared(
+            "UPDATE scope_run_attempts
          SET state = 'failed', completed_at_unix = 2, last_heartbeat_at_unix = 2,
              terminal_reason = '\"runner-failed\"'
          WHERE id = 'attempt-1'",
-    )
-    .await
-    .unwrap();
-    db.execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b'))
+        )
+        .await
+        .unwrap();
+    db.fixture()
+        .execute_unprepared(&dispatching_attempt_sql("attempt-2", 2, 'b'))
         .await
         .unwrap();
 }

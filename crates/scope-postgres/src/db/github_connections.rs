@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::github_review_bots::delete_review_bots;
 use super::github_review_imports::delete_review_imports;
 use super::{
@@ -28,7 +29,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, FromQueryResult, Statement,
-    TransactionTrait, Value,
+    Value,
 };
 
 const BY_REPO: &str = "WHERE connection.repo_id = $1";
@@ -74,7 +75,10 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Option<GitHubConnectionRead>, PostgresError> {
-        load_connection(self.db.as_ref(), BY_REPO, [repo_id.into()]).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let connection = load_connection(&tx, BY_REPO, [repo_id.into()]).await?;
+        tx.commit().await?;
+        Ok(connection)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_connection"))]
@@ -82,7 +86,10 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Option<GitHubConnection>, PostgresError> {
-        repository_github_connection(self.db.as_ref(), repo_id).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let connection = repository_github_connection(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(connection)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_connection_for_github_repository"))]
@@ -90,7 +97,13 @@ impl RepositoryStore {
         &self,
         github_repository_id: u64,
     ) -> Result<Option<GitHubConnection>, PostgresError> {
-        connected_github_repository(self.db.as_ref(), github_repository_id, "").await
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let connection = connected_github_repository(&tx, github_repository_id, "").await?;
+        tx.commit().await?;
+        Ok(connection)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "connect_github_repository"))]
@@ -99,8 +112,12 @@ impl RepositoryStore {
         command: ConnectGitHubRepository,
         still_reachable: impl AsyncFnOnce() -> Result<bool, E>,
     ) -> Result<(GitHubConnection, RepositoryIncarnation), E> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let repo_id = command.repository_id.clone();
+        let tx = self
+            .db
+            .begin(DataScope::Repository(&repo_id))
+            .await
+            .map_err(PostgresError::internal)?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         acquire_aggregate_lock(&tx, "github-connection", &repo_id).await?;
         acquire_aggregate_lock(
@@ -183,7 +200,10 @@ impl RepositoryStore {
         github_repository_id: u64,
         github_private: bool,
     ) -> Result<Option<RepositoryIncarnation>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
         let Some(mut connection) =
             connected_github_repository(&tx, github_repository_id, " FOR UPDATE OF connection")
                 .await?
@@ -288,7 +308,11 @@ impl RepositoryStore {
         now_unix: u64,
         confirm: impl AsyncFnOnce() -> Result<Option<GitHubInstallationChange>, E>,
     ) -> Result<Vec<RepositoryIncarnation>, E> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await
+            .map_err(PostgresError::internal)?;
         acquire_installation_lock(&tx, installation_id).await?;
         let rows = ConnectionRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -399,7 +423,7 @@ impl RepositoryStore {
         user_id: &str,
         aggregates: &[&str],
     ) -> Result<(DatabaseTransaction, RepositoryAccessContext), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
         acquire_shared_repository_lock(&tx, repo_id).await?;
         for aggregate in aggregates {
             acquire_aggregate_lock(&tx, aggregate, repo_id).await?;

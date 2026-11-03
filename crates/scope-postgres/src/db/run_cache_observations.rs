@@ -1,10 +1,11 @@
+use super::data_scope::DataScope;
 use super::{RunStore, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::cache::observation::{
     AttemptCacheObservation, AttemptCachePreparationTiming, AttemptCacheSetupObservation,
     CacheFinalState, CachePreparation,
 };
-use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QuerySelect, TransactionTrait};
+use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QuerySelect};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AttemptCachePreparationCommand {
@@ -38,7 +39,10 @@ impl RunStore {
         reports: Vec<AttemptCachePreparationCommand>,
         now_unix: u64,
     ) -> Result<Option<super::DispatchClaim>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let claim = authenticated_attempt(&tx, attempt_id, token_hash, now_unix).await?;
         let setup = AttemptCacheSetupObservation::new(attempt_id, authorization_ms, wall_ms)
             .map_err(PostgresError::from)?;
@@ -135,7 +139,10 @@ impl RunStore {
         reports: Vec<AttemptCacheFinalizationCommand>,
         now_unix: u64,
     ) -> Result<Option<super::DispatchClaim>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let claim = authenticated_attempt(&tx, attempt_id, token_hash, now_unix).await?;
         let mut changed = false;
         for report in reports {

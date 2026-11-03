@@ -1,3 +1,4 @@
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     CatalogFixture, CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
     MetadataStore, RequestRepositoryInviteEmailCommand, UpdateRepositoryMemberPermissionsCommand,
@@ -18,7 +19,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
-    Statement, TransactionTrait,
+    Statement,
 };
 use std::{future::Future, time::Duration};
 
@@ -167,7 +168,7 @@ async fn granting_unused_views_publishes_their_heads_before_reads() {
     for id in ["docs", "agent"] {
         assert!(
             entities::projection_read_model::Entity::find_by_id((REPO_ID.into(), id.into()))
-                .one(store.db.as_ref())
+                .one(&store.db.fixture())
                 .await
                 .unwrap()
                 .is_none()
@@ -225,7 +226,7 @@ async fn granting_unused_views_publishes_their_heads_before_reads() {
     for (user_id, id) in [("member", "docs"), ("agent", "agent")] {
         let projection =
             entities::projection_read_model::Entity::find_by_id((REPO_ID.into(), id.into()))
-                .one(store.db.as_ref())
+                .one(&store.db.fixture())
                 .await
                 .unwrap()
                 .expect("granting a view must publish its projection before any read");
@@ -262,7 +263,11 @@ async fn granting_unused_views_publishes_their_heads_before_reads() {
 }
 
 async fn lock_history(store: &MetadataStore) -> DatabaseTransaction {
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     held.execute_unprepared(&format!(
         "LOCK TABLE {HISTORY_TABLES} IN ACCESS EXCLUSIVE MODE"
     ))
@@ -315,7 +320,7 @@ async fn without_history<T>(
 
 async fn change_version(store: &MetadataStore) -> u64 {
     entities::repository::Entity::find_by_id(REPO_ID)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap()
@@ -326,7 +331,7 @@ async fn derived_work(store: &MetadataStore) -> (Vec<i64>, Option<i64>) {
     let mut projection = entities::outbox_job::Entity::find()
         .filter(entities::outbox_job::Column::RepoId.eq(REPO_ID))
         .filter(entities::outbox_job::Column::Kind.eq("projection_read_model_rebuild"))
-        .all(store.db.as_ref())
+        .all(&store.db.fixture())
         .await
         .unwrap()
         .into_iter()
@@ -335,6 +340,7 @@ async fn derived_work(store: &MetadataStore) -> (Vec<i64>, Option<i64>) {
     projection.sort_unstable();
     let dependency = store
         .db
+        .fixture()
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT repo_version FROM scope_dependency_analysis_jobs WHERE repo_id = $1",
@@ -348,7 +354,7 @@ async fn derived_work(store: &MetadataStore) -> (Vec<i64>, Option<i64>) {
 
 async fn email_row(store: &MetadataStore, id: &str) -> entities::repository_invite_email::Model {
     entities::repository_invite_email::Entity::find_by_id(id)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap()
@@ -425,7 +431,7 @@ async fn collaboration_mutations_touch_no_history_or_main_packs() {
         REPO_ID.to_string(),
         "member".to_string(),
     ))
-    .one(store.db.as_ref())
+    .one(&store.db.fixture())
     .await
     .unwrap()
     .unwrap()
@@ -591,7 +597,7 @@ async fn collaboration_mutations_touch_no_history_or_main_packs() {
     assert!(
         entities::repository_invite_email::Entity::find()
             .filter(entities::repository_invite_email::Column::InviteId.is_not_null())
-            .all(store.db.as_ref())
+            .all(&store.db.fixture())
             .await
             .unwrap()
             .is_empty()

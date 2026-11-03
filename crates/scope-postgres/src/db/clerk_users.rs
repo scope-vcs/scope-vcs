@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     AuthStore, acquire_aggregate_lock, auth::load_user_by_id,
     clerk_user_deletions::clerk_user_deletion_recorded, entities,
@@ -9,7 +10,6 @@ use scope_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    TransactionTrait,
 };
 use sha2::{Digest, Sha256};
 
@@ -26,7 +26,10 @@ impl AuthStore {
         identity: &ExternalIdentity,
     ) -> Result<Option<UserAccount>, PostgresError> {
         let verified_email = verified_identity_email(identity)?;
-        existing_identity_user(self.db.as_ref(), identity, &verified_email).await
+        let tx = self.db.begin(DataScope::NoRepository).await?;
+        let user = existing_identity_user(&tx, identity, &verified_email).await?;
+        tx.commit().await?;
+        Ok(user)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "resolve_clerk_user"))]
@@ -36,7 +39,7 @@ impl AuthStore {
         _now_unix: u64,
     ) -> Result<ClerkUserResolution, PostgresError> {
         let verified_email = verified_identity_email(identity)?;
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         let identity_key = format!("{}:{}", identity.provider, identity.subject);
         acquire_aggregate_lock(&tx, "auth-identity", &identity_key).await?;
         acquire_aggregate_lock(&tx, "auth-email", &verified_email).await?;

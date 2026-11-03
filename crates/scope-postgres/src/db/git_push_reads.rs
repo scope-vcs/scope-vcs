@@ -1,5 +1,5 @@
 use super::{
-    RepositoryStore, begin_metadata_read_snapshot, entities, repository_access::load_repo_record,
+    RepositoryStore, data_scope::DataScope, entities, repository_access::load_repo_record,
 };
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, IdenStatic, Iterable,
@@ -44,7 +44,10 @@ impl RepositoryStore {
         run_id: &str,
         expected_repository_id: &str,
     ) -> Result<Option<RepositoryIncarnation>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(expected_repository_id))
+            .await?;
         let Some(run) = entities::run::Entity::find_by_id(run_id).one(&tx).await? else {
             tx.commit().await?;
             return Ok(None);
@@ -71,7 +74,10 @@ impl RepositoryStore {
         user_id: &str,
     ) -> Result<Option<GitPushState>, PostgresError> {
         let id = repo_id(owner, name);
-        git_push_state_for_id(self.db.as_ref(), &id, user_id).await
+        let tx = self.db.begin(DataScope::Repository(&id)).await?;
+        let state = git_push_state_for_id(&tx, &id, user_id).await?;
+        tx.commit().await?;
+        Ok(state)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_push_credentials"))]
@@ -81,7 +87,10 @@ impl RepositoryStore {
         name: &str,
     ) -> Result<Option<GitPushCredentials>, PostgresError> {
         let id = repo_id(owner, name);
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&id))
+            .await?;
         let Some(record) = load_repo_record(&tx, &id).await? else {
             tx.commit().await?;
             return Ok(None);

@@ -65,14 +65,14 @@ async fn persist_pack(store: &MetadataStore, repo_id: &str, pack: &GitPoolPack, 
         .await
         .unwrap();
     if published {
-        register_git_pool_pack(store.db.as_ref(), repo_id, pack, 3)
+        register_git_pool_pack(&store.db.fixture(), repo_id, pack, 3)
             .await
             .unwrap();
     }
 }
 
 async fn main_layout(store: &MetadataStore) -> Vec<GitPoolPack> {
-    load_main_pool_packs(store.db.as_ref(), COMPACTION_REPO_ID)
+    load_main_pool_packs(&store.db.fixture(), COMPACTION_REPO_ID)
         .await
         .unwrap()
 }
@@ -80,6 +80,7 @@ async fn main_layout(store: &MetadataStore) -> Vec<GitPoolPack> {
 async fn seed_compaction_repo(store: &MetadataStore) -> [GitPoolPack; 3] {
     store
         .db
+        .fixture()
         .execute_unprepared(
             r#"
                 INSERT INTO scope_users (id, handle, email, email_verified)
@@ -112,7 +113,7 @@ async fn seed_compaction_repo(store: &MetadataStore) -> [GitPoolPack; 3] {
 
 async fn segment_state(store: &MetadataStore, segment_id: &str) -> GitSegmentUploadState {
     entities::git_segment_upload::Entity::find_by_id(segment_id)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap()
@@ -124,6 +125,7 @@ async fn segment_state(store: &MetadataStore, segment_id: &str) -> GitSegmentUpl
 async fn seed_scheduled_repo(store: &MetadataStore) {
     store
         .db
+        .fixture()
         .execute_unprepared(
             r#"
                 INSERT INTO scope_users (id, handle, email, email_verified)
@@ -150,7 +152,7 @@ async fn lease_reclaim_rejects_the_old_workers_completion() {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     seed_scheduled_repo(&store).await;
-    schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 1, 10)
+    schedule_git_compaction(&store.db.fixture(), "scheduler/repo", 1, 10)
         .await
         .unwrap();
 
@@ -181,7 +183,7 @@ async fn lease_reclaim_rejects_the_old_workers_completion() {
         .await
         .unwrap();
     let job = entities::git_compaction_job::Entity::find_by_id("scheduler/repo")
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap();
@@ -194,7 +196,7 @@ async fn lease_reclaim_rejects_the_old_workers_completion() {
         .unwrap();
     assert!(
         entities::git_compaction_job::Entity::find_by_id("scheduler/repo")
-            .one(store.db.as_ref())
+            .one(&store.db.fixture())
             .await
             .unwrap()
             .is_none()
@@ -206,7 +208,7 @@ async fn lease_renewal_prevents_reclaim_until_the_extended_expiry() {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     seed_scheduled_repo(&store).await;
-    schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 1, 10)
+    schedule_git_compaction(&store.db.fixture(), "scheduler/repo", 1, 10)
         .await
         .unwrap();
 
@@ -253,7 +255,7 @@ async fn push_scheduled_during_a_claim_survives_completion() {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     seed_scheduled_repo(&store).await;
-    schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 1, 10)
+    schedule_git_compaction(&store.db.fixture(), "scheduler/repo", 1, 10)
         .await
         .unwrap();
     let first = store
@@ -263,7 +265,7 @@ async fn push_scheduled_during_a_claim_survives_completion() {
         .unwrap()
         .unwrap();
 
-    schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 2, 11)
+    schedule_git_compaction(&store.db.fixture(), "scheduler/repo", 2, 11)
         .await
         .unwrap();
     store
@@ -286,7 +288,7 @@ async fn new_push_does_not_bypass_a_failed_compactions_backoff() {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     seed_scheduled_repo(&store).await;
-    schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 1, 10)
+    schedule_git_compaction(&store.db.fixture(), "scheduler/repo", 1, 10)
         .await
         .unwrap();
     let failed = store
@@ -301,7 +303,7 @@ async fn new_push_does_not_bypass_a_failed_compactions_backoff() {
         .await
         .unwrap();
 
-    schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 2, 11)
+    schedule_git_compaction(&store.db.fixture(), "scheduler/repo", 2, 11)
         .await
         .unwrap();
     assert!(
@@ -328,7 +330,7 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let initial = seed_compaction_repo(&store).await;
 
-    schedule_git_compaction(store.db.as_ref(), COMPACTION_REPO_ID, 4, 10)
+    schedule_git_compaction(&store.db.fixture(), COMPACTION_REPO_ID, 4, 10)
         .await
         .unwrap();
     let claim = store
@@ -355,6 +357,7 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
     persist_pack(&store, COMPACTION_REPO_ID, &appended, true).await;
     store
         .db
+        .fixture()
         .execute_unprepared(
             "UPDATE scope_git_heads
              SET head_oid = 'head-5', push_sequence = 5, change_version = 5
@@ -401,7 +404,7 @@ async fn compaction_replaces_an_interior_pair_and_preserves_both_sides() {
         GitSegmentUploadState::Published
     );
     let head = entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap();
@@ -416,7 +419,7 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let initial = seed_compaction_repo(&store).await;
-    schedule_git_compaction(store.db.as_ref(), COMPACTION_REPO_ID, 4, 10)
+    schedule_git_compaction(&store.db.fixture(), COMPACTION_REPO_ID, 4, 10)
         .await
         .unwrap();
     let stale_plan = store
@@ -445,7 +448,7 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
     );
     let winning_layout = main_layout(&store).await;
     let winning_head = entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap();
@@ -467,7 +470,7 @@ async fn stale_claim_retires_its_unused_replacement_and_preserves_the_winning_co
 
     assert_eq!(main_layout(&store).await, winning_layout);
     let head = entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap();
@@ -491,7 +494,7 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
     let store =
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     let initial = seed_compaction_repo(&store).await;
-    schedule_git_compaction(store.db.as_ref(), COMPACTION_REPO_ID, 4, 10)
+    schedule_git_compaction(&store.db.fixture(), COMPACTION_REPO_ID, 4, 10)
         .await
         .unwrap();
     let stale_plan = store
@@ -506,6 +509,7 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
 
     store
         .db
+        .fixture()
         .execute_unprepared(
             "UPDATE scope_git_pool_packs
              SET segment_plaintext_bytes = segment_plaintext_bytes + 1
@@ -527,7 +531,7 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
         initial[1].storage.stored_bytes() + 1
     );
     let current_head = entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap();
@@ -550,7 +554,7 @@ async fn stale_claim_rejects_selected_segment_metadata_drift() {
     assert_eq!(main_layout(&store).await, current_layout);
     assert_eq!(
         entities::git_head::Entity::find_by_id(COMPACTION_REPO_ID)
-            .one(store.db.as_ref())
+            .one(&store.db.fixture())
             .await
             .unwrap()
             .unwrap(),
@@ -584,7 +588,7 @@ async fn adapter_preserves_compaction_validation_diagnostics() {
     );
 
     seed_compaction_repo(&store).await;
-    schedule_git_compaction(store.db.as_ref(), COMPACTION_REPO_ID, 4, 10)
+    schedule_git_compaction(&store.db.fixture(), COMPACTION_REPO_ID, 4, 10)
         .await
         .unwrap();
     let plan = store
@@ -622,7 +626,8 @@ async fn a_claim_carries_the_latest_traced_schedule() {
         (Some("trace-latest"), 11),
         (None, 12),
     ] {
-        let schedule = schedule_git_compaction(store.db.as_ref(), "scheduler/repo", 1, now_unix);
+        let fixture = store.db.fixture();
+        let schedule = schedule_git_compaction(&fixture, "scheduler/repo", 1, now_unix);
         match traceparent {
             Some(traceparent) => queued_by(traceparent, schedule).await,
             None => schedule.await,

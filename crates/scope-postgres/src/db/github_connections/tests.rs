@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::requests::tests::postgres_store;
 use crate::error::PostgresErrorKind;
 use scope_domain::github_connection::MAIN_WITHHELD_MESSAGE;
@@ -29,7 +30,11 @@ async fn turning_main_publication_on_waits_for_a_visibility_change_instead_of_ov
         .await
         .unwrap();
 
-    let refresh = store.db.as_ref().begin().await.unwrap();
+    let refresh = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     locked_repository_github_connection(&refresh, REPO)
         .await
         .unwrap()

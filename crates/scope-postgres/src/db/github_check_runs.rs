@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RequestStore,
     entities::{decode_enum, encode_enum},
@@ -5,9 +6,7 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::requests::{GitHubCheckRun, Request, RequestCheckEvaluation};
-use sea_orm::{
-    ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Value};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubCheckCommit {
@@ -48,8 +47,11 @@ impl RequestStore {
         &self,
         commit: &GitHubCheckCommit,
     ) -> Result<u64, PostgresError> {
-        let row = self
+        let tx = self
             .db
+            .begin(DataScope::Repository(&commit.repo_id))
+            .await?;
+        let row = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_github_check_refreshes (repo_id, github_repository_id,
@@ -62,6 +64,7 @@ impl RequestStore {
             ))
             .await?
             .ok_or_else(|| PostgresError::internal_message("GitHub check read was not numbered"))?;
+        tx.commit().await?;
         i64_to_u64(row.try_get("", "started_reads")?, "GitHub check read")
     }
 
@@ -73,7 +76,10 @@ impl RequestStore {
         started_at_unix: u64,
         runs: &[GitHubCheckRun],
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubMirrorOwnership))
+            .await?;
         let applied = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -153,8 +159,11 @@ impl RequestStore {
         &self,
         commit: &GitHubCheckCommit,
     ) -> Result<Option<u64>, PostgresError> {
-        let Some(row) = self
+        let tx = self
             .db
+            .begin(DataScope::Repository(&commit.repo_id))
+            .await?;
+        let row = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT applied_read_started_at_unix FROM scope_github_check_refreshes
@@ -162,8 +171,9 @@ impl RequestStore {
                     AND started_reads = applied_read",
                 commit.key_values()?,
             ))
-            .await?
-        else {
+            .await?;
+        tx.commit().await?;
+        let Some(row) = row else {
             return Ok(None);
         };
         optional_i64_to_u64(
@@ -177,7 +187,8 @@ impl RequestStore {
         repo_id: &str,
         commit_oid: &str,
     ) -> Result<Vec<Request>, PostgresError> {
-        super::entities::request::Model::find_by_statement(Statement::from_sql_and_values(
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let rows = super::entities::request::Model::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT request.* FROM scope_requests request
              JOIN scope_request_check_evaluations evaluation
@@ -187,11 +198,12 @@ impl RequestStore {
              ORDER BY request.id",
             [repo_id.into(), commit_oid.into()],
         ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(super::entities::request::Model::try_into_domain)
-        .collect()
+        .all(&tx)
+        .await?;
+        tx.commit().await?;
+        rows.into_iter()
+            .map(super::entities::request::Model::try_into_domain)
+            .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "current_github_evaluations_testing"))]
@@ -200,7 +212,8 @@ impl RequestStore {
         repo_id: &str,
         commit_oid: &str,
     ) -> Result<Vec<RequestCheckEvaluation>, PostgresError> {
-        super::entities::request_check_evaluation::Model::find_by_statement(
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let rows = super::entities::request_check_evaluation::Model::find_by_statement(
             Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
@@ -219,12 +232,13 @@ impl RequestStore {
                 [repo_id.into(), commit_oid.into()],
             ),
         )
-        .all(self.db.as_ref())
+        .all(&tx)
         .await
-        .map_err(PostgresError::internal)?
-        .into_iter()
-        .map(super::entities::request_check_evaluation::Model::try_into_domain)
-        .collect()
+        .map_err(PostgresError::internal)?;
+        tx.commit().await?;
+        rows.into_iter()
+            .map(super::entities::request_check_evaluation::Model::try_into_domain)
+            .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_commit_is_watched"))]
@@ -233,12 +247,12 @@ impl RequestStore {
         repo_id: &str,
         commit_oid: &str,
     ) -> Result<bool, PostgresError> {
-        if super::github_setup_checks::setup_check_watches(self.db.as_ref(), repo_id, commit_oid)
-            .await?
-        {
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        if super::github_setup_checks::setup_check_watches(&tx, repo_id, commit_oid).await? {
+            tx.commit().await?;
             return Ok(true);
         }
-        self.db
+        let tested = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT EXISTS (
@@ -255,7 +269,9 @@ impl RequestStore {
             .await?
             .ok_or_else(|| PostgresError::internal_message("tested commit query returned no row"))?
             .try_get("", "tested")
-            .map_err(PostgresError::internal)
+            .map_err(PostgresError::internal)?;
+        tx.commit().await?;
+        Ok(tested)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_check_refresh_candidates"))]
@@ -264,7 +280,11 @@ impl RequestStore {
         now_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubCheckRefreshCandidate>, PostgresError> {
-        CandidateRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let rows = CandidateRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
             SELECT request.repo_id, connection.github_repository_id, evaluation.request_id,
@@ -294,24 +314,25 @@ impl RequestStore {
                 u64_to_i64(limit, "GitHub check refresh batch size")?.into(),
             ],
         ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(|row| {
-            Ok(GitHubCheckRefreshCandidate {
-                commit: GitHubCheckCommit {
-                    repo_id: row.repo_id,
-                    github_repository_id: i64_to_u64(
-                        row.github_repository_id,
-                        "GitHub repository id",
-                    )?,
-                    commit_oid: row.tested_oid,
-                },
-                request_id: row.request_id,
-                head_oid: row.head_oid,
+        .all(&tx)
+        .await?;
+        tx.commit().await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(GitHubCheckRefreshCandidate {
+                    commit: GitHubCheckCommit {
+                        repo_id: row.repo_id,
+                        github_repository_id: i64_to_u64(
+                            row.github_repository_id,
+                            "GitHub repository id",
+                        )?,
+                        commit_oid: row.tested_oid,
+                    },
+                    request_id: row.request_id,
+                    head_oid: row.head_oid,
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_github_check_refresh"))]
@@ -326,8 +347,11 @@ impl RequestStore {
             u64_to_i64(next_read_at_unix, "GitHub check refresh time")?.into(),
             u64_to_i64(now_unix, "GitHub check refresh time")?.into(),
         ]);
-        Ok(self
+        let tx = self
             .db
+            .begin(DataScope::Repository(&commit.repo_id))
+            .await?;
+        let claimed = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_github_check_refreshes (repo_id, github_repository_id,
@@ -340,7 +364,9 @@ impl RequestStore {
                 values,
             ))
             .await?
-            .is_some())
+            .is_some();
+        tx.commit().await?;
+        Ok(claimed)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "schedule_github_check_refresh"))]
@@ -351,14 +377,18 @@ impl RequestStore {
     ) -> Result<(), PostgresError> {
         let mut values = commit.key_values()?;
         values.push(u64_to_i64(next_read_at_unix, "GitHub check refresh time")?.into());
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "UPDATE scope_github_check_refreshes SET next_read_at_unix = $4
-                  WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3",
-                values,
-            ))
+        let tx = self
+            .db
+            .begin(DataScope::Repository(&commit.repo_id))
             .await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE scope_github_check_refreshes SET next_read_at_unix = $4
+                  WHERE repo_id = $1 AND github_repository_id = $2 AND commit_oid = $3",
+            values,
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

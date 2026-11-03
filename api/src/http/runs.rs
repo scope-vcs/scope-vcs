@@ -204,8 +204,8 @@ pub(crate) async fn get_push_trigger_evaluation(
         .collect::<Vec<_>>();
     let runs_store = state.metadata.runs();
     let (runs, truncated_run_ids) = tokio::try_join!(
-        runs_store.runs_by_ids(&run_ids),
-        runs_store.run_ids_with_truncated_logs(&run_ids),
+        runs_store.runs_by_ids(&repo.record.id, &run_ids),
+        runs_store.run_ids_with_truncated_logs(&repo.record.id, &run_ids),
     )?;
     let mut runs = runs
         .into_iter()

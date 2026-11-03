@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     RequestStore, acquire_aggregate_lock, entities,
     request_auto_merge::{
@@ -12,7 +13,6 @@ use scope_domain::requests::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder,
-    TransactionTrait,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -65,7 +65,13 @@ impl RequestStore {
         &self,
         parent_id: &str,
     ) -> Result<Vec<Request>, PostgresError> {
-        children(self.db.as_ref(), parent_id).await
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(parent_id))
+            .await?;
+        let children = children(&tx, parent_id).await?;
+        tx.commit().await?;
+        Ok(children)
     }
 
     pub async fn mark_request_integration_conflict(
@@ -77,8 +83,11 @@ impl RequestStore {
         expected_main_oid: &str,
         now_unix: u64,
     ) -> Result<Request, PostgresError> {
-        use sea_orm::TransactionTrait;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await
+            .map_err(PostgresError::internal)?;
         let observed = request_by_id(&tx, request_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
@@ -299,7 +308,7 @@ pub(super) async fn lock_graph(
 ) -> Result<(), PostgresError> {
     for _ in 0..GRAPH_LOCK_ATTEMPTS {
         let ids = graph_ids(tx, request, selected_base).await?;
-        let attempt = tx.begin().await?;
+        let attempt = super::data_scope::savepoint(tx).await?;
         for id in &ids {
             acquire_aggregate_lock(&attempt, "request", id).await?;
         }

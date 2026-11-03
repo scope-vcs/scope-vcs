@@ -8,8 +8,9 @@ const PUSH_COLUMNS: &str = "INSERT INTO scope_github_pushes (id,repo_id,request_
 async fn github_pushes_name_their_branch_and_only_running_pushes_hold_a_lease() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    db.execute_unprepared(&format!(
-        r#"
+    db.fixture()
+        .execute_unprepared(&format!(
+            r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);
         INSERT INTO scope_repositories (id,owner_handle,name,owner_user_id,publication_state,
             change_version,content_version,repo_config,policy,incarnation_id)
@@ -20,9 +21,9 @@ async fn github_pushes_name_their_branch_and_only_running_pushes_hold_a_lease() 
                     'octo/one',repeat('a',40),'push','queued',0,10,10,10);
         INSERT INTO scope_github_check_refreshes VALUES ('owner/one',42,repeat('a',40),10,0,0,NULL);
         "#
-    ))
-    .await
-    .unwrap();
+        ))
+        .await
+        .unwrap();
 
     for invalid in [
         "INSERT INTO scope_github_required_checks VALUES ('owner/one',' ci ',1)".to_string(),
@@ -44,10 +45,14 @@ async fn github_pushes_name_their_branch_and_only_running_pushes_hold_a_lease() 
         "UPDATE scope_github_pushes SET state = 'running'".to_string(),
         "UPDATE scope_github_pushes SET state = 'failed'".to_string(),
     ] {
-        assert!(db.execute_unprepared(&invalid).await.is_err(), "{invalid}");
+        assert!(
+            db.fixture().execute_unprepared(&invalid).await.is_err(),
+            "{invalid}"
+        );
     }
 
-    db.execute_unprepared("DELETE FROM scope_repositories WHERE id = 'owner/one'")
+    db.fixture()
+        .execute_unprepared("DELETE FROM scope_repositories WHERE id = 'owner/one'")
         .await
         .unwrap();
     for (table, remaining) in [
@@ -56,6 +61,7 @@ async fn github_pushes_name_their_branch_and_only_running_pushes_hold_a_lease() 
         ("scope_github_check_refreshes", 0),
     ] {
         let row = db
+            .fixture()
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!("SELECT count(*) AS count FROM {table}"),

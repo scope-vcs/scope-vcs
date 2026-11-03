@@ -3,11 +3,12 @@ use super::{
     persistence::{as_i32, as_i64},
     upload::{authorize_active_upload, lock_authorized_upload},
 };
+use crate::db::data_scope::DataScope;
 use crate::error::PostgresError;
 use scope_domain::requests::attachments::{
     RequestAttachmentPartReceipt, RequestAttachmentStagedPart, validate_lease_grant,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement};
 
 impl MediaStore {
     #[allow(clippy::too_many_arguments)]
@@ -23,7 +24,10 @@ impl MediaStore {
         write_expires_at_unix: u64,
     ) -> Result<ReserveUploadPartResult, PostgresError> {
         validate_lease_grant(write_token, now_unix, write_expires_at_unix)?;
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(attachment_id))
+            .await?;
         let attachment = lock_authorized_upload(&tx, attachment_id, uploader_user_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("request attachment upload not found"))?;
@@ -122,7 +126,10 @@ impl MediaStore {
         write_token: &str,
         now_unix: u64,
     ) -> Result<StorePartResult, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(attachment_id))
+            .await?;
         let Some(attachment) = lock_authorized_upload(&tx, attachment_id, uploader_user_id).await?
         else {
             tx.commit().await?;
@@ -183,20 +190,24 @@ impl MediaStore {
         write_token: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "UPDATE scope_request_media_upload_parts SET write_expires_at_unix = $4
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(attachment_id))
+            .await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE scope_request_media_upload_parts SET write_expires_at_unix = $4
                  WHERE attachment_id = $1 AND part_number = $2 AND state = 'Pending'
                    AND write_token = $3 AND write_expires_at_unix > $4",
-                [
-                    attachment_id.into(),
-                    as_i32(part_number, "part number")?.into(),
-                    write_token.into(),
-                    as_i64(now_unix, "part release time")?.into(),
-                ],
-            ))
-            .await?;
+            [
+                attachment_id.into(),
+                as_i32(part_number, "part number")?.into(),
+                write_token.into(),
+                as_i64(now_unix, "part release time")?.into(),
+            ],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

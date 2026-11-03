@@ -1,13 +1,13 @@
 use crate::{
     db::{
-        CleanupStore, GeneratedIdKind, entities, generated_ids::generate_id,
+        CleanupStore, GeneratedIdKind, data_scope::DataScope, entities, generated_ids::generate_id,
         integer_columns::u64_to_i64,
     },
     error::PostgresError,
 };
 use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set, TransactionTrait,
+    ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
     sea_query::{Expr, OnConflict},
 };
 
@@ -24,7 +24,7 @@ impl CleanupStore {
             return Ok(());
         }
 
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         queue_pending_source_blob_deletion_rows(&tx, blobs, now_unix).await?;
         tx.commit().await?;
         Ok(())

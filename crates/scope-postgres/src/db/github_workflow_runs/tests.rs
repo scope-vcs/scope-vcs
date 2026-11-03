@@ -89,6 +89,7 @@ async fn a_run_stays_with_the_scope_repository_its_github_repository_is_connecte
         .unwrap();
     store
         .db
+        .fixture()
         .execute_unprepared(
             "INSERT INTO scope_repositories (id, owner_handle, name, owner_user_id,
                 publication_state, change_version, content_version, repo_config, policy,

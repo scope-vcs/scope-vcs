@@ -26,6 +26,7 @@ fn member(repo: &str, user_id: &str) -> RepositoryMember {
 async fn query_json(store: &MetadataStore, sql: &str) -> Value {
     let row = store
         .db
+        .fixture()
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             format!("SELECT to_jsonb(({sql})) AS value"),
@@ -104,7 +105,12 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
     ];
     let shared_version = shared.record.change_version;
     let store = store_with_repositories([shared, repository(&leaver, "solo", ViewId::private())]);
-    store.db.execute_unprepared(CONTRIBUTIONS).await.unwrap();
+    store
+        .db
+        .fixture()
+        .execute_unprepared(CONTRIBUTIONS)
+        .await
+        .unwrap();
 
     let deleted = store.auth().delete_account("leaver", 10).await.unwrap();
 
@@ -223,6 +229,7 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
     ]);
     store
         .db
+        .fixture()
         .execute_unprepared(
             "INSERT INTO scope_github_connections (repo_id, installation_id,
                 github_repository_id, github_full_name, connected_by_user_id,
@@ -233,6 +240,7 @@ async fn deleting_an_account_removes_its_drafts_and_announces_its_contributions(
         .unwrap();
     store
         .db
+        .fixture()
         .execute_unprepared(
             "INSERT INTO scope_requests (id, repo_id, name, author_user_id, author_role, audience,
         base_kind, review_base_oid, base_version, stack_status, stack_depth,
@@ -303,6 +311,7 @@ async fn a_failed_clerk_deletion_waits_and_is_claimed_again() {
     let store = store_with_repositories([]);
     store
         .db
+        .fixture()
         .execute_unprepared(
             "INSERT INTO scope_clerk_user_deletions (clerk_user_id, next_attempt_at_unix,
                 created_at_unix) VALUES ('user_clerk', 10, 10)",

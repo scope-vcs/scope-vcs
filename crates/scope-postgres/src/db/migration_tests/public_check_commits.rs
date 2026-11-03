@@ -4,7 +4,7 @@ use super::*;
 async fn only_an_evaluation_that_tests_a_check_commit_names_what_it_merges() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    db.execute_unprepared(
+    db.fixture().execute_unprepared(
         r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);
         INSERT INTO scope_repositories (id,owner_handle,name,owner_user_id,publication_state,
@@ -39,14 +39,18 @@ async fn only_an_evaluation_that_tests_a_check_commit_names_what_it_merges() {
         "UPDATE scope_request_check_evaluations SET tested_oid = head_oid",
         "UPDATE scope_request_check_evaluations SET check_private_main_oid = 'short'",
     ] {
-        assert!(db.execute_unprepared(invalid).await.is_err(), "{invalid}");
+        assert!(
+            db.fixture().execute_unprepared(invalid).await.is_err(),
+            "{invalid}"
+        );
     }
-    db.execute_unprepared(
-        "UPDATE scope_request_check_evaluations
+    db.fixture()
+        .execute_unprepared(
+            "UPDATE scope_request_check_evaluations
             SET tested_oid = head_oid, check_private_main_oid = NULL,
                 check_public_base_oid = NULL",
-    )
-    .await
-    .unwrap();
-    migrations::assert_exact_state(db.as_ref()).await.unwrap();
+        )
+        .await
+        .unwrap();
+    migrations::assert_exact_state(&db.fixture()).await.unwrap();
 }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     MetadataStore,
     locks::wait_for_transaction_waiter,
@@ -42,6 +43,7 @@ async fn parallel_job_appends_publish_positions_in_commit_order() {
     let store = fixture().await;
     store
         .db
+        .fixture()
         .execute_unprepared(
             r#"
         CREATE FUNCTION pause_first_log() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
@@ -56,7 +58,11 @@ async fn parallel_job_appends_publish_positions_in_commit_order() {
         )
         .await
         .unwrap();
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     let held_pid = held
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,

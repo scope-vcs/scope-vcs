@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     RequestStore, entities,
     request_access::{lock_request_repository, request_policy_for_user},
@@ -6,9 +7,7 @@ use crate::error::PostgresError;
 use scope_domain::requests::{
     RecordRequestRevisionInput, Request, RequestBase, RequestRevisionMutation,
 };
-use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, Set, TransactionTrait,
-};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, Set};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -29,7 +28,11 @@ impl RequestStore {
         actor_user_id: &str,
         context: &RequestRevisionContextPublication,
     ) -> Result<Option<RequestRevisionMutation>, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await
+            .map_err(PostgresError::internal)?;
         let (repo, request) = lock_request_repository(&tx, request_id, actor_user_id).await?;
         let result = receipt(&tx, &repo, &request, actor_user_id, context).await?;
         tx.commit().await.map_err(PostgresError::internal)?;

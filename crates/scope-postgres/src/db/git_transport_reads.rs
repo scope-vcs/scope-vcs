@@ -1,5 +1,7 @@
 use super::{
-    RepositoryStore, begin_metadata_read_snapshot, entities,
+    RepositoryStore,
+    data_scope::DataScope,
+    entities,
     history_rows::{RepositoryProjectionSource, load_repository_projection_sources},
     projection_read_models::{live_projection_read_model, repository_views},
     repository_access::load_repo_record,
@@ -35,7 +37,10 @@ impl RepositoryStore {
         &self,
         incarnation: &RepositoryIncarnation,
     ) -> Result<RepositoryGitState, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(incarnation.repository_id()))
+            .await?;
         let record = load_repo_record(&tx, incarnation.repository_id())
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
@@ -95,7 +100,10 @@ impl RepositoryStore {
         incarnation: &RepositoryIncarnation,
         content_version: u64,
     ) -> Result<RepositoryProjectionSource, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(incarnation.repository_id()))
+            .await?;
         let record = load_record_at_version(&tx, incarnation, content_version).await?;
         let repo_ids = [record.id];
         let source = load_repository_projection_sources(&tx, &repo_ids)
@@ -112,7 +120,10 @@ impl RepositoryStore {
         incarnation: &RepositoryIncarnation,
         content_version: u64,
     ) -> Result<Views, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(incarnation.repository_id()))
+            .await?;
         let record = load_record_at_version(&tx, incarnation, content_version).await?;
         let views = repository_views(&tx, &record.id).await?;
         tx.commit().await?;
@@ -127,7 +138,10 @@ impl RepositoryStore {
         view: &ViewId,
     ) -> Result<Option<String>, PostgresError> {
         for _ in 0..2 {
-            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+            let tx = self
+                .db
+                .begin_read_snapshot(DataScope::Repository(incarnation.repository_id()))
+                .await?;
             let record = load_record_at_version(&tx, incarnation, content_version).await?;
             let read_model =
                 live_projection_read_model(&tx, &record.id, content_version, view).await?;
@@ -150,7 +164,10 @@ impl RepositoryStore {
         content_version: u64,
         paths: &[ScopePath],
     ) -> Result<PathHistory, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(incarnation.repository_id()))
+            .await?;
         let record = load_record_at_version(&tx, incarnation, content_version).await?;
         let mut history = PathHistory::default();
         for paths in paths.chunks(PATH_BATCH_SIZE) {

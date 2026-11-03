@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::integer_columns;
 use super::{
     DispatchClaim, RunStore, entities,
@@ -7,8 +8,6 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::runs::job::reconcile_run;
-#[cfg(any(test, feature = "seeding"))]
-use sea_orm::TransactionTrait;
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, IntoActiveModel, Statement,
 };
@@ -75,8 +74,11 @@ impl RunStore {
         limit: u64,
     ) -> Result<Vec<CloudTaskStop>, PostgresError> {
         let claim_cutoff = now_unix.saturating_sub(CLOUD_TASK_STOP_CLAIM_LEASE_SECS);
-        let rows = self
+        let tx = self
             .db
+            .begin(DataScope::System(SystemReason::RunDispatch))
+            .await?;
+        let rows = tx
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!(
@@ -97,6 +99,7 @@ impl RunStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         rows.into_iter()
             .map(|row| {
                 Ok(CloudTaskStop {
@@ -112,13 +115,17 @@ impl RunStore {
         &self,
         attempt_id: &str,
     ) -> Result<(), PostgresError> {
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "UPDATE scope_run_attempts SET runner_stop_claimed_at_unix = NULL WHERE id = $1 AND runner_stop_completed_at_unix IS NULL",
-                [attempt_id.into()],
-            ))
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
             .await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "UPDATE scope_run_attempts SET runner_stop_claimed_at_unix = NULL WHERE id = $1 AND runner_stop_completed_at_unix IS NULL",
+            [attempt_id.into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -128,8 +135,11 @@ impl RunStore {
         attempt_id: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let result = self
+        let tx = self
             .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_run_attempts
@@ -145,6 +155,7 @@ impl RunStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         if result.rows_affected() != 1 {
             return Err(PostgresError::conflict(
                 "cloud task stop claim is missing or already complete",
@@ -161,8 +172,11 @@ impl RunStore {
     ) -> Result<(), PostgresError> {
         let now_unix = i64::try_from(now_unix).map_err(PostgresError::internal)?;
         let terminal = attempt_terminal_states();
-        let result = self
+        let tx = self
             .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!(
@@ -177,6 +191,7 @@ impl RunStore {
                 [attempt_id.into(), now_unix.into()],
             ))
             .await?;
+        tx.commit().await?;
         if result.rows_affected() != 1 {
             return Err(PostgresError::conflict(
                 "cloud task absence requires an untracked terminal attempt",
@@ -198,7 +213,7 @@ impl RunStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::RunRepository(run_id)).await?;
         super::run_admission::lock_admission(&tx).await?;
         let claim = self
             .dispatch_in_transaction(
@@ -301,8 +316,11 @@ impl RunStore {
         if external_run_id.trim().is_empty() {
             return Err(PostgresError::invalid_input("external run id is required"));
         }
-        let result = self
+        let tx = self
             .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_run_attempts
@@ -312,6 +330,7 @@ impl RunStore {
                 [attempt_id.into(), external_run_id.into()],
             ))
             .await?;
+        tx.commit().await?;
         if result.rows_affected() != 1 {
             return Err(PostgresError::conflict(
                 "attempt cannot accept the external run id",

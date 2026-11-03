@@ -243,7 +243,7 @@ async fn the_first_evaluation_of_a_head_stands() {
     assert_ne!(current.id, stored.id);
     assert_ne!(current.revision_id, stored.revision_id);
     let retained = entities::request_check_evaluation::Entity::find_by_id(stored.id.clone())
-        .one(store.requests().db.as_ref())
+        .one(&store.requests().db.fixture())
         .await
         .unwrap()
         .unwrap()

@@ -10,7 +10,7 @@ async fn stack_stop_reason_migration_preserves_intents_and_enforces_transition_s
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await
         .unwrap();
-    db.execute_unprepared(r#"
+    super::system(&db).fixture().execute_unprepared(r#"
         INSERT INTO scope_users (id, handle, email, email_verified)
             VALUES ('auto-owner', 'auto-owner', 'auto-owner@example.test', TRUE);
         INSERT INTO scope_repositories (
@@ -38,7 +38,8 @@ async fn stack_stop_reason_migration_preserves_intents_and_enforces_transition_s
             AS fixture(id,status,reason,position);
     "#).await.unwrap();
     let snapshot = "SELECT jsonb_agg(to_jsonb(intent) ORDER BY id)::text AS value FROM scope_request_auto_merge_intents intent";
-    let before = db
+    let before = super::system(&db)
+        .fixture()
         .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, snapshot))
         .await
         .unwrap()
@@ -46,7 +47,8 @@ async fn stack_stop_reason_migration_preserves_intents_and_enforces_transition_s
         .try_get::<String>("", "value")
         .unwrap();
     migrations::Migrator::up(db.as_ref(), None).await.unwrap();
-    let after = db
+    let after = super::system(&db)
+        .fixture()
         .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, snapshot))
         .await
         .unwrap()
@@ -60,14 +62,15 @@ async fn stack_stop_reason_migration_preserves_intents_and_enforces_transition_s
         "AncestorBlocked",
         "NeedsMainUpdate",
     ] {
-        db.execute_raw(Statement::from_sql_and_values(
+        super::system(&db).fixture().execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_auto_merge_intents SET reason = $1 WHERE id = 'stopped-intent'",
             [reason.into()],
         ))
         .await
         .unwrap();
-        let stored = db
+        let stored = super::system(&db)
+            .fixture()
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 "SELECT reason FROM scope_request_auto_merge_intents WHERE id = 'stopped-intent'",
@@ -84,7 +87,12 @@ async fn stack_stop_reason_migration_preserves_intents_and_enforces_transition_s
         "UPDATE scope_request_auto_merge_intents SET reason = 'ParentClosed' WHERE id = 'active-intent'",
         "UPDATE scope_request_auto_merge_intents SET claim_token = 'claim', claim_expires_at_unix = 3 WHERE id = 'stopped-intent'",
     ] {
-        let error = db.execute_unprepared(sql).await.unwrap_err().to_string();
+        let error = super::system(&db)
+            .fixture()
+            .execute_unprepared(sql)
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("scope_request_auto_merge_values"), "{error}");
     }
     migrations::assert_exact_state(db.as_ref()).await.unwrap();

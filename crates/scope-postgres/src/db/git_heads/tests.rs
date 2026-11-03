@@ -9,6 +9,7 @@ async fn store_with_repository() -> MetadataStore {
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     store
         .db
+        .fixture()
         .execute_unprepared(&format!(
             "INSERT INTO scope_users (id, handle, email, email_verified)
              VALUES ('head_user', 'head-user', 'head@scope.test', TRUE);
@@ -27,7 +28,7 @@ async fn store_with_repository() -> MetadataStore {
 
 async fn stored_head(store: &MetadataStore) -> Option<GitHead> {
     entities::git_head::Entity::find_by_id(REPO_ID)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .map(|row| row.try_into_domain().unwrap())
@@ -36,7 +37,7 @@ async fn stored_head(store: &MetadataStore) -> Option<GitHead> {
 #[tokio::test]
 async fn advancing_from_a_stale_head_conflicts_and_keeps_the_current_head() {
     let store = store_with_repository().await;
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
     let first = GitHead::new("a".repeat(40), 1, 2);
     let second = GitHead::new("b".repeat(40), 2, 3);
     advance_git_head(db, REPO_ID, None, &first).await.unwrap();

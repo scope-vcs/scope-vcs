@@ -1,4 +1,5 @@
 use super::publish_git_segment;
+use crate::db::data_scope::DataScope;
 use crate::db::integer_columns::{i32_to_u32, i64_to_u64, u32_to_i32, u64_to_i64};
 use crate::error::PostgresError;
 use scope_domain::{
@@ -309,7 +310,10 @@ impl crate::db::RepositoryStore {
         repo_id: &str,
         request_ids: &[String],
     ) -> Result<Vec<PooledRequestPack>, PostgresError> {
-        git_pool_packs_for_requests(self.db.as_ref(), repo_id, request_ids).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let rows = git_pool_packs_for_requests(&tx, repo_id, request_ids).await?;
+        tx.commit().await?;
+        Ok(rows)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "main_pool_packs"))]
@@ -317,7 +321,10 @@ impl crate::db::RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Vec<ListedMainPoolPack>, PostgresError> {
-        main_pool_pack_listing(self.db.as_ref(), repo_id).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let rows = main_pool_pack_listing(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(rows)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "git_pool_pack_storage"))]
@@ -326,7 +333,10 @@ impl crate::db::RepositoryStore {
         repo_id: &str,
         pack_ids: &[String],
     ) -> Result<Vec<(String, GitPoolPackStorage)>, PostgresError> {
-        git_pool_pack_storage(self.db.as_ref(), repo_id, pack_ids).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let rows = git_pool_pack_storage(&tx, repo_id, pack_ids).await?;
+        tx.commit().await?;
+        Ok(rows)
     }
 }
 

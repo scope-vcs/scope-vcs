@@ -8,8 +8,9 @@ const PUSH_COLUMNS: &str = "id,repo_id,request_id,ref,sequence,installation_id,\
 async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    db.execute_unprepared(&format!(
-        r#"
+    db.fixture()
+        .execute_unprepared(&format!(
+            r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);
         INSERT INTO scope_repositories (id,owner_handle,name,owner_user_id,publication_state,
             change_version,content_version,repo_config,policy,incarnation_id)
@@ -32,9 +33,9 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
             commit_oid,name,status,conclusion,details_url,updated_at_unix,check_suite_id)
             VALUES (1,'owner/one',42,repeat('a',40),'test','completed','success',NULL,20,5);
         "#
-    ))
-    .await
-    .unwrap();
+        ))
+        .await
+        .unwrap();
 
     for invalid in [
         format!(
@@ -68,10 +69,14 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
         "UPDATE scope_github_workflow_runs SET stage = 1".to_string(),
         "UPDATE scope_github_workflow_runs SET run_attempt = 0".to_string(),
     ] {
-        assert!(db.execute_unprepared(&invalid).await.is_err(), "{invalid}");
+        assert!(
+            db.fixture().execute_unprepared(&invalid).await.is_err(),
+            "{invalid}"
+        );
     }
 
-    db.execute_unprepared("DELETE FROM scope_repositories WHERE id = 'owner/one'")
+    db.fixture()
+        .execute_unprepared("DELETE FROM scope_repositories WHERE id = 'owner/one'")
         .await
         .unwrap();
     for (table, kept) in [
@@ -81,6 +86,7 @@ async fn setup_checks_push_their_own_branch_and_workflow_runs_need_a_known_shape
         ("scope_github_check_runs", 0),
     ] {
         let row = db
+            .fixture()
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!("SELECT count(*) AS count FROM {table}"),

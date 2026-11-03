@@ -23,6 +23,7 @@ async fn column(fixture: &Fixture, sql: &str, key: &str) -> String {
     fixture
         .store
         .db
+        .fixture()
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
@@ -104,11 +105,13 @@ async fn an_expired_final_attempt_fails_the_attachment_until_a_manual_retry() {
             .await
             .is_none()
     );
-    let failed =
-        super::super::persistence::attachment_by_id(fixture.store.db.as_ref(), "capped_attachment")
-            .await
-            .unwrap()
-            .unwrap();
+    let failed = super::super::persistence::attachment_by_id(
+        &fixture.store.db.fixture(),
+        "capped_attachment",
+    )
+    .await
+    .unwrap()
+    .unwrap();
     assert_eq!(failed.state, RequestAttachmentState::Failed);
     let failure = failed.failure.unwrap();
     assert_eq!(failure.code, RequestAttachmentFailureCode::Internal);

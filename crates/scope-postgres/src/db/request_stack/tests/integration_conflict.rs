@@ -16,7 +16,7 @@ async fn integration_conflict_marker_fences_main_and_request_then_propagates_and
     .await;
     let child = start(&store, "child", pin(&store, &parent).await, 6).await;
     let main = "d".repeat(40);
-    store.db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+    store.db.fixture().execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "INSERT INTO scope_git_heads (repo_id, head_oid, push_sequence, change_version, frontier_digest) VALUES ($1, $2, 1, 1, $3)",
         [parent.repo_id.clone().into(), main.clone().into(), "sha256-main-frontier".into()])).await.unwrap();
     for (head, version, expected_main) in [

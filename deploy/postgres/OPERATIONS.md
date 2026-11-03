@@ -10,6 +10,8 @@
 | Media worker | `scope_media_worker` | Media processing/cleanup tables; reads repositories and requests. |
 | Private maintenance | `scope_migrator` | Database/schema/object owner. Can migrate and restore; inherits `pg_signal_backend` to drain runtime writer sessions. |
 
+Repository-owned tables force row security. Runtime logins see and write only the rows of the repository their transaction declares; the policies read transaction-local settings and call no application routine, so they need no EXECUTE grant. A direct `psql` session as a runtime login or as `scope_migrator` sees no repository rows, because the owner is also subject to the forced policies. Maintenance that must read them sets `scope.system_reason` with `SET LOCAL` inside its own transaction, or for a whole session with `PGOPTIONS='-c scope.system_reason=<reason>'`. Backups run `pg_dump --enable-row-security` with that session option; without it `pg_dump` fails on the first forced table. Restores need no setting: the dump enables row security after loading data.
+
 Every runtime login can read the migration ledger and use `public`. None can create permanent or temporary tables, change schema, create roles, bypass row security, become the migration owner or inherit another role. Only API/run worker can advance the run sequence. New tables and functions receive no runtime access until this explicit policy is updated. The policy removes stale table, column, sequence and routine grants, including grants through `PUBLIC`. Extension-owned routines retain their extension privileges and ownership; Scope application routines receive no runtime EXECUTE grant.
 
 ## Initial cutover

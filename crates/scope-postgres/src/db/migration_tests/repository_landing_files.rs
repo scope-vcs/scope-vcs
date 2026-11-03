@@ -1,6 +1,6 @@
 use super::*;
 
-async fn insert_repository(db: &DatabaseConnection) {
+async fn insert_repository(db: &impl ConnectionTrait) {
     db.execute_unprepared(
         "
         INSERT INTO scope_users (id, handle, email, email_verified)
@@ -22,9 +22,10 @@ async fn insert_repository(db: &DatabaseConnection) {
 async fn repository_landing_file_schema_enforces_identity_bounds_and_cascade() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    insert_repository(db.as_ref()).await;
-    db.execute_unprepared(
-        "
+    insert_repository(&db.fixture()).await;
+    db.fixture()
+        .execute_unprepared(
+            "
         INSERT INTO scope_repository_landing_files (
             repo_id, path, oid, sha256, size_bytes, git_file_mode, content_bytes
         ) VALUES (
@@ -32,49 +33,54 @@ async fn repository_landing_file_schema_enforces_identity_bounds_and_cascade() {
             1, '100644', decode('61', 'hex')
         );
         ",
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 
     assert!(
-        db.execute_unprepared(
-            "
+        db.fixture()
+            .execute_unprepared(
+                "
             UPDATE scope_repository_landing_files
             SET path = '/readme.html'
             WHERE repo_id = 'landing-owner/repo'
             ",
-        )
-        .await
-        .is_err()
+            )
+            .await
+            .is_err()
     );
     assert!(
-        db.execute_unprepared(
-            "
+        db.fixture()
+            .execute_unprepared(
+                "
             UPDATE scope_repository_landing_files
             SET size_bytes = 1048577,
                 content_bytes = repeat('a', 1048577)::bytea
             WHERE repo_id = 'landing-owner/repo'
             ",
-        )
-        .await
-        .is_err()
+            )
+            .await
+            .is_err()
     );
     assert!(
-        db.execute_unprepared(
-            "
+        db.fixture()
+            .execute_unprepared(
+                "
             UPDATE scope_repository_landing_files
             SET size_bytes = 2
             WHERE repo_id = 'landing-owner/repo'
             ",
-        )
-        .await
-        .is_err()
+            )
+            .await
+            .is_err()
     );
 
-    db.execute_unprepared("DELETE FROM scope_repositories WHERE id = 'landing-owner/repo'")
+    db.fixture()
+        .execute_unprepared("DELETE FROM scope_repositories WHERE id = 'landing-owner/repo'")
         .await
         .unwrap();
     let remaining = db
+        .fixture()
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*) AS count FROM scope_repository_landing_files".to_string(),

@@ -4,8 +4,9 @@ use super::*;
 async fn run_import_counts_stay_in_bounds_and_imports_keep_a_consistent_state() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    db.execute_unprepared(
-        r#"
+    db.fixture()
+        .execute_unprepared(
+            r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);
         INSERT INTO scope_repositories (id,owner_handle,name,owner_user_id,publication_state,
             change_version,content_version,repo_config,policy,incarnation_id)
@@ -15,9 +16,9 @@ async fn run_import_counts_stay_in_bounds_and_imports_keep_a_consistent_state() 
             attempts,imported_count,last_error,next_attempt_at_unix,queued_at_unix)
             VALUES ('owner/one',42,50,'queued',1,0,'GitHub answered 502',40,10);
         "#,
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 
     for invalid in [
         "UPDATE scope_github_run_import_counts SET run_count = 1001",
@@ -31,21 +32,27 @@ async fn run_import_counts_stay_in_bounds_and_imports_keep_a_consistent_state() 
         "UPDATE scope_github_run_imports SET imported_count = 51",
         "UPDATE scope_github_run_imports SET github_repository_id = 0",
     ] {
-        assert!(db.execute_unprepared(invalid).await.is_err(), "{invalid}");
+        assert!(
+            db.fixture().execute_unprepared(invalid).await.is_err(),
+            "{invalid}"
+        );
     }
-    db.execute_unprepared(
-        "UPDATE scope_github_run_imports
+    db.fixture()
+        .execute_unprepared(
+            "UPDATE scope_github_run_imports
             SET state = 'succeeded', last_error = NULL, imported_count = 50,
                 finished_at_unix = 20",
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 
-    db.execute_unprepared("DELETE FROM scope_repositories WHERE id = 'owner/one'")
+    db.fixture()
+        .execute_unprepared("DELETE FROM scope_repositories WHERE id = 'owner/one'")
         .await
         .unwrap();
     for table in ["scope_github_run_import_counts", "scope_github_run_imports"] {
         let row = db
+            .fixture()
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!("SELECT count(*) AS count FROM {table}"),
@@ -55,5 +62,5 @@ async fn run_import_counts_stay_in_bounds_and_imports_keep_a_consistent_state() 
             .unwrap();
         assert_eq!(row.try_get::<i64>("", "count").unwrap(), 0, "{table}");
     }
-    migrations::assert_exact_state(db.as_ref()).await.unwrap();
+    migrations::assert_exact_state(&db.fixture()).await.unwrap();
 }

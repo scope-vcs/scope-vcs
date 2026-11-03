@@ -101,6 +101,7 @@ async fn queue_placement_sql_matches_domain_for_fact_combinations() {
     );
     let actual = postgres_store()
         .db
+        .fixture()
         .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, sql))
         .await
         .unwrap();

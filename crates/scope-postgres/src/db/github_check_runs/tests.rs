@@ -7,6 +7,7 @@ async fn reads_the_latest_run_of_each_name_on_the_requested_commits() {
     let store = postgres_store();
     store
         .db
+        .fixture()
         .execute_unprepared(
             r#"
             INSERT INTO scope_github_check_runs (
@@ -26,9 +27,10 @@ async fn reads_the_latest_run_of_each_name_on_the_requested_commits() {
         .await
         .unwrap();
 
-    let mut runs = latest_github_check_runs(store.db.as_ref(), "owner/repo", 42, &["a".repeat(40)])
-        .await
-        .unwrap();
+    let mut runs =
+        latest_github_check_runs(&store.db.fixture(), "owner/repo", 42, &["a".repeat(40)])
+            .await
+            .unwrap();
     runs.sort_by_key(|run| run.github_check_run_id);
     assert_eq!(
         runs,
@@ -54,7 +56,7 @@ async fn reads_the_latest_run_of_each_name_on_the_requested_commits() {
         ]
     );
     assert_eq!(
-        latest_github_check_runs(store.db.as_ref(), "owner/repo", 43, &["a".repeat(40)])
+        latest_github_check_runs(&store.db.fixture(), "owner/repo", 43, &["a".repeat(40)])
             .await
             .unwrap()
             .iter()
@@ -63,13 +65,13 @@ async fn reads_the_latest_run_of_each_name_on_the_requested_commits() {
         [6]
     );
     assert!(
-        latest_github_check_runs(store.db.as_ref(), "other/repo", 42, &["a".repeat(40)])
+        latest_github_check_runs(&store.db.fixture(), "other/repo", 42, &["a".repeat(40)])
             .await
             .unwrap()
             .is_empty()
     );
     assert!(
-        latest_github_check_runs(store.db.as_ref(), "owner/repo", 42, &[])
+        latest_github_check_runs(&store.db.fixture(), "owner/repo", 42, &[])
             .await
             .unwrap()
             .is_empty()
@@ -98,7 +100,7 @@ async fn a_read_that_answers_late_cannot_replace_a_later_one() {
         commit_oid: "a".repeat(40),
     };
     let latest = || async {
-        latest_github_check_runs(store.db.as_ref(), "owner/repo", 42, &["a".repeat(40)])
+        latest_github_check_runs(&store.db.fixture(), "owner/repo", 42, &["a".repeat(40)])
             .await
             .unwrap()
     };

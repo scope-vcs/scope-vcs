@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RunStore, entities,
     run_attempt_persistence::{locked_jobs, locked_run, save_jobs, save_run},
@@ -5,7 +6,7 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::runs::{job::reconcile_run, run::Run};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_capacity_retries"))]
@@ -16,6 +17,10 @@ impl RunStore {
     ) -> Result<Vec<Run>, PostgresError> {
         let cutoff =
             now_unix.saturating_sub(scope_domain::runs::job::CAPACITY_RETRY_WINDOW_SECONDS);
+        let claim = self
+            .db
+            .begin(DataScope::System(SystemReason::RunCapacityRetry))
+            .await?;
         let candidates = entities::run_job::Entity::find()
             .filter(entities::run_job::Column::State.eq("queued"))
             .filter(
@@ -25,11 +30,15 @@ impl RunStore {
             )
             .order_by_asc(entities::run_job::Column::CapacityRetryFirstRejectedAtUnix)
             .limit(limit)
-            .all(self.db.as_ref())
+            .all(&claim)
             .await?;
+        claim.commit().await?;
         let mut settled = Vec::new();
         for candidate in candidates {
-            let tx = self.db.begin().await?;
+            let tx = self
+                .db
+                .begin(DataScope::RunRepository(&candidate.run_id))
+                .await?;
             let active_auto_merge =
                 super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &candidate.run_id)
                     .await?;

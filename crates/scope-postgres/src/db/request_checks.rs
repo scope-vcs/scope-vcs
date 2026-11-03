@@ -1,5 +1,7 @@
 use super::{
-    RequestStore, entities,
+    RequestStore,
+    data_scope::DataScope,
+    entities,
     github_connections::repository_github_connection,
     github_pushes::queue_github_push,
     native_runs::lock_native_runs_availability,
@@ -21,7 +23,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter, Statement, TransactionTrait,
+    IntoActiveModel, QueryFilter, Statement,
     sea_query::{OnConflict, Query},
 };
 
@@ -56,7 +58,12 @@ impl RequestStore {
         &self,
         command: RecordRequestChecksCommand,
     ) -> Result<RequestChecksMutation, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(
+                command.repository_incarnation.repository_id(),
+            ))
+            .await?;
         super::locks::acquire_shared_repository_lock(
             &tx,
             command.repository_incarnation.repository_id(),
@@ -161,7 +168,10 @@ impl RequestStore {
         &self,
         command: ApproveRequestChecksCommand,
     ) -> Result<RequestChecksMutation, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         super::run_retention::lock_run_evidence_for_recording(&tx).await?;
@@ -227,8 +237,14 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Option<RequestRevision>, PostgresError> {
-        super::request_revision_rows::latest_revision_for_request(self.db.as_ref(), request_id)
-            .await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
+        let revision =
+            super::request_revision_rows::latest_revision_for_request(&tx, request_id).await?;
+        tx.commit().await?;
+        Ok(revision)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "latest_request_revision_through"))]
@@ -237,12 +253,18 @@ impl RequestStore {
         request_id: &str,
         through_position: u64,
     ) -> Result<Option<RequestRevision>, PostgresError> {
-        super::request_revision_rows::latest_revision_through(
-            self.db.as_ref(),
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
+        let revision = super::request_revision_rows::latest_revision_through(
+            &tx,
             request_id,
             through_position,
         )
-        .await
+        .await?;
+        tx.commit().await?;
+        Ok(revision)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_revision_with_head"))]
@@ -251,12 +273,15 @@ impl RequestStore {
         request_id: &str,
         head_oid: &str,
     ) -> Result<Option<RequestRevision>, PostgresError> {
-        super::request_revision_rows::latest_revision_with_head(
-            self.db.as_ref(),
-            request_id,
-            head_oid,
-        )
-        .await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
+        let revision =
+            super::request_revision_rows::latest_revision_with_head(&tx, request_id, head_oid)
+                .await?;
+        tx.commit().await?;
+        Ok(revision)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_check_evaluation"))]
@@ -265,7 +290,13 @@ impl RequestStore {
         request_id: &str,
         head_oid: &str,
     ) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
-        evaluation_for_head(self.db.as_ref(), request_id, head_oid).await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
+        let evaluation = evaluation_for_head(&tx, request_id, head_oid).await?;
+        tx.commit().await?;
+        Ok(evaluation)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_check_evaluation_testing"))]
@@ -274,7 +305,11 @@ impl RequestStore {
         request_id: &str,
         tested_oid: &str,
     ) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
-        entities::request_check_evaluation::Entity::find()
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
+        let evaluation = entities::request_check_evaluation::Entity::find()
             .filter(entities::request_check_evaluation::Column::RequestId.eq(request_id))
             .filter(entities::request_check_evaluation::Column::TestedOid.eq(tested_oid))
             .filter(
@@ -285,8 +320,10 @@ impl RequestStore {
                         .to_owned(),
                 ),
             )
-            .one(self.db.as_ref())
-            .await?
+            .one(&tx)
+            .await?;
+        tx.commit().await?;
+        evaluation
             .map(entities::request_check_evaluation::Model::try_into_domain)
             .transpose()
     }
@@ -297,7 +334,13 @@ impl RequestStore {
         repo_id: &str,
         evaluations: &[RequestCheckEvaluation],
     ) -> Result<RequestCheckResults, PostgresError> {
-        request_check_results(self.db.as_ref(), repo_id, evaluations).await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(repo_id))
+            .await?;
+        let results = request_check_results(&tx, repo_id, evaluations).await?;
+        tx.commit().await?;
+        Ok(results)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_check_evaluations"))]
@@ -305,10 +348,14 @@ impl RequestStore {
         &self,
         heads: &[(String, String)],
     ) -> Result<Vec<RequestCheckEvaluation>, PostgresError> {
-        if heads.is_empty() {
+        let Some((anchor, _)) = heads.first() else {
             return Ok(Vec::new());
-        }
-        entities::request_check_evaluation::Entity::find()
+        };
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(anchor))
+            .await?;
+        let evaluations = entities::request_check_evaluation::Entity::find()
             .filter(head_pairs_condition(heads))
             .filter(
                 entities::request_check_evaluation::Column::Id.in_subquery(
@@ -318,8 +365,10 @@ impl RequestStore {
                         .to_owned(),
                 ),
             )
-            .all(self.db.as_ref())
-            .await?
+            .all(&tx)
+            .await?;
+        tx.commit().await?;
+        evaluations
             .into_iter()
             .map(entities::request_check_evaluation::Model::try_into_domain)
             .collect()

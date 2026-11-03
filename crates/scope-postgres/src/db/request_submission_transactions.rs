@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     RequestStore, SubmitRequestCommand,
     github_pull_requests::queue_carrier_for_pushed_head,
@@ -5,7 +6,7 @@ use super::{
     request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
     request_lifecycle_effects::persist_lifecycle_mutation,
 };
-use sea_orm::{DatabaseTransaction, TransactionTrait};
+use sea_orm::DatabaseTransaction;
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -22,7 +23,10 @@ impl RequestStore {
         &self,
         command: SubmitRequestCommand,
     ) -> Result<RequestLifecycleMutation, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_submission_context(&tx, &command.actor_user_id, &command.request_id).await?;
         let actor_can_submit =

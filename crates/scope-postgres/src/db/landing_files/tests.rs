@@ -38,6 +38,7 @@ fn landing_file(oid: &str, bytes: &[u8]) -> RepositoryLandingFile {
 async fn row_xmin(store: &MetadataStore) -> String {
     store
         .db
+        .fixture()
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT xmin::text AS xmin FROM scope_repository_landing_files".to_string(),
@@ -52,7 +53,7 @@ async fn row_xmin(store: &MetadataStore) -> String {
 #[tokio::test]
 async fn mutations_create_replace_preserve_and_delete() {
     let store = fixture();
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
 
     let first = landing_file("first-oid", b"<h1>first</h1>");
     apply_repository_landing_file_mutation(

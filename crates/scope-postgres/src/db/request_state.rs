@@ -1,6 +1,5 @@
 use super::{
-    GitHubWorkflowRunReference, RequestInviteeRead, RequestStore, begin_metadata_read_snapshot,
-    entities,
+    GitHubWorkflowRunReference, RequestInviteeRead, RequestStore, data_scope::DataScope, entities,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -81,15 +80,16 @@ impl RequestStore {
         children_after_id: Option<&str>,
         children_limit: usize,
     ) -> Result<RequestStateSnapshot, PostgresError> {
+        let repo_id = repo_id(owner, name);
         for _ in 0..3 {
-            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-            let repository = super::repository_access::repository_access(
-                &tx,
-                &repo_id(owner, name),
-                viewer_user_id,
-            )
-            .await?
-            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+            let tx = self
+                .db
+                .begin_read_snapshot(DataScope::Repository(&repo_id))
+                .await?;
+            let repository =
+                super::repository_access::repository_access(&tx, &repo_id, viewer_user_id)
+                    .await?
+                    .ok_or_else(|| PostgresError::not_found("repo not found"))?;
             let projection = super::projection_read_models::live_projection_read_model(
                 &tx,
                 &repository.record.id,

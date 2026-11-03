@@ -1,3 +1,4 @@
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     CatalogFixture, MetadataStore, TestDatabaseTarget, repo_collaboration_tests::HISTORY_TABLES,
 };
@@ -18,7 +19,7 @@ use scope_domain::{
     views::ViewId,
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
-use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseTransaction};
 use std::time::Duration;
 
 const PROJECTION_HISTORY_TABLES: &str = "scope_logical_commits, scope_file_changes, \
@@ -119,7 +120,11 @@ fn incarnation() -> RepositoryIncarnation {
 }
 
 async fn lock(store: &MetadataStore, tables: &str) -> DatabaseTransaction {
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     held.execute_unprepared(&format!("LOCK TABLE {tables} IN ACCESS EXCLUSIVE MODE"))
         .await
         .unwrap();

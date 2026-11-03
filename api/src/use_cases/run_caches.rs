@@ -226,7 +226,11 @@ pub(crate) async fn commit_upload(
     let now = unix_now()?;
     let authorized = authorize(state, attempt_id, token_hash, &request.cache, now).await?;
     let storage = &state.run_caches;
-    let upload = state.metadata.caches().upload(&request.lease_id).await?;
+    let upload = state
+        .metadata
+        .caches()
+        .upload(&authorized.repository_id, &request.lease_id)
+        .await?;
     if upload.repository_id != authorized.repository_id
         || upload.identity_digest != authorized.exact_digest
         || upload.compatibility_group_digest != authorized.compatibility_group_digest
@@ -242,7 +246,7 @@ pub(crate) async fn commit_upload(
     match state
         .metadata
         .caches()
-        .commit_upload(&request.lease_id, now)
+        .commit_upload(&authorized.repository_id, &request.lease_id, now)
         .await?
     {
         CacheCommitResult::Committed { .. } | CacheCommitResult::AlreadyCommitted { .. } => Ok(()),

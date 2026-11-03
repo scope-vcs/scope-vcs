@@ -1,9 +1,15 @@
 use super::{
     database_u64, database_value, enqueue_dependency_analysis_target, validate_analyzer_version,
 };
-use crate::{db::JobStore, error::PostgresError};
+use crate::{
+    db::{
+        JobStore,
+        data_scope::{DataScope, SystemReason},
+    },
+    error::PostgresError,
+};
 use scope_domain::repository::RepositoryIncarnation;
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 impl JobStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "enqueue_dependency_analysis_backfill"))]
@@ -20,8 +26,11 @@ impl JobStore {
         let limit = i64::try_from(limit).map_err(|_| {
             PostgresError::internal_message("dependency backfill limit exceeds database bigint")
         })?;
-        let candidates = self
+        let scan = self
             .db
+            .begin(DataScope::System(SystemReason::DependencyAnalysis))
+            .await?;
+        let candidates = scan
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
@@ -53,10 +62,11 @@ impl JobStore {
                 [analyzer_version.into(), limit.into()],
             ))
             .await?;
+        scan.commit().await?;
         let mut enqueued = 0_u64;
         for candidate in candidates {
             let repo_id = database_value::<String>(&candidate, "id")?;
-            let tx = self.db.begin().await?;
+            let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
             super::acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
             let current = tx
                 .query_one_raw(Statement::from_sql_and_values(

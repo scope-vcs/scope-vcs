@@ -1,10 +1,11 @@
+use super::data_scope::DataScope;
 use super::{
     RepositoryMutationResult, RepositoryStore, acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_content_push},
     entities,
     request_merge::{LandedRequestCandidate, LandedRequestCompletion, complete_landed_requests},
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -56,7 +57,7 @@ impl RepositoryStore {
             now_unix,
         } = command;
         let repo_id = scope_domain::repository::repo_id(&owner, &name);
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let repo_row = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)

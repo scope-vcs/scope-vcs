@@ -55,13 +55,15 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
         .unwrap()
         .try_get::<i32>("", "pid")
         .unwrap();
-    db.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "SELECT pg_terminate_backend($1)",
-        [writer_pid.into()],
-    ))
-    .await
-    .unwrap();
+    super::system(&db)
+        .fixture()
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT pg_terminate_backend($1)",
+            [writer_pid.into()],
+        ))
+        .await
+        .unwrap();
     writer.ping().await.unwrap();
 
     let fence_error = verify_writer_fence_available(database_url.clone())
@@ -98,14 +100,16 @@ async fn maintenance_cutover_refuses_a_writer_after_its_pool_reconnects() {
     .unwrap();
     worker_store.admin().readiness_check().await.unwrap();
 
-    db.execute_unprepared(
-        "
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(
+            "
             INSERT INTO seaql_migrations (version, applied_at)
             VALUES ('m9999_unknown', 0)
         ",
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
     assert!(worker_store.admin().readiness_check().await.is_err());
 }
 
@@ -187,15 +191,17 @@ async fn preflight_requires_empty_schema_for_an_empty_ledger_without_persisting_
             .unwrap(),
         before
     );
-    assert!(!relation_exists(&db, "seaql_migrations").await);
-    assert!(!relation_exists(&db, "scope_users").await);
-    assert!(!relation_exists(&db, "pg_temp.scope_baseline_expression_inventory").await);
+    assert!(!relation_exists(db.as_ref(), "seaql_migrations").await);
+    assert!(!relation_exists(db.as_ref(), "scope_users").await);
+    assert!(!relation_exists(db.as_ref(), "pg_temp.scope_baseline_expression_inventory").await);
 
-    db.execute_unprepared(
-        "CREATE TABLE untracked (id integer CHECK (id > 0)); INSERT INTO untracked VALUES (7)",
-    )
-    .await
-    .unwrap();
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(
+            "CREATE TABLE untracked (id integer CHECK (id > 0)); INSERT INTO untracked VALUES (7)",
+        )
+        .await
+        .unwrap();
     let error = migrations::preflight(&db, Default::default())
         .await
         .unwrap_err();
@@ -204,10 +210,11 @@ async fn preflight_requires_empty_schema_for_an_empty_ledger_without_persisting_
         "{error}"
     );
     assert_eq!(migrations::plan(db.as_ref()).await.unwrap(), before);
-    assert!(!relation_exists(&db, "seaql_migrations").await);
-    assert!(!relation_exists(&db, "scope_users").await);
-    assert!(!relation_exists(&db, "pg_temp.scope_baseline_expression_inventory").await);
-    let retained = db
+    assert!(!relation_exists(db.as_ref(), "seaql_migrations").await);
+    assert!(!relation_exists(db.as_ref(), "scope_users").await);
+    assert!(!relation_exists(db.as_ref(), "pg_temp.scope_baseline_expression_inventory").await);
+    let retained = super::system(&db)
+        .fixture()
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT id FROM untracked",

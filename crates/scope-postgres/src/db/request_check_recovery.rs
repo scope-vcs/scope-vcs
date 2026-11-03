@@ -1,7 +1,12 @@
-use super::{RequestStore, entities, integer_columns::u64_to_i64};
+use super::{
+    RequestStore,
+    data_scope::{DataScope, SystemReason},
+    entities,
+    integer_columns::u64_to_i64,
+};
 use crate::error::PostgresError;
 use scope_domain::{repository::RepositoryIncarnation, requests::Request};
-use sea_orm::{DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
+use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
 
 impl RequestStore {
     pub async fn requests_needing_check_recovery(
@@ -9,7 +14,11 @@ impl RequestStore {
         after_id: Option<&str>,
         limit: u64,
     ) -> Result<Vec<Request>, PostgresError> {
-        entities::request::Model::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::System(SystemReason::RequestCheckRecovery))
+            .await?;
+        let rows = entities::request::Model::find_by_statement(Statement::from_sql_and_values(DatabaseBackend::Postgres,
             r#"SELECT request.* FROM scope_requests request
              LEFT JOIN scope_request_check_evaluations evaluation ON evaluation.id = request.current_check_evaluation_id
              LEFT JOIN scope_git_heads head ON head.repo_id = request.repo_id
@@ -21,8 +30,11 @@ impl RequestStore {
                     OR (evaluation.changes_github_workflows IS NULL AND evaluation.checks @> '[{"provider":"github"}]'::jsonb))
              ORDER BY request.id LIMIT $2"#,
              [after_id.map(str::to_string).into(), u64_to_i64(limit, "request check recovery page size")?.into()]
-        )).all(self.db.as_ref()).await?
-          .into_iter().map(entities::request::Model::try_into_domain).collect()
+        )).all(&tx).await?;
+        tx.commit().await?;
+        rows.into_iter()
+            .map(entities::request::Model::try_into_domain)
+            .collect()
     }
 
     pub async fn record_request_workflow_changes(
@@ -31,7 +43,10 @@ impl RequestStore {
         request: &Request,
         changed: bool,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(incarnation.repository_id()))
+            .await?;
         super::locks::acquire_shared_repository_lock(&tx, incarnation.repository_id()).await?;
         super::acquire_aggregate_lock(&tx, "request", &request.id).await?;
         let repo = super::repository_access::load_repo_record(&tx, &request.repo_id).await?;

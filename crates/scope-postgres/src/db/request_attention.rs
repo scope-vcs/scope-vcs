@@ -1,5 +1,7 @@
 use super::{
-    RequestStore, entities,
+    RequestStore,
+    data_scope::DataScope,
+    entities,
     request_access::{ensure_user_exists, lock_request_repository},
     request_invitees::request_is_invitee,
 };
@@ -12,9 +14,8 @@ use scope_domain::requests::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QuerySelect,
-    QueryTrait, TransactionTrait, sea_query::OnConflict,
+    QueryTrait, sea_query::OnConflict,
 };
-use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct ApplyRequestAttentionCommand {
@@ -39,8 +40,10 @@ impl RequestStore {
         &self,
         command: ApplyRequestAttentionCommand,
     ) -> Result<RequestAttentionResult, PostgresError> {
-        let db = Arc::clone(&self.db);
-        let tx = db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(&command.repo_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         if request.repo_id != command.repo_id {

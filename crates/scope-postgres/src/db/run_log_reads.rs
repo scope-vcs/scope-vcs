@@ -1,5 +1,5 @@
 use super::integer_columns;
-use super::{RunStore, entities};
+use super::{RunStore, data_scope::DataScope, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::{log::RunLogChunk, workflow::definition::WorkflowJobId};
 use sea_orm::{
@@ -73,7 +73,10 @@ impl RunStore {
         cursor: StepLogCursor,
         limit: u64,
     ) -> Result<StoredAttemptStepLogs, PostgresError> {
-        let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RunRepository(run_id))
+            .await?;
         let attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
             .filter(entities::run_attempt::Column::RunId.eq(run_id))
             .one(&tx)
@@ -172,7 +175,8 @@ impl RunStore {
             .map_err(|_| PostgresError::invalid_input("run log cursor is too large"))?;
         let limit = i64::try_from(limit)
             .map_err(|_| PostgresError::invalid_input("run log page limit is too large"))?;
-        RunLogReadRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self.db.begin(DataScope::RunRepository(run_id)).await?;
+        let logs = RunLogReadRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT log.position, log.run_id, log.attempt_id, attempt.job_key, log.step_index,
                     log.sequence, log.text, log.created_at_unix
@@ -183,20 +187,27 @@ impl RunStore {
               LIMIT $3",
             [run_id.into(), after.into(), limit.into()],
         ))
-        .all(self.db.as_ref())
+        .all(&tx)
         .await?
         .into_iter()
         .map(RunLogReadRow::try_into_stored)
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+        tx.commit().await?;
+        Ok(logs)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "next_attempt_log_sequence"))]
     pub async fn next_attempt_log_sequence(&self, attempt_id: &str) -> Result<u64, PostgresError> {
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let last = entities::run_log::Entity::find()
             .filter(entities::run_log::Column::AttemptId.eq(attempt_id))
             .order_by_desc(entities::run_log::Column::Sequence)
-            .one(self.db.as_ref())
+            .one(&tx)
             .await?;
+        tx.commit().await?;
         match last {
             Some(log) => integer_columns::i64_to_u64(log.sequence, "run log sequence")?
                 .checked_add(1)

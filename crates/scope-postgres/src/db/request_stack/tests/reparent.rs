@@ -83,14 +83,14 @@ async fn reparenting_main_request_commits_revision_and_ends_evidence_and_intent(
         assert_eq!(reference_count(&store, &original.id).await, 1);
         assert_eq!(reference_count(&store, &accepted.revision.id).await, 1);
         let row = entities::request::Entity::find_by_id(&child.id)
-            .one(store.db.as_ref())
+            .one(&store.db.fixture())
             .await
             .unwrap()
             .unwrap();
         assert_eq!(row.current_check_evaluation_id, None);
         let historical_evaluation =
             entities::request_check_evaluation::Entity::find_by_id(&evaluation.id)
-                .one(store.db.as_ref())
+                .one(&store.db.fixture())
                 .await
                 .unwrap()
                 .unwrap()

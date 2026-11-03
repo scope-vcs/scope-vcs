@@ -1,5 +1,7 @@
 use super::{
-    RequestStore, entities,
+    RequestStore,
+    data_scope::DataScope,
+    entities,
     request_checks::{
         evaluation_for_head, queue_tested_commit_push, save_evaluation, select_current_evaluation,
     },
@@ -8,7 +10,7 @@ use crate::error::PostgresError;
 use scope_domain::requests::{
     GitHubTestedCommit, Request, RequestCheckPlan, stop_request_auto_merge_for_check_evaluation,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement};
 
 use super::request_checks::RequestChecksMutation;
 
@@ -26,7 +28,13 @@ pub struct RebuildCheckCommitCommand {
 
 impl RequestStore {
     pub async fn request_check_base(&self, repo_id: &str) -> Result<Option<String>, PostgresError> {
-        canonical_main_oid(self.db.as_ref(), repo_id).await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(repo_id))
+            .await?;
+        let oid = canonical_main_oid(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(oid)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "rebuild_request_check_commit"))]
@@ -34,7 +42,12 @@ impl RequestStore {
         &self,
         command: RebuildCheckCommitCommand,
     ) -> Result<Option<RequestChecksMutation>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(
+                command.repository_incarnation.repository_id(),
+            ))
+            .await?;
         super::locks::acquire_shared_repository_lock(
             &tx,
             command.repository_incarnation.repository_id(),
@@ -117,8 +130,11 @@ impl RequestStore {
         &self,
         repo_id: &str,
     ) -> Result<Vec<Request>, PostgresError> {
-        let ids = self
+        let tx = self
             .db
+            .begin_read_snapshot(DataScope::Repository(repo_id))
+            .await?;
+        let ids = tx
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
@@ -147,11 +163,11 @@ impl RequestStore {
             .collect::<Result<Vec<_>, _>>()?;
         let mut requests = Vec::with_capacity(ids.len());
         for id in ids {
-            if let Some(request) = super::request_rows::request_by_id(self.db.as_ref(), &id).await?
-            {
+            if let Some(request) = super::request_rows::request_by_id(&tx, &id).await? {
                 requests.push(request);
             }
         }
+        tx.commit().await?;
         Ok(requests)
     }
 }

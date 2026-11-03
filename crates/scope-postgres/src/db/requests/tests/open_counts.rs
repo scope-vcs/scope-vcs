@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::RepositoryMutation;
-use sea_orm::TransactionTrait;
+use crate::db::data_scope::{DataScope, SystemReason};
 use std::collections::BTreeMap;
 
 #[tokio::test]
@@ -37,7 +37,7 @@ async fn open_request_counts_group_unfinished_requests_by_view() {
             request.merged_main_oid = Some("merged-main".into());
         }
         request.updated_at_unix = 4;
-        crate::db::request_rows::insert_request_row(store.db.as_ref(), &request)
+        crate::db::request_rows::insert_request_row(&store.db.fixture(), &request)
             .await
             .unwrap();
     }
@@ -47,7 +47,7 @@ async fn open_request_counts_group_unfinished_requests_by_view() {
         [(agent, 2), (ViewId::public(), 1)].into_iter().collect()
     );
     assert!(
-        crate::db::request_rows::open_request_counts_by_view(store.db.as_ref(), "other/repo")
+        crate::db::request_rows::open_request_counts_by_view(&store.db.fixture(), "other/repo")
             .await
             .unwrap()
             .is_empty()
@@ -63,7 +63,11 @@ async fn a_repository_mutation_counts_requests_started_while_it_waited_for_the_l
         .await
         .unwrap()
         .request;
-    let starting = store.db.begin().await.unwrap();
+    let starting = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     crate::db::acquire_aggregate_lock(&starting, "repository", "owner/repo")
         .await
         .unwrap();

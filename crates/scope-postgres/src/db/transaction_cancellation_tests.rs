@@ -1,7 +1,9 @@
 use super::{
-    GitHubCheckCommit, connection::begin_metadata_read_snapshot, requests::tests::postgres_store,
+    GitHubCheckCommit,
+    data_scope::{DataScope, ScopedDatabase, SystemReason},
+    requests::tests::postgres_store,
 };
-use sea_orm::{ConnectionTrait, SqlxPostgresConnector, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use sqlx::{Connection, postgres::PgPoolOptions};
 use std::{future::poll_fn, sync::Arc, task::Poll};
 
@@ -10,8 +12,9 @@ async fn cancelled_begin_cannot_roll_back_the_next_borrowers_check_read() {
     let mut store = postgres_store();
     let observer = Arc::clone(&store.db);
     let schema = observer
+        .fixture()
         .query_one_raw(Statement::from_string(
-            observer.get_database_backend(),
+            DatabaseBackend::Postgres,
             "SELECT current_schema() AS name".to_owned(),
         ))
         .await
@@ -19,13 +22,13 @@ async fn cancelled_begin_cannot_roll_back_the_next_borrowers_check_read() {
         .unwrap()
         .try_get::<String>("", "name")
         .unwrap();
-    let options = observer.get_postgres_connection_pool().connect_options();
+    let options = observer.pool_for_tests().connect_options();
     let pool = PgPoolOptions::new()
         .max_connections(1)
         .connect_with((*options).clone().options([("search_path", schema)]))
         .await
         .unwrap();
-    store.db = Arc::new(SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone()));
+    store.db = Arc::new(ScopedDatabase::from_pool(pool.clone()));
     let commit = GitHubCheckCommit {
         repo_id: "owner/repo".into(),
         github_repository_id: 42,
@@ -34,7 +37,7 @@ async fn cancelled_begin_cannot_roll_back_the_next_borrowers_check_read() {
     let requests = store.requests();
     assert_eq!(requests.start_github_check_read(&commit).await.unwrap(), 1);
 
-    let blocker = observer.begin().await.unwrap();
+    let blocker = observer.begin(DataScope::NoRepository).await.unwrap();
     blocker
         .execute_unprepared(
             "SELECT pg_advisory_xact_lock(hashtextextended(current_database(), 73))",
@@ -62,8 +65,9 @@ async fn cancelled_begin_cannot_roll_back_the_next_borrowers_check_read() {
     let read = requests.start_github_check_read(&commit).await.unwrap();
     assert_eq!(read, 2);
     let visible_read = observer
+        .fixture()
         .query_one_raw(Statement::from_string(
-            observer.get_database_backend(),
+            DatabaseBackend::Postgres,
             "SELECT started_reads FROM scope_github_check_refreshes".to_owned(),
         ))
         .await
@@ -73,7 +77,11 @@ async fn cancelled_begin_cannot_roll_back_the_next_borrowers_check_read() {
         .unwrap();
     assert_eq!(visible_read, 2, "a returned read number must be committed");
 
-    let snapshot = begin_metadata_read_snapshot(&store.db).await.unwrap();
+    let snapshot = store
+        .db
+        .begin_read_snapshot(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     snapshot.commit().await.unwrap();
     assert!(
         requests

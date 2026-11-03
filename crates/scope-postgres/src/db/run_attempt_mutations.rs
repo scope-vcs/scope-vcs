@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     AttemptMutation, DispatchClaim, RunStore,
     run_attempt_persistence::{
@@ -18,7 +19,7 @@ use scope_domain::{
         workflow::revision::WorkflowRevision,
     },
 };
-use sea_orm::{DatabaseTransaction, TransactionTrait};
+use sea_orm::DatabaseTransaction;
 
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_runtime"))]
@@ -30,7 +31,10 @@ impl RunStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let (run, job, mut attempt) = locked_attempt_context(&tx, attempt_id).await?;
         let steps = locked_attempt_steps(&tx, attempt_id).await?;
         attempt
@@ -56,7 +60,10 @@ impl RunStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let (run, job, attempt) = locked_attempt_context(&tx, attempt_id).await?;
         let steps = locked_attempt_steps(&tx, attempt_id).await?;
         attempt
@@ -78,7 +85,10 @@ impl RunStore {
             &mut [RunAttemptStep],
         ) -> Result<(), DomainError>,
     ) -> Result<AttemptMutation, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let guard_run_id = attempt_run_id(&tx, attempt_id).await?;
         let active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;
@@ -122,7 +132,10 @@ impl RunStore {
             &mut [RunAttemptStep],
         ) -> Result<(), DomainError>,
     ) -> Result<DispatchClaim, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let guard_run_id = attempt_run_id(&tx, attempt_id).await?;
         let active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, &guard_run_id).await?;

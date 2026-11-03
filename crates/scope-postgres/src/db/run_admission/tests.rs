@@ -59,6 +59,7 @@ async fn concurrent_admission_obeys_global_capacity() {
         let row = store
             .runs()
             .db
+            .fixture()
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!(
@@ -78,6 +79,7 @@ async fn final_dispatch_expiry_is_terminal_and_healthy_job_progresses() {
     let store = fixture(2).await;
     let runs = store.runs();
     runs.db
+        .fixture()
         .execute_unprepared(
             "UPDATE scope_run_jobs SET last_attempt_number = 99 WHERE run_id = 'run-000'",
         )

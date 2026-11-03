@@ -44,7 +44,7 @@ async fn content_fence_serializes_publication_with_delete_revalidation() {
     .await;
 
     super::object_references::insert_object_reference(
-        store.db.as_ref(),
+        &store.db.fixture(),
         "test-publication",
         "fenced-publication",
         &blob,
@@ -153,7 +153,7 @@ async fn reclaimed_source_blob_rejects_stale_completion() {
     let row = entities::source_blob_cleanup_job::Entity::find_by_id(
         serde_json::to_string(&content_ref).unwrap(),
     )
-    .one(store.db.as_ref())
+    .one(&store.db.fixture())
     .await
     .unwrap()
     .unwrap();
@@ -178,7 +178,7 @@ async fn make_source_blob_cleanup_due(
             entities::source_blob_cleanup_job::Column::NextRunAtUnix,
             Expr::value(0_i64),
         )
-        .exec(store.db.as_ref())
+        .exec(&store.db.fixture())
         .await
         .unwrap();
 }

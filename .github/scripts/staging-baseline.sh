@@ -57,13 +57,13 @@ if ! (maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
   node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null
 fi
 maintenance preflight >/dev/null
-[[ "$(railway_private_read "$environment" sh -c 'exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline 'SELECT count(*) > 0 FROM scope_repositories' < /dev/null)" == t ]]
+[[ "$(railway_private_read "$environment" sh -c 'PGOPTIONS="-c scope.system_reason=database-maintenance" exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline 'SELECT count(*) > 0 FROM scope_repositories' < /dev/null)" == t ]]
 if jq -e '.pending | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN" >/dev/null; then
   exit 0
 fi
 : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to retain a snapshot}"
 restore_safe="$(jq -r 'if (.metadataRestoreSafe | type) == "boolean" then .metadataRestoreSafe else error("Migration plan must declare metadataRestoreSafe") end' "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
-railway_private_command "$environment" sh -c 'exec pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-privileges' > "$SCOPE_STAGING_BASELINE_DIR/database.dump"
+railway_private_command "$environment" sh -c 'PGOPTIONS="-c scope.system_reason=database-backup" exec pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-privileges --enable-row-security' > "$SCOPE_STAGING_BASELINE_DIR/database.dump"
 jq -n --argjson safe "$restore_safe" --arg environment "$environment" --arg key "$key" \
   '{environmentId: $environment, ledgerHash: $key, metadataRestoreSafe: $safe}' > "$SCOPE_STAGING_BASELINE_DIR/baseline.json"
 node .github/scripts/staging-baseline-crypto.mjs encrypt \

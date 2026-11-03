@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RequestStore,
     entities::{decode_enum, encode_enum},
@@ -13,7 +14,7 @@ use scope_domain::{
     },
     views::Views,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use std::collections::HashMap;
 
 #[cfg(test)]
@@ -38,7 +39,11 @@ impl RequestStore {
         lease_until_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubReviewBotReconcile>, PostgresError> {
-        self.db
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let rows = tx
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_github_pull_requests pull_request
@@ -62,8 +67,9 @@ impl RequestStore {
                     u64_to_i64(limit, "review bot reconcile batch size")?.into(),
                 ],
             ))
-            .await?
-            .into_iter()
+            .await?;
+        tx.commit().await?;
+        rows.into_iter()
             .map(|row| {
                 let column = |name: &str| row.try_get::<i64>("", name);
                 Ok(GitHubReviewBotReconcile {
@@ -103,7 +109,10 @@ impl RequestStore {
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
         let request_id = reconcile.request_id.as_str();
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(&reconcile.repo_id))
+            .await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_github_pull_requests SET review_bots_due_at_unix = $2
@@ -163,8 +172,11 @@ impl RequestStore {
         github_repository_id: u64,
         number: u64,
     ) -> Result<bool, PostgresError> {
-        let requeued = self
+        let tx = self
             .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let requeued = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_github_pull_requests SET review_bots_due_at_unix = 0
@@ -175,6 +187,7 @@ impl RequestStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         Ok(requeued.rows_affected() > 0)
     }
 
@@ -184,7 +197,10 @@ impl RequestStore {
         repo_id: &str,
         request_ids: &[String],
     ) -> Result<HashMap<String, RequestBotReviews>, PostgresError> {
-        request_bot_reviews(self.db.as_ref(), repo_id, request_ids).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let reviews = request_bot_reviews(&tx, repo_id, request_ids).await?;
+        tx.commit().await?;
+        Ok(reviews)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_reviews_outcome"))]
@@ -193,7 +209,13 @@ impl RequestStore {
         request: &Request,
         views: &Views,
     ) -> Result<RequestReviewsOutcome, PostgresError> {
-        reviews_outcome(self.db.as_ref(), request, views).await
+        let tx = self
+            .db
+            .begin(DataScope::Repository(&request.repo_id))
+            .await?;
+        let outcome = reviews_outcome(&tx, request, views).await?;
+        tx.commit().await?;
+        Ok(outcome)
     }
 }
 

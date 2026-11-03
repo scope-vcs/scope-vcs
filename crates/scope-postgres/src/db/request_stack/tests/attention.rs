@@ -33,14 +33,14 @@ async fn snapshot(
         request_id.to_string(),
         "user_owner".to_string(),
     ))
-    .one(store.db.as_ref())
+    .one(&store.db.fixture())
     .await
     .unwrap()
     .unwrap()
     .try_into_domain()
     .unwrap();
     let claim = entities::request_claim::Entity::find_by_id(request_id)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .map(|claim| claim.try_into_domain().unwrap());

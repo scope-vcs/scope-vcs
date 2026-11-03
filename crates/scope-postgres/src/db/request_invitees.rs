@@ -1,10 +1,12 @@
 use super::{
-    RequestStore, entities,
+    RequestStore,
+    data_scope::DataScope,
+    entities,
     request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, Statement, TransactionTrait,
+    QueryFilter, QueryOrder, Statement,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use {
@@ -87,7 +89,13 @@ impl RequestStore {
         repository_id: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Vec<(scope_domain::requests::Request, bool)>, PostgresError> {
-        requests_with_invitee_status(self.db.as_ref(), repository_id, viewer_user_id).await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(repository_id))
+            .await?;
+        let requests = requests_with_invitee_status(&tx, repository_id, viewer_user_id).await?;
+        tx.commit().await?;
+        Ok(requests)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_invitees"))]
@@ -95,7 +103,13 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Vec<RequestInviteeRead>, PostgresError> {
-        request_invitee_reads(self.db.as_ref(), request_id).await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
+        let invitees = request_invitee_reads(&tx, request_id).await?;
+        tx.commit().await?;
+        Ok(invitees)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_is_invitee"))]
@@ -104,7 +118,13 @@ impl RequestStore {
         request_id: &str,
         user_id: &str,
     ) -> Result<bool, PostgresError> {
-        request_is_invitee(self.db.as_ref(), request_id, user_id).await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
+        let invitee = request_is_invitee(&tx, request_id, user_id).await?;
+        tx.commit().await?;
+        Ok(invitee)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "add_request_invitee"))]
@@ -112,7 +132,10 @@ impl RequestStore {
         &self,
         command: AddRequestInviteeCommand,
     ) -> Result<RequestInviteeRead, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -156,7 +179,10 @@ impl RequestStore {
         &self,
         command: RemoveRequestInviteeCommand,
     ) -> Result<RequestInviteeRead, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -190,7 +216,10 @@ impl RequestStore {
         &self,
         command: LeaveRequestCommand,
     ) -> Result<RequestInviteeRead, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         let actor = user_by_id(&tx, &command.actor_user_id)
@@ -416,13 +445,13 @@ mod tests {
         start_public_request(&store, "request_exact").await;
 
         assert!(
-            user_by_exact_handle(store.db.as_ref(), "target-0")
+            user_by_exact_handle(&store.db.fixture(), "target-0")
                 .await
                 .unwrap()
                 .is_some()
         );
         assert!(
-            user_by_exact_handle(store.db.as_ref(), "Target-0")
+            user_by_exact_handle(&store.db.fixture(), "Target-0")
                 .await
                 .unwrap()
                 .is_none()
@@ -581,7 +610,7 @@ mod tests {
             .unwrap();
         request.submitted_at_unix = Some(4);
         request.updated_at_unix = 4;
-        super::super::request_rows::save_request_row(store.db.as_ref(), &request)
+        super::super::request_rows::save_request_row(&store.db.fixture(), &request)
             .await
             .unwrap();
         let removed = store

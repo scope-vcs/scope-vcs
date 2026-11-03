@@ -1,11 +1,10 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     GeneratedIdKind, JobStore, acquire_aggregate_lock, entities,
     generated_ids::generate_id,
     git_segments::{load_main_pool_packs, register_git_pool_pack, retire_git_segment},
 };
-use sea_orm::{
-    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, Statement, TransactionTrait,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, Statement};
 use {
     crate::{
         db::integer_columns::{i32_to_u32, i64_to_u64, u64_to_i64},
@@ -113,7 +112,10 @@ impl JobStore {
             PostgresError::internal_message("Git compaction lease expiry exceeds database bigint")
         })?;
         let lease_generation = generate_id(GeneratedIdKind::CleanupGeneration)?;
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitCompaction))
+            .await?;
         let Some(job) =
             entities::git_compaction_job::Model::find_by_statement(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -190,7 +192,7 @@ impl JobStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let now = u64_to_i64(now_unix, "Git compaction time")?;
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&claim.repo_id)).await?;
         tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
@@ -245,8 +247,8 @@ impl JobStore {
         let lease_expires = now.checked_add(lease_seconds).ok_or_else(|| {
             PostgresError::internal_message("Git compaction lease expiry exceeds database bigint")
         })?;
-        let result = self
-            .db
+        let tx = self.db.begin(DataScope::Repository(&claim.repo_id)).await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
@@ -265,6 +267,7 @@ impl JobStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -275,10 +278,10 @@ impl JobStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let now = u64_to_i64(now_unix, "Git compaction time")?;
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
+        let tx = self.db.begin(DataScope::Repository(&claim.repo_id)).await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
                     UPDATE scope_git_compaction_jobs
                     SET lease_generation = NULL,
                         lease_owner = NULL,
@@ -289,13 +292,14 @@ impl JobStore {
                         updated_at_unix = GREATEST(updated_at_unix, $3)
                     WHERE repo_id = $1 AND lease_generation = $2
                 "#,
-                [
-                    claim.repo_id.clone().into(),
-                    claim.lease_generation.clone().into(),
-                    now.into(),
-                ],
-            ))
-            .await?;
+            [
+                claim.repo_id.clone().into(),
+                claim.lease_generation.clone().into(),
+                now.into(),
+            ],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -308,10 +312,10 @@ impl JobStore {
     ) -> Result<(), PostgresError> {
         let now = u64_to_i64(now_unix, "Git compaction time")?;
         let error = bounded_compaction_error(error);
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
+        let tx = self.db.begin(DataScope::Repository(&claim.repo_id)).await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
                     UPDATE scope_git_compaction_jobs
                     SET lease_generation = NULL,
                         lease_owner = NULL,
@@ -325,15 +329,16 @@ impl JobStore {
                         updated_at_unix = GREATEST(updated_at_unix, $3)
                     WHERE repo_id = $1 AND lease_generation = $2
                 "#,
-                [
-                    claim.repo_id.clone().into(),
-                    claim.lease_generation.clone().into(),
-                    now.into(),
-                    error.into(),
-                    MAX_COMPACTION_RETRY_SECONDS.into(),
-                ],
-            ))
-            .await?;
+            [
+                claim.repo_id.clone().into(),
+                claim.lease_generation.clone().into(),
+                now.into(),
+                error.into(),
+                MAX_COMPACTION_RETRY_SECONDS.into(),
+            ],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -351,7 +356,7 @@ impl JobStore {
             PostgresError::internal_message("Git compaction replacement must be a segment")
         })?;
         let selected = plan.selected_packs();
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
         acquire_aggregate_lock(&tx, "repository", repo_id).await?;
         let current = load_main_pool_packs(&tx, repo_id).await?;
         let still_current = selected

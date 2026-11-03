@@ -1,4 +1,5 @@
 use super::RepositoryStore;
+use super::data_scope::DataScope;
 use crate::error::PostgresError;
 use scope_domain::{
     github_connection::set_github_required_checks, repository::RepositoryIncarnation,
@@ -11,7 +12,10 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Vec<String>, PostgresError> {
-        required_check_names(self.db.as_ref(), repo_id).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let names = required_check_names(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(names)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "set_github_required_checks"))]

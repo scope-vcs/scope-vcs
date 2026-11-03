@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RequestStore, acquire_aggregate_lock,
     generated_ids::{GeneratedIdKind, generate_id},
@@ -25,10 +26,7 @@ use scope_domain::{
     },
     views::Views,
 };
-use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, Statement,
-    TransactionTrait,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, Statement};
 
 #[cfg(test)]
 mod tests;
@@ -146,7 +144,7 @@ impl RequestStore {
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
         let columns = subject_columns(&job.subject)?;
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&job.repo_id)).await?;
         let carrier =
             super::github_pull_requests::github_pull_request(&tx, &job.request_id).await?;
         if !review_delivery_belongs_to_request(carrier.as_ref(), job.pull_number) {
@@ -205,7 +203,11 @@ impl RequestStore {
         retry_at_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubReviewImportJob>, PostgresError> {
-        ImportJobRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let rows = ImportJobRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_github_review_imports job
                 SET attempts = job.attempts + 1,
@@ -231,11 +233,10 @@ impl RequestStore {
                 u64_to_i64(limit, "GitHub review import batch size")?.into(),
             ],
         ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(ImportJobRow::into_job)
-        .collect()
+        .all(&tx)
+        .await?;
+        tx.commit().await?;
+        rows.into_iter().map(ImportJobRow::into_job).collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_review_import"))]
@@ -271,13 +272,14 @@ impl RequestStore {
                 )
             }
         };
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                sql,
-                values,
-            ))
-            .await?;
+        let tx = self.db.begin(DataScope::Repository(&job.repo_id)).await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -287,15 +289,19 @@ impl RequestStore {
         request_id: &str,
         review_id: u64,
     ) -> Result<(), PostgresError> {
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "INSERT INTO scope_github_imported_comments (request_id, client_id)
-                 SELECT id, $2 FROM scope_requests WHERE id = $1
-                 ON CONFLICT DO NOTHING",
-                [request_id.into(), github_review_client_id(review_id).into()],
-            ))
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
             .await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_github_imported_comments (request_id, client_id)
+             SELECT id, $2 FROM scope_requests WHERE id = $1
+             ON CONFLICT DO NOTHING",
+            [request_id.into(), github_review_client_id(review_id).into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -304,14 +310,19 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Vec<u64>, PostgresError> {
-        self.db
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
+        let rows = tx
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT client_id FROM scope_github_imported_comments WHERE request_id = $1",
                 [request_id.into()],
             ))
-            .await?
-            .into_iter()
+            .await?;
+        tx.commit().await?;
+        rows.into_iter()
             .map(|row| row.try_get::<String>("", "client_id"))
             .filter_map(|client_id| match client_id {
                 Ok(client_id) => github_review_id_from_client_id(&client_id).map(Ok),
@@ -329,11 +340,10 @@ impl RequestStore {
         &self,
         github_account_id: u64,
     ) -> Result<Option<GitHubAccount>, PostgresError> {
-        Ok(
-            github_accounts_by_ids(self.db.as_ref(), [github_account_id].into())
-                .await?
-                .remove(&github_account_id),
-        )
+        let tx = self.db.begin(DataScope::NoRepository).await?;
+        let mut accounts = github_accounts_by_ids(&tx, [github_account_id].into()).await?;
+        tx.commit().await?;
+        Ok(accounts.remove(&github_account_id))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_has_github_discussion"))]
@@ -342,11 +352,14 @@ impl RequestStore {
         request_id: &str,
         client_discussion_id: &str,
     ) -> Result<bool, PostgresError> {
-        Ok(
-            github_discussion_by_client_id(self.db.as_ref(), request_id, client_discussion_id)
-                .await?
-                .is_some(),
-        )
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
+        let discussion =
+            github_discussion_by_client_id(&tx, request_id, client_discussion_id).await?;
+        tx.commit().await?;
+        Ok(discussion.is_some())
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "import_github_review"))]
@@ -354,7 +367,10 @@ impl RequestStore {
         &self,
         command: ImportGitHubReviewCommand,
     ) -> Result<Option<GitHubReviewImport>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let Some((mut request, views)) =
             lock_importing_request(&tx, &command.request_id, &command.github_link_id).await?
         else {
@@ -416,7 +432,10 @@ impl RequestStore {
         &self,
         command: TransitionGitHubDiscussionCommand,
     ) -> Result<GitHubThreadTransition, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let Some((mut request, views)) =
             lock_importing_request(&tx, &command.request_id, &command.github_link_id).await?
         else {

@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, ScopedDatabase, SystemReason};
 use super::{
     AdminStore, CatalogFixture, acquire_aggregate_lock,
     cleanup_queue::queue::{
@@ -24,7 +25,7 @@ use scope_domain::{
     repo_actions::RepoStorageCleanup,
     requests::{Request, RequestEvent},
 };
-use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel};
 #[cfg(any(test, feature = "test-support"))]
 use sea_orm::{ConnectOptions, Database, DatabaseConnection, EntityTrait, Statement};
 #[cfg(any(test, feature = "test-support"))]
@@ -234,6 +235,7 @@ impl AdminStore {
     pub async fn lock_waiters_for_tests(&self) -> Result<i64, PostgresError> {
         Ok(self
             .db
+            .fixture()
             .query_one_raw(Statement::from_string(
                 sea_orm::DatabaseBackend::Postgres,
                 "SELECT count(*) AS waiting FROM pg_locks
@@ -250,7 +252,10 @@ impl AdminStore {
         &self,
         tables: &[&str],
     ) -> Result<sea_orm::DatabaseTransaction, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await?;
         tx.execute_unprepared(&format!(
             "LOCK TABLE {} IN ACCESS EXCLUSIVE MODE",
             tables.join(", ")
@@ -264,19 +269,19 @@ impl AdminStore {
         &self,
         catalog: CatalogFixture,
     ) -> Result<(), PostgresError> {
-        replace_catalog(self.db.as_ref(), catalog).await
+        replace_catalog(&self.db, catalog).await
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub async fn execute_for_tests(&self, sql: &str) -> Result<(), PostgresError> {
-        self.db.execute_unprepared(sql).await?;
+        self.db.fixture().execute_unprepared(sql).await?;
         Ok(())
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn seed_catalog_for_tests(&self, catalog: CatalogFixture) -> Result<(), PostgresError> {
         let db = Arc::clone(&self.db);
-        run_test_future(async move { seed_catalog(db.as_ref(), catalog).await })
+        run_test_future(async move { seed_catalog(&db, catalog).await })
     }
 }
 
@@ -290,7 +295,7 @@ impl CleanupStore {
                 entities::source_blob_cleanup_job::Column::NextRunAtUnix,
                 sea_orm::sea_query::Expr::value(0_i64),
             )
-            .exec(self.db.as_ref())
+            .exec(&self.db.fixture())
             .await?;
         Ok(())
     }
@@ -302,7 +307,7 @@ impl CleanupStore {
         Ok(entities::repo_storage_cleanup_job::Entity::find()
             .filter(entities::repo_storage_cleanup_job::Column::CompletedAtUnix.is_null())
             .order_by_asc(entities::repo_storage_cleanup_job::Column::RepoId)
-            .all(self.db.as_ref())
+            .all(&self.db.fixture())
             .await?
             .into_iter()
             .map(|cleanup| cleanup.into_domain())
@@ -316,7 +321,7 @@ impl CleanupStore {
         entities::source_blob_cleanup_job::Entity::find()
             .filter(entities::source_blob_cleanup_job::Column::CompletedAtUnix.is_null())
             .order_by_asc(entities::source_blob_cleanup_job::Column::ObjectKey)
-            .all(self.db.as_ref())
+            .all(&self.db.fixture())
             .await?
             .into_iter()
             .map(|blob| blob.try_into_domain())
@@ -331,7 +336,7 @@ impl AuthStore {
     pub async fn insert_user_for_tests(&self, user: UserAccount) -> Result<(), PostgresError> {
         entities::user::Model::from_domain(&user)
             .into_active_model()
-            .insert(self.db.as_ref())
+            .insert(&self.db.fixture())
             .await?;
         Ok(())
     }
@@ -341,7 +346,7 @@ impl AuthStore {
         user_id: &str,
     ) -> Result<Option<UserAccount>, PostgresError> {
         entities::user::Entity::find_by_id(user_id.to_string())
-            .one(self.db.as_ref())
+            .one(&self.db.fixture())
             .await?
             .map(entities::user::Model::try_into_domain)
             .transpose()
@@ -350,7 +355,7 @@ impl AuthStore {
     pub async fn user_count_for_tests(&self) -> Result<u64, PostgresError> {
         use sea_orm::PaginatorTrait;
         entities::user::Entity::find()
-            .count(self.db.as_ref())
+            .count(&self.db.fixture())
             .await
             .map_err(PostgresError::internal)
     }
@@ -362,7 +367,10 @@ impl RepositoryStore {
         &self,
         repo: Repository,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await?;
         ensure_repository_users_for_tests(&tx, &repo).await?;
         acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
         match entities::repository::Entity::find_by_id(repo.record.id.clone())
@@ -392,7 +400,10 @@ impl RepositoryStore {
         &self,
         repo: Repository,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await?;
         ensure_repository_users_for_tests(&tx, &repo).await?;
         acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
         entities::repository::Entity::delete_by_id(repo.record.id.clone())
@@ -407,7 +418,10 @@ impl RepositoryStore {
         repo_id: &str,
         op: impl FnOnce(&mut scope_domain::repository::Repository),
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await?;
         acquire_aggregate_lock(&tx, "repository", repo_id).await?;
         let row = entities::repository::Entity::find_by_id(repo_id)
             .one(&tx)
@@ -425,7 +439,7 @@ impl RepositoryStore {
         repo_id: &str,
         pack: &scope_domain::repository::git::GitPoolPack,
     ) -> Result<(), PostgresError> {
-        register_git_pool_pack(self.db.as_ref(), repo_id, pack, CATALOG_SEED_NOW_UNIX).await
+        register_git_pool_pack(&self.db.fixture(), repo_id, pack, CATALOG_SEED_NOW_UNIX).await
     }
 
     pub async fn repository_for_tests(
@@ -433,10 +447,12 @@ impl RepositoryStore {
         repo_id: &str,
     ) -> Result<Option<Repository>, PostgresError> {
         let row = entities::repository::Entity::find_by_id(repo_id.to_string())
-            .one(self.db.as_ref())
+            .one(&self.db.fixture())
             .await?;
         match row {
-            Some(row) => repository_from_model(self.db.as_ref(), row).await.map(Some),
+            Some(row) => repository_from_model(&self.db.fixture(), row)
+                .await
+                .map(Some),
             None => Ok(None),
         }
     }
@@ -444,7 +460,7 @@ impl RepositoryStore {
     pub async fn repository_count_for_tests(&self) -> Result<u64, PostgresError> {
         use sea_orm::PaginatorTrait;
         entities::repository::Entity::find()
-            .count(self.db.as_ref())
+            .count(&self.db.fixture())
             .await
             .map_err(PostgresError::internal)
     }
@@ -453,7 +469,7 @@ impl RepositoryStore {
 #[cfg(any(test, feature = "test-support"))]
 impl RequestStore {
     pub async fn insert_request_for_tests(&self, request: Request) -> Result<(), PostgresError> {
-        insert_request_row(self.db.as_ref(), &request).await
+        insert_request_row(&self.db.fixture(), &request).await
     }
 
     pub async fn forget_request_check_evaluations_for_tests(
@@ -463,7 +479,7 @@ impl RequestStore {
         use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
         super::entities::request_check_evaluation::Entity::delete_many()
             .filter(super::entities::request_check_evaluation::Column::RequestId.eq(request_id))
-            .exec(self.db.as_ref())
+            .exec(&self.db.fixture())
             .await?;
         Ok(())
     }
@@ -475,6 +491,7 @@ impl RequestStore {
     ) -> Result<(), PostgresError> {
         use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
         self.db
+            .fixture()
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_github_check_refreshes
@@ -494,23 +511,23 @@ impl RequestStore {
         request_id: &str,
         op: impl FnOnce(&mut Request),
     ) -> Result<(), PostgresError> {
-        let mut request = request_by_id(self.db.as_ref(), request_id)
+        let mut request = request_by_id(&self.db.fixture(), request_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("test request not found"))?;
         op(&mut request);
-        save_request_row(self.db.as_ref(), &request).await
+        save_request_row(&self.db.fixture(), &request).await
     }
 
     pub async fn request_for_tests(
         &self,
         request_id: &str,
     ) -> Result<Option<Request>, PostgresError> {
-        request_by_id(self.db.as_ref(), request_id).await
+        request_by_id(&self.db.fixture(), request_id).await
     }
 
     pub async fn request_events_for_tests(&self) -> Result<Vec<RequestEvent>, PostgresError> {
         entities::request_event::Entity::find()
-            .all(self.db.as_ref())
+            .all(&self.db.fixture())
             .await?
             .into_iter()
             .map(entities::request_event::Model::try_into_domain)
@@ -558,10 +575,10 @@ where
 
 #[cfg(feature = "local-dev")]
 async fn replace_catalog(
-    db: &sea_orm::DatabaseConnection,
+    db: &ScopedDatabase,
     catalog: CatalogFixture,
 ) -> Result<(), PostgresError> {
-    let tx = db.begin().await?;
+    let tx = db.begin(DataScope::System(SystemReason::Fixture)).await?;
     let tables = tx
         .query_one_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
@@ -586,11 +603,8 @@ async fn replace_catalog(
 }
 
 #[cfg(any(test, feature = "test-support"))]
-async fn seed_catalog(
-    conn: &sea_orm::DatabaseConnection,
-    catalog: CatalogFixture,
-) -> Result<(), PostgresError> {
-    let tx = conn.begin().await?;
+async fn seed_catalog(db: &ScopedDatabase, catalog: CatalogFixture) -> Result<(), PostgresError> {
+    let tx = db.begin(DataScope::System(SystemReason::Fixture)).await?;
     seed_catalog_rows(&tx, catalog).await?;
     tx.commit().await.map_err(PostgresError::internal)
 }
@@ -850,17 +864,19 @@ mod tests {
                 .unwrap();
         let db = Arc::clone(&store.db);
         run_test_future(async move {
-            db.execute_unprepared(
-                "
+            db.fixture()
+                .execute_unprepared(
+                    "
                     INSERT INTO scope_users (id, handle, email, email_verified)
                     VALUES ('user_old', 'old', 'old@scope.test', TRUE);
                     CREATE TABLE scopex_private (sentinel text NOT NULL);
                     INSERT INTO scopex_private (sentinel) VALUES ('keep')
                 ",
-            )
-            .await
-            .unwrap();
+                )
+                .await
+                .unwrap();
             let before = db
+                .fixture()
                 .query_all_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT version FROM seaql_migrations ORDER BY version".to_string(),
@@ -871,11 +887,12 @@ mod tests {
                 .map(|row| row.try_get::<String>("", "version").unwrap())
                 .collect::<Vec<_>>();
 
-            replace_catalog(db.as_ref(), CatalogFixture::default())
+            replace_catalog(&db, CatalogFixture::default())
                 .await
                 .unwrap();
 
             let after = db
+                .fixture()
                 .query_all_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT version FROM seaql_migrations ORDER BY version".to_string(),
@@ -887,6 +904,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(after, before);
             let user_count = db
+                .fixture()
                 .query_one_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT count(*) AS count FROM scope_users".to_string(),
@@ -898,6 +916,7 @@ mod tests {
                 .unwrap();
             assert_eq!(user_count, 0);
             let unrelated_sentinel = db
+                .fixture()
                 .query_one_raw(Statement::from_string(
                     DatabaseBackend::Postgres,
                     "SELECT sentinel FROM scopex_private".to_string(),

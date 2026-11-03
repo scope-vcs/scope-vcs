@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     EnqueueRunResult, RunStore, acquire_aggregate_lock, entities,
     git_push_reads::git_push_state_for_id, repository_access::repository_access,
@@ -8,7 +9,7 @@ use scope_domain::{
     content::SourceBlob,
     runs::{manual::ManualRunRequest, source::RunSource, workflow::revision::WorkflowRevision},
 };
-use sea_orm::{EntityTrait, TransactionTrait};
+use sea_orm::EntityTrait;
 
 #[cfg(test)]
 mod tests;
@@ -22,7 +23,10 @@ impl RunStore {
         revision: WorkflowRevision,
         now_unix: u64,
     ) -> Result<EnqueueRunResult, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(request.repository_id()))
+            .await?;
         acquire_aggregate_lock(&tx, "repository", request.repository_id()).await?;
         let context = repository_access(&tx, request.repository_id(), Some(request.user_id()))
             .await?
@@ -44,7 +48,10 @@ impl RunStore {
         request: &ManualRunRequest,
         now_unix: u64,
     ) -> Result<Option<EnqueueRunResult>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(request.repository_id()))
+            .await?;
         acquire_aggregate_lock(&tx, "repository", request.repository_id()).await?;
         let context = git_push_state_for_id(&tx, request.repository_id(), request.user_id())
             .await?

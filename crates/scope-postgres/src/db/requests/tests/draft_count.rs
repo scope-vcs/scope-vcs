@@ -33,7 +33,7 @@ async fn draft_admission_counts_only_public_actor_drafts() {
             request.merged_main_oid = Some("merged-main".into());
             request.updated_at_unix = 4;
         }
-        crate::db::request_rows::insert_request_row(store.db.as_ref(), &request)
+        crate::db::request_rows::insert_request_row(&store.db.fixture(), &request)
             .await
             .unwrap();
     }
@@ -43,7 +43,7 @@ async fn draft_admission_counts_only_public_actor_drafts() {
         ("other/repo", "user_public", 0),
     ] {
         assert_eq!(
-            public_draft_count(store.db.as_ref(), repo, user)
+            public_draft_count(&store.db.fixture(), repo, user)
                 .await
                 .unwrap(),
             expected

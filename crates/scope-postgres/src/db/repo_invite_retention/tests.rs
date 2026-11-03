@@ -91,7 +91,7 @@ async fn retention_deletes_invites_over_for_thirty_days_with_their_links_and_ema
             updated_at_unix: invite.created_at_unix as i64,
         }
         .into_active_model()
-        .insert(store.db.as_ref())
+        .insert(&store.db.fixture())
         .await
         .unwrap();
     }
@@ -140,7 +140,7 @@ async fn retention_deletes_invites_over_for_thirty_days_with_their_links_and_ema
     assert_eq!(repo.collaboration.members, [member]);
 
     let mut link_owners = entities::repository_invite_link::Entity::find()
-        .all(store.db.as_ref())
+        .all(&store.db.fixture())
         .await
         .unwrap()
         .into_iter()
@@ -149,7 +149,7 @@ async fn retention_deletes_invites_over_for_thirty_days_with_their_links_and_ema
     link_owners.sort_unstable();
     assert_eq!(link_owners, kept);
     let mut email_owners = entities::repository_invite_email::Entity::find()
-        .all(store.db.as_ref())
+        .all(&store.db.fixture())
         .await
         .unwrap()
         .into_iter()

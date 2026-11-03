@@ -20,7 +20,7 @@ async fn root(store: &MetadataStore) -> Request {
     )
     .await;
     let main = "a".repeat(40);
-    store.db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+    store.db.fixture().execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "INSERT INTO scope_git_heads (repo_id, head_oid, push_sequence, change_version, frontier_digest)
          VALUES ('owner/repo', $1, 1, 1, 'sha256-main-frontier')",
         [main.clone().into()])).await.unwrap();

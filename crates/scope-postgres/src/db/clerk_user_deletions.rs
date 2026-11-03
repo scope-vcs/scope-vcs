@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{AuthStore, entities, integer_columns::u64_to_i64};
 use crate::error::PostgresError;
 use entities::clerk_user_deletion::{ActiveModel, Column, Entity};
@@ -8,7 +9,7 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, TransactionTrait,
+    QuerySelect,
     sea_query::{Expr, LockBehavior, LockType},
 };
 
@@ -22,7 +23,7 @@ impl AuthStore {
         limit: u64,
     ) -> Result<Vec<String>, PostgresError> {
         let now = u64_to_i64(now_unix, "Clerk user deletion time")?;
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         let rows = Entity::find()
             .filter(Column::CompletedAtUnix.is_null())
             .filter(Column::NextAttemptAtUnix.lte(now))
@@ -59,6 +60,7 @@ impl AuthStore {
         claim_token: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         Entity::update_many()
             .col_expr(
                 Column::CompletedAtUnix,
@@ -68,8 +70,9 @@ impl AuthStore {
             .col_expr(Column::ClaimExpiresAtUnix, Expr::value(Option::<i64>::None))
             .filter(Column::ClerkUserId.eq(clerk_user_id))
             .filter(Column::ClaimToken.eq(claim_token))
-            .exec(self.db.as_ref())
+            .exec(&tx)
             .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -81,10 +84,12 @@ impl AuthStore {
         let Some(cutoff) = now_unix.checked_sub(CLERK_USER_DELETION_TOMBSTONE_SECS) else {
             return Ok(());
         };
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         Entity::delete_many()
             .filter(Column::CompletedAtUnix.lte(u64_to_i64(cutoff, "Clerk user deletion time")?))
-            .exec(self.db.as_ref())
+            .exec(&tx)
             .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -96,9 +101,10 @@ impl AuthStore {
         error: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         let Some(row) = Entity::find_by_id(clerk_user_id.to_string())
             .filter(Column::ClaimToken.eq(claim_token))
-            .one(self.db.as_ref())
+            .one(&tx)
             .await?
         else {
             return Ok(());
@@ -113,7 +119,8 @@ impl AuthStore {
         active.claim_token = Set(None);
         active.claim_expires_at_unix = Set(None);
         active.last_error = Set(Some(error.chars().take(2000).collect()));
-        active.update(self.db.as_ref()).await?;
+        active.update(&tx).await?;
+        tx.commit().await?;
         Ok(())
     }
 }

@@ -130,7 +130,7 @@ async fn completed_cleanup_never_reserves_bytes_again_during_reconciliation() {
             assert_eq!(retry.attachment_id, "old_attachment");
         }
         let usage = super::super::budget::media_usage(
-            fixture.store.db.as_ref(),
+            &fixture.store.db.fixture(),
             &fixture.repository_id,
             Some("budget_request"),
             None,
@@ -140,7 +140,7 @@ async fn completed_cleanup_never_reserves_bytes_again_during_reconciliation() {
         assert_eq!(usage.request_source_bytes, 4);
         assert_eq!(usage.repository_bytes, 8);
         super::super::processing_support::ensure_derivative_budget(
-            fixture.store.db.as_ref(),
+            &fixture.store.db.fixture(),
             &current.attachment,
             RequestAttachmentLimits::default().max_repository_storage_bytes
                 - current.attachment.size_bytes,

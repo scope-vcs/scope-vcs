@@ -10,8 +10,10 @@ async fn main_pack_spans_become_main_pool_packs_and_the_span_table_is_dropped() 
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await
         .unwrap();
-    db.execute_unprepared(
-        r#"
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(
+            r#"
         INSERT INTO scope_users (id, handle, email, email_verified)
         VALUES ('pool-owner', 'pool-owner', 'pool-owner@example.test', TRUE);
         INSERT INTO scope_repositories (
@@ -52,13 +54,14 @@ async fn main_pack_spans_become_main_pool_packs_and_the_span_table_is_dropped() 
             ARRAY[repeat('b', 40)], '\x01'::bytea, 30
         );
         "#,
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 
     migrations::Migrator::up(db.as_ref(), None).await.unwrap();
 
-    let rows = db
+    let rows = super::system(&db)
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT id, request_id, head_oid, prerequisites, segment_id, segment_sha256,
@@ -131,9 +134,10 @@ async fn main_pack_spans_become_main_pool_packs_and_the_span_table_is_dropped() 
             ),
         ]
     );
-    assert!(!relation_exists(&db, "scope_git_segments").await);
+    assert!(!relation_exists(db.as_ref(), "scope_git_segments").await);
 
-    let duplicate_main_sequence = db
+    let duplicate_main_sequence = super::system(&db)
+        .fixture()
         .execute_unprepared(
             "INSERT INTO scope_git_pool_packs (
                 id, repo_id, head_oid, prerequisites, sealed_pack, created_at_unix,
@@ -150,7 +154,8 @@ async fn main_pack_spans_become_main_pool_packs_and_the_span_table_is_dropped() 
         duplicate_main_sequence.contains("scope_git_pool_packs_main_sequence"),
         "{duplicate_main_sequence}"
     );
-    let ownerless = db
+    let ownerless = super::system(&db)
+        .fixture()
         .execute_unprepared(
             "INSERT INTO scope_git_pool_packs (
                 id, repo_id, head_oid, prerequisites, sealed_pack, created_at_unix

@@ -15,6 +15,7 @@ async fn histories_load_more_parents_than_postgres_bind_limit() {
     .unwrap();
     store
         .db
+        .fixture()
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_logical_commits (repo_id, id, ordinal, origin, author_id, message)
@@ -30,6 +31,7 @@ async fn histories_load_more_parents_than_postgres_bind_limit() {
         .unwrap();
     store
         .db
+        .fixture()
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_visibility_change_sets (repo_id, id, ordinal, author_id)
@@ -38,7 +40,7 @@ async fn histories_load_more_parents_than_postgres_bind_limit() {
         ))
         .await
         .unwrap();
-    let histories = load_repository_histories(store.db.as_ref(), std::slice::from_ref(&repo_id))
+    let histories = load_repository_histories(&store.db.fixture(), std::slice::from_ref(&repo_id))
         .await
         .unwrap();
     assert_eq!(histories[&repo_id].graph.commits.len(), 65536);

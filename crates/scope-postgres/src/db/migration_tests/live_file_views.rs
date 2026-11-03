@@ -10,8 +10,10 @@ async fn live_file_rules_move_from_the_repository_policy_onto_their_files() {
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await
         .unwrap();
-    db.execute_unprepared(
-        r#"
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(
+            r#"
         INSERT INTO scope_users (id, handle, email, email_verified)
         VALUES ('views-owner', 'views-owner', 'views-owner@example.test', TRUE);
         INSERT INTO scope_repositories (
@@ -36,13 +38,14 @@ async fn live_file_rules_move_from_the_repository_policy_onto_their_files() {
             ('views-owner/pinned', '/unruled.md', '{"text":"unruled"}'),
             ('views-owner/unpinned', '/docs/guide.md', '{"text":"guide"}');
         "#,
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 
     migrations::Migrator::up(db.as_ref(), None).await.unwrap();
 
-    let files = db
+    let files = super::system(&db)
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT repo_id, path, view FROM scope_live_files ORDER BY repo_id, path",
@@ -74,7 +77,8 @@ async fn live_file_rules_move_from_the_repository_policy_onto_their_files() {
             )
         })
     );
-    let policies = db
+    let policies = super::system(&db)
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT policy FROM scope_repositories ORDER BY id",

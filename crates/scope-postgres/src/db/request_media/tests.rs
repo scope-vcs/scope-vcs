@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::{
     db::{
         CatalogFixture, CloseRequestCommand, EditRequestIdentityCommand, MetadataStore,
@@ -21,7 +22,7 @@ use scope_domain::{
     },
     views::ViewId,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use std::time::Duration;
 
 const OWNER_ID: &str = "media_owner";
@@ -355,6 +356,7 @@ async fn upload_part_reservation_is_idempotent_and_fences_expired_writers() {
     let abandoned = fixture
         .store
         .db
+        .fixture()
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT object_key FROM scope_request_media_abandoned_objects WHERE attachment_id = $1",
@@ -431,7 +433,7 @@ async fn cross_request_binding_rejection_rolls_back_identity_event_and_prior_bin
     );
     assert_eq!(
         super::persistence::bindings_for_attachment(
-            fixture.store.db.as_ref(),
+            &fixture.store.db.fixture(),
             "binding_attachment",
         )
         .await
@@ -440,10 +442,13 @@ async fn cross_request_binding_rejection_rolls_back_identity_event_and_prior_bin
         1
     );
     assert!(
-        super::persistence::bindings_for_attachment(fixture.store.db.as_ref(), "other_attachment",)
-            .await
-            .unwrap()
-            .is_empty()
+        super::persistence::bindings_for_attachment(
+            &fixture.store.db.fixture(),
+            "other_attachment",
+        )
+        .await
+        .unwrap()
+        .is_empty()
     );
 }
 
@@ -519,6 +524,7 @@ async fn processing_lease_takeover_orphans_old_output_and_fences_stale_completio
     let old_output = fixture
         .store
         .db
+        .fixture()
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT state FROM scope_request_media_processing_objects WHERE object_key = $1",
@@ -542,6 +548,7 @@ async fn completed_manifests_reject_mutation() {
     let error = fixture
         .store
         .db
+        .fixture()
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_manifests SET media_type = $2 WHERE id = $1",
@@ -728,6 +735,7 @@ async fn binding_a_ready_attachment_notifies_only_after_the_transaction_commits(
     fixture
         .store
         .db
+        .fixture()
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "UPDATE scope_request_media_attachments SET state = 'Ready' WHERE id = $1",
@@ -736,15 +744,19 @@ async fn binding_a_ready_attachment_notifies_only_after_the_transaction_commits(
         .await
         .unwrap();
 
-    let mut listener =
-        sqlx::postgres::PgListener::connect_with(fixture.store.db.get_postgres_connection_pool())
-            .await
-            .unwrap();
+    let mut listener = sqlx::postgres::PgListener::connect_with(fixture.store.db.pool_for_tests())
+        .await
+        .unwrap();
     listener
         .listen(crate::db::repo_change_notifications::POSTGRES_REPO_CHANGE_CHANNEL)
         .await
         .unwrap();
-    let tx = fixture.store.db.begin().await.unwrap();
+    let tx = fixture
+        .store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     replace_bindings_for_markdown(
         &tx,
         "notification_request",

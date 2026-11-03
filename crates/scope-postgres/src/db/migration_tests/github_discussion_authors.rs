@@ -13,7 +13,7 @@ async fn github_author_migration_keeps_scope_authors_and_rejects_mixed_authors()
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await
         .unwrap();
-    db.execute_unprepared(r#"
+    super::system(&db).fixture().execute_unprepared(r#"
         INSERT INTO scope_users (id, handle, email, email_verified)
             VALUES ('author', 'author', 'author@example.test', TRUE);
         INSERT INTO scope_repositories (
@@ -75,7 +75,7 @@ async fn github_author_migration_keeps_scope_authors_and_rejects_mixed_authors()
         RequestDiscussionAuthor::User("author".to_string())
     );
 
-    db.execute_unprepared(
+    super::system(&db).fixture().execute_unprepared(
         "INSERT INTO scope_github_accounts (github_user_id, login, account_type, updated_at_unix)
             VALUES (900, 'greptile-apps[bot]', 'Bot', 1)",
     )
@@ -101,16 +101,24 @@ async fn github_author_migration_keeps_scope_authors_and_rejects_mixed_authors()
             "scope_request_discussion_reply_author",
         ),
     ] {
-        let error = db.execute_unprepared(sql).await.unwrap_err().to_string();
+        let error = super::system(&db)
+            .fixture()
+            .execute_unprepared(sql)
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(error.contains(constraint), "{error}");
     }
-    db.execute_unprepared(
-        "UPDATE scope_request_discussions SET author_github_user_id = 900,
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(
+            "UPDATE scope_request_discussions SET author_github_user_id = 900,
             source_url = 'https://github.com/o/r/pull/1#discussion_r1' WHERE id = 'deleted'",
-    )
-    .await
-    .unwrap();
-    let error = db
+        )
+        .await
+        .unwrap();
+    let error = super::system(&db)
+        .fixture()
         .execute_unprepared(
             "INSERT INTO scope_request_discussions (
                 id, request_id, opened_position, last_activity_position, body_markdown, status,

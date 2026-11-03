@@ -13,7 +13,7 @@ const REPO_ID: &str = "workflow-owner/repo";
 const HEAD_OID: &str = "1111111111111111111111111111111111111111";
 const BLOB_OID: &str = "2222222222222222222222222222222222222222";
 
-async fn insert_repository(db: &DatabaseConnection) {
+async fn insert_repository(db: &impl ConnectionTrait) {
     db.execute_unprepared(
         "
         INSERT INTO scope_users (id, handle, email, email_verified)
@@ -31,7 +31,7 @@ async fn insert_repository(db: &DatabaseConnection) {
     .unwrap();
 }
 
-async fn insert_captured_catalog(db: &DatabaseConnection) {
+async fn insert_captured_catalog(db: &impl ConnectionTrait) {
     db.execute_unprepared(&format!(
         "
         INSERT INTO scope_repository_workflow_catalogs (
@@ -90,11 +90,12 @@ async fn maintenance_has_no_catalogs_to_read_before_baseline_initialization() {
 async fn repository_workflow_catalog_schema_enforces_identity_bounds_and_cascade() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    insert_repository(db.as_ref()).await;
-    insert_captured_catalog(db.as_ref()).await;
+    insert_repository(&db.fixture()).await;
+    insert_captured_catalog(&db.fixture()).await;
 
-    db.execute_unprepared(&format!(
-        "
+    db.fixture()
+        .execute_unprepared(&format!(
+            "
         INSERT INTO scope_repository_workflow_files (
             repo_id, path, oid, size_bytes, git_file_mode, content_bytes
         ) VALUES (
@@ -102,9 +103,9 @@ async fn repository_workflow_catalog_schema_enforces_identity_bounds_and_cascade
             4, '100644', decode('74657374', 'hex')
         )
         "
-    ))
-    .await
-    .unwrap();
+        ))
+        .await
+        .unwrap();
 
     for statement in [
         format!(
@@ -149,21 +150,23 @@ async fn repository_workflow_catalog_schema_enforces_identity_bounds_and_cascade
         ),
     ] {
         assert!(
-            db.execute_unprepared(&statement).await.is_err(),
+            db.fixture().execute_unprepared(&statement).await.is_err(),
             "{statement}"
         );
     }
 
-    db.execute_unprepared(&format!(
-        "DELETE FROM scope_repositories WHERE id = '{REPO_ID}'"
-    ))
-    .await
-    .unwrap();
+    db.fixture()
+        .execute_unprepared(&format!(
+            "DELETE FROM scope_repositories WHERE id = '{REPO_ID}'"
+        ))
+        .await
+        .unwrap();
     for table in [
         "scope_repository_workflow_catalogs",
         "scope_repository_workflow_files",
     ] {
         let count = db
+            .fixture()
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!("SELECT count(*) AS count FROM {table}"),
@@ -181,11 +184,12 @@ async fn repository_workflow_catalog_schema_enforces_identity_bounds_and_cascade
 async fn repository_workflow_catalog_schema_caps_files_and_rejects_files_for_errors() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    insert_repository(db.as_ref()).await;
-    insert_captured_catalog(db.as_ref()).await;
+    insert_repository(&db.fixture()).await;
+    insert_captured_catalog(&db.fixture()).await;
 
-    db.execute_unprepared(&format!(
-        "
+    db.fixture()
+        .execute_unprepared(&format!(
+            "
         INSERT INTO scope_repository_workflow_files (
             repo_id, path, oid, size_bytes, git_file_mode, content_bytes
         )
@@ -198,12 +202,13 @@ async fn repository_workflow_catalog_schema_caps_files_and_rejects_files_for_err
             ''::bytea
         FROM generate_series(1, 64) AS value
         "
-    ))
-    .await
-    .unwrap();
+        ))
+        .await
+        .unwrap();
     assert!(
-        db.execute_unprepared(&format!(
-            "
+        db.fixture()
+            .execute_unprepared(&format!(
+                "
             INSERT INTO scope_repository_workflow_files (
                 repo_id, path, oid, size_bytes, git_file_mode, content_bytes
             ) VALUES (
@@ -211,24 +216,26 @@ async fn repository_workflow_catalog_schema_caps_files_and_rejects_files_for_err
                 0, '100644', ''::bytea
             )
             "
-        ))
-        .await
-        .is_err()
+            ))
+            .await
+            .is_err()
     );
 
-    db.execute_unprepared(&format!(
-        "
+    db.fixture()
+        .execute_unprepared(&format!(
+            "
         DELETE FROM scope_repository_workflow_files WHERE repo_id = '{REPO_ID}';
         UPDATE scope_repository_workflow_catalogs
         SET configuration_error = 'too many workflow files'
         WHERE repo_id = '{REPO_ID}';
         "
-    ))
-    .await
-    .unwrap();
+        ))
+        .await
+        .unwrap();
     assert!(
-        db.execute_unprepared(&format!(
-            "
+        db.fixture()
+            .execute_unprepared(&format!(
+                "
             INSERT INTO scope_repository_workflow_files (
                 repo_id, path, oid, size_bytes, git_file_mode, content_bytes
             ) VALUES (
@@ -236,8 +243,8 @@ async fn repository_workflow_catalog_schema_caps_files_and_rejects_files_for_err
                 0, '100644', ''::bytea
             )
             "
-        ))
-        .await
-        .is_err()
+            ))
+            .await
+            .is_err()
     );
 }

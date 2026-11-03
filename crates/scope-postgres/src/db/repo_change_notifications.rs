@@ -1,6 +1,7 @@
 use super::RepositoryStore;
+use super::data_scope::{DataScope, ScopedDatabase};
 use crate::error::PostgresError;
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use sqlx::postgres::PgListener;
 use std::{
     sync::{Arc, Mutex, OnceLock, PoisonError},
@@ -72,7 +73,7 @@ pub(in crate::db) struct RepoChangeNotifier {
 }
 
 impl RepoChangeNotifier {
-    fn queue(&self, db: &Arc<DatabaseConnection>, payload: String) -> Result<(), PostgresError> {
+    fn queue(&self, db: &Arc<ScopedDatabase>, payload: String) -> Result<(), PostgresError> {
         let queue = self.queue.get_or_init(|| {
             let (queue, queued) = mpsc::channel(QUEUED_NOTIFICATION_LIMIT);
             tokio::spawn(send_queued_notifications(Arc::clone(db), queued));
@@ -89,10 +90,7 @@ impl RepoChangeNotifier {
     }
 }
 
-async fn send_queued_notifications(
-    db: Arc<DatabaseConnection>,
-    mut queued: mpsc::Receiver<String>,
-) {
+async fn send_queued_notifications(db: Arc<ScopedDatabase>, mut queued: mpsc::Receiver<String>) {
     let mut payloads = Vec::with_capacity(NOTIFICATIONS_PER_COMMIT);
     while queued
         .recv_many(&mut payloads, NOTIFICATIONS_PER_COMMIT)
@@ -110,15 +108,13 @@ async fn send_queued_notifications(
     }
 }
 
-async fn notify_together(
-    db: &DatabaseConnection,
-    payloads: &[String],
-) -> Result<(), sea_orm::DbErr> {
+async fn notify_together(db: &ScopedDatabase, payloads: &[String]) -> Result<(), sea_orm::DbErr> {
+    let tx = db.begin(DataScope::NoRepository).await?;
     let rows = (1..=payloads.len())
         .map(|index| format!("(${index})"))
         .collect::<Vec<_>>()
         .join(", ");
-    db.execute_raw(Statement::from_sql_and_values(
+    tx.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
         format!(
             "SELECT pg_notify('{POSTGRES_REPO_CHANGE_CHANNEL}', payload)
@@ -127,7 +123,7 @@ async fn notify_together(
         payloads.iter().cloned().map(sea_orm::Value::from),
     ))
     .await?;
-    Ok(())
+    tx.commit().await
 }
 
 async fn subscribe(database_url: &str) -> Result<PgListener, sqlx::Error> {
@@ -204,10 +200,9 @@ mod tests {
     async fn queued_notifications_reach_listeners_in_order() {
         let target = TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
-        let mut listener =
-            sqlx::postgres::PgListener::connect_with(store.db.get_postgres_connection_pool())
-                .await
-                .unwrap();
+        let mut listener = sqlx::postgres::PgListener::connect_with(store.db.pool_for_tests())
+            .await
+            .unwrap();
         listener
             .listen(super::POSTGRES_REPO_CHANGE_CHANNEL)
             .await

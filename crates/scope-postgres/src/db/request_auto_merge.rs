@@ -1,5 +1,7 @@
 use super::{
-    GeneratedIdKind, RequestStore, acquire_aggregate_lock, entities,
+    GeneratedIdKind, RequestStore, acquire_aggregate_lock,
+    data_scope::{DataScope, SystemReason},
+    entities,
     generated_ids::generate_id,
     integer_columns::u64_to_i64,
     request_access::{ensure_user_exists, lock_request_repository},
@@ -19,7 +21,7 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, ExprTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
     sea_query::{LockBehavior, LockType},
 };
 
@@ -84,7 +86,10 @@ impl RequestStore {
         &self,
         command: AuthorizeRequestAutoMergeCommand,
     ) -> Result<RequestAutoMergeMutation, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -147,7 +152,10 @@ impl RequestStore {
         &self,
         command: CancelRequestAutoMergeCommand,
     ) -> Result<RequestAutoMergeMutation, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -176,7 +184,13 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Option<RequestAutoMergeIntent>, PostgresError> {
-        latest_intent(self.db.as_ref(), request_id).await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
+        let intent = latest_intent(&tx, request_id).await?;
+        tx.commit().await?;
+        Ok(intent)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_request_auto_merges"))]
@@ -194,7 +208,10 @@ impl RequestStore {
         }
         let now = u64_to_i64(command.now_unix, "auto-merge claim time")?;
         let lease_expires = u64_to_i64(command.lease_expires_at_unix, "auto-merge claim expiry")?;
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::RequestAutoMerge))
+            .await?;
         let query = entities::request_auto_merge_intent::Entity::find()
             .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
             .filter(entities::request_auto_merge_intent::Column::NextAttemptAtUnix.lte(now))
@@ -279,12 +296,17 @@ impl RequestStore {
                 sea_orm::sea_query::Expr::value(0),
             );
         }
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::RequestAutoMerge))
+            .await?;
         let result = update
             .filter(entities::request_auto_merge_intent::Column::Id.eq(command.intent_id))
             .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
             .filter(entities::request_auto_merge_intent::Column::ClaimToken.eq(command.claim_token))
-            .exec(self.db.as_ref())
+            .exec(&tx)
             .await?;
+        tx.commit().await?;
         Ok(result.rows_affected == 1)
     }
 
@@ -293,13 +315,21 @@ impl RequestStore {
         &self,
         command: StopClaimedRequestAutoMergeCommand,
     ) -> Result<Option<RequestAutoMergeMutation>, PostgresError> {
-        let observed = entities::request_auto_merge_intent::Entity::find_by_id(&command.intent_id)
-            .one(self.db.as_ref())
+        let lookup = self
+            .db
+            .begin_read_snapshot(DataScope::System(SystemReason::RequestAutoMerge))
             .await?;
+        let observed = entities::request_auto_merge_intent::Entity::find_by_id(&command.intent_id)
+            .one(&lookup)
+            .await?;
+        lookup.commit().await?;
         let Some(observed) = observed else {
             return Ok(None);
         };
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(&observed.repo_id))
+            .await?;
         acquire_aggregate_lock(&tx, "request", &observed.request_id).await?;
         let row = entities::request_auto_merge_intent::Entity::find_by_id(&command.intent_id)
             .lock_exclusive()

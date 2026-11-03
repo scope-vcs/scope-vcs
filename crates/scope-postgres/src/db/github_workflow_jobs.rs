@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RepositoryStore,
     entities::{decode_enum, encode_enum},
@@ -71,7 +72,8 @@ impl RepositoryStore {
         github_run_id: u64,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        self.db.execute_raw(Statement::from_sql_and_values(
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        tx.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_github_workflow_job_reads (repo_id, github_repository_id, github_run_id, attempts, generation, next_attempt_at_unix)
              VALUES ($1, $2, $3, 0, 0, $4)
@@ -81,6 +83,7 @@ impl RepositoryStore {
              u64_to_i64(github_run_id, "GitHub workflow run id")?.into(),
              u64_to_i64(now_unix, "GitHub jobs read time")?.into()],
         )).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -90,10 +93,15 @@ impl RepositoryStore {
         lease_until_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubWorkflowJobReadJob>, PostgresError> {
-        JOB_READS
-            .claim_due::<JobReadRow>(self.db.as_ref(), now_unix, lease_until_unix, limit)
-            .await?
-            .into_iter()
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let rows = JOB_READS
+            .claim_due::<JobReadRow>(&tx, now_unix, lease_until_unix, limit)
+            .await?;
+        tx.commit().await?;
+        rows.into_iter()
             .map(|row| {
                 Ok(GitHubWorkflowJobReadJob {
                     read_id: i64_to_u64(row.read_id, "GitHub jobs read id")?,
@@ -123,26 +131,24 @@ impl RepositoryStore {
             u32_to_i32(job.attempts, "GitHub jobs read attempts")?.into(),
             u64_to_i64(job.read_id, "GitHub jobs read id")?.into(),
         ];
+        let tx = self.db.begin(DataScope::Repository(&job.repo_id)).await?;
         if retry_at_unix.is_none() {
             let mut values = claim.clone();
             values.push(u64_to_i64(job.generation, "GitHub jobs read generation")?.into());
             JOB_READS
-                .finish(
-                    self.db.as_ref(),
-                    &["attempts", "read_id", "generation"],
-                    values,
-                    None,
-                )
+                .finish(&tx, &["attempts", "read_id", "generation"], values, None)
                 .await?;
         }
         JOB_READS
             .finish(
-                self.db.as_ref(),
+                &tx,
                 &["attempts", "read_id"],
                 claim,
                 Some(retry_at_unix.unwrap_or(now_unix)),
             )
-            .await
+            .await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "save_github_workflow_jobs"))]
@@ -152,9 +158,14 @@ impl RepositoryStore {
         github_repository_id: u64,
         jobs: &[GitHubWorkflowJob],
     ) -> Result<(), PostgresError> {
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubMirrorOwnership))
+            .await?;
         for job in jobs {
-            save_job(self.db.as_ref(), repo_id, github_repository_id, job).await?;
+            save_job(&tx, repo_id, github_repository_id, job).await?;
         }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -166,7 +177,8 @@ impl RepositoryStore {
         github_run_id: u64,
         run_attempt: u32,
     ) -> Result<Vec<GitHubWorkflowJob>, PostgresError> {
-        JobRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let rows = JobRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "SELECT {SELECT_JOB} FROM scope_github_workflow_jobs
@@ -181,11 +193,10 @@ impl RepositoryStore {
                 u32_to_i32(run_attempt, "GitHub run attempt")?.into(),
             ],
         ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(JobRow::into_domain)
-        .collect()
+        .all(&tx)
+        .await?;
+        tx.commit().await?;
+        rows.into_iter().map(JobRow::into_domain).collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_job"))]
@@ -196,7 +207,8 @@ impl RepositoryStore {
         github_run_id: u64,
         github_job_id: u64,
     ) -> Result<Option<GitHubWorkflowJob>, PostgresError> {
-        JobRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let row = JobRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "SELECT {SELECT_JOB} FROM scope_github_workflow_jobs
@@ -210,10 +222,10 @@ impl RepositoryStore {
                 u64_to_i64(github_job_id, "GitHub job id")?.into(),
             ],
         ))
-        .one(self.db.as_ref())
-        .await?
-        .map(JobRow::into_domain)
-        .transpose()
+        .one(&tx)
+        .await?;
+        tx.commit().await?;
+        row.map(JobRow::into_domain).transpose()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_workflow_job_log"))]
@@ -221,15 +233,20 @@ impl RepositoryStore {
         &self,
         github_job_id: u64,
     ) -> Result<Option<GitHubJobLogState>, PostgresError> {
-        Ok(LogRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let row = LogRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT log_text, truncated FROM scope_github_workflow_job_logs
               WHERE github_job_id = $1",
             [u64_to_i64(github_job_id, "GitHub job id")?.into()],
         ))
-        .one(self.db.as_ref())
-        .await?
-        .map(|row| match row.log_text {
+        .one(&tx)
+        .await?;
+        tx.commit().await?;
+        Ok(row.map(|row| match row.log_text {
             Some(text) => GitHubJobLogState::Kept(GitHubJobLog {
                 text,
                 truncated: row.truncated,
@@ -249,21 +266,25 @@ impl RepositoryStore {
             GitHubJobLogState::Kept(log) => (Some(log.text.clone()), log.truncated),
             GitHubJobLogState::Expired => (None, false),
         };
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "INSERT INTO scope_github_workflow_job_logs
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_github_workflow_job_logs
                     (github_job_id, log_text, truncated, stored_at_unix)
                  VALUES ($1, $2, $3, $4)
                  ON CONFLICT DO NOTHING",
-                [
-                    u64_to_i64(github_job_id, "GitHub job id")?.into(),
-                    text.into(),
-                    truncated.into(),
-                    u64_to_i64(now_unix, "GitHub job log time")?.into(),
-                ],
-            ))
-            .await?;
+            [
+                u64_to_i64(github_job_id, "GitHub job id")?.into(),
+                text.into(),
+                truncated.into(),
+                u64_to_i64(now_unix, "GitHub job log time")?.into(),
+            ],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 }

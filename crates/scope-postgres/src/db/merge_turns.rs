@@ -86,7 +86,7 @@ impl RepositoryStore {
                 "repository merge turn requires a repository id",
             ));
         }
-        let schema = content_fences::current_schema(self.db.as_ref()).await?;
+        let schema = content_fences::current_schema(&self.db).await?;
         let key = sea_orm::sqlx::postgres::PgAdvisoryLock::new(format!(
             "scope:merge-turn:{schema}:{repo_id}"
         ))

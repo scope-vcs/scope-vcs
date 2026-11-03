@@ -312,6 +312,7 @@ async fn media_reads_load_derivative_manifests_until_cleanup_tombstones_the_atta
     let inventory = fixture
         .store
         .db
+        .fixture()
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT state, manifest_id FROM scope_request_media_processing_objects
@@ -347,6 +348,7 @@ async fn media_reads_load_derivative_manifests_until_cleanup_tombstones_the_atta
     fixture
         .store
         .db
+        .fixture()
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "INSERT INTO scope_request_media_cleanup_jobs (

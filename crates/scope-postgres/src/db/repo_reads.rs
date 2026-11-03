@@ -1,5 +1,7 @@
 use super::{
-    RepositoryStore, begin_metadata_read_snapshot, entities,
+    RepositoryStore,
+    data_scope::{DataScope, SystemReason},
+    entities,
     landing_files::repository_landing_file,
     projection_read_models::{
         ProjectionFileLookup, load_live_projection_file_for_view,
@@ -80,7 +82,10 @@ impl RepositoryStore {
         name: &str,
     ) -> Result<Option<Repository>, PostgresError> {
         let id = repo_id(owner, name);
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&id))
+            .await?;
         let repo = match entities::repository::Entity::find_by_id(id)
             .one(&tx)
             .await?
@@ -98,7 +103,10 @@ impl RepositoryStore {
         handle: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<OwnerProfileRead>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::System(SystemReason::ViewerRepositoryListing))
+            .await?;
         let profile = owner_profile_tx(&tx, handle, viewer_user_id).await?;
         tx.commit().await?;
         Ok(profile)
@@ -111,7 +119,11 @@ impl RepositoryStore {
         name: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RepoSummaryRead>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let repo_id = repo_id(owner, name);
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&repo_id))
+            .await?;
         let summary = repo_summary_tx(&tx, owner, name, viewer_user_id).await?;
         tx.commit().await?;
         Ok(summary)
@@ -125,7 +137,11 @@ impl RepositoryStore {
         viewer_user_id: Option<&str>,
         view: Option<&ViewId>,
     ) -> Result<Option<Vec<ProjectionViewFile>>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let repo_id = repo_id(owner, name);
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&repo_id))
+            .await?;
         let files = repo_live_files_tx(&tx, owner, name, viewer_user_id, view).await?;
         tx.commit().await?;
         Ok(files)
@@ -140,7 +156,11 @@ impl RepositoryStore {
         view: Option<&ViewId>,
         path: &ScopePath,
     ) -> Result<Option<RepoLiveFileWithLandingContent>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let repo_id = repo_id(owner, name);
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&repo_id))
+            .await?;
         let content =
             repo_live_file_with_landing_content_tx(&tx, owner, name, viewer_user_id, view, path)
                 .await?;

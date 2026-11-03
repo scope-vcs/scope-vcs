@@ -10,7 +10,7 @@ pub(super) fn main_base() -> RequestBase {
 }
 
 pub(super) async fn set_main(store: &MetadataStore, main: &str) {
-    store.db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+    store.db.fixture().execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "INSERT INTO scope_git_heads (repo_id, head_oid, push_sequence, change_version, frontier_digest)
          VALUES ('owner/repo', $1, 1, 1, 'sha256-main-frontier')
          ON CONFLICT (repo_id) DO UPDATE SET head_oid = excluded.head_oid",
@@ -129,6 +129,7 @@ pub(super) async fn seed_checks(
 pub(super) async fn reference_count(store: &MetadataStore, revision_id: &str) -> i64 {
     store
         .db
+        .fixture()
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT count(*) AS count FROM scope_object_references

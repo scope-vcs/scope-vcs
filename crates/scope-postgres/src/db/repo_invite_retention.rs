@@ -1,16 +1,14 @@
 use super::{
     RepositoryCollaborationMutation, RepositoryStore,
     collaboration_rows::{lock_collaboration_state, save_collaboration_state},
+    data_scope::{DataScope, SystemReason},
     entities, integer_columns,
 };
 use crate::error::PostgresError;
 use scope_domain::repo_collaboration::{
     REPOSITORY_INVITE_RETENTION_SECS, prune_ended_repository_invites,
 };
-use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
-    sea_query::Expr,
-};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr};
 
 impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repositories_with_prunable_invites"))]
@@ -23,7 +21,11 @@ impl RepositoryStore {
             return Ok(Vec::new());
         };
         let cutoff = integer_columns::u64_to_i64(cutoff, "invite retention cutoff")?;
-        entities::repository_invite::Entity::find()
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::System(SystemReason::InviteRetention))
+            .await?;
+        let repo_ids = entities::repository_invite::Entity::find()
             .select_only()
             .column(entities::repository_invite::Column::RepoId)
             .distinct()
@@ -34,9 +36,11 @@ impl RepositoryStore {
             .order_by_asc(entities::repository_invite::Column::RepoId)
             .limit(limit)
             .into_tuple::<String>()
-            .all(self.db.as_ref())
+            .all(&tx)
             .await
-            .map_err(PostgresError::internal)
+            .map_err(PostgresError::internal)?;
+        tx.commit().await?;
+        Ok(repo_ids)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prune_ended_repository_invites"))]
@@ -45,7 +49,7 @@ impl RepositoryStore {
         repo_id: &str,
         now_unix: u64,
     ) -> Result<Option<RepositoryCollaborationMutation<usize>>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
         let Some(mut repo) = lock_collaboration_state(&tx, repo_id).await? else {
             return Ok(None);
         };

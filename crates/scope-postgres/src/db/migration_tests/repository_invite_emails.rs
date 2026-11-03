@@ -4,8 +4,9 @@ use super::*;
 async fn deleting_a_repository_keeps_its_emails_for_the_owner_allowance() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    db.execute_unprepared(
-        r#"
+    db.fixture()
+        .execute_unprepared(
+            r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);
         INSERT INTO scope_repositories (id,owner_handle,name,owner_user_id,publication_state,
             change_version,content_version,repo_config,policy,incarnation_id)
@@ -18,11 +19,12 @@ async fn deleting_a_repository_keeps_its_emails_for_the_owner_allowance() {
             VALUES ('email','invite','owner','Sent',10,10,10);
         DELETE FROM scope_repositories WHERE id = 'owner/repo';
         "#,
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 
     let row = db
+        .fixture()
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT invite_id, requested_by_user_id FROM scope_repository_invite_emails"
@@ -40,11 +42,12 @@ async fn deleting_a_repository_keeps_its_emails_for_the_owner_allowance() {
         "owner"
     );
     assert!(
-        db.execute_unprepared(
-            "UPDATE scope_repository_invite_emails
+        db.fixture()
+            .execute_unprepared(
+                "UPDATE scope_repository_invite_emails
              SET claim_token = 'claim', claim_expires_at_unix = 20"
-        )
-        .await
-        .is_err()
+            )
+            .await
+            .is_err()
     );
 }

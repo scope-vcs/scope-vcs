@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RequestStore,
     entities::{decode_enum, encode_enum},
@@ -18,7 +19,7 @@ use scope_domain::{
         retains_request_branch_for_carrier,
     },
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 const SELECT_PULL_REQUEST: &str = "request_id, repo_id, installation_id, github_repository_id, \
     github_full_name, intent, intent_base, intent_head_oid, intent_sequence, number, url, base, \
@@ -63,7 +64,11 @@ impl RequestStore {
         lease_until_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubPullRequest>, PostgresError> {
-        PullRequestRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let rows = PullRequestRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "UPDATE scope_github_pull_requests pull_request
@@ -87,11 +92,10 @@ impl RequestStore {
                 u64_to_i64(limit, "GitHub pull request batch size")?.into(),
             ],
         ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(PullRequestRow::into_domain)
-        .collect()
+        .all(&tx)
+        .await?;
+        tx.commit().await?;
+        rows.into_iter().map(PullRequestRow::into_domain).collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_pull_request"))]
@@ -142,7 +146,10 @@ impl RequestStore {
                 .and_then(|opened| opened.written_text.clone())
                 .into(),
         ]);
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(&progress.repo_id))
+            .await?;
         acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
         acquire_github_push_lock(&tx, &progress.repo_id, &progress.branch()).await?;
         let finished = tx
@@ -182,18 +189,21 @@ impl RequestStore {
     ) -> Result<bool, PostgresError> {
         let row = self
             .db
-            .query_one_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT EXISTS (SELECT 1 FROM scope_github_pull_requests
+            .query_one(
+                DataScope::RequestRepository(request_id),
+                Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "SELECT EXISTS (SELECT 1 FROM scope_github_pull_requests
                     WHERE request_id = $1 AND claim_token = $2 AND job_state = 'running'
                       AND intent_sequence = $3
                       AND lease_until_unix > extract(epoch FROM now())::bigint) AS holds",
-                [
-                    request_id.into(),
-                    claim_token.into(),
-                    u64_to_i64(intent_sequence, "GitHub pull request intent")?.into(),
-                ],
-            ))
+                    [
+                        request_id.into(),
+                        claim_token.into(),
+                        u64_to_i64(intent_sequence, "GitHub pull request intent")?.into(),
+                    ],
+                ),
+            )
             .await?
             .ok_or_else(|| PostgresError::internal_message("claim check returned no row"))?;
         Ok(row.try_get::<bool>("", "holds")?)
@@ -208,22 +218,25 @@ impl RequestStore {
     ) -> Result<bool, PostgresError> {
         let requeued = self
             .db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                format!(
-                    "UPDATE scope_github_pull_requests pull_request SET
+            .execute(
+                DataScope::RequestRepository(request_id),
+                Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    format!(
+                        "UPDATE scope_github_pull_requests pull_request SET
                         next_attempt_at_unix = CASE WHEN pull_request.job_state = 'running'
                             THEN pull_request.next_attempt_at_unix ELSE $3 END,
                         updated_at_unix = greatest($3, pull_request.updated_at_unix),
                         {REQUEUE}
                       WHERE request_id = $1 AND github_repository_id = $2"
+                    ),
+                    [
+                        request_id.into(),
+                        u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
+                        u64_to_i64(now_unix, "GitHub pull request time")?.into(),
+                    ],
                 ),
-                [
-                    request_id.into(),
-                    u64_to_i64(github_repository_id, "GitHub repository id")?.into(),
-                    u64_to_i64(now_unix, "GitHub pull request time")?.into(),
-                ],
-            ))
+            )
             .await?;
         Ok(requeued.rows_affected() > 0)
     }

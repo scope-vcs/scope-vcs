@@ -101,7 +101,7 @@ mod tests {
             .await
             .unwrap();
         insert_cli_session_in_tx(
-            store.db.as_ref(),
+            &store.db.fixture(),
             &user.id,
             NewCliSession {
                 id: "session_activity".into(),
@@ -119,7 +119,7 @@ mod tests {
                 .await
                 .unwrap();
             let session = entities::cli_session::Entity::find_by_id("session_activity")
-                .one(store.db.as_ref())
+                .one(&store.db.fixture())
                 .await
                 .unwrap()
                 .unwrap();
@@ -139,7 +139,7 @@ mod tests {
                 .is_err()
         );
         let session = entities::cli_session::Entity::find_by_id("session_activity")
-            .one(store.db.as_ref())
+            .one(&store.db.fixture())
             .await
             .unwrap()
             .unwrap();

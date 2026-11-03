@@ -1,4 +1,4 @@
-use super::{RequestListRow, RequestStore, begin_metadata_read_snapshot, entities, request_rows};
+use super::{RequestListRow, RequestStore, data_scope::DataScope, entities, request_rows};
 use crate::error::PostgresError;
 use scope_domain::{
     repository::access::RepositoryAccessContext,
@@ -30,7 +30,10 @@ impl RequestStore {
             .iter()
             .filter_map(|row| row.base.parent_request_id().map(str::to_string))
             .collect::<BTreeSet<_>>();
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&repository.record.id))
+            .await?;
         let parents = authorized_nodes(&tx, repository, viewer_user_id, &ids).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(rows
