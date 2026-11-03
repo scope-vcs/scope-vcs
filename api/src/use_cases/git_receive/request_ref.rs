@@ -516,6 +516,7 @@ pub(super) async fn persist_request_ref_revision(
                 &incarnation,
                 &mutation.request,
                 &mutation.revision,
+                Some(staging_repo),
             )
             .await;
         }
