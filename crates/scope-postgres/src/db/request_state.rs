@@ -71,6 +71,7 @@ impl RequestStore {
         .await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_state_snapshot"))]
     pub async fn request_state_snapshot_with_children(
         &self,
         owner: &str,

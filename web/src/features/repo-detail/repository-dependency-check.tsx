@@ -27,7 +27,7 @@ export function RepositoryDependencySection({ params, repo }: { params: RepoPara
   const openFile = (path: string) => void navigate({
     params,
     search: { file: displayRouteFilePath(path), ...viewingAsSearch(fullView, repo.access.view) },
-    to: '/$owner/$repo',
+    to: '/$owner/$repo/code',
   })
 
   return (

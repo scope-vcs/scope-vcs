@@ -11,7 +11,6 @@ import { useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import { repoResourceScope } from './repo-resource-scope'
 import { repositoryActivityIdentity, repositoryActivityResource } from './repository-activity-resource'
-import { HistoryMenu } from '@/features/history/history-menu'
 import { useViewingAs } from './use-viewing-as'
 import { viewingAsSearch } from './viewing-as'
 
@@ -91,9 +90,6 @@ export function RepositoryLatestActivity({ params, repo }: { params: RepoParams;
             <span className="sr-only">Current revision </span>{headOid.slice(0, 7)}
           </span>
         )}
-        <div className="ml-auto shrink-0 sm:ml-0">
-          <HistoryMenu params={params} />
-        </div>
       </div>
     </div>
   )

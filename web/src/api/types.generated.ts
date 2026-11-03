@@ -188,9 +188,25 @@ export type GitPushTokenResponse = { created_at_unix: number, secret: string | n
 
 export type RepoFileResponse = { path: string, oid: string, tracked: boolean, label: ViewId, };
 
-export type RepoFileContentRequest = { path: string, view: ViewId | null, };
+export type RepoFileContentRequest = { path: string, view: ViewId | null,
+/**
+ * Reads the request's latest push instead of main. Excludes `update`.
+ */
+request: string | null,
+/**
+ * Reads main as of this history entry's `source_id`. Excludes `request`.
+ */
+update: string | null, };
 
-export type RepoFilesRequest = { view: ViewId | null, };
+export type RepoFilesRequest = { view: ViewId | null,
+/**
+ * Reads the request's latest push instead of main. Excludes `update`.
+ */
+request: string | null,
+/**
+ * Reads main as of this history entry's `source_id`. Excludes `request`.
+ */
+update: string | null, };
 
 export type RepoFileContentResponse = { path: string, oid: string, label: ViewId, size_bytes: number, content: ReviewFileContentResponse, };
 
@@ -455,7 +471,11 @@ export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string,
  */
 truncated: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
 
-export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, };
+export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null,
+/**
+ * Matches entry messages, source IDs and visibility-change paths.
+ */
+search: string | null, };
 
 export type HistoryEntryRequest = { view: ViewId | null, };
 

@@ -11,7 +11,6 @@ import { REQUEST_QUEUE_SECTION_ORDER } from './request-list-model'
 import {
   loadMoreRequestQueue,
   requestQueueIdentity,
-  searchRequestQueue,
   type LoadRequestQueuePage,
 } from './request-queue-cache'
 import { RequestWorkspaceSidebar } from './request-workspace-sidebar'
@@ -61,7 +60,6 @@ function RequestWorkspaceContent({
   const identity = scope && requestQueueIdentity(scope, view)
   const [collapsed, setCollapsed] = useState(readRequestWorkspaceCollapsed)
   const [focus, setFocus] = useState(false)
-  const [draft, setDraft] = useState<string | null>(null)
   const [customSnoozeItem, setCustomSnoozeItem] = useState<RequestQueueItemResponse | null>(null)
   useEffect(() => {
     document.documentElement.toggleAttribute('data-focus', focus)
@@ -69,9 +67,9 @@ function RequestWorkspaceContent({
   }, [focus])
   const toggleFocus = useCallback(() => setFocus((value) => !value), [])
   const load = useCallback<LoadRequestQueuePage>(
-    (section, cursor, search, signal) =>
+    (section, cursor, signal) =>
       loadRequestQueuePage({
-        data: { owner: params.owner, repo: params.repo, section, cursor, search, view },
+        data: { owner: params.owner, repo: params.repo, section, cursor, search: null, view },
         signal,
       }),
     [params.owner, params.repo, view],
@@ -84,7 +82,6 @@ function RequestWorkspaceContent({
     loadedPages,
     selectedId,
   )
-  const query = draft ?? queue.value?.requestedQuery ?? ''
   const pages = useMemo(
     () => loadedPages && applyAttentionMoves(loadedPages, moves),
     [loadedPages, moves],
@@ -94,17 +91,10 @@ function RequestWorkspaceContent({
       (item) => item.request.id === selectedId,
     ) ?? null
 
-  function search(value: string) {
-    setDraft(value)
-    if (identity && value.trim() !== queue.value?.requestedQuery)
-      void searchRequestQueue(identity, value, load)
-  }
-
   function changeCollapsed(value: boolean) {
     setCollapsed(value)
     saveRequestWorkspaceCollapsed(value)
     if (!value) setFocus(false)
-    else if (query) search('')
   }
 
   return (
@@ -120,7 +110,7 @@ function RequestWorkspaceContent({
           focus={focus}
           error={queue.error ? 'Could not load requests. Try again.' : null}
           loading={queue.refreshing}
-          skeleton={!queue.value || (queue.refreshing && queue.value.query !== queue.value.requestedQuery)}
+          skeleton={!queue.value}
           maintainer={maintainer}
           onAction={(item, command) => void act(item, command)}
           onCustomSnooze={setCustomSnoozeItem}
@@ -129,16 +119,10 @@ function RequestWorkspaceContent({
           onLoadMore={(section) => {
             if (identity) void loadMoreRequestQueue(identity, section, load)
           }}
-          onRetry={() => {
-            if (identity && query.trim() !== queue.value?.query)
-              void searchRequestQueue(identity, query, load)
-            else queue.retry()
-          }}
-          onSearch={search}
+          onRetry={queue.retry}
           pages={pages}
           params={params}
           pendingId={pendingId}
-          query={query}
           selectedId={selectedId}
           viewingAs={options.length > 1 ? <RepoViewingAsPicker compact /> : null}
         />

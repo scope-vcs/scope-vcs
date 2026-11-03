@@ -62,6 +62,7 @@ pub(crate) async fn get_history_page(
             feed: feed.into(),
             before: boundary.as_ref(),
             entry_source_id: None,
+            search: input.search.as_deref(),
             limit: HISTORY_PAGE_SIZE as u64,
         })
         .await?;
@@ -106,6 +107,7 @@ pub(crate) async fn get_history_entry(
             feed: scope_domain::history::HistoryFeed::All,
             before: None,
             entry_source_id: Some(&entry_id),
+            search: None,
             limit: 1,
         })
         .await?;
@@ -157,6 +159,7 @@ pub(crate) async fn get_history_entry_file_diff(
             feed: scope_domain::history::HistoryFeed::All,
             before: None,
             entry_source_id: Some(&entry_id),
+            search: None,
             limit: 1,
         })
         .await?;
@@ -218,7 +221,7 @@ fn history_entry_file<'a>(
     file.ok_or_else(|| ApiError::not_found(format!("file {path} not found")))
 }
 
-async fn repo_and_view(
+pub(crate) async fn repo_and_view(
     state: &AppState,
     headers: &HeaderMap,
     owner: &str,

@@ -25,6 +25,7 @@ fn request_workflow() -> String {
 
 mod cache;
 mod checks;
+mod code_reads;
 mod diff_stats;
 pub(super) mod github_checks;
 mod github_main_publication;

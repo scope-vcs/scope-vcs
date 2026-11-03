@@ -196,6 +196,7 @@ pub(crate) async fn publish(
         &incarnation,
         &mutation.request,
         &mutation.revision,
+        None,
     )
     .await;
     if let Err(error) = crate::use_cases::request_checks::checks_view(
