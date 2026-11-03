@@ -6,9 +6,10 @@ import { join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 
+import { fetchRefspec, fetchedTipError, readerRef } from './agent-fetch.mjs';
 import { agentBranchName, parseMarks, slug, writeAgentHistoryStream, writeSeedStream } from './agent-fixtures.mjs';
 import { configuration, mergeBatchSize, publicConfig } from './agent-load-config.mjs';
-import { persistReport, reportPath, stageRow } from './agent-load-report.mjs';
+import { latencySummary, persistReport, reportPath, stageRow } from './agent-load-report.mjs';
 import { FixtureCleanup } from './fixture-cleanup.mjs';
 import { message } from './host.mjs';
 import { execute, killCommandTree } from './subprocess.mjs';
@@ -77,6 +78,7 @@ async function openRepository(context, cleanup, root, report) {
   }
   repository.mainOid = await git(['rev-parse', 'refs/heads/main'], { cwd: base });
   repository.base = base;
+  repository.root = root;
   report.repository = { owner: repository.owner, name: repository.name, created: !config.repo, mainOid: repository.mainOid };
   console.log(`repository ${repository.owner}/${repository.name} main ${repository.mainOid.slice(0, 12)}`);
   return repository;
@@ -153,6 +155,7 @@ async function prepareAgent(context, repository, root, index) {
     requestId: request.request.id,
     commits: parseMarks(await readFile(marksPath, 'utf8'), config.commits),
     next: 0, remoteHead: repository.mainOid,
+    firstAttempts: new Map(), readers: new Map(),
   };
 }
 
@@ -160,6 +163,7 @@ async function pushNext(repository, agent, token) {
   const oid = agent.commits[agent.next];
   const environment = { GIT_DIR: agent.directory, ...authEnvironment(repository.pushUrl, token) };
   const started = performance.now();
+  if (!agent.firstAttempts.has(oid)) agent.firstAttempts.set(oid, started);
   const result = await attempt(
     ['-c', 'push.recurseSubmodules=no', 'push', '-q', `--force-with-lease=${agent.ref}:${agent.remoteHead}`, repository.pushUrl, `${oid}:${agent.ref}`],
     { env: environment },
@@ -168,7 +172,7 @@ async function pushNext(repository, agent, token) {
   if (result.ok) {
     agent.remoteHead = oid;
     agent.next += 1;
-    return { ok: true, durationMs };
+    return { ok: true, durationMs, oid, position: agent.next - 1, firstAttemptMs: agent.firstAttempts.get(oid) };
   }
   const listing = await attempt(['ls-remote', repository.pushUrl, agent.ref], { env: environment });
   const remote = listing.stdout.split('\t')[0];
@@ -180,22 +184,74 @@ async function pushNext(repository, agent, token) {
   return { ok: false, durationMs, error: result.error };
 }
 
+async function readerRepository(repository, agent, readerIndex) {
+  if (!agent.readers.has(readerIndex)) {
+    agent.readers.set(readerIndex, (async () => {
+      const directory = join(repository.root, `reader-${agent.index}-${readerIndex}`);
+      await git(['init', '-q', '--bare', directory]);
+      await writeFile(join(directory, 'objects', 'info', 'alternates'), `${join(repository.base, 'objects')}\n`);
+      return directory;
+    })());
+  }
+  return agent.readers.get(readerIndex);
+}
+
+async function fetchAndVerify(context, repository, agent, push, readerIndex) {
+  const { config } = context;
+  let sample;
+  try {
+    const directory = await readerRepository(repository, agent, readerIndex);
+    const localRef = readerRef(agent.index, readerIndex, push.position);
+    const started = performance.now();
+    const fetched = await attempt(
+      ['-c', 'protocol.version=2', 'fetch', '-q', '--no-tags', repository.pushUrl, fetchRefspec(agent.name, localRef)],
+      { env: { GIT_DIR: directory, ...authEnvironment(repository.pushUrl, config.token) } },
+    );
+    const fetchMs = performance.now() - started;
+    const reader = (args) => attempt(args, { env: { GIT_DIR: directory } });
+    const error = fetched.ok ? await fetchedTipError(reader, localRef, push.oid) : fetched.error;
+    const verifiedMs = performance.now();
+    sample = {
+      fetch: { ok: !error, durationMs: fetchMs, ...(error && { error }) },
+      pushToFetch: { ok: !error, durationMs: verifiedMs - push.firstAttemptMs, ...(error && { error }) },
+    };
+  } catch (error) {
+    const failure = message(error).slice(0, 300);
+    sample = { fetch: { ok: false, durationMs: 0, error: failure }, pushToFetch: { ok: false, durationMs: 0, error: failure } };
+  }
+  return sample;
+}
+
 async function runPushStages(context, repository, agents, report) {
   const { config } = context;
   for (const [position, concurrency] of config.stages.entries()) {
     if (context.interrupted) break;
     const samples = [];
+    const readerRuns = [];
     const startedAt = new Date().toISOString();
     const started = performance.now();
     const deadline = started + config.stageSeconds * 1000;
     const active = [...agents].sort((left, right) => (left.next - right.next) || (left.index - right.index)).slice(0, concurrency);
     await Promise.all(active.map(async (agent) => {
       while (performance.now() < deadline && agent.next < agent.commits.length && !context.interrupted) {
-        samples.push(await pushNext(repository, agent, config.token));
+        const result = await pushNext(repository, agent, config.token);
+        samples.push(result);
+        if (result.ok) {
+          for (let reader = 0; reader < config.fetchesPerPush; reader += 1) {
+            readerRuns.push(fetchAndVerify(context, repository, agent, result, reader));
+          }
+        }
       }
     }));
+    const wallSeconds = (performance.now() - started) / 1000;
+    const readerSamples = await Promise.all(readerRuns);
     const row = {
-      ...stageRow({ mode: 'push', concurrency, samples, wallSeconds: (performance.now() - started) / 1000, startedAt, completedAt: new Date().toISOString() }),
+      ...stageRow({ mode: 'push', concurrency, samples, wallSeconds, startedAt, completedAt: new Date().toISOString() }),
+      fetchesPerPush: config.fetchesPerPush,
+      ...(config.fetchesPerPush > 0 && {
+        pushToFetch: latencySummary(readerSamples.map((entry) => entry.pushToFetch)),
+        fetch: latencySummary(readerSamples.map((entry) => entry.fetch)),
+      }),
       exhaustedAgents: active.filter((agent) => agent.next >= agent.commits.length).length,
     };
     record(report, row);

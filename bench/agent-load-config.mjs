@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 
-import { enumValue, nonEmpty, positiveInteger, positiveNumber, required } from './env.mjs';
+import { enumValue, nonEmpty, nonNegativeInteger, positiveInteger, positiveNumber, required } from './env.mjs';
 import { parseStages } from './load-config.mjs';
 import { validateTargetKind } from './target-safety.mjs';
 
@@ -41,6 +41,7 @@ export function configuration(env = process.env) {
     stageSeconds: positiveNumber('SCOPE_AGENT_STAGE_SECONDS', 30, env),
     agents,
     commits: positiveInteger('SCOPE_AGENT_COMMITS', 40, env),
+    fetchesPerPush: nonNegativeInteger('SCOPE_AGENT_FETCHES_PER_PUSH', 1, env),
     deltaBytes: positiveInteger('SCOPE_AGENT_DELTA_BYTES', 4096, env),
     mergesPerStage,
     prepConcurrency: positiveInteger('SCOPE_AGENT_PREP_CONCURRENCY', 16, env),

@@ -372,7 +372,7 @@ export function failureBreakdown(samples) {
   const failures = new Map();
   for (const entry of samples.filter(({ ok }) => !ok)) {
     const http = (entry.error || '').match(/(?:HTTP |error: )(\d{3})/i)?.[1];
-    const kind = http ? `http-${http}` : entry.status === 'client-saturated' ? entry.status : /SIGKILL|signal/i.test(entry.error || '') ? 'killed' : 'other';
+    const kind = http ? `http-${http}` : entry.status === 'client-saturated' ? entry.status : /SIGKILL|signal/i.test(entry.error || '') ? 'killed' : /stale tip/i.test(entry.error || '') ? 'stale-tip' : 'other';
     failures.set(kind, (failures.get(kind) || 0) + 1);
   }
   return Object.fromEntries([...failures.entries()].sort());
