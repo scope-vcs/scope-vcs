@@ -61,6 +61,10 @@ export function repoCodeCacheKeys(
   }
 }
 
+export function repoCodeRefreshVersion(repo: RepoSummaryResponse, version: RepositoryVersion) {
+  return version.kind === 'request' ? String(repo.change_version) : ''
+}
+
 export function prepareRepoCodeLoaderData({
   file,
   keys,
@@ -107,7 +111,7 @@ export function useRepoCodeResources({
   const { view } = useViewingAs()
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const { owner, repo: repoName } = params
-  const refreshVersion = version.kind === 'request' ? String(repo.change_version) : ''
+  const refreshVersion = repoCodeRefreshVersion(repo, version)
   const { contentIdentity } = repoCodeCacheKeys(repo, scope, view, null, version)
   const loadContent = useMemo(() => repoCodeResourceLoader(
     page.contentIdentity === contentIdentity ? page.content : null,

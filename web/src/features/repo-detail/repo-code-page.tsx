@@ -82,6 +82,7 @@ export function RepoCodePage({
         onSelectFilePath={onSelectFilePath}
         params={params}
         selectedPath={selectedPath}
+        version={version}
         workspaceTabs={workspaceTabs}
       />
     </WorkbenchPane>

@@ -1,4 +1,4 @@
-import type { HistoryEntrySummaryResponse, RepoFileResponse, RequestQueueItemResponse } from '../../api/types.generated'
+import type { HistoryEntrySummaryResponse, HistoryFeed, RepoFileResponse, RequestQueueItemResponse } from '../../api/types.generated'
 import { displayRouteFilePath } from '../../lib/route-file'
 import { matchingRepositoryFiles } from '../repo-detail/repository-file-navigation'
 import type { RepositoryVersion } from '../repo-detail/repository-version'
@@ -7,6 +7,7 @@ export type RepositorySearchFilter = 'all' | 'requests' | 'updates' | 'visibilit
 
 export type RepositorySearchResults = {
   history: HistoryEntrySummaryResponse[]
+  historyCursor: string | null
   requests: RequestQueueItemResponse[]
 }
 
@@ -28,6 +29,11 @@ const FILTERED_LIMIT = 30
 
 export function historyEntryOpensCode(entry: Pick<HistoryEntrySummaryResponse, 'kind'>) {
   return entry.kind === 'push' || entry.kind === 'merged_request'
+}
+
+export function repositorySearchFeed(filter: RepositorySearchFilter): HistoryFeed {
+  if (filter === 'updates') return 'updates'
+  return filter === 'visibility' ? 'visibility' : 'all'
 }
 
 export function repositoryFilesLabel(version: RepositoryVersion) {
@@ -71,10 +77,17 @@ export function repositorySearchGroups({
     })
   }
   if (filter === 'all' || filter === 'updates' || filter === 'visibility') {
-    const history = results.history
-      .filter((entry) => filter === 'all' || (filter === 'updates') === historyEntryOpensCode(entry))
-      .map((entry): RepositorySearchRow => ({ entry, id: `history:${entry.source_id}`, kind: 'history' }))
-    groups.push({ id: 'history', label: 'History', rows: history.slice(0, limit), total: history.length })
+    const history = results.history.map((entry): RepositorySearchRow => ({
+      entry,
+      id: `history:${entry.source_id}`,
+      kind: 'history',
+    }))
+    groups.push({
+      id: 'history',
+      label: 'History',
+      rows: filter === 'all' ? history.slice(0, limit) : history,
+      total: history.length,
+    })
   }
   if (filter === 'files' || (filter === 'all' && needle)) {
     const { shown, total } = matchingRepositoryFiles(files, needle)

@@ -1,4 +1,4 @@
-import type { ViewId } from '../../api/types.generated'
+import type { HistoryFeed, ViewId } from '../../api/types.generated'
 import { createCachedResource } from '../../lib/cached-resource'
 import type { RepositorySearchResults } from './repository-search-model'
 
@@ -8,6 +8,6 @@ export const repositorySearchResource = createCachedResource<RepositorySearchRes
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
-export function repositorySearchIdentity(scope: string, view: ViewId, query: string) {
-  return [scope, view, query].join('\0')
+export function repositorySearchIdentity(scope: string, view: ViewId, query: string, feed: HistoryFeed) {
+  return [scope, view, feed, query].join('\0')
 }

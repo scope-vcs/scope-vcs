@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { HistoryEntrySummaryResponse, RequestQueueItemResponse } from '../../api/types.generated'
-import { repositorySearchGroups, type RepositorySearchGroup, type RepositorySearchFilter } from './repository-search-model'
+import { repositorySearchFeed, repositorySearchGroups, type RepositorySearchGroup, type RepositorySearchFilter } from './repository-search-model'
 
 const request = { request: { id: 'req_1', title: 'Retry runners' } } as RequestQueueItemResponse
 const push = { kind: 'push', source_id: 'push_1' } as HistoryEntrySummaryResponse
@@ -18,7 +18,7 @@ function groups(filter: RepositorySearchFilter, query: string) {
     files: [...files],
     filter,
     query,
-    results: { history: [push, merge, visibility, views], requests: [request] },
+    results: { history: [push, merge, visibility, views], historyCursor: null, requests: [request] },
     version: { kind: 'main' },
   })
 }
@@ -45,9 +45,10 @@ test('a query groups matches by kind and drops main unless it matches', () => {
   assert.deepEqual(rowIds(groups('all', 'mai')[0]), ['main', 'request:req_1'])
 })
 
-test('history filters separate code versions from visibility and view changes', () => {
-  assert.deepEqual(rowIds(groups('updates', '')[0]), ['history:push_1', 'history:merge_1'])
-  assert.deepEqual(rowIds(groups('visibility', '')[0]), ['history:vis_1', 'history:views_1'])
+test('history filters ask the server for their feed, so older matches are not cut off', () => {
+  assert.equal(repositorySearchFeed('updates'), 'updates')
+  assert.equal(repositorySearchFeed('visibility'), 'visibility')
+  assert.equal(repositorySearchFeed('requests'), 'all')
 })
 
 test('the Files filter lists files without a query', () => {

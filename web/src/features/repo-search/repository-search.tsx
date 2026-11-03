@@ -3,9 +3,10 @@ import type { RepoSummaryResponse } from '@/api/types.generated'
 import { DiffStatSummary } from '@/components/diff-stat'
 import { NavigationSearch } from '@/components/navigation-search'
 import { RelativeTimestamp } from '@/components/timestamp'
+import { Button } from '@/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { diffStatWithChanges } from '@/lib/diff-stat'
-import { useCachedResource } from '@/lib/use-cached-resource'
+import { resourceErrorMessage, useCachedResource } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
 import { loadRepoContent } from '@/routes/-repo-code-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
@@ -19,17 +20,18 @@ import {
   repositoryVersion,
   repositoryVersionSearch,
 } from '../repo-detail/repository-version'
-import { repoCodeCacheKeys } from '../repo-detail/use-repo-code-resources'
+import { repoCodeCacheKeys, repoCodeRefreshVersion } from '../repo-detail/use-repo-code-resources'
 import { useViewingAs } from '../repo-detail/use-viewing-as'
 import { actorHandle } from '../requests/request-actor'
 import {
   historyEntryOpensCode,
+  repositorySearchFeed,
   repositorySearchGroups,
   type RepositorySearchFilter,
   type RepositorySearchRow,
 } from './repository-search-model'
 import { repositorySearchIdentity, repositorySearchResource } from './repository-search-cache'
-import { loadRepositorySearch } from './repository-search-resource'
+import { loadOlderRepositorySearchHistory, loadRepositorySearch } from './repository-search-resource'
 
 export const REPOSITORY_SEARCH_INPUT_ID = 'repository-search-input'
 
@@ -41,7 +43,7 @@ const FILTERS: { label: string; value: RepositorySearchFilter }[] = [
   { label: 'Files', value: 'files' },
 ]
 const SEARCH_DELAY_MS = 200
-const EMPTY_RESULTS = { history: [], requests: [] }
+const EMPTY_RESULTS = { history: [], historyCursor: null, requests: [] }
 const PAGE_SEARCH_ROUTE = /\/(?:requests|updates)(?:\/|$)/
 
 export function RepositorySearch({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
@@ -58,6 +60,7 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
   const [settledQuery, setSettledQuery] = useState('')
   const [filter, setFilter] = useState<RepositorySearchFilter>('all')
   const [activeIndex, setActiveIndex] = useState(0)
+  const [older, setOlder] = useState<{ error: string | null; loading: boolean }>({ error: null, loading: false })
   const rootRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const listId = useId()
@@ -69,14 +72,16 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
     return () => clearTimeout(timer)
   }, [search])
 
+  const feed = repositorySearchFeed(filter)
   const load = useCallback(
-    (signal: AbortSignal) => loadRepositorySearch(params, view, settledQuery, signal),
-    [params, settledQuery, view],
+    (signal: AbortSignal) => loadRepositorySearch(params, view, settledQuery, feed, signal),
+    [feed, params, settledQuery, view],
   )
+  const searchIdentity = scope ? repositorySearchIdentity(scope, view, settledQuery, feed) : null
   const found = useCachedResource({
     enabled: open,
     fallbackError: 'Search is unavailable.',
-    identity: scope ? repositorySearchIdentity(scope, view, settledQuery) : null,
+    identity: searchIdentity,
     load,
     resource: repositorySearchResource,
     version: String(repo.change_version),
@@ -95,6 +100,7 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
     identity: repoCodeCacheKeys(repo, scope, view, null, version).contentIdentity,
     load: loadFiles,
     resource: repoContentResource,
+    version: repoCodeRefreshVersion(repo, version),
   })
   const groups = useMemo(() => repositorySearchGroups({
     files: files.value?.files ?? [],
@@ -123,11 +129,31 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
       setActiveIndex((active + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length)
     } else if (event.key === 'Enter') {
       event.preventDefault()
+      if (search !== settledQuery && activeRow?.kind !== 'file') return
       listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.click()
     }
   }
 
   const settled = found.status === 'loaded' && search === settledQuery
+  const failure = found.error ? found : files.error ? files : null
+  const canLoadOlder = feed !== 'all' && Boolean(found.value?.historyCursor)
+
+  async function loadOlder() {
+    if (!searchIdentity) return
+    setOlder({ error: null, loading: true })
+    try {
+      await loadOlderRepositorySearchHistory({
+        feed,
+        identity: searchIdentity,
+        params,
+        query: settledQuery,
+        view,
+      })
+      setOlder({ error: null, loading: false })
+    } catch (error) {
+      setOlder({ error: resourceErrorMessage(error, 'Older history is unavailable.'), loading: false })
+    }
+  }
 
   return (
     <div
@@ -215,12 +241,23 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
                 })}
               </div>
             ))}
-            {found.error ? (
-              <p className="px-3 py-3 text-xs text-danger-strong" role="alert">{found.error}</p>
+            {failure ? (
+              <div className="flex items-center justify-between gap-3 px-3 py-3 text-xs text-danger-strong" role="alert">
+                <span>{failure.error}</span>
+                <Button onClick={failure.retry} size="sm" type="button" variant="secondary">Retry</Button>
+              </div>
             ) : !groups.length && (
               <output className="block px-3 py-4 text-xs text-muted-foreground">
                 {settled ? 'No matches.' : 'Searching…'}
               </output>
+            )}
+            {canLoadOlder && (
+              <div className="flex items-center gap-3 px-3 py-2 text-xs">
+                <Button disabled={older.loading} onClick={() => void loadOlder()} size="sm" type="button" variant="secondary">
+                  Load older
+                </Button>
+                {older.error && <span className="text-danger-strong" role="alert">{older.error}</span>}
+              </div>
             )}
           </div>
         </div>

@@ -7,15 +7,18 @@ import { isRepositoryMarkdownPath } from '@/components/repository-markdown'
 import { RepositoryMarkdownRenderer } from '@/components/repository-markdown-renderer'
 import { formatBytes } from '@/lib/format-bytes'
 import { FileQuestion } from 'lucide-react'
+import { repositoryVersionSearch, type RepositoryVersion } from './repository-version'
 
 export function RepositoryFileContent({
   file,
   htmlMode,
   params,
+  version,
 }: {
   file: RepoFileContentResponse
   htmlMode: RepositoryHtmlMode
   params: RepoParams
+  version: RepositoryVersion
 }) {
   if (file.content.kind !== 'text') {
     return (
@@ -33,7 +36,7 @@ export function RepositoryFileContent({
   if (isRepositoryMarkdownPath(file.path)) {
     return (
       <RepositoryMarkdownRenderer
-        repository={{ ...params, markdownPath: file.path }}
+        repository={{ ...params, markdownPath: file.path, version: repositoryVersionSearch(version) }}
         source={file.content.text}
       />
     )

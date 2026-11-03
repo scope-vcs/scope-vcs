@@ -42,6 +42,7 @@ import {
 } from './repository-code-skeletons'
 import { RepositoryFileContent } from './repository-file-content'
 import { RepositoryFileNavigator } from './repository-file-navigator'
+import type { RepositoryVersion } from './repository-version'
 import { useViewingAs } from './use-viewing-as'
 
 const CODE_TAB_SET_ID = 'repository-code-files'
@@ -52,6 +53,7 @@ export function RepositoryCodeView({
   onSelectFilePath,
   params,
   selectedPath,
+  version,
   workspaceTabs,
 }: {
   content: CachedResource<RepoContent>
@@ -59,6 +61,7 @@ export function RepositoryCodeView({
   onSelectFilePath: (path: string) => void
   params: RepoParams
   selectedPath: string | null
+  version: RepositoryVersion
   workspaceTabs: ReturnType<typeof useWorkspaceTabs>
 }) {
   const [navigationOpen, setNavigationOpen] = useState(false)
@@ -140,6 +143,7 @@ export function RepositoryCodeView({
           scrollKey={file.identity}
           selectedPath={openPath}
           showVisibility={hasMixedVisibility}
+          version={version}
           workspaceTabs={workspaceTabs}
         />
       </FileWorkbench>
@@ -179,6 +183,7 @@ function SourcePane({
   scrollKey,
   selectedPath,
   showVisibility,
+  version,
   workspaceTabs,
 }: {
   availablePaths: string[]
@@ -194,6 +199,7 @@ function SourcePane({
   scrollKey: string | null
   selectedPath: string | null
   showVisibility: boolean
+  version: RepositoryVersion
   workspaceTabs: ReturnType<typeof useWorkspaceTabs>
 }) {
   const activeTabDomIds = selectedPath
@@ -262,6 +268,7 @@ function SourcePane({
           params={params}
           retry={retry}
           selectedPath={selectedPath}
+          version={version}
         />
       </div>
     </div>
@@ -325,6 +332,7 @@ function SourceContent({
   params,
   retry,
   selectedPath,
+  version,
 }: {
   emptyMessage: string
   error: string | null
@@ -334,6 +342,7 @@ function SourceContent({
   retry: () => void
   selectedPath: string | null
   htmlMode: RepositoryHtmlMode
+  version: RepositoryVersion
 }) {
   if (loading) {
     return (
@@ -380,7 +389,7 @@ function SourceContent({
 
   return (
     <div className="scope-content-enter min-h-full" key={file.oid}>
-      <RepositoryFileContent file={file} htmlMode={htmlMode} params={params} />
+      <RepositoryFileContent file={file} htmlMode={htmlMode} params={params} version={version} />
     </div>
   )
 }

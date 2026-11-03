@@ -21,6 +21,8 @@ import { RepositoryLatestActivity } from './repository-latest-activity'
 import { RepoViewingAsPicker, useViewingAs } from './use-viewing-as'
 import { ViewingAsStatus } from './viewing-as-picker'
 
+const MAIN = { kind: 'main' } as const
+
 export function RepoHomePage({
   content,
   file,
@@ -135,7 +137,7 @@ function RepositoryReadme({
   }
   return (
     <div className="scope-content-enter" key={file.value.oid}>
-      <RepositoryFileContent file={file.value} htmlMode="preview" params={params} />
+      <RepositoryFileContent file={file.value} htmlMode="preview" params={params} version={MAIN} />
     </div>
   )
 }

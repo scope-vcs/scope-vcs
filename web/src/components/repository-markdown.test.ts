@@ -74,6 +74,17 @@ test('resolves relative Markdown links to repository file routes', () => {
   )
 })
 
+test('relative Markdown links stay on the version being read', () => {
+  assert.equal(
+    resolveRepositoryMarkdownUrl('./setup.md', { ...context, version: { request: 'req_1' } }),
+    '/scope/demo/code?request=req_1&file=docs%2Fsetup.md',
+  )
+  assert.equal(
+    resolveRepositoryMarkdownUrl('./setup.md', { ...context, version: { update: 'entry/1' } }),
+    '/scope/demo/code?update=entry%2F1&file=docs%2Fsetup.md',
+  )
+})
+
 test('rejects relative Markdown paths that escape the repository', () => {
   assert.equal(resolveRepositoryMarkdownUrl('../../LICENSE', context), '')
   assert.equal(resolveRepositoryMarkdownUrl('%2e%2e/%2e%2e/LICENSE', context), '')
