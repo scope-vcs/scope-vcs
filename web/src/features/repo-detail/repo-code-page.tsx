@@ -7,7 +7,7 @@ import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { Button } from '@/components/ui/button'
 import { useWorkspaceTabs } from '@/components/use-workspace-tabs'
-import { REPOSITORY_SEARCH_INPUT_ID } from '@/features/repo-search/repository-search'
+import { useRepositorySearch } from '@/features/repo-search/repository-search-context'
 import type { CachedResource } from '@/lib/use-cached-resource'
 import { Link } from '@tanstack/react-router'
 import { ArrowLeft, ChevronDown, GitBranch, GitPullRequest, History } from 'lucide-react'
@@ -90,12 +90,13 @@ export function RepoCodePage({
 }
 
 function VersionButton({ version }: { version: RepositoryVersion }) {
+  const search = useRepositorySearch()
   const Icon = version.kind === 'main' ? GitBranch : version.kind === 'request' ? GitPullRequest : History
   return (
     <Button
       aria-label="Change version"
       className="min-w-0"
-      onClick={() => document.getElementById(REPOSITORY_SEARCH_INPUT_ID)?.focus()}
+      onClick={() => search.open()}
       size="sm"
       type="button"
       variant="secondary"

@@ -26,7 +26,7 @@ const event = (kind: RepoChangeEvent['kind']): RepoChangeEvent => ({ repo_id: 'r
 function seed() {
   requestQueueResource.clear()
   const page = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  for (const scope of ['viewer-a', 'viewer-b']) for (const view of ['private', 'public']) requestQueueResource.write(requestQueueIdentity(scope, view), { query: 'needle', requestedQuery: 'needle', pages: { active: page, unclaimed: page, set_aside: page, done: page } })
+  for (const scope of ['viewer-a', 'viewer-b']) for (const view of ['private', 'public']) requestQueueResource.write(requestQueueIdentity(scope, view), { pages: { active: page, unclaimed: page, set_aside: page, done: page } })
   repositoryActivityResource.clear()
   requestActivityResource.clear()
   repositoryDependencyResource.clear()
@@ -49,7 +49,7 @@ test('repository updates invalidate retained activity even when its page is unmo
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'public')).stale, true)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
-  assert.equal(requestQueueResource.peek(requestQueueIdentity('viewer-a', 'private'))?.query, 'needle')
+  assert.equal(requestQueueResource.peek(requestQueueIdentity('viewer-a', 'private'))?.pages.active.requests.length, 0)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
   assert.equal(repositoryActivityResource.peek(repositoryActivityIdentity('viewer-a', 'public'))?.head_oid, 'head')
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'agent')).stale, true)

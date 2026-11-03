@@ -2,6 +2,7 @@ import type { RepoParams } from '@/api/types'
 import type { HistoryFeed, ViewId } from '@/api/types.generated'
 import { loadHistoryPage } from '@/routes/-repo-history-actions'
 import { loadRequestQueuePage } from '@/routes/-request-workspace-actions'
+import { appendHistoryPage } from '../history/history-pagination'
 import { REQUEST_QUEUE_SECTION_ORDER } from '../requests/request-list-model'
 import { repositorySearchResource } from './repository-search-cache'
 import type { RepositorySearchResults } from './repository-search-model'
@@ -51,9 +52,14 @@ export async function loadOlderRepositorySearchHistory({
   const page = await loadHistoryPage({
     data: { before, feed, owner, repo, search: query || null, view },
   })
+  const history = appendHistoryPage(
+    { entries: snapshot.value.history, next_cursor: before },
+    page,
+    before,
+  )
   repositorySearchResource.writeIfUnchanged(identity, snapshot, {
     ...snapshot.value,
-    history: [...snapshot.value.history, ...page.entries],
-    historyCursor: page.next_cursor,
+    history: history.entries,
+    historyCursor: history.next_cursor,
   }, snapshot.version ?? '')
 }

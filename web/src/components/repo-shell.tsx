@@ -13,6 +13,7 @@ import {
 } from '@/components/repo-section-model'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { RepositorySearch } from '@/features/repo-search/repository-search'
+import { RepositorySearchProvider } from '@/features/repo-search/repository-search-context'
 import { useRequestReturnLocation } from '@/features/requests/use-request-return-location'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link, useLocation, useRouter } from '@tanstack/react-router'
@@ -75,6 +76,7 @@ export function RepoShell({
   )
 
   return (
+    <RepositorySearchProvider>
     <AppShell
       header={() => (
         <ApplicationTopbar
@@ -95,5 +97,6 @@ export function RepoShell({
     >
       {children}
     </AppShell>
+    </RepositorySearchProvider>
   )
 }

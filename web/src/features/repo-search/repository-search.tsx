@@ -31,9 +31,8 @@ import {
   type RepositorySearchRow,
 } from './repository-search-model'
 import { repositorySearchIdentity, repositorySearchResource } from './repository-search-cache'
+import { REPOSITORY_SEARCH_INPUT_ID, useRepositorySearch } from './repository-search-context'
 import { loadOlderRepositorySearchHistory, loadRepositorySearch } from './repository-search-resource'
-
-export const REPOSITORY_SEARCH_INPUT_ID = 'repository-search-input'
 
 const FILTERS: { label: string; value: RepositorySearchFilter }[] = [
   { label: 'All', value: 'all' },
@@ -44,7 +43,7 @@ const FILTERS: { label: string; value: RepositorySearchFilter }[] = [
 ]
 const SEARCH_DELAY_MS = 200
 const EMPTY_RESULTS = { history: [], historyCursor: null, requests: [] }
-const PAGE_SEARCH_ROUTE = /\/(?:requests|updates)(?:\/|$)/
+const PAGE_SEARCH_ROUTE = /\/(?:updates\/|requests\/[^/]+\/changes(?:\/|$))/
 
 export function RepositorySearch({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
   const { isLoaded, userId } = useAuth()
@@ -58,7 +57,7 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [settledQuery, setSettledQuery] = useState('')
-  const [filter, setFilter] = useState<RepositorySearchFilter>('all')
+  const { filter, setFilter } = useRepositorySearch()
   const [activeIndex, setActiveIndex] = useState(0)
   const [older, setOlder] = useState<{ error: string | null; loading: boolean }>({ error: null, loading: false })
   const rootRef = useRef<HTMLDivElement>(null)

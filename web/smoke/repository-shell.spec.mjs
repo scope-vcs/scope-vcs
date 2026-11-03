@@ -7,6 +7,7 @@ import {
   baseUrl,
   repoPath,
   trackPageSettle,
+  waitForClientHydration,
   withBlankPage,
   within,
   withPage,
@@ -88,6 +89,10 @@ test('public direct Runs access is explicit and exposes no operations', async ()
   })
 })
 
+function primaryNavigationLink(page) {
+  return page.getByRole('navigation', { name: 'Primary' }).getByRole('link').first()
+}
+
 async function assertShellBeforeFileReady({ content, path, requestPath }) {
   let fileRequests = 0
   let settled
@@ -104,6 +109,7 @@ async function assertShellBeforeFileReady({ content, path, requestPath }) {
     await withPage(
       path,
       async (page) => {
+        await waitForClientHydration(primaryNavigationLink(page))
         await within(
           fileRequestStarted,
           10_000,
