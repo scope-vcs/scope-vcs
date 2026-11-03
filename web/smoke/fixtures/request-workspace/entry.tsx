@@ -23,8 +23,9 @@ const diffStats = [
   { additions: 0, deletions: 0, changed_files: 3 },
   null,
 ]
+const mergeability = ['ReviewsPending', 'ChecksFailed', 'Ready'] as const
 const items = titles.map((title, index) => ({
-  request: { id: `request-${index}`, title, base: { kind: 'main', review_base_oid: 'a'.repeat(40) }, base_version: 1, stack_status: 'main', stack_depth: 1, diff_stat: diffStats[index] },
+  request: { id: `request-${index}`, title, base: { kind: 'main', review_base_oid: 'a'.repeat(40) }, base_version: 1, stack_status: 'main', stack_depth: 1, diff_stat: diffStats[index], mergeability: { status: mergeability[index], current_main_oid: null, request_head_oid: 'head', reason: null } },
   author: { handle: 'adam' },
   attention: { group: 'needs_you', reason: 'authored', can_set_aside: index < 2 },
   attention_at_unix: Math.floor(Date.now() / 1000) - index * 480,

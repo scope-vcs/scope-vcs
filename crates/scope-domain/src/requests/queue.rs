@@ -36,6 +36,7 @@ pub enum RequestQueueGroup {
 pub fn request_queue_group(
     section: RequestQueueSection,
     reason: RequestAttentionReason,
+    next_step: RequestQueueNextStep,
     viewer_is_maintainer: bool,
 ) -> RequestQueueGroup {
     use RequestAttentionReason as Reason;
@@ -44,7 +45,9 @@ pub fn request_queue_group(
         RequestQueueSection::SetAside => RequestQueueGroup::SetAside,
         RequestQueueSection::Done => RequestQueueGroup::Done,
         RequestQueueSection::Active => match reason {
-            Reason::Authored if viewer_is_maintainer => RequestQueueGroup::NeedsYou,
+            Reason::Authored if viewer_is_maintainer && next_step != RequestQueueNextStep::Wait => {
+                RequestQueueGroup::NeedsYou
+            }
             Reason::Invited
             | Reason::Claimed
             | Reason::NewActivity

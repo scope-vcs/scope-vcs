@@ -29,13 +29,12 @@ import {
 import {
   REQUEST_ATTENTION_GROUP_LABELS,
   REQUEST_ATTENTION_GROUP_ORDER,
-  REQUEST_MERGE_STEP_LABELS,
   requestAgeLabel,
-  requestAttentionLabel,
+  requestStatusLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
 import { RequestRailHint, type RailHint, type RailHintRequest } from './request-workspace-rail-hint'
-import { foldStackedRequestRows, requestStackMembers, stackRequestRows } from './request-workspace-stack'
+import { foldStackedRequestRows, requestStackMembers, requestStacksWith, stackRequestRows } from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
 
@@ -188,9 +187,9 @@ export function RequestWorkspaceSidebar({
       'stack' in hinted &&
       hinted.stack &&
       target?.dataset.requestId !== undefined &&
-      !over.closest('.request-workspace-row-avatar')
+      !over.closest('.request-workspace-row-mark')
     if (travelingToStack) return
-    const anchor = target?.dataset.railHint ? target : target?.querySelector('.request-workspace-row-avatar')
+    const anchor = target?.dataset.railHint ? target : target?.querySelector('.request-workspace-row-mark')
     const key = target?.dataset.railHint ?? target?.dataset.requestId
     if (state !== 'closed' || !key || !anchor) return setHint(null)
     const { top, height } = anchor.getBoundingClientRect()
@@ -236,6 +235,7 @@ export function RequestWorkspaceSidebar({
   const activeHasMore = Boolean(pages?.active.next_cursor)
   const activeCount = (value: number) => pages ? `${value}${activeHasMore ? '+' : ''}` : null
   const needsYou = grouped.needs_you
+  const needsYouCount = needsYou.filter(({ item }) => item.attention.group === 'needs_you').length
   const caughtUp = Boolean(pages) && !skeleton && needsYou.length === 0 && !activeHasMore
   const current = allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
   const moved = (items: QueueRow[]) => Number(current !== undefined && items.includes(current))
@@ -280,7 +280,7 @@ export function RequestWorkspaceSidebar({
   const hinted = hint && state === 'closed' ? railHint(hint.key, hint.now) : undefined
   function railHint(key: string, now: number): RailHint | undefined {
     if (key === 'needs-you') {
-      const count = activeCount(needsYou.length)
+      const count = activeCount(needsYouCount)
       return {
         title: count === null ? REQUEST_ATTENTION_GROUP_LABELS.needs_you : `${REQUEST_ATTENTION_GROUP_LABELS.needs_you} · ${count}`,
         details: caughtUp ? [EMPTY_LABELS.needs_you] : [],
@@ -297,7 +297,7 @@ export function RequestWorkspaceSidebar({
       id: item.request.id,
       title: item.request.title,
       nextStep: item.next_step,
-      status: railHintStatus(item),
+      status: requestStatusLabel(item, true),
       age: item.request.id === key ? requestAgeLabel(item.attention_at_unix, now, true) : undefined,
       depth,
       hovered: item.request.id === key,
@@ -338,7 +338,6 @@ export function RequestWorkspaceSidebar({
             {state === 'closed' ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
           </Button>
         </div>
-        {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
         {actionError && (
           <p className="py-2 pr-4 pl-(--request-workspace-row-inset) text-xs text-danger-strong" role="alert">
             {actionError}
@@ -353,7 +352,7 @@ export function RequestWorkspaceSidebar({
                 </span>
                 <GroupCount count={null} />
               </h2>
-              <RequestWorkspaceListSkeleton rail />
+              <RequestWorkspaceListSkeleton />
             </section>
           ) : (
             <>
@@ -364,7 +363,7 @@ export function RequestWorkspaceSidebar({
                     {caughtUp && (
                       <CircleCheck aria-hidden="true" className="request-workspace-rail-caught-up" />
                     )}
-                    <GroupCount count={activeCount(needsYou.length)} />
+                    <GroupCount count={activeCount(needsYouCount)} />
                   </h2>
                   <RequestWorkspaceList
                     {...common}
@@ -419,7 +418,7 @@ export function RequestWorkspaceSidebar({
                 </section>
               )}
               <div className="request-workspace-disclosures">
-                {disclosures.map(({ group, section, label, count, emptyLabel }) => (
+                {disclosures.filter(({ count }) => count !== '0').map(({ group, section, label, count, emptyLabel }) => (
                   <RequestWorkspaceDisclosure count={count} key={group} label={label}>
                     <RequestWorkspaceList
                       {...common}
@@ -434,22 +433,24 @@ export function RequestWorkspaceSidebar({
             </>
           )}
         </div>
+        {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
       </div>
     </aside>
   )
 }
 
-function railHintStatus(item: RequestQueueItemResponse) {
-  return REQUEST_MERGE_STEP_LABELS[item.next_step] ?? requestAttentionLabel(item, true)
-}
-
 function groupRows(rows: QueueRow[]) {
-  return Object.fromEntries(
+  const groups = Object.fromEntries(
     REQUEST_ATTENTION_GROUP_ORDER.map((group) => [
       group,
       stackRequestRows(rows.filter((row) => row.item.attention.group === group)).map(({ row }) => row),
     ]),
   ) as Record<RequestAttentionGroup, QueueRow[]>
+  const needsYou = requestStacksWith(
+    rows.filter(({ section }) => section === 'active'),
+    ({ item }) => item.attention.group === 'needs_you',
+  )
+  return { ...groups, needs_you: needsYou, waiting: groups.waiting.filter((row) => !needsYou.includes(row)) }
 }
 
 function RequestWorkspaceDisclosure({

@@ -8,11 +8,10 @@ import type {
   RequestAttentionReason,
   RequestQueueGroup,
   RequestQueueItemResponse,
-  RequestQueueNextStep,
 } from '../../api/types.generated'
+import { requestMergeabilityLabel } from './request-labels'
 
-const REASONS: Record<RequestAttentionReason, string> = {
-  authored: 'Your request',
+const REASONS: Record<Exclude<RequestAttentionReason, 'authored'>, string> = {
   invited: 'Review requested',
   claimed: 'You’re reviewing',
   unclaimed: 'Waiting for a reviewer',
@@ -28,14 +27,14 @@ const REASONS: Record<RequestAttentionReason, string> = {
   merged: 'Merged',
 }
 
-export function requestAttentionLabel(item: RequestQueueItemResponse, hydrated: boolean) {
-  const { attention, claimer } = item
-  let reason = REASONS[attention.reason]
-  if (attention.reason === 'claimed_elsewhere' && claimer) reason = `Reviewing: ${claimer.handle}`
+export function requestStatusLabel(item: RequestQueueItemResponse, hydrated: boolean) {
+  const { attention, claimer, request } = item
+  if (attention.reason === 'authored') return requestMergeabilityLabel(request)
+  if (attention.reason === 'claimed_elsewhere' && claimer) return `Reviewing: ${claimer.handle}`
   if (attention.reason === 'snoozed' && attention.snoozed_until_unix) {
-    reason = `Snoozed until ${formatUnixSnoozeUntil(attention.snoozed_until_unix, hydrated)}`
+    return `Snoozed until ${formatUnixSnoozeUntil(attention.snoozed_until_unix, hydrated)}`
   }
-  return reason
+  return REASONS[attention.reason]
 }
 
 export type RequestAttentionGroup = RequestQueueGroup
@@ -56,12 +55,6 @@ export const REQUEST_ATTENTION_GROUP_LABELS: Record<RequestAttentionGroup, strin
   done: 'Done',
 }
 
-export const REQUEST_MERGE_STEP_LABELS: Partial<Record<RequestQueueNextStep, string>> = {
-  merge: 'Ready to merge',
-  fix_checks: 'Checks failed',
-  update: 'Needs an update',
-}
-
 export function requestStackParentLabel({ request }: RequestQueueItemResponse) {
   if (!request.stack_parent) return undefined
   return request.stack_parent.kind === 'available' ? `Based on ${request.stack_parent.request.title}` : 'Unavailable dependency'
@@ -76,12 +69,8 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 const WEEK = 7 * DAY
 
-export function requestAttentionHeat(attentionAtUnix: number, nowUnix: number): 0 | 1 | 2 | 3 {
-  const age = nowUnix - attentionAtUnix
-  if (age < DAY) return 0
-  if (age < 3 * DAY) return 1
-  if (age < WEEK) return 2
-  return 3
+export function requestAttentionStale(attentionAtUnix: number, nowUnix: number) {
+  return nowUnix - attentionAtUnix >= DAY
 }
 
 export function requestAgeLabel(attentionAtUnix: number, nowUnix: number, hydrated: boolean) {

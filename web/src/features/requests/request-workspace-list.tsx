@@ -1,5 +1,5 @@
 import type { RepoParams } from '@/api/types'
-import type { RequestQueueItemResponse, RequestQueueSection } from '@/api/types.generated'
+import type { RequestAttentionReason, RequestQueueItemResponse, RequestQueueSection } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { DiffStatSummary } from '@/components/diff-stat'
@@ -9,30 +9,32 @@ import { useHydrated } from '@/lib/use-hydrated'
 import { useUnixClock } from '@/lib/use-unix-clock'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
-import { Check, ChevronDown, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-react'
+import { Check, Layers, LoaderCircle, Undo2, UserRound, UserRoundMinus } from 'lucide-react'
 import { useRef, useState, type CSSProperties } from 'react'
 import type { RequestAttentionCommand } from './request-attention-api'
-import { RequestDiscussionActorAvatar } from './request-discussion-avatar'
-import { RequestRailMarker } from './request-workspace-rail-marker'
+import { RequestStatusGlyph } from './request-status-glyph'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import {
-  REQUEST_MERGE_STEP_LABELS,
   requestAgeLabel,
-  requestAttentionHeat,
-  requestAttentionLabel,
+  requestAttentionStale,
   requestHasNewActivity,
   requestStackParentLabel,
+  requestStatusLabel,
 } from './request-workspace-model'
 import { actorHandle } from './request-actor'
 import {
   foldStackedRequestRows,
+  requestStackEdge,
   stackRequestRows,
+  type RequestStackEdge,
   type RequestStackPlacement,
   type VisibleStackedRequestRow,
 } from './request-workspace-stack'
 import './request-workspace-stack.css'
 
 const REQUEST_STACK_FOLD_MS = 100
+const REQUEST_STACK_DOTS = 5
+const REVIEW_REASONS: ReadonlySet<RequestAttentionReason> = new Set(['invited', 'claimed', 'unclaimed', 'claimed_elsewhere'])
 
 export type QueueRow = { item: RequestQueueItemResponse; section: RequestQueueSection }
 
@@ -71,7 +73,7 @@ export function RequestWorkspaceList({
   const [folding, setFolding] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map())
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set())
   const foldTimers = useRef(new Map<string, number>())
-  if (!items.length && skeleton) return <RequestWorkspaceListSkeleton rail={rowProps.rail} />
+  if (!items.length && skeleton) return <RequestWorkspaceListSkeleton />
 
   function cancelFold(parent: string) {
     window.clearTimeout(foldTimers.current.get(parent))
@@ -104,11 +106,13 @@ export function RequestWorkspaceList({
 
   const leavingIds = new Set([...folding.values()].flatMap((ids) => [...ids]))
   let revealOrder = 0
-  const rows = foldStackedRequestRows(stackRequestRows(items), foldedStacks).map((entry) => {
+  const visible = foldStackedRequestRows(stackRequestRows(items), foldedStacks)
+  const rows = visible.map((entry, index) => {
     const { item, section } = entry.row
     const id = item.request.id
     return (
       <RequestWorkspaceRow
+        descendants={entry.descendants.map(({ item }) => item)}
         folded={entry.folded.map(({ item }) => item)}
         item={item}
         key={id}
@@ -117,8 +121,8 @@ export function RequestWorkspaceList({
         placement={entry.placement}
         revealOrder={revealed.has(id) ? revealOrder++ : undefined}
         section={section}
+        stackEdge={requestStackEdge(visible, index)}
         stackOpen={!foldedStacks.has(id) && !folding.has(id)}
-        stackSize={entry.descendants.length}
         {...rowProps}
       />
     )
@@ -158,17 +162,15 @@ export function RequestWorkspaceList({
   )
 }
 
-export function RequestWorkspaceListSkeleton({ rail = false }: { rail?: boolean }) {
+export function RequestWorkspaceListSkeleton() {
   return (
     <div className="request-workspace-rows request-workspace-rows--pending">
       {[0, 1, 2].map((index) => (
-        <div className="request-workspace-row" data-rail={rail ? '' : undefined} key={index}>
-          <div className="request-workspace-row-link">
-            <BlockSkeleton className={cn('rounded-full', rail ? 'size-[30px]' : 'size-5')} />
-            <div className="min-w-0">
-              <TextSkeleton className="h-[18px]" length="long" size="meta" />
-              <TextSkeleton className="mt-[3px] h-[15px]" length="short" size="meta" />
-            </div>
+        <div className="request-workspace-row" key={index}>
+          <BlockSkeleton className="request-workspace-row-mark size-4 rounded-full" />
+          <div className="request-workspace-row-body">
+            <TextSkeleton className="h-[18px]" length="long" size="meta" />
+            <TextSkeleton className="mt-[3px] h-[15px]" length="short" size="meta" />
           </div>
         </div>
       ))}
@@ -186,22 +188,24 @@ function RequestWorkspaceRow({
   selectedId,
   rail,
   placement,
+  descendants,
   folded,
   leaving,
   onToggleStack,
   revealOrder,
+  stackEdge,
   stackOpen,
-  stackSize,
 }: Pick<RequestWorkspaceListProps, 'onAction' | 'onCustomSnooze' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
   placement: RequestStackPlacement
+  descendants: RequestQueueItemResponse[]
   folded: RequestQueueItemResponse[]
   leaving: boolean
   onToggleStack: () => void
   revealOrder: number | undefined
+  stackEdge: RequestStackEdge | undefined
   stackOpen: boolean
-  stackSize: number
 }) {
   const hydrated = useHydrated()
   const { request, attention, author } = item
@@ -210,7 +214,8 @@ function RequestWorkspaceRow({
   const pending = pendingId === request.id
   const hot = attention.group === 'needs_you'
   const unread = requestHasNewActivity(item)
-  const mergeStep = rail ? REQUEST_MERGE_STEP_LABELS[item.next_step] : undefined
+  const status = requestStatusLabel(item, hydrated)
+  const handle = REVIEW_REASONS.has(attention.reason) ? actorHandle(author) : null
   const stackParent = requestStackParentLabel(item)
   const diffStat = diffStatWithChanges(request.diff_stat)
   const canSetAside = section === 'active' && attention.can_set_aside
@@ -231,20 +236,28 @@ function RequestWorkspaceRow({
     { action: 'release', label: 'Release', icon: UserRoundMinus, visible: attention.can_release },
   ] as const
   const actionCount = actions.filter(({ visible }) => visible).length + Number(canSetAside)
-  const foldedReady = folded.filter(({ next_step }) => next_step === 'merge').length
+  const link = {
+    onClick: () => {
+      if (attention.reason === 'snooze_expired') onAction(item, { action: 'acknowledge' })
+    },
+    params: { ...params, requestId: request.id },
+    preload: 'intent',
+    search: (current: { view?: string }) => ({ view: current.view }),
+    to: '/$owner/$repo/requests/$requestId',
+  } as const
   return (
     <article
       className={cn('request-workspace-row', selected && 'request-workspace-row--selected')}
-      data-heat={hot ? requestAttentionHeat(item.attention_at_unix, nowUnix) : 0}
       data-holds-selection={folded.some(({ request }) => request.id === selectedId) || undefined}
       data-leaving={leaving || undefined}
       data-rail={rail ? '' : undefined}
       data-request-id={request.id}
       data-revealed={revealOrder !== undefined || undefined}
-      data-stack-folded={(stackSize > 0 && !stackOpen) || undefined}
+      data-stack-edge={stackEdge}
+      data-stack-folded={(descendants.length > 0 && !stackOpen) || undefined}
       style={
         {
-          '--row-actions': `${actionCount ? actionCount * 35 + 6 : 0}px`,
+          '--row-action-count': actionCount,
           '--stack-depth': placement.depth,
           '--reveal-order': revealOrder,
         } as CSSProperties
@@ -252,128 +265,98 @@ function RequestWorkspaceRow({
     >
       <RequestStackLines placement={{ ...placement, children: placement.children && stackOpen }} />
       <Link
-        aria-current={selected ? 'page' : undefined}
-        className="request-workspace-row-link"
-        onClick={() => {
-          if (attention.reason === 'snooze_expired') onAction(item, { action: 'acknowledge' })
-        }}
-        params={{ ...params, requestId: request.id }}
-        preload="intent"
-        search={(current) => ({ view: current.view })}
-        to="/$owner/$repo/requests/$requestId"
+        {...link}
+        aria-hidden="true"
+        className="request-workspace-row-mark"
+        data-folded-count={folded.length || undefined}
+        tabIndex={-1}
       >
-        <span className="request-workspace-row-avatar">
-          {stackSize > 0 && (
-            <>
-              <span aria-hidden="true" className="request-workspace-row-ghost" />
-              <span aria-hidden="true" className="request-workspace-row-ghost" />
-            </>
-          )}
-          {rail ? (
-            <RequestRailMarker handle={actorHandle(author)} nextStep={item.next_step} unread={unread} />
-          ) : (
-            <RequestDiscussionActorAvatar handle={actorHandle(author)} small />
-          )}
-        </span>
-        <span className="min-w-0">
-          <span
+        <RequestStatusGlyph className="request-status-glyph" nextStep={item.next_step} />
+        {unread && <span className="request-workspace-row-unread" />}
+      </Link>
+      <div className="request-workspace-row-body">
+        <div className="request-workspace-row-heading">
+          <Link
+            {...link}
+            aria-current={selected ? 'page' : undefined}
             className={cn(
-              'block truncate text-[13px] leading-[1.35] tracking-[-0.01em]',
+              'request-workspace-row-link text-[13px] leading-[1.35] tracking-[-0.01em]',
               hot || selected ? 'font-medium text-foreground' : 'text-muted-foreground',
               unread && 'font-semibold',
             )}
-            title={request.title}
           >
-            {request.title}
-          </span>
-          <span className="request-workspace-row-meta mt-[3px] flex items-center gap-2 text-xs leading-[1.4]">
-            <span
-              className={cn(
-                'flex min-w-0 items-center gap-1.5 truncate',
-                hot ? 'text-foreground' : 'text-muted-foreground',
-                attention.reason === 'authored' && 'request-workspace-row-hover-detail',
-              )}
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'size-1.5 shrink-0 rounded-full border border-current',
-                  hot && 'bg-current',
-                )}
-              />
-              <span className="truncate" suppressHydrationWarning>
-                {requestAttentionLabel(item, hydrated)}
-                {mergeStep && <span className="sr-only">, {mergeStep}</span>}
-                {stackParent && <span className="sr-only">, {stackParent}</span>}
-                {folded.length > 0 && (
-                  <span className="request-workspace-row-hover-detail text-muted-foreground">
-                    {' '}
-                    · {folded.length} stacked
-                    {foldedReady > 0 && <span className="text-success">, {foldedReady} ready</span>}
-                  </span>
-                )}
-              </span>
+            <span className="request-workspace-row-title" title={request.title}>
+              {request.title}
             </span>
-            <span className="ml-auto flex shrink-0 items-center text-muted-foreground">
-              {diffStat && (
-                <DiffStatSummary
-                  className="request-workspace-row-diff-stat text-[11.5px]"
-                  detail="compact"
-                  stat={diffStat}
+            <span className="sr-only" suppressHydrationWarning>
+              {[handle, status, stackParent].filter(Boolean).map((detail) => `, ${detail}`)}
+            </span>
+          </Link>
+          <time
+            className="request-workspace-row-age"
+            data-stale={(hot && requestAttentionStale(item.attention_at_unix, nowUnix)) || undefined}
+            dateTime={new Date(item.attention_at_unix * 1_000).toISOString()}
+            suppressHydrationWarning
+          >
+            {requestAgeLabel(item.attention_at_unix, nowUnix, hydrated)}
+          </time>
+          {actionCount > 0 && (
+            <fieldset className="request-workspace-row-actions">
+              <legend className="sr-only">Request {request.id} actions</legend>
+              {canSetAside && (
+                <RequestSnoozeMenu
+                  disabled={pending}
+                  onCustomSnooze={() => onCustomSnooze(item)}
+                  onSnooze={(until_unix) => onAction(item, { action: 'snooze', until_unix })}
+                  requestId={request.id}
                 />
               )}
-              <time
-                className="request-workspace-row-age text-xs"
-                dateTime={new Date(item.attention_at_unix * 1_000).toISOString()}
-                suppressHydrationWarning
-              >
-                {requestAgeLabel(item.attention_at_unix, nowUnix, hydrated)}
-              </time>
-            </span>
+              {actions.map(
+                ({ action, label, icon: Icon, visible }) =>
+                  visible && (
+                    <button
+                      aria-label={`${label} request ${request.id}`}
+                      className="request-workspace-row-action"
+                      disabled={pending}
+                      key={action}
+                      onClick={() => onAction(item, { action })}
+                      title={label}
+                      type="button"
+                    >
+                      <Icon aria-hidden="true" />
+                    </button>
+                  ),
+              )}
+            </fieldset>
+          )}
+        </div>
+        <div className="request-workspace-row-meta">
+          {handle && <span aria-hidden="true">{handle}</span>}
+          <span aria-hidden="true" className="request-workspace-row-status" suppressHydrationWarning>
+            {status}
           </span>
-        </span>
-      </Link>
-      {stackSize > 0 && (
-        <button
-          aria-expanded={stackOpen}
-          aria-label={`${stackOpen ? 'Collapse' : 'Expand'} ${stackSize} stacked requests`}
-          className="request-workspace-stack-toggle"
-          onClick={onToggleStack}
-          title={stackOpen ? 'Collapse stack' : 'Expand stack'}
-          type="button"
-        >
-          <ChevronDown aria-hidden="true" />
-        </button>
-      )}
-      {actionCount > 0 && (
-        <fieldset className="request-workspace-row-actions absolute right-2 flex gap-[3px] border-0 p-0">
-          <legend className="sr-only">Request {request.id} actions</legend>
-          {canSetAside && (
-            <RequestSnoozeMenu
-              disabled={pending}
-              onCustomSnooze={() => onCustomSnooze(item)}
-              onSnooze={(until_unix) => onAction(item, { action: 'snooze', until_unix })}
-              requestId={request.id}
-            />
+          {descendants.length > 0 && (
+            <button
+              aria-expanded={stackOpen}
+              aria-label={`${stackOpen ? 'Collapse' : 'Expand'} ${descendants.length} stacked requests`}
+              className="request-workspace-stack-pill"
+              onClick={onToggleStack}
+              type="button"
+            >
+              <Layers aria-hidden="true" />
+              <span aria-hidden="true">{descendants.length} stacked</span>
+              <span aria-hidden="true" className="request-workspace-stack-dots">
+                {descendants.slice(0, REQUEST_STACK_DOTS).map(({ request, next_step }) => (
+                  <i data-step={next_step} key={request.id} />
+                ))}
+              </span>
+            </button>
           )}
-          {actions.map(
-            ({ action, label, icon: Icon, visible }) =>
-              visible && (
-                <button
-                  aria-label={`${label} request ${request.id}`}
-                  className="request-workspace-row-action"
-                  disabled={pending}
-                  key={action}
-                  onClick={() => onAction(item, { action })}
-                  title={label}
-                  type="button"
-                >
-                  <Icon aria-hidden="true" />
-                </button>
-              ),
+          {diffStat && (
+            <DiffStatSummary className="request-workspace-row-diff-stat" detail="compact" stat={diffStat} />
           )}
-        </fieldset>
-      )}
+        </div>
+      </div>
     </article>
   )
 }

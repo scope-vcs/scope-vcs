@@ -24,7 +24,8 @@ use scope_api_contract::{
 };
 use scope_domain::requests::{
     REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, RequestQueueClassification,
-    RequestQueueSection, RequestViewer, request_queue_group, request_queue_next_step,
+    RequestQueueNextStep, RequestQueueSection, RequestViewer, request_queue_group,
+    request_queue_next_step,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -197,6 +198,7 @@ pub(crate) async fn request_queue(
                 attention: attention_response(
                     row.attention,
                     activity_version,
+                    next_step,
                     access.is_maintainer(),
                 ),
                 claimer,
@@ -316,6 +318,7 @@ pub(crate) async fn apply_attention(
         attention: attention_response(
             result.attention,
             result.activity_version,
+            next_step,
             access.is_maintainer(),
         ),
         claimer,
@@ -326,10 +329,12 @@ pub(crate) async fn apply_attention(
 pub(crate) fn attention_response(
     value: RequestQueueClassification,
     activity_version: u64,
+    next_step: RequestQueueNextStep,
     viewer_is_maintainer: bool,
 ) -> RequestAttentionResponse {
     RequestAttentionResponse {
-        group: request_queue_group(value.section, value.reason, viewer_is_maintainer).into(),
+        group: request_queue_group(value.section, value.reason, next_step, viewer_is_maintainer)
+            .into(),
         state: value.state.into(),
         reason: value.reason.into(),
         activity_version,

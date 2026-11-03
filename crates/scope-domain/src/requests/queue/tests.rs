@@ -6,31 +6,31 @@ use crate::requests::fixtures::open_request;
 fn groups_split_active_rows_by_who_acts_next() {
     use RequestAttentionReason as Reason;
     use RequestQueueGroup::{NeedsYou, Waiting};
-    for (reason, expected) in [
-        (Reason::Invited, NeedsYou),
-        (Reason::Claimed, NeedsYou),
-        (Reason::NewActivity, NeedsYou),
-        (Reason::Restored, NeedsYou),
-        (Reason::SnoozeExpired, NeedsYou),
-        (Reason::Authored, Waiting),
+    use RequestQueueNextStep as Step;
+    for (reason, step, maintainer, expected) in [
+        (Reason::Invited, Step::Review, false, NeedsYou),
+        (Reason::Claimed, Step::Review, false, NeedsYou),
+        (Reason::NewActivity, Step::Wait, true, NeedsYou),
+        (Reason::Restored, Step::Wait, true, NeedsYou),
+        (Reason::SnoozeExpired, Step::Wait, true, NeedsYou),
+        (Reason::Authored, Step::FixChecks, false, Waiting),
+        (Reason::Authored, Step::FixChecks, true, NeedsYou),
+        (Reason::Authored, Step::Merge, true, NeedsYou),
+        (Reason::Authored, Step::Wait, true, Waiting),
     ] {
         assert_eq!(
-            request_queue_group(RequestQueueSection::Active, reason, false),
+            request_queue_group(RequestQueueSection::Active, reason, step, maintainer),
             expected,
-            "{reason:?}"
+            "{reason:?} {step:?} maintainer={maintainer}"
         );
     }
-    assert_eq!(
-        request_queue_group(RequestQueueSection::Active, Reason::Authored, true),
-        NeedsYou
-    );
     for (section, expected) in [
         (RequestQueueSection::Unclaimed, RequestQueueGroup::Unclaimed),
         (RequestQueueSection::SetAside, RequestQueueGroup::SetAside),
         (RequestQueueSection::Done, RequestQueueGroup::Done),
     ] {
         assert_eq!(
-            request_queue_group(section, Reason::Settled, true),
+            request_queue_group(section, Reason::Settled, Step::Wait, true),
             expected
         );
     }

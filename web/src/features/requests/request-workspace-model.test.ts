@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   requestAgeLabel,
-  requestAttentionHeat,
+  requestAttentionStale,
   resolveCustomSnooze,
   requestSnoozeLandingLabel,
   requestSnoozeUntil,
@@ -20,13 +20,10 @@ test('row age reads as a compact unit', () => {
   assert.match(requestAgeLabel(now - 90 * 86400, now, false), /^[A-Z][a-z]{2} \d{1,2}$/)
 })
 
-test('attention heat steps up with the wait', () => {
+test('attention turns stale after a day', () => {
   const now = 1_800_000_000
-  assert.equal(requestAttentionHeat(now + 60, now), 0)
-  assert.equal(requestAttentionHeat(now - 3600, now), 0)
-  assert.equal(requestAttentionHeat(now - 2 * 86400, now), 1)
-  assert.equal(requestAttentionHeat(now - 5 * 86400, now), 2)
-  assert.equal(requestAttentionHeat(now - 30 * 86400, now), 3)
+  assert.equal(requestAttentionStale(now - 86_399, now), false)
+  assert.equal(requestAttentionStale(now - 86_400, now), true)
 })
 
 test('snooze choices land an hour on, tomorrow at nine, or next Monday at nine', () => {
