@@ -407,6 +407,53 @@ async fn seeded_repository_rows_are_visible_only_inside_their_scope() {
 }
 
 #[tokio::test]
+async fn a_system_read_inside_a_repository_scope_restores_that_scope_and_discards_writes() {
+    let store = two_repository_store();
+    let ids = async |tx: &DatabaseTransaction| {
+        tx.query_all_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT id FROM scope_repositories ORDER BY id",
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| row.try_get_by_index::<String>(0).unwrap())
+        .collect::<Vec<_>>()
+    };
+    let tx = store.db.begin(DataScope::Repository(REPO_A)).await.unwrap();
+    let seen = crate::db::data_scope::read_as_system(&tx, SystemReason::Fixture, |system| {
+        Box::pin(async move {
+            system
+                .execute_unprepared(&format!(
+                    "UPDATE scope_repositories SET description = 'escalated' WHERE id = '{REPO_B}'"
+                ))
+                .await?;
+            Ok(ids(system).await)
+        })
+    })
+    .await
+    .unwrap();
+    assert_eq!(seen, [REPO_A, REPO_B]);
+    assert_eq!(ids(&tx).await, [REPO_A]);
+    tx.commit().await.unwrap();
+
+    let tx = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
+    assert_eq!(
+        count(
+            &tx,
+            "SELECT count(*) FROM scope_repositories WHERE description = 'escalated'"
+        )
+        .await,
+        0
+    );
+    tx.commit().await.unwrap();
+}
+
+#[tokio::test]
 async fn request_anchor_scopes_resolve_to_their_repository_and_fail_closed_when_missing() {
     let store = two_repository_store();
     store

@@ -1,6 +1,6 @@
 mod rows;
 
-use super::data_scope::{DataScope, SystemReason};
+use super::data_scope::{DataScope, SystemReason, read_as_system};
 use super::github_review_bots::delete_review_bots;
 use super::github_review_imports::delete_review_imports;
 use super::{
@@ -100,17 +100,16 @@ impl RepositoryStore {
         )
         .await?;
         acquire_installation_lock(&tx, command.installation_id).await?;
-        let github_repository_link = {
-            let link_tx = self
-                .db
-                .begin(DataScope::System(SystemReason::GitHubRepositoryLink))
-                .await
-                .map_err(PostgresError::internal)?;
-            let link =
-                connected_github_repository(&link_tx, command.github_repository_id, "").await?;
-            link_tx.commit().await.map_err(PostgresError::internal)?;
-            link
-        };
+        let github_repository_id = command.github_repository_id;
+        let github_repository_link =
+            read_as_system(&tx, SystemReason::GitHubRepositoryLink, |system| {
+                Box::pin(connected_github_repository(
+                    system,
+                    github_repository_id,
+                    "",
+                ))
+            })
+            .await?;
         let context = repository_access(&tx, &repo_id, Some(&command.user_id))
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;

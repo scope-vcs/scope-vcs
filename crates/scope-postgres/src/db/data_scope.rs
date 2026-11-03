@@ -236,6 +236,22 @@ pub(crate) async fn savepoint(tx: &DatabaseTransaction) -> Result<DatabaseTransa
     tx.begin().await
 }
 
+pub(crate) async fn read_as_system<T>(
+    tx: &DatabaseTransaction,
+    reason: SystemReason,
+    read: impl for<'a> FnOnce(
+        &'a DatabaseTransaction,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<T, PostgresError>> + Send + 'a>,
+    >,
+) -> Result<T, PostgresError> {
+    let system = savepoint(tx).await?;
+    set_scope(&system, "", reason.as_str()).await?;
+    let result = read(&system).await;
+    system.rollback().await?;
+    result
+}
+
 pub(crate) async fn enter_schema_migration_scope<C: ConnectionTrait>(tx: &C) -> Result<(), DbErr> {
     set_scope(tx, "", SystemReason::SchemaMigration.as_str()).await
 }
