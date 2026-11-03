@@ -6,6 +6,7 @@ use std::process::Command;
 
 const GIT_PROTOCOL_HEADER: &str = "git-protocol";
 const LS_REFS_COMMAND: &[u8] = b"command=ls-refs";
+const FETCH_COMMAND: &[u8] = b"command=fetch";
 const REF_PREFIX: &[u8] = b"ref-prefix ";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -33,14 +34,19 @@ impl GitProtocol {
 
     pub(crate) fn upload_pack_ask(self, request: &[u8]) -> Result<GitFetchAsk, ApiError> {
         let packets = upload_pack_packets(request)?;
-        let lists_refs = self == Self::V2
-            && packets
-                .first()
-                .is_some_and(|packet| packet.payload.trim_ascii_end() == LS_REFS_COMMAND);
-        if !lists_refs {
-            return Ok(GitFetchAsk::Transfer {
-                wants: wanted_heads(request)?,
-            });
+        let command = packets
+            .first()
+            .map(|packet| packet.payload.trim_ascii_end());
+        match (self, command) {
+            (Self::V0, _) | (Self::V2, Some(FETCH_COMMAND)) => {
+                return Ok(GitFetchAsk::Transfer {
+                    wants: wanted_heads(request)?,
+                });
+            }
+            (Self::V2, Some(LS_REFS_COMMAND)) => {}
+            (Self::V2, _) => {
+                return Err(ApiError::bad_request("unsupported Git protocol v2 command"));
+            }
         }
         let named_refs = packets
             .iter()
@@ -72,7 +78,7 @@ mod tests {
     }
 
     #[test]
-    fn only_version_2_ls_refs_names_refs_and_other_bodies_transfer_their_wants() {
+    fn version_2_lists_named_refs_transfers_fetches_and_refuses_other_commands() {
         let ls_refs = request(&[
             "command=ls-refs",
             "agent=git/2.55.0",
@@ -110,6 +116,14 @@ mod tests {
                 wants: vec![want.clone()]
             }
         );
+        let object_info = request(&[
+            "command=object-info",
+            "0001",
+            "size",
+            &format!("oid {want}"),
+            "0000",
+        ]);
+        assert!(v2.upload_pack_ask(&object_info).is_err());
         assert_eq!(
             GitProtocol::of(&HeaderMap::new())
                 .upload_pack_ask(&ls_refs)
