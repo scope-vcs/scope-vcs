@@ -68,7 +68,7 @@ pub(super) async fn actor_has_open_editable_request(
     for (request, is_invitee) in state
         .metadata
         .requests()
-        .requests_with_invitee_status(repo_id, Some(actor_user_id))
+        .branch_mutable_requests_with_invitee_status(repo_id, actor_user_id)
         .await?
     {
         if views.may_read(address_view, &request.view)
@@ -125,7 +125,7 @@ pub(crate) async fn prepare_request_staging_repo(
     let candidates = state
         .metadata
         .requests()
-        .requests_with_invitee_status(&context.repo_id, Some(actor_user_id))
+        .branch_mutable_requests_with_invitee_status(&context.repo_id, actor_user_id)
         .await?;
     if matches!(kind, RequestStagingKind::RequestRefsOnly)
         && !candidates.iter().any(|(request, is_invitee)| {
@@ -213,7 +213,7 @@ pub(super) async fn seed_editable_request_refs(
     let candidates = state
         .metadata
         .requests()
-        .requests_with_invitee_status(&context.repo_id, Some(actor_user_id))
+        .branch_mutable_requests_with_invitee_status(&context.repo_id, actor_user_id)
         .await?;
     seed_editable_request_refs_for_repo(
         state,
