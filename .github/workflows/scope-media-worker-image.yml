@@ -58,7 +58,7 @@ jobs:
           file: media-worker/Dockerfile
           build-args: SCOPE_ANALYTICS_RELEASE=${{ inputs.source_sha }}
           platforms: linux/amd64
-          cache-from: type=registry,ref=ghcr.io/scope-vcs/scope-media-worker:buildcache
+          cache-from: ${{ !inputs.publish && 'type=registry,ref=ghcr.io/scope-vcs/scope-media-worker:buildcache' || '' }}
           cache-to: ${{ github.ref == 'refs/heads/main' && 'type=registry,ref=ghcr.io/scope-vcs/scope-media-worker:buildcache,mode=max,image-manifest=true,oci-mediatypes=true' || '' }}
           provenance: false
           push: ${{ inputs.publish }}
