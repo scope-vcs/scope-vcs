@@ -15,6 +15,7 @@ import { repositoryDependencyResource } from './repository-dependency-resource'
 import { repoSettingsResource } from './repo-settings-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
+import { repositoryVersionKey } from './repository-version'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
 import { repositorySearchResource } from '../repo-search/repository-search-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
@@ -24,6 +25,7 @@ import { invalidateGitHubWorkflowRunDetails } from '../runs/github-workflow-run-
 
 export function invalidateRepoSummaryResources(scope: string) {
   invalidateRequestQueues(scope)
+  repositorySearchResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
 }
 
 type RepoResourceInvalidation = {
@@ -50,12 +52,11 @@ export function invalidateRepoResources(
       (!recovery || runResourceNeedsRecovery(runDetailResource, key)))
   }
   if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
-    if (!summaryPending) invalidateRequestQueues(scope)
+    if (!summaryPending) invalidateRepoSummaryResources(scope)
     repoSettingsResource.invalidate(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     historyFeedResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    repositorySearchResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     historyEntryResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAttachmentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     if (repositoryChanged || !versioned) {
@@ -72,14 +73,18 @@ export function invalidateRepoResources(
     invalidateGitHubWorkflowRunDetails(scope)
     requestRatingsResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
   } else if (typeof event.kind === 'object' && 'RequestStateChanged' in event.kind) {
-    refreshRequestState(scope, event.kind.RequestStateChanged.request_id)
-    refreshRequestDiscussionReferences(scope, event.kind.RequestStateChanged.request_id)
-    if (!summaryPending) invalidateRequestQueues(scope)
+    const requestId = event.kind.RequestStateChanged.request_id
+    const version = `\0${repositoryVersionKey({ kind: 'request', id: requestId })}`
+    repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) && identity.endsWith(version))
+    repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) && identity.includes(`${version}\0`))
+    refreshRequestState(scope, requestId)
+    refreshRequestDiscussionReferences(scope, requestId)
+    if (!summaryPending) invalidateRepoSummaryResources(scope)
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)
   } else if (event.kind === 'GitHubWorkflowRunsChanged') {
     refreshRequestState(scope)
-    if (!summaryPending) invalidateRequestQueues(scope)
+    if (!summaryPending) invalidateRepoSummaryResources(scope)
     invalidateGitHubWorkflowRuns(scope)
     githubWorkflowNamesResource.invalidate(scope)
     invalidateGitHubWorkflowRunDetails(scope)
@@ -87,7 +92,7 @@ export function invalidateRepoResources(
     invalidateGitHubWorkflowRunDetails(scope, event.kind.GitHubWorkflowRunChanged.github_run_id)
   } else if (typeof event.kind === 'object' && 'RequestTimelineChanged' in event.kind) {
     const timeline = event.kind.RequestTimelineChanged
-    invalidateRequestQueues(scope)
+    invalidateRepoSummaryResources(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0${timeline.request_id}\0`))
     refreshRequestDiscussionReferences(scope, timeline.request_id)
     requestActivityResource.invalidate(requestActivityIdentity(scope, timeline.request_id))
@@ -96,7 +101,7 @@ export function invalidateRepoResources(
     requestAttachmentResource.invalidate(requestAttachmentResourceIdentity(scope, timeline.request_id))
   } else if (typeof event.kind === 'object' && 'RunChanged' in event.kind) {
     if (event.kind.RunChanged.change === 'StatusChanged') {
-      invalidateRequestQueues(scope)
+      invalidateRepoSummaryResources(scope)
       requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     }
     const runId = event.kind.RunChanged.run_id

@@ -7,6 +7,9 @@ import { requestActivityIdentity, requestActivityResource } from '../requests/re
 import { invalidateRepoResources, invalidateRepoSummaryResources } from './repo-resource-invalidation'
 import { repositoryDependencyResource } from './repository-dependency-resource'
 import { historyFeedResource } from '../history/history-resource-cache'
+import { repositorySearchIdentity, repositorySearchResource } from '../repo-search/repository-search-cache'
+import { repoContentCacheKey, repoContentResource } from './repo-content-cache'
+import { repoFileCacheKey, repoFileResource } from './repo-file-cache'
 import { requestDiscussionReferenceIdentity, requestDiscussionReferenceResource } from '../requests/request-changes-discussion-references'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { githubWorkflowRunsIdentity, githubWorkflowRunsResource } from '../runs/github-workflow-runs-resource'
@@ -34,6 +37,10 @@ function seed() {
   repositoryDependencyResource.write('viewer-a', { error: null, report: null, status: 'Pending' })
   historyFeedResource.clear()
   historyFeedResource.write('viewer-a\0public\0all', { entries: [], next_cursor: null })
+  repositorySearchResource.clear()
+  for (const scope of ['viewer-a', 'viewer-b']) {
+    repositorySearchResource.write(repositorySearchIdentity(scope, 'public', '', 'all'), { history: [], historyCursor: null, requests: [] }, '0')
+  }
 }
 
 test('repository updates invalidate retained activity even when its page is unmounted', () => {
@@ -77,14 +84,26 @@ test('request changes target one request and leave latest repository activity re
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'public')).stale, true)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
+  assert.equal(repositorySearchResource.getSnapshot(repositorySearchIdentity('viewer-a', 'public', '', 'all')).stale, true)
+  assert.equal(repositorySearchResource.getSnapshot(repositorySearchIdentity('viewer-b', 'public', '', 'all')).stale, false)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'one')).stale, true)
   assert.equal(requestActivityResource.getSnapshot(requestActivityIdentity('viewer-a', 'two')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, false)
   assert.equal(repositoryDependencyResource.getSnapshot('viewer-a').stale, false)
 })
 
-test('a request state change, such as a pushed revision, refreshes only that request\'s discussion references', () => {
+test('a pushed revision refreshes its retained code, search and discussion references', () => {
+  seed()
   requestDiscussionReferenceResource.clear()
+  repoContentResource.clear()
+  repoFileResource.clear()
+  const code = { scope: 'viewer-a', repoId: 'repo', view: 'public', contentVersion: 0, version: { kind: 'request', id: 'one' } } as const
+  const identities = [code, { ...code, version: { kind: 'request', id: 'two' } } as const, { ...code, version: { kind: 'main' } } as const, { ...code, scope: 'viewer-b' }]
+  const oldFile = { content: { kind: 'text' as const, text: 'old' }, oid: 'old', path: 'README.md', size_bytes: 3, label: 'public' }
+  for (const identity of identities) {
+    repoContentResource.write(repoContentCacheKey(identity), { clone_remote_url: 'remote', files: [] }, '0')
+    repoFileResource.write(repoFileCacheKey({ ...identity, path: 'README.md' }), oldFile, '0')
+  }
   const page = { discussions: [], next_cursor: null, snapshot_version: 1 }
   const pushed = requestDiscussionReferenceIdentity('viewer-a', 'one', 'latest')
   const sibling = requestDiscussionReferenceIdentity('viewer-a', 'two', 'latest')
@@ -94,6 +113,13 @@ test('a request state change, such as a pushed revision, refreshes only that req
   assert.equal(requestDiscussionReferenceResource.getSnapshot(pushed).stale, true)
   assert.equal(requestDiscussionReferenceResource.getSnapshot(sibling).stale, false)
   assert.equal(requestDiscussionReferenceResource.getSnapshot(otherViewer).stale, false)
+  for (const identity of identities) {
+    assert.equal(repoContentResource.getSnapshot(repoContentCacheKey(identity)).stale, identity === code)
+    assert.equal(repoFileResource.getSnapshot(repoFileCacheKey({ ...identity, path: 'README.md' })).stale, identity === code)
+  }
+  assert.equal(repoFileResource.peek(repoFileCacheKey({ ...code, path: 'README.md' })), oldFile)
+  assert.equal(repositorySearchResource.getSnapshot(repositorySearchIdentity('viewer-a', 'public', '', 'all')).stale, true)
+  assert.equal(repositorySearchResource.getSnapshot(repositorySearchIdentity('viewer-b', 'public', '', 'all')).stale, false)
 })
 
 test('dependency completion invalidates only the retained dependency report', () => {
@@ -240,15 +266,16 @@ test('a pending summary owns queue reconciliation while other resources refresh 
   invalidateRepoResources('viewer-a', event('Lagged'), { summaryPending: true })
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, false)
   assert.equal(repositoryActivityResource.getSnapshot(repositoryActivityIdentity('viewer-a', 'public')).stale, true)
+  assert.equal(repositorySearchResource.getSnapshot(repositorySearchIdentity('viewer-a', 'public', '', 'all')).stale, false)
   invalidateRepoSummaryResources('viewer-a')
+  assert.equal(repositorySearchResource.getSnapshot(repositorySearchIdentity('viewer-a', 'public', '', 'all')).stale, true)
+  assert.equal(repositorySearchResource.getSnapshot(repositorySearchIdentity('viewer-b', 'public', '', 'all')).stale, false)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'private')).stale, true)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-a', 'public')).stale, true)
   assert.equal(requestQueueResource.getSnapshot(requestQueueIdentity('viewer-b', 'private')).stale, false)
 })
 
 test('public code with unchanged version refreshes retained tree and file on repository changes', async () => {
-  const { repoContentCacheKey, repoContentResource } = await import('./repo-content-cache')
-  const { repoFileCacheKey, repoFileResource } = await import('./repo-file-cache')
   repoContentResource.clear()
   repoFileResource.clear()
   const identity = { scope: 'viewer-a', repoId: 'repo', view: 'public' as const, contentVersion: 0, version: { kind: 'main' } as const }
