@@ -184,7 +184,7 @@ pub(crate) async fn git_info_refs(
         Some(GIT_UPLOAD_PACK) => {
             let permit = match state.runtime_budgets.admit_upload_pack().await {
                 Ok(permit) => permit,
-                Err(error) => return git_advertisement_error(error.into_public_message()),
+                Err(error) => return { let diagnostic = error.operator_diagnostic().to_string(); git_advertisement_error(format!("{diagnostic} [{}]", error.into_public_message())) },
             };
             match git_upload_pack_repo_for_request(&state, &headers, &org, &repo, &view).await {
                 Ok(repo_path) => {
@@ -196,13 +196,13 @@ pub(crate) async fn git_info_refs(
                     .await
                     {
                         Ok(response) => response,
-                        Err(error) => git_advertisement_error(error.into_public_message()),
+                        Err(error) => { let diagnostic = error.operator_diagnostic().to_string(); git_advertisement_error(format!("{diagnostic} [{}]", error.into_public_message())) },
                     }
                 }
                 Err(error) if error.status() == StatusCode::UNAUTHORIZED => {
                     git_error_response(error)
                 }
-                Err(error) => git_advertisement_error(error.into_public_message()),
+                Err(error) => { let diagnostic = error.operator_diagnostic().to_string(); git_advertisement_error(format!("{diagnostic} [{}]", error.into_public_message())) },
             }
         }
         Some(service) => (

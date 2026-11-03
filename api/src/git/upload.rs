@@ -371,7 +371,7 @@ pub(crate) fn git_upload_pack_advertisement(repo_path: &FsPath, timeout: Duratio
             body.extend(advertisement);
             git_response("application/x-git-upload-pack-advertisement", body)
         }
-        Err(error) => git_advertisement_error(error.into_public_message()),
+        Err(error) => { let diagnostic = error.operator_diagnostic().to_string(); git_advertisement_error(format!("{diagnostic} [{}]", error.into_public_message())) },
     }
 }
 
