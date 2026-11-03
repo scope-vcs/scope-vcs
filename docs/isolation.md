@@ -26,7 +26,9 @@ A repository route resolves `owner/name` and the caller's access in one read
 loaded by ID and compared with that repository, for example a request's
 `repo_id`, `Run::belongs_to_repository`, or an attachment's request.
 
-A caller who cannot read a repository gets the same 404 as for a missing one.
+A caller who cannot read a repository gets the same answer as for a missing
+one: 404 when signed in, 401 when anonymous, and for Git transport the same
+`ERR` packet.
 Member-only routes check readability before membership: `get_repo_config` and
 `require_full_view_member` call `find_read_access` first
 (`api/src/use_cases/run_inspection.rs`), including manual run creation and
@@ -45,13 +47,23 @@ test asserts that:
   access (401, 403, 404 or 405), not for a malformed body;
 - the outsider, using its own repository's path with repository A's request,
   discussion, attachment, run and member IDs, gets the same answer as for IDs
-  that do not exist;
+  that do not exist. Under its own request and run, each of repository A's
+  child IDs is also substituted alone, so a route that loads a discussion,
+  attachment, revision, upload or attempt without checking its parent fails;
 - no response carries repository A's file contents, paths, commit message,
-  request title or description, discussion text, attachment name, invite
-  email, run log, GitHub repository name, owner email, or incarnation ID.
-  Event streams are checked through their first event;
+  description, request title or description, discussion text, attachment
+  name, invite email, run log, GitHub repository name, GitHub workflow run and
+  job names, owner email, or incarnation ID. Event streams are checked through
+  their first event;
 - the narrow member never sees the paths or contents of files outside its
-  view, run logs, nor the private request and its data.
+  view, run logs, nor the private request and its data. Through Git under its
+  own view it never receives the canonical head.
+
+The sweep does not cover successful Git protocol exchanges beyond
+`info/refs`, event-stream events after the first (owned by
+`workflow_tests::repo_events`), or owner writes. History entry IDs
+(`rv_push_<oid>`) carry the canonical head oid to narrow readers; that is a
+known identity-scheme disclosure, not something this test asserts against.
 
 Bearer capabilities (invite tokens, device codes, user codes) are filled with
 values the caller does not hold. Holding one is the authorization.

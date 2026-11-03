@@ -1,5 +1,9 @@
 use super::super::custom_views::{custom_view, member_id, view};
 use super::super::*;
+use super::seeds::{
+    GITHUB_JOB_ID, GITHUB_JOB_NAME, GITHUB_RUN_ID, GITHUB_WORKFLOW_NAME, seed_github_run,
+    seed_repo_b,
+};
 use super::write_bodies::{WriteBodies, write_bodies};
 use scope_api_contract::routes;
 use scope_domain::{
@@ -31,6 +35,7 @@ const REPLY_BODY: &str = "repo a reply body marker";
 const ATTACHMENT_FILENAME: &str = "repo-a-attachment-marker.jpg";
 const INVITE_EMAIL: &str = "repo-a-invitee-marker@example.com";
 const LOG_TEXT: &str = "repo a run log marker";
+const REPO_DESCRIPTION: &str = "repo a description marker";
 
 pub(super) struct RepoA {
     pub(super) app: axum::Router,
@@ -38,6 +43,7 @@ pub(super) struct RepoA {
     pub(super) absent: BTreeMap<&'static str, String>,
     pub(super) children_in_b: BTreeMap<&'static str, String>,
     pub(super) absent_children_in_b: BTreeMap<&'static str, String>,
+    pub(super) siblings_in_b: BTreeMap<&'static str, String>,
     pub(super) queries: Vec<String>,
     pub(super) write_query: String,
     pub(super) write_bodies: WriteBodies,
@@ -52,7 +58,8 @@ fn absent_twin(value: &str) -> String {
         .rposition(char::is_ascii_alphanumeric)
         .unwrap_or_else(|| panic!("{value} has no character to vary"));
     chars[last] = match chars[last] {
-        '9' => '0',
+        '9' => 'a',
+        'f' => '0',
         'z' => 'a',
         'Z' => 'A',
         c => char::from(c as u8 + 1),
@@ -216,6 +223,8 @@ pub(super) async fn repo_a() -> RepoA {
     cache_test_jwks(&state);
     let owner_id = test_owner_id();
     let outsider = outsider_repo();
+    let mut repo_a_seed = test_repo(&owner_id);
+    repo_a_seed.record.description = Some(REPO_DESCRIPTION.to_string());
     state
         .metadata
         .admin()
@@ -243,7 +252,7 @@ pub(super) async fn repo_a() -> RepoA {
                 ),
             ]),
             repositories: BTreeMap::from([
-                (TEST_REPO_ID.to_string(), test_repo(&owner_id)),
+                (TEST_REPO_ID.to_string(), repo_a_seed),
                 (outsider.record.id.clone(), outsider),
             ]),
             ..Default::default()
@@ -259,6 +268,7 @@ pub(super) async fn repo_a() -> RepoA {
         0,
     )
     .await;
+    seed_github_run(&state).await;
     state
         .metadata
         .repositories()
@@ -435,7 +445,7 @@ pub(super) async fn repo_a() -> RepoA {
         ("derivative_id", "preview".to_string()),
         ("part_number", "1".to_string()),
         ("invite_id", invite_id),
-        ("member_user_id", owner_id),
+        ("member_user_id", member_id().to_string()),
         (
             "session_id",
             sessions["sessions"][0]["id"].as_str().unwrap().to_string(),
@@ -444,6 +454,8 @@ pub(super) async fn repo_a() -> RepoA {
         ("attempt_id", attempt_id),
         ("step_index", "0".to_string()),
         ("job_id", "1".to_string()),
+        ("github_run_id", GITHUB_RUN_ID.to_string()),
+        ("github_job_id", GITHUB_JOB_ID.to_string()),
         ("entry_id", entry_id.clone()),
         ("token", UNHELD_CAPABILITY.to_string()),
         ("user_code", UNHELD_CAPABILITY.to_string()),
@@ -478,6 +490,16 @@ pub(super) async fn repo_a() -> RepoA {
     };
     let children_in_b = in_b(&params);
     let absent_children_in_b = in_b(&absent);
+    let repo_b_parents = seed_repo_b(
+        &state,
+        &format!("{OUTSIDER_HANDLE}/repo-b"),
+        &scope_postgres::db::scope_user_id_for_auth_identity("clerk", OUTSIDER_SUBJECT),
+        &bearer_header_for(OUTSIDER_SUBJECT, OUTSIDER_EMAIL),
+    )
+    .await;
+    let mut siblings_in_b = absent_children_in_b.clone();
+    siblings_in_b.insert("request_id", repo_b_parents.request_id);
+    siblings_in_b.insert("run_id", repo_b_parents.run_id);
     let common = format!(
         "section=active&after=0&workflow=test&git_oid={head}&commit_oid={head}&search=hidden&service=git-upload-pack"
     );
@@ -516,6 +538,9 @@ pub(super) async fn repo_a() -> RepoA {
             TEST_OWNER_EMAIL,
             super::super::fake_github::GITHUB_FULL_NAME,
             super::super::test_repo_incarnation().incarnation_id(),
+            REPO_DESCRIPTION,
+            GITHUB_WORKFLOW_NAME,
+            GITHUB_JOB_NAME,
         ]
         .map(str::to_string),
     );
@@ -531,6 +556,7 @@ pub(super) async fn repo_a() -> RepoA {
         absent,
         children_in_b,
         absent_children_in_b,
+        siblings_in_b,
         queries,
         write_query,
         write_bodies,
