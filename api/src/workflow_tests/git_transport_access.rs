@@ -167,10 +167,16 @@ async fn git_reads_reveal_repository_state_only_to_permitted_readers() {
             }
         };
 
-        let error =
-            git_upload_pack_repo_for_request(&state, &headers, TEST_REPO_OWNER, repo_name, &view)
-                .await
-                .unwrap_err();
+        let error = git_upload_pack_repo_for_request(
+            &state,
+            &headers,
+            TEST_REPO_OWNER,
+            repo_name,
+            &view,
+            &scope_domain::requests::GitFetchAsk::listing(),
+        )
+        .await
+        .unwrap_err();
 
         assert_eq!(error.status(), status, "{label}");
         assert_eq!(error.public_message(), message, "{label}");

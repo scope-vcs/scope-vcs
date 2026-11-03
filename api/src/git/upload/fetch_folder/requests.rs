@@ -1,7 +1,9 @@
 use crate::{error::ApiError, persistence::unix_now, state::AppState};
 use scope_domain::{
     repository::access::RepositoryAccess,
-    requests::{Request, RequestViewer, request_readable_in_git, retain_git_fetch_heads},
+    requests::{
+        GitFetchAsk, Request, RequestViewer, request_readable_in_git, retain_git_fetch_heads,
+    },
     views::Views,
 };
 use scope_postgres::db::GitFetchReader;
@@ -18,7 +20,7 @@ pub(super) async fn readable_requests(
     reader: &GitFetchReader<'_>,
     access: &RepositoryAccess,
     views: &Views,
-    wants: Option<&[String]>,
+    ask: &GitFetchAsk,
 ) -> Result<FetchRequests, ApiError> {
     let readable = |request: &Request, invitee: bool| {
         request_readable_in_git(
@@ -28,13 +30,22 @@ pub(super) async fn readable_requests(
             reader.view,
         )
     };
-    let mut requests = state
+    let (included, excluded): (Vec<_>, Vec<_>) = state
         .metadata
         .requests()
         .git_fetch_requests(reader.repo_id, reader.user_id)
         .await?
         .into_iter()
-        .filter_map(|(request, invitee)| readable(&request, invitee).then_some(request))
+        .filter(|(request, invitee)| readable(request, *invitee))
+        .partition(|(request, invitee)| ask.includes(request, reader.user_id, *invitee));
+    let mut requests = included
+        .into_iter()
+        .map(|(request, _)| request)
+        .collect::<Vec<_>>();
+    let current = excluded
+        .into_iter()
+        .map(|(request, _)| request)
+        .chain(requests.iter().cloned())
         .collect::<Vec<_>>();
     let parents = terminal_parents(state, &requests, reader.user_id, &readable).await?;
     let unadvertised = parents
@@ -42,16 +53,17 @@ pub(super) async fn readable_requests(
         .map(|request| request.id.clone())
         .collect::<BTreeSet<_>>();
     requests.splice(0..0, parents);
-    let advertised = if let Some(wants) = wants {
-        state
-            .metadata
-            .repositories()
-            .advertised_git_fetch_heads(reader, wants, unix_now()?)
-            .await?
-    } else {
-        Vec::new()
+    let advertised = match ask {
+        GitFetchAsk::Transfer { wants } => {
+            state
+                .metadata
+                .repositories()
+                .advertised_git_fetch_heads(reader, wants, unix_now()?)
+                .await?
+        }
+        GitFetchAsk::Listing { .. } => Vec::new(),
     };
-    let retained = retain_git_fetch_heads(&mut requests, advertised);
+    let retained = retain_git_fetch_heads(&current, &mut requests, advertised);
     Ok(FetchRequests {
         requests,
         unadvertised,
