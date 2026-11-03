@@ -251,7 +251,7 @@ test('public code with unchanged version refreshes retained tree and file on rep
   const { repoFileCacheKey, repoFileResource } = await import('./repo-file-cache')
   repoContentResource.clear()
   repoFileResource.clear()
-  const identity = { scope: 'viewer-a', repoId: 'repo', view: 'public' as const, contentVersion: 0 }
+  const identity = { scope: 'viewer-a', repoId: 'repo', view: 'public' as const, contentVersion: 0, version: { kind: 'main' } as const }
   const treeKey = repoContentCacheKey(identity)
   const fileKey = repoFileCacheKey({ ...identity, path: 'README.md' })
   let loads = 0

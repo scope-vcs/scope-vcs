@@ -2,9 +2,11 @@ import { FileWorkbench } from '@/components/file-workbench'
 import { WorkbenchBar, WorkbenchPane } from '@/components/page-header'
 import { PendingSurface } from '@/components/pending-surface'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
+import { useLocation } from '@tanstack/react-router'
 import { useState } from 'react'
 import {
   FileNavigatorSkeleton,
+  ReadmeSkeleton,
   SourceCodeSkeleton,
   SourceTabStripSkeleton,
 } from './repository-code-skeletons'
@@ -13,13 +15,45 @@ import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
 import { RepositoryLatestActivityPending } from './repository-latest-activity'
 
 export function RepositoryCodePending() {
+  const onCodePage = useLocation({
+    select: ({ pathname }) => pathname.split('/').filter(Boolean)[2] === 'code',
+  })
+  return onCodePage ? <RepositoryBrowserPending /> : <RepositoryHomePending />
+}
+
+function RepositoryHomePending() {
+  const repo = useLoadedRepoLayout()?.repo ?? null
+  return (
+    <WorkbenchPane>
+      <WorkbenchBar
+        actions={(
+          <>
+            <BlockSkeleton className="h-8 w-16" />
+            <BlockSkeleton className="h-8 w-24" />
+            <BlockSkeleton className="h-8 w-32" />
+          </>
+        )}
+        summary={repo && hasRepositoryAbout(repo) ? <RepositoryAbout repo={repo} /> : undefined}
+        title="Home"
+      />
+      {repo?.lifecycle_state !== 'AwaitingFirstPush' && <RepositoryLatestActivityPending />}
+      <section aria-label="Repository README" className="border-t border-border">
+        <PendingSurface className="min-h-[220px]" label="Loading repository README">
+          <ReadmeSkeleton />
+        </PendingSurface>
+      </section>
+    </WorkbenchPane>
+  )
+}
+
+function RepositoryBrowserPending() {
   const [navigationOpen, setNavigationOpen] = useState(false)
   const repo = useLoadedRepoLayout()?.repo ?? null
   return (
     <WorkbenchPane>
       <WorkbenchBar
         actions={<BlockSkeleton className="h-8 w-24" />}
-        summary={repo && hasRepositoryAbout(repo) ? <RepositoryAbout repo={repo} /> : undefined}
+        summary={<BlockSkeleton className="h-8 w-40" />}
         title="Code"
       />
       {repo?.lifecycle_state !== 'AwaitingFirstPush' && <RepositoryLatestActivityPending />}

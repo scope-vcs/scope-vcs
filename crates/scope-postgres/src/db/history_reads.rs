@@ -6,7 +6,7 @@ use super::projection_read_models::{
 use super::{RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapshot, entities};
 use crate::error::PostgresError;
 use scope_domain::{
-    history::{HistoryEntry, HistoryFeed, HistoryView},
+    history::{HistoryEntry, HistoryFeed, HistoryTreeFile, HistoryView, history_tree},
     repository::RepositoryIncarnation,
     views::ViewId,
 };
@@ -61,6 +61,7 @@ pub struct RepositoryHistoryQuery<'a> {
     pub feed: HistoryFeed,
     pub before: Option<&'a RepositoryHistoryBoundary>,
     pub entry_source_id: Option<&'a str>,
+    pub search: Option<&'a str>,
     pub limit: u64,
 }
 
@@ -169,6 +170,7 @@ impl RepositoryStore {
             feed,
             before,
             entry_source_id,
+            search,
             limit,
         } = query;
         for _ in 0..2 {
@@ -228,6 +230,15 @@ impl RepositoryStore {
                 HistoryFeed::All => "",
                 HistoryFeed::Visibility => " AND p.payload->'visibility_changes' != '[]'::jsonb",
             };
+            let search_predicate = match search {
+                Some(search) => {
+                    values.push(super::request_queue::escaped_search_pattern(search).into());
+                    " AND (p.payload->>'message' ILIKE $3 ESCAPE '\\' OR e.source_id ILIKE $3 ESCAPE '\\' \
+                     OR EXISTS (SELECT 1 FROM jsonb_array_elements(p.payload->'visibility_changes') c WHERE c->>'path' ILIKE $3 ESCAPE '\\'))"
+                }
+                None => "",
+            };
+            let bound = values.len();
             let sql = if let Some(source_id) = entry_source_id {
                 values.push(source_id.into());
                 "SELECT e.position, p.payload, \
@@ -238,12 +249,15 @@ impl RepositoryStore {
             } else if let Some(position) = boundary {
                 values.extend([position.into(), (limit + 1).into()]);
                 format!(
-                    "SELECT e.position, p.payload FROM scope_repository_history_entries e JOIN scope_repository_history_payloads p ON p.repo_id=e.repo_id AND p.payload_hash=e.payload_hash WHERE e.repo_id=$1 AND e.audience=$2 AND e.position<$3{feed_predicate} ORDER BY e.position DESC LIMIT $4"
+                    "SELECT e.position, p.payload FROM scope_repository_history_entries e JOIN scope_repository_history_payloads p ON p.repo_id=e.repo_id AND p.payload_hash=e.payload_hash WHERE e.repo_id=$1 AND e.audience=$2 AND e.position<${}{feed_predicate}{search_predicate} ORDER BY e.position DESC LIMIT ${}",
+                    bound + 1,
+                    bound + 2,
                 )
             } else {
                 values.push((limit + 1).into());
                 format!(
-                    "SELECT e.position, p.payload FROM scope_repository_history_entries e JOIN scope_repository_history_payloads p ON p.repo_id=e.repo_id AND p.payload_hash=e.payload_hash WHERE e.repo_id=$1 AND e.audience=$2{feed_predicate} ORDER BY e.position DESC LIMIT $3"
+                    "SELECT e.position, p.payload FROM scope_repository_history_entries e JOIN scope_repository_history_payloads p ON p.repo_id=e.repo_id AND p.payload_hash=e.payload_hash WHERE e.repo_id=$1 AND e.audience=$2{feed_predicate}{search_predicate} ORDER BY e.position DESC LIMIT ${}",
+                    bound + 1,
                 )
             };
             let rows = tx
@@ -291,6 +305,72 @@ impl RepositoryStore {
                 next_boundary,
                 head_oid: metadata.head_oid,
             });
+        }
+        Err(PostgresError::conflict(
+            "repository changed while reading history; retry",
+        ))
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_history_tree"))]
+    pub async fn repository_history_tree(
+        &self,
+        incarnation: &RepositoryIncarnation,
+        view: &ViewId,
+        entry_source_id: &str,
+    ) -> Result<Option<Vec<HistoryTreeFile>>, PostgresError> {
+        for _ in 0..2 {
+            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+            let current =
+                super::repository_access::repository_access(&tx, incarnation.repository_id(), None)
+                    .await?
+                    .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+            if current.incarnation() != *incarnation {
+                return Err(PostgresError::conflict(
+                    "repository was recreated; retry the read",
+                ));
+            }
+            if live_projection_read_model(
+                &tx,
+                incarnation.repository_id(),
+                current.record.content_version,
+                view,
+            )
+            .await?
+            .is_none()
+            {
+                tx.commit().await?;
+                self.ensure_live_projection_read_models(incarnation, view)
+                    .await?;
+                continue;
+            }
+            let rows = tx
+                .query_all_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "SELECT p.payload FROM scope_repository_history_entries e \
+                     JOIN scope_repository_history_payloads p ON p.repo_id=e.repo_id AND p.payload_hash=e.payload_hash \
+                     WHERE e.repo_id=$1 AND e.audience=$2 AND e.position<=( \
+                       SELECT t.position FROM scope_repository_history_entries t \
+                       WHERE t.repo_id=$1 AND t.audience=$2 AND t.source_id=$3) \
+                     ORDER BY e.position",
+                    [
+                        incarnation.repository_id().into(),
+                        view.as_str().into(),
+                        entry_source_id.into(),
+                    ],
+                ))
+                .await?;
+            tx.commit().await?;
+            if rows.is_empty() {
+                return Ok(None);
+            }
+            let entries = rows
+                .into_iter()
+                .map(|row| {
+                    serde_json::from_value::<HistoryEntry>(row.try_get("", "payload")?)
+                        .map_err(PostgresError::internal)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            return Ok(Some(history_tree(&entries)));
         }
         Err(PostgresError::conflict(
             "repository changed while reading history; retry",

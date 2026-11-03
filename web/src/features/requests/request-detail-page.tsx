@@ -13,6 +13,7 @@ import { PageContent } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Link } from '@tanstack/react-router'
 import {
+  Code,
   ArrowLeft,
   ShieldQuestion,
   SlidersHorizontal,
@@ -216,6 +217,12 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
         <RequestDetailHeader
           actions={
             <>
+              <Button asChild size="sm" variant="secondary">
+                <Link params={params} search={{ request: request.id }} to="/$owner/$repo/code">
+                  <Code />
+                  Browse code
+                </Link>
+              </Button>
               <RequestChangesMenu
                 activity={activity}
                 params={{ ...params, requestId: request.id }}

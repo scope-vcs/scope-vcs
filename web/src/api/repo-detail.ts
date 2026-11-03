@@ -5,6 +5,7 @@ import {
 } from '@/api/client'
 import { arrayOf, loadOptionalResource, stripTrailingSlash } from './http'
 import { repoRoute } from './paths'
+import type { RepositoryVersionSearch } from '../features/repo-detail/repository-version'
 import type { RepoContent, RepoLiveState, RepoParams } from './types'
 import type { RepoSummaryResponse, RepositoryDependencyCheckResponse, ViewId } from './types.generated'
 import { ApiRouteTemplates, buildApiPath } from './types.generated'
@@ -17,12 +18,12 @@ import {
 } from './validators.generated'
 
 export async function loadRepoContentForRequest(
-  data: RepoParams & { view: ViewId },
+  data: RepoParams & { view: ViewId } & RepositoryVersionSearch,
   signal?: AbortSignal,
 ) {
   const api = createApiClient()
   const files = await api.get(
-    `${repoRoute(ApiRouteTemplates.repoFiles, data)}?${new URLSearchParams({ view: data.view })}`,
+    `${repoRoute(ApiRouteTemplates.repoFiles, data)}?${repoVersionQuery(data)}`,
     arrayOf(RepoFileResponseValidator),
     { auth: 'optional', signal },
   )
@@ -57,12 +58,14 @@ export async function loadRepoLiveStateForRequest(data: RepoParams) {
 }
 
 export async function loadRepoFileForRequest(
-  data: RepoParams & { path: string; view: ViewId },
+  data: RepoParams & { path: string; view: ViewId } & RepositoryVersionSearch,
   signal?: AbortSignal,
 ) {
   const api = createApiClient()
+  const query = repoVersionQuery(data)
+  query.set('path', data.path)
   return api.get(
-    `${repoRoute(ApiRouteTemplates.repoFileContent, data)}?${new URLSearchParams({ path: data.path, view: data.view })}`,
+    `${repoRoute(ApiRouteTemplates.repoFileContent, data)}?${query}`,
     RepoFileContentResponseValidator,
     { auth: 'optional', signal },
   )
@@ -77,6 +80,13 @@ export async function loadRepoDependenciesForRequest(
     RepositoryDependencyCheckResponseValidator,
     { auth: 'required', maxResponseBytes: 8 * 1024 * 1024, signal },
   )
+}
+
+function repoVersionQuery({ request, update, view }: { view: ViewId } & RepositoryVersionSearch) {
+  const query = new URLSearchParams({ view })
+  if (request) query.set('request', request)
+  if (update) query.set('update', update)
+  return query
 }
 
 function repoLiveState(data: RepoParams, repo: RepoSummaryResponse, githubRuns: boolean, githubConfigured: boolean): RepoLiveState {

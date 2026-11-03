@@ -31,6 +31,7 @@ pub(crate) mod request_merge;
 pub(crate) mod request_revision_inspection;
 pub(crate) mod request_start;
 pub(crate) mod request_submit;
+pub(crate) mod request_tree;
 pub(crate) mod run_caches;
 pub(crate) mod run_control;
 pub(crate) mod run_inspection;

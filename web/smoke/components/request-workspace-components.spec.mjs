@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
+import { fixtureClerk, fixtureRepositorySearch, openFixture } from '../support/fixture-server.mjs'
 
 async function workspacePage(t) {
-  const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk], tailwind: true })
+  const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true })
   const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
   return { page, base, errors, railClosed }
 }

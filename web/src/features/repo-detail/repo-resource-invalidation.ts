@@ -16,6 +16,7 @@ import { repoSettingsResource } from './repo-settings-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
+import { repositorySearchResource } from '../repo-search/repository-search-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { invalidateGitHubWorkflowRuns } from '../runs/github-workflow-runs-resource'
 import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
@@ -54,6 +55,7 @@ export function invalidateRepoResources(
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     historyFeedResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+    repositorySearchResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     historyEntryResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestAttachmentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     if (repositoryChanged || !versioned) {

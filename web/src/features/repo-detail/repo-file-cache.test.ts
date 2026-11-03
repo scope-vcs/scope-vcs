@@ -9,6 +9,7 @@ test('keys file entries by repository version, view and normalized path', () => 
     contentVersion: 3,
     path: 'README.html',
     repoId: 'repo-1',
+    version: { kind: 'main' } as const,
   }
 
   assert.notEqual(

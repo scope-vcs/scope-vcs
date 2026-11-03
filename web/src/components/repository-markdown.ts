@@ -53,7 +53,7 @@ export function resolveRepositoryMarkdownUrl(
 
   if (parts.length === 0) return ''
   const repositoryPath = `/${encodeURIComponent(context.owner)}/${encodeURIComponent(context.repo)}`
-  return `${repositoryPath}?file=${encodeURIComponent(parts.join('/'))}${fragment}`
+  return `${repositoryPath}/code?file=${encodeURIComponent(parts.join('/'))}${fragment}`
 }
 
 function markdownFragment(value: string) {

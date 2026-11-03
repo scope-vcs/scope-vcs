@@ -1,205 +1,53 @@
-import { parseRepoFileInput } from '@/api/request-inputs'
-import { HttpError, isNotFoundError } from '@/api/http'
-import {
-  loadRepoContentForRequest,
-  loadRepoFileForRequest,
-} from '@/api/repo-detail'
-import { parseRepoViewInput } from '@/api/repo-params'
 import { repoViews } from '@/api/repo-views'
-import type { RepoContent, RepoLiveState } from '@/api/types'
-import type {
-  RepoFileContentResponse,
-  RepoSummaryResponse,
-  ViewId,
-} from '@/api/types.generated'
+import type { RepoLiveState } from '@/api/types'
 import { RepoContentError } from '@/components/repo-content-error'
-import {
-  repoContentResource,
-  repoContentCacheKey,
-} from '@/features/repo-detail/repo-content-cache'
-import {
-  repoFileResource,
-  repoFileCacheKey,
-} from '@/features/repo-detail/repo-file-cache'
-import { RepoDetailPage } from '@/features/repo-detail/repo-detail-page'
-import { RepositoryCodePending } from '@/features/repo-detail/repository-code-pending'
-import {
-  repositoryLandingPath,
-  loadRepoFileWhenReady,
-  settleRepoCodeResource,
-  repoCodeResourceLoader,
-  type RepoFileLoadResult,
-} from '@/features/repo-detail/repo-code-route-data'
+import { RepoHomePage } from '@/features/repo-detail/repo-home-page'
 import { useRepoLayout } from '@/features/repo-detail/repo-layout-context'
-import {
-  displayRouteFilePath,
-  parseRouteFileSearch,
-} from '@/lib/route-file'
-import { useCachedResource } from '@/lib/use-cached-resource'
-import {
-  createFileRoute,
-  useNavigate,
-} from '@tanstack/react-router'
-import { createServerFn } from '@tanstack/react-start'
-import { getRequest } from '@tanstack/react-start/server'
-import { auth } from '@clerk/tanstack-react-start/server'
-import { useAuth } from '@clerk/tanstack-react-start'
+import { RepositoryCodePending } from '@/features/repo-detail/repository-code-pending'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
+import {
+  EMPTY_REPO_CODE_LOADER_DATA,
+  prepareRepoCodeLoaderData,
+  repoCodeCacheKeys,
+  useRepoCodeResources,
+} from '@/features/repo-detail/use-repo-code-resources'
 import { resolveViewingAs } from '@/features/repo-detail/viewing-as'
-import { useViewingAs } from '@/features/repo-detail/use-viewing-as'
-import { useCallback, useMemo } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { auth } from '@clerk/tanstack-react-start/server'
 
-const PROJECTION_REBUILDING_MESSAGE = 'repository projection is rebuilding; retry shortly'
-
-const loadRepoContent = createServerFn({ method: 'GET' })
-  .validator(parseRepoViewInput)
-  .handler(({ data }) => loadRepoContentForRequest(data, getRequest().signal))
-
-const loadRepoFile = createServerFn({ method: 'GET' })
-  .validator(parseRepoFileInput)
-  .handler(async ({ data }): Promise<RepoFileLoadResult> => {
-    try {
-      return { file: await loadRepoFileForRequest(data, getRequest().signal), status: 'ready' }
-    } catch (error) {
-      if (isNotFoundError(error)) return { status: 'missing' }
-      if (
-        error instanceof HttpError &&
-        error.status === 503 &&
-        error.message === PROJECTION_REBUILDING_MESSAGE
-      ) {
-        return { status: 'rebuilding' }
-      }
-      throw error
-    }
-  })
+const MAIN = { kind: 'main' } as const
 
 export const Route = createFileRoute('/$owner/$repo/_code/')({
-  validateSearch: parseRepoCodeSearch,
-  loaderDeps: ({ search }) => ({ file: search.file ?? null, view: search.view ?? null }),
+  loaderDeps: ({ search }) => ({ view: search.view ?? null }),
   loader: async ({ abortController, deps, params, parentMatchPromise }) => {
-    if (typeof window !== 'undefined') {
-      return { content: null, file: null, contentIdentity: null, fileIdentity: null }
-    }
+    if (typeof window !== 'undefined') return EMPTY_REPO_CODE_LOADER_DATA
     const live = (await parentMatchPromise).loaderData as RepoLiveState
     const { userId } = await auth()
     const scope = repoResourceScope(live.repo, userId)
     const view = resolveViewingAs(repoViews(live.repo.views), live.repo.access.view, deps.view)
-    const { contentIdentity, fileIdentity } = repoCodeCacheKeys(live.repo, scope, view, deps.file)
-    const signal = abortController.signal
-    const content = loadRepoContent({ data: { ...params, view }, signal })
-    const file = deps.file && fileIdentity
-      ? loadAddressedFile({ ...params, path: deps.file, view }, signal)
-      : null
-    const initialContent = settleRepoCodeResource(content)
-    const initialFile = file ? settleRepoCodeResource(file) : null
-    return {
-      content: initialContent,
-      file: initialFile,
-      contentIdentity,
-      fileIdentity,
-    }
+    return prepareRepoCodeLoaderData({
+      file: null,
+      keys: repoCodeCacheKeys(live.repo, scope, view, null, MAIN),
+      params,
+      signal: abortController.signal,
+      version: MAIN,
+      view,
+    })
   },
   errorComponent: RepoContentError,
   pendingComponent: RepositoryCodePending,
-  component: RepoIndexRoute,
+  component: RepoHomeRoute,
 })
 
-function RepoIndexRoute() {
+function RepoHomeRoute() {
   const params = Route.useParams()
   const { repo } = useRepoLayout()
-  const { userId, isLoaded } = useAuth()
-  const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
-  const page = Route.useLoaderData()
-  const search = Route.useSearch()
-  const { view } = useViewingAs()
-  const navigate = useNavigate({ from: Route.fullPath })
-  const owner = params.owner
-  const repoName = params.repo
-  const { contentIdentity } = repoCodeCacheKeys(repo, scope, view, null)
-  const loadContent = useMemo(() => repoCodeResourceLoader(
-    page.contentIdentity === contentIdentity ? page.content : null,
-    (signal: AbortSignal): Promise<RepoContent> => loadRepoContent({
-      data: { owner, repo: repoName, view }, signal,
-    }),
-  ), [contentIdentity, owner, page.content, page.contentIdentity, repoName, view])
-  const contentResource = useCachedResource({
-    fallbackError: 'Repository files are unavailable.',
-    identity: contentIdentity,
-    load: loadContent,
-    resource: repoContentResource,
+  const code = useRepoCodeResources({
+    file: null,
+    page: Route.useLoaderData(),
+    params,
+    repo,
+    version: MAIN,
   })
-  const content = contentResource.value
-  const selectedPath = search.file ?? (content ? repositoryLandingPath(content.files) : null)
-  const { fileIdentity: selectedFileIdentity } = repoCodeCacheKeys(repo, scope, view, selectedPath)
-  const loadSelectedFile = useMemo(() => repoCodeResourceLoader(
-    page.fileIdentity === selectedFileIdentity ? page.file : null,
-    (signal: AbortSignal) => {
-      if (!selectedPath) throw new Error('No file selected.')
-      return loadAddressedFile({ owner, path: selectedPath, repo: repoName, view }, signal)
-    },
-  ), [owner, page.file, page.fileIdentity, repoName, selectedFileIdentity, selectedPath, view])
-  const selectedFileResource = useCachedResource({
-    fallbackError: 'File content is unavailable.',
-    identity: selectedFileIdentity,
-    load: loadSelectedFile,
-    resource: repoFileResource,
-  })
-  const selectFile = useCallback((path: string) => {
-    const nextPath = displayRouteFilePath(path)
-    if (nextPath === selectedPath) return
-    void navigate({
-      resetScroll: false,
-      search: {
-        file: nextPath,
-      },
-    })
-  }, [navigate, selectedPath])
-
-  return (
-    <RepoDetailPage
-      content={contentResource}
-      file={selectedFileResource}
-      onSelectFilePath={selectFile}
-      params={params}
-      repo={repo}
-      selectedPath={selectedPath}
-    />
-  )
-}
-
-type RepoCodeSearch = { file?: string }
-
-function parseRepoCodeSearch(search: Record<string, unknown>): RepoCodeSearch {
-  return { file: parseRouteFileSearch(search.file) }
-}
-
-async function loadAddressedFile(
-  data: ReturnType<typeof parseRepoFileInput>,
-  signal: AbortSignal,
-): Promise<RepoFileContentResponse> {
-  const file = await loadRepoFileWhenReady({
-    load: () => loadRepoFile({ data, signal }),
-    signal,
-  })
-  if (!file) throw new Error('This file is no longer available in the current scoped view.')
-  return file
-}
-
-function repoCodeCacheKeys(
-  repo: RepoSummaryResponse,
-  accessScope: string | null,
-  view: ViewId,
-  path: string | null,
-) {
-  if (!accessScope) return { contentIdentity: null, fileIdentity: null }
-  const scope = {
-    scope: accessScope,
-    view,
-    contentVersion: repo.content_version,
-    repoId: repo.id,
-  }
-  return {
-    contentIdentity: repoContentCacheKey(scope),
-    fileIdentity: path ? repoFileCacheKey({ ...scope, path }) : null,
-  }
+  return <RepoHomePage {...code} params={params} repo={repo} />
 }
