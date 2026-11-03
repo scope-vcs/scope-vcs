@@ -28,7 +28,9 @@ pub(crate) async fn native_commit_details(
         .await?;
     let permit = state.runtime_budgets.try_git_materialization()?;
     let commits = commits.to_vec();
+    let parent_span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _entered = parent_span.enter();
         let _permit = permit;
         commits
             .iter()
