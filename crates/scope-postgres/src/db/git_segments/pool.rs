@@ -19,6 +19,7 @@ pub struct PooledRequestPack {
     pub scope: RequestPackScope,
     pub request_author_id: Option<String>,
     pub request_submitted: bool,
+    pub request_invitees: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -151,7 +152,8 @@ where
          ) SELECT packs.id, packs.request_id, packs.head_oid, packs.prerequisites, packs.view_id,
                 requests.audience AS request_view,
                 requests.author_user_id AS request_author_id,
-                requests.submitted_at_unix IS NOT NULL AS request_submitted
+                requests.submitted_at_unix IS NOT NULL AS request_submitted,
+                ARRAY(SELECT user_id FROM scope_request_invitees WHERE request_id = requests.id) AS request_invitees
          FROM scope_git_pool_packs packs
          JOIN scope_requests requests ON requests.id = packs.request_id
          WHERE packs.repo_id = $1 AND packs.request_id IN (SELECT id FROM lineage)
@@ -176,6 +178,7 @@ where
                 .map_err(PostgresError::internal)?,
             request_author_id: row.try_get("", "request_author_id").map_err(read)?,
             request_submitted: row.try_get("", "request_submitted").map_err(read)?,
+            request_invitees: row.try_get("", "request_invitees").map_err(read)?,
         })
     })
     .collect()

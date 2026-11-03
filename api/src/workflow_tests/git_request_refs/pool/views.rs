@@ -1,5 +1,5 @@
 use super::*;
-use crate::git::request_refs::view_object_repo;
+use crate::git::request_refs::view_object_repos;
 use scope_domain::repository::git::RequestPackScope;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -168,7 +168,7 @@ async fn view_shelf(state: &AppState) -> PathBuf {
     let repo = find_repo(state, TEST_REPO_OWNER, TEST_REPO_NAME)
         .await
         .unwrap();
-    view_object_repo(
+    view_object_repos(
         state,
         &repo.incarnation(),
         &repo.repo_config,
@@ -176,6 +176,7 @@ async fn view_shelf(state: &AppState) -> PathBuf {
     )
     .await
     .unwrap()
+    .objects
 }
 
 fn git_input(repo: &FsPath, args: &[&str], input: &[u8]) -> String {

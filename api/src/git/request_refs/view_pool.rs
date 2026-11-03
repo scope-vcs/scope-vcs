@@ -12,12 +12,17 @@ use scope_domain::{repo_config::RepoConfig, repository::RepositoryIncarnation, v
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
-pub(crate) async fn view_object_repo(
+pub(crate) struct ViewObjectRepos {
+    pub(crate) objects: PathBuf,
+    pub(crate) main: PathBuf,
+}
+
+pub(crate) async fn view_object_repos(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     config: &RepoConfig,
     view: &ViewId,
-) -> Result<PathBuf, ApiError> {
+) -> Result<ViewObjectRepos, ApiError> {
     if view == config.views.full() || config.views.get(view).is_none() {
         return Err(ApiError::not_found("restricted view not found"));
     }
@@ -56,7 +61,10 @@ pub(crate) async fn view_object_repo(
             return Err(error);
         }
         add_receive_pack_alternate(&shelf, &base.join("objects"))?;
-        Ok(shelf)
+        Ok(ViewObjectRepos {
+            objects: shelf,
+            main: base,
+        })
     })
     .await
 }

@@ -156,14 +156,15 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
     );
     assert_eq!(packs[0].head_oid, head);
     let repo = super::custom_views::stored_repo(&state).await;
-    let shelf = crate::git::request_refs::view_object_repo(
+    let shelf = crate::git::request_refs::view_object_repos(
         &state,
         &repo.incarnation(),
         &repo.repo_config,
         &view("agent"),
     )
     .await
-    .unwrap();
+    .unwrap()
+    .objects;
     assert!(contains_commit(&shelf, &head, &head));
     let projection_objects = fs::read_to_string(shelf.join("objects/info/alternates")).unwrap();
     assert_eq!(request.view, view("agent"));
@@ -198,14 +199,15 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
     let projected_main = checkout.fetch_main();
     assert!(contains_commit(&checkout.path, &head, &projected_main));
     let repo = super::custom_views::stored_repo(&state).await;
-    let updated_shelf = crate::git::request_refs::view_object_repo(
+    let updated_shelf = crate::git::request_refs::view_object_repos(
         &state,
         &repo.incarnation(),
         &repo.repo_config,
         &view("agent"),
     )
     .await
-    .unwrap();
+    .unwrap()
+    .objects;
     assert_eq!(
         fs::read_to_string(updated_shelf.join("objects/info/alternates")).unwrap(),
         projection_objects

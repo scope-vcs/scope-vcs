@@ -57,10 +57,7 @@ impl DeferredRequestObjects {
             PoolInstall {
                 incarnation: &self.incarnation,
                 config: &self.config,
-                repos: PoolRepos::Full {
-                    repos: &repos,
-                    actor_user_id: &self.actor_user_id,
-                },
+                repos: PoolRepos::Full(&repos, &self.actor_user_id, staging_repo),
             },
             &self.requests,
             staging_repo,
@@ -87,10 +84,7 @@ pub(crate) async fn attach_request_refs_from_pool(
         PoolInstall {
             incarnation,
             config,
-            repos: PoolRepos::Full {
-                repos: &repos,
-                actor_user_id,
-            },
+            repos: PoolRepos::Full(&repos, actor_user_id, staging_repo),
         },
         &stored,
         staging_repo,
@@ -138,14 +132,16 @@ pub(crate) async fn attach_view_request_refs_from_pool(
     staging_repo: &FsPath,
     view_bases: RequestViewBases,
 ) -> Result<(), ApiError> {
-    let repo = super::view_pool::view_object_repo(state, incarnation, config, view).await?;
+    let repo = super::view_pool::view_object_repos(state, incarnation, config, view)
+        .await?
+        .objects;
     let missing = missing_request_heads(&repo, requests.to_vec()).await?;
     install_request_pool_packs(
         state,
         &PoolInstall {
             incarnation,
             config,
-            repos: PoolRepos::View { view, repo: &repo },
+            repos: PoolRepos::View(view, &repo),
         },
         &missing,
     )
@@ -223,11 +219,7 @@ async fn provide_request_objects(
     requests: &[Request],
     staging_repo: &FsPath,
 ) -> Result<(), ApiError> {
-    let PoolRepos::Full {
-        repos,
-        actor_user_id,
-    } = install.repos
-    else {
+    let PoolRepos::Full(repos, actor_user_id, _) = install.repos else {
         return Err(ApiError::internal_message(
             "full request seeding requires full shelves",
         ));

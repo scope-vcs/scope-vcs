@@ -258,19 +258,22 @@ references, plus its existing `SCOPE_BUCKET_*`, `SCOPE_OBJECT_ENCRYPTION_KEY` an
 other API settings. The API image includes Git and writable `/app/.scope`; its
 configured `SCOPE_DATA_DIR` takes precedence. The maintenance service lacks the
 full API environment, so do not run this mode there or use its migrator credentials.
-The API binary cap is bounded at 59 MiB for this temporary mode; the maintenance
-cap stays at 26 MiB. Remove the extra API allowance when this command is deleted.
+The API cap is bounded at 59 MiB for this temporary mode; the maintenance cap
+stays at 26 MiB. Remove the extra API allowance when this command is deleted.
 The command scans stored revisions in batches of 32, keeps no progress state, and
 is safe to rerun.
 
-Each revision first restores into an empty repository through the reader's pool
-pack selection and installer, using the request's authorized lineage packs and
-main copy or view base. Only chains behind the required heads are installed; there
+Each revision restores from empty shelves through both its view reader and the
+full-view merge reader, using the reader's authorized lineage selection and
+installer with the main copy or view base. Only chains behind the required heads are installed; there
 is no pack-count cutoff. Long cold reads may take longer than a bundle restore. Missing
 revisions import their bundle and publish a pack through the live push writer,
 then repeat the empty-repository check. Verification requires both the head and
-old head and their connected history. Restricted packs stay view-scoped and are
-never installed on shared shelves. Failures print a reason for each revision;
+old head independently and their connected history. Restricted packs stay view-scoped; full-view
+readers install them in staging, never shared shelves. Invited full-view readers
+restore unsubmitted drafts in staging using stored invitation membership. Dependent failures
+are deferred only while successful repairs make progress. When progress stops,
+remaining failures are reported. Failures print a reason for each revision;
 repository and total summaries print verified, repaired, and failed counts.
 The command exits nonzero if any revision fails. Delete request bundles and this
 command only after a production invocation exits zero.

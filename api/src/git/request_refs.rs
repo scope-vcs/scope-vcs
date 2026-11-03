@@ -58,7 +58,7 @@ pub(crate) use snapshot::{bundle_prerequisites, download_snapshot};
 use snapshot::{fetch_bundle_into, fetch_snapshot_into};
 pub(crate) use view_bases::{RequestViewBases, request_view_bases, share_request_view_bases};
 #[cfg(test)]
-pub(crate) use view_pool::view_object_repo;
+pub(crate) use view_pool::view_object_repos;
 
 pub(crate) const REQUEST_REF_DELETE_ERROR: &str = "Scope does not accept request branch deletes";
 pub(crate) const REQUEST_REF_SINGLE_UPDATE_ERROR: &str =
