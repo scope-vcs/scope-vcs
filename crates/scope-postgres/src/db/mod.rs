@@ -17,6 +17,7 @@ mod content_fences;
 mod content_push_transactions;
 #[cfg(test)]
 mod content_version_tests;
+pub(crate) mod data_scope;
 mod dependency_analysis;
 mod entities;
 mod fast_push;
@@ -73,6 +74,8 @@ mod repo_lifecycle;
 mod repo_mutation;
 mod repo_reads;
 mod repository_access;
+#[cfg(test)]
+mod repository_row_security_tests;
 mod repository_rows;
 mod request_access;
 mod request_attention;
@@ -83,6 +86,7 @@ mod request_checks;
 mod request_diff_stats;
 mod request_discussion_actors;
 mod request_discussion_commands;
+mod request_discussion_reads;
 mod request_discussion_rows;
 mod request_discussions;
 mod request_invitees;
@@ -138,7 +142,6 @@ pub use cli_auth_results::{
     BrowserLoginCompletion, CliSessionSummary, CreateCliExchangeGrantCommand, DeviceLoginPoll,
     NewCliSession, StartBrowserLoginCommand, StartDeviceLoginCommand,
 };
-use connection::begin_metadata_read_snapshot;
 pub use connection::{
     DEFAULT_METADATA_POOL_MAX_CONNECTIONS, ExclusiveWriterFence,
     terminate_metadata_writer_sessions, verify_writer_fence_available,
@@ -212,10 +215,10 @@ pub use request_discussion_commands::{
     CreateRequestDiscussionCommand, CreateRequestDiscussionReplyCommand, DiscussionTransition,
     ReopenAndReplyToRequestDiscussionCommand, TransitionRequestDiscussionCommand,
 };
-pub use request_discussion_rows::RequestDiscussionReplyReadModel;
-pub use request_discussions::{
+pub use request_discussion_reads::{
     RequestDiscussionReadBatch, RequestDiscussionReadModel, RequestDiscussionsPageQuery,
 };
+pub use request_discussion_rows::RequestDiscussionReplyReadModel;
 pub use request_invitees::{
     AddRequestInviteeCommand, LeaveRequestCommand, RemoveRequestInviteeCommand, RequestInviteeRead,
 };

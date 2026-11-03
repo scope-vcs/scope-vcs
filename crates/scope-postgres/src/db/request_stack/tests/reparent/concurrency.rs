@@ -1,11 +1,12 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 use std::time::Duration;
 
 async fn wait_for_two_waiters(store: &MetadataStore, blocker: i32) {
     tokio::time::timeout(Duration::from_secs(15), async {
         loop {
-            let count: i64 = store.db.query_one_raw(Statement::from_sql_and_values(
+            let count: i64 = store.db.fixture().query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "WITH RECURSIVE blocked(pid) AS (SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)) UNION SELECT activity.pid FROM pg_stat_activity activity JOIN blocked ON blocked.pid = ANY(pg_blocking_pids(activity.pid))) SELECT count(*) AS count FROM blocked",
                 [blocker.into()],
@@ -28,7 +29,11 @@ async fn concurrent_retries_of_one_revision_context_return_the_same_receipt() {
     let context = context_for(&store, &child, base.clone(), facts.as_ref(), "reparent").await;
     let mut publication = input(&child, &child.head_oid, "reparent_event", 10);
     publication.new_base = Some(base);
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     crate::db::locks::acquire_shared_repository_lock(&held, &child.repo_id)
         .await
         .unwrap();
@@ -70,7 +75,11 @@ async fn a_reparent_while_a_stack_waits_for_its_locks_cannot_deadlock() {
     let facts = selected_parent_facts(&store, &child, &base).await;
     let mut publication = input(&child, &child.head_oid, "reparent_event", 14);
     publication.new_base = Some(base);
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     crate::db::locks::acquire_shared_repository_lock(&held, &root.repo_id)
         .await
         .unwrap();
@@ -85,7 +94,11 @@ async fn a_reparent_while_a_stack_waits_for_its_locks_cannot_deadlock() {
     let graph_store = store.clone();
     let graph_root = root.clone();
     let graph = tokio::spawn(async move {
-        let tx = graph_store.db.begin().await.unwrap();
+        let tx = graph_store
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await
+            .unwrap();
         crate::db::locks::acquire_shared_repository_lock(&tx, &graph_root.repo_id)
             .await
             .unwrap();

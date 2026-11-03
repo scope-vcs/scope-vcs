@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     AuthStore, acquire_aggregate_lock,
     auth::load_user_by_id,
@@ -22,7 +23,7 @@ use scope_domain::{
 use sea_orm::{
     ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
     DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
-    TransactionTrait, sea_query::OnConflict,
+    sea_query::OnConflict,
 };
 use std::collections::BTreeSet;
 
@@ -81,7 +82,11 @@ impl AuthStore {
         user_id: &str,
         now_unix: u64,
     ) -> Result<DeletedAccount, AccountDeletionError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::AccountDeletion))
+            .await
+            .map_err(PostgresError::internal)?;
         let user = load_user_by_id(&tx, user_id).await?;
         let identities = entities::auth_identity::Entity::find()
             .filter(entities::auth_identity::Column::UserId.eq(user_id))

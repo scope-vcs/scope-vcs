@@ -42,6 +42,7 @@ async fn fixture() -> (MetadataStore, Repository) {
 async fn live_projection_count(store: &MetadataStore, repo_id: &str, version: u64) -> i64 {
     store
         .db
+        .fixture()
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT count(*) AS count FROM scope_projection_read_models \
@@ -111,7 +112,7 @@ async fn invites_and_metadata_edits_keep_projections_and_history_current() {
     for audience in [ViewId::private(), ViewId::public()] {
         assert!(
             live_projection_read_model(
-                store.db.as_ref(),
+                &store.db.fixture(),
                 &repo.record.id,
                 content_version,
                 &audience

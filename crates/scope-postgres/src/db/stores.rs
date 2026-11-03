@@ -1,6 +1,7 @@
 #[cfg(feature = "local-dev")]
 use super::connection::connect_postgres_store_with_options;
 use super::connection::{DEFAULT_METADATA_POOL_MAX_CONNECTIONS, connect_postgres_store};
+use super::data_scope::ScopedDatabase;
 #[cfg(any(test, feature = "test-support"))]
 use super::test_support::{self, TestDatabaseTarget};
 use super::{
@@ -9,12 +10,11 @@ use super::{
 };
 use crate::error::PostgresError;
 use scope_domain::content_ref::ContentRef;
-use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct MetadataStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
     pub(super) postgres_database_url: Option<Arc<str>>,
     pub(super) repo_change_notifier: RepoChangeNotifier,
     pub(super) merge_turn_sessions: MergeTurnSessions,
@@ -24,32 +24,32 @@ pub struct MetadataStore {
 
 #[derive(Clone)]
 pub struct JobStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 #[derive(Clone)]
 pub struct AdminStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 #[derive(Clone)]
 pub struct AuthStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 #[derive(Clone)]
 pub struct CleanupStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 #[derive(Clone)]
 pub struct CacheStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 #[derive(Clone)]
 pub struct RepositoryStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
     pub(super) postgres_database_url: Option<Arc<str>>,
     pub(super) repo_change_notifier: RepoChangeNotifier,
     pub(super) merge_turn_sessions: MergeTurnSessions,
@@ -57,22 +57,22 @@ pub struct RepositoryStore {
 
 #[derive(Clone)]
 pub struct RequestStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 #[derive(Clone)]
 pub struct MediaStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 #[derive(Clone)]
 pub struct RunStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 #[derive(Clone)]
 pub struct NativeRunsStore {
-    pub(super) db: Arc<DatabaseConnection>,
+    pub(super) db: Arc<ScopedDatabase>,
 }
 
 impl MetadataStore {

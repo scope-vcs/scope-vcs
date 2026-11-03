@@ -6,10 +6,15 @@ use super::{
     persistence::{as_i32, as_i64},
 };
 use crate::{
-    db::locks::acquire_shared_repository_lock, error::PostgresError, job_trace::QueuedTrace,
+    db::{
+        data_scope::{DataScope, ScopedDatabase, SystemReason},
+        locks::acquire_shared_repository_lock,
+    },
+    error::PostgresError,
+    job_trace::QueuedTrace,
 };
 use scope_domain::requests::attachments::{RequestAttachmentCleanupLease, validate_lease_grant};
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 use super::locks::{lock_attachment_row, lock_processing_job};
 use orphan_claim::claim_orphan_objects;
@@ -27,9 +32,12 @@ impl MediaStore {
         &self,
         now_unix: u64,
     ) -> Result<u64, PostgresError> {
-        reconcile_completed_inventories(self.db.as_ref(), now_unix).await?;
-        let candidates = self
+        let discovery = self
             .db
+            .begin(DataScope::System(SystemReason::MediaCleanup))
+            .await?;
+        reconcile_completed_inventories(&discovery, now_unix).await?;
+        let candidates = discovery
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT attachment.id, attachment.repository_id,
@@ -55,12 +63,13 @@ impl MediaStore {
                 [as_i64(now_unix, "cleanup discovery time")?.into()],
             ))
             .await?;
+        discovery.commit().await?;
         let mut inserted = 0_u64;
         for candidate in candidates {
             let attachment_id = candidate.try_get::<String>("", "id")?;
             let repository_id = candidate.try_get::<String>("", "repository_id")?;
             let reason = candidate.try_get::<String>("", "reason")?;
-            let tx = self.db.begin().await?;
+            let tx = self.db.begin(DataScope::Repository(&repository_id)).await?;
             acquire_shared_repository_lock(&tx, &repository_id).await?;
             lock_processing_job(&tx, &attachment_id).await?;
             let Some(row) = lock_attachment_row(&tx, &attachment_id).await? else {
@@ -106,24 +115,17 @@ impl MediaStore {
         lease_expires_at_unix: u64,
     ) -> Result<Option<(RequestAttachmentCleanupLease, QueuedTrace)>, PostgresError> {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
-        if let Some(claim) = claim_attachment_tombstone(
-            self.db.as_ref(),
-            lease_token,
-            now_unix,
-            lease_expires_at_unix,
-        )
-        .await?
+        if let Some(claim) =
+            claim_attachment_tombstone(&self.db, lease_token, now_unix, lease_expires_at_unix)
+                .await?
         {
             return Ok(Some(claim));
         }
-        Ok(claim_orphan_objects(
-            self.db.as_ref(),
-            lease_token,
-            now_unix,
-            lease_expires_at_unix,
+        Ok(
+            claim_orphan_objects(&self.db, lease_token, now_unix, lease_expires_at_unix)
+                .await?
+                .map(|lease| (lease, QueuedTrace::default())),
         )
-        .await?
-        .map(|lease| (lease, QueuedTrace::default())))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "renew_cleanup_lease"))]
@@ -136,8 +138,11 @@ impl MediaStore {
         lease_expires_at_unix: u64,
     ) -> Result<bool, PostgresError> {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
-        let updated = self
+        let tx = self
             .db
+            .begin(DataScope::AttachmentRepository(attachment_id))
+            .await?;
+        let updated = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_cleanup_jobs
@@ -154,10 +159,10 @@ impl MediaStore {
             ))
             .await?;
         if updated.rows_affected() == 1 {
+            tx.commit().await?;
             return Ok(true);
         }
-        let orphan_updated = self
-            .db
+        let orphan_updated = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_orphan_cleanup_leases
@@ -173,6 +178,7 @@ impl MediaStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         Ok(orphan_updated.rows_affected() == 1)
     }
 
@@ -185,7 +191,10 @@ impl MediaStore {
         let attachment_id = lease.attachment_id.as_str();
         let lease_token = lease.lease_token.as_str();
         let lease_generation = lease.lease_generation;
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(attachment_id))
+            .await?;
         if let Some(expires_at) = locked_cleanup_lease_expiry(
             &tx,
             TOMBSTONE_LEASE,
@@ -271,7 +280,10 @@ impl MediaStore {
                 "cleanup retry time cannot be in the past",
             ));
         }
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(attachment_id))
+            .await?;
         if locked_cleanup_lease_expiry(
             &tx,
             TOMBSTONE_LEASE,
@@ -465,12 +477,14 @@ where
 }
 
 async fn claim_attachment_tombstone(
-    db: &sea_orm::DatabaseConnection,
+    db: &ScopedDatabase,
     lease_token: &str,
     now_unix: u64,
     lease_expires_at_unix: u64,
 ) -> Result<Option<(RequestAttachmentCleanupLease, QueuedTrace)>, PostgresError> {
-    let tx = db.begin().await?;
+    let tx = db
+        .begin(DataScope::System(SystemReason::MediaCleanup))
+        .await?;
     let candidate = tx
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,

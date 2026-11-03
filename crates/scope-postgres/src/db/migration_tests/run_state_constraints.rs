@@ -62,7 +62,7 @@ fn quoted_literals(text: &str) -> Vec<String> {
         .collect()
 }
 
-async fn constraint_definition(db: &DatabaseConnection, name: &str) -> String {
+async fn constraint_definition(db: &impl ConnectionTrait, name: &str) -> String {
     db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT pg_get_constraintdef(c.oid) AS definition
@@ -102,7 +102,7 @@ async fn run_state_check_constraints_allow_exactly_the_domain_states() {
             StepState::ALL.map(StepState::as_str).to_vec(),
         ),
     ] {
-        let definition = constraint_definition(&db, constraint).await;
+        let definition = constraint_definition(&db.fixture(), constraint).await;
         let parsed = constraint_states(&definition);
         assert_eq!(
             parsed.allowed,

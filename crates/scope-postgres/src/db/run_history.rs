@@ -1,4 +1,4 @@
-use super::{RunStore, entities};
+use super::{RunStore, data_scope::DataScope, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::run::Run;
 use sea_orm::{
@@ -51,11 +51,16 @@ impl RunStore {
             })?;
             select = select.filter(entities::run::Column::CreationSequence.lt(creation_sequence));
         }
+        let tx = self
+            .db
+            .begin(DataScope::Repository(query.repository_id))
+            .await?;
         let models = select
             .order_by_desc(entities::run::Column::CreationSequence)
             .limit(query.limit)
-            .all(self.db.as_ref())
+            .all(&tx)
             .await?;
+        tx.commit().await?;
         models
             .into_iter()
             .map(|model| {
@@ -75,8 +80,9 @@ impl RunStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::data_scope::{DataScope, SystemReason};
     use crate::db::requests::tests::postgres_store;
-    use sea_orm::{ConnectionTrait, TransactionTrait};
+    use sea_orm::ConnectionTrait;
     use std::time::Duration;
 
     #[tokio::test]
@@ -84,6 +90,7 @@ mod tests {
         let store = postgres_store();
         store
             .db
+            .fixture()
             .execute_unprepared(
                 "INSERT INTO scope_workflow_revisions (digest, definition, created_at_unix)
              VALUES (repeat('a', 64), '{\"jobs\":[{}]}', 1);
@@ -110,7 +117,11 @@ mod tests {
             )
             .await
             .unwrap();
-        let held = store.db.begin().await.unwrap();
+        let held = store
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await
+            .unwrap();
         held.execute_unprepared("LOCK TABLE scope_run_jobs IN ACCESS EXCLUSIVE MODE")
             .await
             .unwrap();

@@ -28,8 +28,12 @@ async fn worker_role_rebuilds_repository_history() {
     };
     let worker_url = std::env::var("SCOPE_WORKER_ROLE_TEST_WORKER_URL")
         .expect("worker URL must accompany the admin URL");
-    let admin = Arc::new(sea_orm::Database::connect(admin_url).await.unwrap());
-    let worker = Arc::new(sea_orm::Database::connect(worker_url).await.unwrap());
+    let admin = Arc::new(ScopedDatabase::new(
+        sea_orm::Database::connect(admin_url).await.unwrap(),
+    ));
+    let worker = Arc::new(ScopedDatabase::new(
+        sea_orm::Database::connect(worker_url).await.unwrap(),
+    ));
     let owner = UserAccount {
         id: "worker_history_owner".into(),
         handle: "worker_history_owner".into(),
@@ -83,6 +87,7 @@ async fn worker_role_rebuilds_repository_history() {
     .await
     .unwrap();
     let job_error = admin
+        .fixture()
         .query_one_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT last_error FROM scope_outbox_jobs LIMIT 1",
@@ -94,7 +99,7 @@ async fn worker_role_rebuilds_repository_history() {
         .unwrap();
     assert_eq!(summary.completed, 1, "{summary:?}, error: {job_error:?}");
     assert_eq!(summary.failed, 0);
-    let entry_count = history_entry_count(admin.as_ref()).await;
+    let entry_count = history_entry_count(&admin).await;
     assert!(
         entry_count > 0,
         "outbox rebuild must insert history entries"
@@ -105,6 +110,7 @@ async fn worker_role_rebuilds_repository_history() {
         "INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload_hash) VALUES ($1, 'private', 1000000, 'stale-entry', 'stale')",
     ] {
         admin
+            .fixture()
             .execute_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
                 sql,
@@ -113,37 +119,39 @@ async fn worker_role_rebuilds_repository_history() {
             .await
             .unwrap();
     }
-    assert_eq!(history_entry_count(admin.as_ref()).await, entry_count + 1);
+    assert_eq!(history_entry_count(&admin).await, entry_count + 1);
+    let rebuild = worker
+        .begin(DataScope::Repository(&repo.record.id))
+        .await
+        .unwrap();
     super::super::projection_read_models::reset_live_projection_read_models(
-        worker.as_ref(),
+        &rebuild,
         &repo.record.id,
     )
     .await
     .unwrap();
-    fold_live_projection_read_models(
-        worker.as_ref(),
-        &repo.record.id,
-        repo.record.content_version,
-    )
-    .await
-    .unwrap();
-    let replaced_count = history_entry_count(admin.as_ref()).await;
+    fold_live_projection_read_models(&rebuild, &repo.record.id, repo.record.content_version)
+        .await
+        .unwrap();
+    rebuild.commit().await.unwrap();
+    let replaced_count = history_entry_count(&admin).await;
     assert_eq!(
         replaced_count, entry_count,
         "a rebuild from the start must replace old entries"
     );
 }
 
-async fn history_entry_count(db: &sea_orm::DatabaseConnection) -> i64 {
-    db.query_one_raw(sea_orm::Statement::from_string(
-        sea_orm::DatabaseBackend::Postgres,
-        "SELECT count(*) AS count FROM scope_repository_history_entries",
-    ))
-    .await
-    .unwrap()
-    .unwrap()
-    .try_get::<i64>("", "count")
-    .unwrap()
+async fn history_entry_count(db: &ScopedDatabase) -> i64 {
+    db.fixture()
+        .query_one_raw(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT count(*) AS count FROM scope_repository_history_entries",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "count")
+        .unwrap()
 }
 
 #[tokio::test]
@@ -155,7 +163,7 @@ async fn batch_refreshes_time_before_each_claim_and_completion() {
     let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
     let (repo_id, repo_version) = seed_outbox_repo(&store).await;
     enqueue_projection_read_model_rebuild(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &repo_id,
         repo_version.saturating_add(1),
         START,
@@ -178,7 +186,7 @@ async fn batch_refreshes_time_before_each_claim_and_completion() {
 
     let completed_at = entities::outbox_job::Entity::find()
         .order_by_asc(entities::outbox_job::Column::CompletedAtUnix)
-        .all(store.db.as_ref())
+        .all(&store.db.fixture())
         .await
         .unwrap()
         .into_iter()
@@ -215,8 +223,14 @@ async fn repository_deletion_makes_claimed_outbox_job_obsolete() {
             .expect("the rebuild job should be ready");
         claimed_tx.send(job.id.clone()).unwrap();
         deleted_rx.await.unwrap();
-        execute_outbox_job(worker_store.db.as_ref(), &job, NOW).await?;
-        complete_outbox_job(worker_store.db.as_ref(), &job, "worker", NOW as i64).await
+        let tx = worker_store
+            .db
+            .begin(DataScope::Repository(&job.repo_id))
+            .await?;
+        execute_outbox_job(&tx, &job, NOW).await?;
+        complete_outbox_job(&tx, &job, "worker", NOW as i64).await?;
+        tx.commit().await?;
+        Ok::<_, PostgresError>(())
     });
 
     let job_id = claimed_rx.await.unwrap();
@@ -227,7 +241,7 @@ async fn repository_deletion_makes_claimed_outbox_job_obsolete() {
         .unwrap();
     assert!(
         entities::outbox_job::Entity::find_by_id(job_id)
-            .one(store.db.as_ref())
+            .one(&store.db.fixture())
             .await
             .unwrap()
             .is_none(),
@@ -250,11 +264,11 @@ async fn live_repository_still_reports_a_stolen_outbox_lease() {
             entities::outbox_job::Column::LeaseOwner,
             Expr::value(Some("other-worker".to_string())),
         )
-        .exec(store.db.as_ref())
+        .exec(&store.db.fixture())
         .await
         .unwrap();
 
-    let error = complete_outbox_job(store.db.as_ref(), &job, "worker", NOW as i64)
+    let error = complete_outbox_job(&store.db.fixture(), &job, "worker", NOW as i64)
         .await
         .unwrap_err();
     assert!(error.message.contains("lease was lost"));
@@ -299,13 +313,13 @@ async fn claims_are_exclusive_and_expired_leases_are_reclaimed() {
             entities::outbox_job::Column::LeaseExpiresAtUnix,
             Expr::value(Some(0_i64)),
         )
-        .exec(store.db.as_ref())
+        .exec(&store.db.fixture())
         .await
         .unwrap();
     let current = claim(&store, "replacement").await.unwrap().unwrap();
     assert_eq!(current.id, stale.id);
     assert!(
-        complete_outbox_job(store.db.as_ref(), &stale, stale_owner, NOW as i64)
+        complete_outbox_job(&store.db.fixture(), &stale, stale_owner, NOW as i64)
             .await
             .is_err()
     );
@@ -319,17 +333,11 @@ async fn terminal_retry_marks_job_failed() {
     let mut job = claim(&store, "worker").await.unwrap().unwrap();
     job.attempts = MAX_JOB_ATTEMPTS - 1;
 
-    fail_outbox_job(
-        store.db.as_ref(),
-        &job,
-        "worker",
-        "failed".to_string(),
-        NOW as i64,
-    )
-    .await
-    .unwrap();
+    fail_outbox_job(&store.db, &job, "worker", "failed".to_string(), NOW as i64)
+        .await
+        .unwrap();
     let row = entities::outbox_job::Entity::find_by_id(job.id)
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap();
@@ -346,7 +354,7 @@ async fn a_claimed_job_links_the_trace_that_queued_it() {
     queued_by(
         "trace-outbox-push",
         enqueue_projection_read_model_rebuild(
-            store.db.as_ref(),
+            &store.db.fixture(),
             &repo_id,
             repo_version.saturating_add(1),
             NOW,
@@ -369,7 +377,7 @@ async fn claim(
     store: &MetadataStore,
     worker: &str,
 ) -> Result<Option<ClaimedOutboxJob>, PostgresError> {
-    claim_next_ready_job(store.db.as_ref(), worker, 60, NOW as i64).await
+    claim_next_ready_job(&store.db, worker, 60, NOW as i64).await
 }
 
 async fn seed_outbox_repo(store: &MetadataStore) -> (String, u64) {
@@ -387,7 +395,7 @@ async fn seed_outbox_repo(store: &MetadataStore) -> (String, u64) {
     catalog.users.insert(owner.id.clone(), owner);
     store.admin().seed_catalog_for_tests(catalog).unwrap();
     enqueue_projection_read_model_rebuild(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &repo.record.id,
         repo.record.change_version,
         1_700_000_000,

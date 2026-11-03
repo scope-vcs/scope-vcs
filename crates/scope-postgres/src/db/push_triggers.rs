@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, savepoint};
 use super::{
     GeneratedIdKind, RunStore, entities, generated_ids::generate_id,
     native_runs::lock_native_runs_availability, outbox::ClaimedOutboxJob,
@@ -17,7 +18,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -70,18 +71,15 @@ where
     Ok(())
 }
 
-pub(super) async fn evaluate<C>(
-    conn: &C,
+pub(super) async fn evaluate(
+    conn: &DatabaseTransaction,
     job: &ClaimedOutboxJob,
     now_unix: u64,
-) -> Result<Vec<String>, PostgresError>
-where
-    C: ConnectionTrait + TransactionTrait<Transaction = DatabaseTransaction>,
-{
+) -> Result<Vec<String>, PostgresError> {
     let payload = load_job_payload(conn, &job.id).await?;
     let change_version = u64::try_from(job.repo_version)
         .map_err(|_| PostgresError::internal_message("push trigger change version is negative"))?;
-    let tx = conn.begin().await?;
+    let tx = savepoint(conn).await?;
     let Some(model) = entities::push_trigger_evaluation::Entity::find_by_id((
         job.repo_id.clone(),
         job.repo_version,
@@ -247,26 +245,34 @@ impl RunStore {
         repository_id: &str,
         head_oid: &str,
     ) -> Result<Option<PushTriggerEvaluation>, PostgresError> {
-        entities::push_trigger_evaluation::Entity::find()
+        let tx = self.db.begin(DataScope::Repository(repository_id)).await?;
+        let row = entities::push_trigger_evaluation::Entity::find()
             .filter(entities::push_trigger_evaluation::Column::RepoId.eq(repository_id.to_string()))
             .filter(entities::push_trigger_evaluation::Column::HeadOid.eq(head_oid.to_string()))
             .order_by_desc(entities::push_trigger_evaluation::Column::ChangeVersion)
-            .one(self.db.as_ref())
-            .await?
-            .map(entities::push_trigger_evaluation::Model::try_into_domain)
+            .one(&tx)
+            .await?;
+        tx.commit().await?;
+        row.map(entities::push_trigger_evaluation::Model::try_into_domain)
             .transpose()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "runs_by_ids"))]
-    pub async fn runs_by_ids(&self, run_ids: &[String]) -> Result<Vec<Run>, PostgresError> {
+    pub async fn runs_by_ids(
+        &self,
+        repository_id: &str,
+        run_ids: &[String],
+    ) -> Result<Vec<Run>, PostgresError> {
         if run_ids.is_empty() {
             return Ok(Vec::new());
         }
-        entities::run::Entity::find()
+        let tx = self.db.begin(DataScope::Repository(repository_id)).await?;
+        let rows = entities::run::Entity::find()
             .filter(entities::run::Column::Id.is_in(run_ids.to_vec()))
-            .all(self.db.as_ref())
-            .await?
-            .into_iter()
+            .all(&tx)
+            .await?;
+        tx.commit().await?;
+        rows.into_iter()
             .map(entities::run::Model::try_into_domain)
             .collect()
     }
@@ -317,7 +323,7 @@ mod tests {
         assert_eq!(run.source.git_oid(), head_oid);
         let jobs = entities::run_job::Entity::find()
             .filter(entities::run_job::Column::RunId.eq(run.id.clone()))
-            .all(store.db.as_ref())
+            .all(&store.db.fixture())
             .await
             .unwrap();
         assert_eq!(jobs.len(), 2);
@@ -336,7 +342,15 @@ mod tests {
             .await
             .unwrap();
         assert!(replay.created_runs.is_empty());
-        assert_eq!(store.runs().runs_by_ids(&[run.id]).await.unwrap().len(), 1);
+        assert_eq!(
+            store
+                .runs()
+                .runs_by_ids(&repo_id, &[run.id])
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -356,7 +370,7 @@ mod tests {
         let job = entities::outbox_job::Entity::find()
             .filter(entities::outbox_job::Column::RepoId.eq(repo_id.clone()))
             .filter(entities::outbox_job::Column::Kind.eq(JOB_KIND))
-            .one(store.db.as_ref())
+            .one(&store.db.fixture())
             .await
             .unwrap()
             .unwrap();
@@ -368,7 +382,7 @@ mod tests {
             attempts: job.attempts,
             queued_trace: Default::default(),
         };
-        let payload = load_job_payload(store.db.as_ref(), &claimed.id)
+        let payload = load_job_payload(&store.db.fixture(), &claimed.id)
             .await
             .unwrap();
         let mut revisions = scope_run_config::parse_workflow_set(
@@ -384,8 +398,14 @@ mod tests {
         let run = push_main_run(&repo_id, 7, &payload, &revision, now()).unwrap();
         store.runs().enqueue_run(run, revision).await.unwrap();
 
-        let replayed_enqueue = evaluate(store.db.as_ref(), &claimed, now()).await.unwrap();
-        let replayed_evaluation = evaluate(store.db.as_ref(), &claimed, now()).await.unwrap();
+        let tx = store
+            .db
+            .begin(DataScope::Repository(&claimed.repo_id))
+            .await
+            .unwrap();
+        let replayed_enqueue = evaluate(&tx, &claimed, now()).await.unwrap();
+        let replayed_evaluation = evaluate(&tx, &claimed, now()).await.unwrap();
+        tx.commit().await.unwrap();
 
         assert!(replayed_enqueue.is_empty());
         assert!(replayed_evaluation.is_empty());
@@ -427,7 +447,7 @@ mod tests {
         );
         assert!(evaluation.checks.is_empty());
         let protected = entities::source_blob_cleanup_job::Entity::find()
-            .all(store.db.as_ref())
+            .all(&store.db.fixture())
             .await
             .unwrap();
         assert!(protected.is_empty());
@@ -451,6 +471,7 @@ mod tests {
         enqueue(&store, &repo_id, head_oid, 5, workflows).await;
         store
             .db
+            .fixture()
             .execute_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
                 "UPDATE scope_outbox_jobs SET payload = $2, attempts = 11 WHERE repo_id = $1",
@@ -519,7 +540,7 @@ mod tests {
         assert_eq!(evaluation.checks.len(), 1);
         let runs = entities::run::Entity::find()
             .filter(entities::run::Column::RepoId.eq(repo_id))
-            .all(store.db.as_ref())
+            .all(&store.db.fixture())
             .await
             .unwrap();
         assert_eq!(runs.len(), 2);
@@ -544,7 +565,7 @@ mod tests {
         workflows: Vec<PushWorkflowFile>,
     ) {
         enqueue_push_main_trigger_evaluation(
-            store.db.as_ref(),
+            &store.db.fixture(),
             repo_id,
             &trigger_head(head_oid, change_version),
             &PushTriggerInput::new(head_oid, workflows, None).unwrap(),

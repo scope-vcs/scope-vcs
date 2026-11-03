@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     GeneratedIdKind, JobStore, acquire_aggregate_lock, decode_json, generated_ids::generate_id,
     git_segments::load_main_pool_packs,
@@ -15,7 +16,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IsolationLevel, QueryFilter,
-    QueryOrder, QueryResult, Statement, TransactionTrait, TryGetable,
+    QueryOrder, QueryResult, Statement, TryGetable,
 };
 
 const MAX_DEPENDENCY_RETRY_SECONDS: i64 = 30 * 60;
@@ -90,7 +91,11 @@ impl JobStore {
         let lease_generation = generate_id(GeneratedIdKind::DependencyAnalysisLease)?;
         let tx = self
             .db
-            .begin_with_config(Some(IsolationLevel::RepeatableRead), None)
+            .begin_with_isolation(
+                DataScope::System(SystemReason::DependencyAnalysis),
+                Some(IsolationLevel::RepeatableRead),
+                None,
+            )
             .await?;
         let Some(job) = tx
             .query_one_raw(Statement::from_sql_and_values(
@@ -214,8 +219,11 @@ impl JobStore {
     ) -> Result<bool, PostgresError> {
         let now = dependency_time(now_unix)?;
         let expires = lease_expiry(now, lease_seconds)?;
-        let result = self
+        let tx = self
             .db
+            .begin(DataScope::Repository(claim.incarnation.repository_id()))
+            .await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_dependency_analysis_jobs
@@ -229,6 +237,7 @@ impl JobStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -277,7 +286,10 @@ impl JobStore {
             ));
         }
         let now = dependency_time(now_unix)?;
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(claim.incarnation.repository_id()))
+            .await?;
         acquire_aggregate_lock(&tx, "repository", claim.incarnation.repository_id()).await?;
         let Some(repository) = current_claim_repository(&tx, claim, now).await? else {
             tx.commit().await?;
@@ -371,7 +383,10 @@ impl JobStore {
     ) -> Result<bool, PostgresError> {
         let now = dependency_time(now_unix)?;
         let error = bounded_dependency_error(error);
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(claim.incarnation.repository_id()))
+            .await?;
         acquire_aggregate_lock(&tx, "repository", claim.incarnation.repository_id()).await?;
         if current_claim_repository(&tx, claim, now).await?.is_none() {
             tx.commit().await?;

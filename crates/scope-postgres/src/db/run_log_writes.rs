@@ -1,10 +1,11 @@
+use super::data_scope::DataScope;
 use super::integer_columns;
 use super::{RunStore, StoredRunLog, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::log::RunLogChunk;
 use sea_orm::{
     ActiveValue::NotSet, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement, TransactionTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,7 +23,10 @@ impl RunStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<AppendRunLogResult, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(&chunk.attempt_id))
+            .await?;
         let (run, job, mut attempt) =
             super::run_attempt_persistence::locked_attempt_context(&tx, &chunk.attempt_id).await?;
         let steps =

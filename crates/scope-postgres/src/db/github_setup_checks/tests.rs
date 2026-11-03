@@ -12,6 +12,7 @@ async fn connected_store_with_main() -> crate::db::MetadataStore {
     let store = postgres_store();
     store
         .db
+        .fixture()
         .execute_unprepared(&format!(
             "INSERT INTO scope_github_connections (repo_id, installation_id,
                 github_repository_id, github_full_name, connected_by_user_id,

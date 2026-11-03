@@ -7,16 +7,19 @@ use super::{
     },
 };
 use crate::{
-    db::{CleanupStore, entities, integer_columns::u64_to_i64},
+    db::{
+        CleanupStore,
+        data_scope::{DataScope, SystemReason},
+        entities,
+        integer_columns::u64_to_i64,
+    },
     error::PostgresError,
 };
 use scope_domain::{
     content::SourceBlob, content_ref::ContentRef, repo_actions::RepoStorageCleanup,
     repository::repo_id,
 };
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, TransactionTrait, sea_query::Expr,
-};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, sea_query::Expr};
 use std::collections::BTreeSet;
 
 const RETAINED_REPO_STORAGE_ERROR: &str = "repo storage cleanup retained after drain attempt";
@@ -31,7 +34,10 @@ impl CleanupStore {
         retained: &[RepoStorageCleanup],
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::StorageCleanup))
+            .await?;
         reconcile_repo_storage_cleanup_rows(
             &tx,
             &batch.loaded,
@@ -49,7 +55,7 @@ impl CleanupStore {
         retained: &[SourceBlob],
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         reconcile_source_blob_cleanup_rows(&tx, &batch.loaded, retained, now_unix).await?;
         tx.commit().await.map_err(PostgresError::internal)
     }

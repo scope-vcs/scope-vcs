@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RepositoryStore,
     entities::{self, decode_enum, encode_enum},
@@ -12,9 +13,7 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     requests::GitHubPushDestination,
 };
-use sea_orm::{
-    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, Statement, TransactionTrait,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, Statement};
 
 const SELECT_CHECK: &str = "repo_id, github_repository_id, commit_oid, state, started_at_unix, \
     finished_at_unix, last_error, push_id, baseline_run_ids";
@@ -91,7 +90,7 @@ impl RepositoryStore {
         push_id: &str,
         run_ids: Vec<u64>,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
         let Some(mut check) = load_check(&tx, repo_id, true).await? else {
             return Ok(false);
         };
@@ -108,11 +107,13 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Option<GitHubSetupCheckRead>, PostgresError> {
-        let Some(check) = load_check(self.db.as_ref(), repo_id, false).await? else {
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let Some(check) = load_check(&tx, repo_id, false).await? else {
+            tx.commit().await?;
             return Ok(None);
         };
         let runs = branch_workflow_runs(
-            self.db.as_ref(),
+            &tx,
             repo_id,
             check.github_repository_id,
             &GitHubSetupCheck::branch(),
@@ -127,8 +128,7 @@ impl RepositoryStore {
             .filter_map(|run| run.check_suite_id)
             .map(|suite| u64_to_i64(suite, "GitHub check suite id"))
             .collect::<Result<Vec<_>, _>>()?;
-        let check_names = self
-            .db
+        let check_names = tx
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT DISTINCT name
@@ -147,6 +147,7 @@ impl RepositoryStore {
             .into_iter()
             .map(|row| row.try_get("", "name").map_err(PostgresError::internal))
             .collect::<Result<_, _>>()?;
+        tx.commit().await?;
         Ok(Some(GitHubSetupCheckRead {
             check,
             workflows_started: !runs.is_empty(),
@@ -159,7 +160,11 @@ impl RepositoryStore {
         &self,
         limit: u64,
     ) -> Result<Vec<GitHubSetupCheck>, PostgresError> {
-        SetupCheckRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let rows = SetupCheckRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "SELECT {SELECT_CHECK} FROM scope_github_setup_checks
@@ -169,11 +174,10 @@ impl RepositoryStore {
             ),
             [u64_to_i64(limit, "GitHub setup check batch size")?.into()],
         ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(SetupCheckRow::into_domain)
-        .collect()
+        .all(&tx)
+        .await?;
+        tx.commit().await?;
+        rows.into_iter().map(SetupCheckRow::into_domain).collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "observe_github_setup_check"))]
@@ -183,7 +187,7 @@ impl RepositoryStore {
         commit_oid: &str,
         now_unix: u64,
     ) -> Result<Option<GitHubSetupCheck>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
         let Some(mut check) = load_check(&tx, repo_id, true)
             .await?
             .filter(|check| check.commit_oid == commit_oid)

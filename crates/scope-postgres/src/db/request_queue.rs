@@ -1,4 +1,6 @@
-use super::{RequestListRow, RequestStore, auth::load_users_by_ids, entities};
+use super::{
+    RequestListRow, RequestStore, auth::load_users_by_ids, data_scope::DataScope, entities,
+};
 use crate::{
     db::integer_columns::{i64_to_u64, u64_to_i64},
     error::PostgresError,
@@ -110,6 +112,7 @@ impl RequestStore {
             input.views,
             input.request_views.as_deref(),
         );
+        let tx = self.db.begin(DataScope::Repository(input.repo_id)).await?;
         let rows = QueueModel::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
@@ -127,7 +130,7 @@ impl RequestStore {
                     .into(),
             ],
         ))
-        .all(self.db.as_ref())
+        .all(&tx)
         .await?;
 
         let mut user_ids = Vec::with_capacity(rows.len() * 2);
@@ -137,18 +140,13 @@ impl RequestStore {
             user_ids.extend(row.claimer_user_id.clone());
             projected.push(row.try_into_queue_row(&input)?);
         }
-        let users = load_users_by_ids(self.db.as_ref(), user_ids).await?;
+        let users = load_users_by_ids(&tx, user_ids).await?;
         let next_attention_at_unix = if input.access.is_maintainer() {
-            next_snooze_expiry(
-                self.db.as_ref(),
-                input.repo_id,
-                input.viewer_user_id,
-                input.now_unix,
-            )
-            .await?
+            next_snooze_expiry(&tx, input.repo_id, input.viewer_user_id, input.now_unix).await?
         } else {
             None
         };
+        tx.commit().await?;
         Ok(RequestQueuePage {
             rows: projected,
             users,

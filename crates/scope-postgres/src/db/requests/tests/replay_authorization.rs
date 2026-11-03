@@ -1,7 +1,8 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::error::PostgresErrorKind;
 use scope_domain::requests::RequestDiscussionReadState;
-use sea_orm::{EntityTrait, TransactionTrait};
+use sea_orm::EntityTrait;
 
 async fn create_discussion_and_reply(
     store: &MetadataStore,
@@ -55,7 +56,11 @@ async fn discussion_replays_recheck_membership_after_waiting_for_revocation() {
     let (create, reply, saved_read_state) =
         create_discussion_and_reply(&store, "user_public", 3).await;
     let discussion_id = create.id.clone();
-    let revocation = store.db.begin().await.unwrap();
+    let revocation = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     super::super::super::acquire_aggregate_lock(&revocation, "repository", "owner/repo")
         .await
         .unwrap();
@@ -85,7 +90,7 @@ async fn discussion_replays_recheck_membership_after_waiting_for_revocation() {
     assert_eq!(discussion.unwrap_err().kind, PostgresErrorKind::NotFound);
     assert_eq!(reply.unwrap_err().kind, PostgresErrorKind::NotFound);
     let read_state = super::super::super::request_discussion_rows::read_state(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &discussion_id,
         "user_public",
     )
@@ -150,7 +155,11 @@ async fn discussion_reply_replay_rechecks_draft_invitation_after_waiting() {
         .unwrap();
     let (_, reply, saved_read_state) = create_discussion_and_reply(&store, "user_public", 5).await;
     let discussion_id = reply.discussion_id.clone();
-    let revocation = store.db.begin().await.unwrap();
+    let revocation = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     super::super::super::request_access::lock_request_repository(
         &revocation,
         "req_1",
@@ -178,7 +187,7 @@ async fn discussion_reply_replay_rechecks_draft_invitation_after_waiting() {
     let error = replay.await.unwrap().unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::NotFound);
     let read_state = super::super::super::request_discussion_rows::read_state(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &discussion_id,
         "user_public",
     )

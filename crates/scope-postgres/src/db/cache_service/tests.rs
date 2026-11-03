@@ -41,11 +41,17 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
         panic!("first content must require an upload");
     };
     assert!(matches!(
-        caches.commit_upload("upload-1", now + 1).await.unwrap(),
+        caches
+            .commit_upload(&repository_id, "upload-1", now + 1)
+            .await
+            .unwrap(),
         CacheCommitResult::Committed { .. }
     ));
     assert!(matches!(
-        caches.commit_upload("upload-1", now + 1).await.unwrap(),
+        caches
+            .commit_upload(&repository_id, "upload-1", now + 1)
+            .await
+            .unwrap(),
         CacheCommitResult::AlreadyCommitted { .. }
     ));
     let exact = caches
@@ -76,6 +82,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
 
     caches
         .db
+        .fixture()
         .execute_raw(statement(
             "UPDATE scope_cache_references SET compatibility_group_digest = $1
              WHERE repository_id = $2 AND identity_digest = $3",
@@ -97,6 +104,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
     );
     caches
         .db
+        .fixture()
         .execute_raw(statement(
             "UPDATE scope_cache_references SET compatibility_group_digest = $1
              WHERE repository_id = $2 AND identity_digest = $3",
@@ -260,7 +268,10 @@ async fn failed_deletions_store_bounded_errors_and_stay_retryable() {
         )
         .await
         .unwrap();
-    caches.commit_upload("retry-upload", now + 1).await.unwrap();
+    caches
+        .commit_upload(&repository_id, "retry-upload", now + 1)
+        .await
+        .unwrap();
     let expired = now + 1 + scope_cache_domain::CACHE_REFERENCE_TTL_SECONDS;
     assert_eq!(caches.expire_references(expired, 10).await.unwrap(), 1);
     let due = expired + scope_cache_domain::DELETION_GRACE_SECONDS;
@@ -279,6 +290,7 @@ async fn failed_deletions_store_bounded_errors_and_stay_retryable() {
             .unwrap();
         let stored = caches
             .db
+            .fixture()
             .query_one_raw(statement(
                 "SELECT last_error FROM scope_cache_deletion_queue
                  WHERE repository_id = $1 AND checksum_sha256 = $2",

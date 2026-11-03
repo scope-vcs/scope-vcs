@@ -1,5 +1,6 @@
 use super::push_paths::{PUSH_PATHS, PushPath, push};
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{CloseRequestCommand, LandedRequestCandidate, LandedRequestCompletion};
 use scope_domain::requests::{RequestAutoMergeIntentStatus, RequestEventKind};
 use sea_orm::ConnectionTrait;
@@ -66,7 +67,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
             .unwrap()
             .total;
         let before_events = store.requests().request_events_for_tests().await.unwrap();
-        store.db.execute_unprepared("CREATE FUNCTION reject_second_landed_request() RETURNS trigger LANGUAGE plpgsql AS $$
+        store.db.fixture().execute_unprepared("CREATE FUNCTION reject_second_landed_request() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
                 IF NEW.id = 'req_2' AND NEW.merged_at_unix IS NOT NULL THEN
                     IF NOT EXISTS (SELECT 1 FROM scope_requests WHERE id = 'req_1' AND merged_at_unix IS NOT NULL) THEN
@@ -149,7 +150,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
                 .unwrap()
         );
         assert_eq!(
-            crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+            crate::db::github_pushes::latest_github_push(&store.db.fixture(), "req_1")
                 .await
                 .unwrap()
                 .unwrap()
@@ -168,7 +169,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
             RequestAutoMergeIntentStatus::Active
         );
 
-        store.db.execute_unprepared("DROP TRIGGER reject_second_landed_request ON scope_requests; DROP FUNCTION reject_second_landed_request()")
+        store.db.fixture().execute_unprepared("DROP TRIGGER reject_second_landed_request ON scope_requests; DROP FUNCTION reject_second_landed_request()")
             .await.unwrap();
         let persisted = push(
             &store,
@@ -198,7 +199,7 @@ async fn landed_batch_rolls_back_the_push_and_all_terminal_effects_on_database_e
                 .unwrap()
         );
         assert_eq!(
-            crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+            crate::db::github_pushes::latest_github_push(&store.db.fixture(), "req_1")
                 .await
                 .unwrap()
                 .unwrap()
@@ -288,9 +289,12 @@ async fn main_push_skips_candidates_that_moved_closed_or_disappeared() {
 
 #[tokio::test]
 async fn landed_completion_skips_a_non_maintainer_without_failing_the_transaction() {
-    use sea_orm::TransactionTrait;
     let store = merge_store().await;
-    let tx = store.db.begin().await.unwrap();
+    let tx = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     crate::db::acquire_aggregate_lock(&tx, "repository", "owner/repo")
         .await
         .unwrap();

@@ -1,7 +1,7 @@
 use super::RunStore;
+use super::data_scope::DataScope;
 use crate::error::PostgresError;
 use scope_domain::runs::dispatch_authorization::{self, DispatchAuthorization};
-use sea_orm::TransactionTrait;
 
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "authorize_dispatch_start"))]
@@ -11,7 +11,10 @@ impl RunStore {
         bootstrap_hash: &str,
         now_unix: u64,
     ) -> Result<DispatchAuthorization, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let (run, job, attempt) =
             super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
         let authorization = dispatch_authorization::authorize_start(
@@ -30,7 +33,10 @@ impl RunStore {
         &self,
         attempt_id: &str,
     ) -> Result<DispatchAuthorization, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let (run, _, attempt) =
             super::run_attempt_persistence::locked_attempt_context(&tx, attempt_id).await?;
         let authorization = dispatch_authorization::authorize_stop(&run, &attempt)?;

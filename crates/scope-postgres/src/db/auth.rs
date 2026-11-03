@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     AuthStore, acquire_aggregate_lock,
     cli_auth_results::{DeviceLoginPoll, NewCliSession, StartDeviceLoginCommand},
@@ -9,7 +10,7 @@ use crate::error::PostgresError;
 use scope_domain::{account::UserAccount, account::cli_auth as cli_auth_rules};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    TransactionTrait, sea_query::Expr,
+    sea_query::Expr,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,7 +20,10 @@ impl AuthStore {
         &self,
         user_ids: impl IntoIterator<Item = String>,
     ) -> Result<BTreeMap<String, UserAccount>, PostgresError> {
-        load_users_by_ids(self.db.as_ref(), user_ids).await
+        let tx = self.db.begin(DataScope::NoRepository).await?;
+        let users = load_users_by_ids(&tx, user_ids).await?;
+        tx.commit().await?;
+        Ok(users)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_cli_device_login"))]
@@ -28,7 +32,7 @@ impl AuthStore {
         command: StartDeviceLoginCommand,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-auth", "start").await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         enforce_device_login_start_limits(&tx, now_unix).await?;
@@ -56,7 +60,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let user_id = user.id.clone();
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-device-user-code", user_code_hash).await?;
 
         let Some(login) = entities::cli_device_login::Entity::find()
@@ -104,7 +108,7 @@ impl AuthStore {
         session: NewCliSession,
         now_unix: u64,
     ) -> Result<DeviceLoginPoll, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-device-code", device_code_hash).await?;
 
         let Some(login) = entities::cli_device_login::Entity::find_by_id(device_code_hash)
@@ -154,9 +158,10 @@ impl AuthStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<UserAccount, PostgresError> {
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))
-            .one(self.db.as_ref())
+            .one(&tx)
             .await?
         else {
             return Err(PostgresError::unauthenticated("invalid CLI token"));
@@ -174,10 +179,11 @@ impl AuthStore {
             }
             cli_auth_rules::CliSessionUseDecision::Active { user_id } => user_id,
         };
-        let user = load_user_by_id(self.db.as_ref(), &user_id).await?;
+        let user = load_user_by_id(&tx, &user_id).await?;
         if cli_session_use_is_stale(session.last_used_at_unix, now_unix)? {
-            record_cli_session_use(self.db.as_ref(), &session.id, now_unix).await?;
+            record_cli_session_use(&tx, &session.id, now_unix).await?;
         }
+        tx.commit().await?;
         Ok(user)
     }
 
@@ -187,7 +193,7 @@ impl AuthStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-session-token", token_hash).await?;
         let Some(session) = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::TokenHash.eq(token_hash))

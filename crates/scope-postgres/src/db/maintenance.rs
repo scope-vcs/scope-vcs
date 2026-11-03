@@ -1,4 +1,8 @@
-use super::{AdminStore, ExclusiveWriterFence, workflow_catalogs};
+use super::{
+    AdminStore, ExclusiveWriterFence,
+    data_scope::{DataScope, ScopedDatabase},
+    workflow_catalogs,
+};
 use crate::error::PostgresError;
 use crate::migrations::{MigrationLimits, MigrationPlan};
 use sea_orm::{ConnectionTrait, Database};
@@ -6,9 +10,12 @@ use sea_orm::{ConnectionTrait, Database};
 impl AdminStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "readiness_check"))]
     pub async fn readiness_check(&self) -> Result<(), PostgresError> {
-        crate::migrations::assert_exact_state(self.db.as_ref())
+        let tx = self.db.begin(DataScope::NoRepository).await?;
+        crate::migrations::assert_exact_state(&tx)
             .await
-            .map_err(PostgresError::internal)
+            .map_err(PostgresError::internal)?;
+        tx.commit().await?;
+        Ok(())
     }
 }
 
@@ -41,7 +48,7 @@ pub async fn repository_workflow_catalogs_for_maintenance(
     if !exists {
         return Ok(Vec::new());
     }
-    Ok(workflow_catalogs::load_repository_workflow_catalogs(&db).await?)
+    Ok(workflow_catalogs::load_repository_workflow_catalogs(&ScopedDatabase::new(db)).await?)
 }
 
 pub async fn verify_schema(database_url: String) -> anyhow::Result<()> {

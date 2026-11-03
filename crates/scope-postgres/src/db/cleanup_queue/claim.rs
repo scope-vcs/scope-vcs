@@ -7,7 +7,10 @@ use super::{
 };
 use crate::{
     db::{
-        CleanupStore, GeneratedIdKind, entities, generated_ids::generate_id,
+        CleanupStore, GeneratedIdKind,
+        data_scope::{DataScope, SystemReason},
+        entities,
+        generated_ids::generate_id,
         integer_columns::u64_to_i64,
     },
     error::PostgresError,
@@ -15,8 +18,7 @@ use crate::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult,
-    IntoActiveModel, QueryFilter, QuerySelect, Set, Statement, TransactionTrait,
-    sea_query::LockType,
+    IntoActiveModel, QueryFilter, QuerySelect, Set, Statement, sea_query::LockType,
 };
 
 const CLEANUP_BATCH_SIZE: u64 = 100;
@@ -28,7 +30,10 @@ impl CleanupStore {
         &self,
         now_unix: u64,
     ) -> Result<RepoStorageCleanupBatch, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::StorageCleanup))
+            .await?;
         let loaded = claim_pending_repo_storage_cleanup_rows(&tx, now_unix).await?;
         let pending = loaded
             .iter()
@@ -47,7 +52,7 @@ impl CleanupStore {
         &self,
         now_unix: u64,
     ) -> Result<SourceBlobCleanupBatch, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         let loaded = claim_pending_source_blob_cleanup_rows(&tx, now_unix).await?;
         let pending = loaded
             .iter()

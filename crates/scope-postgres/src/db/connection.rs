@@ -1,9 +1,5 @@
-use super::MetadataStore;
-use crate::error::PostgresError;
-use sea_orm::{
-    AccessMode, ConnectOptions, DatabaseConnection, DatabaseTransaction, IsolationLevel,
-    SqlxPostgresConnector, TransactionTrait,
-};
+use super::{MetadataStore, data_scope::ScopedDatabase};
+use sea_orm::{ConnectOptions, DatabaseConnection, SqlxPostgresConnector};
 use sqlx::{AssertSqlSafe, Connection as _, PgConnection};
 use std::sync::Arc;
 
@@ -30,7 +26,7 @@ pub(super) async fn connect_postgres_store_with_options(
         return Err(error.into());
     }
     Ok(MetadataStore {
-        db: Arc::new(db),
+        db: Arc::new(ScopedDatabase::new(db)),
         merge_turn_sessions: super::merge_turns::MergeTurnSessions::new(Arc::clone(&database_url)),
         postgres_database_url: Some(database_url),
         repo_change_notifier: Default::default(),
@@ -137,15 +133,4 @@ fn writer_fence_statement(function: &str) -> String {
             )
         ) AS acquired"
     )
-}
-
-pub(super) async fn begin_metadata_read_snapshot(
-    db: &DatabaseConnection,
-) -> Result<DatabaseTransaction, PostgresError> {
-    db.begin_with_config(
-        Some(IsolationLevel::RepeatableRead),
-        Some(AccessMode::ReadOnly),
-    )
-    .await
-    .map_err(PostgresError::internal)
 }

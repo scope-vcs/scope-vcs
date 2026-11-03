@@ -5,6 +5,7 @@ use super::{
         completion::complete_claimed_repo_storage_cleanup,
         queue::{pending_repo_storage_cleanup_exists, queue_pending_source_blob_deletion_rows},
     },
+    data_scope::DataScope,
     entities,
     generated_ids::generate_id,
     object_references::delete_repository_object_references,
@@ -27,7 +28,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
-    Statement, TransactionTrait,
+    Statement,
 };
 use std::collections::BTreeSet;
 
@@ -74,12 +75,18 @@ impl RepositoryStore {
             init_tokens: (first_push_token, git_push_token),
             now_unix,
         } = command;
+        let user_tx = self
+            .db
+            .begin(DataScope::NoRepository)
+            .await
+            .map_err(PostgresError::internal)?;
         let owner = entities::user::Entity::find_by_id(owner_user_id)
-            .one(self.db.as_ref())
+            .one(&user_tx)
             .await
             .map_err(PostgresError::internal)?
             .ok_or_else(|| PostgresError::internal_message("signed-in user was not persisted"))?
             .try_into_domain()?;
+        user_tx.commit().await.map_err(PostgresError::internal)?;
         let incarnation_id = generate_id(GeneratedIdKind::RepositoryIncarnation)?;
         let repo = create_repo_command(
             &owner,
@@ -92,7 +99,11 @@ impl RepositoryStore {
         .map_err(PostgresError::from)?;
         let repo_id = repo.record.id.clone();
         self.with_repo_storage_lock(&repo_id, move || async move {
-            let claim_tx = self.db.begin().await.map_err(PostgresError::internal)?;
+            let claim_tx = self
+                .db
+                .begin(DataScope::Repository(&repo.record.id))
+                .await
+                .map_err(PostgresError::internal)?;
             acquire_aggregate_lock(&claim_tx, "repository", &repo.record.id).await?;
             ensure_repository_absent(&claim_tx, &repo.record.id).await?;
             let cleanup_claim =
@@ -104,7 +115,11 @@ impl RepositoryStore {
                     .map_err(RepositoryCreationError::Cleanup)?;
             }
 
-            let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+            let tx = self
+                .db
+                .begin(DataScope::Repository(&repo.record.id))
+                .await
+                .map_err(PostgresError::internal)?;
             acquire_aggregate_lock(&tx, "repository", &repo.record.id).await?;
             ensure_repository_absent(&tx, &repo.record.id).await?;
             match cleanup_claim {
@@ -138,7 +153,7 @@ impl RepositoryStore {
         now_unix: u64,
     ) -> Result<String, PostgresError> {
         let repo_id = repo_id(owner, name);
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let repo = entities::repository::Entity::find_by_id(repo_id.clone())
             .one(&tx)
@@ -352,7 +367,7 @@ mod tests {
         );
         store.admin().seed_catalog_for_tests(catalog).unwrap();
         super::super::cleanup_queue::queue::queue_pending_repo_storage_cleanup_row(
-            store.db.as_ref(),
+            &store.db.fixture(),
             RepoStorageCleanup {
                 owner_handle: "owner".to_string(),
                 repo_name: "repo".to_string(),
@@ -443,7 +458,7 @@ mod tests {
         assert!(!competing_cleanup_called.load(Ordering::SeqCst));
         assert!(
             entities::repository::Entity::find_by_id("owner/repo")
-                .one(store.db.as_ref())
+                .one(&store.db.fixture())
                 .await
                 .unwrap()
                 .is_some()
@@ -492,7 +507,7 @@ mod tests {
         let target = super::super::TestDatabaseTarget::required().unwrap();
         let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
         super::super::cleanup_queue::queue::queue_pending_repo_storage_cleanup_row(
-            store.db.as_ref(),
+            &store.db.fixture(),
             RepoStorageCleanup {
                 owner_handle: "owner".to_string(),
                 repo_name: "repo".to_string(),
@@ -507,7 +522,11 @@ mod tests {
         .await
         .unwrap();
 
-        let claim_tx = store.db.begin().await.unwrap();
+        let claim_tx = store
+            .db
+            .begin(DataScope::Repository("owner/repo"))
+            .await
+            .unwrap();
         acquire_aggregate_lock(&claim_tx, "repository", "owner/repo")
             .await
             .unwrap();
@@ -523,7 +542,7 @@ mod tests {
                 entities::repo_storage_cleanup_job::Column::NextRunAtUnix,
                 sea_orm::sea_query::Expr::value(0_i64),
             )
-            .exec(store.db.as_ref())
+            .exec(&store.db.fixture())
             .await
             .unwrap();
         let _worker_batch = store
@@ -532,7 +551,11 @@ mod tests {
             .await
             .unwrap();
 
-        let create_tx = store.db.begin().await.unwrap();
+        let create_tx = store
+            .db
+            .begin(DataScope::Repository("owner/repo"))
+            .await
+            .unwrap();
         acquire_aggregate_lock(&create_tx, "repository", "owner/repo")
             .await
             .unwrap();

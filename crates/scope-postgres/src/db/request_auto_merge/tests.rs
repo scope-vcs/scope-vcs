@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     RecordRequestChecksCommand, SubmitRequestCommand, acquire_aggregate_lock,
     locks::{backend_pid, wait_for_transaction_waiter},
@@ -18,7 +19,7 @@ use scope_domain::{
         source::{RunSource, RunTrigger},
     },
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 #[tokio::test]
 async fn recording_configuration_error_stops_matching_active_intent_immediately() {
@@ -384,7 +385,11 @@ async fn authorization_committing_first_fences_a_selected_retention_candidate() 
     let revision = open_request_with_revision(&store).await;
     record_terminal_check_evidence(&store, true).await;
 
-    let guard = store.db.begin().await.unwrap();
+    let guard = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&guard, "request", "req_1")
         .await
         .unwrap();
@@ -433,7 +438,11 @@ async fn retention_committing_first_makes_authorization_reject_missing_evidence(
     let revision = open_request_with_revision(&store).await;
     record_terminal_check_evidence(&store, true).await;
 
-    let guard = store.db.begin().await.unwrap();
+    let guard = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&guard, "request", "req_1")
         .await
         .unwrap();

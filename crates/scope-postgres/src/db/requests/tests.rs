@@ -151,7 +151,9 @@ async fn discussion_transactions_are_idempotent_atomic_and_self_read() {
         .unwrap();
     request.submitted_at_unix = Some(11);
     request.updated_at_unix = 11;
-    save_request_row(store.db.as_ref(), &request).await.unwrap();
+    save_request_row(&store.db.fixture(), &request)
+        .await
+        .unwrap();
     store
         .requests()
         .create_request_discussion_reply(CreateRequestDiscussionReplyCommand {
@@ -506,7 +508,7 @@ async fn close_draft_request_deletes_request_and_events() {
         source_blob("head-2").content_ref,
     ];
     let initial_references =
-        super::super::object_references::referenced_content_refs(store.db.as_ref())
+        super::super::object_references::referenced_content_refs(&store.db.fixture())
             .await
             .unwrap();
     assert!(initial_references.contains(&snapshot_refs[0]));
@@ -600,7 +602,7 @@ async fn close_draft_request_deletes_request_and_events() {
         .unwrap();
 
     let referenced_before =
-        super::super::object_references::referenced_content_refs(store.db.as_ref())
+        super::super::object_references::referenced_content_refs(&store.db.fixture())
             .await
             .unwrap();
     assert!(referenced_before.contains(&snapshot_refs[1]));
@@ -654,7 +656,7 @@ async fn close_draft_request_deletes_request_and_events() {
         .into_iter()
         .collect()
     );
-    let referenced = super::super::object_references::referenced_content_refs(store.db.as_ref())
+    let referenced = super::super::object_references::referenced_content_refs(&store.db.fixture())
         .await
         .unwrap();
     assert!(
@@ -663,7 +665,7 @@ async fn close_draft_request_deletes_request_and_events() {
             .all(|reference| !referenced.contains(reference))
     );
     let pool_upload_state = sea_orm::ConnectionTrait::query_one_raw(
-        store.db.as_ref(),
+        &store.db.fixture(),
         sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT state FROM scope_git_segment_uploads WHERE segment_id = 'pool-draft'",
@@ -688,7 +690,9 @@ async fn close_open_request_persists_exact_closer() {
         .request;
     request.submitted_at_unix = Some(3);
     request.updated_at_unix = 3;
-    save_request_row(store.db.as_ref(), &request).await.unwrap();
+    save_request_row(&store.db.fixture(), &request)
+        .await
+        .unwrap();
     seed_terminal_effects(&store).await;
 
     let mutation = store

@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 
 #[tokio::test]
 async fn carried_main_orders_parents_before_children_and_retargets_remaining_descendants() {
@@ -56,7 +57,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
         .unwrap();
     let parent = load(&store, &parent.id).await;
     let parent_intent =
-        super::super::super::request_auto_merge::latest_intent(store.db.as_ref(), &parent.id)
+        super::super::super::request_auto_merge::latest_intent(&store.db.fixture(), &parent.id)
             .await
             .unwrap();
     let before_events = store.requests().request_events_for_tests().await.unwrap();
@@ -112,13 +113,17 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
         child_revision
     );
     assert_eq!(
-        super::super::super::request_auto_merge::latest_intent(store.db.as_ref(), &parent.id)
+        super::super::super::request_auto_merge::latest_intent(&store.db.fixture(), &parent.id)
             .await
             .unwrap(),
         parent_intent
     );
     for contains_pin in [false, true] {
-        let tx = store.db.begin().await.unwrap();
+        let tx = store
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await
+            .unwrap();
         acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
             .await
             .unwrap();
@@ -148,7 +153,11 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
         assert_eq!(load(&store, &child.id).await, child);
         assert_eq!(load(&store, &grandchild.id).await, grandchild);
     }
-    let tx = store.db.begin().await.unwrap();
+    let tx = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
         .await
         .unwrap();
@@ -225,14 +234,18 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
         1
     );
     assert_eq!(
-        super::super::super::request_auto_merge::latest_intent(store.db.as_ref(), &parent.id)
+        super::super::super::request_auto_merge::latest_intent(&store.db.fixture(), &parent.id)
             .await
             .unwrap()
             .unwrap()
             .status,
         scope_domain::requests::RequestAutoMergeIntentStatus::Fulfilled
     );
-    let tx = store.db.begin().await.unwrap();
+    let tx = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
         .await
         .unwrap();

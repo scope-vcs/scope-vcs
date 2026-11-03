@@ -8,6 +8,7 @@ use super::{
 };
 use crate::{
     db::{
+        data_scope::DataScope,
         request_access::{ensure_user_exists, lock_request_repository, request_policy_for_user},
         request_media::access::cleanup_tombstone_exists,
     },
@@ -18,7 +19,7 @@ use scope_domain::requests::attachments::{
     RequestAttachmentState, RequestAttachmentStoredObject, RequestAttachmentTarget,
     RequestMediaObject, finish_attachment_upload, validate_prepare_attachment,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 impl MediaStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "prepare_request_attachment"))]
@@ -26,7 +27,10 @@ impl MediaStore {
         &self,
         command: PrepareRequestAttachmentCommand,
     ) -> Result<PreparedRequestAttachment, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -128,7 +132,10 @@ impl MediaStore {
         &self,
         command: FinishRequestAttachmentUploadCommand,
     ) -> Result<RequestAttachment, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         let policy = request_policy_for_user(&tx, &repo, &request, &command.actor_user_id).await?;

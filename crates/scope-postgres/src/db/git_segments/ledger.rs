@@ -1,4 +1,8 @@
-use super::super::{RepositoryStore, entities};
+use super::super::{
+    RepositoryStore,
+    data_scope::{DataScope, SystemReason},
+    entities,
+};
 use crate::{
     db::integer_columns::{u32_to_i32, u64_to_i64},
     error::PostgresError,
@@ -27,7 +31,8 @@ impl RepositoryStore {
                 "Git segment encoding version must be positive",
             ));
         }
-        self.db
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_git_segment_uploads (
@@ -46,16 +51,15 @@ impl RepositoryStore {
                 ],
             ))
             .await
-            .map_err(PostgresError::internal)
-            .and_then(|result| {
-                if result.rows_affected() == 1 {
-                    Ok(())
-                } else {
-                    Err(PostgresError::not_found(format!(
-                        "repository {repo_id} not found"
-                    )))
-                }
-            })
+            .map_err(PostgresError::internal)?;
+        tx.commit().await?;
+        if result.rows_affected() == 1 {
+            Ok(())
+        } else {
+            Err(PostgresError::not_found(format!(
+                "repository {repo_id} not found"
+            )))
+        }
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "mark_git_segment_upload_ready"))]
@@ -73,8 +77,11 @@ impl RepositoryStore {
                 "Git segment SHA-256 must contain 64 hexadecimal characters",
             ));
         }
-        let result = self
+        let tx = self
             .db
+            .begin(DataScope::System(SystemReason::GitSegmentLifecycle))
+            .await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_git_segment_uploads
@@ -92,6 +99,7 @@ impl RepositoryStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         require_one_transition(result.rows_affected(), &segment.segment_id, "ready")
     }
 
@@ -102,8 +110,11 @@ impl RepositoryStore {
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
         require_text(segment_id, "Git segment id")?;
-        let result = self
+        let tx = self
             .db
+            .begin(DataScope::System(SystemReason::GitSegmentLifecycle))
+            .await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_git_segment_uploads
@@ -115,6 +126,7 @@ impl RepositoryStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -124,8 +136,12 @@ impl RepositoryStore {
         segment_id: &str,
         now_unix: u64,
     ) -> Result<bool, PostgresError> {
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitSegmentLifecycle))
+            .await?;
         let transitioned = transition_rows(
-            self.db.as_ref(),
+            &tx,
             segment_id,
             "state IN ('uploading', 'ready') AND NOT EXISTS (
                 SELECT 1 FROM scope_git_pool_packs packs
@@ -135,6 +151,7 @@ impl RepositoryStore {
             now_unix,
         )
         .await?;
+        tx.commit().await?;
         Ok(transitioned == 1)
     }
 
@@ -144,14 +161,13 @@ impl RepositoryStore {
         segment_id: &str,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        transition(
-            self.db.as_ref(),
-            segment_id,
-            "state = 'deleting'",
-            "deleted",
-            now_unix,
-        )
-        .await
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitSegmentLifecycle))
+            .await?;
+        transition(&tx, segment_id, "state = 'deleting'", "deleted", now_unix).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "load_stale_git_segment_uploads"))]
@@ -163,7 +179,11 @@ impl RepositoryStore {
         if limit == 0 {
             return Ok(Vec::new());
         }
-        entities::git_segment_upload::Entity::find()
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitSegmentLifecycle))
+            .await?;
+        let uploads = entities::git_segment_upload::Entity::find()
             .filter(entities::git_segment_upload::Column::State.is_in([
                 "uploading",
                 "ready",
@@ -178,8 +198,10 @@ impl RepositoryStore {
             .order_by_asc(entities::git_segment_upload::Column::UpdatedAtUnix)
             .order_by_asc(entities::git_segment_upload::Column::SegmentId)
             .limit(limit)
-            .all(self.db.as_ref())
-            .await?
+            .all(&tx)
+            .await?;
+        tx.commit().await?;
+        uploads
             .into_iter()
             .map(entities::git_segment_upload::Model::try_into_domain)
             .collect()

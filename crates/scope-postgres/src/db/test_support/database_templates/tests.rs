@@ -23,6 +23,7 @@ fn template_databases_isolate_targets_and_preserve_live_reopens() {
     let database = Arc::clone(&first.db);
     run_test_future(async move {
         database
+            .fixture()
             .execute_unprepared(
                 "INSERT INTO scope_users (id, handle, email, email_verified) VALUES ('template_fixture', 'template_fixture', 'template-fixture@scope.test', TRUE)",
             )
@@ -31,14 +32,18 @@ fn template_databases_isolate_targets_and_preserve_live_reopens() {
     });
 
     let reopened = connect_postgres_test_store(&target).unwrap();
-    assert!(Arc::ptr_eq(&first.db, &reopened.db));
+    assert!(Arc::ptr_eq(
+        first._test_schema.as_ref().unwrap(),
+        reopened._test_schema.as_ref().unwrap()
+    ));
     drop(first);
     run_test_future(async move {
         for (store, expected) in [(reopened, 1_i64), (other, 0_i64)] {
             let row = store
                 .db
+                .fixture()
                 .query_one_raw(Statement::from_string(
-                    store.db.get_database_backend(),
+                    sea_orm::DatabaseBackend::Postgres,
                     "SELECT current_database() AS database, (SELECT count(*) FROM scope_users WHERE id = 'template_fixture') AS count".to_owned(),
                 ))
                 .await
@@ -50,7 +55,7 @@ fn template_databases_isolate_targets_and_preserve_live_reopens() {
                     .starts_with("scope_test_db_")
             );
             assert_eq!(row.try_get::<i64>("", "count").unwrap(), expected);
-            crate::migrations::assert_exact_state(store.db.as_ref())
+            crate::migrations::assert_exact_state(&store.db.fixture())
                 .await
                 .unwrap();
         }
@@ -60,8 +65,9 @@ fn template_databases_isolate_targets_and_preserve_live_reopens() {
     run_test_future(async move {
         let count = fresh
             .db
+            .fixture()
             .query_one_raw(Statement::from_string(
-                fresh.db.get_database_backend(),
+                sea_orm::DatabaseBackend::Postgres,
                 "SELECT count(*) AS count FROM scope_users".to_owned(),
             ))
             .await
@@ -79,15 +85,16 @@ fn dropped_stores_release_their_connections_while_database_drops_are_queued() {
     let store = connect_postgres_test_store(&target).unwrap();
     let database = Arc::clone(&store.db);
     let database_name = run_test_future(async move {
-        let pool = database.get_postgres_connection_pool();
+        let pool = database.pool_for_tests();
         let mut connections = Vec::new();
         for _ in 0..3 {
             connections.push(pool.acquire().await.unwrap());
         }
         drop(connections);
         database
+            .fixture()
             .query_one_raw(Statement::from_string(
-                database.get_database_backend(),
+                sea_orm::DatabaseBackend::Postgres,
                 "SELECT current_database() AS name".to_owned(),
             ))
             .await
@@ -199,12 +206,12 @@ fn process_exit_removes_only_its_registered_databases() {
                 absent,
                 "process cleanup left owned database {name} after its checked-out backend exited"
             );
-            assert!(store.db.get_postgres_connection_pool().is_closed());
+            assert!(store.db.pool_for_tests().is_closed());
         }
         if mode == "pool-close" {
             cleanup_process_databases();
             assert!(
-                store.db.get_postgres_connection_pool().is_closed(),
+                store.db.pool_for_tests().is_closed(),
                 "process cleanup left the registered database pool open"
             );
         }
@@ -322,7 +329,7 @@ fn orphaned_client_with_idle_connection(
     let database = Arc::clone(&store.db);
     let admin_url = target.database_url.clone();
     let (name, terminated, idle_clients) = run_test_future(async move {
-        let pool = database.get_postgres_connection_pool();
+        let pool = database.pool_for_tests();
         let mut orphan = pool.acquire().await.unwrap();
         let (name, pid) = sea_orm::sqlx::query_as::<_, (String, i32)>(
             "SELECT current_database(), pg_backend_pid()",

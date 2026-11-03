@@ -8,6 +8,7 @@ const DELETED_HEAD: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 async fn stored_live_file_views(store: &crate::db::MetadataStore) -> Vec<(String, Option<String>)> {
     store
         .db
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT path, view FROM scope_live_files WHERE repo_id = 'owner/repo' ORDER BY path COLLATE \"C\"",
@@ -27,6 +28,7 @@ async fn stored_live_file_views(store: &crate::db::MetadataStore) -> Vec<(String
 async fn stored_policy_rules(store: &crate::db::MetadataStore) -> serde_json::Value {
     store
         .db
+        .fixture()
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT policy->'rules' AS rules FROM scope_repositories WHERE id = 'owner/repo'",
@@ -119,6 +121,7 @@ async fn main_pushes_keep_file_rules_on_live_files_instead_of_the_repository_pol
 async fn live_file_versions(store: &crate::db::MetadataStore) -> Vec<(String, String)> {
     store
         .db
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT path, xmin::text AS version FROM scope_live_files

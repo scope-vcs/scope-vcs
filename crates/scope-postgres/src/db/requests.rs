@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     CloseRequestCommand, EditRequestIdentityCommand, RequestStore, acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
@@ -19,7 +20,7 @@ use super::{
         requests_by_repo_id, save_request_row,
     },
 };
-use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
+use sea_orm::{EntityTrait, QuerySelect};
 use {
     crate::error::PostgresError,
     scope_domain::content::SourceBlob,
@@ -40,12 +41,21 @@ impl RequestStore {
         &self,
         input: super::RequestListPageQuery<'_>,
     ) -> Result<Vec<super::RequestListRow>, PostgresError> {
-        request_list_page(self.db.as_ref(), input).await
+        let tx = self.db.begin(DataScope::Repository(input.repo_id)).await?;
+        let rows = request_list_page(&tx, input).await?;
+        tx.commit().await?;
+        Ok(rows)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_by_id"))]
     pub async fn request_by_id(&self, request_id: &str) -> Result<Option<Request>, PostgresError> {
-        request_by_id(self.db.as_ref(), request_id).await
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
+        let request = request_by_id(&tx, request_id).await?;
+        tx.commit().await?;
+        Ok(request)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_by_name"))]
@@ -54,12 +64,18 @@ impl RequestStore {
         repo_id: &str,
         request_name: &str,
     ) -> Result<Option<Request>, PostgresError> {
-        request_by_name(self.db.as_ref(), repo_id, request_name).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let request = request_by_name(&tx, repo_id, request_name).await?;
+        tx.commit().await?;
+        Ok(request)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_by_repo_id"))]
     pub async fn requests_by_repo_id(&self, repo_id: &str) -> Result<Vec<Request>, PostgresError> {
-        requests_by_repo_id(self.db.as_ref(), repo_id).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let requests = requests_by_repo_id(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(requests)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_events_by_request_id"))]
@@ -67,7 +83,13 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Vec<RequestEvent>, PostgresError> {
-        request_events_by_request_id(self.db.as_ref(), request_id).await
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
+        let events = request_events_by_request_id(&tx, request_id).await?;
+        tx.commit().await?;
+        Ok(events)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_events_after_position"))]
@@ -77,7 +99,13 @@ impl RequestStore {
         after_position: u64,
         limit: u64,
     ) -> Result<Vec<RequestEvent>, PostgresError> {
-        request_events_after_position(self.db.as_ref(), request_id, after_position, limit).await
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
+        let events = request_events_after_position(&tx, request_id, after_position, limit).await?;
+        tx.commit().await?;
+        Ok(events)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "latest_request_events"))]
@@ -86,7 +114,13 @@ impl RequestStore {
         request_id: &str,
         limit: u64,
     ) -> Result<Vec<RequestEvent>, PostgresError> {
-        latest_request_events(self.db.as_ref(), request_id, limit).await
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
+        let events = latest_request_events(&tx, request_id, limit).await?;
+        tx.commit().await?;
+        Ok(events)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "start_request"))]
@@ -94,7 +128,7 @@ impl RequestStore {
         &self,
         input: StartRequestInput,
     ) -> Result<StartRequestMutation, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&input.repo_id)).await?;
         acquire_aggregate_lock(&tx, "repository", &input.repo_id).await?;
         let mut graph_ids = super::request_stack::ancestry(&tx, &input.base)
             .await?
@@ -151,7 +185,10 @@ impl RequestStore {
         &self,
         input: RecordWorkingRequestUploadInput,
     ) -> Result<WorkingRequestUploadMutation, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&input.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
@@ -242,7 +279,11 @@ impl RequestStore {
             .request_by_id(&input.request_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(&observed.repo_id))
+            .await
+            .map_err(PostgresError::internal)?;
         super::locks::acquire_shared_repository_lock(&tx, &observed.repo_id).await?;
         let request = request_by_id(&tx, &input.request_id)
             .await?
@@ -378,7 +419,10 @@ impl RequestStore {
                 command.now_unix,
             )
         });
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await?;
         let (repo, request) =
             lock_request_repository(&tx, &command.request_id, &command.actor_user_id).await?;
         ensure_user_exists(&tx, &command.actor_user_id).await?;
@@ -431,7 +475,11 @@ impl RequestStore {
         command: CloseRequestCommand,
     ) -> Result<CloseRequestMutation, PostgresError> {
         let now_unix = command.now_unix;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&command.request_id))
+            .await
+            .map_err(PostgresError::internal)?;
         let observed = request_by_id(&tx, &command.request_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("request not found"))?;

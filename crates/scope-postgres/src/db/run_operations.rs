@@ -1,4 +1,4 @@
-use super::{RunStore, entities};
+use super::{RunStore, data_scope::DataScope, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::{job::RunJob, run::Run};
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
@@ -14,7 +14,10 @@ pub struct RunSnapshot {
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_snapshot"))]
     pub async fn run_snapshot(&self, run_id: &str) -> Result<Option<RunSnapshot>, PostgresError> {
-        let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RunRepository(run_id))
+            .await?;
         let Some(run) = entities::run::Entity::find_by_id(run_id.to_string())
             .one(&tx)
             .await?
@@ -36,27 +39,42 @@ impl RunStore {
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_has_truncated_logs"))]
     pub async fn run_has_truncated_logs(&self, run_id: &str) -> Result<bool, PostgresError> {
-        run_has_truncated_logs_with(self.db.as_ref(), run_id).await
+        let tx = self.db.begin(DataScope::RunRepository(run_id)).await?;
+        let truncated = run_has_truncated_logs_with(&tx, run_id).await?;
+        tx.commit().await?;
+        Ok(truncated)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_ids_with_truncated_logs"))]
     pub async fn run_ids_with_truncated_logs(
         &self,
+        repository_id: &str,
         run_ids: &[String],
     ) -> Result<BTreeSet<String>, PostgresError> {
         if run_ids.is_empty() {
             return Ok(BTreeSet::new());
         }
-        entities::run_attempt::Entity::find()
+        let tx = self.db.begin(DataScope::Repository(repository_id)).await?;
+        let ids = entities::run_attempt::Entity::find()
             .select_only()
             .column(entities::run_attempt::Column::RunId)
             .filter(entities::run_attempt::Column::RunId.is_in(run_ids.to_vec()))
             .filter(entities::run_attempt::Column::FirstTruncatedStepIndex.is_not_null())
+            .filter(
+                entities::run_attempt::Column::RunId.in_subquery(
+                    sea_orm::sea_query::Query::select()
+                        .column(entities::run::Column::Id)
+                        .from(entities::run::Entity)
+                        .and_where(entities::run::Column::RepoId.eq(repository_id))
+                        .to_owned(),
+                ),
+            )
             .into_tuple::<String>()
-            .all(self.db.as_ref())
+            .all(&tx)
             .await
-            .map_err(PostgresError::internal)
-            .map(|ids| ids.into_iter().collect())
+            .map_err(PostgresError::internal)?;
+        tx.commit().await?;
+        Ok(ids.into_iter().collect())
     }
 }
 

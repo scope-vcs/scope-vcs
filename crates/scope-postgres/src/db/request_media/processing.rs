@@ -13,6 +13,7 @@ use super::{
 };
 use crate::{
     db::{
+        data_scope::{DataScope, SystemReason},
         locks::acquire_shared_repository_lock,
         repo_change_notifications::POSTGRES_REPO_CHANGE_CHANNEL,
         request_access::{lock_request_repository, request_policy_for_user},
@@ -28,7 +29,7 @@ use scope_domain::requests::attachments::{
     validate_processing_completion, validate_processing_failure,
 };
 use scope_domain::views::ViewId;
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 const CLAIMABLE_JOBS: &str = "FROM scope_request_media_processing_jobs job
      JOIN scope_request_media_attachments attachment ON attachment.id = job.attachment_id
@@ -80,8 +81,11 @@ impl MediaStore {
     ) -> Result<ProcessingClaim, PostgresError> {
         let now = as_i64(now_unix, "processing claim time")?;
         let admitted_kind = lane.admitted_kind().map(enum_string).transpose()?;
-        let Some(candidate) = self
+        let claim = self
             .db
+            .begin(DataScope::System(SystemReason::MediaProcessing))
+            .await?;
+        let candidate = claim
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 format!(
@@ -92,13 +96,14 @@ impl MediaStore {
                 ),
                 [now.into(), None::<String>.into(), admitted_kind.into()],
             ))
-            .await?
-        else {
+            .await?;
+        claim.commit().await?;
+        let Some(candidate) = candidate else {
             return Ok(ProcessingClaim::Empty);
         };
         let attachment_id = candidate.try_get::<String>("", "attachment_id")?;
         let repository_id = candidate.try_get::<String>("", "repository_id")?;
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&repository_id)).await?;
         acquire_shared_repository_lock(&tx, &repository_id).await?;
         let Some(job) = tx
             .query_one_raw(Statement::from_sql_and_values(
@@ -206,8 +211,11 @@ impl MediaStore {
         lease_expires_at_unix: u64,
     ) -> Result<bool, PostgresError> {
         validate_lease_grant(lease_token, now_unix, lease_expires_at_unix)?;
-        let result = self
+        let tx = self
             .db
+            .begin(DataScope::AttachmentRepository(attachment_id))
+            .await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_request_media_processing_jobs job
@@ -228,6 +236,7 @@ impl MediaStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -237,8 +246,11 @@ impl MediaStore {
         lease: &RequestAttachmentProcessingLease,
         now_unix: u64,
     ) -> Result<Option<RequestMediaObject>, PostgresError> {
-        let valid = self
+        let tx = self
             .db
+            .begin(DataScope::AttachmentRepository(&lease.attachment_id))
+            .await?;
+        let valid = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT attachment.original_manifest_id
@@ -265,7 +277,9 @@ impl MediaStore {
         let Some(manifest_id) = row.try_get::<Option<String>>("", "original_manifest_id")? else {
             return Ok(None);
         };
-        manifest_by_id(self.db.as_ref(), &manifest_id).await
+        let manifest = manifest_by_id(&tx, &manifest_id).await?;
+        tx.commit().await?;
+        Ok(manifest)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "reserve_processing_object_key"))]
@@ -280,7 +294,10 @@ impl MediaStore {
         if object_key.trim().is_empty() {
             return Err(PostgresError::invalid_input("media object key is required"));
         }
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(attachment_id))
+            .await?;
         if lock_lease_attachment(
             &tx,
             attachment_id,
@@ -340,7 +357,10 @@ impl MediaStore {
         &self,
         command: ValidateRequestAttachmentSourceCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(&command.attachment_id))
+            .await?;
         let Some(attachment) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
@@ -366,7 +386,10 @@ impl MediaStore {
         &self,
         command: CompleteRequestAttachmentProcessingCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(&command.attachment_id))
+            .await?;
         let Some(attachment) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
@@ -429,7 +452,10 @@ impl MediaStore {
         &self,
         command: FailRequestAttachmentProcessingCommand,
     ) -> Result<MediaLeaseMutation<RequestAttachment>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttachmentRepository(&command.attachment_id))
+            .await?;
         let Some(attachment) = lock_lease_attachment(
             &tx,
             &command.attachment_id,
@@ -507,7 +533,10 @@ impl MediaStore {
                 "retry operation id is required",
             ));
         }
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
         let (repo, request) = lock_request_repository(&tx, request_id, actor_user_id).await?;
         let Some(observed) = attachment_by_id(&tx, attachment_id).await? else {
             return Err(PostgresError::not_found("request attachment not found"));

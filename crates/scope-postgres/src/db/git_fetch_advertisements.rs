@@ -1,10 +1,11 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{RepositoryStore, integer_columns::u64_to_i64};
 use crate::error::PostgresError;
 use scope_domain::{
     requests::{GitFetchHead, Request},
     views::ViewId,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+use sea_orm::{DatabaseBackend, Statement};
 
 const EXPIRED_ADVERTISEMENTS_PER_CALL: i64 = 500;
 
@@ -24,17 +25,20 @@ impl RepositoryStore {
         now: u64,
     ) -> Result<(), PostgresError> {
         self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "DELETE FROM scope_git_fetch_advertisements WHERE ctid = ANY(ARRAY(
+            .execute(
+                DataScope::System(SystemReason::GitFetchAdvertisementRetention),
+                Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "DELETE FROM scope_git_fetch_advertisements WHERE ctid = ANY(ARRAY(
                      SELECT ctid FROM scope_git_fetch_advertisements
                      WHERE expires_at_unix < $1
                      LIMIT $2 FOR UPDATE SKIP LOCKED))",
-                [
-                    u64_to_i64(now, "Git advertisement time")?.into(),
-                    EXPIRED_ADVERTISEMENTS_PER_CALL.into(),
-                ],
-            ))
+                    [
+                        u64_to_i64(now, "Git advertisement time")?.into(),
+                        EXPIRED_ADVERTISEMENTS_PER_CALL.into(),
+                    ],
+                ),
+            )
             .await?;
         let mut refs = std::collections::BTreeMap::<&str, Vec<&Request>>::new();
         for request in requests {
@@ -47,7 +51,7 @@ impl RepositoryStore {
             .into_iter()
             .map(|(oid, requests)| serde_json::json!({ "head_oid": oid, "requests": if oid == main_oid { serde_json::Value::Null } else { serde_json::json!(requests) } }))
             .collect::<Vec<_>>();
-        self.db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        self.db.execute(DataScope::Repository(reader.repo_id), Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO scope_git_fetch_advertisements
              (repo_id, visibility_fingerprint, view_id, reader_id, head_oid, requests, expires_at_unix)
              SELECT $1,$2,$3,$4,refs.head_oid,refs.requests,$6
@@ -80,20 +84,23 @@ impl RepositoryStore {
             return Ok(Vec::new());
         }
         self.db
-            .query_all_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT head_oid, requests FROM scope_git_fetch_advertisements
+            .query_all(
+                DataScope::Repository(reader.repo_id),
+                Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "SELECT head_oid, requests FROM scope_git_fetch_advertisements
              WHERE repo_id = $1 AND visibility_fingerprint = $2 AND view_id = $3 AND reader_id = $4
              AND head_oid = ANY($5) AND expires_at_unix >= $6",
-                [
-                    reader.repo_id.into(),
-                    reader.visibility_fingerprint.into(),
-                    reader.view.as_str().into(),
-                    reader.user_id.unwrap_or_default().into(),
-                    wants.to_vec().into(),
-                    u64_to_i64(now, "Git advertisement time")?.into(),
-                ],
-            ))
+                    [
+                        reader.repo_id.into(),
+                        reader.visibility_fingerprint.into(),
+                        reader.view.as_str().into(),
+                        reader.user_id.unwrap_or_default().into(),
+                        wants.to_vec().into(),
+                        u64_to_i64(now, "Git advertisement time")?.into(),
+                    ],
+                ),
+            )
             .await?
             .into_iter()
             .filter_map(|row| decode_head(row).transpose())
@@ -145,7 +152,7 @@ mod tests {
             .record_git_fetch_advertisement(&reader, "main", &[], 100)
             .await
             .unwrap();
-        store.db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        store.db.execute(DataScope::Repository(&repo.record.id), Statement::from_sql_and_values(DatabaseBackend::Postgres,
             "INSERT INTO scope_git_fetch_advertisements
              (repo_id, visibility_fingerprint, view_id, reader_id, head_oid, requests, expires_at_unix)
              VALUES ($1, 'visibility', 'public', '', 'future-request', '[{\"id\":\"future-request\"}]', 400)",

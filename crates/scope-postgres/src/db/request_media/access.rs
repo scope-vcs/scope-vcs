@@ -6,6 +6,7 @@ use super::{
     },
 };
 use crate::{
+    db::data_scope::DataScope,
     db::{
         repository_access::repository_access, request_invitees::request_is_invitee,
         request_rows::request_by_id,
@@ -26,7 +27,10 @@ impl MediaStore {
         attachment_id: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RequestAttachment>, PostgresError> {
-        let tx = crate::db::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
         let attachment =
             authorized_attachment(&tx, request_id, attachment_id, viewer_user_id).await?;
         tx.commit().await?;
@@ -39,7 +43,10 @@ impl MediaStore {
         request_id: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Vec<RequestAttachment>, PostgresError> {
-        let tx = crate::db::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
         let Some((request, policy)) =
             visible_request_policy(&tx, request_id, viewer_user_id).await?
         else {
@@ -74,7 +81,10 @@ impl MediaStore {
         viewer_user_id: Option<&str>,
         target: RequestMediaObjectTarget<'_>,
     ) -> Result<Option<(RequestAttachment, Option<RequestMediaObject>)>, PostgresError> {
-        let tx = crate::db::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
         let Some(attachment) =
             authorized_attachment(&tx, request_id, attachment_id, viewer_user_id).await?
         else {

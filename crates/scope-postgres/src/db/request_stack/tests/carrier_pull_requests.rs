@@ -28,7 +28,7 @@ async fn opt_in(store: &MetadataStore) {
 }
 
 async fn intent(store: &MetadataStore, id: &str) -> GitHubPullRequestIntent {
-    github_pull_request(store.db.as_ref(), id)
+    github_pull_request(&store.db.fixture(), id)
         .await
         .unwrap()
         .unwrap()
@@ -49,7 +49,7 @@ async fn closing_a_parent_moves_its_open_childrens_carriers_onto_main_in_the_sam
     )
     .await;
     let child = start(&store, "child", pin(&store, &parent).await, 8).await;
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
     queue_carrier_for_pushed_head(db, &parent.id, &parent.head_oid, 12)
         .await
         .unwrap();

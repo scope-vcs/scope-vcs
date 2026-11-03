@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     MetadataStore, RequestDiscussionsPageQuery, entities,
     requests::tests::{postgres_store, public_start_input, public_upload_input},
@@ -71,7 +72,9 @@ async fn open_full_view_request(store: &MetadataStore) -> Request {
         .unwrap()
         .unwrap();
     request.submitted_at_unix = Some(3);
-    save_request_row(store.db.as_ref(), &request).await.unwrap();
+    save_request_row(&store.db.fixture(), &request)
+        .await
+        .unwrap();
     connect_github(store).await;
     request
 }
@@ -100,6 +103,7 @@ async fn connect_github(store: &MetadataStore) {
 async fn live_link(store: &MetadataStore) -> String {
     store
         .db
+        .fixture()
         .query_one_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT link_id FROM scope_github_connections WHERE repo_id = 'owner/repo'",
@@ -143,14 +147,14 @@ async fn waiting(store: &MetadataStore, user_id: &str, through: u64) {
     })
     .unwrap()
     .into_active_model()
-    .insert(store.db.as_ref())
+    .insert(&store.db.fixture())
     .await
     .unwrap();
 }
 
 async fn attention(store: &MetadataStore, user_id: &str) -> RequestAttention {
     entities::request_attention_state::Entity::find_by_id(("req_1".to_string(), user_id.into()))
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .unwrap()
@@ -323,7 +327,9 @@ async fn draft_requests_import_nothing() {
     let mut request = open_full_view_request(&store).await;
     let link = live_link(&store).await;
     request.submitted_at_unix = None;
-    save_request_row(store.db.as_ref(), &request).await.unwrap();
+    save_request_row(&store.db.fixture(), &request)
+        .await
+        .unwrap();
     assert_eq!(
         store
             .requests()
@@ -529,6 +535,7 @@ async fn claim_thread(store: &MetadataStore, node_id: &str, github_account_id: u
 async fn last_errors(store: &MetadataStore) -> Vec<(i64, Option<i64>, Option<String>)> {
     store
         .db
+        .fixture()
         .query_all_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             "SELECT github_subject_id, next_attempt_at_unix, last_error
@@ -688,7 +695,11 @@ async fn an_import_that_loses_the_race_with_a_disconnect_commits_nothing() {
     let stale_link = claimed.github_link_id.clone();
     assert_eq!(stale_link, live_link(&store).await);
 
-    let disconnect = store.db.begin().await.unwrap();
+    let disconnect = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&disconnect, "github-connection", "owner/repo")
         .await
         .unwrap();
@@ -858,6 +869,7 @@ async fn a_finished_review_is_recorded_in_the_imported_comment_ledger() {
     );
     store
         .db
+        .fixture()
         .execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             "INSERT INTO scope_github_imported_comments (request_id, client_id) VALUES ($1, $2)",

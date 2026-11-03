@@ -4,8 +4,9 @@ use super::*;
 async fn a_github_repository_is_connected_once_and_links_follow_their_owners() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    db.execute_unprepared(
-        r#"
+    db.fixture()
+        .execute_unprepared(
+            r#"
         INSERT INTO scope_users VALUES ('owner','owner','owner@scope.test',true);
         INSERT INTO scope_users VALUES ('member','member','member@scope.test',true);
         INSERT INTO scope_repositories (id,owner_handle,name,owner_user_id,publication_state,
@@ -16,37 +17,40 @@ async fn a_github_repository_is_connected_once_and_links_follow_their_owners() {
             github_full_name,connected_by_user_id,connected_at_unix,status)
             VALUES ('owner/one',7,42,'octo/one','member',10,'Connected');
         "#,
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 
     let second_link = "INSERT INTO scope_github_connections (repo_id,installation_id,
         github_repository_id,github_full_name,connected_at_unix,status)
         VALUES ('owner/two',7,42,'octo/one',10,'Connected')";
-    assert!(db.execute_unprepared(second_link).await.is_err());
-    db.execute_unprepared(
-        "UPDATE scope_github_connections
+    assert!(db.fixture().execute_unprepared(second_link).await.is_err());
+    db.fixture()
+        .execute_unprepared(
+            "UPDATE scope_github_connections
          SET status = 'Disconnected', disconnect_reason = 'AppUninstalled',
              disconnected_at_unix = 20",
-    )
-    .await
-    .unwrap();
-    db.execute_unprepared(second_link).await.unwrap();
+        )
+        .await
+        .unwrap();
+    db.fixture().execute_unprepared(second_link).await.unwrap();
     assert!(
-        db.execute_unprepared(
+        db.fixture().execute_unprepared(
             "UPDATE scope_github_connections SET status = 'Disconnected' WHERE repo_id = 'owner/two'"
         )
         .await
         .is_err()
     );
 
-    db.execute_unprepared(
-        "DELETE FROM scope_users WHERE id = 'member';
+    db.fixture()
+        .execute_unprepared(
+            "DELETE FROM scope_users WHERE id = 'member';
          DELETE FROM scope_repositories WHERE id = 'owner/two';",
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
     let rows = db
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT repo_id, connected_by_user_id FROM scope_github_connections".to_string(),

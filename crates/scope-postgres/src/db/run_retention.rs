@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason, savepoint};
 use super::integer_columns;
 use super::{
     RunStore, acquire_aggregate_lock,
@@ -7,9 +8,8 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{content::SourceBlob, runs::run::RunState};
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
-    TransactionTrait,
-    sea_query::{Expr, Query},
+    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, RuntimeErr, sea_query::Expr,
 };
 use std::collections::BTreeSet;
 
@@ -33,7 +33,10 @@ impl RunStore {
         limit: u64,
     ) -> Result<usize, PostgresError> {
         let cutoff = integer_columns::u64_to_i64(completed_before_unix, "run retention cutoff")?;
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::RunRetention))
+            .await?;
         let candidates = entities::run::Entity::find()
             .filter(prunable(cutoff))
             .order_by_asc(entities::run::Column::CompletedAtUnix)
@@ -172,49 +175,117 @@ pub(super) async fn delete_run_source_references<C: ConnectionTrait>(
     Ok(())
 }
 
-pub(super) async fn delete_orphaned_workflow_revisions<C: ConnectionTrait>(
-    conn: &C,
+pub(super) async fn delete_orphaned_workflow_revisions(
+    tx: &DatabaseTransaction,
     digests: BTreeSet<String>,
 ) -> Result<(), PostgresError> {
-    if digests.is_empty() {
-        return Ok(());
+    for digest in digests {
+        let attempt = savepoint(tx).await?;
+        match entities::workflow_revision::Entity::delete_by_id(digest)
+            .exec(&attempt)
+            .await
+        {
+            Ok(_) => attempt.commit().await?,
+            Err(error) if still_referenced(&error) => attempt.rollback().await?,
+            Err(error) => return Err(error.into()),
+        }
     }
-    entities::workflow_revision::Entity::delete_many()
-        .filter(entities::workflow_revision::Column::Digest.is_in(digests))
-        .filter(
-            entities::workflow_revision::Column::Digest.not_in_subquery(
-                Query::select()
-                    .column(entities::run::Column::WorkflowRevisionDigest)
-                    .from(entities::run::Entity)
-                    .to_owned(),
-            ),
-        )
-        .exec(conn)
-        .await?;
     Ok(())
+}
+
+fn still_referenced(error: &DbErr) -> bool {
+    const FOREIGN_KEY_VIOLATION: &str = "23503";
+    const RESTRICT_VIOLATION: &str = "23001";
+    let DbErr::Exec(RuntimeErr::SqlxError(error)) = error else {
+        return false;
+    };
+    matches!(
+        error.as_ref(),
+        sqlx::Error::Database(database)
+            if matches!(database.code().as_deref(), Some(FOREIGN_KEY_VIOLATION | RESTRICT_VIOLATION))
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::{lock_run_evidence_for_pruning, lock_run_evidence_for_recording};
+    use crate::db::data_scope::DataScope;
     use crate::db::{
         MetadataStore, TestDatabaseTarget,
         locks::{backend_pid, wait_for_transaction_waiter},
     };
-    use sea_orm::TransactionTrait;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn deleting_one_repository_keeps_a_workflow_revision_another_still_runs() {
+        use crate::db::test_support::fixtures::{
+            manual_run, manual_workflow, repository, store_with_native_run_repositories, user,
+        };
+        use scope_domain::views::ViewId;
+        let owner = user("user-owner", "owner");
+        let (kept, deleted) = (
+            repository(&owner, "kept", ViewId::public()),
+            repository(&owner, "deleted", ViewId::public()),
+        );
+        let (kept_incarnation, deleted_incarnation) =
+            (kept.record.incarnation(), deleted.record.incarnation());
+        let store = store_with_native_run_repositories([kept, deleted]);
+        let shared = manual_workflow("owner/kept");
+        assert_eq!(shared.digest(), manual_workflow("owner/deleted").digest());
+        for (repository, run) in [("owner/kept", "run-kept"), ("owner/deleted", "run-deleted")] {
+            let revision = manual_workflow(repository);
+            store
+                .runs()
+                .enqueue_run(manual_run(&revision, run, "user-owner"), revision)
+                .await
+                .unwrap();
+        }
+        let revision_exists = || async {
+            let tx = store
+                .db
+                .begin(DataScope::System(
+                    crate::db::data_scope::SystemReason::Fixture,
+                ))
+                .await
+                .unwrap();
+            let revision =
+                <crate::db::entities::workflow_revision::Entity as sea_orm::EntityTrait>::find_by_id(
+                    shared.digest().to_string(),
+                )
+                .one(&tx)
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+            revision.is_some()
+        };
+
+        let repositories = store.repositories();
+        repositories
+            .delete_repo("owner", "deleted", &deleted_incarnation, "user-owner", 20)
+            .await
+            .unwrap();
+        assert!(
+            revision_exists().await,
+            "the kept repository's run still uses it"
+        );
+        repositories
+            .delete_repo("owner", "kept", &kept_incarnation, "user-owner", 21)
+            .await
+            .unwrap();
+        assert!(!revision_exists().await, "no run uses it any more");
+    }
 
     #[tokio::test]
     async fn check_recorders_share_run_evidence_while_pruning_waits_for_them() {
         let store =
             MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
                 .unwrap();
-        let seeded = store.db.begin().await.unwrap();
+        let seeded = store.db.begin(DataScope::NoRepository).await.unwrap();
         lock_run_evidence_for_pruning(&seeded).await.unwrap();
         seeded.commit().await.unwrap();
-        let first = store.db.begin().await.unwrap();
+        let first = store.db.begin(DataScope::NoRepository).await.unwrap();
         lock_run_evidence_for_recording(&first).await.unwrap();
-        let second = store.db.begin().await.unwrap();
+        let second = store.db.begin(DataScope::NoRepository).await.unwrap();
         tokio::time::timeout(
             Duration::from_secs(5),
             lock_run_evidence_for_recording(&second),
@@ -226,7 +297,11 @@ mod tests {
         let first_pid = backend_pid(&first).await;
         let pruning_store = store.clone();
         let pruning = tokio::spawn(async move {
-            let tx = pruning_store.db.begin().await.unwrap();
+            let tx = pruning_store
+                .db
+                .begin(DataScope::NoRepository)
+                .await
+                .unwrap();
             lock_run_evidence_for_pruning(&tx).await.unwrap();
             tx.commit().await.unwrap();
         });

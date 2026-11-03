@@ -84,7 +84,7 @@ async fn queue(
     section: RequestQueueSection,
     now_unix: u64,
 ) -> crate::db::RequestQueuePage {
-    let repo = repo_by_id(store.db.as_ref(), "owner/repo", "user_owner")
+    let repo = repo_by_id(&store.db.fixture(), "owner/repo", "user_owner")
         .await
         .unwrap();
     store
@@ -128,7 +128,9 @@ async fn open_public_request(store: &MetadataStore) -> scope_domain::requests::R
         .unwrap();
     request.submitted_at_unix = Some(3);
     request.updated_at_unix = 3;
-    save_request_row(store.db.as_ref(), &request).await.unwrap();
+    save_request_row(&store.db.fixture(), &request)
+        .await
+        .unwrap();
     request
 }
 
@@ -317,7 +319,7 @@ async fn releasing_a_claim_returns_the_request_to_unclaimed_for_everyone() {
             request.id.clone(),
             "user_owner".to_string()
         ))
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .is_none()
@@ -376,7 +378,7 @@ async fn removing_a_member_releases_their_request_claim_and_attention() {
             request.id.clone(),
             "user_public".to_string()
         ))
-        .one(store.db.as_ref())
+        .one(&store.db.fixture())
         .await
         .unwrap()
         .is_none()
@@ -422,7 +424,7 @@ async fn reactivated_and_expired_requests_sort_before_older_active_pages() {
         .unwrap();
     newer.submitted_at_unix = Some(20);
     newer.updated_at_unix = 20;
-    save_request_row(store.db.as_ref(), &newer).await.unwrap();
+    save_request_row(&store.db.fixture(), &newer).await.unwrap();
     set_attention(&store, &newer, RequestAttentionAction::Claim, 21).await;
     let incoming = store
         .requests()
@@ -439,7 +441,7 @@ async fn reactivated_and_expired_requests_sort_before_older_active_pages() {
         })
         .await
         .unwrap();
-    let repo = repo_by_id(store.db.as_ref(), "owner/repo", "user_owner")
+    let repo = repo_by_id(&store.db.fixture(), "owner/repo", "user_owner")
         .await
         .unwrap();
     let input = RequestQueuePageQuery {

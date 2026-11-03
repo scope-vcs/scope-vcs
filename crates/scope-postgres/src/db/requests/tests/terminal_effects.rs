@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use scope_domain::requests::{GitHubBranch, GitHubPushDestination};
 
 #[tokio::test]
@@ -12,7 +13,9 @@ async fn rolling_back_terminal_persistence_restores_request_invitees_push_and_ev
         .request;
     request.submitted_at_unix = Some(3);
     request.updated_at_unix = 3;
-    save_request_row(store.db.as_ref(), &request).await.unwrap();
+    save_request_row(&store.db.fixture(), &request)
+        .await
+        .unwrap();
     seed_terminal_effects(&store).await;
 
     let mutation = close_request(
@@ -35,7 +38,11 @@ async fn rolling_back_terminal_persistence_restores_request_invitees_push_and_ev
     let CloseRequestMutation::Closed { request, event } = mutation else {
         panic!("submitted request should close");
     };
-    let tx = store.db.begin().await.unwrap();
+    let tx = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     persist_lifecycle_mutation(&tx, &request, std::slice::from_ref(&event))
         .await
         .unwrap();
@@ -59,7 +66,7 @@ async fn rolling_back_terminal_persistence_restores_request_invitees_push_and_ev
             .unwrap()
     );
     assert!(
-        crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+        crate::db::github_pushes::latest_github_push(&store.db.fixture(), "req_1")
             .await
             .unwrap()
             .unwrap()
@@ -89,7 +96,7 @@ pub(crate) async fn seed_terminal_effects(store: &MetadataStore) {
         .await
         .unwrap();
     crate::db::github_pushes::queue_github_push(
-        store.db.as_ref(),
+        &store.db.fixture(),
         "owner/repo",
         &GitHubBranch::Request("req_1".into()),
         Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
@@ -113,7 +120,7 @@ pub(crate) async fn assert_terminal_effects(store: &MetadataStore, event_id: &st
             .unwrap()
     );
     assert_eq!(
-        crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+        crate::db::github_pushes::latest_github_push(&store.db.fixture(), "req_1")
             .await
             .unwrap()
             .unwrap()

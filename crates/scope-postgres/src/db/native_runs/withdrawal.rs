@@ -1,4 +1,5 @@
 use super::{availability, owned_repositories};
+use crate::db::data_scope::{DataScope, ScopedDatabase, SystemReason};
 use crate::{
     db::{
         acquire_aggregate_lock, entities,
@@ -15,10 +16,7 @@ use scope_domain::{
     requests::RequestCheckEvaluation,
     runs::{job::request_run_cancellation, run::Run},
 };
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, QueryFilter,
-    Statement, TransactionTrait,
-};
+use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter, Statement};
 
 #[derive(Clone, Debug, Default)]
 pub struct NativeRunsWithdrawal {
@@ -30,7 +28,7 @@ pub struct NativeRunsWithdrawal {
 }
 
 pub(super) async fn settle(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
     user_id: &str,
     removed: bool,
     now_unix: u64,
@@ -50,12 +48,16 @@ pub(super) async fn settle(
             withdrawal.canceled_runs.push(run);
         }
     }
-    withdrawal.repositories = owned_repositories(db, user_id).await?;
+    let tx = db
+        .begin(DataScope::System(SystemReason::NativeRunsSettlement))
+        .await?;
+    withdrawal.repositories = owned_repositories(&tx, user_id).await?;
+    tx.commit().await?;
     Ok(withdrawal)
 }
 
 async fn waiting_request_ids(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
     user_id: &str,
 ) -> Result<Vec<String>, PostgresError> {
     ids(
@@ -76,7 +78,7 @@ async fn waiting_request_ids(
 }
 
 async fn unfinished_run_ids(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
     user_id: &str,
 ) -> Result<Vec<String>, PostgresError> {
     ids(
@@ -95,30 +97,35 @@ async fn unfinished_run_ids(
 }
 
 async fn ids(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
     sql: String,
     user_id: &str,
 ) -> Result<Vec<String>, PostgresError> {
-    db.query_all_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        sql,
-        [user_id.into()],
-    ))
-    .await?
-    .into_iter()
-    .map(|row| {
-        row.try_get::<String>("", "id")
-            .map_err(PostgresError::internal)
-    })
-    .collect()
+    let tx = db
+        .begin(DataScope::System(SystemReason::NativeRunsSettlement))
+        .await?;
+    let rows = tx
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [user_id.into()],
+        ))
+        .await?;
+    tx.commit().await?;
+    rows.into_iter()
+        .map(|row| {
+            row.try_get::<String>("", "id")
+                .map_err(PostgresError::internal)
+        })
+        .collect()
 }
 
 async fn withdraw_evaluation(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
     request_id: &str,
     now_unix: u64,
 ) -> Result<Option<RequestCheckEvaluation>, PostgresError> {
-    let tx = db.begin().await?;
+    let tx = db.begin(DataScope::RequestRepository(request_id)).await?;
     acquire_aggregate_lock(&tx, "request", request_id).await?;
     let active_auto_merge = lock_active_intent_for_request(&tx, request_id).await?;
     let Some(request) = request_by_id(&tx, request_id).await? else {
@@ -152,11 +159,11 @@ async fn withdraw_evaluation(
 }
 
 async fn cancel_run(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
     run_id: &str,
     now_unix: u64,
 ) -> Result<Option<Run>, PostgresError> {
-    let tx = db.begin().await?;
+    let tx = db.begin(DataScope::RunRepository(run_id)).await?;
     let active_auto_merge = lock_active_auto_merge_for_run(&tx, run_id).await?;
     let mut jobs = locked_jobs(&tx, run_id).await?;
     let mut run = locked_run(&tx, run_id).await?;

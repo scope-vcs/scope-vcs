@@ -41,7 +41,7 @@ async fn queue<C: ConnectionTrait>(conn: &C, request_id: &str, target: Option<ch
 async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
     let store = postgres_store();
     let requests = store.requests();
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
     let t = now();
     queue(db, "req_1", Some('a'), t).await;
     queue(db, "req_2", Some('c'), t).await;
@@ -100,7 +100,7 @@ async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
     assert_eq!(next.len(), 1);
     assert_eq!(next[0].target_oid.as_deref(), Some(oid('b').as_str()));
     assert_eq!(
-        crate::db::github_pushes::latest_github_push(requests.db.as_ref(), "req_1")
+        crate::db::github_pushes::latest_github_push(&requests.db.fixture(), "req_1")
             .await
             .unwrap()
             .unwrap(),
@@ -112,7 +112,7 @@ async fn a_branch_is_pushed_by_one_claim_at_a_time_and_the_newest_push_wins() {
 async fn a_push_queued_in_the_same_second_is_still_the_newer_one() {
     let store = postgres_store();
     let requests = store.requests();
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
     let t = now();
     queue(db, "req_1", Some('a'), t).await;
     let running = requests
@@ -150,7 +150,7 @@ async fn a_push_queued_in_the_same_second_is_still_the_newer_one() {
 async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed_and_only_once() {
     let store = postgres_store();
     let requests = store.requests();
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
     let t = now();
     queue_github_branch_deletion(db, REPO, "req_never_pushed", t)
         .await
@@ -223,7 +223,7 @@ async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed_and_only
 async fn deleting_a_repository_leaves_deletions_of_the_branches_it_pushed() {
     let store = postgres_store();
     let requests = store.requests();
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
     let t = now();
     queue(db, "req_1", Some('a'), t).await;
     queue(db, "req_2", Some('b'), t).await;
@@ -247,7 +247,7 @@ async fn deleting_a_repository_leaves_deletions_of_the_branches_it_pushed() {
 async fn main_is_pushed_through_the_same_queue_but_never_deleted() {
     let store = postgres_store();
     let requests = store.requests();
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
     let t = now();
     queue_github_push(
         db,

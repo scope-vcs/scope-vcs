@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{CatalogFixture, MetadataStore, test_support::fixtures};
 use scope_domain::{
     history::history_view_from_projection,
@@ -54,6 +55,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
     let (store, repo) = fixture(1000);
     store
         .db
+        .fixture()
         .execute_unprepared("DELETE FROM scope_projection_read_models")
         .await
         .unwrap();
@@ -89,7 +91,11 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
         HistoryFeed::All.generation(&expected_private.generation, &repo.record.id, "private")
     );
 
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     held.execute_unprepared("LOCK TABLE scope_logical_commits, scope_file_changes, scope_live_files IN ACCESS EXCLUSIVE MODE").await.unwrap();
     let next = tokio::time::timeout(
         Duration::from_secs(2),
@@ -205,7 +211,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
     assert_eq!(rebuilt.failed, 0);
     assert!(
         live_projection_read_model(
-            store.db.as_ref(),
+            &store.db.fixture(),
             &repo.record.id,
             repo.record.content_version,
             &ViewId::public(),
@@ -216,6 +222,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
     );
     store
         .db
+        .fixture()
         .execute_unprepared("DELETE FROM scope_projection_read_models")
         .await
         .unwrap();
@@ -310,6 +317,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .unwrap();
     store
         .db
+        .fixture()
         .execute_unprepared("UPDATE scope_projection_read_models SET history_version='stale'")
         .await
         .unwrap();
@@ -320,7 +328,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .unwrap();
     assert!(
         live_projection_read_model(
-            store.db.as_ref(),
+            &store.db.fixture(),
             &repo.record.id,
             repo.record.content_version,
             &ViewId::private()
@@ -363,7 +371,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .await
         .unwrap()
         .unwrap();
-    store.db.execute_unprepared("UPDATE scope_repositories SET change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
+    store.db.fixture().execute_unprepared("UPDATE scope_repositories SET change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
     assert!(
         store
             .repositories()
@@ -393,7 +401,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
         .await
         .unwrap()
         .unwrap();
-    store.db.execute_unprepared("UPDATE scope_repositories SET incarnation_id='repoi_recreated' WHERE id='owner/history'").await.unwrap();
+    store.db.fixture().execute_unprepared("UPDATE scope_repositories SET incarnation_id='repoi_recreated' WHERE id='owner/history'").await.unwrap();
     assert!(
         store
             .repositories()
@@ -486,7 +494,7 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
             &ViewId::public()
         )
     );
-    store.db.execute_unprepared("UPDATE scope_repositories SET publication_state='AwaitingFirstPush', change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
+    store.db.fixture().execute_unprepared("UPDATE scope_repositories SET publication_state='AwaitingFirstPush', change_version=change_version+1 WHERE id='owner/history'").await.unwrap();
     assert!(
         store
             .repositories()
@@ -636,7 +644,7 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
             .collect::<Vec<_>>(),
         ["logical_54"]
     );
-    assert!(store.db.execute_unprepared("INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload_hash) SELECT repo_id, audience, position + 10000, source_id, payload_hash FROM scope_repository_history_entries LIMIT 1").await.is_err());
+    assert!(store.db.fixture().execute_unprepared("INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload_hash) SELECT repo_id, audience, position + 10000, source_id, payload_hash FROM scope_repository_history_entries LIMIT 1").await.is_err());
 }
 
 #[tokio::test]
@@ -664,6 +672,7 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
         .unwrap();
     store
         .db
+        .fixture()
         .execute_unprepared("DELETE FROM scope_file_changes WHERE commit_id <> 'logical_300'")
         .await
         .unwrap();

@@ -128,7 +128,7 @@ fn record(repo: &mut Repository, commits: Vec<LogicalCommit>, sets: Vec<Visibili
 
 async fn fold(store: &MetadataStore, repo: &Repository) {
     fold_live_projection_read_models(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &repo.record.id,
         repo.record.content_version,
     )
@@ -138,7 +138,7 @@ async fn fold(store: &MetadataStore, repo: &Repository) {
 
 async fn read_model(store: &MetadataStore, repo: &Repository, id: &ViewId) -> Option<ReadModel> {
     live_projection_read_model(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &repo.record.id,
         repo.record.content_version,
         id,
@@ -150,6 +150,7 @@ async fn read_model(store: &MetadataStore, repo: &Repository, id: &ViewId) -> Op
 async fn stored_views(store: &MetadataStore, repo: &Repository) -> Vec<String> {
     store
         .db
+        .fixture()
         .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT DISTINCT audience FROM scope_repository_history_entries WHERE repo_id=$1 \
@@ -220,6 +221,7 @@ async fn an_include_change_folds_into_one_boundary_commit_on_top_of_the_resumed_
         .unwrap();
     store
         .db
+        .fixture()
         .execute_unprepared("DELETE FROM scope_file_changes WHERE commit_id <> 'c2'")
         .await
         .unwrap();
@@ -290,7 +292,7 @@ async fn an_include_change_folds_into_one_boundary_commit_on_top_of_the_resumed_
         ["/README.md"]
     );
     let files = load_live_projection_files_for_view(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &repo.record.id,
         repo.record.content_version,
         &view("agent"),

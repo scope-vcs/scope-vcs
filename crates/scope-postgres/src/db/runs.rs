@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::integer_columns;
 use super::{
     RunStore, entities,
@@ -20,7 +21,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ColumnTrait, DatabaseTransaction, DbErr, EntityTrait, ExprTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, QuerySelect, TransactionTrait, TryInsertResult, sea_query::OnConflict,
+    QueryOrder, QuerySelect, TryInsertResult, sea_query::OnConflict,
 };
 
 #[cfg(test)]
@@ -56,7 +57,10 @@ impl RunStore {
         run: Run,
         revision: WorkflowRevision,
     ) -> Result<EnqueueRunResult, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::Repository(run.workflow.repository_id()))
+            .await?;
         let stored = enqueue_run_in_transaction(&tx, run, revision).await?;
         tx.commit().await?;
         Ok(stored)
@@ -70,7 +74,10 @@ impl RunStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<(RunAttempt, bool), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let (run, job, mut attempt) = locked_attempt_context(&tx, attempt_id).await?;
         let cancellation_requested = attempt
             .heartbeat(&run, &job, token_hash, now_unix, lease_expires_at_unix)
@@ -163,7 +170,11 @@ impl RunStore {
         let now_unix = integer_columns::u64_to_i64(now_unix, "attempt recovery time")?;
         let maximum_age_cutoff = now_unix
             .saturating_sub(scope_domain::runs::attempt::MAX_RUN_ATTEMPT_AGE_SECONDS as i64);
-        Ok(entities::run_attempt::Entity::find()
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::RunRecovery))
+            .await?;
+        let ids = entities::run_attempt::Entity::find()
             .filter(
                 entities::run_attempt::Column::State
                     .is_in(["dispatching".to_string(), "running".to_string()]),
@@ -176,11 +187,13 @@ impl RunStore {
             .order_by_asc(entities::run_attempt::Column::LeaseExpiresAtUnix)
             .order_by_asc(entities::run_attempt::Column::Id)
             .limit(limit)
-            .all(self.db.as_ref())
+            .all(&tx)
             .await?
             .into_iter()
             .map(|attempt| attempt.id)
-            .collect())
+            .collect();
+        tx.commit().await?;
+        Ok(ids)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_run_cancellation"))]
@@ -191,7 +204,7 @@ impl RunStore {
         run_id: &str,
         now_unix: u64,
     ) -> Result<Run, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repository_id)).await?;
         authorize_run_control(&tx, actor_user_id, repository_id).await?;
         let active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, run_id).await?;
@@ -215,7 +228,7 @@ impl RunStore {
         run_id: &str,
         now_unix: u64,
     ) -> Result<Run, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repository_id)).await?;
         authorize_run_control(&tx, actor_user_id, repository_id).await?;
         let _active_auto_merge =
             super::request_auto_merge::lock_active_auto_merge_for_run(&tx, run_id).await?;
@@ -235,11 +248,12 @@ impl RunStore {
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run"))]
     pub async fn run(&self, run_id: &str) -> Result<Option<Run>, PostgresError> {
-        entities::run::Entity::find_by_id(run_id.to_string())
-            .one(self.db.as_ref())
-            .await?
-            .map(entities::run::Model::try_into_domain)
-            .transpose()
+        let tx = self.db.begin(DataScope::RunRepository(run_id)).await?;
+        let run = entities::run::Entity::find_by_id(run_id.to_string())
+            .one(&tx)
+            .await?;
+        tx.commit().await?;
+        run.map(entities::run::Model::try_into_domain).transpose()
     }
 }
 

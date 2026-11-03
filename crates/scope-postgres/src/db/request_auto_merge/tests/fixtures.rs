@@ -218,6 +218,7 @@ pub(super) async fn wait_for_blocked_transaction_count(
         loop {
             let count = store
                 .db
+                .fixture()
                 .query_one_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     "WITH RECURSIVE blocked(pid) AS ( \

@@ -7,9 +7,10 @@ cd "${1:?Isolated scratch directory is required}"
 cat > snapshot.psql <<'SQL'
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout = '30min';
+SET LOCAL scope.system_reason = 'database-backup';
 SELECT pg_export_snapshot() AS snapshot \gset
 \setenv SCOPE_RECOVERY_SNAPSHOT :snapshot
-\! pg_dump --dbname="$DATABASE_URL" --no-password --format=custom --no-owner --no-acl --snapshot="$SCOPE_RECOVERY_SNAPSHOT" --file=database.dump && touch dump.ok
+\! PGOPTIONS='-c scope.system_reason=database-backup' pg_dump --dbname="$DATABASE_URL" --enable-row-security --no-password --format=custom --no-owner --no-acl --snapshot="$SCOPE_RECOVERY_SNAPSHOT" --file=database.dump && touch dump.ok
 \o references.jsonl
 \i references-json.sql
 \o captured-at.txt

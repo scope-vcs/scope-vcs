@@ -2,6 +2,7 @@ use super::*;
 use crate::{
     db::{
         MetadataStore,
+        data_scope::SystemReason,
         locks::{backend_pid, wait_for_transaction_waiter},
         test_support::fixtures::{
             repository, source_blob, store_with_native_run_repositories, user,
@@ -49,7 +50,7 @@ fn manual_request(user_id: &str, workflow: &str) -> ManualRunRequest {
 }
 
 async fn assert_no_enqueue_rows(store: &MetadataStore) {
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
     assert_eq!(entities::run::Entity::find().count(db).await.unwrap(), 0);
     assert_eq!(
         entities::run_job::Entity::find().count(db).await.unwrap(),
@@ -64,7 +65,11 @@ async fn assert_no_enqueue_rows(store: &MetadataStore) {
 #[tokio::test]
 async fn uploaded_enqueue_rechecks_membership_after_waiting_for_repository_lock() {
     let (store, request, revision, object) = fixture();
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::Repository(request.repository_id()))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&held, "repository", request.repository_id())
         .await
         .unwrap();
@@ -95,7 +100,11 @@ async fn uploaded_enqueue_rechecks_membership_after_waiting_for_repository_lock(
 #[tokio::test]
 async fn uploaded_enqueue_that_wins_repository_lock_completes_before_real_revocation() {
     let (store, request, revision, object) = fixture();
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     held.execute_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "LOCK TABLE scope_runs IN SHARE MODE",
@@ -165,7 +174,11 @@ async fn uploaded_enqueue_replay_requires_current_membership_and_matching_reques
             .kind,
         PostgresErrorKind::Conflict
     );
-    let tx = store.db.begin().await.unwrap();
+    let tx = store
+        .db
+        .begin(DataScope::Repository(request.repository_id()))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&tx, "repository", request.repository_id())
         .await
         .unwrap();

@@ -2,6 +2,7 @@ mod file_rules;
 mod landed;
 mod push_paths;
 
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     AuthorizeRequestAutoMergeCommand, CancelRequestAutoMergeCommand,
     ClaimDueRequestAutoMergesCommand, ExpectedRequestAutoMerge, MergeRequestContentCommand,
@@ -298,7 +299,7 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         .unwrap()
         .unwrap();
     let revision = super::super::request_revision_rows::latest_revision_for_request(
-        store.db.as_ref(),
+        &store.db.fixture(),
         "req_1",
     )
     .await
@@ -308,7 +309,7 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         scope_domain::requests::RequestCheckContext::for_revision(&request, &revision).unwrap();
     let evaluation = if github {
         use sea_orm::ConnectionTrait;
-        store.db.execute_unprepared("INSERT INTO scope_github_connections (repo_id, installation_id, github_repository_id, github_full_name, connected_by_user_id, connected_at_unix, status) VALUES ('owner/repo', 7, 42, 'octo/repo', 'user_owner', 1, 'Connected')").await.unwrap();
+        store.db.fixture().execute_unprepared("INSERT INTO scope_github_connections (repo_id, installation_id, github_repository_id, github_full_name, connected_by_user_id, connected_at_unix, status) VALUES ('owner/repo', 7, 42, 'octo/repo', 'user_owner', 1, 'Connected')").await.unwrap();
         let names = vec!["test".to_string()];
         let mut evaluation = scope_domain::requests::RequestCheckPlan::evaluate_github(
             &request,
@@ -576,7 +577,7 @@ async fn manual_merge_rejects_check_reads_that_changed_after_preparation() {
 
 #[tokio::test]
 async fn final_merge_fences_check_reads_and_rejects_expiry_while_publication_waits() {
-    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     for expires in [false, true] {
         let store = merge_store_with_github(true).await;
         apply_github_result(&store, true).await;
@@ -585,7 +586,11 @@ async fn final_merge_fences_check_reads_and_rejects_expiry_while_publication_wai
         if expires {
             command.now_unix = GITHUB_READ_AT + GITHUB_CHECK_MERGE_FRESHNESS_SECS - 3;
         }
-        let held = store.db.begin().await.unwrap();
+        let held = store
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await
+            .unwrap();
         let holder_pid: i32 = held
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
@@ -664,7 +669,7 @@ async fn final_merge_fences_check_reads_and_rejects_expiry_while_publication_wai
 
 #[tokio::test]
 async fn a_batched_merge_whose_checks_expire_before_the_batch_commits_does_not_land() {
-    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
     let store = merge_store_with_github(true).await;
     apply_github_result(&store, true).await;
     let prepared = merge_preparation(&store).await;
@@ -684,7 +689,11 @@ async fn a_batched_merge_whose_checks_expire_before_the_batch_commits_does_not_l
     neighbor.request_id = "req_2".to_string();
     neighbor.merged_event_id = "event_merged_req_2".to_string();
 
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     let holder_pid: i32 = held
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,

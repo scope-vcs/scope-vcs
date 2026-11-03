@@ -10,6 +10,7 @@ async fn store_with_repository(repo_id: &str) -> MetadataStore {
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     store
         .db
+        .fixture()
         .execute_unprepared(&format!(
             "INSERT INTO scope_users (id, handle, email, email_verified)
              VALUES ('segment_user', 'segment-user', 'segment@scope.test', TRUE);
@@ -96,7 +97,7 @@ async fn upload_ledger_enforces_publication_and_recovery_states() {
     assert_eq!(stale[0].state, GitSegmentUploadState::Ready);
 
     register_git_pool_pack(
-        store.db.as_ref(),
+        &store.db.fixture(),
         "segment-user/repo",
         &first_main_pack(&segment),
         12,
@@ -110,18 +111,19 @@ async fn upload_ledger_enforces_publication_and_recovery_states() {
             .unwrap()
     );
     assert!(
-        !retire_git_segment(store.db.as_ref(), &segment.segment_id, 13)
+        !retire_git_segment(&store.db.fixture(), &segment.segment_id, 13)
             .await
             .unwrap()
     );
 
     store
         .db
+        .fixture()
         .execute_unprepared("DELETE FROM scope_git_pool_packs")
         .await
         .unwrap();
     assert!(
-        retire_git_segment(store.db.as_ref(), &segment.segment_id, 13)
+        retire_git_segment(&store.db.fixture(), &segment.segment_id, 13)
             .await
             .unwrap()
     );
@@ -158,7 +160,7 @@ async fn repository_deletion_keeps_segment_ledger_for_physical_cleanup() {
         .await
         .unwrap();
     register_git_pool_pack(
-        store.db.as_ref(),
+        &store.db.fixture(),
         "segment-user/repo",
         &first_main_pack(&segment),
         12,
@@ -210,6 +212,7 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
     let store = store_with_repository("segment-user/repo").await;
     store
         .db
+        .fixture()
         .execute_unprepared(
             "INSERT INTO scope_requests (
                 id, repo_id, name, author_user_id, author_role, audience,
@@ -266,7 +269,7 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
         storage: GitPoolPackStorage::Inline { sealed: vec![6] },
     };
     for (pack, now) in [(&inline, 12), (&segment, 13), (&other, 14), (&main, 15)] {
-        register_git_pool_pack(store.db.as_ref(), "segment-user/repo", pack, now)
+        register_git_pool_pack(&store.db.fixture(), "segment-user/repo", pack, now)
             .await
             .unwrap();
     }
@@ -321,11 +324,11 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
         std::slice::from_ref(&main)
     );
 
-    retire_request_pool_packs(store.db.as_ref(), "req_wanted", 16)
+    retire_request_pool_packs(&store.db.fixture(), "req_wanted", 16)
         .await
         .unwrap();
     assert_eq!(
-        load_main_pool_packs(store.db.as_ref(), "segment-user/repo")
+        load_main_pool_packs(&store.db.fixture(), "segment-user/repo")
             .await
             .unwrap(),
         [main]

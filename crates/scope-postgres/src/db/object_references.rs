@@ -133,19 +133,29 @@ mod tests {
             git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
             size_bytes: 42,
         };
-        insert_object_reference(store.db.as_ref(), "file_change", "owner-a/repo:1", &shared)
-            .await
-            .unwrap();
-        insert_object_reference(store.db.as_ref(), "file_change", "owner-b/repo:1", &shared)
-            .await
-            .unwrap();
+        insert_object_reference(
+            &store.db.fixture(),
+            "file_change",
+            "owner-a/repo:1",
+            &shared,
+        )
+        .await
+        .unwrap();
+        insert_object_reference(
+            &store.db.fixture(),
+            "file_change",
+            "owner-b/repo:1",
+            &shared,
+        )
+        .await
+        .unwrap();
 
-        delete_repository_object_references(store.db.as_ref(), "owner-a/repo", &[], &[])
+        delete_repository_object_references(&store.db.fixture(), "owner-a/repo", &[], &[])
             .await
             .unwrap();
 
         let rows = entities::object_reference::Entity::find()
-            .all(store.db.as_ref())
+            .all(&store.db.fixture())
             .await
             .unwrap();
         assert_eq!(rows.len(), 1);

@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{NativeRunsStore, entities, integer_columns};
 use crate::error::PostgresError;
 use scope_domain::{
@@ -6,7 +7,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
-    QueryResult, Statement, TransactionTrait,
+    QueryResult, Statement,
 };
 
 mod withdrawal;
@@ -30,7 +31,8 @@ pub struct NativeRunsAddition {
 impl NativeRunsStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "accounts"))]
     pub async fn accounts(&self) -> Result<Vec<NativeRunsAccountListing>, PostgresError> {
-        self.db
+        let tx = self.db.begin(DataScope::NoRepository).await?;
+        let rows = tx
             .query_all_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 "SELECT account.user_id, account.added_at_unix, account.note, users.handle
@@ -38,10 +40,9 @@ impl NativeRunsStore {
                  JOIN scope_users users ON users.id = account.user_id
                  ORDER BY users.handle",
             ))
-            .await?
-            .iter()
-            .map(listing_from_row)
-            .collect()
+            .await?;
+        tx.commit().await?;
+        rows.iter().map(listing_from_row).collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "add_account"))]
@@ -51,7 +52,10 @@ impl NativeRunsStore {
         note: Option<String>,
         now_unix: u64,
     ) -> Result<NativeRunsAddition, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::NativeRunsSettlement))
+            .await?;
         let user_id = user_id_for_handle(&tx, handle).await?;
         let account = NativeRunsAccount::new(user_id, note, now_unix)?;
         let row = tx
@@ -85,7 +89,7 @@ impl NativeRunsStore {
         handle: &str,
         now_unix: u64,
     ) -> Result<NativeRunsWithdrawal, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         let user_id = user_id_for_handle(&tx, handle).await?;
         let removed = tx
             .execute_raw(Statement::from_sql_and_values(
@@ -97,7 +101,7 @@ impl NativeRunsStore {
             .rows_affected()
             > 0;
         tx.commit().await?;
-        withdrawal::settle(self.db.as_ref(), &user_id, removed, now_unix).await
+        withdrawal::settle(&self.db, &user_id, removed, now_unix).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_availability"))]
@@ -105,7 +109,10 @@ impl NativeRunsStore {
         &self,
         repository_id: &str,
     ) -> Result<NativeRunsAvailability, PostgresError> {
-        availability(self.db.as_ref(), repository_id, "").await
+        let tx = self.db.begin(DataScope::Repository(repository_id)).await?;
+        let availability = availability(&tx, repository_id, "").await?;
+        tx.commit().await?;
+        Ok(availability)
     }
 }
 

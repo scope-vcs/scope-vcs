@@ -241,7 +241,7 @@ async fn one_reader_claims_each_jobs_read_and_a_run_names_its_request_and_check_
     );
 
     assert_eq!(
-        github_workflow_runs_for_check_suites(repositories.db.as_ref(), REPO, 42, &[77, 78])
+        github_workflow_runs_for_check_suites(&repositories.db.fixture(), REPO, 42, &[77, 78])
             .await
             .unwrap(),
         [(
@@ -253,7 +253,7 @@ async fn one_reader_claims_each_jobs_read_and_a_run_names_its_request_and_check_
         )]
     );
     assert!(
-        github_workflow_runs_for_check_suites(repositories.db.as_ref(), REPO, 43, &[77])
+        github_workflow_runs_for_check_suites(&repositories.db.fixture(), REPO, 43, &[77])
             .await
             .unwrap()
             .is_empty()

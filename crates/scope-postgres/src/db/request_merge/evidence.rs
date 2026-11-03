@@ -1,5 +1,6 @@
 use super::super::{
-    RequestStore, begin_metadata_read_snapshot,
+    RequestStore,
+    data_scope::DataScope,
     github_connections::repository_github_connection,
     integer_columns::{i64_to_u64, optional_i64_to_u64, u64_to_i64},
     request_checks::{evaluation_for_head, request_check_results},
@@ -21,7 +22,10 @@ impl RequestStore {
         base_version: u64,
         review_base_oid: &str,
     ) -> Result<ExpectedRequestMergeEvidence, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RequestRepository(request_id))
+            .await?;
         let request = request_by_id(&tx, request_id)
             .await?
             .filter(|request| {

@@ -8,6 +8,7 @@ use std::{
 };
 
 const TEMPLATE_SCHEMA: &str = "scope_test_template";
+const ROW_SECURITY_ROLE: &str = "scope_test_row_security";
 const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
 const BACKEND_STARTUP_ALLOWANCE: Duration = Duration::from_secs(5);
 const INSUFFICIENT_PRIVILEGE: &str = "42501";
@@ -34,7 +35,9 @@ pub(super) async fn connect_store(target: &TestDatabaseTarget) -> anyhow::Result
     };
 
     Ok(MetadataStore {
-        db: Arc::clone(&lease.database),
+        db: Arc::new(crate::db::data_scope::ScopedDatabase::new(
+            lease.database.as_ref().clone(),
+        )),
         postgres_database_url: Some(Arc::from(lease.database_url.clone())),
         repo_change_notifier: Default::default(),
         merge_turn_sessions: crate::db::merge_turns::MergeTurnSessions::new(Arc::from(
@@ -51,8 +54,8 @@ async fn clone_test_database(target: &TestDatabaseTarget) -> anyhow::Result<Arc<
         .await
         .expect("outstanding test database semaphore should stay open");
     let database_name = unique_database_name("db");
-    let database_url = database_url(&target.database_url, &database_name)?;
-    create_database(&target.database_url, &database_name, &template).await?;
+    let database_url = template.session_url(database_url(&target.database_url, &database_name)?);
+    create_database(&target.database_url, &database_name, &template.name).await?;
 
     let mut options = ConnectOptions::new(database_url.clone());
     options
@@ -84,8 +87,26 @@ async fn clone_test_database(target: &TestDatabaseTarget) -> anyhow::Result<Arc<
     }))
 }
 
-async fn template_database(admin_url: &str) -> anyhow::Result<String> {
-    type Templates = Mutex<HashMap<String, Arc<tokio::sync::OnceCell<String>>>>;
+#[derive(Clone)]
+struct TemplateDatabase {
+    name: String,
+    session_role: Option<&'static str>,
+}
+
+impl TemplateDatabase {
+    fn session_url(&self, database_url: String) -> String {
+        match self.session_role {
+            Some(role) => {
+                let separator = if database_url.contains('?') { '&' } else { '?' };
+                format!("{database_url}{separator}options=-c%20role%3D{role}")
+            }
+            None => database_url,
+        }
+    }
+}
+
+async fn template_database(admin_url: &str) -> anyhow::Result<TemplateDatabase> {
+    type Templates = Mutex<HashMap<String, Arc<tokio::sync::OnceCell<TemplateDatabase>>>>;
     static TEMPLATES: OnceLock<Templates> = OnceLock::new();
 
     let template = TEMPLATES
@@ -102,21 +123,39 @@ async fn template_database(admin_url: &str) -> anyhow::Result<String> {
         .cloned()
 }
 
-async fn prepare_template_database(admin_url: &str) -> anyhow::Result<String> {
+async fn prepare_template_database(admin_url: &str) -> anyhow::Result<TemplateDatabase> {
     let database_name = unique_database_name("template");
     create_database(admin_url, &database_name, "template0").await?;
 
     let result = async {
         let database_url = database_url(admin_url, &database_name)?;
         let database = Database::connect(&database_url).await?;
-        execute(
-            &database,
-            format!("CREATE SCHEMA {}", quote_pg_ident(TEMPLATE_SCHEMA)),
-        )
-        .await?;
+        let template = TemplateDatabase {
+            name: database_name.clone(),
+            session_role: row_security_session_role(&database).await?,
+        };
+        let schema = quote_pg_ident(TEMPLATE_SCHEMA);
+        match template.session_role {
+            Some(role) => {
+                execute(
+                    &database,
+                    "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public".to_owned(),
+                )
+                .await?;
+                execute(
+                    &database,
+                    format!(
+                        "CREATE SCHEMA {schema} AUTHORIZATION {}",
+                        quote_pg_ident(role)
+                    ),
+                )
+                .await?
+            }
+            None => execute(&database, format!("CREATE SCHEMA {schema}")).await?,
+        }
         database.close().await?;
 
-        let mut options = ConnectOptions::new(database_url);
+        let mut options = ConnectOptions::new(template.session_url(database_url));
         options
             .max_connections(8)
             .min_connections(1)
@@ -126,7 +165,7 @@ async fn prepare_template_database(admin_url: &str) -> anyhow::Result<String> {
             crate::migrations::apply_in_maintenance(&database, Default::default()).await;
         database.close().await?;
         migration_result?;
-        Ok::<_, anyhow::Error>(database_name.clone())
+        Ok::<_, anyhow::Error>(template)
     }
     .await;
 
@@ -134,6 +173,53 @@ async fn prepare_template_database(admin_url: &str) -> anyhow::Result<String> {
         drop_database(admin_url, &database_name).await;
     }
     result
+}
+
+async fn row_security_session_role(
+    database: &DatabaseConnection,
+) -> anyhow::Result<Option<&'static str>> {
+    let row = database
+        .query_one_raw(Statement::from_string(
+            database.get_database_backend(),
+            "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user".to_owned(),
+        ))
+        .await?
+        .context("current PostgreSQL role is missing from pg_roles")?;
+    let superuser = row.try_get::<bool>("", "rolsuper")?;
+    let bypasses_row_security = row.try_get::<bool>("", "rolbypassrls")?;
+    if !superuser {
+        anyhow::ensure!(
+            !bypasses_row_security,
+            "the SCOPE_TEST_DATABASE_URL role must not bypass row security unless it is a superuser"
+        );
+        return Ok(None);
+    }
+    execute(
+        database,
+        format!(
+            "DO $$ BEGIN
+                 CREATE ROLE {role} NOLOGIN NOSUPERUSER NOBYPASSRLS IN ROLE pg_read_all_stats;
+             EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
+             END $$",
+            role = quote_pg_ident(ROW_SECURITY_ROLE)
+        ),
+    )
+    .await?;
+    let role = database
+        .query_one_raw(Statement::from_sql_and_values(
+            database.get_database_backend(),
+            "SELECT NOT (rolsuper OR rolbypassrls) AND rolinherit
+                    AND pg_has_role(oid, 'pg_read_all_stats', 'USAGE') AS enforced
+               FROM pg_roles WHERE rolname = $1",
+            [ROW_SECURITY_ROLE.into()],
+        ))
+        .await?
+        .context("row security test role is missing")?;
+    anyhow::ensure!(
+        role.try_get::<bool>("", "enforced")?,
+        "{ROW_SECURITY_ROLE} must not bypass row security and must read pg_stat_activity"
+    );
+    Ok(Some(ROW_SECURITY_ROLE))
 }
 
 async fn create_database(

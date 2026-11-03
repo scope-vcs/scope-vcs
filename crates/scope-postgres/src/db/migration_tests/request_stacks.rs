@@ -1,5 +1,4 @@
 use super::*;
-use sea_orm::TransactionTrait;
 
 #[tokio::test]
 async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_identity() {
@@ -11,7 +10,7 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await
         .unwrap();
-    db.execute_unprepared(r#"
+    super::system(&db).fixture().execute_unprepared(r#"
         INSERT INTO scope_users (id, handle, email, email_verified)
         VALUES ('stack-owner', 'stack-owner', 'stack-owner@example.test', TRUE);
         INSERT INTO scope_repositories (
@@ -47,7 +46,7 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
         );
     "#).await.unwrap();
     migrations::Migrator::up(db.as_ref(), None).await.unwrap();
-    let main = db.query_one_raw(Statement::from_string(DatabaseBackend::Postgres,
+    let main = super::system(&db).fixture().query_one_raw(Statement::from_string(DatabaseBackend::Postgres,
         "SELECT stack_status, stack_depth, base_kind, review_base_oid FROM scope_requests WHERE id = 'parent'"
     )).await.unwrap().unwrap();
     assert_eq!(main.try_get::<String>("", "stack_status").unwrap(), "main");
@@ -69,7 +68,7 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
         open_parent.git_snapshot.as_ref().unwrap().git_oid,
         "b".repeat(40)
     );
-    db.execute_unprepared(
+    super::system(&db).fixture().execute_unprepared(
         r#"
         UPDATE scope_requests SET base_kind = 'Request', parent_request_id = 'parent',
             parent_revision_id = 'parent-revision', parent_head_oid = repeat('b',40),
@@ -99,14 +98,17 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
     .await
     .unwrap();
     for id in ["parent", "child"] {
-        db.execute_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "UPDATE scope_requests SET stack_status = 'needs_main_update' WHERE id = $1",
-            [id.into()],
-        ))
-        .await
-        .unwrap();
-        let status = db
+        super::system(&db)
+            .fixture()
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "UPDATE scope_requests SET stack_status = 'needs_main_update' WHERE id = $1",
+                [id.into()],
+            ))
+            .await
+            .unwrap();
+        let status = super::system(&db)
+            .fixture()
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT stack_status FROM scope_requests WHERE id = $1",
@@ -173,10 +175,15 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
             "scope_request_revision_context_receipts_pkey",
         ),
     ] {
-        let error = db.execute_unprepared(sql).await.unwrap_err().to_string();
+        let error = super::system(&db)
+            .fixture()
+            .execute_unprepared(sql)
+            .await
+            .unwrap_err()
+            .to_string();
         assert!(error.contains(constraint), "{error}");
     }
-    let pinned = db.query_one_raw(Statement::from_string(DatabaseBackend::Postgres,
+    let pinned = super::system(&db).fixture().query_one_raw(Statement::from_string(DatabaseBackend::Postgres,
         "SELECT base_version,parent_request_id,parent_revision_id,parent_head_oid FROM scope_request_revisions WHERE id = 'child-revision'"
     )).await.unwrap().unwrap();
     assert_eq!(pinned.try_get::<i64>("", "base_version").unwrap(), 1);
@@ -192,7 +199,10 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
         pinned.try_get::<String>("", "parent_head_oid").unwrap(),
         "b".repeat(40)
     );
-    let tx = db.begin().await.unwrap();
+    let tx = system(&db)
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     tx.execute_unprepared("SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off;")
         .await
         .unwrap();
@@ -244,8 +254,10 @@ async fn stack_migration_backfills_revision_versions_from_ordered_base_transitio
     migrations::Migrator::up(db.as_ref(), Some(review_base_count as u32))
         .await
         .unwrap();
-    db.execute_unprepared(
-        r#"
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(
+            r#"
         INSERT INTO scope_users (id, handle, email, email_verified)
         VALUES ('version-owner', 'version-owner', 'versions@example.test', TRUE);
         INSERT INTO scope_repositories (
@@ -267,13 +279,13 @@ async fn stack_migration_backfills_revision_versions_from_ordered_base_transitio
             repeat('f',40), repeat('f',40), repeat(base,40), FALSE, '{}', position
           FROM (VALUES (1,'b'), (2,'a')) AS fixture(position,base);
     "#,
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
     migrations::Migrator::up(db.as_ref(), Some(2))
         .await
         .unwrap();
-    db.execute_unprepared(r#"
+    super::system(&db).fixture().execute_unprepared(r#"
         UPDATE scope_requests SET base_version = CASE id
             WHEN 'history' THEN 3 WHEN 'first-change' THEN 2 ELSE 1 END;
         UPDATE scope_requests SET review_base_oid = repeat('b',40), main_ancestor_oid = repeat('b',40)
@@ -293,7 +305,8 @@ async fn stack_migration_backfills_revision_versions_from_ordered_base_transitio
             repeat('f',40), 'Main', repeat('b',40), repeat('b',40), TRUE, '{}', 1);
     "#).await.unwrap();
     migrations::Migrator::up(db.as_ref(), None).await.unwrap();
-    let versions = db
+    let versions = super::system(&db)
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT id, base_version FROM scope_request_revisions ORDER BY request_id, position",
@@ -323,7 +336,8 @@ async fn stack_migration_backfills_revision_versions_from_ordered_base_transitio
             ("legacy-2".into(), 1),
         ]
     );
-    let requests = db
+    let requests = super::system(&db)
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT id, base_version FROM scope_requests ORDER BY id",

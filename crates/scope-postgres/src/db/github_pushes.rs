@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RepositoryStore, RequestStore, acquire_aggregate_lock,
     entities::decode_enum,
@@ -7,9 +8,17 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     github_setup_check::GitHubSetupCheck,
-    requests::{GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState, Request},
+    requests::{GitHubBranch, GitHubPush, GitHubPushDestination, Request},
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
+
+mod queue;
+
+pub(super) use queue::{
+    acquire_github_push_lock, queue_github_branch_deletion,
+    queue_github_branch_deletions_for_repository, queue_github_push, queue_main_publication,
+    queue_pushed_branch_deletion,
+};
 
 const SELECT_PUSH: &str = "id, repo_id, ref AS git_ref, target_oid, installation_id, \
     github_repository_id, github_full_name, state, attempts, last_error, updated_at_unix";
@@ -46,7 +55,11 @@ impl RequestStore {
         id: &str,
         claim_token: &str,
     ) -> Result<GitHubPushStanding, PostgresError> {
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await
+            .map_err(PostgresError::internal)?;
         let blocked = blocked_request_push(&tx, id).await?;
         let Some(row) = tx
             .query_one_raw(Statement::from_sql_and_values(
@@ -84,17 +97,21 @@ impl RequestStore {
         id: &str,
         claim_token: &str,
     ) -> Result<(), PostgresError> {
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                format!(
-                    "DELETE FROM scope_github_pushes push
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "DELETE FROM scope_github_pushes push
                       WHERE push.id = $1 AND push.claim_token = $2 AND push.state = 'running'
                         AND EXISTS (SELECT 1 FROM scope_github_pushes later WHERE {LATER_JOB})"
-                ),
-                [id.into(), claim_token.into()],
-            ))
-            .await?;
+            ),
+            [id.into(), claim_token.into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -104,14 +121,18 @@ impl RequestStore {
         id: &str,
         claim_token: &str,
     ) -> Result<(), PostgresError> {
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "DELETE FROM scope_github_pushes
-                  WHERE id = $1 AND claim_token = $2 AND state = 'running'",
-                [id.into(), claim_token.into()],
-            ))
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
             .await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "DELETE FROM scope_github_pushes
+              WHERE id = $1 AND claim_token = $2 AND state = 'running'",
+            [id.into(), claim_token.into()],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -124,7 +145,11 @@ impl RequestStore {
         limit: u64,
     ) -> Result<Vec<GitHubPush>, PostgresError> {
         let now = u64_to_i64(now_unix, "GitHub push claim time")?;
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await
+            .map_err(PostgresError::internal)?;
         let observed_values = [
             now.into(),
             u64_to_i64(limit, "GitHub push batch size")?.into(),
@@ -199,9 +224,13 @@ impl RequestStore {
         request_id: &str,
         head_oid: &str,
     ) -> Result<Option<u64>, PostgresError> {
-        Ok(latest_github_push(self.db.as_ref(), request_id)
-            .await?
-            .and_then(|push| push.delivered_at(head_oid)))
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
+        let push = latest_github_push(&tx, request_id).await?;
+        tx.commit().await?;
+        Ok(push.and_then(|push| push.delivered_at(head_oid)))
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "finish_github_push"))]
@@ -229,7 +258,11 @@ impl RequestStore {
                 retry_at_unix: None,
             } => ("failed", None, Some(error.clone()), Some(Err(error))),
         };
-        let tx = self.db.begin().await.map_err(PostgresError::internal)?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await
+            .map_err(PostgresError::internal)?;
         if blocked_request_push(&tx, id).await? {
             return Ok(None);
         }
@@ -290,8 +323,8 @@ impl RequestStore {
         repo_id: &str,
         github_repository_id: u64,
     ) -> Result<Vec<Request>, PostgresError> {
-        let rows = self
-            .db
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let rows = tx
             .query_all_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "SELECT request.id FROM scope_requests request
@@ -312,12 +345,11 @@ impl RequestStore {
         let mut requests = Vec::with_capacity(rows.len());
         for row in rows {
             let request_id: String = row.try_get("", "id")?;
-            if let Some(request) =
-                super::request_rows::request_by_id(self.db.as_ref(), &request_id).await?
-            {
+            if let Some(request) = super::request_rows::request_by_id(&tx, &request_id).await? {
                 requests.push(request);
             }
         }
+        tx.commit().await?;
         Ok(requests)
     }
 
@@ -328,7 +360,7 @@ impl RequestStore {
         request_ids: &[String],
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
         super::locks::acquire_shared_repository_lock(&tx, repo_id).await?;
         for request_id in request_ids {
             queue_github_branch_deletion(&tx, repo_id, request_id, now_unix).await?;
@@ -338,208 +370,14 @@ impl RequestStore {
     }
 }
 
-pub(super) async fn queue_github_push<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    branch: &GitHubBranch,
-    target_oid: Option<&str>,
-    destination: &GitHubPushDestination,
-    now_unix: u64,
-) -> Result<String, PostgresError> {
-    if target_oid.is_none() && !branch.owned_by_scope() {
-        return Err(PostgresError::internal_message(format!(
-            "Scope does not delete {} on GitHub",
-            branch.name()
-        )));
-    }
-    let git_ref = branch.git_ref();
-    let request_id = match branch {
-        GitHubBranch::Request(request_id) => Some(request_id.clone()),
-        GitHubBranch::SetupCheck | GitHubBranch::Main => None,
-    };
-    acquire_github_push_lock(conn, repo_id, branch).await?;
-    let now = u64_to_i64(now_unix, "GitHub push time")?;
-    let sequence = conn
-        .query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT coalesce(max(sequence), 0) + 1 AS sequence
-               FROM scope_github_pushes WHERE repo_id = $1 AND ref = $2",
-            [repo_id.into(), git_ref.clone().into()],
-        ))
-        .await?
-        .ok_or_else(|| {
-            PostgresError::internal_message("GitHub push sequence query returned no row")
-        })?
-        .try_get::<i64>("", "sequence")?;
-    conn.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "DELETE FROM scope_github_pushes
-          WHERE repo_id = $1 AND ref = $2
-            AND (state <> 'running' OR lease_until_unix <= $3)",
-        [repo_id.into(), git_ref.clone().into(), now.into()],
-    ))
-    .await?;
-    conn.query_one_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "INSERT INTO scope_github_pushes (id, repo_id, request_id, ref, sequence,
-            installation_id, github_repository_id, github_full_name, target_oid, kind,
-            state, attempts, next_attempt_at_unix, created_at_unix, updated_at_unix)
-         VALUES ('github_push_' || replace(gen_random_uuid()::text, '-', ''), $1, $2, $3, $4,
-            $5, $6, $7, $8, $9, 'queued', 0, $10, $10, $10)
-         RETURNING id",
-        [
-            repo_id.into(),
-            request_id.into(),
-            git_ref.into(),
-            sequence.into(),
-            u64_to_i64(destination.installation_id, "GitHub installation id")?.into(),
-            u64_to_i64(destination.github_repository_id, "GitHub repository id")?.into(),
-            destination.github_full_name.clone().into(),
-            target_oid.map(str::to_string).into(),
-            if target_oid.is_some() {
-                "push"
-            } else {
-                "delete"
-            }
-            .into(),
-            now.into(),
-        ],
-    ))
-    .await?
-    .ok_or_else(|| PostgresError::internal_message("GitHub push insert returned no row"))?
-    .try_get("", "id")
-    .map_err(PostgresError::internal)
-}
-
-pub(super) async fn acquire_github_push_lock<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    branch: &GitHubBranch,
-) -> Result<(), PostgresError> {
-    acquire_aggregate_lock(
-        conn,
-        "github-push",
-        &format!("{repo_id}:{}", branch.git_ref()),
-    )
-    .await
-}
-
-pub(super) async fn queue_github_branch_deletion<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    request_id: &str,
-    now_unix: u64,
-) -> Result<(), PostgresError> {
-    queue_pushed_branch_deletion(
-        conn,
-        repo_id,
-        &GitHubBranch::Request(request_id.to_string()),
-        now_unix,
-    )
-    .await
-}
-
-pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    branch: &GitHubBranch,
-    now_unix: u64,
-) -> Result<(), PostgresError> {
-    let Some(latest) = PushRow::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        format!(
-            "SELECT {SELECT_PUSH} FROM scope_github_pushes
-              WHERE repo_id = $1 AND ref = $2
-              ORDER BY sequence DESC
-              LIMIT 1"
-        ),
-        [repo_id.into(), branch.git_ref().into()],
-    ))
-    .one(conn)
-    .await?
-    else {
-        return Ok(());
-    };
-    let latest = latest.into_domain()?;
-    let deletion_pending_or_done =
-        latest.target_oid.is_none() && latest.state != GitHubPushState::Failed;
-    if deletion_pending_or_done {
-        return Ok(());
-    }
-    queue_github_push(conn, repo_id, branch, None, &latest.destination, now_unix).await?;
-    Ok(())
-}
-
-pub(super) async fn queue_github_branch_deletions_for_repository<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    now_unix: u64,
-) -> Result<(), PostgresError> {
-    let pushed = PushRow::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        format!(
-            "SELECT {SELECT_PUSH} FROM (
-                SELECT DISTINCT ON (ref) *
-                  FROM scope_github_pushes
-                 WHERE repo_id = $1
-                 ORDER BY ref, sequence DESC
-             ) latest
-             WHERE kind = 'push'"
-        ),
-        [repo_id.into()],
-    ))
-    .all(conn)
-    .await?;
-    for push in pushed {
-        let push = push.into_domain()?;
-        if !push.branch.owned_by_scope() {
-            continue;
-        }
-        queue_github_push(
-            conn,
-            repo_id,
-            &push.branch,
-            None,
-            &push.destination,
-            now_unix,
-        )
-        .await?;
-    }
-    Ok(())
-}
-
-pub(super) async fn queue_main_publication<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    main_oid: &str,
-    now_unix: u64,
-) -> Result<bool, PostgresError> {
-    let Some(destination) = super::github_connections::repository_github_connection(conn, repo_id)
-        .await?
-        .as_ref()
-        .and_then(GitHubPushDestination::for_main_publication)
-    else {
-        return Ok(false);
-    };
-    queue_github_push(
-        conn,
-        repo_id,
-        &GitHubBranch::Main,
-        Some(main_oid),
-        &destination,
-        now_unix,
-    )
-    .await?;
-    Ok(true)
-}
-
 impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "latest_github_main_push"))]
     pub async fn latest_github_main_push(
         &self,
         repo_id: &str,
     ) -> Result<Option<GitHubPush>, PostgresError> {
-        PushRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let row = PushRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "SELECT {SELECT_PUSH} FROM scope_github_pushes
@@ -549,10 +387,10 @@ impl RepositoryStore {
             ),
             [repo_id.into(), GitHubBranch::Main.git_ref().into()],
         ))
-        .one(self.db.as_ref())
-        .await?
-        .map(PushRow::into_domain)
-        .transpose()
+        .one(&tx)
+        .await?;
+        tx.commit().await?;
+        row.map(PushRow::into_domain).transpose()
     }
 }
 

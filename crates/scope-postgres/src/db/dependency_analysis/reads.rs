@@ -1,8 +1,7 @@
 use super::{database_u64, database_value};
 use crate::{
     db::{
-        RepositoryStore, begin_metadata_read_snapshot, decode_json,
-        repository_access::repository_access,
+        RepositoryStore, data_scope::DataScope, decode_json, repository_access::repository_access,
     },
     error::PostgresError,
 };
@@ -21,7 +20,10 @@ impl RepositoryStore {
         user_id: &str,
     ) -> Result<Option<DependencyCheck>, PostgresError> {
         let repo_id = repo_id(owner, name);
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&repo_id))
+            .await?;
         let Some(access) = repository_access(&tx, &repo_id, Some(user_id)).await? else {
             tx.commit().await?;
             return Ok(None);

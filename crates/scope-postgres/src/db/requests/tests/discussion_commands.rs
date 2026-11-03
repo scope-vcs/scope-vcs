@@ -179,6 +179,7 @@ async fn line_anchor_columns_are_all_set_or_all_null() {
     for (start_line, end_line) in [("NULL", "2"), ("1", "NULL"), ("NULL", "NULL")] {
         let error = store
             .db
+            .fixture()
             .execute_unprepared(&set_lines(start_line, end_line))
             .await
             .unwrap_err();
@@ -191,6 +192,7 @@ async fn line_anchor_columns_are_all_set_or_all_null() {
     }
     store
         .db
+        .fixture()
         .execute_unprepared(&set_lines("1", "2"))
         .await
         .unwrap();

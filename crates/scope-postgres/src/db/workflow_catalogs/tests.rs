@@ -1,10 +1,11 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     MetadataStore,
     test_support::fixtures::{repository, store_with_repositories, user},
 };
 use scope_domain::{content::DEFAULT_GIT_FILE_MODE, views::ViewId};
-use sea_orm::{DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{DatabaseBackend, Statement};
 use std::time::Duration;
 
 const REPO_ID: &str = "workflow-owner/repo";
@@ -25,7 +26,7 @@ async fn insert_head(store: &MetadataStore) -> GitHead {
     };
     let head = row.clone().try_into_domain().unwrap();
     row.into_active_model()
-        .insert(store.db.as_ref())
+        .insert(&store.db.fixture())
         .await
         .unwrap();
     head
@@ -82,7 +83,7 @@ async fn current_catalog_preserves_missing_repository_head_and_catalog() {
         RepositoryWorkflowCatalog::captured(REPO_ID, HEAD_OID, 7, vec![]).unwrap(),
         RepositoryWorkflowCatalog::rejected(REPO_ID, HEAD_OID, 7, "invalid workflow").unwrap(),
     ] {
-        apply_repository_workflow_catalog(store.db.as_ref(), &catalog)
+        apply_repository_workflow_catalog(&store.db.fixture(), &catalog)
             .await
             .unwrap();
         let snapshot = repositories
@@ -101,7 +102,7 @@ async fn current_catalog_keeps_source_mismatches_for_caller_validation() {
     let store = fixture();
     let head = insert_head(&store).await;
     let stale = RepositoryWorkflowCatalog::captured(REPO_ID, "2".repeat(40), 6, vec![]).unwrap();
-    apply_repository_workflow_catalog(store.db.as_ref(), &stale)
+    apply_repository_workflow_catalog(&store.db.fixture(), &stale)
         .await
         .unwrap();
     let snapshot = store
@@ -114,7 +115,7 @@ async fn current_catalog_keeps_source_mismatches_for_caller_validation() {
     assert_eq!(snapshot.catalog, Some(stale.clone()));
 
     entities::git_head::Entity::delete_by_id(REPO_ID)
-        .exec(store.db.as_ref())
+        .exec(&store.db.fixture())
         .await
         .unwrap();
     let without_head = store
@@ -132,11 +133,15 @@ async fn current_catalog_reads_head_and_files_from_one_snapshot_during_a_push() 
     let store = fixture();
     let head = insert_head(&store).await;
     let catalog = captured_catalog();
-    apply_repository_workflow_catalog(store.db.as_ref(), &catalog)
+    apply_repository_workflow_catalog(&store.db.fixture(), &catalog)
         .await
         .unwrap();
 
-    let writer = store.db.begin().await.unwrap();
+    let writer = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     writer
         .execute_unprepared("LOCK TABLE scope_git_heads IN ACCESS EXCLUSIVE MODE")
         .await
@@ -209,7 +214,7 @@ async fn current_catalog_reads_head_and_files_from_one_snapshot_during_a_push() 
 #[tokio::test]
 async fn catalog_replaces_complete_snapshots_and_detects_corruption() {
     let store = fixture();
-    let db = store.db.as_ref();
+    let db = &store.db.fixture();
 
     let first_file = RepositoryWorkflowFile::from_content(
         "/.scope/runs/checks.yml",

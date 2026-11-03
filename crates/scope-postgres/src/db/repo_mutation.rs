@@ -1,6 +1,7 @@
 use super::{
     RepositoryStore, acquire_aggregate_lock,
     cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
+    data_scope::DataScope,
     entities,
     git_compaction::schedule_git_compaction,
     git_segments::register_git_pool_pack,
@@ -13,7 +14,7 @@ use super::{
     request_rows::open_request_counts_by_view,
     workflow_catalogs::apply_repository_workflow_catalog,
 };
-use sea_orm::{DatabaseTransaction, EntityTrait, TransactionTrait};
+use sea_orm::{DatabaseTransaction, EntityTrait};
 use std::{collections::BTreeMap, fmt};
 use {
     crate::error::PostgresError,
@@ -141,7 +142,7 @@ impl RepositoryStore {
         name: &str,
     ) -> Result<(DatabaseTransaction, Repository), PostgresError> {
         let repo_id = repo_id(owner, name);
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         acquire_aggregate_lock(&tx, "repository", &repo_id).await?;
         let repo = entities::repository::Entity::find_by_id(&repo_id)
             .one(&tx)

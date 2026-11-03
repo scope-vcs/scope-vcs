@@ -10,7 +10,7 @@ async fn review_context_backfill_preserves_saved_revision_bases_and_only_links_c
     migrations::Migrator::up(db.as_ref(), Some(previous_count as u32))
         .await
         .unwrap();
-    db.execute_unprepared(
+    super::system(&db).fixture().execute_unprepared(
         r#"
         INSERT INTO scope_users (id, handle, email, email_verified)
         VALUES ('base-owner', 'base-owner', 'base-owner@example.test', TRUE);
@@ -58,7 +58,8 @@ async fn review_context_backfill_preserves_saved_revision_bases_and_only_links_c
 
     migrations::Migrator::up(db.as_ref(), None).await.unwrap();
 
-    let revisions = db
+    let revisions = super::system(&db)
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT id, base_kind, review_base_oid, main_ancestor_oid, rewrote_history, git_snapshot
@@ -92,7 +93,8 @@ async fn review_context_backfill_preserves_saved_revision_bases_and_only_links_c
             serde_json::json!({ "saved": expected_snapshot })
         );
     }
-    let evaluations = db
+    let evaluations = super::system(&db)
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT id, request_id, revision_id, review_base_oid, base_version
@@ -117,7 +119,8 @@ async fn review_context_backfill_preserves_saved_revision_bases_and_only_links_c
         );
         assert_eq!(row.try_get::<i64>("", "base_version").unwrap(), 1);
     }
-    let requests = db
+    let requests = super::system(&db)
+        .fixture()
         .query_all_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT request.id, request.base_kind, request.main_ancestor_oid,
@@ -177,10 +180,12 @@ async fn review_context_backfill_preserves_saved_revision_bases_and_only_links_c
         evaluations[0].try_get::<String>("", "id").unwrap(),
         expected_evaluation.id
     );
-    db.execute_unprepared("DELETE FROM scope_requests WHERE id = 'current'")
+    super::system(&db)
+        .fixture()
+        .execute_unprepared("DELETE FROM scope_requests WHERE id = 'current'")
         .await
         .unwrap();
-    let remaining = db.query_one_raw(Statement::from_string(
+    let remaining = super::system(&db).fixture().query_one_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT count(*) AS count FROM scope_request_check_evaluations WHERE request_id = 'current'",
     )).await.unwrap().unwrap();

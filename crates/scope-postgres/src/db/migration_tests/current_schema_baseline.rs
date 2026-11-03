@@ -4,8 +4,10 @@ const BASELINE: &str = "m0084_current_schema_baseline";
 
 pub(super) async fn baseline_database(db: &DatabaseConnection) {
     migrations::Migrator::up(db, Some(1)).await.unwrap();
-    db.execute_unprepared(
-        "INSERT INTO scope_users (id, handle, email, email_verified)
+    super::system(db)
+        .fixture()
+        .execute_unprepared(
+            "INSERT INTO scope_users (id, handle, email, email_verified)
          VALUES ('retained-user', 'retained', 'retained@scope.test', TRUE);
          INSERT INTO scope_auth_identities (provider, subject, user_id)
          VALUES ('clerk', 'retained-subject', 'retained-user');
@@ -17,13 +19,14 @@ pub(super) async fn baseline_database(db: &DatabaseConnection) {
              7, 7, '{}'::jsonb, '{}'::jsonb, 'retained-incarnation'
          );
          SELECT setval('scope_run_creation_sequence', 41, TRUE);",
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
 }
 
 pub(super) async fn sequence_state(db: &DatabaseConnection) -> (i64, bool) {
-    let row = db
+    let row = super::system(db)
+        .fixture()
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT last_value, is_called FROM scope_run_creation_sequence",
@@ -55,7 +58,7 @@ async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
             BASELINE,
         ],
     ] {
-        replace_ledger(&db, &ledger).await;
+        replace_ledger(db.as_ref(), &ledger).await;
         let before = representative_business_snapshot(&db).await;
         let sequence = sequence_state(&db).await;
 
@@ -81,7 +84,7 @@ async fn ledgers_outside_the_canonical_prefix_are_rejected_without_changes() {
                 "{ledger:?}: {error}"
             );
         }
-        assert_eq!(applied_versions(&db).await, ledger);
+        assert_eq!(applied_versions(db.as_ref()).await, ledger);
         assert_eq!(representative_business_snapshot(&db).await, before);
         assert_eq!(sequence_state(&db).await, sequence);
     }
@@ -92,8 +95,12 @@ async fn preflight_refuses_baseline_schema_drift_without_changing_the_ledger() {
     let (_target, db, _lease) = isolated_database().await;
     baseline_database(&db).await;
     let drift = "ALTER TABLE scope_users ALTER COLUMN handle DROP NOT NULL";
-    db.execute_unprepared(drift).await.unwrap();
-    let ledger = applied_versions(&db).await;
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(drift)
+        .await
+        .unwrap();
+    let ledger = applied_versions(db.as_ref()).await;
     let before = representative_business_snapshot(&db).await;
 
     let error = migrations::preflight(&db, Default::default())
@@ -104,7 +111,7 @@ async fn preflight_refuses_baseline_schema_drift_without_changing_the_ledger() {
         error.to_string().contains("schema drift"),
         "{drift}: {error}"
     );
-    assert_eq!(applied_versions(&db).await, ledger);
+    assert_eq!(applied_versions(db.as_ref()).await, ledger);
     assert_eq!(representative_business_snapshot(&db).await, before);
 }
 
@@ -169,17 +176,19 @@ async fn inventory_after(db: &DatabaseConnection, drift: &str) -> serde_json::Va
 #[tokio::test]
 async fn baseline_initialization_refuses_an_untracked_nonempty_schema() {
     let (_target, db, _lease) = isolated_database().await;
-    db.execute_unprepared(
-        "CREATE TABLE retained_unknown (id text); INSERT INTO retained_unknown VALUES ('keep')",
-    )
-    .await
-    .unwrap();
+    super::system(&db)
+        .fixture()
+        .execute_unprepared(
+            "CREATE TABLE retained_unknown (id text); INSERT INTO retained_unknown VALUES ('keep')",
+        )
+        .await
+        .unwrap();
     let error = migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap_err();
     assert!(error.to_string().contains("empty schema"));
-    assert!(relation_exists(&db, "retained_unknown").await);
-    assert!(!relation_exists(&db, "seaql_migrations").await);
+    assert!(relation_exists(db.as_ref(), "retained_unknown").await);
+    assert!(!relation_exists(db.as_ref(), "seaql_migrations").await);
 }
 
 #[tokio::test]
@@ -214,7 +223,7 @@ async fn preflight_checks_the_baseline_schema_with_writers_online_without_changi
 async fn preflight_rejects_upload_constraint_drift_and_rolls_back_metadata() {
     let (target, db, _lease) = isolated_database().await;
     baseline_database(&db).await;
-    db.execute_unprepared(
+    super::system(&db).fixture().execute_unprepared(
         "ALTER TABLE scope_git_segment_uploads
          DROP CONSTRAINT scope_git_segment_upload_state,
          DROP CONSTRAINT scope_git_segment_upload_values,

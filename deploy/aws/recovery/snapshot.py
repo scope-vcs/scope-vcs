@@ -12,15 +12,16 @@ def snapshot(url, destination, include_cache=False):
     with psycopg.connect(url, row_factory=dict_row, autocommit=True) as connection:
         connection.execute("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
         connection.execute("SET LOCAL statement_timeout = '30min'")
+        connection.execute("SET LOCAL scope.system_reason = 'database-backup'")
         exported = connection.execute("SELECT pg_export_snapshot() AS id").fetchone()["id"]
         from psycopg.conninfo import conninfo_to_dict
         parameters = conninfo_to_dict(url)
-        environment = {"PATH": os.environ.get("PATH", ""), "PGCONNECT_TIMEOUT": "10"}
+        environment = {"PATH": os.environ.get("PATH", ""), "PGCONNECT_TIMEOUT": "10", "PGOPTIONS": "-c scope.system_reason=database-backup"}
         for option, name in {"host": "PGHOST", "hostaddr": "PGHOSTADDR", "port": "PGPORT", "user": "PGUSER", "password": "PGPASSWORD", "sslmode": "PGSSLMODE", "sslrootcert": "PGSSLROOTCERT", "sslcert": "PGSSLCERT", "sslkey": "PGSSLKEY"}.items():
             if option in parameters:
                 environment[name] = parameters[option]
         result = subprocess.run(
-            ["pg_dump", "--dbname=" + parameters["dbname"], "--no-password", "--format=custom", "--no-owner", "--no-acl", "--snapshot=" + exported, "--file=" + str(destination)],
+            ["pg_dump", "--dbname=" + parameters["dbname"], "--enable-row-security", "--no-password", "--format=custom", "--no-owner", "--no-acl", "--snapshot=" + exported, "--file=" + str(destination)],
             env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=1800,
         )
         if result.returncode:

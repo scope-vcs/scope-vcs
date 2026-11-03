@@ -1,6 +1,7 @@
 use super::{
     RepositoryCollaborationMutation, RepositoryStore, acquire_aggregate_lock,
     collaboration_rows::{lock_collaboration_state, save_collaboration_state},
+    data_scope::{DataScope, SystemReason},
     entities,
     integer_columns::u64_to_i64,
 };
@@ -22,7 +23,7 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
     ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, ExprTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect,
     sea_query::{LockBehavior, LockType},
 };
 use std::collections::BTreeMap;
@@ -53,7 +54,7 @@ impl RepositoryStore {
         PostgresError,
     > {
         let repo_id = repo_id(&command.owner, &command.name);
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         let mut repo = lock_collaboration_state(&tx, &repo_id)
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
@@ -92,7 +93,10 @@ impl RepositoryStore {
         limit: u64,
     ) -> Result<Vec<String>, PostgresError> {
         let now = u64_to_i64(now_unix, "repository invite email time")?;
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::InviteEmailDelivery))
+            .await?;
         Entity::delete_many()
             .filter(Column::InviteId.is_null())
             .filter(Column::CreatedAtUnix.lte(u64_to_i64(
@@ -141,10 +145,10 @@ impl RepositoryStore {
         now_unix: u64,
     ) -> Result<Option<RepositoryCollaborationMutation<RepositoryInviteEmailDelivery>>, PostgresError>
     {
-        let tx = self.db.begin().await?;
-        let Some(repo_id) = email_repository_id(&tx, email_id).await? else {
+        let Some(repo_id) = self.email_repository_id(email_id).await? else {
             return Ok(None);
         };
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         let mut repo = lock_collaboration_state(&tx, &repo_id)
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
@@ -180,10 +184,10 @@ impl RepositoryStore {
         provider_message_id: Option<String>,
         now_unix: u64,
     ) -> Result<Option<RepositoryCollaborationMutation<RepositoryInviteEmail>>, PostgresError> {
-        let tx = self.db.begin().await?;
-        let Some(repo_id) = email_repository_id(&tx, email_id).await? else {
+        let Some(repo_id) = self.email_repository_id(email_id).await? else {
             return Ok(None);
         };
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         let mut repo = lock_collaboration_state(&tx, &repo_id)
             .await?
             .ok_or_else(|| PostgresError::not_found(format!("repo {repo_id} not found")))?;
@@ -294,21 +298,27 @@ pub(super) async fn queue_invite_email(
     Ok(email)
 }
 
-async fn email_repository_id<C>(conn: &C, email_id: &str) -> Result<Option<String>, PostgresError>
-where
-    C: ConnectionTrait,
-{
-    let Some(invite_id) = Entity::find_by_id(email_id.to_string())
-        .one(conn)
-        .await?
-        .and_then(|email| email.invite_id)
-    else {
-        return Ok(None);
-    };
-    Ok(entities::repository_invite::Entity::find_by_id(invite_id)
-        .one(conn)
-        .await?
-        .map(|invite| invite.repo_id))
+impl RepositoryStore {
+    async fn email_repository_id(&self, email_id: &str) -> Result<Option<String>, PostgresError> {
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::System(SystemReason::InviteEmailDelivery))
+            .await?;
+        let Some(invite_id) = Entity::find_by_id(email_id.to_string())
+            .one(&tx)
+            .await?
+            .and_then(|email| email.invite_id)
+        else {
+            tx.commit().await?;
+            return Ok(None);
+        };
+        let repo_id = entities::repository_invite::Entity::find_by_id(invite_id)
+            .one(&tx)
+            .await?
+            .map(|invite| invite.repo_id);
+        tx.commit().await?;
+        Ok(repo_id)
+    }
 }
 
 async fn claimed_email(

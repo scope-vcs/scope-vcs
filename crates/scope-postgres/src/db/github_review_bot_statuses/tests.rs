@@ -78,6 +78,7 @@ fn status(login: &str, state: GitHubReviewBotState) -> GitHubReviewBotStatus {
 async fn live_link(store: &MetadataStore) -> String {
     store
         .db
+        .fixture()
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT link_id FROM scope_github_connections WHERE repo_id = $1",

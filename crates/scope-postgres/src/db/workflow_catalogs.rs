@@ -1,12 +1,16 @@
-use super::{RepositoryStore, begin_metadata_read_snapshot, entities};
+use super::{
+    RepositoryStore,
+    data_scope::{DataScope, ScopedDatabase, SystemReason},
+    entities,
+};
 use crate::error::PostgresError;
 use scope_domain::{
     repository::git::GitHead,
     runs::catalog::{RepositoryWorkflowCatalog, RepositoryWorkflowFile},
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, sea_query::OnConflict,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
+    QueryOrder, QuerySelect, sea_query::OnConflict,
 };
 
 pub struct CurrentRepositoryWorkflowCatalog {
@@ -86,7 +90,10 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Option<CurrentRepositoryWorkflowCatalog>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(repo_id))
+            .await?;
         let snapshot = match entities::repository::Entity::find_by_id(repo_id)
             .select_only()
             .column(entities::repository::Column::Id)
@@ -115,7 +122,7 @@ impl RepositoryStore {
         repo_id: &str,
     ) -> Result<(), PostgresError> {
         entities::repository_workflow_catalog::Entity::delete_by_id(repo_id)
-            .exec(self.db.as_ref())
+            .exec(&self.db.fixture())
             .await?;
         Ok(())
     }
@@ -133,7 +140,7 @@ impl RepositoryStore {
              WHERE repo_id = $1",
             [repo_id.into(), source_head_oid.into()],
         );
-        self.db.execute_raw(statement).await?;
+        self.db.fixture().execute_raw(statement).await?;
         Ok(())
     }
 
@@ -152,15 +159,17 @@ impl RepositoryStore {
              WHERE repo_id = $1 AND path = $2",
             [repo_id.into(), path.into(), content_bytes.into()],
         );
-        self.db.execute_raw(statement).await?;
+        self.db.fixture().execute_raw(statement).await?;
         Ok(())
     }
 }
 
 pub(super) async fn load_repository_workflow_catalogs(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
 ) -> Result<Vec<RepositoryWorkflowCatalog>, PostgresError> {
-    let tx = begin_metadata_read_snapshot(db).await?;
+    let tx = db
+        .begin_read_snapshot(DataScope::System(SystemReason::WorkflowCatalogMaintenance))
+        .await?;
     let headers = entities::repository_workflow_catalog::Entity::find()
         .order_by_asc(entities::repository_workflow_catalog::Column::RepoId)
         .all(&tx)

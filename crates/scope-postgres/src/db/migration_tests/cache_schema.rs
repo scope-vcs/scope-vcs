@@ -8,8 +8,9 @@ const IDENTITY_DIGEST: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
     let store = migrated_store();
     let db = Arc::clone(&store.db);
-    db.execute_unprepared(&format!(
-        "
+    db.fixture()
+        .execute_unprepared(&format!(
+            "
         INSERT INTO scope_users (id, handle, email, email_verified)
         VALUES ('cache-user', 'cache-owner', 'cache@scope.test', TRUE);
         INSERT INTO scope_repositories (
@@ -48,9 +49,9 @@ async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
             repository_id, checksum_sha256, not_before_unix, attempts, last_error
         ) VALUES ('{REPOSITORY_ID}', '{OBJECT_DIGEST}', 3610, 0, NULL);
         "
-    ))
-    .await
-    .unwrap();
+        ))
+        .await
+        .unwrap();
 
     for index in [
         "idx_scope_cache_objects_access",
@@ -62,12 +63,16 @@ async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
         "idx_scope_cache_orphan_uploads_due",
         "idx_scope_cache_deletion_queue_due",
     ] {
-        assert!(relation_exists(db.as_ref(), index).await, "missing {index}");
+        assert!(
+            relation_exists(&db.fixture(), index).await,
+            "missing {index}"
+        );
     }
 
     assert!(
-        db.execute_unprepared(&format!(
-            "INSERT INTO scope_cache_objects (
+        db.fixture()
+            .execute_unprepared(&format!(
+                "INSERT INTO scope_cache_objects (
                 repository_id, checksum_sha256, storage_backend, object_key,
                 size_bytes, created_at_unix, last_accessed_at_unix
             ) VALUES (
@@ -75,14 +80,15 @@ async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
                 'repos/{REPOSITORY_ID}/objects/sha256/' || repeat('A', 64),
                 1, 0, 0
             )"
-        ))
-        .await
-        .is_err(),
+            ))
+            .await
+            .is_err(),
         "object digests must be lowercase SHA-256"
     );
     assert!(
-        db.execute_unprepared(&format!(
-            "INSERT INTO scope_cache_uploads (
+        db.fixture()
+            .execute_unprepared(&format!(
+                "INSERT INTO scope_cache_uploads (
                 upload_id, repository_id, identity_digest, compatibility_group_digest,
                 checksum_sha256,
                 storage_backend, object_key, size_bytes,
@@ -94,31 +100,33 @@ async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
                 'repos/{REPOSITORY_ID}/objects/sha256/' || repeat('f', 64),
                 1073741825, 'active', 0, 1800
             )"
-        ))
-        .await
-        .is_err(),
+            ))
+            .await
+            .is_err(),
         "the launch object cap must be enforced"
     );
     assert!(
-        db.execute_unprepared(&format!(
-            "INSERT INTO scope_cache_references (
+        db.fixture()
+            .execute_unprepared(&format!(
+                "INSERT INTO scope_cache_references (
                 repository_id, identity_digest, compatibility_group_digest,
                 checksum_sha256, created_at_unix, expires_at_unix, last_accessed_at_unix
             ) VALUES (
                 '{REPOSITORY_ID}', repeat('f', 64), repeat('d', 64), repeat('e', 64),
                 10, 20, 10
             )"
-        ))
-        .await
-        .is_err(),
+            ))
+            .await
+            .is_err(),
         "references cannot name uncommitted objects"
     );
 
-    db.execute_unprepared(&format!(
-        "DELETE FROM scope_repositories WHERE id = '{REPOSITORY_ID}'"
-    ))
-    .await
-    .unwrap();
+    db.fixture()
+        .execute_unprepared(&format!(
+            "DELETE FROM scope_repositories WHERE id = '{REPOSITORY_ID}'"
+        ))
+        .await
+        .unwrap();
     for table in [
         "scope_cache_objects",
         "scope_cache_references",
@@ -127,6 +135,7 @@ async fn cache_service_schema_enforces_content_and_lifecycle_invariants() {
         "scope_cache_deletion_queue",
     ] {
         let count = db
+            .fixture()
             .query_one_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 format!("SELECT count(*) AS count FROM {table}"),

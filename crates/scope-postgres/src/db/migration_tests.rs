@@ -1,5 +1,6 @@
 use super::{
     TestDatabaseTarget,
+    data_scope::{DataScope, ScopedDatabase, SystemReason},
     test_support::{TestSchemaLease, connect_isolated_test_database},
 };
 use crate::migrations;
@@ -39,11 +40,15 @@ pub(super) async fn isolated_database() -> (
     (target, db, lease)
 }
 
+pub(super) fn system(db: &DatabaseConnection) -> ScopedDatabase {
+    ScopedDatabase::new(db.clone())
+}
+
 pub(super) fn migrated_store() -> super::MetadataStore {
     super::MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap()
 }
 
-pub(super) async fn relation_exists(db: &DatabaseConnection, relation: &str) -> bool {
+pub(super) async fn relation_exists(db: &impl ConnectionTrait, relation: &str) -> bool {
     db.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "SELECT to_regclass($1) IS NOT NULL AS exists",
@@ -56,7 +61,7 @@ pub(super) async fn relation_exists(db: &DatabaseConnection, relation: &str) -> 
     .unwrap()
 }
 
-pub(super) async fn applied_versions(db: &DatabaseConnection) -> Vec<String> {
+pub(super) async fn applied_versions(db: &impl ConnectionTrait) -> Vec<String> {
     db.query_all_raw(Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT version FROM seaql_migrations ORDER BY version".to_string(),
@@ -68,7 +73,7 @@ pub(super) async fn applied_versions(db: &DatabaseConnection) -> Vec<String> {
     .collect()
 }
 
-pub(super) async fn replace_ledger(db: &DatabaseConnection, ledger: &[&str]) {
+pub(super) async fn replace_ledger(db: &impl ConnectionTrait, ledger: &[&str]) {
     db.execute_unprepared("DELETE FROM seaql_migrations")
         .await
         .unwrap();
@@ -84,9 +89,11 @@ pub(super) async fn replace_ledger(db: &DatabaseConnection, ledger: &[&str]) {
 }
 
 async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
-    db.query_one_raw(Statement::from_string(
-        DatabaseBackend::Postgres,
-        "
+    system(db)
+        .fixture()
+        .query_one_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "
             SELECT jsonb_build_object(
                 'users', (SELECT jsonb_agg(to_jsonb(item) ORDER BY id) FROM scope_users item),
                 'auth', (
@@ -119,13 +126,13 @@ async fn representative_business_snapshot(db: &DatabaseConnection) -> String {
                 )
             )::text AS value
         "
-        .to_string(),
-    ))
-    .await
-    .unwrap()
-    .unwrap()
-    .try_get::<String>("", "value")
-    .unwrap()
+            .to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<String>("", "value")
+        .unwrap()
 }
 
 #[tokio::test]
@@ -135,14 +142,16 @@ async fn reapplying_latest_migrations_is_a_data_preserving_noop() {
         .await
         .unwrap();
     migrations::assert_exact_state(db.as_ref()).await.unwrap();
-    db.execute_unprepared(
-        "
+    system(&db)
+        .fixture()
+        .execute_unprepared(
+            "
             INSERT INTO scope_users (id, handle, email, email_verified)
             VALUES ('user_latest', 'latest', 'latest@scope.test', TRUE)
         ",
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
     let before = representative_business_snapshot(db.as_ref()).await;
 
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
@@ -177,21 +186,25 @@ async fn exact_state_check_is_read_only_and_rejects_behind_and_ahead() {
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await
         .unwrap();
-    db.execute_unprepared(
-        "DELETE FROM seaql_migrations WHERE version = 'm0084_current_schema_baseline'",
-    )
-    .await
-    .unwrap();
+    system(&db)
+        .fixture()
+        .execute_unprepared(
+            "DELETE FROM seaql_migrations WHERE version = 'm0084_current_schema_baseline'",
+        )
+        .await
+        .unwrap();
     assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
 
-    db.execute_unprepared(
-        "
+    system(&db)
+        .fixture()
+        .execute_unprepared(
+            "
             INSERT INTO seaql_migrations (version, applied_at)
             VALUES ('m0084_current_schema_baseline', 0), ('m9999_unknown', 0)
         ",
-    )
-    .await
-    .unwrap();
+        )
+        .await
+        .unwrap();
     assert!(migrations::assert_exact_state(db.as_ref()).await.is_err());
 }
 

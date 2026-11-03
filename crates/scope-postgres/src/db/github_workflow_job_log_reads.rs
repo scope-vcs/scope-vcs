@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RepositoryStore,
     github_read_queue::GitHubReadQueue,
@@ -40,21 +41,25 @@ impl RepositoryStore {
         github_job_id: u64,
         now_unix: u64,
     ) -> Result<(), PostgresError> {
-        self.db
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "INSERT INTO scope_github_workflow_job_log_reads
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        tx.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "INSERT INTO scope_github_workflow_job_log_reads
                     (github_job_id, attempts, next_attempt_at_unix)
                  SELECT $1, 0, $2
                   WHERE NOT EXISTS (SELECT 1 FROM scope_github_workflow_job_logs
                                      WHERE github_job_id = $1)
                  ON CONFLICT DO NOTHING",
-                [
-                    u64_to_i64(github_job_id, "GitHub job id")?.into(),
-                    u64_to_i64(now_unix, "GitHub job log read time")?.into(),
-                ],
-            ))
-            .await?;
+            [
+                u64_to_i64(github_job_id, "GitHub job id")?.into(),
+                u64_to_i64(now_unix, "GitHub job log read time")?.into(),
+            ],
+        ))
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -65,10 +70,15 @@ impl RepositoryStore {
         retry_at_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubJobLogReadJob>, PostgresError> {
-        LOG_READS
-            .claim_due::<LogReadRow>(self.db.as_ref(), now_unix, retry_at_unix, limit)
-            .await?
-            .into_iter()
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let rows = LOG_READS
+            .claim_due::<LogReadRow>(&tx, now_unix, retry_at_unix, limit)
+            .await?;
+        tx.commit().await?;
+        rows.into_iter()
             .map(|row| {
                 Ok(GitHubJobLogReadJob {
                     repo_id: row.repo_id,
@@ -90,9 +100,10 @@ impl RepositoryStore {
         read: &GitHubJobLogReadJob,
         retry_at_unix: Option<u64>,
     ) -> Result<(), PostgresError> {
+        let tx = self.db.begin(DataScope::Repository(&read.repo_id)).await?;
         LOG_READS
             .finish(
-                self.db.as_ref(),
+                &tx,
                 &["attempts"],
                 vec![
                     u64_to_i64(read.github_job_id, "GitHub job id")?.into(),
@@ -100,7 +111,9 @@ impl RepositoryStore {
                 ],
                 retry_at_unix,
             )
-            .await
+            .await?;
+        tx.commit().await?;
+        Ok(())
     }
 }
 

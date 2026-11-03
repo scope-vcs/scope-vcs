@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RequestStore, entities,
     request_access::{ensure_user_exists, lock_request_repository},
@@ -8,7 +9,7 @@ use scope_domain::requests::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, Statement, TransactionTrait,
+    QueryFilter, QueryOrder, Statement,
 };
 
 impl RequestStore {
@@ -17,7 +18,13 @@ impl RequestStore {
         &self,
         request_id: &str,
     ) -> Result<Vec<RequestRating>, PostgresError> {
-        ratings_for_request(self.db.as_ref(), request_id).await
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(request_id))
+            .await?;
+        let ratings = ratings_for_request(&tx, request_id).await?;
+        tx.commit().await?;
+        Ok(ratings)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "create_request_rating"))]
@@ -25,7 +32,10 @@ impl RequestStore {
         &self,
         input: CreateRequestRatingInput,
     ) -> Result<RequestRating, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RequestRepository(&input.request_id))
+            .await?;
         let (_repo, request) =
             lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
@@ -44,8 +54,11 @@ impl RequestStore {
         &self,
         user_id: &str,
     ) -> Result<RequestReputation, PostgresError> {
-        let row = self
+        let tx = self
             .db
+            .begin(DataScope::System(SystemReason::UserReputation))
+            .await?;
+        let row = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
@@ -58,6 +71,7 @@ impl RequestStore {
             ))
             .await?
             .ok_or_else(|| PostgresError::internal_message("request reputation row is missing"))?;
+        tx.commit().await?;
         let score_sum = row
             .try_get::<i64>("", "score_sum")?
             .try_into()
@@ -176,7 +190,7 @@ mod tests {
         entities::request::Model::from_domain(&second_request)
             .unwrap()
             .into_active_model()
-            .insert(request_store.db.as_ref())
+            .insert(&request_store.db.fixture())
             .await
             .unwrap();
         request_store

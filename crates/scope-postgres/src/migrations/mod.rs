@@ -22,6 +22,7 @@ mod m0103_review_request_times;
 mod m0104_request_revision_diff_stats;
 mod m0105_view_pool_packs;
 mod m0106_git_fetch_advertisements;
+mod m0107_repository_row_security;
 
 #[cfg(test)]
 pub(crate) use baseline::schema_inventory;
@@ -164,6 +165,10 @@ fn migration_registry() -> Vec<RegisteredMigration> {
             migration: Box::new(m0106_git_fetch_advertisements::Migration),
             metadata_restore_safe: true,
         },
+        RegisteredMigration {
+            migration: Box::new(m0107_repository_row_security::Migration),
+            metadata_restore_safe: true,
+        },
     ]
 }
 
@@ -188,6 +193,7 @@ pub async fn apply_in_maintenance(
 ) -> Result<(), DbErr> {
     let tx = db.begin().await?;
     set_operation_limits(&tx, limits).await?;
+    crate::db::data_scope::enter_schema_migration_scope(&tx).await?;
     lock_migration_inventory(&tx).await?;
     plan(&tx).await?;
     Migrator::up(&tx, None).await?;

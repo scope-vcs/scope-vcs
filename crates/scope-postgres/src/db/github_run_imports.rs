@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     RepositoryStore,
     entities::decode_enum,
@@ -15,7 +16,7 @@ use scope_domain::{
     github_workflow_runs::GitHubWorkflowRun,
     repository::RepositoryIncarnation,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
 const SELECT_IMPORT: &str = "repo_id, github_repository_id, run_count, state, attempts, \
     imported_count, last_error, queued_at_unix, finished_at_unix";
@@ -36,7 +37,10 @@ struct ImportRow {
 impl RepositoryStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_run_import_count"))]
     pub async fn github_run_import_count(&self, repo_id: &str) -> Result<u32, PostgresError> {
-        run_import_count(self.db.as_ref(), repo_id).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let count = run_import_count(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(count)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "set_github_run_import_count"))]
@@ -89,7 +93,10 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Option<GitHubRunImport>, PostgresError> {
-        load_import(self.db.as_ref(), repo_id).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let import = load_import(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(import)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "claim_due_github_run_imports"))]
@@ -100,7 +107,11 @@ impl RepositoryStore {
         lease_until_unix: u64,
         limit: u64,
     ) -> Result<Vec<GitHubRunImport>, PostgresError> {
-        ImportRow::find_by_statement(Statement::from_sql_and_values(
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubSync))
+            .await?;
+        let rows = ImportRow::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             format!(
                 "UPDATE scope_github_run_imports import
@@ -124,11 +135,10 @@ impl RepositoryStore {
                 u64_to_i64(limit, "GitHub run import batch size")?.into(),
             ],
         ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(ImportRow::into_domain)
-        .collect()
+        .all(&tx)
+        .await?;
+        tx.commit().await?;
+        rows.into_iter().map(ImportRow::into_domain).collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "store_github_run_import_page"))]
@@ -138,7 +148,10 @@ impl RepositoryStore {
         claim_token: &str,
         runs: &[GitHubWorkflowRun],
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::GitHubMirrorOwnership))
+            .await?;
         let Some(row) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -201,8 +214,8 @@ impl RepositoryStore {
                 Some(now),
             ),
         };
-        let result = self
-            .db
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let result = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "UPDATE scope_github_run_imports
@@ -223,6 +236,7 @@ impl RepositoryStore {
                 ],
             ))
             .await?;
+        tx.commit().await?;
         Ok(result.rows_affected() == 1)
     }
 }

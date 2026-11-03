@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{RepositoryStore, github_connections::repository_github_connection};
 use crate::error::PostgresError;
 use scope_domain::{
@@ -14,7 +15,10 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Vec<GitHubReviewBot>, PostgresError> {
-        review_bots(self.db.as_ref(), repo_id).await
+        let tx = self.db.begin(DataScope::Repository(repo_id)).await?;
+        let bots = review_bots(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(bots)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "set_github_review_bots"))]

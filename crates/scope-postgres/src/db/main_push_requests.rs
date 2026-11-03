@@ -1,3 +1,4 @@
+use super::data_scope::DataScope;
 use super::{
     RequestStore, acquire_aggregate_lock, entities,
     projection_read_models::live_projection_read_model,
@@ -13,7 +14,7 @@ use scope_domain::requests::{
     MainPushRequestFacts, MainPushRequestOutcome, StartMainPushRequestInput,
     start_main_push_request,
 };
-use sea_orm::{ActiveModelTrait, IntoActiveModel, TransactionTrait};
+use sea_orm::{ActiveModelTrait, IntoActiveModel};
 
 impl RequestStore {
     pub async fn start_main_push_request(
@@ -21,7 +22,7 @@ impl RequestStore {
         input: StartMainPushRequestInput,
         objects: super::PushedRevisionObjects,
     ) -> Result<MainPushRequestOutcome, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(&input.repo_id)).await?;
         acquire_aggregate_lock(&tx, "repository", &input.repo_id).await?;
         acquire_aggregate_lock(&tx, "request", &input.id).await?;
         ensure_user_exists(&tx, &input.pusher_user_id).await?;

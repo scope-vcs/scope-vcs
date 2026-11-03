@@ -1,4 +1,5 @@
 use super::cli_sessions::{cli_session_summary_from_model, insert_cli_session_in_tx};
+use super::data_scope::DataScope;
 use super::{
     AuthStore, acquire_aggregate_lock,
     auth::{cleanup_expired_cli_rows, login_start_counts},
@@ -15,7 +16,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    TransactionTrait, sea_query::Expr,
+    sea_query::Expr,
 };
 
 impl AuthStore {
@@ -36,7 +37,7 @@ impl AuthStore {
             completed_at_unix: None,
             consumed_at_unix: None,
         };
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-auth", "start").await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         enforce_browser_login_start_limits(&tx, now_unix).await?;
@@ -54,7 +55,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<BrowserLoginCompletion, PostgresError> {
         let user_id = user.id.clone();
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-browser-request", request_id).await?;
         let Some(login) = entities::cli_browser_login::Entity::find_by_id(request_id)
             .one(&tx)
@@ -108,7 +109,7 @@ impl AuthStore {
         session: NewCliSession,
         now_unix: u64,
     ) -> Result<SessionIdentity, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-browser-request", request_id).await?;
         let Some(login) = entities::cli_browser_login::Entity::find_by_id(request_id)
             .one(&tx)
@@ -161,7 +162,7 @@ impl AuthStore {
             expires_at_unix: u64_to_i64(command.expires_at_unix, "CLI login expiry")?,
             consumed_at_unix: None,
         };
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-exchange-grant", &row.grant_hash).await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         row.into_active_model().insert(&tx).await?;
@@ -176,7 +177,7 @@ impl AuthStore {
         session: NewCliSession,
         now_unix: u64,
     ) -> Result<SessionIdentity, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-exchange-grant", grant_hash).await?;
         let Some(grant) = entities::cli_exchange_grant::Entity::find_by_id(grant_hash)
             .one(&tx)
@@ -218,7 +219,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<Vec<CliSessionSummary>, PostgresError> {
         let user_id = user.id.clone();
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         let sessions = entities::cli_session::Entity::find()
             .filter(entities::cli_session::Column::UserId.eq(user_id))
             .filter(entities::cli_session::Column::RevokedAtUnix.is_null())
@@ -244,7 +245,7 @@ impl AuthStore {
         now_unix: u64,
     ) -> Result<(), PostgresError> {
         let user_id = user.id.clone();
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         acquire_aggregate_lock(&tx, "cli-session", session_id).await?;
         cleanup_expired_cli_rows(&tx, now_unix).await?;
         let result = entities::cli_session::Entity::update_many()

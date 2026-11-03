@@ -3,11 +3,11 @@ use super::{
     types::{SourceBlobCleanupBatch, SourceBlobCleanupDecision},
 };
 use crate::{
-    db::{CleanupStore, entities},
+    db::{CleanupStore, data_scope::DataScope, entities},
     error::PostgresError,
 };
 use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup, repository::repo_id};
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use std::collections::BTreeSet;
 
 impl CleanupStore {
@@ -25,7 +25,7 @@ impl CleanupStore {
             return Ok(SourceBlobCleanupDecision::StaleClaim);
         };
         let encoded = encode_content_ref(&blob.content_ref)?;
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::NoRepository).await?;
         let job = entities::source_blob_cleanup_job::Entity::find_by_id(encoded.clone())
             .one(&tx)
             .await?;

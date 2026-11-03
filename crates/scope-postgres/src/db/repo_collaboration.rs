@@ -5,6 +5,7 @@ use super::{
         load_collaboration_state, load_repository_collaboration, lock_collaboration_state,
         save_collaboration_state,
     },
+    data_scope::{DataScope, SystemReason},
     entities,
     repo_invite_emails::{latest_invite_emails, queue_invite_email},
 };
@@ -24,7 +25,7 @@ use scope_domain::{
     },
     repository::{RepoRecord, RepositoryIncarnation, access::RepositoryAccessContext, repo_id},
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::collections::BTreeMap;
 
 pub struct RepositoryCollaborationMutation<T> {
@@ -124,7 +125,10 @@ impl RepositoryStore {
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "user"))]
     pub async fn user(&self, user_id: &str) -> Result<UserAccount, PostgresError> {
-        load_user_by_id(self.db.as_ref(), user_id).await
+        let tx = self.db.begin(DataScope::NoRepository).await?;
+        let user = load_user_by_id(&tx, user_id).await?;
+        tx.commit().await?;
+        Ok(user)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "create_repository_invite"))]
@@ -136,7 +140,8 @@ impl RepositoryStore {
         PostgresError,
     > {
         let now_unix = command.now_unix;
-        let tx = self.db.begin().await?;
+        let repo_id = repo_id(&command.owner, &command.name);
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         let mut repo = lock_owned_collaboration(&tx, &command.owner, &command.name).await?;
         let before = repo.clone();
         let invitee = user_by_normalized_email(&tx, &command.invited_email).await?;
@@ -241,7 +246,8 @@ impl RepositoryStore {
         member_user_id: &str,
         now_unix: u64,
     ) -> Result<RepositoryCollaborationMutation<RepositoryMember>, PostgresError> {
-        let tx = self.db.begin().await?;
+        let repo_id = repo_id(owner, name);
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         let mut repo = lock_owned_collaboration(&tx, owner, name).await?;
         let before = repo.clone();
         let removed = remove_repository_member(&mut repo, owner_user_id, member_user_id)?;
@@ -267,12 +273,17 @@ impl RepositoryStore {
         &self,
         link_hash: &str,
     ) -> Result<Option<(CollaborationState, RepositoryInvite)>, PostgresError> {
-        let Some(repo_id) = repo_id_for_invite_link(self.db.as_ref(), link_hash).await? else {
+        let Some(repo_id) = self.repo_id_for_invite_link(link_hash).await? else {
             return Ok(None);
         };
-        let repo = load_collaboration_state(self.db.as_ref(), &repo_id)
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&repo_id))
+            .await?;
+        let repo = load_collaboration_state(&tx, &repo_id)
             .await?
             .ok_or_else(|| PostgresError::internal_message("repository invite repo is missing"))?;
+        tx.commit().await?;
         let invite = repo
             .collaboration
             .invitations
@@ -289,10 +300,11 @@ impl RepositoryStore {
         user: UserAccount,
         now_unix: u64,
     ) -> Result<(RepositoryAccessContext, AcceptRepositoryInviteOutcome), PostgresError> {
-        let tx = self.db.begin().await?;
-        let repo_id = repo_id_for_invite_link(&tx, link_hash)
+        let repo_id = self
+            .repo_id_for_invite_link(link_hash)
             .await?
             .ok_or_else(|| PostgresError::not_found("repository invite not found"))?;
+        let tx = self.db.begin(DataScope::Repository(&repo_id)).await?;
         let mut repo = lock_collaboration_state(&tx, &repo_id)
             .await?
             .ok_or_else(|| PostgresError::not_found("repository invite not found"))?;
@@ -314,25 +326,30 @@ impl RepositoryStore {
     }
 }
 
-async fn repo_id_for_invite_link<C>(
-    conn: &C,
-    link_hash: &str,
-) -> Result<Option<String>, PostgresError>
-where
-    C: sea_orm::ConnectionTrait,
-{
-    let Some(link) = entities::repository_invite_link::Entity::find_by_id(link_hash.to_string())
-        .one(conn)
-        .await?
-    else {
-        return Ok(None);
-    };
-    Ok(
-        entities::repository_invite::Entity::find_by_id(link.invite_id)
-            .one(conn)
+impl RepositoryStore {
+    async fn repo_id_for_invite_link(
+        &self,
+        link_hash: &str,
+    ) -> Result<Option<String>, PostgresError> {
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::System(SystemReason::InviteLinkResolution))
+            .await?;
+        let Some(link) =
+            entities::repository_invite_link::Entity::find_by_id(link_hash.to_string())
+                .one(&tx)
+                .await?
+        else {
+            tx.commit().await?;
+            return Ok(None);
+        };
+        let repo_id = entities::repository_invite::Entity::find_by_id(link.invite_id)
+            .one(&tx)
             .await?
-            .map(|invite| invite.repo_id),
-    )
+            .map(|invite| invite.repo_id);
+        tx.commit().await?;
+        Ok(repo_id)
+    }
 }
 
 async fn lock_owned_collaboration(
@@ -351,7 +368,8 @@ async fn mutate_collaboration<T>(
     name: &str,
     op: impl FnOnce(&mut CollaborationState) -> Result<T, DomainError>,
 ) -> Result<RepositoryCollaborationMutation<T>, PostgresError> {
-    let tx = store.db.begin().await?;
+    let repo_id = repo_id(owner, name);
+    let tx = store.db.begin(DataScope::Repository(&repo_id)).await?;
     let mut repo = lock_owned_collaboration(&tx, owner, name).await?;
     let before = repo.clone();
     let value = op(&mut repo)?;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     CloseRequestCommand, MetadataStore, RequestRevisionContextPublication, SubmitRequestCommand,
 };
@@ -9,7 +10,6 @@ use scope_domain::{
     },
     views::ViewId,
 };
-use sea_orm::TransactionTrait;
 
 fn advance_main(
     repo: &mut scope_domain::repository::Repository,
@@ -465,7 +465,11 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
         },
     )
     .unwrap();
-    let tx = store.db.begin().await.unwrap();
+    let tx = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
         .await
         .unwrap();
@@ -489,7 +493,11 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
         load(&store, "parent").await.state(),
         scope_domain::requests::RequestState::Open
     );
-    let tx = store.db.begin().await.unwrap();
+    let tx = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     acquire_aggregate_lock(&tx, "repository", &parent.repo_id)
         .await
         .unwrap();

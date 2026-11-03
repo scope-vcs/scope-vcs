@@ -1,5 +1,5 @@
 use super::integer_columns;
-use super::{RepositoryStore, begin_metadata_read_snapshot, entities};
+use super::{RepositoryStore, data_scope::DataScope, entities};
 use crate::error::PostgresError;
 use scope_domain::{
     repository::{
@@ -98,7 +98,10 @@ impl RepositoryStore {
         viewer_user_id: Option<&str>,
     ) -> Result<Option<(DatabaseTransaction, RepositoryAccessContext, bool)>, PostgresError> {
         for _ in 0..3 {
-            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+            let tx = self
+                .db
+                .begin_read_snapshot(DataScope::Repository(repo_id))
+                .await?;
             let Some(context) = repository_access(&tx, repo_id, viewer_user_id).await? else {
                 tx.commit().await?;
                 return Ok(None);
@@ -143,8 +146,12 @@ impl RepositoryStore {
         name: &str,
         viewer_user_id: Option<&str>,
     ) -> Result<Option<RepositoryAccessContext>, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
-        let context = repository_access(&tx, &repo_id(owner, name), viewer_user_id).await?;
+        let repo_id = repo_id(owner, name);
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&repo_id))
+            .await?;
+        let context = repository_access(&tx, &repo_id, viewer_user_id).await?;
         tx.commit().await?;
         Ok(context)
     }
@@ -154,7 +161,13 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Option<RepoRecord>, PostgresError> {
-        load_repo_record(self.db.as_ref(), repo_id).await
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(repo_id))
+            .await?;
+        let record = load_repo_record(&tx, repo_id).await?;
+        tx.commit().await?;
+        Ok(record)
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_content_source"))]
@@ -177,7 +190,10 @@ impl RepositoryStore {
         &self,
         context: &RepositoryAccessContext,
     ) -> Result<RepositoryReadPolicy, PostgresError> {
-        let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::Repository(&context.record.id))
+            .await?;
         let current = repository_access(&tx, &context.record.id, None)
             .await?
             .ok_or_else(|| PostgresError::not_found("repo not found"))?;
@@ -207,7 +223,10 @@ impl RepositoryStore {
         view: &ViewId,
     ) -> Result<Option<String>, PostgresError> {
         for _ in 0..2 {
-            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+            let tx = self
+                .db
+                .begin_read_snapshot(DataScope::Repository(&context.record.id))
+                .await?;
             let current = repository_access(&tx, &context.record.id, None)
                 .await?
                 .ok_or_else(|| PostgresError::not_found("repo not found"))?;

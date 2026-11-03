@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::db::{
     MetadataStore, SubmitRequestCommand,
     requests::tests::{postgres_store, public_upload_input},
@@ -23,7 +24,7 @@ pub(crate) async fn submitted_full_view_request(store: &MetadataStore, id: &str)
     let mut request = draft_full_view_request(store, id).await;
     request.submitted_at_unix = Some(3);
     request.updated_at_unix = 3;
-    crate::db::request_rows::save_request_row(store.db.as_ref(), &request)
+    crate::db::request_rows::save_request_row(&store.db.fixture(), &request)
         .await
         .unwrap();
     request
@@ -140,7 +141,7 @@ async fn queue_branch_push(store: &MetadataStore, branch: &GitHubBranch, head: c
         .unwrap()
         .unwrap();
     crate::db::github_pushes::queue_github_push(
-        store.db.as_ref(),
+        &store.db.fixture(),
         REPO,
         branch,
         Some(&oid(head)),
@@ -152,7 +153,7 @@ async fn queue_branch_push(store: &MetadataStore, branch: &GitHubBranch, head: c
 }
 
 async fn carrier(store: &MetadataStore, request_id: &str) -> Option<GitHubPullRequest> {
-    github_pull_request(store.db.as_ref(), request_id)
+    github_pull_request(&store.db.fixture(), request_id)
         .await
         .unwrap()
 }
@@ -298,7 +299,7 @@ async fn ending_a_request_turns_its_carrier_intent_into_a_close() {
 
     request.closed_at_unix = Some(20);
     request.updated_at_unix = 20;
-    queue_carrier_close(store.db.as_ref(), &request, None)
+    queue_carrier_close(&store.db.fixture(), &request, None)
         .await
         .unwrap();
     let closing = claim(&store, "claim_2", 20).await.remove(0);
@@ -422,7 +423,7 @@ async fn a_delivery_during_a_running_claim_runs_the_job_again_after_it() {
 }
 
 async fn request_branch_push(store: &MetadataStore) -> GitHubPush {
-    crate::db::github_pushes::latest_github_push(store.db.as_ref(), "req_1")
+    crate::db::github_pushes::latest_github_push(&store.db.fixture(), "req_1")
         .await
         .unwrap()
         .unwrap()
@@ -478,7 +479,9 @@ async fn open_carrier_and_merge(store: &MetadataStore, id: &str, number: u64, at
 }
 
 async fn persist_ended(store: &MetadataStore, request: &Request) {
-    let tx = sea_orm::TransactionTrait::begin(store.db.as_ref())
+    let tx = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
         .await
         .unwrap();
     crate::db::request_lifecycle_effects::persist_lifecycle_mutation(&tx, request, &[])
@@ -488,7 +491,7 @@ async fn persist_ended(store: &MetadataStore, request: &Request) {
 }
 
 async fn branch_push_of(store: &MetadataStore, request_id: &str) -> Option<GitHubPush> {
-    crate::db::github_pushes::latest_github_push(store.db.as_ref(), request_id)
+    crate::db::github_pushes::latest_github_push(&store.db.fixture(), request_id)
         .await
         .unwrap()
 }
@@ -569,7 +572,7 @@ async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_
     );
     let mut pushed_elsewhere = submitted_full_view_request(&store, "req_elsewhere").await;
     crate::db::github_pushes::queue_github_push(
-        store.db.as_ref(),
+        &store.db.fixture(),
         REPO,
         &GitHubBranch::Request("req_elsewhere".into()),
         Some(&oid('e')),
@@ -587,7 +590,7 @@ async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_
     pushed_elsewhere.merged_head_oid = Some(pushed_elsewhere.head_oid.clone());
     pushed_elsewhere.merged_main_oid = Some(oid('m'));
     pushed_elsewhere.updated_at_unix = 35;
-    crate::db::request_rows::save_request_row(store.db.as_ref(), &pushed_elsewhere)
+    crate::db::request_rows::save_request_row(&store.db.fixture(), &pushed_elsewhere)
         .await
         .unwrap();
 

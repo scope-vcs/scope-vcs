@@ -1,3 +1,4 @@
+use super::data_scope::{DataScope, SystemReason};
 use super::{
     DispatchClaim, RunStore,
     native_runs::lock_native_runs_availability,
@@ -7,7 +8,7 @@ use super::{
     },
 };
 use crate::error::PostgresError;
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement};
 
 #[derive(Debug)]
 pub enum DispatchAdmission {
@@ -36,7 +37,10 @@ impl RunStore {
         now_unix: u64,
         lease_expires_at_unix: u64,
     ) -> Result<DispatchAdmission, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::RunDispatch))
+            .await?;
         lock_admission(&tx).await?;
         let row = tx
             .query_one_raw(Statement::from_string(

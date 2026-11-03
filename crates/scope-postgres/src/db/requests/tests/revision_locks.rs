@@ -1,5 +1,5 @@
 use super::*;
-use sea_orm::TransactionTrait;
+use crate::db::data_scope::{DataScope, SystemReason};
 use std::time::Duration;
 
 async fn store_with_independent_request() -> MetadataStore {
@@ -37,7 +37,11 @@ fn independent_revision(new_head: &str) -> RecordRequestRevisionInput {
 #[tokio::test]
 async fn revisions_of_independent_requests_do_not_wait_for_each_other() {
     let store = store_with_independent_request().await;
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     super::super::super::request_access::lock_request_repository(&held, "req_1", "user_public")
         .await
         .unwrap();
@@ -59,7 +63,11 @@ async fn revisions_of_independent_requests_do_not_wait_for_each_other() {
 #[tokio::test]
 async fn revisions_wait_for_an_exclusive_repository_mutation() {
     let store = store_with_independent_request().await;
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     super::super::super::acquire_aggregate_lock(&held, "repository", "owner/repo")
         .await
         .unwrap();
@@ -91,7 +99,11 @@ async fn a_revision_that_waited_for_its_request_builds_on_the_committed_request(
         .unwrap()
         .unwrap()
         .activity_version;
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     super::super::super::request_access::lock_request_repository(
         &held,
         "req_independent",

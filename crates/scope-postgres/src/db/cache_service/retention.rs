@@ -13,8 +13,10 @@ impl CacheStore {
     ) -> Result<Vec<PendingOrphanCacheUpload>, PostgresError> {
         let rows = self
             .db
-            .query_all_raw(statement(
-                "WITH due AS (
+            .query_all(
+                DataScope::System(SystemReason::CacheRetention),
+                statement(
+                    "WITH due AS (
                     SELECT object_key
                     FROM scope_cache_orphan_uploads
                     WHERE not_before_unix <= $1
@@ -26,12 +28,13 @@ impl CacheStore {
                  FROM due
                  WHERE orphan.object_key = due.object_key
                  RETURNING orphan.object_key, orphan.attempts",
-                vec![
-                    u64_to_i64(now_unix, "current time")?.into(),
-                    u64_to_i64(limit, "batch limit")?.into(),
-                    u64_to_i64(retry_at_unix, "retry time")?.into(),
-                ],
-            ))
+                    vec![
+                        u64_to_i64(now_unix, "current time")?.into(),
+                        u64_to_i64(limit, "batch limit")?.into(),
+                        u64_to_i64(retry_at_unix, "retry time")?.into(),
+                    ],
+                ),
+            )
             .await?;
         rows.into_iter()
             .map(|row| {
@@ -52,10 +55,13 @@ impl CacheStore {
         object_key: &str,
     ) -> Result<(), PostgresError> {
         self.db
-            .execute_raw(statement(
-                "DELETE FROM scope_cache_orphan_uploads WHERE object_key = $1",
-                vec![object_key.into()],
-            ))
+            .execute(
+                DataScope::System(SystemReason::CacheRetention),
+                statement(
+                    "DELETE FROM scope_cache_orphan_uploads WHERE object_key = $1",
+                    vec![object_key.into()],
+                ),
+            )
             .await?;
         Ok(())
     }
@@ -68,23 +74,29 @@ impl CacheStore {
         error: &str,
     ) -> Result<(), PostgresError> {
         self.db
-            .execute_raw(statement(
-                "UPDATE scope_cache_orphan_uploads
+            .execute(
+                DataScope::System(SystemReason::CacheRetention),
+                statement(
+                    "UPDATE scope_cache_orphan_uploads
                  SET not_before_unix = $2, last_error = $3
                  WHERE object_key = $1",
-                vec![
-                    object_key.into(),
-                    u64_to_i64(retry_at_unix, "retry time")?.into(),
-                    bounded_job_error(error).into(),
-                ],
-            ))
+                    vec![
+                        object_key.into(),
+                        u64_to_i64(retry_at_unix, "retry time")?.into(),
+                        bounded_job_error(error).into(),
+                    ],
+                ),
+            )
             .await?;
         Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "expire_references"))]
     pub async fn expire_references(&self, now_unix: u64, limit: u64) -> Result<u64, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::System(SystemReason::CacheRetention))
+            .await?;
         let rows = tx
             .query_all_raw(statement(
                 "SELECT repository_id, identity_digest, compatibility_group_digest,
@@ -117,8 +129,10 @@ impl CacheStore {
     ) -> Result<Vec<CacheUploadCleanupClaim>, PostgresError> {
         let rows = self
             .db
-            .query_all_raw(statement(
-                "WITH due AS (
+            .query_all(
+                DataScope::System(SystemReason::CacheRetention),
+                statement(
+                    "WITH due AS (
                     SELECT upload_id FROM scope_cache_uploads
                     WHERE (state = 'active' AND expires_at_unix <= $1)
                        OR (state = 'deleting' AND cleanup_lease_expires_at_unix <= $1)
@@ -130,12 +144,13 @@ impl CacheStore {
                      cleanup_lease_expires_at_unix = $3
                  FROM due WHERE u.upload_id = due.upload_id
                  RETURNING u.upload_id, u.object_key, u.cleanup_generation",
-                vec![
-                    u64_to_i64(now_unix, "current time")?.into(),
-                    u64_to_i64(limit, "batch limit")?.into(),
-                    u64_to_i64(now_unix.saturating_add(300), "cleanup lease expiry")?.into(),
-                ],
-            ))
+                    vec![
+                        u64_to_i64(now_unix, "current time")?.into(),
+                        u64_to_i64(limit, "batch limit")?.into(),
+                        u64_to_i64(now_unix.saturating_add(300), "cleanup lease expiry")?.into(),
+                    ],
+                ),
+            )
             .await?;
         rows.into_iter()
             .map(|row| {
@@ -161,7 +176,9 @@ impl CacheStore {
         let db = self.db.clone();
         let claim = claim.clone();
         tokio::spawn(async move {
-            let tx = db.begin().await?;
+            let tx = db
+                .begin(DataScope::System(SystemReason::CacheRetention))
+                .await?;
             let current = tx
                 .query_one_raw(statement(
                     "SELECT upload_id FROM scope_cache_uploads
@@ -202,18 +219,21 @@ impl CacheStore {
     ) -> Result<u64, PostgresError> {
         let result = self
             .db
-            .execute_raw(statement(
-                "DELETE FROM scope_cache_uploads
+            .execute(
+                DataScope::System(SystemReason::CacheRetention),
+                statement(
+                    "DELETE FROM scope_cache_uploads
                  WHERE upload_id IN (
                     SELECT upload_id FROM scope_cache_uploads
                     WHERE state = 'committed' AND expires_at_unix <= $1
                     ORDER BY expires_at_unix LIMIT $2
                  )",
-                vec![
-                    u64_to_i64(now_unix, "current time")?.into(),
-                    u64_to_i64(limit, "batch limit")?.into(),
-                ],
-            ))
+                    vec![
+                        u64_to_i64(now_unix, "current time")?.into(),
+                        u64_to_i64(limit, "batch limit")?.into(),
+                    ],
+                ),
+            )
             .await?;
         Ok(result.rows_affected())
     }
@@ -227,23 +247,26 @@ impl CacheStore {
     ) -> Result<Vec<PendingCacheDeletion>, PostgresError> {
         let candidates = self
             .db
-            .query_all_raw(statement(
-                "SELECT repository_id, checksum_sha256
+            .query_all(
+                DataScope::System(SystemReason::CacheRetention),
+                statement(
+                    "SELECT repository_id, checksum_sha256
                  FROM scope_cache_deletion_queue
                  WHERE not_before_unix <= $1
                  ORDER BY not_before_unix, repository_id, checksum_sha256
                  LIMIT $2",
-                vec![
-                    u64_to_i64(now_unix, "current time")?.into(),
-                    u64_to_i64(limit, "batch limit")?.into(),
-                ],
-            ))
+                    vec![
+                        u64_to_i64(now_unix, "current time")?.into(),
+                        u64_to_i64(limit, "batch limit")?.into(),
+                    ],
+                ),
+            )
             .await?;
         let mut deletions = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             let repository_id: String = candidate.try_get("", "repository_id")?;
             let checksum_sha256: String = candidate.try_get("", "checksum_sha256")?;
-            let tx = self.db.begin().await?;
+            let tx = self.db.begin(DataScope::Repository(&repository_id)).await?;
             lock_repository(&tx, &repository_id).await?;
             let row = tx
                 .query_one_raw(statement(
@@ -292,7 +315,7 @@ impl CacheStore {
         repository_id: &str,
         checksum_sha256: &str,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self.db.begin(DataScope::Repository(repository_id)).await?;
         lock_repository(&tx, repository_id).await?;
         let result = tx
             .execute_raw(statement(
@@ -324,17 +347,20 @@ impl CacheStore {
         error: &str,
     ) -> Result<(), PostgresError> {
         self.db
-            .execute_raw(statement(
-                "UPDATE scope_cache_deletion_queue
+            .execute(
+                DataScope::Repository(&deletion.repository_id),
+                statement(
+                    "UPDATE scope_cache_deletion_queue
                  SET not_before_unix = $3, last_error = $4
                  WHERE repository_id = $1 AND checksum_sha256 = $2",
-                vec![
-                    deletion.repository_id.clone().into(),
-                    deletion.checksum_sha256.clone().into(),
-                    u64_to_i64(retry_at_unix, "retry time")?.into(),
-                    bounded_job_error(error).into(),
-                ],
-            ))
+                    vec![
+                        deletion.repository_id.clone().into(),
+                        deletion.checksum_sha256.clone().into(),
+                        u64_to_i64(retry_at_unix, "retry time")?.into(),
+                        bounded_job_error(error).into(),
+                    ],
+                ),
+            )
             .await?;
         Ok(())
     }

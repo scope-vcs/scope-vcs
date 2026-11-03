@@ -1,5 +1,7 @@
 use super::{
-    RequestStore, entities,
+    RequestStore,
+    data_scope::{DataScope, SystemReason},
+    entities,
     integer_columns::{i64_to_u64, optional_i64_to_u64, optional_u64_to_i64, u64_to_i64},
     request_revision_rows::current_revision_ids,
 };
@@ -9,7 +11,7 @@ use scope_domain::{
     requests::{DiffStat, FileDiffStat, FileLineChanges, Request, RevisionDiffStat},
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait, Value,
+    ConnectionTrait, DatabaseBackend, DatabaseTransaction, FromQueryResult, Statement, Value,
 };
 use std::collections::BTreeMap;
 
@@ -42,7 +44,10 @@ impl RequestStore {
         revision_id: &str,
         stat: &RevisionDiffStat,
     ) -> Result<bool, PostgresError> {
-        let tx = self.db.begin().await?;
+        let tx = self
+            .db
+            .begin(DataScope::RevisionRepository(revision_id))
+            .await?;
         let totals = stat.totals();
         let inserted = tx
             .execute_raw(Statement::from_sql_and_values(
@@ -76,9 +81,12 @@ impl RequestStore {
         &self,
         request_ids: &[String],
     ) -> Result<BTreeMap<String, DiffStat>, PostgresError> {
-        self.current_diff_stat_rows(request_ids)
-            .await?
-            .into_iter()
+        let Some(tx) = self.begin_request_batch_read(request_ids).await? else {
+            return Ok(BTreeMap::new());
+        };
+        let rows = current_diff_stat_rows(&tx, request_ids).await?;
+        tx.commit().await?;
+        rows.into_iter()
             .map(|(request_id, row)| Ok((request_id, row_totals(&row)?)))
             .collect()
     }
@@ -88,7 +96,10 @@ impl RequestStore {
         &self,
         request_ids: &[String],
     ) -> Result<BTreeMap<String, RevisionDiffStat>, PostgresError> {
-        let rows = self.current_diff_stat_rows(request_ids).await?;
+        let Some(tx) = self.begin_request_batch_read(request_ids).await? else {
+            return Ok(BTreeMap::new());
+        };
+        let rows = current_diff_stat_rows(&tx, request_ids).await?;
         let listed = rows
             .values()
             .filter(|row| row.files_listed)
@@ -105,7 +116,7 @@ impl RequestStore {
                 ),
                 listed.into_iter().map(Value::from),
             ))
-            .all(self.db.as_ref())
+            .all(&tx)
             .await?
             {
                 files
@@ -114,6 +125,7 @@ impl RequestStore {
                     .push(file_from_row(row)?);
             }
         }
+        tx.commit().await?;
         rows.into_iter()
             .map(|(request_id, row)| {
                 let listed_files = row
@@ -133,7 +145,11 @@ impl RequestStore {
         after_id: Option<&str>,
         limit: u64,
     ) -> Result<Vec<Request>, PostgresError> {
-        entities::request::Model::find_by_statement(Statement::from_sql_and_values(
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::System(SystemReason::RequestDiffStatBackfill))
+            .await?;
+        let rows = entities::request::Model::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT request.* FROM scope_requests request
              CROSS JOIN LATERAL (
@@ -152,43 +168,58 @@ impl RequestStore {
                 u64_to_i64(limit, "diff stat backfill page size")?.into(),
             ],
         ))
-        .all(self.db.as_ref())
-        .await?
-        .into_iter()
-        .map(entities::request::Model::try_into_domain)
-        .collect()
+        .all(&tx)
+        .await?;
+        tx.commit().await?;
+        rows.into_iter()
+            .map(entities::request::Model::try_into_domain)
+            .collect()
     }
 
-    async fn current_diff_stat_rows(
+    async fn begin_request_batch_read(
         &self,
         request_ids: &[String],
-    ) -> Result<BTreeMap<String, DiffStatRow>, PostgresError> {
-        let current = current_revision_ids(self.db.as_ref(), request_ids).await?;
-        if current.is_empty() {
-            return Ok(BTreeMap::new());
-        }
-        let mut requests_by_revision = current
-            .into_iter()
-            .map(|(request_id, revision_id)| (revision_id, request_id))
-            .collect::<BTreeMap<_, _>>();
-        let revision_ids = requests_by_revision.keys().cloned().collect::<Vec<_>>();
-        Ok(
-            DiffStatRow::find_by_statement(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                format!(
-                    "SELECT revision_id, additions, deletions, changed_files, files_listed
-                 FROM scope_request_revision_diff_stats WHERE revision_id IN ({})",
-                    placeholders(revision_ids.len())
-                ),
-                revision_ids.into_iter().map(Value::from),
-            ))
-            .all(self.db.as_ref())
-            .await?
-            .into_iter()
-            .filter_map(|row| Some((requests_by_revision.remove(&row.revision_id)?, row)))
-            .collect(),
-        )
+    ) -> Result<Option<DatabaseTransaction>, PostgresError> {
+        let Some(anchor) = request_ids.first() else {
+            return Ok(None);
+        };
+        Ok(Some(
+            self.db
+                .begin_read_snapshot(DataScope::RequestRepository(anchor))
+                .await?,
+        ))
     }
+}
+
+async fn current_diff_stat_rows(
+    tx: &DatabaseTransaction,
+    request_ids: &[String],
+) -> Result<BTreeMap<String, DiffStatRow>, PostgresError> {
+    let current = current_revision_ids(tx, request_ids).await?;
+    if current.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let mut requests_by_revision = current
+        .into_iter()
+        .map(|(request_id, revision_id)| (revision_id, request_id))
+        .collect::<BTreeMap<_, _>>();
+    let revision_ids = requests_by_revision.keys().cloned().collect::<Vec<_>>();
+    Ok(
+        DiffStatRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "SELECT revision_id, additions, deletions, changed_files, files_listed
+             FROM scope_request_revision_diff_stats WHERE revision_id IN ({})",
+                placeholders(revision_ids.len())
+            ),
+            revision_ids.into_iter().map(Value::from),
+        ))
+        .all(tx)
+        .await?
+        .into_iter()
+        .filter_map(|row| Some((requests_by_revision.remove(&row.revision_id)?, row)))
+        .collect(),
+    )
 }
 
 async fn insert_files<C: ConnectionTrait>(

@@ -1,13 +1,16 @@
 use super::support::orphan_object_keys;
 use crate::{
-    db::request_media::persistence::{as_i32, as_i64},
+    db::{
+        data_scope::{DataScope, ScopedDatabase, SystemReason},
+        request_media::persistence::{as_i32, as_i64},
+    },
     error::PostgresError,
 };
 use scope_domain::requests::attachments::RequestAttachmentCleanupLease;
-use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 pub(super) async fn claim_orphan_objects(
-    db: &sea_orm::DatabaseConnection,
+    db: &ScopedDatabase,
     lease_token: &str,
     now_unix: u64,
     lease_expires_at_unix: u64,
@@ -28,12 +31,14 @@ enum OrphanClaim {
 }
 
 async fn try_claim_orphan_objects(
-    db: &sea_orm::DatabaseConnection,
+    db: &ScopedDatabase,
     lease_token: &str,
     now_unix: u64,
     lease_expires_at_unix: u64,
 ) -> Result<OrphanClaim, PostgresError> {
-    let tx = db.begin().await?;
+    let tx = db
+        .begin(DataScope::System(SystemReason::MediaCleanup))
+        .await?;
     let candidate = tx
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,

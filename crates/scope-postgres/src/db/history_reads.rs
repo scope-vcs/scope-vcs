@@ -1,26 +1,27 @@
+use super::data_scope::{DataScope, ScopedDatabase};
 use super::integer_columns::{self, usize_to_i64};
 use super::projection_read_models::{
     build_projection_read_model, eager_views, fold_live_projection_read_models,
     live_projection_read_model,
 };
-use super::{RepositoryStore, acquire_aggregate_lock, begin_metadata_read_snapshot, entities};
+use super::{RepositoryStore, acquire_aggregate_lock, entities};
 use crate::error::PostgresError;
 use scope_domain::{
     history::{HistoryEntry, HistoryFeed, HistoryTreeFile, HistoryView, history_tree},
     repository::RepositoryIncarnation,
     views::ViewId,
 };
-use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement, TransactionTrait,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement};
 use sha2::{Digest, Sha256};
 
 pub(super) async fn ensure_live_projection_read_models(
-    db: &DatabaseConnection,
+    db: &ScopedDatabase,
     incarnation: &RepositoryIncarnation,
     view: &ViewId,
 ) -> Result<(), PostgresError> {
-    let tx = db.begin().await?;
+    let tx = db
+        .begin(DataScope::Repository(incarnation.repository_id()))
+        .await?;
     acquire_aggregate_lock(&tx, "repository", incarnation.repository_id()).await?;
     let row = entities::repository::Entity::find_by_id(incarnation.repository_id())
         .one(&tx)
@@ -155,7 +156,7 @@ impl RepositoryStore {
         incarnation: &RepositoryIncarnation,
         view: &ViewId,
     ) -> Result<(), PostgresError> {
-        ensure_live_projection_read_models(self.db.as_ref(), incarnation, view).await
+        ensure_live_projection_read_models(&self.db, incarnation, view).await
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_history_page"))]
@@ -174,7 +175,10 @@ impl RepositoryStore {
             limit,
         } = query;
         for _ in 0..2 {
-            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+            let tx = self
+                .db
+                .begin_read_snapshot(DataScope::Repository(incarnation.repository_id()))
+                .await?;
             let current =
                 super::repository_access::repository_access(&tx, incarnation.repository_id(), None)
                     .await?
@@ -319,7 +323,10 @@ impl RepositoryStore {
         entry_source_id: &str,
     ) -> Result<Option<Vec<HistoryTreeFile>>, PostgresError> {
         for _ in 0..2 {
-            let tx = begin_metadata_read_snapshot(self.db.as_ref()).await?;
+            let tx = self
+                .db
+                .begin_read_snapshot(DataScope::Repository(incarnation.repository_id()))
+                .await?;
             let current =
                 super::repository_access::repository_access(&tx, incarnation.repository_id(), None)
                     .await?

@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 use crate::{
     db::{
         MetadataStore, acquire_aggregate_lock,
@@ -137,7 +138,11 @@ async fn run_control_waits_for_revocation_and_rejects_without_mutating() {
         let store = fixture(command).await;
         let before = store.runs().run(RUN).await.unwrap();
         let jobs = store.runs().run_snapshot(RUN).await.unwrap().unwrap().jobs;
-        let revocation = store.db.begin().await.unwrap();
+        let revocation = store
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await
+            .unwrap();
         acquire_aggregate_lock(&revocation, "repository", REPO)
             .await
             .unwrap();
@@ -171,7 +176,11 @@ async fn run_control_waits_for_revocation_and_rejects_without_mutating() {
 async fn run_control_that_wins_repository_lock_completes_before_real_revocation() {
     for command in [Command::Cancel, Command::Retry] {
         let store = fixture(command).await;
-        let job_guard = store.db.begin().await.unwrap();
+        let job_guard = store
+            .db
+            .begin(DataScope::System(SystemReason::Fixture))
+            .await
+            .unwrap();
         locked_jobs(&job_guard, RUN).await.unwrap();
         let guard_pid = backend_pid(&job_guard).await;
         let writing_store = store.clone();

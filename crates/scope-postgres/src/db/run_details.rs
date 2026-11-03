@@ -1,4 +1,4 @@
-use super::{RunStore, entities};
+use super::{RunStore, data_scope::DataScope, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::{
     attempt::{MAX_RUN_ATTEMPTS, RunAttempt},
@@ -30,7 +30,10 @@ pub struct RunDetail {
 impl RunStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "run_detail"))]
     pub async fn run_detail(&self, run_id: &str) -> Result<Option<RunDetail>, PostgresError> {
-        let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::RunRepository(run_id))
+            .await?;
         let Some(run) = entities::run::Entity::find_by_id(run_id.to_string())
             .one(&tx)
             .await?

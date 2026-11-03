@@ -22,5 +22,6 @@
   "m0103_review_request_times.rs": "a6af6b28336dd6aac9f6acaa076d917da4f6299d876ded622a50a9419e26e4f6",
   "m0104_request_revision_diff_stats.rs": "3ae7cc1dda565afc2b004a1c127e7a468b6666ceba58c75313066e2207b76795",
   "m0105_view_pool_packs.rs": "69aa06177a329aa92b52b481f8f3b3176f3352bc97a56e09fb623256b731c6e7",
-  "m0106_git_fetch_advertisements.rs": "6bbfa7dc95eb539f541d6fdd9d1478142934e5d534f942385db633a1c4bd5553"
+  "m0106_git_fetch_advertisements.rs": "6bbfa7dc95eb539f541d6fdd9d1478142934e5d534f942385db633a1c4bd5553",
+  "m0107_repository_row_security.rs": "088ca92eeaf2d66b3b85d4814d43c8791b93eabf15a7b746c67205a3cfa5e7d1"
 }

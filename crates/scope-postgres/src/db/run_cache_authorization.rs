@@ -1,4 +1,4 @@
-use super::{RunStore, entities};
+use super::{RunStore, data_scope::DataScope, entities};
 use crate::error::PostgresError;
 use scope_domain::runs::workflow::{definition::WorkflowJob, identity::WorkflowIdentity};
 use sea_orm::EntityTrait;
@@ -18,7 +18,10 @@ impl RunStore {
         token_hash: &str,
         now_unix: u64,
     ) -> Result<CacheAttemptAccess, PostgresError> {
-        let tx = super::begin_metadata_read_snapshot(self.db.as_ref()).await?;
+        let tx = self
+            .db
+            .begin_read_snapshot(DataScope::AttemptRepository(attempt_id))
+            .await?;
         let attempt = entities::run_attempt::Entity::find_by_id(attempt_id.to_string())
             .one(&tx)
             .await?

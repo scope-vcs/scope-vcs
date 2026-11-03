@@ -1,8 +1,9 @@
 use super::*;
+use crate::db::data_scope::{DataScope, SystemReason};
 
 #[tokio::test]
 async fn independent_request_writes_share_repository_guard_without_hydrating_history() {
-    use sea_orm::{ConnectionTrait, TransactionTrait};
+    use sea_orm::ConnectionTrait;
     use std::time::Duration;
     let store = postgres_store();
     start_public_request(&store).await;
@@ -12,7 +13,11 @@ async fn independent_request_writes_share_repository_guard_without_hydrating_his
     second.event_id = "event_independent".to_string();
     store.requests().start_request(second).await.unwrap();
 
-    let held = store.db.begin().await.unwrap();
+    let held = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     super::super::super::request_access::lock_request_repository(&held, "req_1", "user_public")
         .await
         .unwrap();
@@ -41,14 +46,18 @@ async fn independent_request_writes_share_repository_guard_without_hydrating_his
 
 #[tokio::test]
 async fn request_write_waits_for_membership_revocation_and_rechecks_permissions() {
-    use sea_orm::{EntityTrait, TransactionTrait};
+    use sea_orm::EntityTrait;
     let store = store_with_public_user_membership();
     let mut input = public_start_input();
     input.author_user_id = "user_owner".to_string();
     input.view = ViewId::private();
     store.requests().start_request(input).await.unwrap();
 
-    let revocation = store.db.begin().await.unwrap();
+    let revocation = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     super::super::super::acquire_aggregate_lock(&revocation, "repository", "owner/repo")
         .await
         .unwrap();
@@ -94,7 +103,7 @@ async fn request_write_waits_for_membership_revocation_and_rechecks_permissions(
 #[tokio::test]
 async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
     use crate::{db::SubmitRequestCommand, error::PostgresErrorKind};
-    use sea_orm::{EntityTrait, TransactionTrait};
+    use sea_orm::EntityTrait;
 
     let store = store_with_public_user_membership();
     let mut input = public_start_input();
@@ -116,14 +125,14 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
     assert_eq!(draft.author_user_id.as_deref(), Some("user_public"));
     assert!(draft.git_snapshot.is_some());
     let repo = super::super::super::request_access::repo_by_id(
-        store.db.as_ref(),
+        &store.db.fixture(),
         "owner/repo",
         "user_public",
     )
     .await
     .unwrap();
     let policy = super::super::super::request_access::request_policy_for_user(
-        store.db.as_ref(),
+        &store.db.fixture(),
         &repo,
         &draft,
         "user_public",
@@ -137,7 +146,11 @@ async fn submission_waits_for_membership_revocation_and_rechecks_permissions() {
         .await
         .unwrap();
 
-    let revocation = store.db.begin().await.unwrap();
+    let revocation = store
+        .db
+        .begin(DataScope::System(SystemReason::Fixture))
+        .await
+        .unwrap();
     super::super::super::acquire_aggregate_lock(&revocation, "repository", "owner/repo")
         .await
         .unwrap();

@@ -287,6 +287,48 @@ Follow these paths from application coordination to durable rules and storage:
   split into `run_details.rs`, `run_log_reads.rs`, and related focused modules.
 - `cleanup_queue/` owns queue, claim, revalidation, and completion transactions.
 
+### Repository row security
+
+Stores hold a `ScopedDatabase` (`db/data_scope.rs`), not a connection. The only
+way to open a transaction is `begin(DataScope)`, which sets transaction-local
+settings that PostgreSQL row security policies read:
+
+- `DataScope::Repository(repo_id)` admits rows of that one repository.
+  `RequestRepository`, `RunRepository`, `AttemptRepository`,
+  `AttachmentRepository`, `DiscussionRepository`, and `RevisionRepository`
+  resolve their anchor's repository inside the same transaction; a missing
+  anchor admits nothing.
+- `execute`, `query_one`, and `query_all` run one statement in its own scoped
+  transaction.
+- `DataScope::NoRepository` admits no repository rows. Identity, CLI session,
+  lock, and notification transactions use it.
+- `DataScope::System(SystemReason)` admits every repository. Each reason names
+  cross-repository work: queue claims, pollers, retention, GitHub webhooks keyed
+  by GitHub ids, viewer repository listings, account deletion, and migrations.
+  `GitHubMirrorOwnership` covers GitHub run, job, and check-run upserts, whose
+  rows are keyed by GitHub's global ids and move to the repository currently
+  connected to their GitHub repository. `GitHubRepositoryLink` reads which
+  Scope repository a GitHub repository is connected to, so connecting a second
+  Scope repository to it gets the domain's conflict.
+
+Every table with a `repo_id` or `repository_id` column, plus
+`scope_repositories`, enables and forces the `scope_repository_scope` policy
+(`m0107_repository_row_security`). An unset scope sees no rows, so a query that
+forgets its repository filter returns nothing instead of another repository's
+rows, and a write into another repository fails. Tables that reach a repository
+only through a parent row are listed in
+`db/repository_row_security_tests.rs` until they carry their own repository
+column. That test classifies every table from the catalog and fails when a new
+table is neither policy-covered nor reviewed as holding no repository data.
+`.github/scripts/check-data-scope.mjs` rejects raw connections, transactions, and
+scope settings outside the boundary, migrations, and test support. It also
+rejects connection constructors outside their named owners: the writer pool,
+the external-I/O fence, merge-turn sessions, the change-notification listener,
+maintenance, and tests. When
+`SCOPE_TEST_DATABASE_URL` is a superuser, test databases are owned by and
+connect as `scope_test_row_security`, which cannot bypass row security, so every
+store test runs under the policies.
+
 Use cases may prepare Git data or object-store blobs before a database commit.
 They carry the relevant content or Git-frontier identity across that work and
 explicitly enqueue or perform compensating cleanup when persistence fails.
