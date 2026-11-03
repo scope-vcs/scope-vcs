@@ -161,7 +161,6 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
         &repo.incarnation(),
         &repo.repo_config,
         &view("agent"),
-        None,
     )
     .await
     .unwrap()
@@ -205,7 +204,6 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
         &repo.incarnation(),
         &repo.repo_config,
         &view("agent"),
-        None,
     )
     .await
     .unwrap()

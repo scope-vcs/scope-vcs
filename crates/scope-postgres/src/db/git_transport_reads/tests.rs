@@ -399,6 +399,13 @@ async fn git_state_reads_no_history() {
     let state = within_lock(store.repositories().repository_git_state(&incarnation()))
         .await
         .unwrap();
+    within_lock(
+        store
+            .repositories()
+            .repository_object_config(&incarnation()),
+    )
+    .await
+    .unwrap();
     held.rollback().await.unwrap();
 
     assert_eq!(state.content_version, content_version(&store).await);
@@ -413,6 +420,12 @@ async fn git_state_reads_no_history() {
         .await
         .unwrap_err();
     assert_eq!(error.kind, PostgresErrorKind::Conflict);
+    let error = store
+        .repositories()
+        .repository_object_config(&recreated)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind, PostgresErrorKind::NotFound);
 }
 
 #[tokio::test]

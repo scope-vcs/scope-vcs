@@ -26,11 +26,25 @@ pub(crate) async fn view_object_repos(
     view_repos(state, incarnation, config, view, None).await
 }
 
-pub(crate) async fn view_object_repo(state: &AppState, incarnation: &RepositoryIncarnation, config: &RepoConfig, view: &ViewId, reader: Option<&str>) -> Result<GitRepoHandle, ApiError> {
-    Ok(view_repos(state, incarnation, config, view, reader).await?.objects)
+pub(crate) async fn view_object_repo(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &ViewId,
+    reader: Option<&str>,
+) -> Result<GitRepoHandle, ApiError> {
+    Ok(view_repos(state, incarnation, config, view, reader)
+        .await?
+        .objects)
 }
 
-async fn view_repos(state: &AppState, incarnation: &RepositoryIncarnation, config: &RepoConfig, view: &ViewId, reader: Option<&str>) -> Result<ViewObjectRepos, ApiError> {
+async fn view_repos(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &ViewId,
+    reader: Option<&str>,
+) -> Result<ViewObjectRepos, ApiError> {
     if view == config.views.full() || config.views.get(view).is_none() {
         return Err(ApiError::not_found("restricted view not found"));
     }

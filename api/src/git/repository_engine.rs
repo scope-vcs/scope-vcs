@@ -110,6 +110,13 @@ impl RepositoryEngine {
         self.cache.remove(incarnation)
     }
 
+    pub(crate) fn lease_repository(
+        self: &Arc<Self>,
+        incarnation: &RepositoryIncarnation,
+    ) -> Result<GitRepoHandle, ApiError> {
+        self.cache.lease(incarnation)
+    }
+
     pub(crate) fn lease_derived(
         self: &Arc<Self>,
         path: PathBuf,
@@ -450,6 +457,30 @@ impl RepositoryEngine {
                 PushedPackLink::Linked
             }
         })
+    }
+
+    pub(crate) async fn install_request_objects<Build, BuildFuture>(
+        &self,
+        shelf: &Path,
+        heads: Vec<String>,
+        build: Build,
+    ) -> Result<(), ApiError>
+    where
+        Build: FnOnce() -> BuildFuture + Send + 'static,
+        BuildFuture: std::future::Future<Output = Result<(), ApiError>> + Send + 'static,
+    {
+        let path = shelf.to_path_buf();
+        self.materializations
+            .materialize_async(
+                GitDerivedCacheNamespace::RequestObjects,
+                shelf.to_string_lossy().into_owned(),
+                move || {
+                    present_commits(&path, heads.iter().map(String::as_str))
+                        .is_ok_and(|present| heads.iter().all(|oid| present.contains(oid)))
+                },
+                build,
+            )
+            .await
     }
 
     async fn coordinate_repository<IsReady, Operation, OperationFuture>(

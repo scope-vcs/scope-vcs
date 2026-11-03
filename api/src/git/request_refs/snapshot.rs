@@ -36,7 +36,9 @@ pub(crate) fn download_snapshot(
         let mut file = tokio::fs::File::create(path)
             .await
             .map_err(ApiError::internal)?;
-        write_source_blob_to(objects, snapshot, &mut file).await.map_err(ApiError::from)?;
+        write_source_blob_to(objects, snapshot, &mut file)
+            .await
+            .map_err(ApiError::from)?;
         file.flush().await.map_err(ApiError::internal)
     })
 }

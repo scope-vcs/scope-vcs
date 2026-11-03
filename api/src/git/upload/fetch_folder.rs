@@ -99,6 +99,7 @@ pub(crate) async fn prepare(
         user.as_deref(),
         &base,
         &selection.requests,
+        &folder,
     )
     .await?;
     {

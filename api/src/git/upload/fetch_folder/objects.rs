@@ -35,6 +35,7 @@ pub(super) async fn install_objects(
     user: Option<&str>,
     base: &GitRepoHandle,
     requests: &[Request],
+    folder: &GitRepoHandle,
 ) -> Result<FetchObjects, ApiError> {
     let full = view == config.views.full();
     let mut alternates = Vec::new();
@@ -59,7 +60,7 @@ pub(super) async fn install_objects(
             &PoolInstall {
                 incarnation: &git.incarnation,
                 config,
-                repos: PoolRepos::Full(&repos, user.unwrap_or_default(), base),
+                repos: PoolRepos::Full(&repos, user.unwrap_or_default(), folder),
             },
             requests,
         )

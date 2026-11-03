@@ -166,9 +166,9 @@ impl RepositoryGitCache {
     }
 
     pub(crate) fn prune_to(&self, max_bytes: u64) -> Result<(), ApiError> {
-        let mut caches = repository_cache_directories(&self.root)?;
         let now = SystemTime::now();
         prune_stale_materializations(&self.root, now, STALE_MATERIALIZATION_MAX_IDLE)?;
+        let mut caches = repository_cache_directories(&self.root)?;
         caches.sort_by_key(|entry| entry.last_used);
 
         let mut retained_bytes = caches

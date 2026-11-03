@@ -262,7 +262,7 @@ async fn maintainer_rebases_and_amends_a_private_request() {
     );
 }
 
-fn rewrite_history(repo: &FsPath, args: &[&str]) {
+pub(super) fn rewrite_history(repo: &FsPath, args: &[&str]) {
     let mut command = vec![
         "-c",
         "user.name=Scope Test",
@@ -273,7 +273,7 @@ fn rewrite_history(repo: &FsPath, args: &[&str]) {
     run_git(Some(repo), &command, "rewrite request history").unwrap();
 }
 
-fn lease_push(repo: &FsPath, remote: &str, request_ref: &str, expected_head: &str) {
+pub(super) fn lease_push(repo: &FsPath, remote: &str, request_ref: &str, expected_head: &str) {
     let output = run_git_output(
         Some(repo),
         &[

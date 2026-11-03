@@ -49,14 +49,15 @@ pub(crate) use pool::{
     PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs,
     retain_staged_pool_pack,
 };
-pub(crate) use revision::with_request_revision_store_repo;
+pub(crate) use revision::{sweep_revision_jobs, with_request_revision_store_repo};
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,
 };
 #[cfg(test)]
-use snapshot::bundle_prerequisites;
-use snapshot::{BundleRef, download_snapshot, fetch_bundle_into_ref, fetch_snapshot_into_ref};
-pub(crate) use view_bases::{RequestViewBases, request_view_bases, share_request_view_bases};
+use snapshot::fetch_bundle_into_ref;
+use snapshot::{BundleRef, fetch_snapshot_into_ref};
+pub(crate) use snapshot::{bundle_prerequisites, download_snapshot};
+pub(crate) use view_bases::{RequestViewBases, request_view_bases};
 #[cfg(test)]
 pub(crate) use view_pool::view_object_repos;
 
