@@ -140,8 +140,8 @@ async fn run_resource_access_errors_precede_workflow_and_cursor_errors() {
         let existing = format!("{}?{invalid_query}", route(TEST_REPO_OWNER, TEST_REPO_NAME));
         assert_error(
             get(router(state.clone()), &existing, Some(&public)).await,
-            StatusCode::FORBIDDEN,
-            "repo membership required",
+            StatusCode::NOT_FOUND,
+            "repo owner/repo not found",
         )
         .await;
     }

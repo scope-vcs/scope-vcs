@@ -19,6 +19,9 @@ pub(crate) async fn require_full_view_member(
         .repository_access(owner, name, Some(user_id))
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{name} not found")))?;
+    if !repo.access.is_maintainer() {
+        crate::repo_access::find_read_access(state, owner, name, Some(user_id)).await?;
+    }
     repo.ensure_member()?;
     repo.ensure_run_reader()?;
     Ok(repo)

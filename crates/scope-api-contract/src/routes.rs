@@ -17,6 +17,7 @@ macro_rules! routes {
         $(define_route!($constant, $path $(, $builder($($arg: $ty),*))?);)*
         $(define_route!($internal, $internal_path $(, $internal_builder($($internal_arg: $internal_ty),*))?);)*
         pub const WEB_ROUTE_TEMPLATES: &[(&str, &str)] = &[$(($web, $constant)),*];
+        pub const ROUTE_TEMPLATES: &[&str] = &[$($constant,)* $($internal,)*];
     };
 }
 

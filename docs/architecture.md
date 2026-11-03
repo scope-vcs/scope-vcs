@@ -361,6 +361,8 @@ their own timeouts. The policy gate runs the check.
   download service.
 - `docs/github-app.md` documents registering and configuring the Scope
   GitHub App and how a repository is connected.
+- `docs/isolation.md` lists the channels through which data could cross
+  between repositories or views, and what enforces each.
 - `docs/licensing.md` documents third-party license inventory generation.
 - `docs/maintenance-cutovers.md` documents releases, migration recovery, and
   the forward-only cutover rule; `docs/operations/current-schema-baseline.md`
