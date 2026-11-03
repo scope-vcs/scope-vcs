@@ -18,7 +18,7 @@ function groups(filter: RepositorySearchFilter, query: string) {
     files: [...files],
     filter,
     query,
-    results: { history: [push, merge, visibility, views], historyCursor: null, requestCursors: {}, requests: [request] },
+    results: { history: [push, merge, visibility, views], requests: [request] },
     version: { kind: 'main' },
   })
 }
@@ -57,7 +57,7 @@ test('the Requests filter shows every loaded request so paging can reach later m
     files: [],
     filter: 'requests',
     query: 'req',
-    results: { history: [], historyCursor: null, requestCursors: {}, requests: many },
+    results: { history: [], requests: many },
     version: { kind: 'main' },
   })
   assert.equal(requests?.rows.length, 40)

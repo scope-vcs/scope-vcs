@@ -17,7 +17,6 @@ import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
 import { repositoryVersionKey } from './repository-version'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
-import { repositorySearchResource } from '../repo-search/repository-search-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { invalidateGitHubWorkflowRuns } from '../runs/github-workflow-runs-resource'
 import { githubWorkflowNamesResource } from '../runs/github-workflow-names-resource'
@@ -25,7 +24,6 @@ import { invalidateGitHubWorkflowRunDetails } from '../runs/github-workflow-run-
 
 export function invalidateRepoSummaryResources(scope: string) {
   invalidateRequestQueues(scope)
-  repositorySearchResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
 }
 
 type RepoResourceInvalidation = {
@@ -52,7 +50,7 @@ export function invalidateRepoResources(
       (!recovery || runResourceNeedsRecovery(runDetailResource, key)))
   }
   if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
-    if (!summaryPending) invalidateRepoSummaryResources(scope)
+    if (!summaryPending) invalidateRequestQueues(scope)
     repoSettingsResource.invalidate(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
@@ -79,12 +77,12 @@ export function invalidateRepoResources(
     repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) && identity.includes(`${version}\0`))
     refreshRequestState(scope, requestId)
     refreshRequestDiscussionReferences(scope, requestId)
-    if (!summaryPending) invalidateRepoSummaryResources(scope)
+    if (!summaryPending) invalidateRequestQueues(scope)
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)
   } else if (event.kind === 'GitHubWorkflowRunsChanged') {
     refreshRequestState(scope)
-    if (!summaryPending) invalidateRepoSummaryResources(scope)
+    if (!summaryPending) invalidateRequestQueues(scope)
     invalidateGitHubWorkflowRuns(scope)
     githubWorkflowNamesResource.invalidate(scope)
     invalidateGitHubWorkflowRunDetails(scope)
@@ -92,7 +90,7 @@ export function invalidateRepoResources(
     invalidateGitHubWorkflowRunDetails(scope, event.kind.GitHubWorkflowRunChanged.github_run_id)
   } else if (typeof event.kind === 'object' && 'RequestTimelineChanged' in event.kind) {
     const timeline = event.kind.RequestTimelineChanged
-    invalidateRepoSummaryResources(scope)
+    invalidateRequestQueues(scope)
     requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0${timeline.request_id}\0`))
     refreshRequestDiscussionReferences(scope, timeline.request_id)
     requestActivityResource.invalidate(requestActivityIdentity(scope, timeline.request_id))
@@ -101,7 +99,7 @@ export function invalidateRepoResources(
     requestAttachmentResource.invalidate(requestAttachmentResourceIdentity(scope, timeline.request_id))
   } else if (typeof event.kind === 'object' && 'RunChanged' in event.kind) {
     if (event.kind.RunChanged.change === 'StatusChanged') {
-      invalidateRepoSummaryResources(scope)
+      invalidateRequestQueues(scope)
       requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
     }
     const runId = event.kind.RunChanged.run_id

@@ -1,4 +1,4 @@
-import type { HistoryEntrySummaryResponse, HistoryFeed, RepoFileResponse, RequestQueueItemResponse, RequestQueueSection } from '../../api/types.generated'
+import type { HistoryEntrySummaryResponse, HistoryFeed, RepoFileResponse, RequestQueueItemResponse } from '../../api/types.generated'
 import { displayRouteFilePath } from '../../lib/route-file'
 import { matchingRepositoryFiles } from '../repo-detail/repository-file-navigation'
 import type { RepositoryVersion } from '../repo-detail/repository-version'
@@ -7,8 +7,6 @@ export type RepositorySearchFilter = 'all' | 'requests' | 'updates' | 'visibilit
 
 export type RepositorySearchResults = {
   history: HistoryEntrySummaryResponse[]
-  historyCursor: string | null
-  requestCursors: Partial<Record<RequestQueueSection, string>>
   requests: RequestQueueItemResponse[]
 }
 

@@ -30,9 +30,8 @@ import {
   type RepositorySearchFilter,
   type RepositorySearchRow,
 } from './repository-search-model'
-import { repositorySearchIdentity, repositorySearchResource } from './repository-search-cache'
 import { REPOSITORY_SEARCH_INPUT_ID, useRepositorySearch } from './repository-search-context'
-import { loadMoreRepositorySearchRequests, loadOlderRepositorySearchHistory, loadRepositorySearch } from './repository-search-resource'
+import { useRepositorySearchResults } from './use-repository-search-results'
 
 const FILTERS: { label: string; value: RepositorySearchFilter }[] = [
   { label: 'All', value: 'all' },
@@ -42,7 +41,6 @@ const FILTERS: { label: string; value: RepositorySearchFilter }[] = [
   { label: 'Files', value: 'files' },
 ]
 const SEARCH_DELAY_MS = 200
-const EMPTY_RESULTS = { history: [], historyCursor: null, requestCursors: {}, requests: [] }
 const PAGE_SEARCH_ROUTE = /\/(?:updates\/|requests\/[^/]+\/changes(?:\/|$))/
 
 export function RepositorySearch({ params, repo }: { params: RepoParams; repo: RepoSummaryResponse }) {
@@ -72,18 +70,14 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
   }, [search])
 
   const feed = repositorySearchFeed(filter)
-  const load = useCallback(
-    (signal: AbortSignal) => loadRepositorySearch(params, view, settledQuery, feed, signal),
-    [feed, params, settledQuery, view],
-  )
-  const searchIdentity = scope ? repositorySearchIdentity(scope, view, settledQuery, feed) : null
-  const found = useCachedResource({
+  const found = useRepositorySearchResults({
     enabled: open,
-    fallbackError: 'Search is unavailable.',
-    identity: searchIdentity,
-    load,
-    resource: repositorySearchResource,
-    version: String(repo.change_version),
+    feed,
+    params,
+    query: settledQuery,
+    repo,
+    scope,
+    view,
   })
   const { owner, repo: repoName } = params
   const loadFiles = useCallback(
@@ -105,9 +99,9 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
     files: files.value?.files ?? [],
     filter,
     query: search,
-    results: found.value ?? EMPTY_RESULTS,
+    results: found.results,
     version,
-  }), [files.value, filter, found.value, search, version])
+  }), [files.value, filter, found.results, search, version])
   const rows = groups.flatMap((group) => group.rows)
   const active = Math.min(activeIndex, Math.max(0, rows.length - 1))
   const activeRow = rows[active]
@@ -133,20 +127,18 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
     }
   }
 
-  const settled = found.status === 'loaded' && search === settledQuery
-  const failure = found.error ? found : files.error ? files : null
+  const settled = found.loaded && search === settledQuery
+  const failure = found.failure ?? (files.error ? files : null)
   const pagingRequests = filter === 'requests'
   const canLoadMore = pagingRequests
-    ? Object.keys(found.value?.requestCursors ?? {}).length > 0
-    : feed !== 'all' && Boolean(found.value?.historyCursor)
+    ? found.hasMoreRequests
+    : feed !== 'all' && found.hasMoreHistory
 
   async function loadMore() {
-    if (!searchIdentity) return
     setMore({ error: null, loading: true })
-    const request = { identity: searchIdentity, params, query: settledQuery, view }
     try {
-      if (pagingRequests) await loadMoreRepositorySearchRequests(request)
-      else await loadOlderRepositorySearchHistory({ ...request, feed })
+      if (pagingRequests) await found.loadMoreRequests()
+      else await found.loadOlderHistory()
       setMore({ error: null, loading: false })
     } catch (error) {
       setMore({
