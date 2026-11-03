@@ -242,7 +242,7 @@ Railway source upload.
 
 ## Pool bundle backfill
 
-Before deleting stored request bundles in a later PR, stop Git writes and worker
+Before deleting stored request bundles in a later PR, stop all HTTP, Git and worker
 writers while keeping the API deployment containing this change available for SSH.
 Run the one-shot mode in that API container, first without publishing packs:
 
@@ -260,23 +260,28 @@ configured `SCOPE_DATA_DIR` takes precedence. The maintenance service lacks the
 full API environment, so do not run this mode there or use its migrator credentials.
 The API cap is bounded at 59 MiB for this temporary mode; the maintenance cap
 stays at 26 MiB. Remove the extra API allowance when this command is deleted.
-The command scans stored revisions in batches of 32, keeps no progress state, and
-is safe to rerun.
+The command reads every revision in one repeatable-read, read-only snapshot,
+orders dependencies in memory, and recounts the revision set in a fresh read
+before succeeding. Stop writers and rerun if that set changes. It keeps no progress state and is safe to rerun. The summary
+prints the database host and total scanned. An empty scan fails unless
+`--allow-empty` explicitly confirms that an empty database is expected.
 
 Each revision restores from empty shelves through both its view reader and the
 full-view merge reader, using the reader's authorized lineage selection and
-installer with the main copy or view base. Only chains behind the required heads are installed; there
-is no pack-count cutoff. Long cold reads may take longer than a bundle restore. Missing
-revisions import their bundle and publish a pack through the live push writer,
-then repeat the empty-repository check. Verification requires both the head and
-old head independently and their connected history. Restricted packs stay view-scoped; full-view
-readers install them in staging, never shared shelves. Invited full-view readers
+installer with the main copy or view base. Only chains behind the required heads
+are installed; there is no pack-count cutoff. Long cold reads may take longer than
+a bundle restore. Missing revisions import their bundle and stage a pack through the live push writer.
+The candidate must pass every empty-repository check before publication.
+Verification requires both the head and old head independently and their connected
+history. Restricted packs stay view-scoped; full-view readers install them in staging, never shared shelves. Invited full-view readers
 restore unsubmitted drafts in staging using stored invitation membership. Dependent failures
 are deferred only while successful repairs make progress. When progress stops,
 remaining failures are reported. Failures print a reason for each revision;
-repository and total summaries print verified, repaired, and failed counts.
+the total summary prints verified, repaired, and failed counts.
 The command exits nonzero if any revision fails. Delete request bundles and this
 command only after a production invocation exits zero.
 
-This command does not cover run-owned bundles from
-`RunSource::EphemeralGitBundle` or `RunSource::RequestGitSnapshot`.
+Run-owned `RunSource::EphemeralGitBundle` and `RunSource::RequestGitSnapshot`
+reads can share these stored request blobs. Keep writers stopped through deletion
+and verify those run readers before deleting shared blobs. This command verifies
+request revisions; it does not enumerate run-owned sources.
