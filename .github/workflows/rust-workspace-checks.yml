@@ -30,7 +30,7 @@ jobs:
         with:
           cache-bin: false
           shared-key: workspace-lint
-          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          save-if: true
 
       - name: Install cargo-deny
         run: ./dev/install-cargo-deny.sh
@@ -96,7 +96,7 @@ jobs:
         with:
           cache-bin: false
           shared-key: workspace-tests-${{ matrix.lane == 'workspace' && 'workspace' || 'api' }}
-          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (matrix.lane == 'workspace' || matrix.lane == 'api') }}
+          save-if: ${{ matrix.lane == 'workspace' || matrix.lane == 'api' }}
 
       - name: Test Rust workspace lane
         run: ./dev/checks/backend ${{ matrix.lane }}
