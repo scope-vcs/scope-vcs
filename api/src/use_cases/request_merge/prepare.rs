@@ -5,6 +5,7 @@ use super::{
 use crate::{
     error::ApiError,
     git::{
+        cache::GitRepoHandle,
         command::run_git,
         import::{PreparedReceivePackUpdate, ReviewTarget, reviewed_merge_update},
         projection_repo::VerifiedProjections,
@@ -34,6 +35,7 @@ pub(super) struct MergeStaging {
     path: PathBuf,
     projections: VerifiedProjections,
     committed: Repository,
+    leases: Vec<GitRepoHandle>,
 }
 
 impl MergeStaging {
@@ -58,6 +60,7 @@ impl MergeStaging {
             path,
             projections,
             committed: repo.clone(),
+            leases: vec![base_repo],
         })
     }
 
@@ -102,7 +105,7 @@ pub(super) async fn prepare_merge_on(
             request.base.review_base_oid(),
         )
         .await?;
-    attach_request_refs_from_pool(
+    let attached = attach_request_refs_from_pool(
         state,
         &base.incarnation(),
         &base.repo_config,
@@ -119,6 +122,7 @@ pub(super) async fn prepare_merge_on(
             RequestMergeFailure::from(error)
         }
     })?;
+    staging.leases.extend(attached.leases);
     phases.mark("attach");
     let views = base.repo_config.views();
     let (origin, merge_base_oid) = if &request.view == views.full() {

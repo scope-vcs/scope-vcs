@@ -61,16 +61,19 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
         shelf_lease.as_ref().unwrap().as_ref().to_path_buf()
     };
     let main_for_install = main.as_ref().map(GitRepoHandle::share).transpose()?;
+    let shelf_for_install = shelf_lease.as_ref().map(GitRepoHandle::share).transpose()?;
     let state_for_install = state.clone();
     let incarnation = incarnation.clone();
     let request_for_install = request.clone();
     let revision_for_install = revision.clone();
     let target = shelf.clone();
     let heads = revision_heads(revision);
+    let (leases_sender, mut leases_receiver) = tokio::sync::oneshot::channel();
     state
         .repository_engine
         .install_request_objects(&shelf, heads, move || async move {
             let _main_lease = main_for_install;
+            let _shelf_lease = shelf_for_install;
             let (_canonical, full) = if full {
                 let canonical = lease_canonical(&state_for_install, &incarnation).await?;
                 let repos = ensure_full_object_repos(
@@ -94,17 +97,22 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
                     None => PoolRepos::View(&request_for_install.view, &target),
                 },
             };
-            restore_revision_lineage(
+            let leases = restore_revision_lineage(
                 &state_for_install,
                 &target,
                 &request_for_install,
                 &revision_for_install,
                 &install,
             )
-            .await
+            .await?;
+            let _ = leases_sender.send(leases);
+            Ok(())
         })
         .await?;
-    inspect_revision(state, &shelf, request, revision, main, action).await
+    let mut leases = leases_receiver.try_recv().unwrap_or_default();
+    leases.extend(main);
+    leases.extend(shelf_lease);
+    inspect_revision(state, &shelf, request, revision, leases, action).await
 }
 
 fn revision_heads(revision: &RequestRevision) -> Vec<String> {
@@ -126,7 +134,8 @@ async fn restore_revision_lineage(
     request: &Request,
     revision: &RequestRevision,
     install: &PoolInstall<'_>,
-) -> Result<(), ApiError> {
+) -> Result<Vec<GitRepoHandle>, ApiError> {
+    let mut leases = Vec::new();
     let mut pending = vec![(request.clone(), revision.clone(), false)];
     let mut visited = std::collections::BTreeSet::new();
     while let Some((request, revision, restoring)) = pending.pop() {
@@ -141,7 +150,7 @@ async fn restore_revision_lineage(
             {
                 continue;
             }
-            install_revision_packs(state, install, &request, &revision).await?;
+            leases.extend(install_revision_packs(state, install, &request, &revision).await?);
             copy_full_scope_revision(state, install, shelf, &request, &revision).await?;
             let state = state.clone();
             let shelf = shelf.to_path_buf();
@@ -157,7 +166,7 @@ async fn restore_revision_lineage(
         if !visited.insert(revision.id.clone()) {
             continue;
         }
-        install_revision_packs(state, install, &request, &revision).await?;
+        leases.extend(install_revision_packs(state, install, &request, &revision).await?);
         let heads = revision_heads(&revision);
         let target = shelf.to_path_buf();
         let present = crate::git::blocking::run(move || {
@@ -214,7 +223,7 @@ async fn restore_revision_lineage(
             pending.push((parent, base, false));
         }
     }
-    Ok(())
+    Ok(leases)
 }
 
 async fn install_revision_packs(
@@ -222,16 +231,16 @@ async fn install_revision_packs(
     install: &PoolInstall<'_>,
     request: &Request,
     revision: &RequestRevision,
-) -> Result<(), ApiError> {
+) -> Result<Vec<GitRepoHandle>, ApiError> {
     let _permit = state.runtime_budgets.try_git_materialization()?;
-    install_missing_request_packs(
+    let (_, leases) = install_missing_request_packs(
         state,
         install,
         std::slice::from_ref(request),
         &revision_heads(revision),
     )
     .await?;
-    Ok(())
+    Ok(leases)
 }
 
 async fn copy_full_scope_revision(
@@ -267,7 +276,7 @@ async fn copy_full_scope_revision(
         &full.authored
     };
     copy_revision_heads(state, shelf, source, revision_heads(revision)).await?;
-    install_revision_packs(
+    let leases = install_revision_packs(
         state,
         &PoolInstall {
             incarnation: install.incarnation,
@@ -279,6 +288,7 @@ async fn copy_full_scope_revision(
     )
     .await?;
     copy_revision_heads(state, source, shelf, revision_heads(revision)).await?;
+    drop(leases);
     drop(main);
     Ok(())
 }
@@ -397,7 +407,7 @@ async fn inspect_revision<T: Send + 'static>(
     shelf: &Path,
     request: &Request,
     revision: &RequestRevision,
-    main: Option<GitRepoHandle>,
+    leases: Vec<GitRepoHandle>,
     action: impl FnOnce(&Path, &RequestRevision) -> Result<T, ApiError> + Send + 'static,
 ) -> Result<T, ApiError> {
     let permit = state.runtime_budgets.wait_git_materialization().await?;
@@ -407,7 +417,7 @@ async fn inspect_revision<T: Send + 'static>(
     let revision = revision.clone();
     crate::git::blocking::run(move || {
         let _permit = permit;
-        let _main = main;
+        let _leases = leases;
         crate::persistence::ensure_private_dir(&root)?;
         let job = tempfile::Builder::new()
             .prefix("revision-")

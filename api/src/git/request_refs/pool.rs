@@ -3,6 +3,7 @@ use crate::{
     error::ApiError,
     git::{
         blocking,
+        cache::GitRepoHandle,
         pool_install::{
             FetchedPack, install_chain, install_fetched, installable_packs, present_commits,
         },
@@ -81,7 +82,7 @@ pub(crate) async fn install_request_pool_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
     missing: &[Request],
-) {
+) -> Vec<GitRepoHandle> {
     let started = std::time::Instant::now();
     let heads = missing
         .iter()
@@ -89,18 +90,24 @@ pub(crate) async fn install_request_pool_packs(
         .collect::<Vec<_>>();
     let restore = install_missing_request_packs(state, install, missing, &heads);
     match restore.boxed().await {
-        Ok(installed) => tracing::info!(
-            repository_id = install.incarnation.repository_id(),
-            requests = missing.len(),
-            installed,
-            duration_ms = started.elapsed().as_millis(),
-            "request pool packs installed"
-        ),
-        Err(error) => tracing::warn!(
-            repository_id = install.incarnation.repository_id(),
-            error = %error.operator_diagnostic(),
-            "request pool packs were not installed; missing requests restore from their snapshots"
-        ),
+        Ok((installed, leases)) => {
+            tracing::info!(
+                repository_id = install.incarnation.repository_id(),
+                requests = missing.len(),
+                installed,
+                duration_ms = started.elapsed().as_millis(),
+                "request pool packs installed"
+            );
+            leases
+        }
+        Err(error) => {
+            tracing::warn!(
+                repository_id = install.incarnation.repository_id(),
+                error = %error.operator_diagnostic(),
+                "request pool packs were not installed; missing requests restore from their snapshots"
+            );
+            Vec::new()
+        }
     }
 }
 
@@ -109,7 +116,7 @@ pub(crate) async fn install_missing_request_packs(
     install: &PoolInstall<'_>,
     missing: &[Request],
     heads: &[String],
-) -> Result<usize, ApiError> {
+) -> Result<(usize, Vec<GitRepoHandle>), ApiError> {
     let incarnation = install.incarnation;
     let request_ids = missing
         .iter()
@@ -125,6 +132,7 @@ pub(crate) async fn install_missing_request_packs(
         PoolRepos::View(_, repo) => repo,
     };
     listed.retain(|pack| pack_target(install, pack).is_some());
+    let mut leases = Vec::new();
     if matches!(install.repos, PoolRepos::Full(..)) {
         for view in listed
             .iter()
@@ -133,8 +141,12 @@ pub(crate) async fn install_missing_request_packs(
         {
             let base = view_object_repos(state, incarnation, install.config, view).await?;
             let target = read_repo.to_path_buf();
-            blocking::run(move || add_receive_pack_alternate(&target, &base.main.join("objects")))
-                .await?;
+            let base = blocking::run(move || {
+                add_receive_pack_alternate(&target, &base.main.join("objects"))?;
+                Ok(base.main)
+            })
+            .await?;
+            leases.push(base);
         }
     }
     let target = read_repo.to_path_buf();
@@ -180,7 +192,7 @@ pub(crate) async fn install_missing_request_packs(
             .collect();
         installed += install_chain(state, incarnation, repo, packs).await?;
     }
-    Ok(installed)
+    Ok((installed, leases))
 }
 
 fn packs_to_catch_up(

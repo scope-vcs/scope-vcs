@@ -242,6 +242,63 @@ async fn restricted_revisions_use_isolated_view_shelves_across_replicas_and_gene
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn full_view_pool_reader_retains_projection_until_its_leases_are_dropped() {
+    use crate::git::{
+        cache::RepositoryGitCache,
+        request_refs::{
+            PoolInstall, PoolRepos, ensure_local_bare_repo, install_missing_request_packs,
+        },
+    };
+
+    let (state, _main) = test_state_with_mergeable_request("view-pool-lease").await;
+    let (_source, _remote, _server, head) =
+        request_checkout(&state, "view-pool-lease-source").await;
+    submit_request(
+        router(state.clone()),
+        REQUEST_ID,
+        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
+    )
+    .await;
+    let replica = state.replica_for_tests();
+    let repo = find_repo(&replica, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    let request = stored_request(&replica, REQUEST_ID).await;
+    let directory = tempfile::tempdir().unwrap();
+    let reader = ensure_local_bare_repo(directory.path().join("reader.git")).unwrap();
+    let repos = object_repos(&replica, &test_owner_id()).await;
+    let (installed, leases) = install_missing_request_packs(
+        &replica,
+        &PoolInstall {
+            incarnation: &repo.incarnation(),
+            config: &repo.repo_config,
+            repos: PoolRepos::Full(&repos, &test_owner_id(), &reader),
+        },
+        &[request],
+        std::slice::from_ref(&head),
+    )
+    .await
+    .unwrap();
+    assert_eq!(installed, 1);
+    let projection = fs::read_to_string(reader.join("objects/info/alternates"))
+        .unwrap()
+        .trim()
+        .to_string();
+    let cache =
+        RepositoryGitCache::new(replica.repository_engine.cache_root().to_path_buf(), 1).unwrap();
+    assert!(FsPath::new(&projection).is_dir());
+    run_git(
+        Some(&reader),
+        &["fsck", "--connectivity-only", &head],
+        "read pooled request after cache eviction",
+    )
+    .unwrap();
+    drop(leases);
+    cache.prune().unwrap();
+    assert!(!FsPath::new(&projection).exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn restricted_receive_pack_cannot_resolve_shared_shelf_objects_by_id() {
     let (state, _main) = test_state_with_mergeable_request("view-pool-graft").await;
     let (source, _remote, _server, old) = request_checkout(&state, "view-pool-graft-source").await;

@@ -120,9 +120,11 @@ pub(crate) async fn backfill_revision(
                     let directory = tempfile::tempdir_in(state.data_dir.as_ref())
                         .map_err(ApiError::internal)?;
                     let path = ensure_local_bare_repo(directory.path().join("rev.git"))?;
+                    let mut leases = Vec::new();
                     for view in [read_view, &request.view] {
                         let base = wait(git.view_repo(&state, views, view))?;
                         add_receive_pack_alternate(&path, &base.join("objects"))?;
+                        leases.push(base);
                     }
                     let targets = RequestObjectRepos {
                         shared: path.clone(),
@@ -137,8 +139,12 @@ pub(crate) async fn backfill_revision(
                             PoolRepos::View(&request.view, &path)
                         },
                     };
-                    let install =
-                        |heads: &[String]| wait(install_packs(&state, &install, requested, heads));
+                    let mut install = |heads: &[String]| {
+                        let (_, installed_leases) =
+                            wait(install_packs(&state, &install, requested, heads))?;
+                        leases.extend(installed_leases);
+                        Ok::<_, ApiError>(())
+                    };
                     install(std::slice::from_ref(&head))?;
                     if let Some(StagedPoolPack { pack, .. }) = &staged
                         && pack.head_oid == head

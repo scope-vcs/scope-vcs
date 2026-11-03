@@ -56,16 +56,18 @@ pub(super) async fn install_objects(
             repos.shared.clone(),
             repos.authored.clone(),
         ]);
-        install_request_pool_packs(
-            state,
-            &PoolInstall {
-                incarnation: &git.incarnation,
-                config,
-                repos: PoolRepos::Full(&repos, user.unwrap_or_default(), folder),
-            },
-            requests,
-        )
-        .await;
+        shelf_leases.extend(
+            install_request_pool_packs(
+                state,
+                &PoolInstall {
+                    incarnation: &git.incarnation,
+                    config,
+                    repos: PoolRepos::Full(&repos, user.unwrap_or_default(), folder),
+                },
+                requests,
+            )
+            .await,
+        );
         for request in requests {
             let target = if shares_objects(request, config) {
                 Some(&repos.shared)
@@ -110,16 +112,18 @@ pub(super) async fn install_objects(
         if !full {
             validate_isolated_shelf(&shelf)?;
         }
-        install_request_pool_packs(
-            state,
-            &PoolInstall {
-                incarnation: &git.incarnation,
-                config,
-                repos: PoolRepos::View(&request_view, &shelf),
-            },
-            &subset,
-        )
-        .await;
+        shelf_leases.extend(
+            install_request_pool_packs(
+                state,
+                &PoolInstall {
+                    incarnation: &git.incarnation,
+                    config,
+                    repos: PoolRepos::View(&request_view, &shelf),
+                },
+                &subset,
+            )
+            .await,
+        );
         for request in subset {
             shelves
                 .entry((request.id, request.head_oid))

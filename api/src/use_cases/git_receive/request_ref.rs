@@ -53,6 +53,7 @@ pub(crate) struct RequestStagingRepo {
 
 #[derive(Default)]
 pub(crate) struct SeededRequestRefs {
+    pub(crate) leases: Vec<GitRepoHandle>,
     pub(crate) advertised: Vec<(String, String)>,
     pub(crate) deferred_objects: Option<DeferredRequestObjects>,
 }
@@ -260,7 +261,7 @@ async fn seed_editable_request_refs_for_repo(
                     .into_iter()
                     .map(|request| (canonical_request_ref(&request.name), request.head_oid))
                     .collect(),
-                deferred_objects: None,
+                ..Default::default()
             });
         }
         RequestRefSeeding::Pushed(_) if !reads_every_request => (Vec::new(), requests),
@@ -292,7 +293,7 @@ async fn seed_editable_request_refs_for_repo(
         )
         .await?
     } else {
-        attach_view_request_refs_from_pool(
+        let leases = attach_view_request_refs_from_pool(
             state,
             &context.incarnation,
             &context.repo_config,
@@ -302,7 +303,10 @@ async fn seed_editable_request_refs_for_repo(
             view_bases,
         )
         .await?;
-        return Ok(SeededRequestRefs::default());
+        return Ok(SeededRequestRefs {
+            leases,
+            ..Default::default()
+        });
     };
     let unreachable = attached.unreachable;
     if !unreachable.is_empty() {
@@ -317,6 +321,7 @@ async fn seed_editable_request_refs_for_repo(
     Ok(SeededRequestRefs {
         advertised: Vec::new(),
         deferred_objects: attached.deferred,
+        leases: attached.leases,
     })
 }
 
