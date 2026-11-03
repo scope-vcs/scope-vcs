@@ -1,7 +1,8 @@
-use super::pack_consolidation::consolidate_pool_repos;
+use super::{pack_consolidation::consolidate_pool_repos, view_pool::view_object_repos};
 use crate::{
     error::ApiError,
     git::{
+        blocking,
         pool_install::{
             FetchedPack, install_chain, install_fetched, installable_packs, present_commits,
         },
@@ -11,23 +12,23 @@ use crate::{
     },
     state::AppState,
 };
+use futures_util::FutureExt;
 use scope_domain::{
     repo_config::RepoConfig,
     repository::{
         RepositoryIncarnation,
-        git::{GitPoolPack, GitPoolPackOwner},
+        git::{GitPoolPack, GitPoolPackOwner, RequestPackScope},
     },
     requests::{Request, request_visible_to_every_maintainer},
+    views::ViewId,
 };
 use scope_postgres::db::PooledRequestPack;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path as FsPath, PathBuf},
 };
-
-const MAX_POOL_PACKS_PER_REQUEST: usize = 16;
 
 #[derive(Clone)]
 pub(crate) struct RequestObjectRepos {
@@ -64,11 +65,16 @@ pub(super) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
     request_visible_to_every_maintainer(&request.view, request.is_submitted(), &config.views)
 }
 
-pub(super) struct PoolInstall<'a> {
-    pub(super) incarnation: &'a RepositoryIncarnation,
-    pub(super) config: &'a RepoConfig,
-    pub(super) repos: &'a RequestObjectRepos,
-    pub(super) actor_user_id: &'a str,
+#[derive(Clone, Copy)]
+pub(crate) enum PoolRepos<'a> {
+    Full(&'a RequestObjectRepos, &'a str, &'a FsPath),
+    View(&'a ViewId, &'a FsPath),
+}
+
+pub(crate) struct PoolInstall<'a> {
+    pub(crate) incarnation: &'a RepositoryIncarnation,
+    pub(crate) config: &'a RepoConfig,
+    pub(crate) repos: PoolRepos<'a>,
 }
 
 pub(super) async fn install_request_pool_packs(
@@ -76,11 +82,13 @@ pub(super) async fn install_request_pool_packs(
     install: &PoolInstall<'_>,
     missing: &[Request],
 ) {
-    if missing.is_empty() {
-        return;
-    }
     let started = std::time::Instant::now();
-    match install_missing_request_packs(state, install, missing).await {
+    let heads = missing
+        .iter()
+        .map(|request| request.head_oid.clone())
+        .collect::<Vec<_>>();
+    let restore = install_missing_request_packs(state, install, missing, &heads);
+    match restore.boxed().await {
         Ok(installed) => tracing::info!(
             repository_id = install.incarnation.repository_id(),
             requests = missing.len(),
@@ -96,47 +104,65 @@ pub(super) async fn install_request_pool_packs(
     }
 }
 
-async fn install_missing_request_packs(
+pub(crate) async fn install_missing_request_packs(
     state: &AppState,
     install: &PoolInstall<'_>,
     missing: &[Request],
+    heads: &[String],
 ) -> Result<usize, ApiError> {
-    let repository_id = install.incarnation.repository_id();
+    let incarnation = install.incarnation;
     let request_ids = missing
         .iter()
         .map(|request| request.id.clone())
         .collect::<Vec<_>>();
-    let listed = state
+    let mut listed = state
         .metadata
         .repositories()
-        .git_pool_packs_for_requests(repository_id, &request_ids)
+        .git_pool_packs_for_requests(incarnation.repository_id(), &request_ids)
         .await?;
-    let mut by_repo = BTreeMap::<&FsPath, Vec<PooledRequestPack>>::new();
-    for listed in listed {
-        if let Some(repo) = pack_target(install, &listed) {
-            by_repo.entry(repo).or_default().push(listed);
+    let read_repo = match install.repos {
+        PoolRepos::Full(_, _, staging) => staging,
+        PoolRepos::View(_, repo) => repo,
+    };
+    listed.retain(|pack| pack_target(install, pack).is_some());
+    if matches!(install.repos, PoolRepos::Full(..)) {
+        for view in listed
+            .iter()
+            .filter_map(|pack| pack.scope.view())
+            .collect::<BTreeSet<_>>()
+        {
+            let base = view_object_repos(state, incarnation, install.config, view).await?;
+            let target = read_repo.to_path_buf();
+            blocking::run(move || add_receive_pack_alternate(&target, &base.main.join("objects")))
+                .await?;
         }
     }
-    let mut needed = Vec::new();
-    for (repo, packs) in by_repo {
-        let objects_repo = repo.to_path_buf();
-        let packs =
-            crate::git::blocking::run(move || packs_to_catch_up(&objects_repo, packs)).await?;
-        needed.push((repo, packs));
-    }
+    let target = read_repo.to_path_buf();
+    let heads = heads.to_vec();
+    let needed = blocking::run(move || packs_to_catch_up(&target, listed, heads)).await?;
     let pack_ids = needed
         .iter()
-        .flat_map(|(_, packs)| packs.iter().map(|pack| pack.id.clone()))
+        .map(|pack| pack.id.clone())
         .collect::<Vec<_>>();
     let mut storage = state
         .metadata
         .repositories()
-        .git_pool_pack_storage(repository_id, &pack_ids)
+        .git_pool_pack_storage(incarnation.repository_id(), &pack_ids)
         .await?
         .into_iter()
         .collect::<BTreeMap<_, _>>();
+    let mut by_repo = BTreeMap::<((bool, bool), &FsPath), Vec<PooledRequestPack>>::new();
+    for listed in needed {
+        if let Some(repo) = pack_target(install, &listed) {
+            let rank = match install.repos {
+                PoolRepos::Full(repos, _, staging) => (repo != repos.shared, repo == staging),
+                _ => (false, false),
+            };
+            by_repo.entry((rank, repo)).or_default().push(listed);
+        }
+    }
     let mut installed = 0;
-    for (repo, packs) in needed {
+    for ((_, repo), packs) in by_repo {
         let packs = packs
             .into_iter()
             .filter_map(|listed| {
@@ -144,6 +170,7 @@ async fn install_missing_request_packs(
                     id: listed.id,
                     owner: GitPoolPackOwner::Request {
                         request_id: listed.request_id,
+                        scope: listed.scope,
                     },
                     head_oid: listed.head_oid,
                     prerequisites: listed.prerequisites,
@@ -151,43 +178,54 @@ async fn install_missing_request_packs(
                 })
             })
             .collect();
-        installed += install_chain(state, install.incarnation, repo, packs).await?;
+        installed += install_chain(state, incarnation, repo, packs).await?;
     }
     Ok(installed)
 }
 
 fn packs_to_catch_up(
     objects_repo: &FsPath,
-    packs: Vec<PooledRequestPack>,
+    mut packs: Vec<PooledRequestPack>,
+    mut heads: Vec<String>,
 ) -> Result<Vec<PooledRequestPack>, ApiError> {
     let present = present_commits(
         objects_repo,
         packs.iter().map(|pack| pack.head_oid.as_str()),
     )?;
-    let missing = packs
-        .into_iter()
-        .filter(|pack| !present.contains(&pack.head_oid))
-        .collect::<Vec<_>>();
-    let mut per_request = BTreeMap::<String, usize>::new();
-    for pack in &missing {
-        *per_request.entry(pack.request_id.clone()).or_default() += 1;
+    packs.retain(|pack| !present.contains(&pack.head_oid));
+    let mut needed = Vec::new();
+    while let Some(head) = heads.pop() {
+        for pack in packs.extract_if(.., |pack| pack.head_oid == head) {
+            heads.extend(pack.prerequisites.iter().cloned());
+            needed.push(pack);
+        }
     }
-    Ok(missing
-        .into_iter()
-        .filter(|pack| per_request[&pack.request_id] <= MAX_POOL_PACKS_PER_REQUEST)
-        .collect())
+    Ok(needed)
 }
 
 fn pack_target<'a>(install: &PoolInstall<'a>, listed: &PooledRequestPack) -> Option<&'a FsPath> {
     let views = &install.config.views;
-    if request_visible_to_every_maintainer(&listed.request_view, listed.request_submitted, views) {
-        Some(&install.repos.shared)
-    } else if views.get(&listed.request_view).is_some()
-        && listed.request_author_id.as_deref() == Some(install.actor_user_id)
-    {
-        Some(&install.repos.authored)
-    } else {
-        None
+    let view = &listed.request_view;
+    let scope = listed.scope.view();
+    if views.get(view).is_none() || scope.is_some_and(|pack_view| pack_view != view) {
+        return None;
+    }
+    match install.repos {
+        PoolRepos::View(view, repo) => (listed.scope.view() == Some(view)).then_some(repo),
+        PoolRepos::Full(repos, actor_user_id, staging) => {
+            let shared = request_visible_to_every_maintainer(view, listed.request_submitted, views);
+            let author = listed.request_author_id.as_deref() == Some(actor_user_id);
+            if !shared && !author && !listed.request_invitees.iter().any(|id| id == actor_user_id) {
+                return None;
+            }
+            Some(if shared && scope.is_none() {
+                &repos.shared
+            } else if author && scope.is_none() {
+                &repos.authored
+            } else {
+                staging
+            })
+        }
     }
 }
 
@@ -200,10 +238,18 @@ pub(crate) async fn retain_staged_pool_pack(
     pool_pack: StagedPoolPack,
 ) {
     let shared = shares_objects(request, config);
-    if (shared || request.is_author(pusher_id))
+    if (matches!(
+        &pool_pack.pack.owner,
+        GitPoolPackOwner::Request {
+            scope: RequestPackScope::View(_),
+            ..
+        }
+    ) || shared
+        || request.is_author(pusher_id))
         && let Err(error) = install_staged_pool_pack(
             state,
             incarnation,
+            config,
             generation,
             pusher_id,
             shared,
@@ -224,20 +270,43 @@ pub(crate) async fn retain_staged_pool_pack(
 async fn install_staged_pool_pack(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
     generation: &str,
     pusher_id: &str,
     shared: bool,
     pool_pack: &StagedPoolPack,
 ) -> Result<(), ApiError> {
+    let view_path = match &pool_pack.pack.owner {
+        GitPoolPackOwner::Request {
+            scope: RequestPackScope::View(view),
+            ..
+        } => {
+            if config.object_generation() != generation {
+                return Err(ApiError::conflict("request object generation changed"));
+            }
+            Some(
+                view_object_repos(state, incarnation, config, view)
+                    .await?
+                    .objects,
+            )
+        }
+        _ => None,
+    };
     let (objects_repo, installable) = {
         let state = state.clone();
         let incarnation = incarnation.clone();
         let generation = generation.to_string();
         let pusher_id = pusher_id.to_string();
         let pack = pool_pack.pack.clone();
-        crate::git::blocking::run(move || {
-            let repos = request_object_repos(&state, &incarnation, &generation, &pusher_id)?;
-            let objects_repo = if shared { repos.shared } else { repos.authored };
+        blocking::run(move || {
+            let objects_repo = match view_path {
+                Some(repo) => repo,
+                None => {
+                    let repos =
+                        request_object_repos(&state, &incarnation, &generation, &pusher_id)?;
+                    if shared { repos.shared } else { repos.authored }
+                }
+            };
             let (installable, _) = installable_packs(&objects_repo, vec![pack])?;
             Ok((objects_repo, !installable.is_empty()))
         })
@@ -254,7 +323,7 @@ async fn install_staged_pool_pack(
                 files.pack.clone(),
                 files.index.clone(),
             );
-            crate::git::blocking::run(move || link_pack_files(&target, files)).await
+            blocking::run(move || link_pack_files(&target, files)).await
         }
         LocalPoolPack::Segment(staged) => {
             let verified = state

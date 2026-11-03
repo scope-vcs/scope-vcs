@@ -1870,10 +1870,10 @@ Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/Definitel
 LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
 
 ==============================================================================
-@types/node 24.13.5
+@types/node 26.6.5
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/@types/node/-/node-24.13.5.tgz
+Source: https://registry.npmjs.org/@types/node/-/node-26.6.5.tgz
 
 Repository: {"type": "git", "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git", "directory": "types/node"}
 LICENSE: text ff82c90f84945c60601e96b43246009b9bc589f3ebe1cd8a0fd39a3520d8c310
@@ -4633,10 +4633,10 @@ Repository: "unjs/ufo"
 LICENSE: text f7673e959327e93e07c08b1772835c239b565a14946d275ed1b5af1c5f7b4a94
 
 ==============================================================================
-undici-types 7.18.2
+undici-types 8.9.0
 Declared license: MIT
 Selected license: MIT
-Source: https://registry.npmjs.org/undici-types/-/undici-types-7.18.2.tgz
+Source: https://registry.npmjs.org/undici-types/-/undici-types-8.9.0.tgz
 
 Repository: {"type": "git", "url": "git+https://github.com/nodejs/undici.git"}
 LICENSE: text fe64958bfaef10b1c9628b4ee9f1c48170b0219bd4b2a7ef4a0c41aebd920c9e

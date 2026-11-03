@@ -293,6 +293,16 @@ explicitly enqueue or perform compensating cleanup when persistence fails.
 A successful Postgres transaction remains the authority for metadata state;
 filesystem and object operations do not invent domain transitions.
 
+Request pushes keep writing bundles for existing readers and also register pool
+packs in the revision transaction. Restricted pushes record the pack's view and
+install it only on that view's shelf under the repository's object generation.
+A restricted staging repository copies only authorized request heads from its
+view shelf, keeping other authors' drafts unreachable. The shelf borrows a
+self-contained projection owner that fetches each new view head incrementally,
+since ordinary projection caches can borrow canonical objects. Changing view configuration abandons the old shelf.
+Full-view push shelves retain their shared and per-author ownership; readers
+continue using bundles in this migration slice.
+
 `scope-domain::repository::git::GitHead` owns the current Git coordinates and
 its opaque `GitFrontier` digest. Push and merge transactions compare that typed
 frontier to reject stale preparation. A frontier is metadata, not a separate

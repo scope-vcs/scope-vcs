@@ -2,7 +2,9 @@ use super::publish_git_segment;
 use crate::db::integer_columns::{i32_to_u32, i64_to_u64, u32_to_i32, u64_to_i64};
 use crate::error::PostgresError;
 use scope_domain::{
-    repository::git::{GitPoolPack, GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef},
+    repository::git::{
+        GitPoolPack, GitPoolPackOwner, GitPoolPackStorage, GitSegmentRef, RequestPackScope,
+    },
     views::ViewId,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, QueryResult, Statement, Value};
@@ -14,8 +16,10 @@ pub struct PooledRequestPack {
     pub head_oid: String,
     pub prerequisites: Vec<String>,
     pub request_view: ViewId,
+    pub scope: RequestPackScope,
     pub request_author_id: Option<String>,
     pub request_submitted: bool,
+    pub request_invitees: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,28 +84,31 @@ where
             )
         }
     };
-    let (request_id, first_sequence, last_sequence): (Value, Value, Value) = match &pack.owner {
-        GitPoolPackOwner::Request { request_id } => (
-            Some(request_id.clone()).into(),
-            Option::<i64>::None.into(),
-            Option::<i64>::None.into(),
-        ),
-        GitPoolPackOwner::Main {
-            first_sequence,
-            last_sequence,
-        } => (
-            Option::<String>::None.into(),
-            Some(u64_to_i64(*first_sequence, "Git main pack first sequence")?).into(),
-            Some(u64_to_i64(*last_sequence, "Git main pack last sequence")?).into(),
-        ),
-    };
+    let (request_id, first_sequence, last_sequence, view_id): (Value, Value, Value, Value) =
+        match &pack.owner {
+            GitPoolPackOwner::Request { request_id, scope } => (
+                Some(request_id.clone()).into(),
+                Option::<i64>::None.into(),
+                Option::<i64>::None.into(),
+                scope.view().map(|view| view.as_str().to_string()).into(),
+            ),
+            GitPoolPackOwner::Main {
+                first_sequence,
+                last_sequence,
+            } => (
+                Option::<String>::None.into(),
+                Some(u64_to_i64(*first_sequence, "Git main pack first sequence")?).into(),
+                Some(u64_to_i64(*last_sequence, "Git main pack last sequence")?).into(),
+                Option::<String>::None.into(),
+            ),
+        };
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "INSERT INTO scope_git_pool_packs (
              id, repo_id, request_id, head_oid, prerequisites, sealed_pack, segment_id,
              segment_sha256, segment_plaintext_bytes, segment_encoding_version, created_at_unix,
-             first_sequence, last_sequence
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+             first_sequence, last_sequence, view_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
         [
             pack.id.clone().into(),
             repo_id.into(),
@@ -116,6 +123,7 @@ where
             u64_to_i64(now_unix, "Git pool pack registration time")?.into(),
             first_sequence,
             last_sequence,
+            view_id,
         ],
     ))
     .await?;
@@ -136,13 +144,19 @@ where
     let read = PostgresError::internal;
     conn.query_all_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT packs.id, packs.request_id, packs.head_oid, packs.prerequisites,
+        "WITH RECURSIVE lineage(id) AS (
+             SELECT unnest($2::text[]) UNION
+             SELECT unnest(ARRAY[r.parent_request_id] || ARRAY(
+                 SELECT parent_request_id FROM scope_request_revisions WHERE request_id = r.id))
+             FROM scope_requests r JOIN lineage l ON r.id = l.id WHERE r.repo_id = $1
+         ) SELECT packs.id, packs.request_id, packs.head_oid, packs.prerequisites, packs.view_id,
                 requests.audience AS request_view,
                 requests.author_user_id AS request_author_id,
-                requests.submitted_at_unix IS NOT NULL AS request_submitted
+                requests.submitted_at_unix IS NOT NULL AS request_submitted,
+                ARRAY(SELECT user_id FROM scope_request_invitees WHERE request_id = requests.id) AS request_invitees
          FROM scope_git_pool_packs packs
          JOIN scope_requests requests ON requests.id = packs.request_id
-         WHERE packs.repo_id = $1 AND packs.request_id = ANY($2)
+         WHERE packs.repo_id = $1 AND packs.request_id IN (SELECT id FROM lineage)
          ORDER BY packs.created_at_unix, packs.id",
         [repo_id.into(), request_ids.to_vec().into()],
     ))
@@ -152,12 +166,19 @@ where
         Ok(PooledRequestPack {
             id: row.try_get("", "id").map_err(read)?,
             request_id: row.try_get("", "request_id").map_err(read)?,
+            scope: match row.try_get::<Option<String>>("", "view_id").map_err(read)? {
+                Some(view) => {
+                    RequestPackScope::View(ViewId::parse(&view).map_err(PostgresError::internal)?)
+                }
+                None => RequestPackScope::Full,
+            },
             head_oid: row.try_get("", "head_oid").map_err(read)?,
             prerequisites: row.try_get("", "prerequisites").map_err(read)?,
             request_view: ViewId::parse(&row.try_get::<String>("", "request_view").map_err(read)?)
                 .map_err(PostgresError::internal)?,
             request_author_id: row.try_get("", "request_author_id").map_err(read)?,
             request_submitted: row.try_get("", "request_submitted").map_err(read)?,
+            request_invitees: row.try_get("", "request_invitees").map_err(read)?,
         })
     })
     .collect()

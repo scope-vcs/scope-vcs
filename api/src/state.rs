@@ -106,15 +106,21 @@ impl Integrations {
 
 impl AppState {
     pub async fn from_env() -> anyhow::Result<Self> {
+        let state = Self::for_bundle_backfill(database_url_from_env()?).await?;
+        state.git_segment_store.cleanup_temporary().await?;
+        best_effort_drain_pending_repo_storage_deletions(&state).await;
+        Ok(state)
+    }
+
+    pub(crate) async fn for_bundle_backfill(database_url: String) -> anyhow::Result<Self> {
         let git_public_url = git_public_url_from_env(None)?;
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
-        storage.git_segment_store.cleanup_temporary().await?;
         let metadata = MetadataStore::connect_with_max_connections(
-            database_url_from_env()?,
+            database_url,
             database_max_connections_from_env()?,
         )
         .await?;
-        let state = Self::connect(AppServices {
+        Self::connect(AppServices {
             storage,
             metadata,
             run_caches: RunCacheStorage::from_env()?,
@@ -122,9 +128,7 @@ impl AppState {
             product_analytics: ProductAnalytics::from_env(EventSource::Api).await?,
             git_public_url,
         })
-        .await?;
-        best_effort_drain_pending_repo_storage_deletions(&state).await;
-        Ok(state)
+        .await
     }
 
     pub(crate) async fn connect(services: AppServices) -> anyhow::Result<Self> {

@@ -93,6 +93,7 @@ pub(crate) struct ReceivePreparation {
     pub(crate) advertised_request_refs: Vec<(String, String)>,
     pub(crate) deferred_request_objects: Option<DeferredRequestObjects>,
     pub(crate) object_generation: Option<String>,
+    full_view_staging: bool,
     pub(crate) base_publication:
         Option<crate::use_cases::request_base_publication::RequestBasePublicationHeaders>,
 }
@@ -114,12 +115,13 @@ pub(crate) async fn prepare(
     seeding: RequestRefSeeding<'_>,
 ) -> Result<ReceivePreparation, ApiError> {
     let incarnation = access.incarnation().clone();
-    let (staging_repo, staging_seed, seeded, object_generation) = match &access {
+    let (staging_repo, staging_seed, seeded, object_generation, full_view_staging) = match &access {
         ReceivePackAccess::FirstPush { .. } => (
             ensure_first_push_receive_pack_staging_repo(state, &incarnation).await?,
             None,
             SeededRequestRefs::default(),
             None,
+            true,
         ),
         ReceivePackAccess::ReadyMember {
             author_id, context, ..
@@ -139,6 +141,7 @@ pub(crate) async fn prepare(
                     Some(staging.seed),
                     seeded,
                     Some(context.repo_config.object_generation()),
+                    true,
                 ),
                 Err(error) => {
                     let _ = crate::git::storage::remove_dir_if_exists(&staging.path);
@@ -175,6 +178,7 @@ pub(crate) async fn prepare(
                 Some(staging.seed),
                 staging.seeded,
                 Some(staging.object_generation),
+                staging.full_view,
             )
         }
     };
@@ -198,6 +202,7 @@ pub(crate) async fn prepare(
         advertised_request_refs: seeded.advertised,
         deferred_request_objects: seeded.deferred_objects,
         object_generation,
+        full_view_staging,
         base_publication: None,
     })
 }
@@ -283,6 +288,7 @@ async fn complete_inner(
             request_ref::RequestRevisionStaging {
                 repo: staging_repo,
                 object_generation,
+                full_view: preparation.full_view_staging,
             },
             update,
             preparation.base_publication,
@@ -320,6 +326,9 @@ async fn complete_inner(
                 repo_name,
                 staging_repo,
                 view_main_push::ViewMainPush {
+                    object_generation: preparation.object_generation.ok_or_else(|| {
+                        ApiError::internal_message("view push has no object generation")
+                    })?,
                     author_id,
                     incarnation,
                     view,

@@ -14,6 +14,7 @@ fn selection_surfaces_chain_errors_before_looking_for_a_pair() {
     disconnected.prerequisites = vec!["different".to_string()];
     let mut request_owned = main_pack(2, 2);
     request_owned.owner = GitPoolPackOwner::Request {
+        scope: crate::repository::git::RequestPackScope::Full,
         request_id: "request".to_string(),
     };
     for (packs, expected) in [

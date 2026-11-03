@@ -6,6 +6,9 @@ use crate::use_cases::git_receive::{
 };
 use std::collections::BTreeSet;
 
+mod backfill;
+mod views;
+
 async fn prepare_owner_push(state: &AppState, request_ref: &str) -> PathBuf {
     prepare_push(state, &test_owner_id(), request_ref).await
 }
@@ -160,12 +163,12 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
         .unwrap();
         git_head_oid(&source)
     };
-    for revision in 0..20 {
+    for revision in 0..17 {
         push(&first_remote, revision);
     }
-    let restored_head = push(&second_remote, 20);
-    let behind_head = push(&first_remote, 21);
-    push(&second_remote, 22);
+    push(&second_remote, 17);
+    let behind_head = push(&first_remote, 18);
+    push(&second_remote, 19);
 
     let pushing_objects = object_repos(&state, &test_owner_id()).await.shared;
     let packs = fs::read_dir(pushing_objects.join("objects/pack"))
@@ -179,7 +182,7 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
                 .is_some_and(|ext| ext == "idx")
         })
         .count();
-    assert!(packs <= 16, "{packs} packs after 21 retained revisions");
+    assert!(packs <= 16, "{packs} packs after 19 retained revisions");
     let main_head = git_head_oid(&main_source);
     let local_objects = fs::read_dir(pushing_objects.join("objects/pack"))
         .unwrap()
@@ -211,21 +214,15 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
     .unwrap();
     let replica_objects = object_repos(&replica, &test_owner_id()).await.shared;
     assert!(has_commit(&replica_objects, &behind_head));
-    assert_eq!(
-        git_stdout_text(
-            &replica_objects,
-            &["rev-parse", "refs/scope/seeded/long"],
-            "read the replica's bundle restore",
+    assert!(
+        !run_git_output(
+            Some(&replica_objects),
+            &["show-ref", "--verify", "refs/scope/seeded/long"],
+            "check for a bundle restore",
         )
         .unwrap()
-        .trim(),
-        git_stdout_text(
-            &source,
-            &["rev-parse", &format!("{restored_head}^")],
-            "read the restored head"
-        )
-        .unwrap()
-        .trim()
+        .status
+        .success()
     );
 }
 

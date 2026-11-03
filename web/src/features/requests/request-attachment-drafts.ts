@@ -1,3 +1,5 @@
+import { browserSessionStorage } from '../../lib/session-storage'
+
 export type RequestAttachmentDraftTarget =
   | 'description'
   | 'discussion'
@@ -246,10 +248,11 @@ export function activateRequestAttachmentDraftViewer(viewerId: string) {
 
 function knownDraftKeys() {
   const keys = new Set(entries.keys())
-  if (typeof sessionStorage !== 'undefined') {
+  const storage = browserSessionStorage()
+  if (storage) {
     try {
-      for (let index = 0; index < sessionStorage.length; index += 1) {
-        const storageKey = sessionStorage.key(index)
+      for (let index = 0; index < storage.length; index += 1) {
+        const storageKey = storage.key(index)
         if (storageKey?.startsWith(STORAGE_PREFIX)) keys.add(storageKey.slice(STORAGE_PREFIX.length))
       }
     } catch {}
@@ -263,7 +266,7 @@ function discardDraftKey(key: string) {
   for (const attachment of entry?.draft.attachments ?? []) revokePreviewUrl(attachment.previewUrl)
   entries.delete(key)
   try {
-    sessionStorage.removeItem(`${STORAGE_PREFIX}${key}`)
+    browserSessionStorage()?.removeItem(`${STORAGE_PREFIX}${key}`)
   } catch {}
 }
 
@@ -358,13 +361,14 @@ export function inferredMediaType(file: File) {
 }
 
 function persist(key: string, draft: RequestAttachmentDraft) {
-  if (typeof sessionStorage === 'undefined') return
+  const storage = browserSessionStorage()
+  if (!storage) return
   try {
     if (!draft.initialized && !draft.text && draft.attachments.length === 0) {
-      sessionStorage.removeItem(`${STORAGE_PREFIX}${key}`)
+      storage.removeItem(`${STORAGE_PREFIX}${key}`)
       return
     }
-    sessionStorage.setItem(`${STORAGE_PREFIX}${key}`, JSON.stringify({
+    storage.setItem(`${STORAGE_PREFIX}${key}`, JSON.stringify({
       attachments: draft.attachments.map((attachment) => ({
         attachmentId: attachment.attachmentId,
         contentType: attachment.contentType,
@@ -383,9 +387,10 @@ function persist(key: string, draft: RequestAttachmentDraft) {
 }
 
 function restore(key: string): RequestAttachmentDraft {
-  if (typeof sessionStorage === 'undefined') return emptyDraft()
+  const storage = browserSessionStorage()
+  if (!storage) return emptyDraft()
   try {
-    const raw = sessionStorage.getItem(`${STORAGE_PREFIX}${key}`)
+    const raw = storage.getItem(`${STORAGE_PREFIX}${key}`)
     if (!raw) return emptyDraft()
     const value: unknown = JSON.parse(raw)
     if (!value || typeof value !== 'object') return emptyDraft()
