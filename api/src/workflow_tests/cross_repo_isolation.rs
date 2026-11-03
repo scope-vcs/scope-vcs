@@ -1,4 +1,5 @@
 mod repo_a;
+mod write_bodies;
 
 use super::custom_views::member_bearer;
 use super::*;
@@ -16,6 +17,12 @@ const REFUSALS: [StatusCode; 7] = [
     StatusCode::UNSUPPORTED_MEDIA_TYPE,
     StatusCode::UNPROCESSABLE_ENTITY,
 ];
+const ACCESS_REFUSALS: [StatusCode; 4] = [
+    StatusCode::UNAUTHORIZED,
+    StatusCode::FORBIDDEN,
+    StatusCode::NOT_FOUND,
+    StatusCode::METHOD_NOT_ALLOWED,
+];
 const CALLER_SCOPED_SUCCESSES: &[(&str, &str)] = &[
     ("GET", routes::HEALTH),
     ("GET", routes::READINESS),
@@ -25,6 +32,8 @@ const CALLER_SCOPED_SUCCESSES: &[(&str, &str)] = &[
     ("GET", routes::REPOSITORY_INVITE),
     ("POST", routes::CLI_DEVICE_LOGIN),
     ("POST", routes::CLI_EXCHANGE_GRANTS),
+    ("POST", routes::REPOS),
+    ("POST", routes::CLI_BROWSER_LOGIN),
     ("DELETE", routes::ACCOUNT),
 ];
 
@@ -62,6 +71,15 @@ impl Case {
         CALLER_SCOPED_SUCCESSES.contains(&(self.method, self.template))
     }
 
+    fn names_repository_children(&self) -> bool {
+        let repository_level = ["{owner}", "{repo}", "{view}"]
+            .iter()
+            .filter(|parameter| self.template.contains(**parameter))
+            .count();
+        self.template.contains("{owner}/{repo}")
+            && self.template.matches('{').count() > repository_level
+    }
+
     fn uri(&self, params: &BTreeMap<&'static str, String>) -> String {
         let mut uri = String::new();
         let mut rest = self.template;
@@ -94,19 +112,25 @@ struct Observed {
 }
 
 impl Observed {
-    fn refused(&self) -> bool {
-        REFUSALS.contains(&self.status) || self.git_error
+    fn refused(&self, method: &str) -> bool {
+        let refusals: &[StatusCode] = if method == "GET" {
+            &REFUSALS
+        } else {
+            &ACCESS_REFUSALS
+        };
+        refusals.contains(&self.status) || self.git_error
     }
 }
 
-fn cases(queries: &[String]) -> Vec<Case> {
+fn cases(repo_a: &RepoA) -> Vec<Case> {
     let mut cases = Vec::new();
+    let write_queries = [repo_a.write_query.clone()];
     for method in METHODS {
         for template in ROUTE_TEMPLATES {
             let queries = if method == "GET" {
-                queries
+                &repo_a.queries[..]
             } else {
-                &queries[..1]
+                &write_queries[..]
             };
             for query in queries {
                 cases.push(Case {
@@ -121,10 +145,15 @@ fn cases(queries: &[String]) -> Vec<Case> {
     cases
 }
 
-async fn call(app: &axum::Router, case: &Case, uri: &str, caller: Caller) -> Observed {
-    let body = (case.method != "GET").then_some("{}");
+async fn call(repo_a: &RepoA, case: &Case, uri: &str, caller: Caller) -> Observed {
+    let body = (case.method != "GET").then(|| {
+        repo_a
+            .write_bodies
+            .get(&(case.method, case.template))
+            .map_or("{}", String::as_str)
+    });
     let response = api_request(
-        app.clone(),
+        repo_a.app.clone(),
         case.method,
         uri,
         caller.bearer().as_deref(),
@@ -142,7 +171,9 @@ async fn call(app: &axum::Router, case: &Case, uri: &str, caller: Caller) -> Obs
     let git = content_type.starts_with(b"application/x-git-");
     let mut git_error = false;
     if streams && status.is_success() {
-        text.push_str("<open event stream>");
+        let mut events = response.into_body().into_data_stream();
+        let first = events.next().await.unwrap().unwrap();
+        text.push_str(&String::from_utf8_lossy(&first));
     } else {
         let body = to_bytes(response.into_body(), 16 * 1024 * 1024)
             .await
@@ -206,7 +237,7 @@ struct Checked {
 
 async fn check(repo_a: &RepoA, case: &Case, caller: Caller) -> Checked {
     let uri = case.uri(&repo_a.params);
-    let observed = call(&repo_a.app, case, &uri, caller).await;
+    let observed = call(repo_a, case, &uri, caller).await;
     let mut failures = Vec::new();
     let markers: &[String] = match caller {
         Caller::Owner => &[],
@@ -222,14 +253,14 @@ async fn check(repo_a: &RepoA, case: &Case, caller: Caller) -> Checked {
     }
     let outsider = matches!(caller, Caller::Anonymous | Caller::Outsider);
     if outsider && !case.may_succeed_for_outsiders() {
-        if !observed.refused() {
+        if !observed.refused(case.method) {
             failures.push(format!(
                 "{caller:?} {} {uri}: {} is not a refusal: {}",
                 case.method, observed.status, observed.text
             ));
         }
         if observed.status != StatusCode::METHOD_NOT_ALLOWED {
-            let absent = call(&repo_a.app, case, &case.uri(&repo_a.absent), caller).await;
+            let absent = call(repo_a, case, &case.uri(&repo_a.absent), caller).await;
             let observed_text = normalized(&observed.text, &repo_a.params);
             let absent_text = normalized(&absent.text, &repo_a.absent);
             if observed.status != absent.status || observed_text != absent_text {
@@ -240,6 +271,9 @@ async fn check(repo_a: &RepoA, case: &Case, caller: Caller) -> Checked {
             }
         }
     }
+    if caller == Caller::Outsider && case.names_repository_children() {
+        failures.extend(children_through_own_repository(repo_a, case).await);
+    }
     Checked {
         caller,
         failures,
@@ -247,10 +281,36 @@ async fn check(repo_a: &RepoA, case: &Case, caller: Caller) -> Checked {
     }
 }
 
+async fn children_through_own_repository(repo_a: &RepoA, case: &Case) -> Vec<String> {
+    let uri = case.uri(&repo_a.children_in_b);
+    let observed = call(repo_a, case, &uri, Caller::Outsider).await;
+    let absent = call(
+        repo_a,
+        case,
+        &case.uri(&repo_a.absent_children_in_b),
+        Caller::Outsider,
+    )
+    .await;
+    let mut failures = Vec::new();
+    let leaks = leaked(&observed.text, &repo_a.outsider_markers);
+    if !leaks.is_empty() {
+        failures.push(format!("Outsider {} {uri}: leaked {leaks:?}", case.method));
+    }
+    let observed_text = normalized(&observed.text, &repo_a.children_in_b);
+    let absent_text = normalized(&absent.text, &repo_a.absent_children_in_b);
+    if observed.status != absent.status || observed_text != absent_text {
+        failures.push(format!(
+            "Outsider {} {uri}: repo A's ids under repo B answer {} {observed_text} but absent ids answer {} {absent_text}",
+            case.method, observed.status, absent.status
+        ));
+    }
+    failures
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn no_route_returns_another_repositorys_data_or_a_hidden_views_files() {
     let repo_a = repo_a().await;
-    let cases = cases(&repo_a.queries);
+    let cases = cases(&repo_a);
     let (reads, writes): (Vec<_>, Vec<_>) = cases.iter().partition(|case| case.method == "GET");
     let callers = [
         Caller::Owner,

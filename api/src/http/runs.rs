@@ -63,11 +63,8 @@ pub(crate) async fn resolve_manual_run(
     Query(query): Query<CreateManualRunQuery>,
 ) -> Result<Json<ResolveManualRunResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let request = manual_run_request(
-        scope_domain::repository::repo_id(&owner, &repo_name),
-        user.id,
-        query,
-    )?;
+    let repo = require_full_view_member(&state, &user.id, &owner, &repo_name).await?;
+    let request = manual_run_request(repo.record.id, user.id, query)?;
     let response = match resolve_manual_run_control(&state, &request).await? {
         Some(inspected) => ResolveManualRunResponse::Queued {
             run: run_response(&inspected.run, inspected.logs_truncated),

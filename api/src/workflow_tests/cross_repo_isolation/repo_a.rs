@@ -1,5 +1,6 @@
 use super::super::custom_views::{custom_view, member_id, view};
 use super::super::*;
+use super::write_bodies::{WriteBodies, write_bodies};
 use scope_api_contract::routes;
 use scope_domain::{
     requests::{RecordRequestRevisionInput, RequestRevisionGitFacts},
@@ -35,7 +36,11 @@ pub(super) struct RepoA {
     pub(super) app: axum::Router,
     pub(super) params: BTreeMap<&'static str, String>,
     pub(super) absent: BTreeMap<&'static str, String>,
+    pub(super) children_in_b: BTreeMap<&'static str, String>,
+    pub(super) absent_children_in_b: BTreeMap<&'static str, String>,
     pub(super) queries: Vec<String>,
+    pub(super) write_query: String,
+    pub(super) write_bodies: WriteBodies,
     pub(super) outsider_markers: Vec<String>,
     pub(super) narrow_markers: Vec<String>,
 }
@@ -454,7 +459,7 @@ pub(super) async fn repo_a() -> RepoA {
         "user_code",
         "device_code",
     ];
-    let absent = params
+    let absent: BTreeMap<_, _> = params
         .iter()
         .map(|(name, value)| {
             let value = if unvaried.contains(name) {
@@ -465,6 +470,14 @@ pub(super) async fn repo_a() -> RepoA {
             (*name, value)
         })
         .collect();
+    let in_b = |values: &BTreeMap<&'static str, String>| {
+        let mut values = values.clone();
+        values.insert("owner", OUTSIDER_HANDLE.to_string());
+        values.insert("repo", "repo-b".to_string());
+        values
+    };
+    let children_in_b = in_b(&params);
+    let absent_children_in_b = in_b(&absent);
     let common = format!(
         "section=active&after=0&workflow=test&git_oid={head}&commit_oid={head}&search=hidden&service=git-upload-pack"
     );
@@ -491,6 +504,7 @@ pub(super) async fn repo_a() -> RepoA {
         REPLY_BODY,
         ATTACHMENT_FILENAME,
         INVITE_EMAIL,
+        LOG_TEXT,
     ]
     .map(str::to_string)
     .to_vec();
@@ -499,17 +513,27 @@ pub(super) async fn repo_a() -> RepoA {
         [
             VISIBLE_PATH,
             COMMIT_MESSAGE,
-            LOG_TEXT,
             TEST_OWNER_EMAIL,
             super::super::fake_github::GITHUB_FULL_NAME,
+            super::super::test_repo_incarnation().incarnation_id(),
         ]
         .map(str::to_string),
     );
+    let write_query = format!(
+        "workflow=test&git_oid={}&request_id={}",
+        params["head_oid"],
+        "0".repeat(32)
+    );
+    let write_bodies = write_bodies(&params);
     RepoA {
         app: router(state),
         params,
         absent,
+        children_in_b,
+        absent_children_in_b,
         queries,
+        write_query,
+        write_bodies,
         outsider_markers,
         narrow_markers,
     }

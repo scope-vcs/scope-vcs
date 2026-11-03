@@ -183,7 +183,6 @@ pub(crate) async fn update_repository_member(
         &repo_name,
         RepoChangeReason::MemberPermissionsChanged,
         |user| async move {
-            let member_user = metadata.repositories().user(&member_user_id).await?;
             let mutation = metadata
                 .repositories()
                 .update_repository_member_permissions(
@@ -191,12 +190,13 @@ pub(crate) async fn update_repository_member(
                         owner: mutation_owner,
                         name: mutation_repo_name,
                         owner_user_id: user.id,
-                        member_user_id,
+                        member_user_id: member_user_id.clone(),
                         permissions: input.permissions.into(),
                         now_unix,
                     },
                 )
                 .await?;
+            let member_user = metadata.repositories().user(&member_user_id).await?;
             Ok(map_committed_mutation(mutation, |member| {
                 repository_member_response(&member, &member_user)
             }))
@@ -259,7 +259,6 @@ pub(crate) async fn delete_repository_member(
         &repo_name,
         RepoChangeReason::MemberRemoved,
         |user| async move {
-            let member_user = metadata.repositories().user(&member_user_id).await?;
             let mutation = metadata
                 .repositories()
                 .remove_repository_member(
@@ -270,6 +269,7 @@ pub(crate) async fn delete_repository_member(
                     now_unix,
                 )
                 .await?;
+            let member_user = metadata.repositories().user(&member_user_id).await?;
             Ok(map_committed_mutation(mutation, |member| {
                 repository_member_response(&member, &member_user)
             }))

@@ -29,7 +29,8 @@ loaded by ID and compared with that repository, for example a request's
 A caller who cannot read a repository gets the same 404 as for a missing one.
 Member-only routes check readability before membership: `get_repo_config` and
 `require_full_view_member` call `find_read_access` first
-(`api/src/use_cases/run_inspection.rs`), and Git transport returns the
+(`api/src/use_cases/run_inspection.rs`), including manual run creation and
+resolution, and Git transport returns the
 missing-repository error before it reports an unreadable view
 (`authorized_git_read` in `api/src/git/upload.rs`).
 
@@ -39,12 +40,18 @@ member with a narrow view. Path parameters carry repository A's real IDs. The
 test asserts that:
 
 - outsiders get a refusal status, and the same status and body as for a
-  repository that does not exist;
+  repository that does not exist. Writes carry a body that deserializes
+  (`cross_repo_isolation/write_bodies.rs`), so they must be refused for
+  access (401, 403, 404 or 405), not for a malformed body;
+- the outsider, using its own repository's path with repository A's request,
+  discussion, attachment, run and member IDs, gets the same answer as for IDs
+  that do not exist;
 - no response carries repository A's file contents, paths, commit message,
   request title or description, discussion text, attachment name, invite
-  email, run log, GitHub repository name, owner email, or incarnation ID;
+  email, run log, GitHub repository name, owner email, or incarnation ID.
+  Event streams are checked through their first event;
 - the narrow member never sees the paths or contents of files outside its
-  view, nor the private request and its data.
+  view, run logs, nor the private request and its data.
 
 Bearer capabilities (invite tokens, device codes, user codes) are filled with
 values the caller does not hold. Holding one is the authorization.
