@@ -26,6 +26,16 @@ test('a same-image redeploy replaces the receipt for a release that deploys it',
   assert.deepEqual(verifyRedeployedReplacement(fixture()), { ...receipt, evidenceId: 'redeployed' });
 });
 
+test('a same-image Railway failover replaces the receipt like a redeploy', () => {
+  const failover = fixture();
+  failover.history[0].meta.reason = 'failover';
+  assert.deepEqual(verifyRedeployedReplacement(failover), { ...receipt, evidenceId: 'redeployed' });
+
+  const otherImage = fixture();
+  otherImage.history[0].meta = { reason: 'failover', imageDigest: `sha256:${'d'.repeat(64)}` };
+  assert.throws(() => verifyRedeployedReplacement(otherImage), /not a redeploy of the receipted image/);
+});
+
 test('the release must deploy the redeployed component', () => {
   assert.throws(() => verifyRedeployedReplacement({ ...fixture(), selected: { api: false } }),
     /does not replace api/);
