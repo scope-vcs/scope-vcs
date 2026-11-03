@@ -220,3 +220,157 @@ fn stored_rules_in_any_order_resolve_the_nearest_ancestor_and_last_duplicate() {
         assert_eq!(policy.label(&path(file), &views), expected, "{file}");
     }
 }
+
+fn strings_up_to(alphabet: &[char], length: usize) -> Vec<String> {
+    let mut all = vec![String::new()];
+    let mut frontier = all.clone();
+    for _ in 0..length {
+        frontier = frontier
+            .iter()
+            .flat_map(|prefix| alphabet.iter().map(move |c| format!("{prefix}{c}")))
+            .collect();
+        all.extend(frontier.iter().cloned());
+    }
+    all
+}
+
+fn assert_scope_path_contract(raw: &str) {
+    let segments = raw.split('/').filter(|segment| !segment.is_empty());
+    let acceptable = raw.starts_with('/')
+        && segments
+            .clone()
+            .all(|segment| segment != "." && segment != "..");
+    match ScopePath::parse(raw) {
+        Ok(parsed) => {
+            assert!(acceptable, "{raw:?} parsed");
+            let text = parsed.as_str();
+            assert!(text.starts_with('/'), "{raw:?}");
+            assert!(
+                text == "/"
+                    || text[1..]
+                        .split('/')
+                        .all(|s| !s.is_empty() && s != "." && s != ".."),
+                "{raw:?} -> {text:?}"
+            );
+            assert_eq!(
+                text[1..]
+                    .split('/')
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>(),
+                segments.collect::<Vec<_>>()
+            );
+            assert_eq!(ScopePath::parse(parsed.to_string()), Ok(parsed));
+        }
+        Err(_) => assert!(!acceptable, "{raw:?} rejected"),
+    }
+}
+
+#[test]
+fn scope_path_parsing_is_exhaustively_correct_up_to_seven_characters() {
+    for raw in strings_up_to(&['/', '.', 'a', ' '], 7) {
+        assert_scope_path_contract(&raw);
+    }
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config { cases: 256, ..Default::default() })]
+
+    #[test]
+    fn scope_path_parsing_never_panics_and_round_trips(
+        raw in proptest::string::string_regex("(/|\\.|\\.\\.|[a-z]|\\\\|%2e|\\x00|\\PC)*").unwrap()
+    ) {
+        assert_scope_path_contract(&raw);
+    }
+}
+
+fn small_paths() -> Vec<ScopePath> {
+    let mut paths = vec![ScopePath::root()];
+    for depth in 1..=3 {
+        let mut level = vec![String::new()];
+        for _ in 0..depth {
+            level = level
+                .iter()
+                .flat_map(|prefix| ["a", "ab", "b"].map(|segment| format!("{prefix}/{segment}")))
+                .collect();
+        }
+        paths.extend(level.iter().map(|value| path(value)));
+    }
+    paths
+}
+
+fn nearest_rule_label(rules: &[LabelRule], file: &ScopePath) -> Option<ViewId> {
+    let mut candidate = file.as_str().to_string();
+    loop {
+        if let Some(rule) = rules.iter().find(|rule| rule.path.as_str() == candidate) {
+            return Some(rule.view.clone());
+        }
+        if candidate == "/" {
+            return None;
+        }
+        candidate = match candidate.rfind('/') {
+            Some(0) => "/".to_string(),
+            Some(index) => candidate[..index].to_string(),
+            None => return None,
+        };
+    }
+}
+
+fn island(rules: &[LabelRule]) -> bool {
+    rules.iter().any(|child| {
+        child.view.is_public()
+            && rules.iter().any(|parent| {
+                parent.view.is_private()
+                    && parent.path != child.path
+                    && (parent.path.as_str() == "/"
+                        || child
+                            .path
+                            .as_str()
+                            .starts_with(&format!("{}/", parent.path.as_str())))
+            })
+    })
+}
+
+#[test]
+fn labels_and_the_public_island_rule_are_exhaustively_correct_for_two_rules() {
+    let views = Views::builtin();
+    let agent = ViewId::parse("agent").unwrap();
+    let paths = small_paths();
+    let labels = [ViewId::public(), ViewId::private(), agent];
+    let rules = paths
+        .iter()
+        .flat_map(|rule_path| {
+            labels.iter().map(|view| LabelRule {
+                path: rule_path.clone(),
+                view: view.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let existing = Policy::new(ViewId::private());
+    for first in &rules {
+        for second in rules.iter().filter(|rule| rule.path.as_str() < "/b") {
+            let batch = [first.clone(), second.clone()];
+            let merged = if first.path == second.path {
+                vec![second.clone()]
+            } else {
+                batch.to_vec()
+            };
+            let mut policy = existing.clone();
+            match policy.add_rules(batch) {
+                Ok(()) => {
+                    assert!(!island(&merged), "{merged:?} accepted");
+                    for file in &paths {
+                        assert_eq!(
+                            policy.label(file, &views),
+                            nearest_rule_label(&merged, file).unwrap_or_else(ViewId::private),
+                            "{merged:?} {file}"
+                        );
+                    }
+                }
+                Err(PolicyError::PublicIsland { .. }) => {
+                    assert!(island(&merged), "{merged:?} rejected");
+                    assert_eq!(policy, existing);
+                }
+            }
+        }
+    }
+}

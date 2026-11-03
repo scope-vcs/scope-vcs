@@ -297,6 +297,47 @@ fn random_upload_id() -> Result<String, BackendError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Component, Path};
+
+    fn assert_key_stays_inside_objects(key: &str) {
+        if validate_key(key).is_ok() {
+            let joined = Path::new("objects").join(key);
+            let components = joined.components().collect::<Vec<_>>();
+            assert!(
+                components
+                    .iter()
+                    .all(|part| matches!(part, Component::Normal(_))),
+                "{key:?}"
+            );
+            assert_eq!(components.len(), key.split('/').count() + 1, "{key:?}");
+        }
+    }
+
+    #[test]
+    fn object_keys_up_to_five_characters_cannot_escape_the_objects_directory() {
+        let alphabet = ['a', '.', '/', '\\', '-', ':'];
+        let mut keys = vec![String::new()];
+        let mut frontier = keys.clone();
+        for _ in 0..5 {
+            frontier = frontier
+                .iter()
+                .flat_map(|prefix| alphabet.iter().map(move |c| format!("{prefix}{c}")))
+                .collect();
+            keys.extend(frontier.iter().cloned());
+        }
+        for key in keys {
+            assert_key_stays_inside_objects(&key);
+        }
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config { cases: 256, ..Default::default() })]
+
+        #[test]
+        fn arbitrary_object_keys_cannot_escape_the_objects_directory(key in "(\\PC|/|\\.\\.|\\\\|[a-z]){0,24}") {
+            assert_key_stays_inside_objects(&key);
+        }
+    }
 
     #[tokio::test]
     async fn readiness_fails_when_the_objects_directory_cannot_exist() {

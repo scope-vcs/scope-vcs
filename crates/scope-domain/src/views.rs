@@ -500,6 +500,78 @@ mod tests {
         assert!(private_only.readable_by(None).is_empty());
     }
 
+    fn every_small_views() -> Vec<Views> {
+        let candidates = ["public", "private", "c0", "c1"];
+        let includes = |mask: usize| -> BTreeSet<ViewId> {
+            (0..candidates.len())
+                .filter(|bit| mask & (1 << bit) != 0)
+                .map(|bit| id(candidates[bit]))
+                .collect()
+        };
+        let mut all = Vec::new();
+        for public_mask in 0..16 {
+            for customs in 0..=2 {
+                for masks in 0..16usize.pow(customs) {
+                    let mut definitions = Vec::<ViewDefinition>::from(Views::builtin());
+                    definitions[0].includes = ViewIncludes::Some(includes(public_mask));
+                    for index in 0..customs {
+                        definitions.push(ViewDefinition {
+                            id: id(&format!("c{index}")),
+                            name: format!("C{index}"),
+                            includes: ViewIncludes::Some(includes(masks >> (4 * index) & 15)),
+                            readers: ViewReaders::Assigned,
+                        });
+                    }
+                    all.extend(Views::new(definitions).ok());
+                }
+            }
+        }
+        all
+    }
+
+    #[test]
+    fn read_access_is_exhaustively_monotone_and_never_reaches_the_full_view() {
+        let paths = ["/README.md", "/.scope/secret", "/.scope/RULES.md"]
+            .map(|path| ScopePath::parse(path).unwrap());
+        let control = &paths[1];
+        let views = every_small_views();
+        assert!(views.len() > 300);
+        for views in views {
+            let full = views.full().clone();
+            let ids = views
+                .iter()
+                .map(|definition| definition.id.clone())
+                .collect::<Vec<_>>();
+            for reader in &ids {
+                let labels = views.labels(reader);
+                assert!(labels.contains(reader));
+                assert_eq!(
+                    labels.contains(&full),
+                    reader == &full,
+                    "{views:?} {reader}"
+                );
+                for target in ids.iter().filter(|target| views.may_read(reader, target)) {
+                    assert!(views.labels(target).is_subset(&labels), "{views:?}");
+                    for (path, label) in paths
+                        .iter()
+                        .flat_map(|path| ids.iter().map(move |label| (path, label)))
+                    {
+                        if views.shows(target, path, label) {
+                            assert!(
+                                views.shows(reader, path, label),
+                                "{views:?} {target} {reader} {path} {label}"
+                            );
+                        }
+                    }
+                }
+                assert_eq!(
+                    ids.iter().any(|label| views.shows(reader, control, label)),
+                    reader == &full
+                );
+            }
+        }
+    }
+
     #[test]
     fn labels_and_read_access_follow_includes() {
         let views = Views::builtin();
