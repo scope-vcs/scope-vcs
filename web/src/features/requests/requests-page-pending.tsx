@@ -40,11 +40,9 @@ export function RequestsPagePending({ children }: { children?: ReactNode }) {
             onFocusToggle={ignore}
             onLoadMore={ignore}
             onRetry={ignore}
-            onSearch={ignore}
             pages={undefined}
             params={params}
             pendingId={null}
-            query=""
             selectedId={selectedId}
             skeleton
           />

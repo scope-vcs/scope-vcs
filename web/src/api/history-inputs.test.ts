@@ -15,6 +15,7 @@ test('normalizes an optional history cursor', () => {
   }), {
     view: 'private',
     before: 'cursor-50',
+    search: null,
     feed: 'updates',
     owner: 'scope',
     repo: 'vcs',

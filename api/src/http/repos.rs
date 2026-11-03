@@ -6,6 +6,7 @@ use crate::{
     error::ApiError,
     git::repository_git::RepositoryGit,
     http::origins::public_git_origin,
+    http::repo_versions::{RepoVersion, RepoVersionRead, repo_version_file, repo_version_files},
     http::responses::*,
     persistence::unix_now,
     push_intents::{PushIntentTarget, repo_config_fingerprint},
@@ -496,6 +497,16 @@ pub(crate) async fn get_files(
     Path((owner, repo_name)): Path<(String, String)>,
     Query(input): Query<RepoFilesRequest>,
 ) -> Result<Json<Vec<RepoFileResponse>>, ApiError> {
+    if let Some(version) = RepoVersion::select(input.request, input.update)? {
+        let read = RepoVersionRead {
+            state: &state,
+            headers: &headers,
+            owner: &owner,
+            repo: &repo_name,
+            view: input.view.map(ViewId::from),
+        };
+        return Ok(Json(repo_version_files(read, version).await?));
+    }
     let user = optional_scope_user(&state, &headers).await?;
     let view = input.view.map(ViewId::from);
     let files = state
@@ -522,6 +533,16 @@ pub(crate) async fn get_file_content(
     let path = ScopePath::parse(format!("/{}", input.path)).map_err(ApiError::bad_request)?;
     if path == ScopePath::root() {
         return Err(ApiError::bad_request("file path is required"));
+    }
+    if let Some(version) = RepoVersion::select(input.request, input.update)? {
+        let read = RepoVersionRead {
+            state: &state,
+            headers: &headers,
+            owner: &owner,
+            repo: &repo_name,
+            view: input.view.map(ViewId::from),
+        };
+        return Ok(Json(repo_version_file(read, version, path).await?));
     }
     let user = optional_scope_user(&state, &headers).await?;
     let view = input.view.map(ViewId::from);

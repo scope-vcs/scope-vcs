@@ -2,7 +2,7 @@ import type { RequestQueuePageResponse, RequestQueueSection, ViewId } from '../.
 import { createCachedResource } from '../../lib/cached-resource'
 import { appendQueuePage, REQUEST_QUEUE_SECTION_ORDER, type RequestQueuePages, type RequestQueueViewState } from './request-list-model'
 
-export type LoadRequestQueuePage = (section: RequestQueueSection, cursor: string | null, search: string | null, signal?: AbortSignal) => Promise<RequestQueuePageResponse>
+export type LoadRequestQueuePage = (section: RequestQueueSection, cursor: string | null, signal?: AbortSignal) => Promise<RequestQueuePageResponse>
 
 export const requestQueueResource = createCachedResource<RequestQueueViewState>({
   maxEntries: 12,
@@ -29,46 +29,31 @@ export function invalidateRequestQueues(scope: string) {
 
 export async function refreshRequestQueue(key: string, load: LoadRequestQueuePage, signal: AbortSignal): Promise<RequestQueueViewState> {
   const previous = requestQueueResource.peek(key)
-  const query = previous?.requestedQuery ?? ''
   const entries = await Promise.all(REQUEST_QUEUE_SECTION_ORDER.map(async (section) => {
-    let page = await load(section, null, query || null, signal)
-    const depth = previous?.query === query ? previous.pages[section].requests.length : 0
+    let page = await load(section, null, signal)
+    const depth = previous?.pages[section].requests.length ?? 0
     const cursors = new Set<string>()
     while (page.next_cursor && page.requests.length < depth && !signal.aborted) {
       if (cursors.has(page.next_cursor)) break
       cursors.add(page.next_cursor)
-      page = appendQueuePage(page, await load(section, page.next_cursor, query || null, signal))
+      page = appendQueuePage(page, await load(section, page.next_cursor, signal))
     }
     return [section, page] as const
   }))
-  return { pages: Object.fromEntries(entries) as RequestQueuePages, query, requestedQuery: query }
-}
-
-export async function searchRequestQueue(key: string, query: string, load: LoadRequestQueuePage) {
-  const normalized = query.trim()
-  const snapshot = requestQueueResource.getSnapshot(key)
-  if (snapshot.value?.query === normalized && snapshot.value.requestedQuery === normalized && !snapshot.error) return
-  const emptyPage = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  requestQueueResource.write(key, {
-    pages: snapshot.value?.pages ?? { active: emptyPage, unclaimed: emptyPage, set_aside: emptyPage, done: emptyPage },
-    query: snapshot.value?.query ?? '',
-    requestedQuery: normalized,
-  }, snapshot.version ?? '')
-  requestQueueResource.invalidate(key)
-  await requestQueueResource.ensure(key, snapshot.version ?? '', (signal) => refreshRequestQueue(key, load, signal))
+  return { pages: Object.fromEntries(entries) as RequestQueuePages }
 }
 
 export async function loadMoreRequestQueue(key: string, section: RequestQueueSection, load: LoadRequestQueuePage) {
   const snapshot = requestQueueResource.getSnapshot(key)
   const current = snapshot.value
   const cursor = current?.pages[section].next_cursor
-  if (!current || !cursor || current.requestedQuery !== current.query || snapshot.pending || snapshot.stale) return
+  if (!current || !cursor || snapshot.pending || snapshot.stale) return
   requestQueueResource.invalidate(key)
   await requestQueueResource.ensure(key, snapshot.version ?? '', async (signal) => ({
     ...current,
     pages: {
       ...current.pages,
-      [section]: appendQueuePage(current.pages[section], await load(section, cursor, current.query || null, signal)),
+      [section]: appendQueuePage(current.pages[section], await load(section, cursor, signal)),
     },
   }))
 }

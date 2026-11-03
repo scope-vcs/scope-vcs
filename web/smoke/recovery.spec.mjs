@@ -85,7 +85,7 @@ test('changes retry keeps the document and selected revision', async () => {
 test('a delayed file offers scoped retry and keeps its selection', async () => {
   let release = () => {}
   try {
-    await withPage(repoPath, async (page) => {
+    await withPage(`${repoPath}/code`, async (page) => {
       await page.locator('iframe[title="README.html preview"]').waitFor()
       let attempts = 0
       const held = new Promise((resolve) => { release = resolve })
@@ -117,7 +117,7 @@ test('a delayed file offers scoped retry and keeps its selection', async () => {
 
 test('a stale build shows one reload notice', async () => {
   const names = []
-  await withPage(repoPath, async (page) => {
+  await withPage(`${repoPath}/code`, async (page) => {
     await page.locator('iframe[title="README.html preview"]').waitFor()
     await page.route('**/_serverFn/**', async (route) => {
       names.push(serverFunctionName(route.request()))

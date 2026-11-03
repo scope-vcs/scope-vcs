@@ -310,7 +310,7 @@ fn optional_u64(value: Option<i64>, field: &str) -> Result<Option<u64>, Postgres
     value.map(|value| i64_to_u64(value, field)).transpose()
 }
 
-fn escaped_search_pattern(value: &str) -> String {
+pub(super) fn escaped_search_pattern(value: &str) -> String {
     format!(
         "%{}%",
         value

@@ -1,4 +1,4 @@
-import { parseRepoParams, parseRepoViewInput } from './repo-params'
+import { parseRepoParams, parseRepoVersionViewInput, parseRepoViewInput } from './repo-params'
 import { parseFilePath } from './file-path-input'
 import { parseReviewDiffRenderBudget } from './review-diff-budget-input'
 import type { ApproveRequestChecksInput, RequestParams } from './types'
@@ -71,7 +71,7 @@ export function parseRequestParams(input: unknown): RequestParams {
 
 export function parseRepoFileInput(input: unknown) {
   const data = object(input)
-  return { ...parseRepoViewInput(data), path: parseFilePath(data.path) }
+  return { ...parseRepoVersionViewInput(data), path: parseFilePath(data.path) }
 }
 
 export function parseLoadRequestRevisionsInput(input: unknown) {

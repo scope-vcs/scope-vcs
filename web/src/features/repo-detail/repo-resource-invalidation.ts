@@ -15,6 +15,7 @@ import { repositoryDependencyResource } from './repository-dependency-resource'
 import { repoSettingsResource } from './repo-settings-resource'
 import { repoContentResource } from './repo-content-cache'
 import { repoFileResource } from './repo-file-cache'
+import { repositoryVersionKey } from './repository-version'
 import { historyEntryResource, historyFeedResource } from '../history/history-resource-cache'
 import { runWorkflowsResource } from '../runs/run-workflows-resource'
 import { invalidateGitHubWorkflowRuns } from '../runs/github-workflow-runs-resource'
@@ -70,8 +71,12 @@ export function invalidateRepoResources(
     invalidateGitHubWorkflowRunDetails(scope)
     requestRatingsResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
   } else if (typeof event.kind === 'object' && 'RequestStateChanged' in event.kind) {
-    refreshRequestState(scope, event.kind.RequestStateChanged.request_id)
-    refreshRequestDiscussionReferences(scope, event.kind.RequestStateChanged.request_id)
+    const requestId = event.kind.RequestStateChanged.request_id
+    const version = `\0${repositoryVersionKey({ kind: 'request', id: requestId })}`
+    repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) && identity.endsWith(version))
+    repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) && identity.includes(`${version}\0`))
+    refreshRequestState(scope, requestId)
+    refreshRequestDiscussionReferences(scope, requestId)
     if (!summaryPending) invalidateRequestQueues(scope)
   } else if (event.kind === 'DependenciesChanged') {
     repositoryDependencyResource.invalidate(scope)

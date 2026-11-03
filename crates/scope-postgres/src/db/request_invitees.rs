@@ -19,6 +19,8 @@ use {
     },
 };
 
+mod branch_mutable;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestInviteeRead {
     pub invitee: RequestInvitee,
@@ -606,7 +608,7 @@ mod tests {
         assert!(error.message.contains("maintainers do not need"));
     }
 
-    async fn postgres_store(target_count: usize) -> MetadataStore {
+    pub(super) async fn postgres_store(target_count: usize) -> MetadataStore {
         let store = crate::db::requests::tests::postgres_store();
         let targets = (0..target_count).map(|index| {
             fixtures::user(&format!("user_target_{index}"), &format!("target-{index}"))
@@ -617,7 +619,7 @@ mod tests {
         store
     }
 
-    async fn start_public_request(store: &MetadataStore, request_id: &str) {
+    pub(super) async fn start_public_request(store: &MetadataStore, request_id: &str) {
         store
             .requests()
             .start_request(StartRequestInput {

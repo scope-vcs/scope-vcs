@@ -19,7 +19,7 @@ async function readyDiff(page, path) {
 }
 
 test('file workbench resizes with pointer and keyboard and keeps mobile navigation available', async () => {
-  await withPage(repoPath, async (page) => {
+  await withPage(`${repoPath}/code`, async (page) => {
     await page.getByRole('tab', { name: 'README.html' }).waitFor()
     const separator = page.getByRole('separator', { name: 'File pane width' })
     await separator.waitFor()

@@ -258,6 +258,37 @@ async fn merge_stack_request(state: &AppState, request_id: &str, head: &str) -> 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn private_stack_extension_lands_parent_then_child_without_rewriting_child_review() {
     let fixture = PrivateStackFixture::create("private-stack-extension-landing").await;
+    fs::remove_dir_all(crate::git::storage::request_objects_root(
+        &fixture.state,
+        &test_repo_incarnation(),
+    ))
+    .unwrap();
+    let prepared = crate::use_cases::git_receive::prepare(
+        &fixture.state,
+        TEST_REPO_OWNER,
+        TEST_REPO_NAME,
+        crate::use_cases::git_receive::ReceivePackAccess::RequestContributor {
+            author_id: test_owner_id(),
+            incarnation: test_repo_incarnation(),
+            view: ViewId::private(),
+        },
+        crate::use_cases::git_receive::RequestRefSeeding::Pushed(
+            &["refs/heads/stack-child".into()],
+        ),
+    )
+    .await
+    .unwrap();
+    let refs = prepared.refs_before.as_ref().unwrap();
+    for (name, head) in [
+        ("refs/heads/stack-parent", &fixture.parent_pin),
+        ("refs/heads/stack-child", &fixture.child_head),
+    ] {
+        assert!(
+            refs.iter()
+                .any(|(actual, oid)| actual == name && oid == head)
+        );
+    }
+    fs::remove_dir_all(&prepared.staging_repo).unwrap();
     let original_revision = fixture.latest_child_revision().await;
     assert_child_layer(&fixture, &fixture.parent_pin).await;
     let blocked = merge_stack_request(&fixture.state, &fixture.child_id, &fixture.child_head).await;

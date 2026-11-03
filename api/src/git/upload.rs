@@ -107,7 +107,9 @@ pub(crate) async fn git_upload_pack_response(
     let mut request = request.to_vec();
     if repo_path.join("objects/info/alternates").is_file() {
         let validation_repo = repo_path.clone();
+        let parent_span = tracing::Span::current();
         request = tokio::task::spawn_blocking(move || {
+            let _entered = parent_span.enter();
             prepare_upload_pack_request(&validation_repo, &request)
         })
         .await

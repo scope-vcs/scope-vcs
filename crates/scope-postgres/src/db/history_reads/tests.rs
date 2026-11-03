@@ -8,7 +8,7 @@ use scope_domain::{
     views::{ViewId, Views},
     visibility_changes::VisibilityChangeSet,
 };
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 
 fn history_view(
     graph: &SourceGraph,
@@ -77,6 +77,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: None,
+            search: None,
             limit: 50,
         })
         .await
@@ -101,6 +102,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
                 feed: HistoryFeed::All,
                 before: first.next_boundary.as_ref(),
                 entry_source_id: None,
+                search: None,
                 limit: 50,
             }),
     )
@@ -128,6 +130,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: None,
+            search: None,
             limit: 50,
         })
         .await
@@ -146,6 +149,7 @@ async fn history_pages_match_domain_projection_and_do_not_read_history_when_warm
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: Some(&public.view.entries[10].source_id),
+            search: None,
             limit: 1,
         })
         .await
@@ -228,6 +232,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
                 feed: HistoryFeed::All,
                 before: before.as_ref(),
                 entry_source_id: None,
+                search: None,
                 limit: 1,
             })
             .await
@@ -255,6 +260,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
             feed: HistoryFeed::All,
             before: None,
             entry_source_id: Some("logical_4"),
+            search: None,
             limit: 1,
         })
         .await
@@ -281,6 +287,7 @@ async fn actions_group_repeated_projection_sources_and_page_by_exact_position() 
             feed: HistoryFeed::All,
             before: first_boundary.as_ref(),
             entry_source_id: None,
+            search: None,
             limit: 1,
         })
         .await
@@ -339,6 +346,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
                 position: 999,
             }),
             entry_source_id: None,
+            search: None,
             limit: 50,
         })
         .await;
@@ -373,6 +381,7 @@ async fn history_reads_reject_changed_frontiers_and_deleted_boundaries() {
                 feed: HistoryFeed::All,
                 before: None,
                 entry_source_id: None,
+                search: None,
                 limit: 50
             })
             .await
@@ -455,6 +464,7 @@ async fn narrow_access_preserves_membership_lifecycle_and_public_root_capabiliti
                     feed: HistoryFeed::All,
                     before: None,
                     entry_source_id: None,
+                    search: None,
                     limit: 50,
                 })
                 .await
@@ -555,6 +565,7 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
         feed,
         before,
         entry_source_id: None,
+        search: None,
         limit: 50,
     };
     let first = store
@@ -602,11 +613,29 @@ async fn feed_filters_before_limit_and_binds_boundaries() {
         .repositories()
         .repository_history_page(RepositoryHistoryQuery {
             entry_source_id: Some("visibility_59"),
+            search: None,
             ..query(HistoryFeed::All, None)
         })
         .await
         .unwrap();
     assert_eq!(detail.view.entries[0].source_id, "visibility_59");
+    let searched = store
+        .repositories()
+        .repository_history_page(RepositoryHistoryQuery {
+            search: Some("LOGICAL_54"),
+            ..query(HistoryFeed::All, None)
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        searched
+            .view
+            .entries
+            .iter()
+            .map(|entry| entry.source_id.as_str())
+            .collect::<Vec<_>>(),
+        ["logical_54"]
+    );
     assert!(store.db.execute_unprepared("INSERT INTO scope_repository_history_entries (repo_id, audience, position, source_id, payload_hash) SELECT repo_id, audience, position + 10000, source_id, payload_hash FROM scope_repository_history_entries LIMIT 1").await.is_err());
 }
 
@@ -656,6 +685,7 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
                 feed: HistoryFeed::All,
                 before: None,
                 entry_source_id: None,
+                search: None,
                 limit: 50,
             })
             .await
@@ -686,6 +716,26 @@ async fn a_push_folds_only_its_own_commits_onto_the_read_models() {
             .await
             .unwrap()
             .unwrap();
+        let replayed = store
+            .repositories()
+            .repository_history_tree(
+                &repo.incarnation(),
+                &view_key,
+                &page.view.entries.first().unwrap().source_id,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            replayed
+                .iter()
+                .map(|file| (&file.path, &file.content.git_oid, &file.label))
+                .collect::<BTreeSet<_>>(),
+            files
+                .iter()
+                .map(|file| (&file.path, &file.oid, &file.label))
+                .collect::<BTreeSet<_>>(),
+        );
         assert_eq!(
             files.len(),
             if view_key == ViewId::private() {
