@@ -46,6 +46,10 @@ pub struct Request {
 }
 
 impl RequestState {
+    pub fn advertised_in_git(self) -> bool {
+        matches!(self, Self::Draft | Self::Open)
+    }
+
     pub fn from_timestamps(
         merged_at_unix: Option<u64>,
         closed_at_unix: Option<u64>,
@@ -64,6 +68,10 @@ impl RequestState {
 }
 
 impl Request {
+    pub fn object_author_id(&self) -> &str {
+        self.author_user_id.as_deref().unwrap_or(&self.id)
+    }
+
     pub fn state(&self) -> RequestState {
         RequestState::from_timestamps(
             self.merged_at_unix,

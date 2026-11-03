@@ -159,7 +159,7 @@ pub(crate) async fn backfill_revision(
                     let bundle = directory.path().join("rev.bundle");
                     let snapshot = serde_json::from_value(rev.git_snapshot.clone())
                         .map_err(ApiError::internal)?;
-                    download_snapshot(state.object_store.as_ref(), &snapshot, &bundle)??;
+                    download_snapshot(state.object_store.as_ref(), &snapshot, &bundle)?;
                     let prerequisites = bundle_prerequisites(&bundle)?;
                     let needed: Vec<_> = prerequisites.iter().chain(&heads[1..]).cloned().collect();
                     install(&needed)?;

@@ -1,3 +1,5 @@
+mod git_fetch;
+pub use git_fetch::{GitFetchHead, request_readable_in_git, retain_git_fetch_heads};
 mod navigation;
 use crate::error::DomainError;
 pub use navigation::*;

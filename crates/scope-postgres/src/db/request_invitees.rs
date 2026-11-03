@@ -49,6 +49,38 @@ pub struct LeaveRequestCommand {
 }
 
 impl RequestStore {
+    pub async fn git_fetch_requests(
+        &self,
+        repository_id: &str,
+        viewer_user_id: Option<&str>,
+    ) -> Result<Vec<(scope_domain::requests::Request, bool)>, PostgresError> {
+        let rows = entities::request::Entity::find()
+            .filter(entities::request::Column::RepoId.eq(repository_id))
+            .filter(entities::request::Column::MergedAtUnix.is_null())
+            .filter(entities::request::Column::ClosedAtUnix.is_null())
+            .order_by_asc(entities::request::Column::Name)
+            .all(self.db.as_ref())
+            .await?;
+        let ids = rows
+            .iter()
+            .map(|request| request.id.clone())
+            .collect::<Vec<_>>();
+        let invited = match viewer_user_id {
+            Some(user) if !ids.is_empty() => self.db.query_all_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT request_id FROM scope_request_invitees WHERE user_id = $1 AND request_id = ANY($2)",
+                [user.into(), ids.into()],
+            )).await?.into_iter().map(|row| row.try_get("", "request_id").map_err(PostgresError::internal)).collect::<Result<BTreeSet<String>, _>>()?,
+            _ => BTreeSet::new(),
+        };
+        rows.into_iter()
+            .map(|row| {
+                let invitee = invited.contains(&row.id);
+                Ok((row.try_into_domain()?, invitee))
+            })
+            .collect()
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_with_invitee_status"))]
     pub async fn requests_with_invitee_status(
         &self,

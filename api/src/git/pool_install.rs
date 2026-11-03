@@ -1,3 +1,6 @@
+mod locking;
+pub(crate) use locking::write_shelf;
+
 use crate::{
     error::ApiError,
     git::{command::git_command_output, restore::install_verified_git_pack},
@@ -182,7 +185,8 @@ pub(crate) async fn install_fetched(
 ) -> Result<(), ApiError> {
     let objects_repo = objects_repo.to_path_buf();
     let timeout = state.runtime_budgets.git_command_timeout();
-    crate::git::blocking::run(move || match fetched {
+    let target = objects_repo.clone();
+    write_shelf(&target, move || match fetched {
         FetchedPack::Bytes(pack) => git_command_output(
             Command::new("git")
                 .arg("-C")

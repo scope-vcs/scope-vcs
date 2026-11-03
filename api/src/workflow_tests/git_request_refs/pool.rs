@@ -7,6 +7,8 @@ use crate::use_cases::git_receive::{
 use std::collections::BTreeSet;
 
 mod backfill;
+mod fetch;
+mod fetch_visibility;
 mod views;
 
 async fn prepare_owner_push(state: &AppState, request_ref: &str) -> PathBuf {
@@ -63,7 +65,45 @@ async fn a_revision_pushed_to_one_replica_reaches_another_through_the_object_poo
     .unwrap();
     let submitted_head = git_head_oid(&source);
     submit_request(router(state.clone()), &request_id, &bearer).await;
-    let _ = fs::remove_dir_all(prepare_owner_push(&replica, request_ref).await);
+    let request = stored_request(&state, &request_id).await;
+    let revision = state
+        .metadata
+        .requests()
+        .latest_request_revision(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    replica
+        .object_store
+        .delete(&scope_storage::object_key(&revision.git_snapshot))
+        .await
+        .unwrap();
+    let job = crate::git::request_refs::with_request_revision_store_repo(
+        &replica,
+        &test_repo_incarnation(),
+        &request,
+        &revision,
+        |job, revision| {
+            run_git(
+                Some(job),
+                &["diff", &revision.old_head_oid, &revision.new_head_oid],
+                "read pooled revision",
+            )?;
+            Ok(job.to_path_buf())
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!job.exists());
+    assert!(
+        fs::read_dir(replica.repository_engine.cache_root())
+            .unwrap()
+            .all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("revision-"))
+    );
     push_change(
         &source,
         &first_remote,
@@ -136,7 +176,7 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
         super::super::push_intent_completion::published_git_fixture("request-pool-long").await;
     let replica = state.replica_for_tests();
     let bearer = bearer_header();
-    start_request(&state, "long").await;
+    let request_id = start_request(&state, "long").await;
     let request_ref = "refs/heads/long";
     let (first_origin, _first_server) = spawn_test_server(&state).await;
     let (second_origin, _second_server) = spawn_test_server(&replica).await;
@@ -169,6 +209,25 @@ async fn a_long_request_catches_up_from_the_pool_and_keeps_its_packs_consolidate
     push(&second_remote, 17);
     let behind_head = push(&first_remote, 18);
     push(&second_remote, 19);
+
+    let cold = state.replica_for_tests();
+    let request = stored_request(&cold, &request_id).await;
+    let revision = cold
+        .metadata
+        .requests()
+        .latest_request_revision(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    crate::git::request_refs::with_request_revision_store_repo(
+        &cold,
+        &test_repo_incarnation(),
+        &request,
+        &revision,
+        |_, _| Ok(()),
+    )
+    .await
+    .unwrap();
 
     let pushing_objects = object_repos(&state, &test_owner_id()).await.shared;
     let packs = fs::read_dir(pushing_objects.join("objects/pack"))

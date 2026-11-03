@@ -209,5 +209,6 @@ async fn warm_public_clone_reads_no_repository_history() {
     .unwrap();
     held.rollback().await.unwrap();
 
-    assert_eq!(warm.as_ref(), cold_path.as_path());
+    assert_ne!(warm.as_ref(), cold_path.as_path());
+    assert!(!cold_path.exists());
 }

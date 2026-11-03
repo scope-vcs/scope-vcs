@@ -25,7 +25,6 @@ use scope_domain::{
     },
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_storage::{ObjectStoreError, ObjectStoreErrorKind};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -34,12 +33,12 @@ use std::{
 
 mod ancestry;
 mod pack_consolidation;
-mod pool;
+pub(super) mod pool;
 mod revision;
 mod seeding;
 mod snapshot;
 mod view_bases;
-mod view_pool;
+pub(super) mod view_pool;
 pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
     ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
@@ -50,13 +49,15 @@ pub(crate) use pool::{
     PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs,
     retain_staged_pool_pack,
 };
-pub(crate) use revision::with_request_revision_store_repo;
+pub(crate) use revision::{sweep_revision_jobs, with_request_revision_store_repo};
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,
 };
+#[cfg(test)]
+use snapshot::fetch_bundle_into_ref;
+use snapshot::{BundleRef, fetch_snapshot_into_ref};
 pub(crate) use snapshot::{bundle_prerequisites, download_snapshot};
-use snapshot::{fetch_bundle_into, fetch_snapshot_into};
-pub(crate) use view_bases::{RequestViewBases, request_view_bases, share_request_view_bases};
+pub(crate) use view_bases::{RequestViewBases, request_view_bases};
 #[cfg(test)]
 pub(crate) use view_pool::view_object_repos;
 
@@ -194,49 +195,6 @@ pub(crate) fn attach_visible_request_refs(
     target_repo: &FsPath,
     view_bases: &RequestViewBases,
 ) -> Result<(), ApiError> {
-    attach_request_refs(state, requests, target_repo, view_bases, &mut |_, error| {
-        Err(error.into())
-    })
-}
-
-pub(crate) fn attach_readable_request_refs(
-    state: &AppState,
-    requests: &[Request],
-    target_repo: &FsPath,
-    view_bases: &RequestViewBases,
-) -> Result<Vec<String>, ApiError> {
-    let mut unreadable = Vec::new();
-    attach_request_refs(
-        state,
-        requests,
-        target_repo,
-        view_bases,
-        &mut |request, error| match error.kind {
-            ObjectStoreErrorKind::ServiceUnavailable
-            | ObjectStoreErrorKind::NotFound
-            | ObjectStoreErrorKind::Integrity => {
-                tracing::warn!(
-                    request_id = request.id,
-                    request_name = request.name,
-                    error = %error,
-                    "omitting request with an unreadable snapshot from Git read view"
-                );
-                unreadable.push(request.name.clone());
-                Ok(())
-            }
-            _ => Err(error.into()),
-        },
-    )?;
-    Ok(unreadable)
-}
-
-fn attach_request_refs(
-    state: &AppState,
-    requests: &[Request],
-    target_repo: &FsPath,
-    view_bases: &RequestViewBases,
-    on_unreadable_snapshot: &mut dyn FnMut(&Request, ObjectStoreError) -> Result<(), ApiError>,
-) -> Result<(), ApiError> {
     for request in requests
         .iter()
         .filter(|request| request.git_snapshot.is_some())
@@ -248,17 +206,17 @@ fn attach_request_refs(
     {
         let request_ref = canonical_request_ref(&request.name);
         if let Some(snapshot) = request.git_snapshot.as_ref() {
-            if let Err(error) = fetch_snapshot_into(
+            fetch_snapshot_into_ref(
                 state,
                 target_repo,
-                &request_ref,
+                BundleRef {
+                    source: &request_ref,
+                    destination: &request_ref,
+                },
                 snapshot,
                 None,
                 "attaching request ref to Git read view",
-            )? {
-                on_unreadable_snapshot(request, error)?;
-                continue;
-            }
+            )?;
         } else {
             if !request_ref_oid_is_commit(target_repo, &request.head_oid)?
                 && let Some(view_base) = view_bases.get(&request.view)
@@ -530,7 +488,10 @@ pub(crate) fn ensure_local_bare_repo(repo: PathBuf) -> Result<PathBuf, ApiError>
     }
 }
 
-fn request_ref_head(store_repo: &FsPath, request_ref: &str) -> Result<Option<String>, ApiError> {
+pub(crate) fn request_ref_head(
+    store_repo: &FsPath,
+    request_ref: &str,
+) -> Result<Option<String>, ApiError> {
     if !store_repo.exists() {
         return Ok(None);
     }

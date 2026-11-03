@@ -115,6 +115,7 @@ impl AppState {
     pub(crate) async fn for_bundle_backfill(database_url: String) -> anyhow::Result<Self> {
         let git_public_url = git_public_url_from_env(None)?;
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
+        crate::git::request_refs::sweep_revision_jobs(&storage.data_dir)?;
         let metadata = MetadataStore::connect_with_max_connections(
             database_url,
             database_max_connections_from_env()?,
