@@ -57,13 +57,12 @@ function Workspace() {
   const { owner, repo, requestId } = useParams({ strict: false })
   const [collapsed, setCollapsed] = useState(false)
   const [queue, setQueue] = useState<{ pages: RequestQueuePages | undefined; maintainer: boolean | null; loading: boolean }>({ pages, maintainer: true, loading: false })
-  const [query, setQuery] = useState('')
   const [customSnooze, setCustomSnooze] = useState<RequestQueueItemResponse | null>(null)
-  Object.assign(window, { setQueue, setQuery })
+  Object.assign(window, { setQueue })
   return <RequestWorkspaceShell collapsed={collapsed} detailOpenOnMobile={Boolean(requestId)}
     onCollapsedChange={setCollapsed} sidebar={
       <RequestWorkspaceSidebar pages={queue.pages} collapsed={collapsed} onCollapsedChange={setCollapsed}
-        query={query} onSearch={setQuery} loading={queue.loading} skeleton={!queue.pages} error={null} actionError={null}
+        loading={queue.loading} skeleton={!queue.pages} error={null} actionError={null}
         maintainer={queue.maintainer} onRetry={noop} onLoadMore={noop}
         onAction={(item, command) => attentionCommands.push({ id: item.request.id, ...command })} onCustomSnooze={setCustomSnooze}
         params={{ owner: owner!, repo: repo! }} pendingId={null} selectedId={requestId}

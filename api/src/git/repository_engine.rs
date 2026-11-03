@@ -124,6 +124,7 @@ impl RepositoryEngine {
         self.cache.lease_derived(path)
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn materialize_derived<IsReady, Build, BuildFuture>(
         self: &Arc<Self>,
         incarnation: &RepositoryIncarnation,
@@ -152,7 +153,8 @@ impl RepositoryEngine {
                 built_for_build.store(true, Ordering::Relaxed);
                 let result = build().await;
                 if result.is_ok() {
-                    let pruned = tokio::task::spawn_blocking(move || engine_for_build.prune()).await;
+                    let parent_span = tracing::Span::current();
+                    let pruned = tokio::task::spawn_blocking(move || parent_span.in_scope(|| engine_for_build.prune())).await;
                     match pruned {
                         Ok(Ok(())) => {}
                         Ok(Err(error)) => tracing::warn!(error = %error.operator_diagnostic(), "failed to prune derived Git caches"),
@@ -175,6 +177,7 @@ impl RepositoryEngine {
         result
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn materialize_repository(
         self: &Arc<Self>,
         state: &AppState,
@@ -315,7 +318,9 @@ impl RepositoryEngine {
         result?;
         if built.load(Ordering::Relaxed) {
             let engine = self.clone();
-            match tokio::task::spawn_blocking(move || engine.prune()).await {
+            let parent_span = tracing::Span::current();
+            match tokio::task::spawn_blocking(move || parent_span.in_scope(|| engine.prune())).await
+            {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
                     tracing::warn!(error = %error.operator_diagnostic(), "Git cache pruning failed")

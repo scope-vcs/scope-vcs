@@ -1,3 +1,4 @@
+import { parseRepositoryVersionSearch } from '../features/repo-detail/repository-version'
 import { parseViewId } from './repo-views'
 import type { RepoParams } from './types'
 import type { ViewId } from './types.generated'
@@ -14,6 +15,14 @@ export function parseRepoViewInput(input: unknown): RepoParams & { view: ViewId 
   return {
     ...parseRepoParams(input),
     view: parseViewId((input as { view?: unknown } | null)?.view),
+  }
+}
+
+export function parseRepoVersionViewInput(input: unknown) {
+  const { request, update } = (input ?? {}) as { request?: unknown; update?: unknown }
+  return {
+    ...parseRepoViewInput(input),
+    ...parseRepositoryVersionSearch({ request, update }),
   }
 }
 

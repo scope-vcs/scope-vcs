@@ -18,7 +18,8 @@ test('pre-runtime error routes use registered aliases without retaining path val
   for (const [pathname, name] of [
     ['/', 'home'],
     ['/settings', 'settings'],
-    ['/private-owner/private-repo/', 'repository_code'],
+    ['/private-owner/private-repo/', 'repository_home'],
+    ['/private-owner/private-repo/code', 'repository_code'],
     ['/private-owner/private-repo/requests/private-id', 'request'],
     ['/private-owner/private-repo/requests/private-id/changes', 'request_changes'],
     ['/private-owner/private-repo/runs/private-id', 'repository_run'],

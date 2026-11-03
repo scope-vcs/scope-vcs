@@ -5,44 +5,46 @@ import { serverFunctionName } from './server-functions-smoke.mjs'
 
 const viewport = { width: 1280, height: 900 }
 
-test('Markdown-only repository opens its introduction and retains direct file links', async () => {
+test('Home shows only the README and Browse code opens the file tree', async () => {
   await withPage(requestRepoPath, async (page) => {
-    await page.getByRole('tab', { name: 'README.md', exact: true }).waitFor()
-    await page.getByRole('tabpanel').locator('article h1').waitFor()
-    assert.equal(new URL(page.url()).searchParams.has('file'), false)
+    const readme = page.getByRole('region', { name: 'Repository README' })
+    await readme.locator('article h1').waitFor()
+    assert.equal(await page.getByLabel('Repository file navigator').count(), 0)
     assert.equal(await page.getByRole('alert').count(), 0)
-    await page.goto(`${baseUrl}${repoPath}?file=src%2Fapp.ts`)
+    const browse = page.getByRole('link', { name: 'Browse code', exact: true })
+    await waitForClientHydration(browse)
+    await browse.click()
+    await page.waitForURL((url) => url.pathname === `${requestRepoPath}/code`)
+    await page.getByRole('tab', { name: 'README.md', exact: true }).waitFor()
+    await page.getByLabel('Repository file navigator').waitFor()
+    await page.goto(`${baseUrl}${repoPath}/code?file=src%2Fapp.ts`)
     await page.getByRole('tab', { name: 'src/app.ts', exact: true }).waitFor()
     await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
-    await page.goBack()
-    await page.getByRole('tab', { name: 'README.md', exact: true }).waitFor()
   }, { viewport })
 })
 
-test('file finder supports nested paths, keyboard selection, clearing and mobile shortcut', async () => {
-  await withPage(repoPath, async (page) => {
+test('central search opens files, keeps the open file, and honors keyboard rules', async () => {
+  await withPage(`${repoPath}/code`, async (page) => {
     await page.getByRole('tab', { name: 'README.html', exact: true }).waitFor()
     await page.getByRole('tab', { name: 'README.html', exact: true }).dblclick()
-    const finder = page.getByRole('searchbox', { name: 'Find file' })
+    const search = page.getByRole('combobox', { name: 'Search requests, history and files' })
+    await waitForClientHydration(search)
     await page.getByRole('tab', { name: 'README.html', exact: true }).focus()
     await page.keyboard.press('/')
-    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Find file')
-    await finder.fill('src/')
-    await page.getByRole('list', { name: 'Matching files' }).getByRole('button', { name: 'src/app.ts' }).waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'combobox')
+    await page.getByRole('radio', { name: 'Files', exact: true }).click()
+    await search.fill('src/')
+    await page.getByRole('option', { name: 'src/app.ts' }).waitFor()
+    await search.focus()
     await page.keyboard.press('Enter')
     await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
     assert.equal(new URL(page.url()).searchParams.get('file'), 'src/app.ts')
     assert.equal(await page.getByRole('tab', { name: 'README.html', exact: true }).count(), 1)
-    assert.equal(await finder.inputValue(), '')
-    await finder.fill('does-not-exist')
-    await page.getByText('No matching visible files.', { exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Clear file search' }).click()
-    await page.getByRole('button', { name: 'README.html', exact: true }).waitFor()
-    await finder.fill('src')
-    await page.keyboard.press('/')
-    assert.equal(await finder.inputValue(), 'src/')
+    await search.fill('does-not-exist')
+    await page.getByText('No matches.', { exact: true }).waitFor()
     await page.keyboard.press('Escape')
-    assert.equal(await finder.inputValue(), '')
+    assert.equal(await search.inputValue(), '')
+    assert.equal(await page.getByRole('listbox', { name: 'Search results' }).count(), 0)
     await page.evaluate(() => {
       const textarea = document.createElement('textarea')
       textarea.dataset.finderTest = 'true'
@@ -55,10 +57,10 @@ test('file finder supports nested paths, keyboard selection, clearing and mobile
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('tab', { name: 'src/app.ts', exact: true }).focus()
     await page.keyboard.press('/')
-    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Find file')
-    assert.equal(await finder.isVisible(), true)
-    await finder.fill('README')
-    await page.keyboard.press('ArrowDown')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'combobox')
+    await search.fill('README')
+    await page.getByRole('option', { name: 'README.html' }).waitFor()
+    await search.focus()
     await page.keyboard.press('Enter')
     await page.getByRole('tab', { name: 'README.html', exact: true }).waitFor()
     await assertMobileFilesCollapsed(page, 'README.html')
@@ -66,7 +68,7 @@ test('file finder supports nested paths, keyboard selection, clearing and mobile
 })
 
 test('README details preserve inspection without exposing repeated navigator metadata', async () => {
-  await withPage(repoPath, async (page) => {
+  await withPage(`${repoPath}/code`, async (page) => {
     const preview = page.locator('iframe[title="README.html preview"]')
     await preview.waitFor()
     assert.equal(await preview.getAttribute('sandbox'), '')
@@ -81,7 +83,7 @@ test('README details preserve inspection without exposing repeated navigator met
     await page.keyboard.press('Escape')
     assert.equal(await detailsPanel.isVisible(), false)
 
-    await page.goto(`${baseUrl}${repoPath}?file=src%2Fapp.ts`)
+    await page.goto(`${baseUrl}${repoPath}/code?file=src%2Fapp.ts`)
     await page.locator('pre code').waitFor()
     assert.equal(await page.getByText(/^\d+ B · /).count(), 0)
     await waitForClientHydration(details)
@@ -120,7 +122,7 @@ test('an explicit file remains readable while its tree is pending and after the 
   })
   await withPage('/', async (page) => {
     try {
-      await navigateFromHome(page, `${repoPath}?file=src%2Fapp.ts`)
+      await navigateFromHome(page, `${repoPath}/code?file=src%2Fapp.ts`)
       await page.locator('pre code').filter({ hasText: 'export function greet' }).waitFor()
       assert.equal(intercepted, true)
       releaseTree()
@@ -152,9 +154,33 @@ test('views without a README or any files open deliberately without guessing a f
     await withPage('/', async (page) => {
       await navigateFromHome(page, repoPath)
       await page.getByText(files.length
-        ? 'No README in this view. Browse the files or use Find file to get started.'
+        ? 'No README yet. Add README.md or README.html to main and it shows here.'
         : 'Run scope push --main from the CLI to add files to this repository.', { exact: true }).waitFor()
       assert.equal(fileRequests, 0)
     }, { prepare: fulfillTree, viewport })
   }
+})
+
+test('central search opens the code at a request and at a past update, then returns to latest', async () => {
+  await withPage(requestRepoPath, async (page) => {
+    const search = page.getByRole('combobox', { name: 'Search requests, history and files' })
+    await waitForClientHydration(search)
+    await search.click()
+    await page.getByRole('option', { name: /Add bounded retry timing/ }).click()
+    await page.waitForURL((url) => url.pathname === `${requestRepoPath}/code` && url.searchParams.get('request') === 'req_demo_ready')
+    await page.getByRole('link', { name: 'Open request', exact: true }).waitFor()
+    const navigator = page.getByLabel('Repository file navigator')
+    await navigator.getByRole('button', { name: 'tests', exact: false }).waitFor()
+
+    await page.getByRole('button', { name: 'Change version', exact: true }).click()
+    await page.getByRole('option', { name: /Projected public update/ }).click()
+    await page.waitForURL((url) => url.searchParams.has('update'))
+    await page.getByRole('link', { name: 'View changes', exact: true }).waitFor()
+    await navigator.getByRole('button', { name: 'README.md', exact: true }).waitFor()
+    assert.equal(await navigator.getByRole('button', { name: 'docs', exact: false }).count(), 0)
+
+    await page.getByRole('link', { name: 'Back to latest', exact: true }).click()
+    await page.waitForURL((url) => url.pathname === `${requestRepoPath}/code` && !url.searchParams.has('update'))
+    await navigator.getByRole('button', { name: 'docs', exact: false }).waitFor()
+  }, { viewport })
 })

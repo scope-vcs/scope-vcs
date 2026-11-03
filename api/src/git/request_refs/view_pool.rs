@@ -1,7 +1,7 @@
 use crate::{
     error::ApiError,
     git::{
-        command::{git_stdout_text, run_git},
+        command::{git_main_oid, run_git},
         repository_git::RepositoryGit,
         staging::add_receive_pack_alternate,
         storage::request_objects_root,
@@ -38,12 +38,8 @@ pub(crate) async fn view_object_repo(
         None => key.clone(),
     };
     crate::git::blocking::run(move || {
-        let head = git_stdout_text(
-            &projection,
-            &["rev-parse", "HEAD"],
-            "reading view shelf projection head",
-        )?;
-        let head = head.trim();
+        let head = git_main_oid(&projection, "reading view shelf projection head")?;
+        let head = head.as_str();
         let base = super::ensure_local_bare_repo(root.join(format!("{key}-projection.git")))?;
         let retained = format!("refs/scope/projections/{head}");
         if super::request_ref_head(&base, &retained)?.as_deref() != Some(head)

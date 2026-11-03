@@ -4,6 +4,7 @@ import { readRailway } from './railway-read.mjs';
 import { railwayServicesFromStatus } from './railway-service-health.mjs';
 
 const digestPattern = /^sha256:[0-9a-f]{64}$/;
+const sameImageReplacementReasons = new Set(['redeploy', 'failover']);
 
 function requireMatch(condition, message) {
   if (!condition) throw new Error(`Redeployed service replacement: ${message}`);
@@ -24,7 +25,7 @@ export function verifyRedeployedReplacement({ component, selected, receipt, hist
   const receiptedAt = Date.parse(receipted.createdAt);
   const later = history.filter(({ createdAt }) => Date.parse(createdAt) > receiptedAt);
   requireMatch(later.length > 0
-    && later.every(({ meta }) => meta?.reason === 'redeploy' && meta.imageDigest === digest),
+    && later.every(({ meta }) => sameImageReplacementReasons.has(meta?.reason) && meta.imageDigest === digest),
   'a later deployment is not a redeploy of the receipted image');
   const live = later.find(({ id }) => id === liveDeploymentId);
   requireMatch(live?.status === 'SUCCESS', 'live deployment is not a successful redeploy of the receipt');
