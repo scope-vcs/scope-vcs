@@ -500,12 +500,13 @@ mod tests {
         assert!(private_only.readable_by(None).is_empty());
     }
 
-    fn every_small_views() -> Vec<Views> {
-        let candidates = ["public", "private", "c0", "c1"];
+    const CANDIDATES: [&str; 4] = ["public", "private", "c0", "c1"];
+
+    fn every_small_views() -> Vec<(Views, [usize; 4])> {
         let includes = |mask: usize| -> BTreeSet<ViewId> {
-            (0..candidates.len())
+            (0..CANDIDATES.len())
                 .filter(|bit| mask & (1 << bit) != 0)
-                .map(|bit| id(candidates[bit]))
+                .map(|bit| id(CANDIDATES[bit]))
                 .collect()
         };
         let mut all = Vec::new();
@@ -514,19 +515,40 @@ mod tests {
                 for masks in 0..16usize.pow(customs) {
                     let mut definitions = Vec::<ViewDefinition>::from(Views::builtin());
                     definitions[0].includes = ViewIncludes::Some(includes(public_mask));
+                    let mut direct = [public_mask, 15, 0, 0];
                     for index in 0..customs {
+                        let slot = 2 + index as usize;
+                        direct[slot] = masks >> (4 * index) & 15;
                         definitions.push(ViewDefinition {
                             id: id(&format!("c{index}")),
                             name: format!("C{index}"),
-                            includes: ViewIncludes::Some(includes(masks >> (4 * index) & 15)),
+                            includes: ViewIncludes::Some(includes(direct[slot])),
                             readers: ViewReaders::Assigned,
                         });
                     }
-                    all.extend(Views::new(definitions).ok());
+                    all.extend(Views::new(definitions).ok().map(|views| (views, direct)));
                 }
             }
         }
         all
+    }
+
+    fn reachable_from_masks(direct: [usize; 4], reader: usize) -> BTreeSet<ViewId> {
+        let mut reach = direct;
+        for (index, row) in reach.iter_mut().enumerate() {
+            *row |= 1 << index;
+        }
+        for via in 0..4 {
+            for from in 0..4 {
+                if reach[from] & (1 << via) != 0 {
+                    reach[from] |= reach[via];
+                }
+            }
+        }
+        (0..4)
+            .filter(|target| reach[reader] & (1 << target) != 0)
+            .map(|target| id(CANDIDATES[target]))
+            .collect()
     }
 
     #[test]
@@ -536,7 +558,7 @@ mod tests {
         let control = &paths[1];
         let views = every_small_views();
         assert!(views.len() > 300);
-        for views in views {
+        for (views, direct) in views {
             let full = views.full().clone();
             let ids = views
                 .iter()
@@ -544,6 +566,23 @@ mod tests {
                 .collect::<Vec<_>>();
             for reader in &ids {
                 let labels = views.labels(reader);
+                let position = CANDIDATES
+                    .iter()
+                    .position(|name| reader.as_str() == *name)
+                    .unwrap();
+                let defined = |label: &ViewId| ids.contains(label);
+                assert_eq!(
+                    labels
+                        .iter()
+                        .filter(|label| defined(label))
+                        .cloned()
+                        .collect::<BTreeSet<_>>(),
+                    reachable_from_masks(direct, position)
+                        .into_iter()
+                        .filter(|label| defined(label))
+                        .collect::<BTreeSet<_>>(),
+                    "{views:?} {reader}"
+                );
                 assert!(labels.contains(reader));
                 assert_eq!(
                     labels.contains(&full),

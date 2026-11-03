@@ -420,9 +420,16 @@ impl Case {
             .iter()
             .filter_map(|(anchor, _)| *anchor)
             .collect::<BTreeSet<_>>();
+        let merges_into_reader = |index: usize| {
+            self.commits[index]
+                .merge
+                .as_ref()
+                .is_some_and(|merge| merge.view.is_none_or(|view| label(view) == self.reader))
+        };
         let named = |index: usize| {
-            let commit = &self.commits[index];
-            commit.merge.is_some() || !commit.low.is_empty() || sources.contains(&index)
+            merges_into_reader(index)
+                || !self.commits[index].low.is_empty()
+                || sources.contains(&index)
         };
         let fixed =
             |index: usize| source_identity_is_disclosed(named(index), anchors.contains(&index));
@@ -447,7 +454,8 @@ impl Case {
                 high = hidden_change_presence_is_disclosed(high_of(Side::A), high);
             }
             let low = expand(&raw.low, &LOW_PATHS, |_, index| label(index));
-            let private_message = !high.is_empty() || (raw.low.is_empty() && raw.merge.is_none());
+            let private_message =
+                !high.is_empty() || (raw.low.is_empty() && !merges_into_reader(index));
             let message_side = if private_message { side.index() } else { 0 };
             let commit_id = format!("c{index}");
             let origin = match &raw.merge {

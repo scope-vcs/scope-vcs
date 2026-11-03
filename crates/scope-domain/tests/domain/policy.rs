@@ -347,7 +347,7 @@ fn labels_and_the_public_island_rule_are_exhaustively_correct_for_two_rules() {
         .collect::<Vec<_>>();
     let existing = Policy::new(ViewId::private());
     for first in &rules {
-        for second in rules.iter().filter(|rule| rule.path.as_str() < "/b") {
+        for second in &rules {
             let batch = [first.clone(), second.clone()];
             let merged = if first.path == second.path {
                 vec![second.clone()]
