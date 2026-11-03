@@ -4,13 +4,13 @@ import { DiffStatSummary } from '@/components/diff-stat'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Badge } from '@/components/ui/badge'
 import { historyEntryCacheKey, historyEntryResource } from '@/features/history/history-resource-cache'
-import { requestStateIdentity, requestStateResource } from '@/features/requests/request-state-resource'
+import { reloadRequestStateValue, requestStateIdentity, requestStateResource } from '@/features/requests/request-state-resource'
 import { requestMergeabilityLabel, requestMergeabilityTone } from '@/features/requests/request-labels'
 import { diffStatWithChanges } from '@/lib/diff-stat'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
 import { loadHistoryEntry } from '@/routes/-repo-history-actions'
-import { loadRequestStateForViewer } from '@/routes/-request-state-actions'
+import { loadRequestChildrenForViewer, loadRequestStateForViewer } from '@/routes/-request-state-actions'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import { useCallback, type ReactNode } from 'react'
@@ -33,16 +33,21 @@ export function RepositoryRequestStrip({
   const { isLoaded, userId } = useAuth()
   const viewerId = userId ?? null
   const scope = isLoaded ? repoResourceScope(repo, viewerId) : null
-  const load = useCallback(
-    (signal: AbortSignal) => loadRequestStateForViewer({ ...params, request_id: requestId }, viewerId, signal),
-    [params, requestId, viewerId],
-  )
+  const identity = scope ? requestStateIdentity(scope, requestId) : null
+  const load = useCallback((signal: AbortSignal) => {
+    const request = { ...params, request_id: requestId }
+    return reloadRequestStateValue(
+      identity!,
+      (stateSignal) => loadRequestStateForViewer(request, viewerId, stateSignal),
+      (cursor, childSignal) => loadRequestChildrenForViewer({ ...request, cursor }, viewerId, childSignal),
+      signal,
+    )
+  }, [identity, params, requestId, viewerId])
   const current = useCachedResource({
     fallbackError: 'Request details are unavailable.',
-    identity: scope ? requestStateIdentity(scope, requestId) : null,
+    identity,
     load,
     resource: requestStateResource,
-    version: String(repo.change_version),
   })
   const detail = current.value?.state?.detail
   const changes = diffStatWithChanges(detail?.diff_stat ?? null)
