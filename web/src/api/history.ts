@@ -31,6 +31,7 @@ export async function loadHistoryPageForRequest(
   const query = new URLSearchParams()
   if (data.view) query.set('view', parseViewId(data.view))
   if (data.before) query.set('before', data.before)
+  if (data.search) query.set('search', data.search)
   query.set('feed', parseHistoryFeed(data.feed))
 
   return createApiClient().get(

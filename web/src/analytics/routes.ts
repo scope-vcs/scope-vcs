@@ -29,7 +29,8 @@ const routeDecisions = {
   '/$owner/': tracked('owner', '/owner'),
   '/$owner/$repo': excluded,
   '/$owner/$repo/_code': excluded,
-  '/$owner/$repo/_code/': tracked('repository_code', '/repository/code'),
+  '/$owner/$repo/_code/': tracked('repository_home', '/repository/home'),
+  '/$owner/$repo/_code/code': tracked('repository_code', '/repository/code'),
   '/$owner/$repo/updates/$entryId': tracked('repository_update', '/repository/update'),
   '/$owner/$repo/requests': excluded,
   '/$owner/$repo/requests/': tracked(

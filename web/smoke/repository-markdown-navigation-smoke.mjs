@@ -15,7 +15,7 @@ export async function assertRepositoryMarkdownUsesClientNavigation(page) {
 
   await page.getByRole('link', { name: 'Read the release guide' }).click()
   await page.waitForURL((url) => (
-    url.pathname === requestRepoPath &&
+    url.pathname === `${requestRepoPath}/code` &&
     url.searchParams.get('file') === 'docs/release.md'
   ))
   await page.getByRole('heading', { level: 1, name: 'Release flow' }).waitFor()

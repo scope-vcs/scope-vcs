@@ -1,6 +1,7 @@
 import type { ViewId } from '@/api/types.generated'
 import type { RepoContent } from '@/api/types'
 import { createCachedResource } from '../../lib/cached-resource'
+import { repositoryVersionKey, type RepositoryVersion } from './repository-version'
 
 export const repoContentResource = createCachedResource<RepoContent>({
   maxEntries: 8,
@@ -13,11 +14,12 @@ type RepoContentIdentity = {
   view: ViewId
   contentVersion: number
   repoId: string
+  version: RepositoryVersion
 }
 
 export function repoContentCacheKey(identity: RepoContentIdentity) {
-  const { scope, repoId, contentVersion, view } = identity
-  return [scope, repoId, contentVersion, view].join('\0')
+  const { scope, repoId, contentVersion, view, version } = identity
+  return [scope, repoId, contentVersion, view, repositoryVersionKey(version)].join('\0')
 }
 
 function approximateContentBytes(content: RepoContent) {

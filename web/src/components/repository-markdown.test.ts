@@ -58,19 +58,30 @@ test('rejects unresolved repository paths and unsafe URL schemes', () => {
 test('resolves relative Markdown links to repository file routes', () => {
   assert.equal(
     resolveRepositoryMarkdownUrl('./setup.md#usage', context),
-    '/scope/demo?file=docs%2Fsetup.md#markdown-usage',
+    '/scope/demo/code?file=docs%2Fsetup.md#markdown-usage',
   )
   assert.equal(
     resolveRepositoryMarkdownUrl('../LICENSE', context),
-    '/scope/demo?file=LICENSE',
+    '/scope/demo/code?file=LICENSE',
   )
   assert.equal(
     resolveRepositoryMarkdownUrl('/CONTRIBUTING.md', context),
-    '/scope/demo?file=CONTRIBUTING.md',
+    '/scope/demo/code?file=CONTRIBUTING.md',
   )
   assert.equal(
     resolveRepositoryMarkdownUrl('My%20Guide.md', context),
-    '/scope/demo?file=docs%2FMy%20Guide.md',
+    '/scope/demo/code?file=docs%2FMy%20Guide.md',
+  )
+})
+
+test('relative Markdown links stay on the version being read', () => {
+  assert.equal(
+    resolveRepositoryMarkdownUrl('./setup.md', { ...context, version: { request: 'req_1' } }),
+    '/scope/demo/code?request=req_1&file=docs%2Fsetup.md',
+  )
+  assert.equal(
+    resolveRepositoryMarkdownUrl('./setup.md', { ...context, version: { update: 'entry/1' } }),
+    '/scope/demo/code?update=entry%2F1&file=docs%2Fsetup.md',
   )
 })
 

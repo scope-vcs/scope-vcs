@@ -16,9 +16,16 @@ export function safeMarkdownUrl(url: string) {
   return ''
 }
 
+export type RepositoryMarkdownContext = {
+  markdownPath: string
+  owner: string
+  repo: string
+  version?: { request?: string; update?: string }
+}
+
 export function resolveRepositoryMarkdownUrl(
   url: string,
-  context: { markdownPath: string; owner: string; repo: string },
+  context: RepositoryMarkdownContext,
 ) {
   const safeUrl = safeMarkdownUrl(url)
   if (safeUrl) return safeUrl
@@ -53,7 +60,11 @@ export function resolveRepositoryMarkdownUrl(
 
   if (parts.length === 0) return ''
   const repositoryPath = `/${encodeURIComponent(context.owner)}/${encodeURIComponent(context.repo)}`
-  return `${repositoryPath}?file=${encodeURIComponent(parts.join('/'))}${fragment}`
+  const { request, update } = context.version ?? {}
+  const version = request
+    ? `request=${encodeURIComponent(request)}&`
+    : update ? `update=${encodeURIComponent(update)}&` : ''
+  return `${repositoryPath}/code?${version}file=${encodeURIComponent(parts.join('/'))}${fragment}`
 }
 
 function markdownFragment(value: string) {

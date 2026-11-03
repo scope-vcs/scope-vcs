@@ -79,7 +79,6 @@
   }
 
   .request-workspace-sidebar[data-closing] .request-workspace-row-link > :last-child,
-  .request-workspace-sidebar[data-closing] .request-workspace-sidebar-tools > search,
   .request-workspace-sidebar[data-closing] .request-workspace-needs-you > h2 > span:first-child,
   .request-workspace-sidebar[data-closing] .request-workspace-open,
   .request-workspace-sidebar[data-closing] .request-workspace-disclosures {
@@ -111,10 +110,6 @@
 
   .request-workspace-shell[data-collapsed] > .request-workspace-resize-handle:is(:hover, :focus-visible) {
     background: var(--foreground);
-  }
-
-  .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-tools > search {
-    visibility: hidden;
   }
 
   .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-toggle {
@@ -226,7 +221,9 @@
   display: flex;
   flex: none;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  min-height: calc(2rem + 26px);
   padding: 14px 12px 12px var(--app-inset);
 }
 
@@ -570,15 +567,11 @@ html[data-focus] .application-topbar {
   }
 
   .request-workspace-sidebar-tools {
-    padding: 13px var(--app-inset);
+    display: none;
   }
 
   .request-workspace-viewing-as {
     padding: 0 var(--app-inset) 10px;
-  }
-
-  .request-workspace-sidebar-tools > button {
-    display: none;
   }
 
   .request-workspace-row {

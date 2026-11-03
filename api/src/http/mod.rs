@@ -13,6 +13,7 @@ pub(crate) mod origins;
 pub(crate) mod repo_collaboration;
 pub(crate) mod repo_events;
 pub(crate) mod repo_metadata;
+pub(crate) mod repo_versions;
 pub(crate) mod repos;
 pub(crate) mod request_attachments;
 pub(crate) mod request_auto_merge;

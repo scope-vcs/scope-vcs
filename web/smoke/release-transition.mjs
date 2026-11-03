@@ -76,7 +76,7 @@ export async function verifyReleaseTransition(options) {
       }
     });
     const repoUrl = new URL(
-      `/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repo)}`,
+      `/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repo)}/code`,
       `${options.baseUrl}/`,
     ).toString();
     const navigation = await page.goto(repoUrl, { timeout: 30_000, waitUntil: "domcontentloaded" });
