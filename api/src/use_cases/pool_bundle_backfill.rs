@@ -3,20 +3,18 @@ use crate::{
     git::{
         blocking::{block_on as wait, run},
         command::run_git,
-        pool_install::install_chain,
         pool_pack::{PoolPackRevision, StagedPoolPack, stage_pool_pack},
         repository_git::RepositoryGit,
-        request_refs::{
-            PoolInstall, PoolRepos, RequestObjectRepos, bundle_prerequisites, download_snapshot,
-            ensure_local_bare_repo, install_missing_request_packs as install_packs,
-        },
-        staging::add_receive_pack_alternate,
+        request_refs::{bundle_prerequisites, download_snapshot},
     },
     state::AppState,
 };
 use scope_domain::repository::git::{GitPoolPackOwner, RequestPackScope};
 use scope_domain::requests::request_visible_to_every_maintainer as shared;
 use scope_postgres::db::BundleSource;
+
+pub(crate) mod reader;
+use reader::PoolBundleReader;
 
 pub async fn run_pool_bundle_backfill(arguments: &[String]) -> anyhow::Result<()> {
     let flags = ["--dry-run", "--allow-empty"];
@@ -108,69 +106,55 @@ pub(crate) async fn backfill_revision(
             RequestPackScope::View(request.view.clone())
         };
         let heads = [rev.head_oid.clone(), rev.old_head_oid.clone()];
-        let requested = std::slice::from_ref(&request);
-        let incarnation = &git.incarnation;
         let mut staged: Option<StagedPoolPack> = None;
+        let mut retained = false;
         let result = (|| {
-            'verify: for repair in [!dry_run, false] {
+            'verify: for repair in [!dry_run, false, false] {
                 for (read_view, head) in std::iter::once(&request.view)
                     .chain((&request.view != views.full()).then_some(views.full()))
                     .flat_map(|view| heads.clone().into_iter().map(move |head| (view, head)))
                 {
-                    let directory = tempfile::tempdir_in(state.data_dir.as_ref())
-                        .map_err(ApiError::internal)?;
-                    let path = ensure_local_bare_repo(directory.path().join("rev.git"))?;
-                    let mut leases = Vec::new();
-                    for view in [read_view, &request.view] {
-                        let base = wait(git.view_repo(&state, views, view))?;
-                        add_receive_pack_alternate(&path, &base.join("objects"))?;
-                        leases.push(base);
+                    let mut reader = PoolBundleReader::new(
+                        &state,
+                        &git,
+                        &context.repo_config,
+                        actor,
+                        read_view,
+                    )?;
+                    if let Some(candidate) = &staged
+                        && !retained
+                        && (read_view != views.full() || allowed)
+                    {
+                        reader.lease_candidate_base(&state, &candidate.pack)?;
                     }
-                    let targets = RequestObjectRepos {
-                        shared: path.clone(),
-                        authored: path.clone(),
-                    };
-                    let install = PoolInstall {
-                        incarnation: &git.incarnation,
-                        config: &context.repo_config,
-                        repos: if read_view == views.full() {
-                            PoolRepos::Full(&targets, actor, &path)
-                        } else {
-                            PoolRepos::View(&request.view, &path)
-                        },
-                    };
-                    let mut install = |heads: &[String]| {
-                        let (_, installed_leases) =
-                            wait(install_packs(&state, &install, requested, heads))?;
-                        leases.extend(installed_leases);
-                        Ok::<_, ApiError>(())
-                    };
-                    install(std::slice::from_ref(&head))?;
+                    reader.install(
+                        &state,
+                        std::slice::from_ref(&request),
+                        std::slice::from_ref(&head),
+                    )?;
                     if let Some(StagedPoolPack { pack, .. }) = &staged
+                        && !retained
                         && pack.head_oid == head
                         && (read_view != views.full() || allowed)
                     {
-                        install(&pack.prerequisites)?;
-                        let packs = vec![pack.clone()];
-                        wait(install_chain(&state, incarnation, &path, packs))?;
+                        reader.install_candidate(&state, &request, pack)?;
                     }
-                    let check = ["fsck", "--connectivity-only", &head];
-                    let verified = run_git(Some(&path), &check, "verify connectivity");
+                    let verified = reader.verify(&head);
                     if verified.is_ok() {
                         continue;
                     }
                     if !repair {
                         verified?;
                     }
-                    let bundle = directory.path().join("rev.bundle");
+                    let bundle = reader.directory.path().join("rev.bundle");
                     let snapshot = serde_json::from_value(rev.git_snapshot.clone())
                         .map_err(ApiError::internal)?;
                     download_snapshot(state.object_store.as_ref(), &snapshot, &bundle)?;
                     let prerequisites = bundle_prerequisites(&bundle)?;
                     let needed: Vec<_> = prerequisites.iter().chain(&heads[1..]).cloned().collect();
-                    install(&needed)?;
+                    reader.install(&state, std::slice::from_ref(&request), &needed)?;
                     let import = ["bundle", "unbundle", bundle.to_str().unwrap()];
-                    run_git(Some(&path), &import, "import bundle")?;
+                    run_git(Some(&reader.path), &import, "import bundle")?;
                     let pack = PoolPackRevision {
                         owner: GitPoolPackOwner::Request {
                             request_id: rev.request_id.clone(),
@@ -179,12 +163,21 @@ pub(crate) async fn backfill_revision(
                         head_oid: rev.head_oid.clone(),
                         prerequisites: needed,
                     };
-                    staged = Some(wait(stage_pool_pack(&state, &rev.repo_id, &path, pack))?);
+                    staged = Some(wait(stage_pool_pack(
+                        &state,
+                        &rev.repo_id,
+                        &reader.path,
+                        pack,
+                    ))?);
                     continue 'verify;
                 }
-                if let Some(candidate) = &staged {
+                if let Some(candidate) = &staged
+                    && !retained
+                {
                     let now = crate::persistence::unix_now()?;
                     wait(repos.retain_bundle_pool_pack(&context, &candidate.pack, now))?;
+                    retained = true;
+                    continue 'verify;
                 }
                 return Ok::<_, ApiError>(());
             }
@@ -192,7 +185,7 @@ pub(crate) async fn backfill_revision(
         })();
         let changed = staged.is_some();
         if let Some(staged) = staged {
-            if result.is_err() {
+            if result.is_err() && !retained {
                 wait(staged.discard(&state, &rev.repo_id));
             } else {
                 wait(staged.finish(&state));

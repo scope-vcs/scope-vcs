@@ -9,10 +9,7 @@ use super::{
 };
 use crate::{
     error::ApiError,
-    git::{
-        cache::GitRepoHandle, command::git_command_output, pool_install::present_commits,
-        staging::add_receive_pack_alternate,
-    },
+    git::{cache::GitRepoHandle, command::git_command_output, pool_install::present_commits},
     state::AppState,
 };
 use scope_domain::{
@@ -209,9 +206,7 @@ async fn object_repos(
     let staging_repo = staging_repo.to_path_buf();
     crate::git::blocking::run(move || {
         let repos = request_object_repos(&state, &incarnation, &generation, &actor_user_id)?;
-        for repo in [&repos.shared, &repos.authored] {
-            add_receive_pack_alternate(&staging_repo, &repo.join("objects"))?;
-        }
+        repos.add_alternates_to(&staging_repo)?;
         Ok(repos)
     })
     .await

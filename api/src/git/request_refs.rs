@@ -47,7 +47,7 @@ use ancestry::{
 pub(crate) use pool::request_object_repos;
 pub(crate) use pool::{
     PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs,
-    retain_staged_pool_pack,
+    retain_staged_pool_pack, shares_objects,
 };
 pub(crate) use revision::{sweep_revision_jobs, with_request_revision_store_repo};
 pub(crate) use seeding::{
@@ -58,7 +58,6 @@ use snapshot::fetch_bundle_into_ref;
 use snapshot::{BundleRef, fetch_snapshot_into_ref};
 pub(crate) use snapshot::{bundle_prerequisites, download_snapshot};
 pub(crate) use view_bases::{RequestViewBases, request_view_bases};
-#[cfg(test)]
 pub(crate) use view_pool::view_object_repos;
 
 pub(crate) const REQUEST_REF_DELETE_ERROR: &str = "Scope does not accept request branch deletes";

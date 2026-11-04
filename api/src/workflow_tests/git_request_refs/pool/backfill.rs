@@ -4,6 +4,105 @@ use crate::use_cases::pool_bundle_backfill::{
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pool_bundle_backfill_proves_mixed_view_repairs_with_cold_readers() {
+    use scope_domain::repository::git::RequestPackScope;
+
+    let (state, _main) = test_state_with_mergeable_request("backfill-topology").await;
+    let (source, remote, _server, first) =
+        request_checkout(&state, "backfill-topology-source").await;
+    submit_request(
+        router(state.clone()),
+        REQUEST_ID,
+        &bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL),
+    )
+    .await;
+    let full_remote = remote.replace("/git/public/", "/git/private/");
+    configure_bearer_header(&source, &full_remote, &bearer_header());
+    push_change(
+        &source,
+        &full_remote,
+        REQUEST_REF,
+        "request.txt",
+        "full view revision\n",
+        "full view revision",
+    )
+    .unwrap();
+    let head = git_head_oid(&source);
+    let store = state.metadata.repositories();
+    let packs = store
+        .git_pool_packs_for_requests(TEST_REPO_ID, &[REQUEST_ID.to_string()])
+        .await
+        .unwrap();
+    assert!(packs.iter().any(
+        |pack| pack.head_oid == first && pack.scope == RequestPackScope::View(ViewId::public())
+    ));
+    assert!(packs.iter().any(|pack| pack.head_oid == head
+        && pack.scope == RequestPackScope::Full
+        && pack.prerequisites.contains(&first)));
+    let revision = store
+        .bundle_batch(None, None)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|revision| revision.head_oid == head)
+        .unwrap();
+    let cold = state.replica_for_tests();
+    let repo = find_repo(&cold, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    let request = stored_request(&cold, REQUEST_ID).await;
+    let head_for_read = head.clone();
+    let full_read = crate::git::blocking::run(move || {
+        let git = crate::git::repository_git::RepositoryGit::of_repository(&repo);
+        let actor = test_owner_id();
+        let mut reader = crate::use_cases::pool_bundle_backfill::reader::PoolBundleReader::new(
+            &cold,
+            &git,
+            &repo.repo_config,
+            &actor,
+            repo.repo_config.views.full(),
+        )?;
+        reader.install(&cold, &[request], std::slice::from_ref(&head_for_read))?;
+        reader.verify(&head_for_read)
+    })
+    .await;
+    assert!(full_read.is_err());
+    assert!(verify(&state, &revision, true).await.is_err());
+    assert!(verify(&state, &revision, false).await.unwrap());
+    let repaired = store
+        .git_pool_packs_for_requests(TEST_REPO_ID, &[REQUEST_ID.to_string()])
+        .await
+        .unwrap();
+    assert_eq!(repaired.len(), packs.len() + 1);
+    assert!(repaired.iter().any(
+        |pack| pack.head_oid == head && pack.scope == RequestPackScope::View(ViewId::public())
+    ));
+    let snapshot = stored_request(&state, REQUEST_ID)
+        .await
+        .git_snapshot
+        .unwrap();
+    state
+        .object_store
+        .delete(&scope_storage::object_key(&snapshot))
+        .await
+        .unwrap();
+    assert!(!verify(&state, &revision, true).await.unwrap());
+    let cold = state.replica_for_tests();
+    let staging = prepare_owner_push(&cold, REQUEST_REF).await;
+    run_git(
+        Some(&staging),
+        &["fsck", "--connectivity-only", &head],
+        "read repaired mixed-view revision without a snapshot",
+    )
+    .unwrap();
+    assert!(!has_commit(
+        &object_repos(&cold, &test_owner_id()).await.shared,
+        &head
+    ));
+    fs::remove_dir_all(staging).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pool_bundle_backfill_verifies_cold_readers_merges_stacks_corruption_and_reruns() {
     let (state, _, source) = super::super::super::custom_views::fixture("backfill").await;
     let requests = state.metadata.requests();

@@ -37,29 +37,48 @@ pub(crate) struct RequestObjectRepos {
     pub(crate) authored: PathBuf,
 }
 
+impl RequestObjectRepos {
+    pub(crate) fn initialize(
+        root: &FsPath,
+        generation: &str,
+        author_id: &str,
+        canonical: &FsPath,
+    ) -> Result<Self, ApiError> {
+        let shared = super::ensure_local_bare_repo(root.join(format!("{generation}.git")))?;
+        let authored = super::ensure_local_bare_repo(root.join(format!(
+            "{generation}-{}.git",
+            hex::encode(&Sha256::digest(author_id.as_bytes())[..16])
+        )))?;
+        for repo in [&shared, &authored] {
+            if canonical.join("objects").is_dir() {
+                add_receive_pack_alternate(repo, &canonical.join("objects"))?;
+            }
+        }
+        add_receive_pack_alternate(&authored, &shared.join("objects"))?;
+        Ok(Self { shared, authored })
+    }
+
+    pub(crate) fn add_alternates_to(&self, staging: &FsPath) -> Result<(), ApiError> {
+        for repo in [&self.shared, &self.authored] {
+            add_receive_pack_alternate(staging, &repo.join("objects"))?;
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn request_object_repos(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     generation: &str,
     author_id: &str,
 ) -> Result<RequestObjectRepos, ApiError> {
-    let root = request_objects_root(state, incarnation);
-    let canonical = state
-        .repository_engine
-        .repository_path(incarnation)
-        .join("objects");
-    let shared = super::ensure_local_bare_repo(root.join(format!("{generation}.git")))?;
-    let authored = super::ensure_local_bare_repo(root.join(format!(
-        "{generation}-{}.git",
-        hex::encode(&Sha256::digest(author_id.as_bytes())[..16])
-    )))?;
-    for repo in [&shared, &authored] {
-        if canonical.is_dir() {
-            add_receive_pack_alternate(repo, &canonical)?;
-        }
-    }
-    add_receive_pack_alternate(&authored, &shared.join("objects"))?;
-    Ok(RequestObjectRepos { shared, authored })
+    let canonical = state.repository_engine.repository_path(incarnation);
+    RequestObjectRepos::initialize(
+        &request_objects_root(state, incarnation),
+        generation,
+        author_id,
+        &canonical,
+    )
 }
 
 pub(crate) fn shares_objects(request: &Request, config: &RepoConfig) -> bool {
@@ -72,10 +91,49 @@ pub(crate) enum PoolRepos<'a> {
     View(&'a ViewId, &'a FsPath),
 }
 
+impl<'a> PoolRepos<'a> {
+    pub(crate) fn pack_target(
+        self,
+        scope: &RequestPackScope,
+        shared: bool,
+        author: bool,
+    ) -> Option<&'a FsPath> {
+        match self {
+            Self::View(view, repo) => (scope.view() == Some(view)).then_some(repo),
+            Self::Full(repos, _, staging) => Some(if shared && scope.view().is_none() {
+                &repos.shared
+            } else if author && scope.view().is_none() {
+                &repos.authored
+            } else {
+                staging
+            }),
+        }
+    }
+}
+
 pub(crate) struct PoolInstall<'a> {
     pub(crate) incarnation: &'a RepositoryIncarnation,
     pub(crate) config: &'a RepoConfig,
     pub(crate) repos: PoolRepos<'a>,
+}
+
+impl PoolInstall<'_> {
+    pub(crate) async fn lease_view_base(
+        &self,
+        state: &AppState,
+        view: &ViewId,
+    ) -> Result<Option<GitRepoHandle>, ApiError> {
+        let PoolRepos::Full(_, _, staging) = self.repos else {
+            return Ok(None);
+        };
+        let base = view_object_repos(state, self.incarnation, self.config, view).await?;
+        let target = staging.to_path_buf();
+        blocking::run(move || {
+            add_receive_pack_alternate(&target, &base.main.join("objects"))?;
+            Ok(Some(base.main))
+        })
+        .await
+    }
 }
 
 pub(crate) async fn install_request_pool_packs(
@@ -139,14 +197,7 @@ pub(crate) async fn install_missing_request_packs(
             .filter_map(|pack| pack.scope.view())
             .collect::<BTreeSet<_>>()
         {
-            let base = view_object_repos(state, incarnation, install.config, view).await?;
-            let target = read_repo.to_path_buf();
-            let base = blocking::run(move || {
-                add_receive_pack_alternate(&target, &base.main.join("objects"))?;
-                Ok(base.main)
-            })
-            .await?;
-            leases.push(base);
+            leases.extend(install.lease_view_base(state, view).await?);
         }
     }
     let target = read_repo.to_path_buf();
@@ -223,20 +274,14 @@ fn pack_target<'a>(install: &PoolInstall<'a>, listed: &PooledRequestPack) -> Opt
         return None;
     }
     match install.repos {
-        PoolRepos::View(view, repo) => (listed.scope.view() == Some(view)).then_some(repo),
-        PoolRepos::Full(repos, actor_user_id, staging) => {
+        PoolRepos::View(..) => install.repos.pack_target(&listed.scope, false, false),
+        PoolRepos::Full(_, actor_user_id, _) => {
             let shared = request_visible_to_every_maintainer(view, listed.request_submitted, views);
             let author = listed.request_author_id.as_deref() == Some(actor_user_id);
             if !shared && !author && !listed.request_invitees.iter().any(|id| id == actor_user_id) {
                 return None;
             }
-            Some(if shared && scope.is_none() {
-                &repos.shared
-            } else if author && scope.is_none() {
-                &repos.authored
-            } else {
-                staging
-            })
+            install.repos.pack_target(&listed.scope, shared, author)
         }
     }
 }
