@@ -57,11 +57,50 @@ def projectedJson (p : Projected) : Json :=
     ("changes", .arr (p.changes.map changeJson).toArray),
     ("materialization", materializationJson p.materialization)]
 
+def parseViews (j : Json) : Except String Views := do
+  (← j.getArr?).toList.mapM parseView
+
+def parseRelabel (j : Json) : Except String Relabel := do
+  pure ⟨← (← field j "path").getStr?, ← (← field j "old").getStr?, ← (← field j "new").getStr?,
+    ← optString j "content"⟩
+
+def parseTransition (j : Json) : Except String (Option Transition) := do
+  match j with
+  | .null => pure none
+  | v => pure (some ⟨← parseViews (← field v "before"), ← parseViews (← field v "after")⟩)
+
+def parseSet (j : Json) : Except String ChangeSet := do
+  let relabels ← (← (← field j "relabels").getArr?).toList.mapM parseRelabel
+  pure ⟨← (← field j "id").getStr?, ← optString j "anchor", ← optString j "source", relabels,
+    ← parseTransition (← field j "views")⟩
+
+def viewsJson (views : Views) : Json :=
+  .arr (views.map fun v => Json.mkObj [("id", .str v.id),
+    ("includes", match v.includes with
+      | none => .null
+      | some included => .arr (included.map Json.str).toArray)]).toArray
+
+def projectionJson (commits : List Projected) : Json := .arr (commits.map projectedJson).toArray
+
 def runCase (j : Json) : Except String Json := do
-  let views ← (← (← field j "views").getArr?).toList.mapM parseView
-  let history ← (← (← field j "commits").getArr?).toList.mapM parseCommit
+  let current ← parseViews (← field j "views")
+  let commits ← (← (← field j "commits").getArr?).toList.mapM parseCommit
+  let sets ← (← (← field j "sets").getArr?).toList.mapM parseSet
   let reader ← (← field j "reader").getStr?
-  pure (.arr ((projectFor views reader history).map projectedJson).toArray)
+  let prefixCommits ← (← field j "prefix_commits").getNat?
+  let prefixSets ← (← field j "prefix_sets").getNat?
+  let start : Cursor := ⟨0, none, initialViews sets current⟩
+  let (prefixGraph, suffixGraph) := (commits.take prefixCommits, commits.drop prefixCommits)
+  let (prefixChanges, suffixChanges) := (sets.take prefixSets, sets.drop prefixSets)
+  let (next, tree) := resume start [] prefixGraph prefixChanges reader
+  pure (Json.mkObj [
+    ("whole", projectionJson (projectGraph commits sets current reader)),
+    ("prefix", projectionJson (projectAfter start [] prefixGraph prefixChanges reader)),
+    ("cursor", Json.mkObj [("count", (next.count : Nat)), ("last", optJson next.last),
+      ("views", viewsJson next.views)]),
+    ("tree", .arr ((tree.mergeSort fun a b => !decide (b.path < a.path)).map fun e => Json.mkObj [("path", .str e.path), ("blob", .str e.blob),
+      ("label", .str e.label)]).toArray),
+    ("suffix", projectionJson (projectAfter next tree suffixGraph suffixChanges reader))])
 
 def main : IO UInt32 := do
   let input ← (← IO.getStdin).readToEnd
