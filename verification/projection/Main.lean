@@ -53,6 +53,7 @@ def materializationJson : Materialization → Json
 def projectedJson (p : Projected) : Json :=
   Json.mkObj [("projected_id", .str p.projectedId), ("logical_commit_id", .str p.logicalId),
     ("parent", optJson p.parent), ("author", optJson p.author), ("message", .str p.message),
+    ("visibility_change_set_id", optJson p.visibilityChangeSet),
     ("changes", .arr (p.changes.map changeJson).toArray),
     ("materialization", materializationJson p.materialization)]
 

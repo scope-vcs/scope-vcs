@@ -34,6 +34,7 @@ structure Projected where
   parent : Option String
   author : Option String
   message : String
+  visibilityChangeSet : Option String
   changes : List Change
   materialization : Materialization
   deriving DecidableEq, Repr
@@ -64,9 +65,9 @@ def preservedNative (r : Reader) (c : Commit) : Option (List Native) :=
 
 def preservedCommits (c : Commit) (vis : List Change) : List Native → List Projected
   | [] => []
-  | [n] => [⟨n.oid, c.id, n.parents.head?, none, c.message, vis, .preserve n.oid n.parents n.tree⟩]
+  | [n] => [⟨n.oid, c.id, n.parents.head?, none, c.message, none, vis, .preserve n.oid n.parents n.tree⟩]
   | n :: rest =>
-      ⟨n.oid, c.id, n.parents.head?, none, "Preserved request commit", [], .preserve n.oid n.parents n.tree⟩
+      ⟨n.oid, c.id, n.parents.head?, none, "Preserved request commit", none, [], .preserve n.oid n.parents n.tree⟩
         :: preservedCommits c vis rest
 
 def lastOid : List Native → Option String
@@ -86,7 +87,7 @@ def step (r : Reader) (s : Fold) (c : Commit) : Fold :=
         { commits := s.commits ++ [⟨pid, c.id, s.lastVisible,
             if isPartial then none else some c.author,
             if isPartial then "Projected public update" else c.message,
-            visible r c, .generate⟩],
+            none, visible r c, .generate⟩],
           lastVisible := some pid }
 
 def project (r : Reader) (s : Fold) (history : List Commit) : Fold :=
@@ -99,7 +100,7 @@ structure Indistinct (r : Reader) (a b : Commit) : Prop where
   sourceIdentityIsDisclosed : a.id = b.id
   visible : visible r a = visible r b
   hiddenChangePresenceIsDisclosed : partialCommit r a = partialCommit r b
-  preserved : preservedNative r a = preservedNative r b
+  preservedMergeIsDisclosed : preservedNative r a = preservedNative r b
   message : partialCommit r a = false ∨ preservedNative r a ≠ none → a.message = b.message
   author : partialCommit r a = false → preservedNative r a = none → a.author = b.author
 
@@ -127,7 +128,7 @@ theorem preservedCommits_congr (a b : Commit) (vis : List Change) (native : List
 theorem step_indistinct (r : Reader) (s : Fold) (a b : Commit) (h : Indistinct r a b) :
     step r s a = step r s b := by
   unfold step
-  rw [← h.preserved]
+  rw [← h.preservedMergeIsDisclosed]
   cases hp : preservedNative r a with
   | some native =>
     have hmsg : a.message = b.message := h.message (Or.inr (by simp [hp]))

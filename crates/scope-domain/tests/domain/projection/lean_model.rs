@@ -1,5 +1,6 @@
 use super::{blob, graph, path};
 use scope_domain::{
+    content::SourceBlob,
     projection::{
         FileChange, LogicalCommit, LogicalCommitOrigin, NativeRequestCommit,
         ProjectionMaterialization, project_graph,
@@ -41,6 +42,16 @@ impl Rng {
     fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
         &items[self.below(items.len())]
     }
+}
+
+fn file(rng: &mut Rng) -> SourceBlob {
+    let mut file = blob(&format!("v{}", rng.below(3)));
+    file.git_file_mode = rng.pick(&["100644", "100755", "120000"]).to_string();
+    file
+}
+
+fn blob_key(blob: &SourceBlob) -> String {
+    serde_json::to_string(blob).unwrap()
 }
 
 fn id(value: &str) -> ViewId {
@@ -113,8 +124,8 @@ fn history(rng: &mut Rng, view_ids: &[ViewId]) -> Vec<LogicalCommit> {
             changes: (0..rng.below(5))
                 .map(|_| FileChange {
                     path: path(rng.pick(&PATHS)),
-                    old_content: None,
-                    new_content: rng.chance().then(|| blob(&format!("v{}", rng.below(3)))),
+                    old_content: rng.chance().then(|| file(rng)),
+                    new_content: rng.chance().then(|| file(rng)),
                     label: rng.pick(view_ids).clone(),
                 })
                 .collect(),
@@ -161,7 +172,7 @@ fn case_json(views: &Views, reader: &ViewId, commits: &[LogicalCommit]) -> Value
             "changes": commit.changes.iter().map(|change| json!({
                 "path": change.path.as_str(),
                 "label": change.label.as_str(),
-                "content": change.new_content.as_ref().map(|blob| &blob.sha256),
+                "content": change.new_content.as_ref().map(blob_key),
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
     })
@@ -179,10 +190,11 @@ fn rust_projection(views: &Views, reader: &ViewId, commits: Vec<LogicalCommit>) 
                 "parent": commit.parent_projected_id,
                 "author": commit.author,
                 "message": commit.message,
+                "visibility_change_set_id": commit.visibility_change_set_id,
                 "changes": commit.changes.iter().map(|change| json!({
                     "path": change.path.as_str(),
                     "label": change.label.as_str(),
-                    "content": change.new_content.as_ref().map(|blob| &blob.sha256),
+                    "content": change.new_content.as_ref().map(blob_key),
                 })).collect::<Vec<_>>(),
                 "materialization": match &commit.materialization {
                     ProjectionMaterialization::Generate => json!({ "kind": "generate" }),
