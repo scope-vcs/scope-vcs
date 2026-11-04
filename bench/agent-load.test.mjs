@@ -88,7 +88,7 @@ test('agent branch names are unique, bounded, and ref safe', () => {
   const longLabel = 'a-very-long-label-'.repeat(8);
   const names = Array.from({ length: 200 }, (_, index) => agentBranchName(longLabel, index));
   assert.equal(new Set(names).size, 200);
-  assert.ok(names.every((name) => name.length <= 60 && /^[a-z0-9-]+$/.test(name)));
+  assert.ok(names.every((name) => /^[a-z0-9][a-z0-9-]{0,47}$/.test(name)), names[0]);
   assert.ok(names[199].endsWith('-199'));
 });
 
