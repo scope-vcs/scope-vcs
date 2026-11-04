@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestQueueItemResponse, RequestStackParentResponse } from '../../api/types.generated'
-import { foldStackedRequestRows, requestStackMembers, requestStacksWith, stackRequestRows } from './request-workspace-stack'
+import { foldStackedRequestRows, requestRailRows, requestStackMembers, requestStacksWith, stackRequestRows } from './request-workspace-stack'
 
 function row(id: string, parent: string | 'unavailable' | null = null) {
   const stack_parent: RequestStackParentResponse | null =
@@ -109,4 +109,12 @@ test('a stack joins a group when any of its requests belongs there, and unrelate
     requestStacksWith(rows, ({ item }) => urgent.has(item.request.id)).map(({ item }) => item.request.id),
     ['waiting-parent', 'urgent-child', 'urgent-plain', 'waiting-child'],
   )
+})
+
+test('the collapsed rail closes a stack outline on the last row it shows, and keeps the selected row', () => {
+  const ids = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7']
+  const visible = foldStackedRequestRows(stackRequestRows(ids.map((id, index) => row(id, index ? 's0' : null))), new Set())
+  const rail = (selected?: string) => requestRailRows(visible, selected).map(({ shown, edge }) => (shown ? edge : 'hidden'))
+  assert.deepEqual(rail(), ['start', 'middle', 'middle', 'middle', 'middle', 'end', 'hidden', 'hidden'])
+  assert.deepEqual(rail('s7'), ['start', 'middle', 'middle', 'middle', 'middle', 'middle', 'hidden', 'end'])
 })

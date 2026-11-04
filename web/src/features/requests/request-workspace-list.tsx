@@ -15,6 +15,7 @@ import type { RequestAttentionCommand } from './request-attention-api'
 import { RequestStatusGlyph } from './request-status-glyph'
 import { RequestSnoozeMenu } from './request-snooze-menu'
 import {
+  REQUEST_NEXT_STEP_ACTIONS,
   requestAgeLabel,
   requestAttentionStale,
   requestHasNewActivity,
@@ -24,9 +25,9 @@ import {
 import { actorHandle } from './request-actor'
 import {
   foldStackedRequestRows,
-  requestStackEdge,
+  requestRailRows,
   stackRequestRows,
-  type RequestStackEdge,
+  type RequestRailRow,
   type RequestStackPlacement,
   type VisibleStackedRequestRow,
 } from './request-workspace-stack'
@@ -107,6 +108,7 @@ export function RequestWorkspaceList({
   const leavingIds = new Set([...folding.values()].flatMap((ids) => [...ids]))
   let revealOrder = 0
   const visible = foldStackedRequestRows(stackRequestRows(items), foldedStacks)
+  const railRows = rowProps.rail ? requestRailRows(visible, rowProps.selectedId) : undefined
   const rows = visible.map((entry, index) => {
     const { item, section } = entry.row
     const id = item.request.id
@@ -121,7 +123,7 @@ export function RequestWorkspaceList({
         placement={entry.placement}
         revealOrder={revealed.has(id) ? revealOrder++ : undefined}
         section={section}
-        stackEdge={requestStackEdge(visible, index)}
+        railRow={railRows?.[index]}
         stackOpen={!foldedStacks.has(id) && !folding.has(id)}
         {...rowProps}
       />
@@ -193,7 +195,7 @@ function RequestWorkspaceRow({
   leaving,
   onToggleStack,
   revealOrder,
-  stackEdge,
+  railRow,
   stackOpen,
 }: Pick<RequestWorkspaceListProps, 'onAction' | 'onCustomSnooze' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
   item: RequestQueueItemResponse
@@ -204,7 +206,7 @@ function RequestWorkspaceRow({
   leaving: boolean
   onToggleStack: () => void
   revealOrder: number | undefined
-  stackEdge: RequestStackEdge | undefined
+  railRow: RequestRailRow | undefined
   stackOpen: boolean
 }) {
   const hydrated = useHydrated()
@@ -215,6 +217,7 @@ function RequestWorkspaceRow({
   const hot = attention.group === 'needs_you'
   const unread = requestHasNewActivity(item)
   const status = requestStatusLabel(item, hydrated)
+  const action = attention.reason === 'authored' ? undefined : REQUEST_NEXT_STEP_ACTIONS[item.next_step]
   const handle = REVIEW_REASONS.has(attention.reason) ? actorHandle(author) : null
   const stackParent = requestStackParentLabel(item)
   const diffStat = diffStatWithChanges(request.diff_stat)
@@ -253,7 +256,8 @@ function RequestWorkspaceRow({
       data-rail={rail ? '' : undefined}
       data-request-id={request.id}
       data-revealed={revealOrder !== undefined || undefined}
-      data-stack-edge={stackEdge}
+      data-rail-hidden={railRow?.shown === false || undefined}
+      data-stack-edge={railRow?.edge}
       data-stack-folded={(descendants.length > 0 && !stackOpen) || undefined}
       style={
         {
@@ -289,7 +293,7 @@ function RequestWorkspaceRow({
               {request.title}
             </span>
             <span className="sr-only" suppressHydrationWarning>
-              {[handle, status, stackParent].filter(Boolean).map((detail) => `, ${detail}`)}
+              {[handle, status, action, stackParent].filter(Boolean).map((detail) => `, ${detail}`)}
             </span>
           </Link>
           <time

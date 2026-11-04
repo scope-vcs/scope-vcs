@@ -8,6 +8,7 @@ import type {
   RequestAttentionReason,
   RequestQueueGroup,
   RequestQueueItemResponse,
+  RequestQueueNextStep,
 } from '../../api/types.generated'
 import { requestMergeabilityLabel } from './request-labels'
 
@@ -53,6 +54,12 @@ export const REQUEST_ATTENTION_GROUP_LABELS: Record<RequestAttentionGroup, strin
   unclaimed: 'Unclaimed',
   set_aside: 'Set aside',
   done: 'Done',
+}
+
+export const REQUEST_NEXT_STEP_ACTIONS: Partial<Record<RequestQueueNextStep, string>> = {
+  merge: 'Ready to merge',
+  fix_checks: 'Checks failed',
+  update: 'Needs an update',
 }
 
 export function requestStackParentLabel({ request }: RequestQueueItemResponse) {

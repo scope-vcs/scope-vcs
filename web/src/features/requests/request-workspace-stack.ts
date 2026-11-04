@@ -1,6 +1,7 @@
 import type { RequestQueueItemResponse } from '../../api/types.generated'
 
 const REQUEST_STACK_MAX_INDENT = 4
+const REQUEST_RAIL_ROWS = 6
 
 type RequestStackGuide = { column: number; dashed: boolean }
 
@@ -20,6 +21,8 @@ export type RequestStackMember<T> = { row: T; depth: number }
 export type VisibleStackedRequestRow<T> = StackedRequestRow<T> & { folded: T[] }
 
 export type RequestStackEdge = 'start' | 'middle' | 'end' | 'single'
+
+export type RequestRailRow = { shown: boolean; edge?: RequestStackEdge }
 
 type StackNode<T> = {
   row?: T
@@ -96,7 +99,21 @@ export function foldStackedRequestRows<T extends StackRow>(
   return visible
 }
 
-export function requestStackEdge<T>(rows: VisibleStackedRequestRow<T>[], index: number): RequestStackEdge | undefined {
+export function requestRailRows<T extends StackRow>(
+  rows: VisibleStackedRequestRow<T>[],
+  selectedId: string | undefined,
+): RequestRailRow[] {
+  const shown = rows.filter(
+    ({ row, folded }, index) =>
+      index < REQUEST_RAIL_ROWS || [row, ...folded].some(({ item }) => item.request.id === selectedId),
+  )
+  return rows.map((entry) => {
+    const index = shown.indexOf(entry)
+    return index < 0 ? { shown: false } : { shown: true, edge: stackEdge(shown, index) }
+  })
+}
+
+function stackEdge<T>(rows: VisibleStackedRequestRow<T>[], index: number): RequestStackEdge | undefined {
   const { stack, folded } = rows[index]
   const before = rows[index - 1]?.stack === stack
   const after = rows[index + 1]?.stack === stack

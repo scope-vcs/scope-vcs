@@ -306,6 +306,7 @@ test('pressing a woke row acknowledges it once and custom snooze confirms a chos
     window.setQueue({ pages: { active: { ...empty, requests: [first, woke, third] }, unclaimed: empty, set_aside: empty, done: empty }, maintainer: true, loading: false })
   })
   await row.locator('.request-workspace-row-status').getByText('Woke').waitFor()
+  assert.match(await row.getByRole('link').textContent(), /, Woke, Checks failed$/)
   await page.locator('[data-request-id="request-0"]').getByRole('link').click()
   assert.deepEqual(await page.evaluate(() => window.attentionCommands), [])
   await row.getByRole('link').click()

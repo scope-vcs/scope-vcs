@@ -34,11 +34,16 @@ import {
   type RequestAttentionGroup,
 } from './request-workspace-model'
 import { RequestRailHint, type RailHint, type RailHintRequest } from './request-workspace-rail-hint'
-import { foldStackedRequestRows, requestStackMembers, requestStacksWith, stackRequestRows } from './request-workspace-stack'
+import {
+  foldStackedRequestRows,
+  requestRailRows,
+  requestStackMembers,
+  requestStacksWith,
+  stackRequestRows,
+} from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
 
-const RAIL_AVATARS = 6
 const RAIL_HINT_GRACE_MS = 250
 
 const FOLDED_LABELS = {
@@ -264,12 +269,9 @@ export function RequestWorkspaceSidebar({
     ),
   ]
   const stackedNeedsYou = stackRequestRows(needsYou)
-  const railed = foldStackedRequestRows(stackedNeedsYou, foldedStacks)
-    .filter(
-      ({ row, folded }, index) =>
-        index < RAIL_AVATARS || [row, ...folded].some(({ item }) => item.request.id === selectedId),
-    )
-    .map(({ row }) => row)
+  const visibleNeedsYou = foldStackedRequestRows(stackedNeedsYou, foldedStacks)
+  const railRows = requestRailRows(visibleNeedsYou, selectedId)
+  const railed = visibleNeedsYou.filter((_, index) => railRows[index].shown).map(({ row }) => row)
   const foldedGroups = (Object.keys(FOLDED_LABELS) as (keyof typeof FOLDED_LABELS)[])
     .map((group) => ({
       group,
