@@ -281,6 +281,7 @@ impl Case {
                     "content": change.new_content.as_ref().map(blob_key),
                 })).collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
+            "repo_id": graph(Vec::new()).repo_id,
             "sets": self.sets.iter().map(set_json).collect::<Vec<_>>(),
             "prefix_commits": self.prefix_commits,
             "prefix_sets": self.prefix_sets,
@@ -339,8 +340,10 @@ fn case(rng: &mut Rng) -> Case {
 }
 
 fn projection_json(projection: &Projection) -> Value {
-    json!(
-        projection
+    json!({
+        "repo_id": projection.repo_id,
+        "view_key": projection.view_key.as_str(),
+        "commits": projection
             .commits
             .iter()
             .map(|commit| json!({
@@ -366,7 +369,7 @@ fn projection_json(projection: &Projection) -> Value {
                 },
             }))
             .collect::<Vec<_>>()
-    )
+    })
 }
 
 fn lean_projections(cases: &[Value]) -> Vec<Value> {
@@ -393,7 +396,7 @@ fn count(outputs: &[Value], kind: impl Fn(&Value) -> bool) -> usize {
     outputs
         .iter()
         .flat_map(|output| ["whole", "prefix", "suffix"].map(|part| &output[part]))
-        .flat_map(|projection| projection.as_array().unwrap())
+        .flat_map(|projection| projection["commits"].as_array().unwrap())
         .filter(|commit| kind(commit))
         .count()
 }
@@ -450,7 +453,7 @@ fn the_rust_projection_matches_the_proven_lean_model() {
             case.sets[..case.prefix_sets]
                 .iter()
                 .any(|set| set.views.is_some())
-                && !output["suffix"].as_array().unwrap().is_empty()
+                && !output["suffix"]["commits"].as_array().unwrap().is_empty()
         })
         .count();
     let reached = [

@@ -29,6 +29,8 @@ Lean checks these proofs on every build:
   to secret paths.
 - `projected_changes_are_readable`: every change in a projection has a path
   and label that the reader can read in at least one views version of the run.
+  It does not show that the label is readable in the views version in force
+  when that change is emitted.
 - `private_control_paths_reach_only_the_full_view`: no change under `/.scope`
   except `/.scope/RULES.md` reaches a reader that is not the full view in any
   views version of the run.
@@ -38,7 +40,9 @@ Lean checks these proofs on every build:
 
 ## Disclosures
 
-The projection discloses exactly what these conditions require to be equal.
+The conditions below say what must be equal between the two histories for the
+theorem to apply. They are conservative: the projection reveals at most these
+facts, though it does not necessarily reveal every one of them.
 
 For a commit both histories contain (`SameCommit`):
 
@@ -91,7 +95,8 @@ whole projection, the projection of a prefix, the cursor and labelled tree
 after that prefix, and the projection of the suffix from that cursor and tree.
 The ignored test `the_rust_projection_matches_the_proven_lean_model` in
 `crates/scope-domain/tests/domain/projection/lean_model.rs` sends 2,000
-generated cases to it and requires every field of the Rust output to match.
+generated cases to it and requires every field of the Rust output to match,
+including each projection's repository id and view key.
 The cases include anchored, unanchored and dangling sets, source updates,
 relabels with and without current content, views transitions and duplicate
 commit ids. The test fails if the generator stops reaching partial and
@@ -99,9 +104,13 @@ preserved commits, source updates, each kind of set commit, anchored sets,
 relabels of a source update's paths, or suffixes resumed after a transition.
 
 The build treats warnings as errors, so an unfinished `sorry` fails it.
-`Axioms.lean` prints the axioms each theorem depends on, and the check fails
-unless they are only Lean's standard `propext`, `Classical.choice` and
-`Quot.sound`, so a declared `axiom` cannot stand in for a proof.
+`Audit.lean` inspects every theorem in the `Projection` modules, so none can be
+left out. It fails if any depends on an axiom other than Lean's standard
+`propext`, `Classical.choice` and `Quot.sound`, if any `Projection` module
+declares an `axiom`, or if one of the theorems listed above is missing or is
+not a theorem, so a declared `axiom` cannot stand in for a proof. It also fails if any `Projection` definition replaces its
+compiled code with `implemented_by` or `extern`, so the executable the
+comparison runs is the definition the theorems are about.
 
 Run it with `./dev/check model`, which installs the pinned Lean release from
 `dev/tool-versions.json`. CI runs `dev/checks/projection-model` in the Rust

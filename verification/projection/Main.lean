@@ -80,13 +80,16 @@ def viewsJson (views : Views) : Json :=
       | none => .null
       | some included => .arr (included.map Json.str).toArray)]).toArray
 
-def projectionJson (commits : List Projected) : Json := .arr (commits.map projectedJson).toArray
+def projectionJson (repo view : String) (commits : List Projected) : Json :=
+  Json.mkObj [("repo_id", .str repo), ("view_key", .str view),
+    ("commits", .arr (commits.map projectedJson).toArray)]
 
 def runCase (j : Json) : Except String Json := do
   let current ← parseViews (← field j "views")
   let commits ← (← (← field j "commits").getArr?).toList.mapM parseCommit
   let sets ← (← (← field j "sets").getArr?).toList.mapM parseSet
   let reader ← (← field j "reader").getStr?
+  let repo ← (← field j "repo_id").getStr?
   let prefixCommits ← (← field j "prefix_commits").getNat?
   let prefixSets ← (← field j "prefix_sets").getNat?
   let start : Cursor := ⟨0, none, initialViews sets current⟩
@@ -94,13 +97,13 @@ def runCase (j : Json) : Except String Json := do
   let (prefixChanges, suffixChanges) := (sets.take prefixSets, sets.drop prefixSets)
   let (next, tree) := resume start [] prefixGraph prefixChanges reader
   pure (Json.mkObj [
-    ("whole", projectionJson (projectGraph commits sets current reader)),
-    ("prefix", projectionJson (projectAfter start [] prefixGraph prefixChanges reader)),
+    ("whole", projectionJson repo reader (projectGraph commits sets current reader)),
+    ("prefix", projectionJson repo reader (projectAfter start [] prefixGraph prefixChanges reader)),
     ("cursor", Json.mkObj [("count", (next.count : Nat)), ("last", optJson next.last),
       ("views", viewsJson next.views)]),
     ("tree", .arr ((tree.mergeSort fun a b => !decide (b.path < a.path)).map fun e => Json.mkObj [("path", .str e.path), ("blob", .str e.blob),
       ("label", .str e.label)]).toArray),
-    ("suffix", projectionJson (projectAfter next tree suffixGraph suffixChanges reader))])
+    ("suffix", projectionJson repo reader (projectAfter next tree suffixGraph suffixChanges reader))])
 
 def main : IO UInt32 := do
   let input ← (← IO.getStdin).readToEnd
