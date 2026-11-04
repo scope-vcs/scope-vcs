@@ -347,21 +347,28 @@ function RequestWorkspaceRow({
         <div className="request-workspace-row-meta">
           {handle && <span aria-hidden="true">{handle}</span>}
           {descendants.length > 0 && (
-            <button
-              aria-expanded={stackOpen}
-              aria-label={`${stackOpen ? 'Collapse' : 'Expand'} ${descendants.length} stacked requests`}
-              className="request-workspace-stack-pill"
-              onClick={onToggleStack}
-              type="button"
-            >
-              <Layers aria-hidden="true" />
-              <span aria-hidden="true">{descendants.length} stacked</span>
-              <span aria-hidden="true" className="request-workspace-stack-dots">
-                {descendants.slice(0, REQUEST_STACK_DOTS).map(({ request, next_step }) => (
-                  <i data-step={next_step} key={request.id} />
-                ))}
-              </span>
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  aria-expanded={stackOpen}
+                  aria-label={`${stackOpen ? 'Collapse' : 'Expand'} ${descendants.length} stacked requests`}
+                  className="request-workspace-stack-pill"
+                  onClick={onToggleStack}
+                  type="button"
+                >
+                  <Layers aria-hidden="true" />
+                  <span aria-hidden="true">{descendants.length}</span>
+                  <span aria-hidden="true" className="request-workspace-stack-dots">
+                    {descendants.slice(0, REQUEST_STACK_DOTS).map(({ request, next_step }) => (
+                      <i data-step={next_step} key={request.id} />
+                    ))}
+                  </span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {descendants.length} stacked {descendants.length === 1 ? 'request' : 'requests'}
+              </TooltipContent>
+            </Tooltip>
           )}
           {diffStat && (
             <DiffStatSummary className="request-workspace-row-diff-stat" detail="compact" stat={diffStat} />

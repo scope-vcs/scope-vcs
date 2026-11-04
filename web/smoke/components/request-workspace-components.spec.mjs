@@ -694,7 +694,11 @@ test('a stack\'s pill folds it behind its base and summarizes what it hides', as
   await page.mouse.move(1200, 800)
   assert.deepEqual(await ids(), ['base', 'first', 'ready', 'plain'])
   assert.equal(await toggle.isVisible(), true)
-  assert.equal((await toggle.textContent()).trim(), '2 stacked')
+  assert.equal((await toggle.textContent()).trim(), '2')
+  await toggle.hover()
+  assert.equal(await page.getByRole('tooltip').textContent(), '2 stacked requests')
+  await page.mouse.move(1200, 800)
+  await page.getByRole('tooltip').waitFor({ state: 'detached' })
   assert.deepEqual(await toggle.locator('i').evaluateAll((dots) => dots.map((dot) => dot.dataset.step)), ['review', 'merge'])
   assert.equal(await page.locator('[data-request-id="plain"] .request-workspace-stack-pill').count(), 0)
 
