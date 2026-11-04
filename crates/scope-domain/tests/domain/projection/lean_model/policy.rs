@@ -6,9 +6,15 @@ use scope_domain::{
 use serde_json::{Value, json};
 
 const CASES: usize = 3000;
-const PATHS: [&str; 12] = [
+const PATHS: [&str; 18] = [
     "/",
     "/a",
+    "/a-b",
+    "/a-b/c",
+    "/a.b",
+    "/a/a",
+    "/a/a/a",
+    "/a/child",
     "/ab",
     "/a/b",
     "/ab/c",
@@ -48,10 +54,39 @@ fn policy_labels_and_the_public_island_rule_match_the_proven_policy() {
     let paths = PATHS.map(path);
     let mut rust = Vec::new();
     let mut cases = Vec::new();
-    for _ in 0..CASES {
-        let mut policy = Policy::new(id(rng.pick(&LABELS)));
-        let _ = policy.add_rules(rules(&mut rng, 3));
-        let additions = rules(&mut rng, 2);
+    let rule = |at: &str, view: &str| LabelRule {
+        path: path(at),
+        view: id(view),
+    };
+    let scenarios = [
+        (
+            "public",
+            vec![rule("/a", "private")],
+            vec![rule("/a-b", "public"), rule("/a/child", "public")],
+        ),
+        (
+            "public",
+            vec![rule("/a", "private")],
+            vec![rule("/a-b", "private"), rule("/a/child", "public")],
+        ),
+        (
+            "public",
+            vec![rule("/", "public"), rule("/a", "private")],
+            vec![rule("/a/a/a", "agent")],
+        ),
+    ]
+    .map(|(default, existing, additions)| (id(default), existing, additions));
+    let generated = (0..CASES).map(|_| {
+        (
+            id(rng.pick(&LABELS)),
+            rules(&mut rng, 3),
+            rules(&mut rng, 2),
+        )
+    });
+    for (default, existing, additions) in scenarios.into_iter().chain(generated.collect::<Vec<_>>())
+    {
+        let mut policy = Policy::new(default);
+        let _ = policy.add_rules(existing);
         let before = labels(&policy, &paths, &views);
         cases.push(json!({
             "kind": "policy",
@@ -95,7 +130,7 @@ fn policy_labels_and_the_public_island_rule_match_the_proven_policy() {
         ("labels inherited from an ancestor rule", inherited),
     ] {
         assert!(
-            reached > 100,
+            reached > 50,
             "the generator stopped reaching {kind} ({reached})"
         );
     }

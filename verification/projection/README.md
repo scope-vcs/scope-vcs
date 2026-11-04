@@ -192,7 +192,10 @@ counts or missing native details.
 
 `every_small_views_configuration_matches_the_proven_view_rules` enumerates
 every configuration `Views::new` accepts with up to two custom views, with and
-without the public view. It checks `Views.valid` on each and compares `labels`,
+without the public view. It checks that `Views.valid` holds on each, which shows every configuration
+`Views::new` accepts is valid. The converse is not established: `Views.valid`
+accepts some configurations `Views::new` rejects, such as a private full view
+readable by anyone, and the proofs about valid views also cover those. It compares `labels`,
 `may_read`, `readable_by` and `shows` for every reader, label and a public,
 private-control and rules path.
 `policy_labels_and_the_public_island_rule_match_the_proven_policy` compares
@@ -200,12 +203,19 @@ labels before and after `add_rules`, the island it reports and the resulting
 policy for 3,000 generated policies and batches.
 
 The build treats warnings as errors, so an unfinished `sorry` fails it.
-`Audit.lean` inspects every theorem in the `Projection` modules, so none can be
-left out. It fails if any depends on an axiom other than Lean's standard
-`propext`, `Classical.choice` and `Quot.sound`, if any `Projection` module
-declares an `axiom`, or if one of the theorems listed above is missing or is
-not a theorem, so a declared `axiom` cannot stand in for a proof. It also fails if any `Projection` definition replaces its
-compiled code with `implemented_by` or `extern`, so the executable the
+`Audit.lean` imports `Projection` and `Main` and inspects every constant from
+any module whose compiled file was not loaded from the Lean toolchain's own
+library directory. A module counts as Lean's by where it was loaded from, not
+by its name, so a project helper named under `Std` or `Lake` is still
+inspected. It fails:
+- if any theorem depends on an axiom other than Lean's standard `propext`,
+  `Classical.choice` and `Quot.sound`;
+- if any such module declares an `axiom`;
+- if one of the theorems listed above is missing or is not a theorem;
+- if any definition replaces its compiled code with `implemented_by` or
+  `extern`.
+
+So a declared `axiom` cannot stand in for a proof, and the executable the
 comparison runs is the definition the theorems are about.
 
 Run it with `./dev/check model`, which installs the pinned Lean release from

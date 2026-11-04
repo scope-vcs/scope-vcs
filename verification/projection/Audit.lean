@@ -1,4 +1,5 @@
 import Projection
+import Main
 import Lean
 
 open Lean Meta
@@ -21,9 +22,18 @@ def provedTheorems : List Name := [``projection_noninterference, ``graph_noninte
 
 #eval show MetaM Unit from do
   let env ← getEnv
+  let toolchain := (← IO.FS.realPath (← getLibDir (← findSysroot))).components
+  let mut audited : NameSet := {}
+  for module in env.header.moduleNames do
+    let olean := (← IO.FS.realPath (← findOLean module)).components
+    unless olean.take toolchain.length == toolchain do
+      audited := audited.insert module
+  for module in [`Projection, `Main] do
+    unless audited.contains module do
+      throwError m!"{module} was loaded from the Lean toolchain instead of this project"
   let isProjection (name : Name) : Bool :=
     match env.getModuleIdxFor? name with
-    | some idx => (`Projection).isPrefixOf (env.header.moduleNames[idx.toNat]!)
+    | some idx => audited.contains env.header.moduleNames[idx.toNat]!
     | none => false
   let mut theorems : Nat := 0
   for (name, info) in env.constants.toList do
