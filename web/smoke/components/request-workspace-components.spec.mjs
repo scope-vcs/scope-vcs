@@ -675,8 +675,6 @@ test('a stack\'s pill folds it behind its base and summarizes what it hides', as
   const requests = [row('base', null), row('first', 'base'), row('ready', 'first', { next_step: 'merge' }), row('plain', null, { attention: invited })]
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { active: { ...empty, requests }, unclaimed: empty, set_aside: empty, done: empty })
   const ids = () => page.locator('.request-workspace-needs-you [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId))
-  const opacity = async (locator, value) => page.waitForFunction(([node, value]) =>
-    getComputedStyle(node).opacity === value, [await locator.elementHandle(), value])
   const baseRow = page.locator('[data-request-id="base"]')
   const toggle = baseRow.locator('.request-workspace-stack-pill')
   await page.locator('[data-request-id="first"] .request-workspace-row-link').click()

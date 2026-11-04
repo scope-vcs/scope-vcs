@@ -20,7 +20,7 @@ export type RequestStackMember<T> = { row: T; depth: number }
 
 export type VisibleStackedRequestRow<T> = StackedRequestRow<T> & { folded: T[] }
 
-export type RequestStackEdge = 'start' | 'middle' | 'end' | 'single'
+type RequestStackEdge = 'start' | 'middle' | 'end' | 'single'
 
 export type RequestRailRow = { shown: boolean; edge?: RequestStackEdge }
 
@@ -109,17 +109,18 @@ export function requestRailRows<T extends StackRow>(
   )
   return rows.map((entry) => {
     const index = shown.indexOf(entry)
-    return index < 0 ? { shown: false } : { shown: true, edge: stackEdge(shown, index) }
+    return index < 0 ? { shown: false } : { shown: true, edge: stackEdge(shown, index, rows) }
   })
 }
 
-function stackEdge<T>(rows: VisibleStackedRequestRow<T>[], index: number): RequestStackEdge | undefined {
+function stackEdge<T>(rows: VisibleStackedRequestRow<T>[], index: number, allRows: VisibleStackedRequestRow<T>[]): RequestStackEdge | undefined {
   const { stack, folded } = rows[index]
   const before = rows[index - 1]?.stack === stack
   const after = rows[index + 1]?.stack === stack
   if (before) return after ? 'middle' : 'end'
   if (after) return 'start'
-  return folded.length ? 'single' : undefined
+  const stacked = folded.length > 0 || allRows.some((entry) => entry !== rows[index] && entry.stack === stack)
+  return stacked ? 'single' : undefined
 }
 
 export function requestStackMembers<T extends StackRow>(

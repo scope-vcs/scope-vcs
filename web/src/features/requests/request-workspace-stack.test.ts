@@ -117,4 +117,11 @@ test('the collapsed rail closes a stack outline on the last row it shows, and ke
   const rail = (selected?: string) => requestRailRows(visible, selected).map(({ shown, edge }) => (shown ? edge : 'hidden'))
   assert.deepEqual(rail(), ['start', 'middle', 'middle', 'middle', 'middle', 'end', 'hidden', 'hidden'])
   assert.deepEqual(rail('s7'), ['start', 'middle', 'middle', 'middle', 'middle', 'middle', 'hidden', 'end'])
+  const prefixed = (count: number) => foldStackedRequestRows(stackRequestRows([
+    ...Array.from({ length: count }, (_, index) => row(`p${index}`)),
+    ...ids.map((id, index) => row(id, index ? 's0' : null)),
+  ]), new Set())
+  assert.equal(requestRailRows(prefixed(5), undefined)[5].edge, 'single')
+  assert.equal(requestRailRows(prefixed(5), 's7').at(-1)?.edge, 'end')
+  assert.equal(requestRailRows(prefixed(6), 's7').at(-1)?.edge, 'single')
 })

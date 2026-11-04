@@ -442,17 +442,19 @@ export function RequestWorkspaceSidebar({
 }
 
 function groupRows(rows: QueueRow[]) {
-  const groups = Object.fromEntries(
-    REQUEST_ATTENTION_GROUP_ORDER.map((group) => [
-      group,
-      stackRequestRows(rows.filter((row) => row.item.attention.group === group)).map(({ row }) => row),
-    ]),
-  ) as Record<RequestAttentionGroup, QueueRow[]>
   const needsYou = requestStacksWith(
     rows.filter(({ section }) => section === 'active'),
     ({ item }) => item.attention.group === 'needs_you',
   )
-  return { ...groups, needs_you: needsYou, waiting: groups.waiting.filter((row) => !needsYou.includes(row)) }
+  const needsYouRows = new Set(needsYou)
+  return Object.fromEntries(
+    REQUEST_ATTENTION_GROUP_ORDER.map((group) => [
+      group,
+      group === 'needs_you' ? needsYou : stackRequestRows(
+        rows.filter((row) => row.item.attention.group === group && !needsYouRows.has(row)),
+      ).map(({ row }) => row),
+    ]),
+  ) as Record<RequestAttentionGroup, QueueRow[]>
 }
 
 function RequestWorkspaceDisclosure({
