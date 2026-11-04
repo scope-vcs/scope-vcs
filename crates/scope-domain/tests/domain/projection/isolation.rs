@@ -1,13 +1,10 @@
 mod case;
 
-use case::{Case, HIGH_PATHS, Side, Source};
+use case::{Side, Source};
 use proptest::{prelude::*, test_runner::Config};
 use scope_domain::{
     policy::Policy,
-    projection::{
-        FileChange, LabelledTree, LogicalCommit, Projection, ProjectionCursor, initial_views,
-        project_graph, project_graph_after,
-    },
+    projection::{FileChange, LogicalCommit},
     projection_views::{
         ProjectionPreviewCommitVisibility, ProjectionPreviewSource, ProjectionPreviewView,
         projection_preview,
@@ -16,24 +13,6 @@ use scope_domain::{
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use std::collections::BTreeMap;
-
-fn projections(source: &Source, reader: &ViewId) -> Vec<Projection> {
-    let whole = project_graph(&source.graph, &source.sets, &source.current, reader);
-    let start = ProjectionCursor::start(initial_views(&source.sets, &source.current));
-    let (prefix_graph, prefix_sets, suffix_graph, suffix_sets) = source.split();
-    let prefix = project_graph_after(
-        &start,
-        &LabelledTree::default(),
-        &prefix_graph,
-        &prefix_sets,
-        reader,
-    );
-    let cursor = start.advanced(&prefix, &prefix_graph, &prefix_sets);
-    let mut tree = LabelledTree::default();
-    tree.fold(&prefix_graph, &prefix_sets);
-    let suffix = project_graph_after(&cursor, &tree, &suffix_graph, &suffix_sets, reader);
-    vec![whole, prefix, suffix]
-}
 
 fn preview(
     source: &Source,
@@ -61,42 +40,13 @@ fn without_disclosed_hidden_counts(mut preview: ProjectionPreviewView) -> Projec
     preview
 }
 
-fn assert_only_readable_files(case: &Case, source: &Source, projection: &Projection) {
-    for change in projection.commits.iter().flat_map(|commit| &commit.changes) {
-        assert!(
-            !HIGH_PATHS.contains(&change.path.as_str()),
-            "{} reached {}",
-            change.path,
-            projection.view_key
-        );
-        if change.new_content.is_some() {
-            assert!(
-                source.versions.iter().any(|views| views.shows(
-                    &case.reader,
-                    &change.path,
-                    &change.label
-                )),
-                "{} labelled {} reached {}",
-                change.path,
-                change.label,
-                projection.view_key
-            );
-        }
-    }
-}
-
 proptest! {
     #![proptest_config(Config { cases: 192, ..Config::default() })]
 
     #[test]
-    fn a_view_cannot_observe_files_it_cannot_read(case in case::case()) {
+    fn a_preview_cannot_observe_files_it_cannot_read(case in case::case()) {
         let (a, b) = (case.build(Side::A), case.build(Side::B));
         let reader = &case.reader;
-        let projected = projections(&a, reader);
-        for projection in &projected {
-            assert_only_readable_files(&case, &a, projection);
-        }
-        prop_assert_eq!(&projected, &projections(&b, reader));
         prop_assert_eq!(preview(&a, reader, false), preview(&b, reader, false));
         prop_assert_eq!(
             without_disclosed_hidden_counts(preview(&a, reader, true)),

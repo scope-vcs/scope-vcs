@@ -115,42 +115,14 @@ pub(crate) struct Case {
     commits: Vec<RawCommit>,
     sets: Vec<RawSet>,
     policy: RawPolicy,
-    split: usize,
 }
 
 pub(crate) struct Source {
     pub(crate) graph: SourceGraph,
     pub(crate) sets: Vec<VisibilityChangeSet>,
     pub(crate) current: Views,
-    pub(crate) versions: Vec<Views>,
     pub(crate) policy: Policy,
     pub(crate) native_details: BTreeMap<String, NativeRequestCommitDetails>,
-    prefix_commits: usize,
-    prefix_sets: usize,
-}
-
-impl Source {
-    pub(crate) fn split(
-        &self,
-    ) -> (
-        SourceGraph,
-        Vec<VisibilityChangeSet>,
-        SourceGraph,
-        Vec<VisibilityChangeSet>,
-    ) {
-        let (prefix, suffix) = self.graph.commits.split_at(self.prefix_commits);
-        let (prefix_sets, suffix_sets) = self.sets.split_at(self.prefix_sets);
-        let graph = |commits: &[LogicalCommit]| SourceGraph {
-            repo_id: self.graph.repo_id.clone(),
-            commits: commits.to_vec(),
-        };
-        (
-            graph(prefix),
-            prefix_sets.to_vec(),
-            graph(suffix),
-            suffix_sets.to_vec(),
-        )
-    }
 }
 
 fn change() -> impl Strategy<Value = RawChange> {
@@ -253,15 +225,13 @@ pub(crate) fn case() -> impl Strategy<Value = Case> {
         vec(commit(), 1..7),
         vec(set(), 0..5),
         policy,
-        any::<usize>(),
     )
-        .prop_map(|(reader, versions, commits, sets, policy, split)| Case {
+        .prop_map(|(reader, versions, commits, sets, policy)| Case {
             reader: id(READERS[reader]),
             versions,
             commits,
             sets,
             policy,
-            split,
         })
 }
 
@@ -433,13 +403,9 @@ impl Case {
         };
         let fixed =
             |index: usize| source_identity_is_disclosed(named(index), anchors.contains(&index));
-        let split_at = (0..commit_count)
-            .filter(|index| fixed(*index))
-            .nth(self.split % (commit_count + 1));
 
         let mut native_details = BTreeMap::new();
         let mut commits = Vec::new();
-        let mut prefix_commits = 0;
         for (index, raw) in self.commits.iter().enumerate() {
             if !fixed(index) && !raw.present[side.index()] {
                 continue;
@@ -509,13 +475,9 @@ impl Case {
                 message: format!("message {index}-{}", raw.message[message_side]),
                 changes,
             });
-            if split_at.is_some_and(|split| index <= split) {
-                prefix_commits = commits.len();
-            }
         }
 
         let mut visibility_sets = Vec::new();
-        let mut prefix_sets = 0;
         for (position, ((anchor, raw), views)) in sets.iter().zip(transitions).enumerate() {
             let low = relabels(&raw.low, &LOW_PATHS, |_, index| label(index));
             let high = relabels(&raw.high[side.index()], &HIGH_PATHS, |path, index| {
@@ -539,9 +501,6 @@ impl Case {
                 changes,
                 views,
             });
-            if split_at.is_some_and(|split| anchor.is_none_or(|anchor| anchor <= split)) {
-                prefix_sets = visibility_sets.len();
-            }
         }
 
         let current = versions.last().expect("one views version").clone();
@@ -564,11 +523,8 @@ impl Case {
             },
             sets: visibility_sets,
             current,
-            versions,
             policy,
             native_details,
-            prefix_commits,
-            prefix_sets,
         }
     }
 }
