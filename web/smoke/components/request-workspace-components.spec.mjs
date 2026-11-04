@@ -6,7 +6,11 @@ const mergeability = (status) => ({ status, current_main_oid: null, request_head
 
 async function workspacePage(t) {
   const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true })
-  const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
+  const railClosed = async () => {
+    await page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
+    await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar')
+      .getAnimations({ subtree: true }).every((animation) => !(animation instanceof CSSTransition)))
+  }
   return { page, base, errors, railClosed }
 }
 
