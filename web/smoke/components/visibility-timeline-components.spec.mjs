@@ -39,6 +39,12 @@ test('visibility timeline shows the focused update under the chart without cover
     'entry-0:entered', 'entry-3:left', 'entry-9:entered', 'entry-17:entered', 'entry-38:entered',
   ])
 
+  await page.mouse.move(...await pointAboveColumn(22))
+  await detail.getByText('22 left the Public view', { exact: true }).waitFor()
+  const exitCount = await chart.locator('text').filter({ hasText: /^22$/ }).boundingBox()
+  const exitDate = await chart.getByText('Aug 20', { exact: true }).boundingBox()
+  assert(exitCount.y + exitCount.height <= exitDate.y, 'the count under an exit bar stays above its date')
+
   await page.mouse.move(0, 0)
   await detail.getByText('Latest', { exact: true }).waitFor()
   assert.deepEqual(await shownCounts(), ['282'])

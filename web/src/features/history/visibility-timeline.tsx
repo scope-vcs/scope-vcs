@@ -2,7 +2,7 @@ import type { RepoParams } from '@/api/types'
 import type { HistoryEntrySummaryResponse, ViewId } from '@/api/types.generated'
 import { formatUnixMonthDay } from '@/lib/date-format'
 import { useHydrated } from '@/lib/use-hydrated'
-import { barY, defineChart, ruleY, text, type ChartMarkStateContext } from '@tanstack/charts'
+import { barY, defineChart, ruleY, text, type ChartMarkStateContext, type ChartScale } from '@tanstack/charts'
 import { decorative } from '@tanstack/charts/mark/decorative'
 import { Chart } from '@tanstack/charts/react'
 import { scaleBand } from '@tanstack/charts/scales/band'
@@ -26,6 +26,7 @@ const BAR_FILL: Record<VisibilityDirection, string> = {
 }
 
 const LABEL_FILL = 'var(--foreground)'
+const BELOW_LABEL_SPACE = 16
 
 const isFocusedEntry = ({ datum, focus }: ChartMarkStateContext<VisibilityTimelineBar>) => datum.entry === focus.primary.datum.entry
 const isOtherEntry = (context: ChartMarkStateContext<VisibilityTimelineBar>) => !isFocusedEntry(context)
@@ -122,12 +123,22 @@ function visibilityTimelineDefinition(bars: readonly VisibilityTimelineBar[], hy
       },
       y: {
         axis: false,
-        scale: scaleSqrt().domain([Math.min(0, ...counts), Math.max(0, ...counts)]),
+        scale: countScale(Math.min(0, ...counts), Math.max(0, ...counts)),
       },
     },
     focus: 'nearest-x',
     focusRing: false,
   })
+}
+
+function countScale(min: number, max: number): ChartScale {
+  return {
+    id: 'y',
+    resolve: ({ id, range: [bottom, top] }) => {
+      const scale = scaleSqrt().domain([min, max]).range([min < 0 ? bottom - BELOW_LABEL_SPACE : bottom, top])
+      return { bandwidth: 0, domain: [min, max], id, map: (value) => scale(Number(value)), ticks: [], type: 'sqrt' }
+    },
+  }
 }
 
 function TimelineEntryDetail({
