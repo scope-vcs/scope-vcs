@@ -174,6 +174,7 @@ test('central search opens the code at a request and at a past update, then retu
     await navigator.getByRole('button', { name: 'tests', exact: false }).waitFor()
 
     await page.getByRole('button', { name: 'Change version', exact: true }).click()
+    await search.fill('Projected public')
     await page.getByRole('option', { name: /Projected public update/ }).click()
     await page.waitForURL((url) => url.searchParams.has('update'))
     await page.getByRole('link', { name: 'View changes', exact: true }).waitFor()
