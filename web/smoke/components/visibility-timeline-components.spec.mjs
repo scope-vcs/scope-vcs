@@ -4,6 +4,7 @@ import { fixturePath, openFixture } from '../support/fixture-server.mjs'
 
 test('visibility timeline shows the focused update under the chart without covering it', async (t) => {
   const { base, errors, page } = await openFixture(t, 'visibility-timeline', {
+    page: { timezoneId: 'UTC' },
     tailwind: true,
     aliases: [
       { find: '@tanstack/react-router', replacement: fixturePath('visibility-timeline', 'router.tsx') },
@@ -42,7 +43,7 @@ test('visibility timeline shows the focused update under the chart without cover
   await page.mouse.move(...await pointAboveColumn(22))
   await detail.getByText('22 left the Public view', { exact: true }).waitFor()
   const exitCount = await chart.locator('text').filter({ hasText: /^22$/ }).boundingBox()
-  const exitDate = await chart.getByText('Aug 20', { exact: true }).boundingBox()
+  const exitDate = await chart.getByText('Aug 21', { exact: true }).boundingBox()
   assert(exitCount.y + exitCount.height <= exitDate.y, 'the count under an exit bar stays above its date')
 
   await page.mouse.move(0, 0)
