@@ -6,3 +6,9 @@ import Projection.Steps
 import Projection.Noninterference
 import Projection.Theorems
 import Projection.Readable
+import Projection.ViewRules
+import Projection.Policy
+import Projection.Preview
+import Projection.PublicPaths
+import Projection.PreviewTheorems
+import Projection.PreviewNoninterference

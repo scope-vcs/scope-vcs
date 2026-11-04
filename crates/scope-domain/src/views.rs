@@ -477,46 +477,9 @@ mod tests {
     }
 
     #[test]
-    fn readers_and_names_follow_the_definitions() {
-        let views = Views::new(with(vec![
-            custom("agent", "Agent", &["public"]),
-            custom("review", "Review", &["agent"]),
-        ]))
-        .unwrap();
-        assert_eq!(views.readable_by(None), [&ViewId::public()]);
-        assert_eq!(
-            views.readable_by(Some(&id("review"))),
-            [&ViewId::public(), &id("agent"), &id("review")]
-        );
-        assert_eq!(views.readable_by(Some(&ViewId::private())).len(), 4);
-        assert!(views.may_read(&id("review"), &ViewId::public()));
-        assert!(!views.may_read(&id("agent"), &id("review")));
+    fn display_names_fall_back_to_the_id() {
+        let views = Views::new(with(vec![custom("agent", "Agent", &["public"])])).unwrap();
         assert_eq!(views.display_name(&id("agent")), "Agent");
         assert_eq!(views.display_name(&id("gone")), "gone");
-        let private_only = Views::new(vec![
-            Vec::<ViewDefinition>::from(Views::builtin())[1].clone(),
-        ])
-        .unwrap();
-        assert!(private_only.readable_by(None).is_empty());
-    }
-
-    #[test]
-    fn labels_and_read_access_follow_includes() {
-        let views = Views::builtin();
-        let public = ViewId::public();
-        let private = ViewId::private();
-        assert_eq!(views.labels(&public), BTreeSet::from([public.clone()]));
-        assert_eq!(
-            views.labels(&private),
-            BTreeSet::from([public.clone(), private.clone()])
-        );
-        assert!(views.may_read(&private, &public));
-        assert!(!views.may_read(&public, &private));
-        let control = ScopePath::parse("/.scope/secret").unwrap();
-        let file = ScopePath::parse("/README.md").unwrap();
-        assert!(!views.shows(&public, &control, &public));
-        assert!(views.shows(&private, &control, &public));
-        assert!(views.shows(&public, &file, &public));
-        assert!(!views.shows(&public, &file, &private));
     }
 }

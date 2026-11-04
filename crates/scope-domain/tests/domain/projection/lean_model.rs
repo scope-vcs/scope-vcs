@@ -1,16 +1,28 @@
+mod policy;
+mod views;
+
 use super::{blob, graph, path};
 use scope_domain::{
     content::SourceBlob,
+    policy::{LabelRule, Policy},
     projection::{
         FileChange, LabelledTree, LogicalCommit, LogicalCommitOrigin, NativeRequestCommit,
-        Projection, ProjectionCursor, ProjectionMaterialization, initial_views, project_graph,
-        project_graph_after,
+        NativeRequestCommitDetails, Projection, ProjectionCursor, ProjectionMaterialization,
+        initial_views, project_graph, project_graph_after,
+    },
+    projection_views::{
+        ProjectionPreviewCommitVisibility, ProjectionPreviewSource, ProjectionPreviewView,
+        projection_preview,
     },
     views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views, ViewsTransition},
     visibility_changes::{VisibilityChange, VisibilityChangeSet},
 };
 use serde_json::{Value, json};
-use std::{collections::BTreeSet, io::Write, process::Command};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    io::Write,
+    process::Command,
+};
 
 const CASES: usize = 2000;
 const LABELS: [&str; 5] = ["public", "private", "c0", "c1", "unknown"];
@@ -24,25 +36,25 @@ const PATHS: [&str; 7] = [
     "/.scope/RULES.md",
 ];
 
-struct Rng(u64);
+pub(super) struct Rng(pub(super) u64);
 
 impl Rng {
-    fn next(&mut self) -> u64 {
+    pub(super) fn next(&mut self) -> u64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         self.0
     }
 
-    fn below(&mut self, bound: usize) -> usize {
+    pub(super) fn below(&mut self, bound: usize) -> usize {
         (self.next() % bound as u64) as usize
     }
 
-    fn chance(&mut self) -> bool {
+    pub(super) fn chance(&mut self) -> bool {
         self.next() & 1 == 1
     }
 
-    fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
+    pub(super) fn pick<'a, T>(&mut self, items: &'a [T]) -> &'a T {
         &items[self.below(items.len())]
     }
 }
@@ -57,7 +69,7 @@ fn blob_key(blob: &SourceBlob) -> String {
     serde_json::to_string(blob).unwrap()
 }
 
-fn id(value: &str) -> ViewId {
+pub(super) fn id(value: &str) -> ViewId {
     ViewId::parse(value).unwrap()
 }
 
@@ -202,7 +214,7 @@ fn change_sets(
     (sets, views)
 }
 
-fn views_json(views: &Views) -> Value {
+pub(super) fn views_json(views: &Views) -> Value {
     json!(
         views
             .iter()
@@ -212,6 +224,7 @@ fn views_json(views: &Views) -> Value {
                     ViewIncludes::All => Value::Null,
                     ViewIncludes::Some(included) => json!(included.iter().map(ViewId::as_str).collect::<Vec<_>>()),
                 },
+                "readers": definition.readers,
             }))
             .collect::<Vec<_>>()
     )
@@ -257,6 +270,8 @@ fn origin_json(origin: &LogicalCommitOrigin) -> Value {
 }
 
 struct Case {
+    policy: Policy,
+    native: BTreeMap<String, NativeRequestCommitDetails>,
     current: Views,
     reader: ViewId,
     commits: Vec<LogicalCommit>,
@@ -268,6 +283,14 @@ struct Case {
 impl Case {
     fn json(&self) -> Value {
         json!({
+            "kind": "projection",
+            "policy": self.policy,
+            "native": self.native.iter().map(|(oid, details)| json!({
+                "oid": oid,
+                "author": details.author,
+                "message": details.message,
+                "changes": details.changes.len(),
+            })).collect::<Vec<_>>(),
             "views": views_json(&self.current),
             "reader": self.reader.as_str(),
             "commits": self.commits.iter().map(|commit| json!({
@@ -319,8 +342,106 @@ impl Case {
                 "label": label.as_str(),
             })).collect::<Vec<_>>(),
             "suffix": projection_json(&suffix),
+            "preview": self.preview(false),
+            "preview_with_counts": self.preview(true),
         })
     }
+
+    fn preview(&self, include_private_counts: bool) -> Value {
+        let graph = graph(self.commits.clone());
+        let source = ProjectionPreviewSource {
+            repo_id: &graph.repo_id,
+            policy: &self.policy,
+            graph: &graph,
+            visibility_change_sets: &self.sets,
+        };
+        match projection_preview(
+            source,
+            &self.current,
+            &self.reader,
+            include_private_counts,
+            &self.native,
+        ) {
+            Ok(preview) => json!({ "ok": preview_json(&preview) }),
+            Err(error) => json!({ "error": error.to_string() }),
+        }
+    }
+}
+
+fn preview_json(preview: &ProjectionPreviewView) -> Value {
+    json!({
+        "repo_id": preview.repo_id,
+        "view": preview.view.as_str(),
+        "files": preview.files.iter().map(|file| json!({
+            "path": file.path.as_str(),
+            "oid": file.oid,
+            "label": file.label.as_str(),
+        })).collect::<Vec<_>>(),
+        "commits": preview.commits.iter().map(|commit| json!({
+            "projected_id": commit.projected_id,
+            "logical_commit_id": commit.logical_commit_id,
+            "parents": commit.parent_projected_ids,
+            "author": commit.author,
+            "message": commit.message,
+            "visibility": match commit.visibility {
+                ProjectionPreviewCommitVisibility::AllInView => "all",
+                ProjectionPreviewCommitVisibility::SomeInView => "some",
+                ProjectionPreviewCommitVisibility::NoneInView => "none",
+            },
+            "change_count": commit.change_count,
+        })).collect::<Vec<_>>(),
+        "summary": {
+            "visible_files": preview.summary.visible_files,
+            "hidden_files": preview.summary.hidden_files,
+            "visible_commits": preview.summary.visible_commits,
+            "hidden_commits": preview.summary.hidden_commits,
+        },
+    })
+}
+
+fn policy(rng: &mut Rng) -> Policy {
+    let mut policy = Policy::new(label(rng));
+    let rules = (0..rng.below(4))
+        .map(|_| LabelRule {
+            path: path(rng.pick(&PATHS)),
+            view: label(rng),
+        })
+        .collect::<Vec<_>>();
+    let _ = policy.add_rules(rules);
+    policy
+}
+
+fn native_details(
+    rng: &mut Rng,
+    commits: &[LogicalCommit],
+) -> BTreeMap<String, NativeRequestCommitDetails> {
+    commits
+        .iter()
+        .flat_map(|commit| match &commit.origin {
+            LogicalCommitOrigin::RequestMerge { commits, .. } => commits.clone(),
+            _ => Vec::new(),
+        })
+        .filter_map(|native| {
+            (rng.below(3) != 0).then(|| {
+                (
+                    native.oid.clone(),
+                    NativeRequestCommitDetails {
+                        author: format!("native-author{}", rng.below(2)),
+                        message: format!("native {}", native.oid),
+                        occurred_at_unix: 0,
+                        changes: (0..rng.below(3))
+                            .map(|_| FileChange {
+                                path: path("/README.md"),
+                                old_content: None,
+                                new_content: None,
+                                label: ViewId::public(),
+                            })
+                            .collect(),
+                    },
+                )
+            })
+        })
+        .collect()
 }
 
 fn case(rng: &mut Rng) -> Case {
@@ -329,7 +450,11 @@ fn case(rng: &mut Rng) -> Case {
     let label_ids = LABELS.map(id);
     let commits = history(rng, &label_ids);
     let (sets, current) = change_sets(rng, &commits, first);
+    let policy = policy(rng);
+    let native = native_details(rng, &commits);
     Case {
+        policy,
+        native,
         prefix_commits: rng.below(commits.len() + 1),
         prefix_sets: rng.below(sets.len() + 1),
         current,
@@ -372,7 +497,7 @@ fn projection_json(projection: &Projection) -> Value {
     })
 }
 
-fn lean_projections(cases: &[Value]) -> Vec<Value> {
+pub(super) fn lean_outputs(cases: &[Value]) -> Vec<Value> {
     let model = std::env::var("SCOPE_PROJECTION_MODEL").expect(
         "SCOPE_PROJECTION_MODEL names the built Lean model; run dev/checks/projection-model",
     );
@@ -401,13 +526,29 @@ fn count(outputs: &[Value], kind: impl Fn(&Value) -> bool) -> usize {
         .count()
 }
 
+fn previews(outputs: &[Value], kind: impl Fn(&Value) -> bool) -> usize {
+    outputs
+        .iter()
+        .filter(|output| kind(&output["preview_with_counts"]))
+        .count()
+}
+
+fn preview_commits(outputs: &[Value], visibility: &str) -> usize {
+    outputs
+        .iter()
+        .filter_map(|output| output["preview"]["ok"]["commits"].as_array())
+        .flatten()
+        .filter(|commit| commit["visibility"] == visibility)
+        .count()
+}
+
 #[test]
 #[ignore = "needs the Lean model; run dev/checks/projection-model"]
 fn the_rust_projection_matches_the_proven_lean_model() {
     let mut rng = Rng(0x5eed_5c09e);
     let cases = (0..CASES).map(|_| case(&mut rng)).collect::<Vec<_>>();
     let expected = cases.iter().map(Case::rust).collect::<Vec<_>>();
-    let modelled = lean_projections(&cases.iter().map(Case::json).collect::<Vec<_>>());
+    let modelled = lean_outputs(&cases.iter().map(Case::json).collect::<Vec<_>>());
     assert_eq!(modelled.len(), cases.len());
     for ((case, rust), lean) in cases.iter().zip(&expected).zip(&modelled) {
         assert_eq!(
@@ -486,6 +627,20 @@ fn the_rust_projection_matches_the_proven_lean_model() {
             count(&expected, |c| message(c, "Projection visibility boundary")),
         ),
         ("anchored sets", anchored),
+        ("commits partly in view", preview_commits(&expected, "some")),
+        ("commits not in view", preview_commits(&expected, "none")),
+        (
+            "hidden file counts",
+            previews(&expected, |preview| {
+                preview["ok"]["summary"]["hidden_files"].as_u64() > Some(0)
+            }),
+        ),
+        (
+            "hidden commit counts",
+            previews(&expected, |preview| {
+                preview["ok"]["summary"]["hidden_commits"].as_u64() > Some(0)
+            }),
+        ),
         (
             "relabels of a source update's paths",
             relabels_of_source_paths,
@@ -495,6 +650,11 @@ fn the_rust_projection_matches_the_proven_lean_model() {
             resumed_after_a_transition,
         ),
     ];
+    let missing_details = previews(&expected, |preview| preview.get("error").is_some());
+    assert!(
+        missing_details > 10,
+        "the generator stopped reaching missing native details ({missing_details})"
+    );
     for (kind, reached) in reached {
         assert!(
             reached > 50,

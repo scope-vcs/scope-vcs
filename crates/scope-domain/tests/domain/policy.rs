@@ -1,4 +1,4 @@
-use scope_domain::policy::{LabelRule, Policy, PolicyError, ScopePath, ScopePathError};
+use scope_domain::policy::{LabelRule, Policy, ScopePath, ScopePathError};
 use scope_domain::views::{ViewId, Views};
 
 fn path(value: &str) -> ScopePath {
@@ -105,62 +105,6 @@ fn batched_rules_preserve_visibility_and_last_replacement() {
     batch.remove_rule(&path("/docs/secrets"));
     assert_eq!(
         batch.label(&path("/docs/secrets/key"), &Views::builtin()),
-        ViewId::public()
-    );
-}
-
-#[test]
-fn batch_rejects_private_ancestors_in_either_input_order_without_mutation() {
-    for parent in ["/", "/docs", "/docs/private"] {
-        let rules = [
-            LabelRule::public(path("/docs/private/file")),
-            LabelRule::private(path(parent)),
-        ];
-        for rules in [rules.clone(), [rules[1].clone(), rules[0].clone()]] {
-            let mut policy = Policy::new(ViewId::public());
-            let error = policy.add_rules(rules).unwrap_err();
-            assert_eq!(
-                error,
-                PolicyError::PublicIsland {
-                    child: path("/docs/private/file"),
-                    parent: path(parent),
-                }
-            );
-            assert!(policy.rules().is_empty());
-        }
-    }
-}
-
-#[test]
-fn ancestor_lookup_respects_segment_boundaries_and_lexical_siblings() {
-    let mut policy = Policy::new(ViewId::private());
-    policy
-        .add_rules([
-            LabelRule::private(path("/a")),
-            LabelRule::public(path("/a-b")),
-            LabelRule::public(path("/ab/child")),
-        ])
-        .unwrap();
-    let before = policy.rules().to_vec();
-    assert!(matches!(
-        policy.add_rule(LabelRule::public(path("/a/child"))),
-        Err(PolicyError::PublicIsland { .. })
-    ));
-    assert_eq!(policy.rules(), before);
-}
-
-#[test]
-fn replacing_a_private_rule_with_public_keeps_existing_children_valid() {
-    let mut policy = Policy::new(ViewId::private());
-    policy.add_rule(LabelRule::private(path("/docs"))).unwrap();
-    policy
-        .add_rules([
-            LabelRule::public(path("/docs")),
-            LabelRule::public(path("/docs/guide.md")),
-        ])
-        .unwrap();
-    assert_eq!(
-        policy.label(&path("/docs/guide.md"), &Views::builtin()),
         ViewId::public()
     );
 }

@@ -95,6 +95,7 @@ def project (r : Reader) (mint : String → Nat → String) (s : Fold) (history 
 structure ViewDef where
   id : String
   includes : Option (List String)
+  anyone : Bool
   deriving Repr
 
 abbrev Views := List ViewDef
@@ -104,19 +105,27 @@ def ViewDef.direct (views : Views) (v : ViewDef) : List String :=
   | none => views.map (·.id)
   | some included => included
 
-def labelsWithin (views : Views) : Nat → List String → List String → List String
-  | 0, _, seen => seen
-  | _ + 1, [], seen => seen
-  | fuel + 1, next :: pending, seen =>
-      if seen.contains next then labelsWithin views fuel pending seen
-      else
-        let more := match views.find? (·.id == next) with
-          | some v => ViewDef.direct views v
-          | none => []
-        labelsWithin views fuel (more ++ pending) (next :: seen)
+def includesOf (views : Views) (id : String) : List String :=
+  match views.find? (·.id == id) with
+  | some v => ViewDef.direct views v
+  | none => []
+
+def insertNew (seen : List String) (x : String) : List String :=
+  if seen.contains x then seen else seen ++ [x]
+
+def grow (views : Views) (seen : List String) : List String :=
+  (seen.flatMap (includesOf views)).foldl insertNew seen
+
+def closeWithin (views : Views) : Nat → List String → List String
+  | 0, seen => seen
+  | n + 1, seen =>
+      if (grow views seen).length = seen.length then seen else closeWithin views n (grow views seen)
+
+def mentioned (views : Views) (view : String) : List String :=
+  view :: views.flatMap fun v => v.id :: v.includes.getD []
 
 def labels (views : Views) (view : String) : List String :=
-  labelsWithin views ((views.length + 1) * (views.length + 1) + 1) [view] []
+  closeWithin views (mentioned views view).length [view]
 
 def isPrivateControlPath (path : String) : Bool :=
   (path == "/.scope" || path.startsWith "/.scope/") && path != "/.scope/RULES.md"
@@ -129,6 +138,20 @@ def fullView (views : Views) : Option String :=
 
 def Views.shows (views : Views) (view path label : String) : Bool :=
   fullView views == some view || ((labels views view).contains label && !isPrivateControlPath path)
+
+def Views.mayRead (views : Views) (reader target : String) : Bool :=
+  (labels views reader).contains target
+
+def Views.readableBy (views : Views) : Option String → List String
+  | none => ((views.find? (·.anyone)).map (·.id)).toList
+  | some reader => (views.map (·.id)).filter ((labels views reader).contains ·)
+
+def Views.valid (views : Views) : Bool :=
+  decide (views.map (·.id)).Nodup &&
+    (views.filter (·.includes.isNone)).map (·.id) == ["private"] &&
+    views.all fun v => match v.includes with
+      | none => true
+      | some included => !included.contains "private" && included.all ((views.map (·.id)).contains ·)
 
 def foldReader (view : String) (views : Views) : Reader := ⟨views.shows view, view, false⟩
 
