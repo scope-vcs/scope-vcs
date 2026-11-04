@@ -15,7 +15,8 @@ def parseChange (j : Json) : Except String Change := do
   pure ⟨← (← field j "path").getStr?, ← (← field j "label").getStr?, ← optString j "content"⟩
 
 def parseNative (j : Json) : Except String Native := do
-  pure ⟨← (← field j "oid").getStr?, ← optString j "parent"⟩
+  let parents ← (← (← field j "parents").getArr?).toList.mapM (·.getStr?)
+  pure ⟨← (← field j "oid").getStr?, parents, ← (← field j "tree").getStr?⟩
 
 def parseOrigin (j : Json) : Except String Origin := do
   match ← (← field j "kind").getStr? with
@@ -43,10 +44,17 @@ def optJson : Option String → Json
 def changeJson (c : Change) : Json :=
   Json.mkObj [("path", .str c.path), ("label", .str c.label), ("content", optJson c.content)]
 
+def materializationJson : Materialization → Json
+  | .generate => Json.mkObj [("kind", .str "generate")]
+  | .preserve oid parents tree =>
+      Json.mkObj [("kind", .str "preserve"), ("oid", .str oid),
+        ("parents", .arr (parents.map Json.str).toArray), ("tree", .str tree)]
+
 def projectedJson (p : Projected) : Json :=
   Json.mkObj [("projected_id", .str p.projectedId), ("logical_commit_id", .str p.logicalId),
     ("parent", optJson p.parent), ("author", optJson p.author), ("message", .str p.message),
-    ("changes", .arr (p.changes.map changeJson).toArray)]
+    ("changes", .arr (p.changes.map changeJson).toArray),
+    ("materialization", materializationJson p.materialization)]
 
 def runCase (j : Json) : Except String Json := do
   let views ← (← (← field j "views").getArr?).toList.mapM parseView

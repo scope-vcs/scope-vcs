@@ -13,14 +13,18 @@ The Rust code it models is `project_graph_after` in
   had none.
 - `hidden_only_edits_are_indistinct`: editing only hidden changes keeps two
   commits indistinct.
-- `shows_monotone`: a reader that may read a view is shown everything that view
-  is shown, for every view configuration.
+
+The proofs hold for any visibility function, so they cover the executable
+`readerOf` without depending on how it computes view labels. Properties of the
+view rules themselves are checked exhaustively by the Rust tests in
+`crates/scope-domain/src/views.rs`, not proved here.
 
 A proof covers the model, not the Rust code. `Main.lean` builds the model as
 `projection-model`, which reads histories as JSON and prints their projection.
 The ignored test `the_rust_projection_matches_the_proven_lean_model` in
 `crates/scope-domain/tests/domain/projection/lean_model.rs` sends 2,000 generated
-histories to it and requires the Rust projection to match field for field.
+histories to it and requires the Rust projection to match field for field,
+including each preserved native commit's oid, parents and tree.
 
 Visibility change sets, view transitions and the preview are not modelled yet.
 Histories with them are outside both the proofs and the comparison.

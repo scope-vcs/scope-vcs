@@ -6,7 +6,13 @@ structure Change where
 
 structure Native where
   oid : String
-  parent : Option String
+  parents : List String
+  tree : String
+  deriving DecidableEq, Repr
+
+inductive Materialization where
+  | generate
+  | preserve (oid : String) (parents : List String) (tree : String)
   deriving DecidableEq, Repr
 
 inductive Origin where
@@ -29,6 +35,7 @@ structure Projected where
   author : Option String
   message : String
   changes : List Change
+  materialization : Materialization
   deriving DecidableEq, Repr
 
 structure Fold where
@@ -57,8 +64,10 @@ def preservedNative (r : Reader) (c : Commit) : Option (List Native) :=
 
 def preservedCommits (c : Commit) (vis : List Change) : List Native → List Projected
   | [] => []
-  | [n] => [⟨n.oid, c.id, n.parent, none, c.message, vis⟩]
-  | n :: rest => ⟨n.oid, c.id, n.parent, none, "Preserved request commit", []⟩ :: preservedCommits c vis rest
+  | [n] => [⟨n.oid, c.id, n.parents.head?, none, c.message, vis, .preserve n.oid n.parents n.tree⟩]
+  | n :: rest =>
+      ⟨n.oid, c.id, n.parents.head?, none, "Preserved request commit", [], .preserve n.oid n.parents n.tree⟩
+        :: preservedCommits c vis rest
 
 def lastOid : List Native → Option String
   | [] => none
@@ -77,7 +86,7 @@ def step (r : Reader) (s : Fold) (c : Commit) : Fold :=
         { commits := s.commits ++ [⟨pid, c.id, s.lastVisible,
             if isPartial then none else some c.author,
             if isPartial then "Projected public update" else c.message,
-            visible r c⟩],
+            visible r c, .generate⟩],
           lastVisible := some pid }
 
 def project (r : Reader) (s : Fold) (history : List Commit) : Fold :=
@@ -153,31 +162,6 @@ theorem hidden_only_edits_are_indistinct (r : Reader) (a b : Commit)
   refine ⟨hid, hvis, hpart, ?_, hmsg, hauthor⟩
   unfold preservedNative
   rw [horigin, hpart]
-
-inductive Reaches (includes : String → String → Prop) : String → String → Prop where
-  | refl (v) : Reaches includes v v
-  | step {v w l} : includes v w → Reaches includes w l → Reaches includes v l
-
-theorem Reaches.trans {includes : String → String → Prop} {u v w : String}
-    (h1 : Reaches includes u v) (h2 : Reaches includes v w) : Reaches includes u w := by
-  induction h1 with
-  | refl => exact h2
-  | step hi _ ih => exact .step hi (ih h2)
-
-def Shows (includes : String → String → Prop) (full : String) (control : String → Prop)
-    (view path label : String) : Prop :=
-  view = full ∨ (Reaches includes view label ∧ ¬ control path)
-
-theorem shows_monotone (includes : String → String → Prop) (full : String)
-    (control : String → Prop) (reader target path label : String)
-    (hfullTop : ∀ v, Reaches includes v full → v = full)
-    (hread : Reaches includes reader target)
-    (h : Shows includes full control target path label) :
-    Shows includes full control reader path label := by
-  rcases h with htarget | ⟨hreach, hctl⟩
-  · subst htarget
-    exact Or.inl (hfullTop reader hread)
-  · exact Or.inr ⟨hread.trans hreach, hctl⟩
 
 structure ViewDef where
   id : String

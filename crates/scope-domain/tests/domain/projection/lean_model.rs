@@ -1,7 +1,8 @@
 use super::{blob, graph, path};
 use scope_domain::{
     projection::{
-        FileChange, LogicalCommit, LogicalCommitOrigin, NativeRequestCommit, project_graph,
+        FileChange, LogicalCommit, LogicalCommitOrigin, NativeRequestCommit,
+        ProjectionMaterialization, project_graph,
     },
     views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views},
 };
@@ -90,11 +91,9 @@ fn origin(rng: &mut Rng, index: usize, view_ids: &[ViewId]) -> LogicalCommitOrig
             commits: (0..rng.below(4))
                 .map(|step| NativeRequestCommit {
                     oid: format!("n{index}-{step}"),
-                    parent_oids: if rng.chance() {
-                        vec![format!("p{index}-{step}")]
-                    } else {
-                        Vec::new()
-                    },
+                    parent_oids: (0..rng.below(4))
+                        .map(|parent| format!("p{index}-{step}-{parent}"))
+                        .collect(),
                     tree_oid: format!("t{index}-{step}"),
                     changed_paths: Vec::new(),
                 })
@@ -136,7 +135,8 @@ fn origin_json(origin: &LogicalCommitOrigin) -> Value {
             "preserve": preserve_commits,
             "native": commits.iter().map(|native| json!({
                 "oid": native.oid,
-                "parent": native.parent_oids.first(),
+                "parents": native.parent_oids,
+                "tree": native.tree_oid,
             })).collect::<Vec<_>>(),
         }),
         _ => json!({ "kind": "push" }),
@@ -184,6 +184,15 @@ fn rust_projection(views: &Views, reader: &ViewId, commits: Vec<LogicalCommit>) 
                     "label": change.label.as_str(),
                     "content": change.new_content.as_ref().map(|blob| &blob.sha256),
                 })).collect::<Vec<_>>(),
+                "materialization": match &commit.materialization {
+                    ProjectionMaterialization::Generate => json!({ "kind": "generate" }),
+                    ProjectionMaterialization::PreserveGitCommit { oid, parent_oids, tree_oid } => json!({
+                        "kind": "preserve",
+                        "oid": oid,
+                        "parents": parent_oids,
+                        "tree": tree_oid,
+                    }),
+                },
             }))
             .collect::<Vec<_>>()
     )

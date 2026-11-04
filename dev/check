@@ -51,6 +51,7 @@ case "$COMMAND" in
     cli
     web
     ops
+    model
     ;;
   guardrails) guardrails ;;
   rust) rust ;;
