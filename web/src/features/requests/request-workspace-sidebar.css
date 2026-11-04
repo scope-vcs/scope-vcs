@@ -93,10 +93,6 @@
   color: var(--muted-foreground);
 }
 
-.request-workspace-sidebar:is([data-state="pinned"], [data-state="open"]:not([data-closing])) .request-workspace-scroll > .request-workspace-current:first-child {
-  margin-top: 36px;
-}
-
 .request-workspace-viewing-as {
   flex: none;
   padding: 10px 12px 12px var(--app-inset);
@@ -130,6 +126,8 @@
 }
 
 .request-workspace-needs-you > h2 {
+  min-height: 40px;
+  padding-bottom: 12px;
   transition: min-height 200ms ease, padding 200ms ease;
 }
 

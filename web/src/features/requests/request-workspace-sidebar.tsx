@@ -244,7 +244,9 @@ export function RequestWorkspaceSidebar({
   const needsYou = grouped.needs_you
   const needsYouCount = needsYou.filter(({ item }) => item.attention.group === 'needs_you').length
   const caughtUp = Boolean(pages) && !skeleton && needsYou.length === 0 && !activeHasMore
-  const current = allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
+  const current = state === 'closed' || closing
+    ? allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
+    : undefined
   const moved = (items: QueueRow[]) => Number(current !== undefined && items.includes(current))
   const waiting = grouped.waiting.filter((row) => row !== current)
   const waitingCount = activeCount(grouped.waiting.length - moved(grouped.waiting))
