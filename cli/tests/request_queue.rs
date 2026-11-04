@@ -405,7 +405,7 @@ fn queue_item(id: &str, name: &str, group: &str, reason: &str, claimer: Option<&
 
 fn attention(group: &str, reason: &str) -> Value {
     json!({
-        "group": group, "state": "active", "reason": reason, "activity_version": LOADED_VERSION,
+        "group": group, "stack_group": group, "state": "active", "reason": reason, "activity_version": LOADED_VERSION,
         "through_activity_version": LOADED_VERSION, "snoozed_until_unix": null, "revision": 1,
         "can_claim": true, "can_set_aside": true, "can_restore": false, "can_release": false
     })

@@ -543,13 +543,14 @@ export type RequestAttentionReason = "authored" | "invited" | "claimed" | "uncla
 
 export type RequestAttentionResponse = {
 /**
- * The viewer's group for this request on its own; group counts use it.
+ * The viewer's group for this request on its own. Group counts and flat
+ * lists use it.
  */
 group: RequestQueueGroup,
 /**
- * The group this row shows in. A waiting request shows in Needs you when
- * another request in its stack on the same queue page needs the viewer;
- * otherwise this equals `group`.
+ * The group a view that draws stacks together shows this row in. A
+ * waiting request moves to Needs you when another request in its stack
+ * on the same queue page needs the viewer; otherwise this equals `group`.
  */
 stack_group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null,
 /**
