@@ -45,13 +45,10 @@ test('request rows exchange age and actions and restore the selected view across
   const diffStats = () => page.locator('.request-workspace-row').evaluateAll((rows) => rows.map((node) => {
     const stat = node.querySelector('.request-workspace-row-diff-stat')
     if (!stat || getComputedStyle(stat).display === 'none') return null
-    const statBox = stat.getBoundingClientRect()
-    const label = node.querySelector('.request-workspace-row-status')
     return {
       text: stat.querySelector('[aria-hidden="true"]').textContent,
       title: stat.title,
-      clear: label.getBoundingClientRect().right <= statBox.left
-        && statBox.right <= node.getBoundingClientRect().right,
+      clear: stat.getBoundingClientRect().right <= node.getBoundingClientRect().right,
     }
   }))
   assert.deepEqual(await diffStats(), [
@@ -247,9 +244,6 @@ test('request rows exchange age and actions and restore the selected view across
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   assert.equal(await page.locator('[data-request-id="request-2"] time').evaluate((node) =>
     getComputedStyle(node).opacity), '1')
-  const label = await row.locator('.request-workspace-row-status').boundingBox()
-  const buttons = await actions.boundingBox()
-  assert(label.x + label.width < buttons.x)
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.mobile.png` })
   }
@@ -310,8 +304,12 @@ test('pressing a woke row acknowledges it once and custom snooze confirms a chos
     const woke = { ...second, attention: { ...second.attention, reason: 'snooze_expired' } }
     window.setQueue({ pages: { active: { ...empty, requests: [first, woke, third] }, unclaimed: empty, set_aside: empty, done: empty }, maintainer: true, loading: false })
   })
-  await row.locator('.request-workspace-row-status').getByText('Woke').waitFor()
-  assert.match(await row.getByRole('link').textContent(), /, Woke, Checks need attention$/)
+  await row.getByRole('link', { name: /, Woke, Checks need attention$/ }).waitFor()
+  assert.equal(await row.locator('.request-workspace-row-meta').getByText('Woke').count(), 0, 'the status is not written on the row')
+  await row.locator('.request-workspace-row-mark').hover()
+  assert.equal(await page.getByRole('tooltip').textContent(), 'Woke · Checks need attention')
+  await page.mouse.move(700, 400)
+  await page.getByRole('tooltip').waitFor({ state: 'detached' })
   await page.locator('[data-request-id="request-0"]').getByRole('link').click()
   assert.deepEqual(await page.evaluate(() => window.attentionCommands), [])
   await row.getByRole('link').click()

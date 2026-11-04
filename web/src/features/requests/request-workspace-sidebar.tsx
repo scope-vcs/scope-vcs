@@ -6,6 +6,7 @@ import type {
 } from '@/api/types.generated'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { ChevronRight, CircleCheck, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import {
@@ -216,6 +217,7 @@ export function RequestWorkspaceSidebar({
     params,
     pendingId,
     selectedId,
+    statusHints: state !== 'closed',
     foldedStacks,
     onFoldStack: (requestId: string, folded: boolean) =>
       setFoldedStacks((current) => {
@@ -345,96 +347,98 @@ export function RequestWorkspaceSidebar({
             {actionError}
           </p>
         )}
-        <div aria-busy={loading} className="request-workspace-scroll">
-          {maintainer === null ? (
-            <section className="request-workspace-needs-you">
-              <h2 aria-hidden="true" className="request-workspace-group-label">
-                <span>
-                  <TextSkeleton length="short" size="meta" />
-                </span>
-                <GroupCount count={null} />
-              </h2>
-              <RequestWorkspaceListSkeleton />
-            </section>
-          ) : (
-            <>
-              {(maintainer || needsYou.length > 0) && (
-                <section className="request-workspace-needs-you">
-                  <h2 className="request-workspace-group-label text-foreground" data-rail-hint="needs-you">
-                    <span>{REQUEST_ATTENTION_GROUP_LABELS.needs_you}</span>
-                    {caughtUp && (
-                      <CircleCheck aria-hidden="true" className="request-workspace-rail-caught-up" />
-                    )}
-                    <GroupCount count={activeCount(needsYouCount)} />
-                  </h2>
-                  <RequestWorkspaceList
-                    {...common}
-                    emptyLabel={EMPTY_LABELS.needs_you}
-                    hasMore={activeHasMore && grouped.waiting.length === 0}
-                    items={needsYou}
-                    onLoadMore={() => onLoadMore('active')}
-                    rail
-                  />
-                </section>
-              )}
-              {current && (
-                <section aria-label="Open request" className="request-workspace-current">
-                  <hr className="request-workspace-rail-rule" />
-                  <RequestWorkspaceList
-                    {...common}
-                    emptyLabel=""
-                    hasMore={false}
-                    items={[current]}
-                    onLoadMore={() => {}}
-                    rail
-                  />
-                </section>
-              )}
-              {state === 'closed' && folded > 0 && (
-                <>
-                  <hr className="request-workspace-rail-rule" />
-                  <button
-                    aria-label={`Show ${folded} more requests`}
-                    className="request-workspace-rail-more"
-                    data-rail-hint="folded"
-                    onClick={openRail}
-                    type="button"
-                  >
-                    {folded > 99 ? '99+' : `+${folded}`}
-                  </button>
-                </>
-              )}
-              {!maintainer && (waiting.length > 0 || needsYou.length === 0) && (
-                <section className="request-workspace-open">
-                  <h2 className="request-workspace-group-label text-muted-foreground">
-                    <span>Open</span>
-                    <GroupCount count={waitingCount} />
-                  </h2>
-                  <RequestWorkspaceList
-                    {...common}
-                    emptyLabel={EMPTY_LABELS.needs_you}
-                    hasMore={activeHasMore}
-                    items={waiting}
-                    onLoadMore={() => onLoadMore('active')}
-                  />
-                </section>
-              )}
-              <div className="request-workspace-disclosures">
-                {disclosures.filter(({ count }) => count !== '0').map(({ group, section, label, count, emptyLabel }) => (
-                  <RequestWorkspaceDisclosure count={count} key={group} label={label}>
+        <TooltipProvider disableHoverableContent>
+          <div aria-busy={loading} className="request-workspace-scroll">
+            {maintainer === null ? (
+              <section className="request-workspace-needs-you">
+                <h2 aria-hidden="true" className="request-workspace-group-label">
+                  <span>
+                    <TextSkeleton length="short" size="meta" />
+                  </span>
+                  <GroupCount count={null} />
+                </h2>
+                <RequestWorkspaceListSkeleton />
+              </section>
+            ) : (
+              <>
+                {(maintainer || needsYou.length > 0) && (
+                  <section className="request-workspace-needs-you">
+                    <h2 className="request-workspace-group-label text-foreground" data-rail-hint="needs-you">
+                      <span>{REQUEST_ATTENTION_GROUP_LABELS.needs_you}</span>
+                      {caughtUp && (
+                        <CircleCheck aria-hidden="true" className="request-workspace-rail-caught-up" />
+                      )}
+                      <GroupCount count={activeCount(needsYouCount)} />
+                    </h2>
                     <RequestWorkspaceList
                       {...common}
-                      emptyLabel={emptyLabel}
-                      hasMore={Boolean(pages?.[section].next_cursor)}
-                      items={grouped[group].filter((row) => row !== current)}
-                      onLoadMore={() => onLoadMore(section)}
+                      emptyLabel={EMPTY_LABELS.needs_you}
+                      hasMore={activeHasMore && grouped.waiting.length === 0}
+                      items={needsYou}
+                      onLoadMore={() => onLoadMore('active')}
+                      rail
                     />
-                  </RequestWorkspaceDisclosure>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+                  </section>
+                )}
+                {current && (
+                  <section aria-label="Open request" className="request-workspace-current">
+                    <hr className="request-workspace-rail-rule" />
+                    <RequestWorkspaceList
+                      {...common}
+                      emptyLabel=""
+                      hasMore={false}
+                      items={[current]}
+                      onLoadMore={() => {}}
+                      rail
+                    />
+                  </section>
+                )}
+                {state === 'closed' && folded > 0 && (
+                  <>
+                    <hr className="request-workspace-rail-rule" />
+                    <button
+                      aria-label={`Show ${folded} more requests`}
+                      className="request-workspace-rail-more"
+                      data-rail-hint="folded"
+                      onClick={openRail}
+                      type="button"
+                    >
+                      {folded > 99 ? '99+' : `+${folded}`}
+                    </button>
+                  </>
+                )}
+                {!maintainer && (waiting.length > 0 || needsYou.length === 0) && (
+                  <section className="request-workspace-open">
+                    <h2 className="request-workspace-group-label text-muted-foreground">
+                      <span>Open</span>
+                      <GroupCount count={waitingCount} />
+                    </h2>
+                    <RequestWorkspaceList
+                      {...common}
+                      emptyLabel={EMPTY_LABELS.needs_you}
+                      hasMore={activeHasMore}
+                      items={waiting}
+                      onLoadMore={() => onLoadMore('active')}
+                    />
+                  </section>
+                )}
+                <div className="request-workspace-disclosures">
+                  {disclosures.filter(({ count }) => count !== '0').map(({ group, section, label, count, emptyLabel }) => (
+                    <RequestWorkspaceDisclosure count={count} key={group} label={label}>
+                      <RequestWorkspaceList
+                        {...common}
+                        emptyLabel={emptyLabel}
+                        hasMore={Boolean(pages?.[section].next_cursor)}
+                        items={grouped[group].filter((row) => row !== current)}
+                        onLoadMore={() => onLoadMore(section)}
+                      />
+                    </RequestWorkspaceDisclosure>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </TooltipProvider>
         {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
       </div>
     </aside>

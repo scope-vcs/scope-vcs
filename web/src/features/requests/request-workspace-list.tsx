@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { DiffStatSummary } from '@/components/diff-stat'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { diffStatWithChanges } from '@/lib/diff-stat'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useUnixClock } from '@/lib/use-unix-clock'
@@ -54,6 +55,7 @@ export type RequestWorkspaceListProps = {
   pendingId: string | null
   selectedId?: string
   rail?: boolean
+  statusHints: boolean
   foldedStacks: ReadonlySet<string>
   onFoldStack: (requestId: string, folded: boolean) => void
 }
@@ -197,7 +199,8 @@ function RequestWorkspaceRow({
   revealOrder,
   railRow,
   stackOpen,
-}: Pick<RequestWorkspaceListProps, 'onAction' | 'onCustomSnooze' | 'params' | 'pendingId' | 'rail' | 'selectedId'> & {
+  statusHints,
+}: Pick<RequestWorkspaceListProps, 'onAction' | 'onCustomSnooze' | 'params' | 'pendingId' | 'rail' | 'selectedId' | 'statusHints'> & {
   item: RequestQueueItemResponse
   section: RequestQueueSection
   placement: RequestStackPlacement
@@ -268,16 +271,23 @@ function RequestWorkspaceRow({
       }
     >
       <RequestStackLines placement={{ ...placement, children: placement.children && stackOpen }} />
-      <Link
-        {...link}
-        aria-hidden="true"
-        className="request-workspace-row-mark"
-        data-folded-count={folded.length || undefined}
-        tabIndex={-1}
-      >
-        <RequestStatusGlyph className="request-status-glyph" nextStep={item.next_step} />
-        {unread && <span className="request-workspace-row-unread" />}
-      </Link>
+      <Tooltip open={statusHints ? undefined : false}>
+        <TooltipTrigger asChild>
+          <Link
+            {...link}
+            aria-hidden="true"
+            className="request-workspace-row-mark"
+            data-folded-count={folded.length || undefined}
+            tabIndex={-1}
+          >
+            <RequestStatusGlyph className="request-status-glyph" nextStep={item.next_step} />
+            {unread && <span className="request-workspace-row-unread" />}
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent suppressHydrationWarning>
+          {[status, action].filter(Boolean).join(' · ')}
+        </TooltipContent>
+      </Tooltip>
       <div className="request-workspace-row-body">
         <div className="request-workspace-row-heading">
           <Link
@@ -336,9 +346,6 @@ function RequestWorkspaceRow({
         </div>
         <div className="request-workspace-row-meta">
           {handle && <span aria-hidden="true">{handle}</span>}
-          <span aria-hidden="true" className="request-workspace-row-status" suppressHydrationWarning>
-            {status}
-          </span>
           {descendants.length > 0 && (
             <button
               aria-expanded={stackOpen}

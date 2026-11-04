@@ -219,6 +219,11 @@
     opacity: 0;
   }
 
+  .request-workspace-sidebar:not([data-state="pinned"]) .request-workspace-row-meta:empty {
+    display: block;
+    height: 1lh;
+  }
+
   .request-workspace-row-body {
     transition: opacity 150ms ease;
   }
@@ -491,10 +496,8 @@
   content: "·" / "";
 }
 
-.request-workspace-row-status {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.request-workspace-row-meta:empty {
+  display: none;
 }
 
 .request-workspace-row-diff-stat {
