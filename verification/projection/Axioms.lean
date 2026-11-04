@@ -1,0 +1,9 @@
+import Projection
+
+#print axioms projection_noninterference
+#print axioms graph_noninterference
+#print axioms incremental_noninterference
+#print axioms history_noninterference
+#print axioms projected_changes_are_readable
+#print axioms private_control_paths_reach_only_the_full_view
+#print axioms hidden_only_edits_are_indistinct

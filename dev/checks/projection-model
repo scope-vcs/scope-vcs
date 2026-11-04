@@ -7,5 +7,9 @@ test "$(cat verification/projection/lean-toolchain)" = "leanprover/lean4:v${expe
 lean --version | grep -q "version ${expected},"
 
 (cd verification/projection && lake build)
+axioms="$(cd verification/projection && lake env lean Axioms.lean)"
+theorems="$(grep -c '^#print axioms ' verification/projection/Axioms.lean)"
+standard="\(propext\|Classical\.choice\|Quot\.sound\)"
+test "$(grep -c "^'[^']*' \(depends on axioms: \[${standard}\(, ${standard}\)*\]\|does not depend on any axioms\)$" <<<"$axioms")" = "$theorems"
 SCOPE_PROJECTION_MODEL="$PWD/verification/projection/.lake/build/bin/projection-model" \
   cargo test --locked -p scope-domain --test domain lean_model -- --ignored

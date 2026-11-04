@@ -98,6 +98,11 @@ commit ids. The test fails if the generator stops reaching partial and
 preserved commits, source updates, each kind of set commit, anchored sets,
 relabels of a source update's paths, or suffixes resumed after a transition.
 
+The build treats warnings as errors, so an unfinished `sorry` fails it.
+`Axioms.lean` prints the axioms each theorem depends on, and the check fails
+unless they are only Lean's standard `propext`, `Classical.choice` and
+`Quot.sound`, so a declared `axiom` cannot stand in for a proof.
+
 Run it with `./dev/check model`, which installs the pinned Lean release from
 `dev/tool-versions.json`. CI runs `dev/checks/projection-model` in the Rust
 workspace job. When `projection.rs` changes, update the model so the
