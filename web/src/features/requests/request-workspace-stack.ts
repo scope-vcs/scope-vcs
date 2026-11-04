@@ -79,12 +79,6 @@ export function stackRequestRows<T extends StackRow>(rows: T[]): StackedRequestR
   return placed
 }
 
-export function requestStacksWith<T extends StackRow>(rows: T[], member: (row: T) => boolean): T[] {
-  const stacked = stackRequestRows(rows)
-  const stacks = new Set(stacked.filter(({ row }) => member(row)).map(({ stack }) => stack))
-  return stacked.filter(({ stack }) => stacks.has(stack)).map(({ row }) => row)
-}
-
 export function foldStackedRequestRows<T extends StackRow>(
   rows: StackedRequestRow<T>[],
   foldedIds: ReadonlySet<string>,

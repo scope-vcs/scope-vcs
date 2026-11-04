@@ -9,10 +9,12 @@ use crate::views::Views;
 use serde::{Deserialize, Serialize};
 
 mod placement;
+mod stacks;
 pub use placement::{
     REQUEST_QUEUE_RULES, RequestQueuePredicate, RequestQueuePredicateAtom, RequestQueueRule,
     request_queue_visibility_predicate,
 };
+pub use stacks::{RequestQueueStackMember, request_queue_stack_groups};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

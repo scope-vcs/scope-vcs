@@ -39,7 +39,6 @@ import {
   foldStackedRequestRows,
   requestRailRows,
   requestStackMembers,
-  requestStacksWith,
   stackRequestRows,
 } from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
@@ -446,17 +445,10 @@ export function RequestWorkspaceSidebar({
 }
 
 function groupRows(rows: QueueRow[]) {
-  const needsYou = requestStacksWith(
-    rows.filter(({ section }) => section === 'active'),
-    ({ item }) => item.attention.group === 'needs_you',
-  )
-  const needsYouRows = new Set(needsYou)
   return Object.fromEntries(
     REQUEST_ATTENTION_GROUP_ORDER.map((group) => [
       group,
-      group === 'needs_you' ? needsYou : stackRequestRows(
-        rows.filter((row) => row.item.attention.group === group && !needsYouRows.has(row)),
-      ).map(({ row }) => row),
+      stackRequestRows(rows.filter((row) => row.item.attention.stack_group === group)).map(({ row }) => row),
     ]),
   ) as Record<RequestAttentionGroup, QueueRow[]>
 }

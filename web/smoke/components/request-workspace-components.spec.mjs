@@ -411,7 +411,7 @@ test('collapsed request loading keeps its header stable without guessing avatar 
   const done = [0, 1, 2].map((index) => ({
     request: { id: `request-${index}`, title: `Closed request ${index}` },
     author: { handle: 'adam' },
-    attention: { group: 'done', reason: 'closed' },
+    attention: { group: 'done', stack_group: 'done', reason: 'closed' },
     attention_at_unix: 1_790_000_000,
     next_step: 'done',
   }))
@@ -459,7 +459,7 @@ test('collapsed request loading keeps its header stable without guessing avatar 
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-loaded.png` })
   }
-  const waiting = [3, 4].map((index) => ({ ...done[0], request: { id: `request-${index}`, title: `Waiting request ${index}` }, attention: { group: 'waiting', reason: 'waiting' }, next_step: 'wait' }))
+  const waiting = [3, 4].map((index) => ({ ...done[0], request: { id: `request-${index}`, title: `Waiting request ${index}` }, attention: { group: 'waiting', stack_group: 'waiting', reason: 'waiting' }, next_step: 'wait' }))
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { ...pages, active: { ...empty, requests: waiting } })
   const more = sidebar.getByRole('button', { name: 'Show 2 more requests' })
   assert.equal(await more.textContent(), '+2')
@@ -488,7 +488,7 @@ test('stack context preserves actionable children and row order when parents are
   const { page, base, errors } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests', base).href)
   const node = { id: 'parent', name: 'parent', title: 'Safe parent', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
-  const row = (id, parent, group = 'needs_you') => ({ request: { id, title: `Actionable ${id}`, stack_parent: parent, stack_depth: 2, mergeability: mergeability('ChecksPending') }, author: { handle: 'adam' }, attention: { group, reason: 'authored', can_set_aside: true }, attention_at_unix: 1790000000, next_step: 'review' })
+  const row = (id, parent, group = 'needs_you', stack_group = group) => ({ request: { id, title: `Actionable ${id}`, stack_parent: parent, stack_depth: 2, mergeability: mergeability('ChecksPending') }, author: { handle: 'adam' }, attention: { group, stack_group, reason: 'authored', can_set_aside: true }, attention_at_unix: 1790000000, next_step: 'review' })
   const parent = { kind: 'available', request: node }
   const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
   const requests = [row('child', parent), row('sibling', parent), row('opaque', { kind: 'unavailable' })]
@@ -519,7 +519,7 @@ test('stack context preserves actionable children and row order when parents are
   assert.deepEqual(await lines('sibling'), ['parent'])
   const avatarLeft = (id) => page.locator(`[data-request-id="${id}"] .request-workspace-row-mark`).evaluate((node) => node.getBoundingClientRect().left)
   assert.equal(await avatarLeft('child') - await avatarLeft('parent'), 18)
-  const waitingParent = { ...together, active: { ...empty, requests: [...requests, row('parent', null, 'waiting')] } }
+  const waitingParent = { ...together, active: { ...empty, requests: [...requests, row('parent', null, 'waiting', 'needs_you')] } }
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), waitingParent)
   await page.waitForFunction(() => document.querySelector('.request-workspace-needs-you > h2').textContent === 'Needs you3')
   assert.deepEqual(await rows.evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId)), ['parent', 'child', 'sibling', 'opaque'])
@@ -556,7 +556,7 @@ test('the collapsed rail shows a request\'s whole stack on hover while the stack
   const row = (id, parent, extra = {}) => ({
     request: { id, title: `Stacked ${id}`, stack_parent: parent && { kind: 'available', request: { ...node, id: parent, title: `Stacked ${parent}` } }, stack_depth: 1, mergeability: mergeability(extra.next_step === 'merge' ? 'Ready' : 'ChecksPending') },
     author: { handle: 'adam' },
-    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention: { group: 'needs_you', stack_group: 'needs_you', reason: 'authored', can_set_aside: true },
     attention_at_unix: 1790000000,
     next_step: 'review',
     ...extra,
@@ -634,7 +634,7 @@ test('a stack taller than the window stays inside it and scrolls to every reques
   const requests = ids.map((id, index) => ({
     request: { id, title: `Layer ${index}`, stack_parent: index > 0 && { kind: 'available', request: { ...node, id: ids[index - 1], title: `Layer ${index - 1}` } }, stack_depth: 1, mergeability: mergeability('ChecksPending') },
     author: { handle: 'adam' },
-    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention: { group: 'needs_you', stack_group: 'needs_you', reason: 'authored', can_set_aside: true },
     attention_at_unix: 1790000000,
     next_step: 'review',
   }))
@@ -672,13 +672,13 @@ test('a stack\'s pill folds it behind its base and summarizes what it hides', as
   const row = (id, parent, extra = {}) => ({
     request: { id, title: `Stacked ${id}`, stack_parent: parent && { kind: 'available', request: { ...node, id: parent, title: `Stacked ${parent}` } }, stack_depth: 1, mergeability: mergeability(extra.next_step === 'merge' ? 'Ready' : 'ChecksPending') },
     author: { handle: 'adam' },
-    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention: { group: 'needs_you', stack_group: 'needs_you', reason: 'authored', can_set_aside: true },
     attention_at_unix: 1790000000,
     next_step: 'review',
     ...extra,
   })
   const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  const invited = { group: 'needs_you', reason: 'invited', can_set_aside: true }
+  const invited = { group: 'needs_you', stack_group: 'needs_you', reason: 'invited', can_set_aside: true }
   const requests = [row('base', null), row('first', 'base'), row('ready', 'first', { next_step: 'merge' }), row('plain', null, { attention: invited })]
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { active: { ...empty, requests }, unclaimed: empty, set_aside: empty, done: empty })
   const ids = () => page.locator('.request-workspace-needs-you [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId))

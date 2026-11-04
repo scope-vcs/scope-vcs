@@ -142,8 +142,9 @@ pub use queue::{
     RequestAttentionMutation, RequestAttentionReason, RequestAttentionState, RequestClaim,
     RequestQueueClassification, RequestQueueFacts, RequestQueueGroup, RequestQueueNextStep,
     RequestQueuePredicate, RequestQueuePredicateAtom, RequestQueueRule, RequestQueueSection,
-    apply_request_attention_action, classify_request_queue_item, reactivate_request_attention,
-    reactivate_request_attention_for_stack_blocker, request_queue_group, request_queue_next_step,
+    RequestQueueStackMember, apply_request_attention_action, classify_request_queue_item,
+    reactivate_request_attention, reactivate_request_attention_for_stack_blocker,
+    request_queue_group, request_queue_next_step, request_queue_stack_groups,
     request_queue_visibility_predicate,
 };
 mod ratings;

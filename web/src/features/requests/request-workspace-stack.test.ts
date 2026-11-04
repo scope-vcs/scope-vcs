@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestQueueItemResponse, RequestStackParentResponse } from '../../api/types.generated'
-import { foldStackedRequestRows, requestRailRows, requestStackMembers, requestStacksWith, stackRequestRows } from './request-workspace-stack'
+import { foldStackedRequestRows, requestRailRows, requestStackMembers, stackRequestRows } from './request-workspace-stack'
 
 function row(id: string, parent: string | 'unavailable' | null = null) {
   const stack_parent: RequestStackParentResponse | null =
@@ -100,15 +100,6 @@ test('requests whose shared parent is outside the list form one stack starting a
   const members = (id: string) => requestStackMembers(stacked, id).map(({ row, depth }) => [row.item.request.id, depth])
   assert.deepEqual(members('sibling'), [['child', 0], ['sibling', 0]])
   assert.deepEqual(members('opaque'), [])
-})
-
-test('a stack joins a group when any of its requests belongs there, and unrelated requests stay out', () => {
-  const rows = [row('waiting-parent'), row('urgent-child', 'waiting-parent'), row('waiting-plain'), row('urgent-plain'), row('waiting-child', 'urgent-plain')]
-  const urgent = new Set(['urgent-child', 'urgent-plain'])
-  assert.deepEqual(
-    requestStacksWith(rows, ({ item }) => urgent.has(item.request.id)).map(({ item }) => item.request.id),
-    ['waiting-parent', 'urgent-child', 'urgent-plain', 'waiting-child'],
-  )
 })
 
 test('the collapsed rail closes a stack outline on the last row it shows, and keeps the selected row', () => {

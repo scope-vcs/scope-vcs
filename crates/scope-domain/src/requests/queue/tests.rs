@@ -38,6 +38,33 @@ fn groups_split_active_rows_by_who_acts_next() {
 }
 
 #[test]
+fn a_stack_shows_with_its_member_that_needs_you_and_others_keep_their_group() {
+    use RequestQueueGroup::{NeedsYou, SetAside, Waiting};
+    let member = |request_id, parent_request_id, group| RequestQueueStackMember {
+        request_id,
+        parent_request_id,
+        group,
+    };
+    let members = [
+        member("parent", None, Waiting),
+        member("child", Some("parent"), NeedsYou),
+        member("grandchild", Some("child"), Waiting),
+        member("sibling", Some("parent"), Waiting),
+        member("waiting", None, Waiting),
+        member("orphan", Some("elsewhere"), Waiting),
+        member("set-aside", Some("parent"), SetAside),
+        member("alone", None, NeedsYou),
+        member("alone-child", Some("alone"), SetAside),
+    ];
+    assert_eq!(
+        request_queue_stack_groups(&members),
+        [
+            NeedsYou, NeedsYou, NeedsYou, NeedsYou, Waiting, Waiting, SetAside, NeedsYou, SetAside,
+        ]
+    );
+}
+
+#[test]
 fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
     use RequestAttentionReason as Reason;
     use RequestMergeabilityStatus as Status;
