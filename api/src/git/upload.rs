@@ -21,7 +21,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use scope_domain::{
-    repository::RepoLifecycleState, repository::access::RepositoryActor, views::ViewId,
+    repository::RepoLifecycleState, repository::access::RepositoryActor, requests::GitFetchAsk,
+    views::ViewId,
 };
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_postgres::db::GitReadSource;
@@ -36,6 +37,8 @@ use tracing::Instrument as _;
 pub(super) mod fetch_folder;
 #[cfg(test)]
 mod fetch_tests;
+mod protocol;
+pub(crate) use protocol::GitProtocol;
 
 pub(crate) async fn authorized_git_read(
     state: &AppState,
@@ -93,13 +96,15 @@ pub(crate) async fn git_upload_pack_repo_for_request(
     owner: &str,
     repo_name: &str,
     view: &ViewId,
+    ask: &GitFetchAsk,
 ) -> Result<GitRepoHandle, ApiError> {
-    fetch_folder::prepare(state, headers, owner, repo_name, view, None).await
+    fetch_folder::prepare(state, headers, owner, repo_name, view, ask).await
 }
 
 pub(crate) async fn git_upload_pack_response(
     repo: GitRepoHandle,
     request: &[u8],
+    protocol: GitProtocol,
     timeout: Duration,
     permit: RuntimePermit,
 ) -> Result<Response, ApiError> {
@@ -117,7 +122,7 @@ pub(crate) async fn git_upload_pack_response(
             ApiError::internal_message(format!("Git upload-pack validation task failed: {error}"))
         })??;
     }
-    let mut command = git_upload_pack_command();
+    let mut command = git_upload_pack_command(protocol);
     command.arg("--stateless-rpc").arg(repo_path);
     let git_span = prepare_git_subprocess(&mut command)?;
     let (sender, receiver) = tokio::sync::mpsc::channel(2);
@@ -236,14 +241,6 @@ fn upload_pack_oid(object: &[u8]) -> Result<Vec<u8>, ApiError> {
     Ok(oid.to_ascii_lowercase())
 }
 
-pub(super) fn wanted_heads(request: &[u8]) -> Result<Vec<String>, ApiError> {
-    upload_pack_packets(request)?
-        .into_iter()
-        .filter_map(|packet| packet.payload.strip_prefix(b"want "))
-        .map(|object| upload_pack_oid(object).map(|oid| String::from_utf8_lossy(&oid).into_owned()))
-        .collect()
-}
-
 fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec<u8>, ApiError> {
     let mut required = BTreeSet::new();
     let mut haves = BTreeSet::new();
@@ -316,17 +313,24 @@ fn prepare_upload_pack_request(repo_path: &FsPath, request: &[u8]) -> Result<Vec
             "Git object is outside the visible refs; refs may have changed, retry fetch",
         ));
     }
+    let mut unacknowledged = have_packets
+        .iter()
+        .all(|(_, _, oid)| haves.contains(oid))
+        .then(|| pkt_line(format!("have {UNKNOWN_HAVE}\n").as_bytes()));
     let mut filtered = Vec::with_capacity(request.len());
     let mut copied_through = 0;
     for (packet_start, packet_end, oid) in have_packets {
         if haves.contains(&oid) {
             filtered.extend_from_slice(&request[copied_through..packet_start]);
+            filtered.extend(unacknowledged.take().unwrap_or_default());
             copied_through = packet_end;
         }
     }
     filtered.extend_from_slice(&request[copied_through..]);
     Ok(filtered)
 }
+
+const UNKNOWN_HAVE: &str = "0000000000000000000000000000000000000000";
 
 fn send_upload_pack_chunk(
     sender: &tokio::sync::mpsc::Sender<Result<Bytes, std::io::Error>>,
@@ -359,17 +363,26 @@ fn send_upload_pack_chunk(
     }
 }
 
-pub(crate) fn git_upload_pack_advertisement(repo_path: &FsPath, timeout: Duration) -> Response {
+pub(crate) fn git_upload_pack_advertisement(
+    repo_path: &FsPath,
+    protocol: GitProtocol,
+    timeout: Duration,
+) -> Response {
     match git_command_output_with_timeout(
-        git_upload_pack_command()
+        git_upload_pack_command(protocol)
             .args(["--stateless-rpc", "--advertise-refs"])
             .arg(repo_path),
         None,
         timeout,
     ) {
         Ok(advertisement) => {
-            let mut body = pkt_line(format!("# service={GIT_UPLOAD_PACK}\n").as_bytes());
-            body.extend_from_slice(b"0000");
+            let mut body = Vec::new();
+            if protocol == GitProtocol::V0 {
+                body.extend(pkt_line(
+                    format!("# service={GIT_UPLOAD_PACK}\n").as_bytes(),
+                ));
+                body.extend_from_slice(b"0000");
+            }
             body.extend(advertisement);
             git_response("application/x-git-upload-pack-advertisement", body)
         }
@@ -377,8 +390,9 @@ pub(crate) fn git_upload_pack_advertisement(repo_path: &FsPath, timeout: Duratio
     }
 }
 
-fn git_upload_pack_command() -> Command {
+fn git_upload_pack_command(protocol: GitProtocol) -> Command {
     let mut command = Command::new("git");
+    protocol.configure(&mut command);
     command.args([
         "-c",
         "uploadpack.allowAnySHA1InWant=false",

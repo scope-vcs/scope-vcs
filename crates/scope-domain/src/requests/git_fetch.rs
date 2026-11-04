@@ -1,12 +1,41 @@
-use super::{Request, RequestViewer, request_policy};
+use super::{Request, RequestViewer, canonical_request_ref, request_policy};
 use crate::views::{ViewId, Views};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GitFetchRequest {
     pub id: String,
     pub view: ViewId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitFetchAsk {
+    Listing { named_refs: BTreeSet<String> },
+    Transfer { wants: Vec<String>, shallow: bool },
+}
+
+impl GitFetchAsk {
+    pub fn listing() -> Self {
+        Self::Listing {
+            named_refs: BTreeSet::new(),
+        }
+    }
+
+    pub fn includes(&self, request: &Request, user: Option<&str>, invitee: bool) -> bool {
+        invitee
+            || user.is_some_and(|user| request.is_author(user))
+            || match self {
+                Self::Listing { named_refs } => {
+                    named_refs.contains(&canonical_request_ref(&request.name))
+                }
+                Self::Transfer { wants, shallow } => *shallow || wants.contains(&request.head_oid),
+            }
+    }
+
+    pub fn is_listing(&self) -> bool {
+        matches!(self, Self::Listing { .. })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -25,10 +54,11 @@ pub fn request_readable_in_git(
 }
 
 pub fn retain_git_fetch_heads(
+    readable: &[Request],
     requests: &mut Vec<Request>,
     advertised: Vec<(String, GitFetchHead)>,
 ) -> Vec<String> {
-    let current = requests
+    let current = readable
         .iter()
         .filter(|request| request.state().advertised_in_git())
         .map(|request| ((request.id.clone(), request.view.clone()), request.clone()))
@@ -96,7 +126,9 @@ mod tests {
                     view: closed.view,
                 });
             }
+            let readable = requests.clone();
             let retained = retain_git_fetch_heads(
+                &readable,
                 &mut requests,
                 vec![(old.head_oid.clone(), GitFetchHead::Requests(saved))],
             );
@@ -108,6 +140,46 @@ mod tests {
                     .any(|request| request.head_oid == old.head_oid),
                 allowed,
                 "{change}"
+            );
+        }
+    }
+
+    #[test]
+    fn fetches_list_only_own_invited_named_or_wanted_requests() {
+        let request = open_request();
+        let named = GitFetchAsk::Listing {
+            named_refs: [canonical_request_ref(&request.name)].into(),
+        };
+        let wanted = GitFetchAsk::Transfer {
+            wants: vec![request.head_oid.clone()],
+            shallow: false,
+        };
+        let other_ref = GitFetchAsk::Listing {
+            named_refs: ["refs/heads/".to_string(), "refs/heads/other".to_string()].into(),
+        };
+        let other_want = GitFetchAsk::Transfer {
+            wants: vec!["other".to_string()],
+            shallow: false,
+        };
+        let shallow = GitFetchAsk::Transfer {
+            wants: vec!["other".to_string()],
+            shallow: true,
+        };
+        for (ask, user, invitee, expected) in [
+            (&GitFetchAsk::listing(), Some("author"), false, true),
+            (&GitFetchAsk::listing(), Some("reader"), true, true),
+            (&GitFetchAsk::listing(), Some("reader"), false, false),
+            (&GitFetchAsk::listing(), None, false, false),
+            (&other_ref, Some("reader"), false, false),
+            (&other_want, Some("reader"), false, false),
+            (&named, None, false, true),
+            (&wanted, Some("reader"), false, true),
+            (&shallow, Some("reader"), false, true),
+        ] {
+            assert_eq!(
+                ask.includes(&request, user, invitee),
+                expected,
+                "{ask:?} {user:?} {invitee}"
             );
         }
     }

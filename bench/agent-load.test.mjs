@@ -7,8 +7,9 @@ import test from 'node:test';
 import {
   agentBranchName, parseMarks, seedFilePath, slug, writeAgentHistoryStream, writeSeedStream,
 } from './agent-fixtures.mjs';
+import { fetchedTipError } from './agent-fetch.mjs';
 import { configuration, mergeBatchSize, publicConfig, seedFileBytes } from './agent-load-config.mjs';
-import { reportPath, stageRow } from './agent-load-report.mjs';
+import { latencySummary, reportPath, stageRow } from './agent-load-report.mjs';
 import { execute } from './subprocess.mjs';
 
 const REQUIRED = { SCOPE_BENCH_API_URL: 'https://scope-api-loadtest.up.railway.app/', SCOPE_BENCH_AUTH_TOKEN: 'scope_cli_secret' };
@@ -25,6 +26,7 @@ test('defaults describe a push run sized to the largest stage', () => {
   assert.equal(config.deltaBytes, 4096);
   assert.equal(config.mergesPerStage, 40);
   assert.equal(config.prepConcurrency, 16);
+  assert.equal(config.fetchesPerPush, 1);
   assert.equal(config.repo, null);
   assert.equal(config.seedFiles, 1);
   assert.equal(config.runLabel, 'unlabeled');
@@ -61,9 +63,12 @@ test('invalid configuration is rejected before any request is made', () => {
   assert.throws(() => configuration({ ...REQUIRED, SCOPE_AGENT_STAGES: 'a' }), /SCOPE_AGENT_STAGES/);
   assert.throws(() => configuration({ ...REQUIRED, SCOPE_AGENT_COMMITS: '0' }), /SCOPE_AGENT_COMMITS must be a positive integer/);
   assert.throws(() => configuration({ ...REQUIRED, SCOPE_AGENT_SEED_FILES: '-3' }), /SCOPE_AGENT_SEED_FILES must be a positive integer/);
+  assert.throws(() => configuration({ ...REQUIRED, SCOPE_AGENT_FETCHES_PER_PUSH: '-1' }), /SCOPE_AGENT_FETCHES_PER_PUSH must be a non-negative integer/);
+  assert.equal(configuration({ ...REQUIRED, SCOPE_AGENT_FETCHES_PER_PUSH: '0' }).fetchesPerPush, 0);
+  assert.equal(configuration({ ...REQUIRED, SCOPE_AGENT_FETCHES_PER_PUSH: '3' }).fetchesPerPush, 3);
   assert.throws(() => configuration({ ...REQUIRED, SCOPE_AGENT_STAGE_SECONDS: '0' }), /SCOPE_AGENT_STAGE_SECONDS must be positive/);
   assert.throws(() => configuration({ ...REQUIRED, SCOPE_AGENT_REPO: 'just-a-name' }), /SCOPE_AGENT_REPO must be owner\/name/);
-  assert.throws(() => configuration({ ...REQUIRED, SCOPE_BENCH_TARGET_KIND: 'production' }), /SCOPE_BENCH_TARGET_KIND must be loadtest or staging/);
+  assert.throws(() => configuration({ ...REQUIRED, SCOPE_BENCH_TARGET_KIND: 'production' }), /SCOPE_BENCH_TARGET_KIND must be loadtest, staging, or preview/);
   assert.throws(
     () => configuration({ ...REQUIRED, SCOPE_AGENT_STAGES: '1,16', SCOPE_AGENT_COUNT: '8' }),
     /SCOPE_AGENT_COUNT must be at least the largest/,
@@ -83,7 +88,7 @@ test('agent branch names are unique, bounded, and ref safe', () => {
   const longLabel = 'a-very-long-label-'.repeat(8);
   const names = Array.from({ length: 200 }, (_, index) => agentBranchName(longLabel, index));
   assert.equal(new Set(names).size, 200);
-  assert.ok(names.every((name) => name.length <= 60 && /^[a-z0-9-]+$/.test(name)));
+  assert.ok(names.every((name) => /^[a-z0-9][a-z0-9-]{0,47}$/.test(name)), names[0]);
   assert.ok(names[199].endsWith('-199'));
 });
 
@@ -168,4 +173,27 @@ test('seed and agent streams import into a repository that borrows base objects'
   assert.equal(added, 'agents/agent-x-0/f-1.bin');
   assert.equal(await git(['cat-file', '-s', `${commits[2]}:agents/agent-x-0/f-2.bin`], { GIT_DIR: agent }), '100');
   assert.throws(() => parseMarks(':1 abc\n', 2), /did not export mark 2/);
+
+  const reader = async (args) => {
+    const result = await execute('git', args, { env: { GIT_DIR: agent }, captureStdout: true });
+    return { ok: result.code === 0, stdout: result.stdout.trim() };
+  };
+  await git(['update-ref', 'refs/bench/reader', commits[2]], { GIT_DIR: agent });
+  assert.equal(await fetchedTipError(reader, 'refs/bench/reader', commits[1]), null);
+  await git(['update-ref', 'refs/bench/reader', commits[0]], { GIT_DIR: agent });
+  assert.match(await fetchedTipError(reader, 'refs/bench/reader', commits[1]), /^stale tip: fetched \w{12}, expected \w{12} or a descendant$/);
+  assert.match(await fetchedTipError(reader, 'refs/bench/missing', commits[1]), /fetched nothing/);
+});
+
+test('latency summaries classify stale tips and fetch failures separately', () => {
+  const summary = latencySummary([
+    { ok: true, durationMs: 100 },
+    { ok: true, durationMs: 400 },
+    { ok: false, durationMs: 10, error: 'stale tip: fetched abc, expected def' },
+    { ok: false, durationMs: 10, error: 'fatal: The requested URL returned error: 502' },
+  ]);
+  assert.equal(summary.operations, 4);
+  assert.equal(summary.errorRate, 0.5);
+  assert.equal(summary.p95, 400);
+  assert.deepEqual(summary.errors, { 'http-502': 1, 'stale-tip': 1 });
 });

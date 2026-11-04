@@ -2,7 +2,7 @@ use super::*;
 use scope_domain::views::ViewId;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn public_view_clone_fetches_named_public_requests_without_joining() {
+async fn shallow_public_clone_omits_another_authors_request_until_it_is_fetched_by_name() {
     let state = test_state_with_request().await;
     let (_author_checkout, private_remote, _server, _request_head) =
         request_checkout(&state, "published-request-clone-source").await;
@@ -19,24 +19,48 @@ async fn public_view_clone_fetches_named_public_requests_without_joining() {
         .await
         .unwrap();
     insert_public_contributor(&state).await;
+    let contributor = bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL);
     let checkout = TempGitRepo(unique_test_path("named-request-clone"));
-    clone_with_bearer(
-        &public_remote,
-        &checkout,
-        &bearer_header_for(CONTRIBUTOR_SUBJECT, CONTRIBUTOR_EMAIL),
-        "clone all public request refs",
-    );
+    let header = format!("http.{public_remote}.extraHeader=Authorization: {contributor}");
+    run_git(
+        None,
+        &[
+            "-c",
+            &header,
+            "clone",
+            "--depth=1",
+            &public_remote,
+            checkout.to_str().unwrap(),
+        ],
+        "shallow clone public main",
+    )
+    .unwrap();
+    let tracked = "refs/remotes/origin/request-branch";
+    assert!(git_stdout_text(&checkout, &["rev-parse", tracked], "read unlisted request").is_err());
 
+    configure_bearer_header(&checkout, &public_remote, &contributor);
+    run_git(
+        Some(&checkout),
+        &["fetch", "--depth=1", "origin", REQUEST_NAME],
+        "fetch request by name",
+    )
+    .unwrap();
     let request_head = git_stdout_text(
         &checkout,
-        &["rev-parse", "refs/remotes/origin/request-branch"],
-        "read fetched request ref",
+        &["rev-parse", "FETCH_HEAD"],
+        "read fetched request",
     )
     .unwrap();
     assert_eq!(
         request_head.trim(),
         stored_request(&state, REQUEST_ID).await.head_oid
     );
+    run_git(
+        Some(&checkout),
+        &["fetch", "--depth=1", "origin", "main"],
+        "fetch main with the request's shallow boundary",
+    )
+    .unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
