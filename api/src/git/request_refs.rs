@@ -43,19 +43,22 @@ pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{
     ensure_request_ref_descends_from_base, request_ref_oid_is_commit, thin_snapshot_base,
 };
-pub(crate) use pool::retain_staged_pool_pack;
 #[cfg(test)]
-pub(crate) use pool::{RequestObjectRepos, request_object_repos};
-pub(crate) use revision::with_request_revision_store_repo;
+pub(crate) use pool::request_object_repos;
+pub(crate) use pool::{
+    PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs,
+    retain_staged_pool_pack, shares_objects,
+};
+pub(crate) use revision::{sweep_revision_jobs, with_request_revision_store_repo};
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,
 };
 #[cfg(test)]
-use snapshot::bundle_prerequisites;
-use snapshot::{BundleRef, download_snapshot, fetch_bundle_into_ref, fetch_snapshot_into_ref};
+use snapshot::fetch_bundle_into_ref;
+use snapshot::{BundleRef, fetch_snapshot_into_ref};
+pub(crate) use snapshot::{bundle_prerequisites, download_snapshot};
 pub(crate) use view_bases::{RequestViewBases, request_view_bases};
-#[cfg(test)]
-pub(crate) use view_pool::view_object_repo;
+pub(crate) use view_pool::view_object_repos;
 
 pub(crate) const REQUEST_REF_DELETE_ERROR: &str = "Scope does not accept request branch deletes";
 pub(crate) const REQUEST_REF_SINGLE_UPDATE_ERROR: &str =
@@ -433,7 +436,7 @@ fn ensure_request_ref_oid_is_commit(repo: &FsPath, oid: &str) -> Result<(), ApiE
     Err(ApiError::bad_request(REQUEST_REF_COMMIT_ERROR))
 }
 
-fn ensure_local_bare_repo(repo: PathBuf) -> Result<PathBuf, ApiError> {
+pub(crate) fn ensure_local_bare_repo(repo: PathBuf) -> Result<PathBuf, ApiError> {
     if repo.join("objects").is_dir() {
         return Ok(repo);
     }

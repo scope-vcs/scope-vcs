@@ -60,6 +60,8 @@ mod migration_tests;
 mod native_runs;
 mod object_references;
 mod outbox;
+mod pool_bundle_backfill;
+pub use pool_bundle_backfill::BundleSource;
 mod projection_read_models;
 mod push_triggers;
 mod repo_change_notifications;

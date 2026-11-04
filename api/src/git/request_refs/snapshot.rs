@@ -26,18 +26,20 @@ pub(super) fn fetch_snapshot_into_ref(
     fetch_bundle_into_ref(repo, bundle_ref, bundle_path, base_repo, action)
 }
 
-pub(super) fn download_snapshot(
+pub(crate) fn download_snapshot(
     objects: &dyn ObjectStore,
     snapshot: &SourceBlob,
     path: &FsPath,
 ) -> Result<(), ApiError> {
     crate::git::blocking::block_on(async {
+        use tokio::io::AsyncWriteExt;
         let mut file = tokio::fs::File::create(path)
             .await
             .map_err(ApiError::internal)?;
         write_source_blob_to(objects, snapshot, &mut file)
             .await
-            .map_err(ApiError::from)
+            .map_err(ApiError::from)?;
+        file.flush().await.map_err(ApiError::internal)
     })
 }
 
@@ -96,7 +98,7 @@ fn supply_bundle_base(
     run_git(Some(repo), &args, "fetching request snapshot base")
 }
 
-pub(super) fn bundle_prerequisites(bundle: &FsPath) -> Result<Vec<String>, ApiError> {
+pub(crate) fn bundle_prerequisites(bundle: &FsPath) -> Result<Vec<String>, ApiError> {
     use std::io::BufRead;
     let mut reader = std::io::BufReader::new(fs::File::open(bundle).map_err(ApiError::internal)?);
     let mut prerequisites = Vec::new();

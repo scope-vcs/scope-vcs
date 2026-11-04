@@ -88,10 +88,10 @@ pub(crate) async fn prepare(
         state,
         &git,
         &config,
-        view,
-        user.as_deref(),
+        &reader,
         &base,
         &selection.requests,
+        &folder,
     )
     .await?;
     {

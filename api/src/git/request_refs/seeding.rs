@@ -9,10 +9,7 @@ use super::{
 };
 use crate::{
     error::ApiError,
-    git::{
-        command::git_command_output, pool_install::present_commits,
-        staging::add_receive_pack_alternate,
-    },
+    git::{cache::GitRepoHandle, command::git_command_output, pool_install::present_commits},
     state::AppState,
 };
 use scope_domain::{
@@ -23,6 +20,7 @@ use scope_domain::{
 use std::{path::Path as FsPath, process::Command};
 
 pub(crate) struct AttachedRequestRefs {
+    pub(crate) leases: Vec<GitRepoHandle>,
     pub(crate) unreachable: Vec<Request>,
     pub(crate) deferred: Option<DeferredRequestObjects>,
 }
@@ -43,7 +41,7 @@ impl DeferredRequestObjects {
         &self,
         state: &AppState,
         staging_repo: &FsPath,
-    ) -> Result<(), ApiError> {
+    ) -> Result<Vec<GitRepoHandle>, ApiError> {
         let repos = object_repos(
             state,
             &self.incarnation,
@@ -57,10 +55,7 @@ impl DeferredRequestObjects {
             PoolInstall {
                 incarnation: &self.incarnation,
                 config: &self.config,
-                repos: PoolRepos::Full {
-                    repos: &repos,
-                    actor_user_id: &self.actor_user_id,
-                },
+                repos: PoolRepos::Full(&repos, &self.actor_user_id, staging_repo),
             },
             &self.requests,
             staging_repo,
@@ -82,15 +77,12 @@ pub(crate) async fn attach_request_refs_from_pool(
     let (stored, snapshotless): (Vec<_>, Vec<_>) = refs_for
         .into_iter()
         .partition(|request| request.git_snapshot.is_some());
-    provide_request_objects(
+    let leases = provide_request_objects(
         state,
         PoolInstall {
             incarnation,
             config,
-            repos: PoolRepos::Full {
-                repos: &repos,
-                actor_user_id,
-            },
+            repos: PoolRepos::Full(&repos, actor_user_id, staging_repo),
         },
         &stored,
         staging_repo,
@@ -119,6 +111,7 @@ pub(crate) async fn attach_request_refs_from_pool(
         .await?
     };
     Ok(AttachedRequestRefs {
+        leases,
         unreachable,
         deferred: (!deferred.is_empty()).then(|| DeferredRequestObjects {
             incarnation: incarnation.clone(),
@@ -137,15 +130,17 @@ pub(crate) async fn attach_view_request_refs_from_pool(
     requests: &[Request],
     staging_repo: &FsPath,
     view_bases: RequestViewBases,
-) -> Result<(), ApiError> {
-    let repo = super::view_pool::view_object_repo(state, incarnation, config, view, None).await?;
+) -> Result<Vec<GitRepoHandle>, ApiError> {
+    let repo = super::view_pool::view_object_repos(state, incarnation, config, view)
+        .await?
+        .objects;
     let missing = missing_request_heads(&repo, requests.to_vec()).await?;
-    install_request_pool_packs(
+    let mut leases = install_request_pool_packs(
         state,
         &PoolInstall {
             incarnation,
             config,
-            repos: PoolRepos::View { view, repo: &repo },
+            repos: PoolRepos::View(view, &repo),
         },
         &missing,
     )
@@ -155,7 +150,7 @@ pub(crate) async fn attach_view_request_refs_from_pool(
     let staging_repo = staging_repo.to_path_buf();
     let requests = requests.to_vec();
     let view = view.clone();
-    crate::git::blocking::run(move || {
+    let repo = crate::git::blocking::run(move || {
         let local = missing
             .into_iter()
             .filter(|request| request.view == view)
@@ -190,9 +185,11 @@ pub(crate) async fn attach_view_request_refs_from_pool(
                 "copying authorized request objects from the view shelf",
             )?;
         }
-        Ok(())
+        Ok(repo)
     })
-    .await
+    .await?;
+    leases.push(repo);
+    Ok(leases)
 }
 
 async fn object_repos(
@@ -209,9 +206,7 @@ async fn object_repos(
     let staging_repo = staging_repo.to_path_buf();
     crate::git::blocking::run(move || {
         let repos = request_object_repos(&state, &incarnation, &generation, &actor_user_id)?;
-        for repo in [&repos.shared, &repos.authored] {
-            add_receive_pack_alternate(&staging_repo, &repo.join("objects"))?;
-        }
+        repos.add_alternates_to(&staging_repo)?;
         Ok(repos)
     })
     .await
@@ -222,21 +217,17 @@ async fn provide_request_objects(
     install: PoolInstall<'_>,
     requests: &[Request],
     staging_repo: &FsPath,
-) -> Result<(), ApiError> {
-    let PoolRepos::Full {
-        repos,
-        actor_user_id,
-    } = install.repos
-    else {
+) -> Result<Vec<GitRepoHandle>, ApiError> {
+    let PoolRepos::Full(repos, actor_user_id, _) = install.repos else {
         return Err(ApiError::internal_message(
             "full request seeding requires full shelves",
         ));
     };
     let missing = missing_request_heads(staging_repo, requests.to_vec()).await?;
     if missing.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
-    install_request_pool_packs(state, &install, &missing).await;
+    let leases = install_request_pool_packs(state, &install, &missing).await;
     let missing = missing_request_heads(staging_repo, missing).await?;
     if !missing.is_empty() {
         let state = state.clone();
@@ -264,7 +255,7 @@ async fn provide_request_objects(
         vec![repos.shared.clone(), repos.authored.clone()],
     )
     .await;
-    Ok(())
+    Ok(leases)
 }
 
 async fn missing_request_heads(

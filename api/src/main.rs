@@ -16,6 +16,10 @@ fn main() -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn run() -> anyhow::Result<()> {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("pool-bundle-backfill") {
+        return api::run_pool_bundle_backfill(&args.collect::<Vec<_>>()).await;
+    }
     let port = scope_service_runtime::port_from_env(8080);
     let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
     let state = app_state_from_env().await?;

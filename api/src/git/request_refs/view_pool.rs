@@ -12,6 +12,20 @@ use crate::{
 use scope_domain::{repo_config::RepoConfig, repository::RepositoryIncarnation, views::ViewId};
 use sha2::{Digest, Sha256};
 
+pub(crate) struct ViewObjectRepos {
+    pub(crate) objects: GitRepoHandle,
+    pub(crate) main: GitRepoHandle,
+}
+
+pub(crate) async fn view_object_repos(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &ViewId,
+) -> Result<ViewObjectRepos, ApiError> {
+    view_repos(state, incarnation, config, view, None).await
+}
+
 pub(crate) async fn view_object_repo(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -19,6 +33,18 @@ pub(crate) async fn view_object_repo(
     view: &ViewId,
     reader: Option<&str>,
 ) -> Result<GitRepoHandle, ApiError> {
+    Ok(view_repos(state, incarnation, config, view, reader)
+        .await?
+        .objects)
+}
+
+async fn view_repos(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &ViewId,
+    reader: Option<&str>,
+) -> Result<ViewObjectRepos, ApiError> {
     if view == config.views.full() || config.views.get(view).is_none() {
         return Err(ApiError::not_found("restricted view not found"));
     }
@@ -69,7 +95,10 @@ pub(crate) async fn view_object_repo(
             return Err(error);
         }
         add_receive_pack_alternate(&shelf, &base.join("objects"))?;
-        Ok(shelf)
+        Ok(ViewObjectRepos {
+            objects: shelf,
+            main: base,
+        })
     })
     .await
 }

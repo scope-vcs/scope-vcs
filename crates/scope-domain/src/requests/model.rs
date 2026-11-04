@@ -68,6 +68,10 @@ impl RequestState {
 }
 
 impl Request {
+    pub fn object_author_id(&self) -> &str {
+        self.author_user_id.as_deref().unwrap_or(&self.id)
+    }
+
     pub fn state(&self) -> RequestState {
         RequestState::from_timestamps(
             self.merged_at_unix,

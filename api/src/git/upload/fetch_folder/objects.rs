@@ -14,7 +14,8 @@ use crate::{
     },
     state::AppState,
 };
-use scope_domain::{repo_config::RepoConfig, requests::Request, views::ViewId};
+use scope_domain::{repo_config::RepoConfig, requests::Request};
+use scope_postgres::db::GitFetchReader;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -31,11 +32,12 @@ pub(super) async fn install_objects(
     state: &AppState,
     git: &RepositoryGit,
     config: &RepoConfig,
-    view: &ViewId,
-    user: Option<&str>,
+    reader: &GitFetchReader<'_>,
     base: &GitRepoHandle,
     requests: &[Request],
+    folder: &GitRepoHandle,
 ) -> Result<FetchObjects, ApiError> {
+    let (view, user) = (reader.view, reader.user_id);
     let full = view == config.views.full();
     let mut alternates = Vec::new();
     let mut shelf_leases = Vec::new();
@@ -54,19 +56,18 @@ pub(super) async fn install_objects(
             repos.shared.clone(),
             repos.authored.clone(),
         ]);
-        install_request_pool_packs(
-            state,
-            &PoolInstall {
-                incarnation: &git.incarnation,
-                config,
-                repos: PoolRepos::Full {
-                    repos: &repos,
-                    actor_user_id: user.unwrap_or_default(),
+        shelf_leases.extend(
+            install_request_pool_packs(
+                state,
+                &PoolInstall {
+                    incarnation: &git.incarnation,
+                    config,
+                    repos: PoolRepos::Full(&repos, user.unwrap_or_default(), folder),
                 },
-            },
-            requests,
-        )
-        .await;
+                requests,
+            )
+            .await,
+        );
         for request in requests {
             let target = if shares_objects(request, config) {
                 Some(&repos.shared)
@@ -111,19 +112,18 @@ pub(super) async fn install_objects(
         if !full {
             validate_isolated_shelf(&shelf)?;
         }
-        install_request_pool_packs(
-            state,
-            &PoolInstall {
-                incarnation: &git.incarnation,
-                config,
-                repos: PoolRepos::View {
-                    view: &request_view,
-                    repo: &shelf,
+        shelf_leases.extend(
+            install_request_pool_packs(
+                state,
+                &PoolInstall {
+                    incarnation: &git.incarnation,
+                    config,
+                    repos: PoolRepos::View(&request_view, &shelf),
                 },
-            },
-            &subset,
-        )
-        .await;
+                &subset,
+            )
+            .await,
+        );
         for request in subset {
             shelves
                 .entry((request.id, request.head_oid))
