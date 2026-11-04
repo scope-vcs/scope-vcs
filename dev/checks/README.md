@@ -11,6 +11,7 @@ root, regardless of the caller's working directory.
 | `cli-bundle` | Host release binaries, archive size cap, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |
+| `projection-model` | Lean proofs that a view's projection never depends on files it cannot read, and a comparison of the Rust projection with that proven model on 2,000 generated histories |
 | `policy` | License inventory freshness, complete-tree source size, comments, test waits, Rust boundaries, toolchain pins, workflow job timeouts, gate inventory |
 | `integration web` | Browser smoke against a running seeded stack |
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |

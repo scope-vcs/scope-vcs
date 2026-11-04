@@ -1,0 +1,30 @@
+name: Install Lean
+description: Install the pinned Lean toolchain into ~/.local/share/lean from a cache keyed by its version and checksum, downloading and verifying it on a miss.
+runs:
+  using: composite
+  steps:
+    - id: plan
+      shell: bash
+      run: |
+        version="$(jq -er '.lean.version' dev/tool-versions.json)"
+        sha256="$(jq -er '.lean.linuxSha256' dev/tool-versions.json)"
+        echo "key=lean-${RUNNER_OS:?}-${RUNNER_ARCH:?}-$version-${sha256:0:16}" >> "$GITHUB_OUTPUT"
+
+    - id: restore
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.local/share/lean
+        key: ${{ steps.plan.outputs.key }}
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: ./dev/install-lean.sh
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.local/share/lean
+        key: ${{ steps.plan.outputs.key }}
+
+    - shell: bash
+      run: echo "$HOME/.local/share/lean/bin" >> "$GITHUB_PATH"

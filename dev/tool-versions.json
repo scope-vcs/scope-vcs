@@ -7,5 +7,9 @@
   "cargoDeny": {
     "version": "0.20.2",
     "linuxMuslSha256": "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f"
+  },
+  "lean": {
+    "version": "4.35.0",
+    "linuxSha256": "7289597a44543246c9227b8cae501767e095ce17f6d448b95fc4a8dc97268f6d"
   }
 }

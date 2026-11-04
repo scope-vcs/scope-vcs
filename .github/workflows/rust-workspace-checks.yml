@@ -53,6 +53,12 @@ jobs:
       - name: Check Rust workspace
         run: ./dev/checks/backend
 
+      - name: Install Lean
+        uses: ./.github/actions/install-lean
+
+      - name: Check the projection against its Lean model
+        run: ./dev/checks/projection-model
+
       - name: Enable pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
         with:

@@ -1,0 +1,12 @@
+name = "projection"
+defaultTargets = ["projection-model"]
+
+[leanOptions]
+warningAsError = true
+
+[[lean_lib]]
+name = "Projection"
+
+[[lean_exe]]
+name = "projection-model"
+root = "Main"
