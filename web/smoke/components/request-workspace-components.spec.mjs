@@ -168,6 +168,7 @@ test('request rows exchange age and actions and restore the selected view across
     await sidebarWidth(360)
     assert.equal(await sidebar.getAttribute('data-state'), 'open')
   }
+  const pinnedAvatars = await avatars()
   await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
   await sidebarWidth(88)
   await railClosed()
@@ -197,7 +198,12 @@ test('request rows exchange age and actions and restore the selected view across
   await page.waitForURL(/\/request-1$/)
   assert.equal(await sidebar.getAttribute('data-state'), 'closed')
   await openRail()
-  assert.deepEqual(await avatars(), closedAvatars)
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar')
+    .getAnimations({ subtree: true }).every((animation) => !(animation instanceof CSSTransition)))
+  assert.deepEqual(await avatars(), pinnedAvatars, 'the opened rail lays rows out like the pinned sidebar')
+  const openToggle = await page.getByRole('button', { name: 'Collapse requests sidebar' }).boundingBox()
+  const openHeading = await page.locator('.request-workspace-needs-you > h2 > span:first-child').boundingBox()
+  assert(Math.abs(openToggle.y + openToggle.height / 2 - (openHeading.y + openHeading.height / 2)) <= 1, 'the opened rail keeps the collapse button on the first heading line')
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-open.png` })
   }

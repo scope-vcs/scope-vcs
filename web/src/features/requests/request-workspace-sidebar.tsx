@@ -43,6 +43,7 @@ import {
 } from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
+import './request-workspace-rail.css'
 
 const RAIL_HINT_GRACE_MS = 250
 
