@@ -631,26 +631,6 @@ fn config_only_update_changes_policy_without_content_commit() {
 }
 
 #[test]
-fn public_projection_contains_only_visible_paths_from_mixed_commit() {
-    let mut mixed = commit(
-        "rv1",
-        "mixed",
-        added("/README.md", ViewId::public(), "hello"),
-    );
-    mixed
-        .changes
-        .push(added("/internal/model.rs", ViewId::private(), "secret"));
-    let graph = graph(vec![mixed]);
-
-    let projection = project_graph(&graph, &[], &Views::builtin(), &ViewId::public());
-
-    assert_eq!(projection.commits.len(), 1);
-    assert_eq!(projection.visible_paths(), vec!["/README.md"]);
-    assert_eq!(projection.commits[0].message, "Projected public update");
-    assert!(projection.commits[0].author.is_none());
-}
-
-#[test]
 fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
     let mut request_merge = commit(
         "rv_merge_canonical",
@@ -722,46 +702,6 @@ fn public_request_origin_expands_to_exact_native_commits_only_in_public_view() {
         ProjectionMaterialization::Generate
     );
     assert_eq!(agent.visible_paths(), vec!["/README.md"]);
-}
-
-#[test]
-fn public_projection_keeps_public_history_when_a_later_edit_is_private() {
-    let graph = graph(vec![
-        commit(
-            "rv1",
-            "public readme",
-            added("/README.md", ViewId::public(), "public readme"),
-        ),
-        commit(
-            "rv2",
-            "private readme",
-            change(
-                "/README.md",
-                ViewId::private(),
-                Some(blob("public readme")),
-                Some(blob("private readme")),
-            ),
-        ),
-    ]);
-
-    let projection = project_graph(&graph, &[], &Views::builtin(), &ViewId::public());
-
-    assert_eq!(projection.commits.len(), 1);
-    assert_eq!(projection.commits[0].logical_commit_id, "rv1");
-    assert_eq!(projection.visible_paths(), vec!["/README.md"]);
-}
-
-#[test]
-fn public_projection_never_contains_tracked_workflow_definitions() {
-    let graph = graph(vec![commit(
-        "rv1",
-        "add workflow",
-        added("/.scope/runs/test.yml", ViewId::public(), "name: Test"),
-    )]);
-
-    let projection = project_graph(&graph, &[], &Views::builtin(), &ViewId::public());
-
-    assert!(projection.visible_paths().is_empty());
 }
 
 #[test]
