@@ -350,7 +350,10 @@ async fn fetch_folder(
     headers: &HeaderMap,
     view: &ViewId,
 ) -> crate::git::cache::GitRepoHandle {
-    git_upload_pack_repo_for_request(state, headers, TEST_REPO_OWNER, TEST_REPO_NAME, view)
+    let ask = scope_domain::requests::GitFetchAsk::Listing {
+        named_refs: [REQUEST_REF.to_string()].into(),
+    };
+    git_upload_pack_repo_for_request(state, headers, TEST_REPO_OWNER, TEST_REPO_NAME, view, &ask)
         .await
         .unwrap()
 }

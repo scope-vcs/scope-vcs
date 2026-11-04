@@ -67,15 +67,20 @@ async fn advertisement_and_exact_fetch_follow_viewer_and_publication_policy() {
         })
         .await
         .unwrap();
-    for (remote, bearer) in [
-        (public_remote.as_str(), None),
-        (public_remote.as_str(), Some(author.as_str())),
-        (public_remote.as_str(), Some(invitee.as_str())),
-        (private_remote.as_str(), Some(maintainer.as_str())),
-        (public_remote.as_str(), Some(unrelated.as_str())),
+    for (remote, bearer, listed) in [
+        (public_remote.as_str(), None, false),
+        (public_remote.as_str(), Some(author.as_str()), true),
+        (public_remote.as_str(), Some(invitee.as_str()), true),
+        (private_remote.as_str(), Some(maintainer.as_str()), false),
+        (public_remote.as_str(), Some(unrelated.as_str()), false),
     ] {
-        assert!(advertises_request_ref(remote, bearer));
+        assert_eq!(advertises_request_ref(remote, bearer), listed, "{bearer:?}");
+        assert!(
+            fetch_exact_request_tip(remote, bearer, REQUEST_NAME, "submitted-named-fetch"),
+            "{bearer:?}"
+        );
     }
+    assert!(!lists_request_ref(&public_remote, Some(&unrelated), "0"));
 }
 
 fn unrelated_user_id() -> String {
@@ -83,33 +88,24 @@ fn unrelated_user_id() -> String {
 }
 
 fn advertises_request_ref(remote: &str, bearer: Option<&str>) -> bool {
-    let output = match bearer {
-        Some(bearer) => {
-            let header = format!("http.{remote}.extraHeader=Authorization: {bearer}");
-            run_git_output(
-                None,
-                &["-c", &header, "ls-remote", remote],
-                "reading request ref advertisement",
-            )
-        }
-        None => run_git_output(
-            None,
-            &["ls-remote", remote],
-            "reading public request ref advertisement",
-        ),
+    lists_request_ref(remote, bearer, "2")
+}
+
+fn lists_request_ref(remote: &str, bearer: Option<&str>, protocol: &str) -> bool {
+    let protocol = format!("protocol.version={protocol}");
+    let header = bearer.map(|bearer| format!("http.{remote}.extraHeader=Authorization: {bearer}"));
+    let mut command = vec!["-c", protocol.as_str()];
+    if let Some(header) = header.as_deref() {
+        command.extend(["-c", header]);
     }
-    .unwrap();
+    command.extend(["ls-remote", remote]);
+    let output = run_git_output(None, &command, "reading request ref advertisement").unwrap();
     String::from_utf8(output.stdout)
         .unwrap()
         .contains(REQUEST_REF)
 }
 
-fn fetch_exact_request_tip(
-    remote: &str,
-    bearer: Option<&str>,
-    request_head: &str,
-    label: &str,
-) -> bool {
+fn fetch_exact_request_tip(remote: &str, bearer: Option<&str>, refspec: &str, label: &str) -> bool {
     let checkout = TempGitRepo(unique_test_path(label));
     run_git(
         None,
@@ -121,12 +117,12 @@ fn fetch_exact_request_tip(
     let output = match header.as_deref() {
         Some(header) => run_git_output(
             Some(&checkout),
-            &["-c", header, "fetch", remote, request_head],
+            &["-c", header, "fetch", remote, refspec],
             "fetch exact request tip",
         ),
         None => run_git_output(
             Some(&checkout),
-            &["fetch", remote, request_head],
+            &["fetch", remote, refspec],
             "fetch public exact request tip",
         ),
     }
