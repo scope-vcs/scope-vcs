@@ -1,5 +1,5 @@
 import type { RequestQueueNextStep } from '@/api/types.generated'
-import { AlarmClock, CircleCheck, CircleDashed, CircleX, Eye, MessageSquare, RefreshCw, Send, type LucideIcon } from 'lucide-react'
+import { AlarmClock, CircleCheck, CircleDashed, CirclePlay, CircleX, Eye, MessageSquare, RefreshCw, Send, type LucideIcon } from 'lucide-react'
 import './request-status-glyph.css'
 
 const NEXT_STEP_ICONS: Record<RequestQueueNextStep, { icon: LucideIcon; round: boolean }> = {
@@ -8,6 +8,7 @@ const NEXT_STEP_ICONS: Record<RequestQueueNextStep, { icon: LucideIcon; round: b
   revisit: { icon: AlarmClock, round: false },
   merge: { icon: CircleCheck, round: true },
   fix_checks: { icon: CircleX, round: true },
+  approve_checks: { icon: CirclePlay, round: true },
   update: { icon: RefreshCw, round: false },
   submit: { icon: Send, round: false },
   wait: { icon: CircleDashed, round: true },

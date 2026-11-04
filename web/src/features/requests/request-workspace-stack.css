@@ -100,6 +100,11 @@
   box-shadow: inset 0 0 0 1.3px var(--muted-foreground);
 }
 
+.request-workspace-stack-dots > i[data-step="approve_checks"] {
+  background: var(--warning);
+  box-shadow: none;
+}
+
 .request-workspace-stack-dots > i[data-step="fix_checks"] {
   background: var(--danger);
   box-shadow: none;

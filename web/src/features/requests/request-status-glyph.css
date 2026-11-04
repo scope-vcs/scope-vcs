@@ -17,6 +17,10 @@
   color: var(--muted-foreground);
 }
 
+.request-status-glyph[data-step="approve_checks"] {
+  color: var(--warning);
+}
+
 .request-status-glyph[data-step="fix_checks"] {
   color: var(--danger);
 }

@@ -85,4 +85,6 @@ test('your own request names its next step when you cannot merge it', () => {
   assert.equal(requestStatusLabel(own('NotMaintainer', 'fix_checks'), true), 'Checks need attention')
   assert.equal(requestStatusLabel(own('NotMaintainer', 'wait'), true), 'Maintainer merges')
   assert.equal(requestStatusLabel(own('ChecksFailed', 'fix_checks'), true), 'CI failed')
+  assert.equal(requestStatusLabel(own('WaitingForParent', 'approve_checks'), true), 'CI needs your approval')
+  assert.equal(requestStatusLabel(own('WaitingForParent', 'wait'), true), 'Waiting for parent')
 })

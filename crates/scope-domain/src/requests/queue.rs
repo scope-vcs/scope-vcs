@@ -68,6 +68,7 @@ pub enum RequestQueueNextStep {
     Revisit,
     Merge,
     FixChecks,
+    ApproveChecks,
     Update,
     Submit,
     Wait,
@@ -102,7 +103,8 @@ pub fn request_queue_next_step(
         readiness,
         ViewerAbilities {
             merge: viewer_can_merge,
-            approve_checks: RequestCheckReviewer::may_review(&viewer.access, views),
+            approve_pending_checks: checks == RequestChecksOutcome::AwaitingApproval
+                && RequestCheckReviewer::may_review(&viewer.access, views),
         },
     )
 }
@@ -110,7 +112,7 @@ pub fn request_queue_next_step(
 #[derive(Clone, Copy)]
 struct ViewerAbilities {
     merge: bool,
-    approve_checks: bool,
+    approve_pending_checks: bool,
 }
 
 fn next_step_for(
@@ -126,8 +128,10 @@ fn next_step_for(
         return match readiness {
             Status::Ready if viewer.merge => RequestQueueNextStep::Merge,
             Status::Ready => RequestQueueNextStep::Wait,
-            Status::ChecksAwaitingApproval if viewer.approve_checks => {
-                RequestQueueNextStep::FixChecks
+            Status::ChecksAwaitingApproval | Status::WaitingForParent | Status::AncestorBlocked
+                if viewer.approve_pending_checks =>
+            {
+                RequestQueueNextStep::ApproveChecks
             }
             Status::ChecksFailed
             | Status::ChecksConfigurationError

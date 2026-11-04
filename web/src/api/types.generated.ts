@@ -535,7 +535,7 @@ export type RequestQueueSection = "active" | "unclaimed" | "set_aside" | "done";
 
 export type RequestQueueGroup = "needs_you" | "waiting" | "unclaimed" | "set_aside" | "done";
 
-export type RequestQueueNextStep = "review" | "reply" | "revisit" | "merge" | "fix_checks" | "update" | "submit" | "wait" | "done";
+export type RequestQueueNextStep = "review" | "reply" | "revisit" | "merge" | "fix_checks" | "approve_checks" | "update" | "submit" | "wait" | "done";
 
 export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled";
 

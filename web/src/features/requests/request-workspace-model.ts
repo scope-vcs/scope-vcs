@@ -32,7 +32,8 @@ export function requestStatusLabel(item: RequestQueueItemResponse, hydrated: boo
   const { attention, claimer, request } = item
   if (attention.reason === 'authored') {
     const mergeability = requestMergeabilityLabel(request)
-    return request.mergeability.status === 'NotMaintainer' ? (REQUEST_NEXT_STEP_ACTIONS[item.next_step] ?? mergeability) : mergeability
+    const named = item.next_step === 'approve_checks' || request.mergeability.status === 'NotMaintainer'
+    return named ? (REQUEST_NEXT_STEP_ACTIONS[item.next_step] ?? mergeability) : mergeability
   }
   if (attention.reason === 'claimed_elsewhere' && claimer) return `Reviewing: ${claimer.handle}`
   if (attention.reason === 'snoozed' && attention.snoozed_until_unix) {
@@ -62,6 +63,7 @@ export const REQUEST_ATTENTION_GROUP_LABELS: Record<RequestAttentionGroup, strin
 export const REQUEST_NEXT_STEP_ACTIONS: Partial<Record<RequestQueueNextStep, string>> = {
   merge: 'Ready to merge',
   fix_checks: 'Checks need attention',
+  approve_checks: 'CI needs your approval',
   update: 'Needs an update',
 }
 

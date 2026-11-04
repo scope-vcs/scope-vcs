@@ -18,6 +18,7 @@ fn groups_split_active_rows_by_who_acts_next() {
         (Reason::Authored, Step::Merge, true, NeedsYou),
         (Reason::Authored, Step::Wait, true, Waiting),
         (Reason::Authored, Step::Submit, true, NeedsYou),
+        (Reason::Authored, Step::ApproveChecks, true, NeedsYou),
     ] {
         assert_eq!(
             request_queue_group(RequestQueueSection::Active, reason, step, maintainer),
@@ -75,11 +76,15 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
     let author = Some("author");
     let maintainer = ViewerAbilities {
         merge: true,
-        approve_checks: true,
+        approve_pending_checks: false,
+    };
+    let approver = ViewerAbilities {
+        merge: false,
+        approve_pending_checks: true,
     };
     let contributor = ViewerAbilities {
         merge: false,
-        approve_checks: false,
+        approve_pending_checks: false,
     };
     for (status, viewer, expected) in [
         (Status::Ready, maintainer, Step::Merge),
@@ -87,17 +92,25 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
         (Status::ChecksFailed, maintainer, Step::FixChecks),
         (Status::IntegrationConflict, maintainer, Step::Update),
         (Status::ChecksPending, maintainer, Step::Wait),
-        (Status::ChecksAwaitingApproval, maintainer, Step::FixChecks),
+        (
+            Status::ChecksAwaitingApproval,
+            approver,
+            Step::ApproveChecks,
+        ),
         (Status::ChecksAwaitingApproval, contributor, Step::Wait),
+        (Status::WaitingForParent, approver, Step::ApproveChecks),
+        (Status::AncestorBlocked, approver, Step::ApproveChecks),
+        (Status::WaitingForParent, maintainer, Step::Wait),
+        (Status::ParentRewritten, approver, Step::Update),
         (Status::Draft, contributor, Step::Submit),
         (Status::MissingRequestBranch, contributor, Step::Update),
     ] {
         assert_eq!(
             next_step_for(author, author, Reason::NewActivity, status, viewer),
             expected,
-            "{status:?} merge={} approve_checks={}",
+            "{status:?} merge={} approve_pending_checks={}",
             viewer.merge,
-            viewer.approve_checks
+            viewer.approve_pending_checks
         );
     }
     for (reason, expected) in [
