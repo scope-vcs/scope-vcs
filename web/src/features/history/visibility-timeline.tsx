@@ -1,16 +1,14 @@
 import type { RepoParams } from '@/api/types'
 import type { HistoryEntrySummaryResponse, ViewId } from '@/api/types.generated'
-import { RelativeTimestamp } from '@/components/timestamp'
 import { formatUnixMonthDay } from '@/lib/date-format'
 import { useHydrated } from '@/lib/use-hydrated'
-import { barY, defineChart, ruleY, text } from '@tanstack/charts'
+import { barY, defineChart, ruleY, text, type ChartMarkStateContext } from '@tanstack/charts'
 import { decorative } from '@tanstack/charts/mark/decorative'
-import { Chart } from '@tanstack/charts/react/tooltip'
+import { Chart } from '@tanstack/charts/react'
 import { scaleBand } from '@tanstack/charts/scales/band'
-import { tooltip } from '@tanstack/charts/tooltip'
 import { useNavigate } from '@tanstack/react-router'
 import { scaleSqrt } from 'd3-scale'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { historyCommitTitle, historyEntryCountLabel, historyEntryKindLabel } from './history-row-labels'
 import type { RepoViews } from '@/api/repo-views'
 import { useRepoViews } from '@/features/repo-detail/repo-layout-context'
@@ -27,15 +25,10 @@ const BAR_FILL: Record<VisibilityDirection, string> = {
   left: 'var(--border-strong)',
 }
 
-const CHART_CLASS = [
-  'text-muted-foreground',
-  '[--ts-chart-tooltip-background:var(--popover)]',
-  '[--ts-chart-tooltip-color:var(--popover-foreground)]',
-  '[--ts-chart-tooltip-border:1px_solid_var(--border)]',
-  '[--ts-chart-tooltip-border-radius:8px]',
-  '[--ts-chart-tooltip-shadow:var(--shadow-pop)]',
-  '[--ts-chart-tooltip-max-width:18rem]',
-].join(' ')
+const LABEL_FILL = 'var(--foreground)'
+
+const isFocusedEntry = ({ datum, focus }: ChartMarkStateContext<VisibilityTimelineBar>) => datum.entry === focus.primary.datum.entry
+const isOtherEntry = (context: ChartMarkStateContext<VisibilityTimelineBar>) => !isFocusedEntry(context)
 
 export function VisibilityTimeline({
   entries,
@@ -51,28 +44,36 @@ export function VisibilityTimeline({
   const hydrated = useHydrated()
   const navigate = useNavigate()
   const views = useRepoViews()
+  const [focusedEntryId, setFocusedEntryId] = useState<string | null>(null)
   const definition = useMemo(
     () => visibilityTimelineDefinition(visibilityTimelineBars(entries), hydrated),
     [entries, hydrated],
   )
   const shown = Math.min(entries.length, VISIBILITY_TIMELINE_ENTRY_LIMIT)
+  const focusedEntry = entries.find((entry) => entry.id === focusedEntryId)
+  const detailEntry = focusedEntry ?? entries[0]
 
   return (
-    <Chart
-      ariaLabel={`${shown} most recent visibility ${shown === 1 ? 'change' : 'changes'}, oldest to newest`}
-      className={CHART_CLASS}
-      definition={definition}
-      height={136}
-      onSelect={(point) => {
-        if (!point) return
-        void navigate({
-          params: { ...params, entryId: point.datum.entry.source_id },
-          search,
-          to: '/$owner/$repo/updates/$entryId',
-        })
-      }}
-      renderTooltipBody={({ primaryPoint }) => primaryPoint ? <TimelineTooltip entry={primaryPoint.datum.entry} view={view} views={views} /> : null}
-    />
+    <div className="grid gap-2">
+      <Chart
+        ariaLabel={`${shown} most recent visibility ${shown === 1 ? 'change' : 'changes'}, oldest to newest`}
+        className="text-muted-foreground"
+        definition={definition}
+        height={136}
+        onFocusChange={(point) => setFocusedEntryId(point?.datum.entry.id ?? null)}
+        onSelect={(point) => {
+          if (!point) return
+          void navigate({
+            params: { ...params, entryId: point.datum.entry.source_id },
+            search,
+            to: '/$owner/$repo/updates/$entryId',
+          })
+        }}
+      />
+      {detailEntry && (
+        <TimelineEntryDetail entry={detailEntry} hydrated={hydrated} latest={!focusedEntry} view={view} views={views} />
+      )}
+    </div>
   )
 }
 
@@ -82,24 +83,31 @@ function visibilityTimelineDefinition(bars: readonly VisibilityTimelineBar[], hy
     : [[entry.id, formatUnixMonthDay(entry.occurred_at_unix, hydrated)] as const]))
   const counts = bars.map((bar) => bar.signedCount)
   const entryId = (bar: VisibilityTimelineBar) => bar.entry.id
+  const barKey = (bar: VisibilityTimelineBar) => `${bar.entry.id}:${bar.direction}`
 
   return defineChart({
     marks: [
       decorative(ruleY([0], { stroke: 'var(--border-strong)' })),
       barY(bars, {
         fill: (bar) => BAR_FILL[bar.direction],
-        key: (bar) => `${bar.entry.id}:${bar.direction}`,
+        key: barKey,
         maxThickness: 28,
         radius: { end: 4 },
+        states: [{ style: { opacity: 0.32 }, when: isOtherEntry }],
         x: entryId,
         y: 'signedCount',
       }),
-      decorative(text(bars.filter((bar) => bar.label !== null), {
+      decorative(text(bars, {
         dy: (bar) => bar.signedCount < 0 ? 10 : -8,
-        fill: 'var(--foreground)',
+        fill: (bar) => bar.labeled ? LABEL_FILL : 'transparent',
         fontSize: 11,
         fontWeight: 500,
-        text: 'label',
+        key: barKey,
+        states: [
+          { style: { fill: LABEL_FILL }, when: isFocusedEntry },
+          { style: { fill: 'transparent' }, when: isOtherEntry },
+        ],
+        text: (bar) => Math.abs(bar.signedCount),
         x: entryId,
         y: 'signedCount',
       })),
@@ -117,27 +125,35 @@ function visibilityTimelineDefinition(bars: readonly VisibilityTimelineBar[], hy
         scale: scaleSqrt().domain([Math.min(0, ...counts), Math.max(0, ...counts)]),
       },
     },
-    tooltip,
+    focus: 'nearest-x',
+    focusRing: false,
   })
 }
 
-function TimelineTooltip({
+function TimelineEntryDetail({
   entry,
+  hydrated,
+  latest,
   view,
   views,
 }: {
   entry: HistoryEntrySummaryResponse
+  hydrated: boolean
+  latest: boolean
   view: ViewId
   views: RepoViews
 }) {
   return (
-    <span className="grid gap-0.5 text-xs">
-      <span className="text-[13px] font-medium text-foreground">{historyCommitTitle(entry)}</span>
-      <span className="text-muted-foreground">
-        {[historyEntryKindLabel(entry.kind), entry.author].filter(Boolean).join(' · ')}
-        {entry.occurred_at_unix !== null ? <> · <RelativeTimestamp value={entry.occurred_at_unix} /></> : null}
-      </span>
-      <span className="tabular-nums text-muted-foreground">{historyEntryCountLabel(entry, view, views)}</span>
-    </span>
+    <div className="grid gap-0.5 border-t border-border pt-2.5 text-xs text-muted-foreground">
+      <div className="flex items-baseline gap-1.5">
+        {latest && <span className="shrink-0 rounded border border-border px-1 text-[11px]">Latest</span>}
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{historyCommitTitle(entry)}</span>
+        {entry.occurred_at_unix !== null && (
+          <span className="ml-1.5 shrink-0 tabular-nums">{formatUnixMonthDay(entry.occurred_at_unix, hydrated)}</span>
+        )}
+      </div>
+      <span className="truncate">{[historyEntryKindLabel(entry.kind), entry.author].filter(Boolean).join(' · ')}</span>
+      <span className="truncate tabular-nums">{historyEntryCountLabel(entry, view, views)}</span>
+    </div>
   )
 }

@@ -17,26 +17,24 @@ export function VisibilityLogSection({ params, view }: { params: RepoParams; vie
   return (
     <SectionRows>
       <SectionRow
+        actions={(
+          <Button className="-ml-2.5 text-muted-foreground" onClick={() => search.open('visibility')} size="sm" type="button" variant="ghost">
+            <History />
+            Visibility history
+          </Button>
+        )}
         description="How paths' visibility changed over time, including changes made by pushes."
         icon={<Eye className="size-4" />}
         title="Visibility changes"
       >
         <HistoryFeedState empty="No visibility changes yet." resource={history.resource}>
           {(page) => (
-            <div className="grid gap-2">
-              <VisibilityTimeline
-                entries={page.entries}
-                params={params}
-                search={viewingAsSearch(view, repo.access.view)}
-                view={view}
-              />
-              <div className="flex justify-end">
-                <Button onClick={() => search.open('visibility')} size="sm" type="button" variant="ghost">
-                  <History />
-                  Visibility history
-                </Button>
-              </div>
-            </div>
+            <VisibilityTimeline
+              entries={page.entries}
+              params={params}
+              search={viewingAsSearch(view, repo.access.view)}
+              view={view}
+            />
           )}
         </HistoryFeedState>
       </SectionRow>
