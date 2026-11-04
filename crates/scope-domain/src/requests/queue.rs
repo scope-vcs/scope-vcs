@@ -1,7 +1,7 @@
 use super::merge_gate::{evaluate_request_merge, evaluate_request_readiness};
 use super::{
-    Request, RequestChecksOutcome, RequestMergeSubject, RequestMergeabilityStatus,
-    RequestReviewsOutcome, RequestState, RequestViewer,
+    Request, RequestCheckReviewer, RequestChecksOutcome, RequestMergeSubject,
+    RequestMergeabilityStatus, RequestReviewsOutcome, RequestState, RequestViewer,
 };
 use crate::error::DomainError;
 use crate::repository::RepoLifecycleState;
@@ -97,8 +97,17 @@ pub fn request_queue_next_step(
         viewer.user_id,
         reason,
         readiness,
-        viewer_can_merge,
+        ViewerAbilities {
+            merge: viewer_can_merge,
+            approve_checks: RequestCheckReviewer::may_review(&viewer.access, views),
+        },
     )
+}
+
+#[derive(Clone, Copy)]
+struct ViewerAbilities {
+    merge: bool,
+    approve_checks: bool,
 }
 
 fn next_step_for(
@@ -106,14 +115,17 @@ fn next_step_for(
     viewer_user_id: Option<&str>,
     reason: RequestAttentionReason,
     readiness: RequestMergeabilityStatus,
-    viewer_can_merge: bool,
+    viewer: ViewerAbilities,
 ) -> RequestQueueNextStep {
     use RequestAttentionReason as Reason;
     use RequestMergeabilityStatus as Status;
     if viewer_user_id.is_some() && author_user_id == viewer_user_id {
         return match readiness {
-            Status::Ready if viewer_can_merge => RequestQueueNextStep::Merge,
+            Status::Ready if viewer.merge => RequestQueueNextStep::Merge,
             Status::Ready => RequestQueueNextStep::Wait,
+            Status::ChecksAwaitingApproval if viewer.approve_checks => {
+                RequestQueueNextStep::FixChecks
+            }
             Status::ChecksFailed
             | Status::ChecksConfigurationError
             | Status::ReviewFindingsOpen => RequestQueueNextStep::FixChecks,

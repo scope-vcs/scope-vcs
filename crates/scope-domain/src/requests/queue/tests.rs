@@ -42,23 +42,31 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
     use RequestMergeabilityStatus as Status;
     use RequestQueueNextStep as Step;
     let author = Some("author");
-    for (status, expected) in [
-        (Status::Ready, Step::Merge),
-        (Status::ChecksFailed, Step::FixChecks),
-        (Status::IntegrationConflict, Step::Update),
-        (Status::ChecksPending, Step::Wait),
+    let maintainer = ViewerAbilities {
+        merge: true,
+        approve_checks: true,
+    };
+    let contributor = ViewerAbilities {
+        merge: false,
+        approve_checks: false,
+    };
+    for (status, viewer, expected) in [
+        (Status::Ready, maintainer, Step::Merge),
+        (Status::Ready, contributor, Step::Wait),
+        (Status::ChecksFailed, maintainer, Step::FixChecks),
+        (Status::IntegrationConflict, maintainer, Step::Update),
+        (Status::ChecksPending, maintainer, Step::Wait),
+        (Status::ChecksAwaitingApproval, maintainer, Step::FixChecks),
+        (Status::ChecksAwaitingApproval, contributor, Step::Wait),
     ] {
         assert_eq!(
-            next_step_for(author, author, Reason::NewActivity, status, true),
+            next_step_for(author, author, Reason::NewActivity, status, viewer),
             expected,
-            "{status:?}"
+            "{status:?} merge={} approve_checks={}",
+            viewer.merge,
+            viewer.approve_checks
         );
     }
-    assert_eq!(
-        next_step_for(author, author, Reason::NewActivity, Status::Ready, false),
-        Step::Wait,
-        "a contributor waits for a maintainer to merge"
-    );
     for (reason, expected) in [
         (Reason::Invited, Step::Review),
         (Reason::NewActivity, Step::Reply),
@@ -67,17 +75,23 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
         (Reason::Merged, Step::Done),
     ] {
         assert_eq!(
-            next_step_for(author, Some("reviewer"), reason, Status::ChecksFailed, true),
+            next_step_for(
+                author,
+                Some("reviewer"),
+                reason,
+                Status::ChecksFailed,
+                maintainer
+            ),
             expected,
             "{reason:?}"
         );
     }
     assert_eq!(
-        next_step_for(author, author, Reason::Closed, Status::Closed, false),
+        next_step_for(author, author, Reason::Closed, Status::Closed, contributor),
         Step::Done
     );
     assert_eq!(
-        next_step_for(None, None, Reason::Open, Status::Ready, false),
+        next_step_for(None, None, Reason::Open, Status::Ready, contributor),
         Step::Wait
     );
 }
