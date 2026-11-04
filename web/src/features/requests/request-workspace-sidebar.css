@@ -197,25 +197,12 @@
 .request-workspace-row-mark {
   position: relative;
   z-index: 1;
-  isolation: isolate;
   display: block;
   width: var(--stack-mark);
   height: var(--stack-mark);
   margin-top: 1px;
   border-radius: 999px;
   transition: translate 200ms ease;
-}
-
-.request-workspace-row[data-stack-folded] .request-workspace-row-mark::before {
-  position: absolute;
-  z-index: -1;
-  top: 3.5px;
-  left: 3.5px;
-  width: 15px;
-  height: 15px;
-  border: 1.3px solid color-mix(in srgb, var(--foreground) 35%, transparent);
-  border-radius: 999px;
-  content: "";
 }
 
 .request-workspace-row-unread {
