@@ -14,7 +14,7 @@ test('latest repository activity survives child navigation without another reque
     })
     delayed = await delayInitialRepositoryReconciliation(page, 400)
   }
-  await withPage(repoPath, async (page) => {
+  await withPage(`${repoPath}/code`, async (page) => {
     assert.equal(delayed(), true, 'initial reconciliation ran with controlled latency')
     const activity = page.getByLabel('Latest repository change', { exact: true })
     await activity.waitFor()
@@ -25,8 +25,8 @@ test('latest repository activity survives child navigation without another reque
       await page.setViewportSize({ width, height: 844 })
       await page.getByRole('link', { name: 'Requests', exact: true }).first().click()
       await page.waitForURL(`**/${repo}/requests`)
-      await page.getByRole('link', { name: 'Home', exact: true }).first().click()
-      await page.waitForURL(`${baseUrl}${repoPath}`)
+      await page.goBack()
+      await page.waitForURL((url) => url.pathname === `${repoPath}/code`)
       assert.equal(await activity.isVisible(), true)
       assert.equal(await activity.innerText(), original)
       assert.equal(await page.getByLabel('Loading latest repository change', { exact: true }).count(), 0)
@@ -133,7 +133,7 @@ test('repository events received off-page refresh retained activity without blan
     })
   }
   try {
-    await withPage(repoPath, async (page) => {
+    await withPage(`${repoPath}/code`, async (page) => {
       const emitEvent = (kind) => page.evaluate((kind) => {
         const repo = globalThis.__TSR_ROUTER__.state.matches.find((match) => match.loaderData?.repo)?.loaderData.repo
         if (!repo) throw new Error('Repository layout is unavailable')
@@ -155,8 +155,8 @@ test('repository events received off-page refresh retained activity without blan
       await emitEvent({ RepositoryChanged: { reason: 'push' } })
       await (await revalidated).finished()
       await page.waitForFunction(() => globalThis.__TSR_ROUTER__.state.status === 'idle')
-      await page.getByRole('link', { name: 'Home', exact: true }).first().click()
-      await page.waitForURL(`${baseUrl}${repoPath}`)
+      await page.goBack()
+      await page.waitForURL((url) => url.pathname === `${repoPath}/code`)
       assert.equal(await activity.isVisible(), true)
       assert.equal(await activity.innerText(), original)
       assert.equal(await page.getByLabel('Loading latest repository change', { exact: true }).count(), 0)

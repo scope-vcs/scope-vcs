@@ -35,8 +35,8 @@ function RepositoryHomePending() {
         )}
         summary={repo && hasRepositoryAbout(repo) ? <RepositoryAbout repo={repo} /> : undefined}
         title="Home"
+        titleHidden
       />
-      {repo?.lifecycle_state !== 'AwaitingFirstPush' && <RepositoryLatestActivityPending />}
       <section aria-label="Repository README" className="border-t border-border">
         <PendingSurface className="min-h-[220px]" label="Loading repository README">
           <ReadmeSkeleton />
