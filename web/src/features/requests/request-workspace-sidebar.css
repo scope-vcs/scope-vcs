@@ -112,7 +112,7 @@
   }
 
   .request-workspace-sidebar[data-state="closed"] .request-workspace-sidebar-toggle {
-    position: absolute;
+    right: auto;
     left: calc(var(--request-workspace-rail-axis) - 16px);
   }
 
@@ -274,6 +274,32 @@
   gap: 8px;
   min-height: calc(2rem + 26px);
   padding: 14px 12px 12px var(--app-inset);
+  transition: min-height 200ms ease;
+}
+
+.request-workspace-sidebar-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: 12px;
+}
+
+.request-workspace-sidebar-toggle:not(:hover) {
+  background: var(--background);
+}
+
+.request-workspace-sidebar[data-state="pinned"] .request-workspace-sidebar-tools {
+  min-height: 12px;
+  padding: 0;
+}
+
+.request-workspace-sidebar[data-state="pinned"] .request-workspace-scroll > section:first-child > .request-workspace-group-label > span:last-child {
+  margin-left: 0;
+  color: var(--muted-foreground);
+}
+
+.request-workspace-sidebar[data-state="pinned"] .request-workspace-scroll > .request-workspace-current:first-child {
+  margin-top: 36px;
 }
 
 .request-workspace-viewing-as {
@@ -390,32 +416,6 @@
   border: 1.3px solid color-mix(in srgb, var(--foreground) 35%, transparent);
   border-radius: 999px;
   content: "";
-}
-
-.request-status-glyph {
-  display: block;
-  width: 16px;
-  height: 16px;
-  flex: none;
-  color: var(--foreground);
-  stroke-width: 1.75;
-}
-
-.request-workspace-row .request-status-glyph {
-  fill: var(--row-surface);
-}
-
-.request-status-glyph:is([data-step="wait"], [data-step="done"]) {
-  color: var(--muted-foreground);
-}
-
-.request-status-glyph[data-step="fix_checks"] {
-  color: var(--danger);
-}
-
-.request-status-glyph[data-step="merge"] {
-  color: var(--row-surface, var(--background));
-  fill: var(--success);
 }
 
 .request-workspace-row-unread {
@@ -681,6 +681,7 @@ html[data-focus] .application-topbar {
   .request-workspace-row-age,
   .request-workspace-row-actions,
   .request-workspace-sidebar,
+  .request-workspace-sidebar-tools,
   .request-workspace-group-toggle {
     transition: none;
   }

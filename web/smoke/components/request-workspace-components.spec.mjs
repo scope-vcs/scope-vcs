@@ -101,6 +101,11 @@ test('request rows exchange age and actions and restore the selected view across
   assert.equal(await page.locator('[data-request-id="request-2"] time').evaluate((node) =>
     getComputedStyle(node).opacity), '1')
   await page.mouse.move(700, 400)
+  const collapse = await page.getByRole('button', { name: 'Collapse requests sidebar' }).boundingBox()
+  const needsYouHeading = await page.locator('.request-workspace-needs-you > h2 > span:first-child').boundingBox()
+  const headingCount = await page.locator('.request-workspace-needs-you > h2 > span:last-child').boundingBox()
+  assert(Math.abs(collapse.y + collapse.height / 2 - (needsYouHeading.y + needsYouHeading.height / 2)) <= 1, 'the collapse button shares the first heading line')
+  assert(headingCount.x + headingCount.width < collapse.x, 'the heading count stays clear of the collapse button')
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.idle.png` })
   }
