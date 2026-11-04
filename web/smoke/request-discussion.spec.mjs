@@ -19,7 +19,7 @@ const requestPath = `${requestRepoPath}/requests/req_demo_ready`
 
 test('reply disclosure preserves scroll and remains reversible', async () => {
   await withPage(requestPath, async (page) => {
-    await page.locator('.request-workspace-sidebar a[href$="/req_demo_ready"]').waitFor()
+    await page.locator('.request-workspace-sidebar .request-workspace-row-link[href$="/req_demo_ready"]').waitFor()
     const retryThread = page.locator('#discussion-discussion_demo_retry_cap')
     const hideRetryReplies = retryThread.getByRole('button', {
       name: 'Hide 3 replies',

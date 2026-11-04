@@ -16,8 +16,7 @@ test('public repository requests route is anonymously readable', async () => {
     await page.getByText('You’re caught up.', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: /Set aside/ }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /Unclaimed/ }).count(), 0)
-    await page.getByRole('button', { name: /Done/ }).click()
-    await page.getByText('No closed or merged requests.', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: /Done/ }).count(), 0)
   })
 })
 
