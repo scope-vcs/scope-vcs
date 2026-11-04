@@ -100,6 +100,17 @@ test('read-only maintenance retries an SSH transport failure with the same binar
   assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8'), 'ssh\nssh\n');
 });
 
+test('read-only maintenance outlasts a Railway SSH outage longer than three attempts', t => {
+  const f = fixture(t);
+  const recovered = f.run([staging, 'plan'], { TEST_SSH_FAILURES: '3' });
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8').split('\n').length - 1, 4);
+  rmSync(f.env.TEST_ATTEMPTS);
+  const exhausted = f.run([staging, 'plan'], { TEST_SSH_FAILURES: '100' });
+  assert.equal(exhausted.status, 255);
+  assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8').split('\n').length - 1, 30);
+});
+
 test('mutating maintenance attempts SSH once after a transport failure', t => {
   const f = fixture(t);
   const result = f.run([staging, 'apply'], { TEST_SSH_FAILURES: '1' });
