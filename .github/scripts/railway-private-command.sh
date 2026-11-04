@@ -35,19 +35,19 @@ railway_private_command() (
 )
 
 railway_private_read() (
-  local attempt status
+  local attempt status read_attempts=30 retry_delay_seconds=10
   scope_read_input="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-read.XXXXXXXX")" || return
   scope_read_output="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-read.XXXXXXXX")" || return
   trap 'rm -f -- "$scope_read_input" "$scope_read_output"' EXIT
   cat >| "$scope_read_input" || return
-  for attempt in 1 2 3; do
+  for ((attempt = 1; ; attempt++)); do
     status=0
     railway_private_command "$@" < "$scope_read_input" >| "$scope_read_output" || status=$?
-    if [[ "$status" != 255 || "$attempt" == 3 ]]; then
+    if [[ "$status" != 255 || "$attempt" == "$read_attempts" ]]; then
       cat -- "$scope_read_output" || return
       return "$status"
     fi
-    echo "Railway SSH transport failed; retrying read-only command ($attempt/3)." >&2
-    sleep $((attempt * 2))
+    echo "Railway SSH transport failed; retrying read-only command ($attempt/$read_attempts)." >&2
+    sleep "$retry_delay_seconds"
   done
 )
