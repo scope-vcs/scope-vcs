@@ -266,6 +266,7 @@
         "Cargo.toml",
         "rust-toolchain.toml",
         ".github/workflows/scope-media-worker-image.yml",
+        ".github/workflows/warm-ci-caches.yml",
         ".github/scripts/scan-image.sh",
         ".github/scripts/scan-report.mjs",
         ".github/workflows/deploy-backend.yml",

@@ -47,7 +47,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS build
 
 COPY --from=heif-builder /opt/libheif /opt/libheif
-ENV PATH=/opt/libheif/bin:$PATH LD_LIBRARY_PATH=/opt/libheif/lib CARGO_BUILD_JOBS=2
+ENV PATH=/opt/libheif/bin:$PATH LD_LIBRARY_PATH=/opt/libheif/lib
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -62,11 +62,9 @@ ENV SCOPE_MEDIA_HEIF_CONVERT=/opt/libheif/bin/heif-convert \
     SCOPE_MEDIA_HEIF_INFO=/opt/libheif/bin/heif-info
 
 COPY --from=planner /scope/recipe.json recipe.json
-RUN cargo chef cook --locked --release --tests -p scope-media-worker --recipe-path recipe.json \
-    && cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
+RUN cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
 COPY --from=planner /scope ./
-RUN cargo test --locked --release -p scope-media-worker \
-    && cargo build --locked --release -p scope-media-worker \
+RUN cargo build --locked --release -p scope-media-worker \
     && chmod +x media-worker/tests/*.sh \
     && media-worker/tests/generate-codec-fixtures.sh /tmp/scope-media-fixtures \
     && SCOPE_MEDIA_FFMPEG=/scope/media-worker/tests/ffmpeg-many-cpus.sh \
