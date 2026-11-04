@@ -110,7 +110,7 @@
   box-shadow: none;
 }
 
-.request-workspace-stack-dots > i:is([data-step="review"], [data-step="reply"], [data-step="revisit"], [data-step="update"]) {
+.request-workspace-stack-dots > i:is([data-step="review"], [data-step="reply"], [data-step="revisit"], [data-step="update"], [data-step="submit"]) {
   background: var(--foreground);
   box-shadow: none;
 }

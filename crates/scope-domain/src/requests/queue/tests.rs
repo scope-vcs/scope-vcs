@@ -17,6 +17,7 @@ fn groups_split_active_rows_by_who_acts_next() {
         (Reason::Authored, Step::FixChecks, true, NeedsYou),
         (Reason::Authored, Step::Merge, true, NeedsYou),
         (Reason::Authored, Step::Wait, true, Waiting),
+        (Reason::Authored, Step::Submit, true, NeedsYou),
     ] {
         assert_eq!(
             request_queue_group(RequestQueueSection::Active, reason, step, maintainer),
@@ -58,6 +59,8 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
         (Status::ChecksPending, maintainer, Step::Wait),
         (Status::ChecksAwaitingApproval, maintainer, Step::FixChecks),
         (Status::ChecksAwaitingApproval, contributor, Step::Wait),
+        (Status::Draft, contributor, Step::Submit),
+        (Status::MissingRequestBranch, contributor, Step::Update),
     ] {
         assert_eq!(
             next_step_for(author, author, Reason::NewActivity, status, viewer),

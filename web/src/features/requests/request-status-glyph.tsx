@@ -1,5 +1,5 @@
 import type { RequestQueueNextStep } from '@/api/types.generated'
-import { AlarmClock, CircleCheck, CircleDashed, CircleX, Eye, MessageSquare, RefreshCw, type LucideIcon } from 'lucide-react'
+import { AlarmClock, CircleCheck, CircleDashed, CircleX, Eye, MessageSquare, RefreshCw, Send, type LucideIcon } from 'lucide-react'
 
 const NEXT_STEP_ICONS: Record<RequestQueueNextStep, LucideIcon> = {
   review: Eye,
@@ -8,6 +8,7 @@ const NEXT_STEP_ICONS: Record<RequestQueueNextStep, LucideIcon> = {
   merge: CircleCheck,
   fix_checks: CircleX,
   update: RefreshCw,
+  submit: Send,
   wait: CircleDashed,
   done: CircleCheck,
 }

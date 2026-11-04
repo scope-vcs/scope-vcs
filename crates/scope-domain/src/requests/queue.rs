@@ -67,6 +67,7 @@ pub enum RequestQueueNextStep {
     Merge,
     FixChecks,
     Update,
+    Submit,
     Wait,
     Done,
 }
@@ -132,12 +133,12 @@ fn next_step_for(
             Status::IntegrationConflict
             | Status::NeedsMainUpdate
             | Status::ParentRewritten
-            | Status::ParentClosed => RequestQueueNextStep::Update,
+            | Status::ParentClosed
+            | Status::MissingRequestBranch => RequestQueueNextStep::Update,
+            Status::Draft => RequestQueueNextStep::Submit,
             Status::Closed | Status::Merged => RequestQueueNextStep::Done,
             Status::RepositoryNotReady
-            | Status::Draft
             | Status::NotMaintainer
-            | Status::MissingRequestBranch
             | Status::ChecksNotEvaluated
             | Status::ChecksAwaitingApproval
             | Status::ChecksPending

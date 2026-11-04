@@ -293,7 +293,7 @@ wire_enum!(
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
     RequestQueueNextStep => DomainRequestQueueNextStep {
-        Review, Reply, Revisit, Merge, FixChecks, Update, Wait, Done
+        Review, Reply, Revisit, Merge, FixChecks, Update, Submit, Wait, Done
     }
 );
 wire_enum!(RequestDiscussionStatus => DomainRequestDiscussionStatus { Open, Resolved });
