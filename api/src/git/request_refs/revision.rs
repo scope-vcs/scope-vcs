@@ -1,9 +1,5 @@
-use super::{
-    pool::{
-        PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs,
-        request_object_repos, shares_objects,
-    },
-    snapshot::{BundleRef, fetch_snapshot_into_ref},
+use super::pool::{
+    PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs, request_object_repos,
 };
 use crate::{
     config::EMPTY_GIT_OID,
@@ -16,8 +12,9 @@ use crate::{
 };
 use scope_domain::{
     repository::RepositoryIncarnation,
-    requests::{Request, RequestBase, RequestRevision, canonical_request_ref},
+    requests::{Request, RequestRevision, canonical_request_ref},
 };
+use sha2::Digest as _;
 use std::{fs, path::Path};
 
 pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
@@ -39,34 +36,38 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     let main = full
         .then(|| state.repository_engine.lease_repository(incarnation))
         .transpose()?;
-    let shelf_lease = if full {
-        None
-    } else {
-        Some(
-            super::view_pool::view_object_repo(
-                state,
-                incarnation,
-                &config,
-                &request.view,
-                Some(&request.id),
-            )
-            .await?,
-        )
-    };
     let shelf = if full {
-        ensure_full_object_repos(state, incarnation, &config, request)
-            .await?
-            .shared
+        let repos = ensure_full_object_repos(state, incarnation, &config, request).await?;
+        let key = hex::encode(sha2::Sha256::digest(request.id.as_bytes()));
+        let target = state.repository_engine.cache_root().join(format!(
+            "request-{}-{}-{key}.git",
+            crate::git::storage::repository_storage_key(incarnation),
+            config.object_generation()
+        ));
+        let handle = state.repository_engine.lease_derived(target.clone())?;
+        crate::git::blocking::run(move || {
+            super::ensure_local_bare_repo(target.clone())?;
+            add_receive_pack_alternate(&target, &repos.shared.join("objects"))
+        })
+        .await?;
+        handle
     } else {
-        shelf_lease.as_ref().unwrap().as_ref().to_path_buf()
+        super::view_pool::view_object_repo(
+            state,
+            incarnation,
+            &config,
+            &request.view,
+            Some(&request.id),
+        )
+        .await?
     };
     let main_for_install = main.as_ref().map(GitRepoHandle::share).transpose()?;
-    let shelf_for_install = shelf_lease.as_ref().map(GitRepoHandle::share).transpose()?;
+    let shelf_for_install = shelf.share()?;
     let state_for_install = state.clone();
     let incarnation = incarnation.clone();
     let request_for_install = request.clone();
     let revision_for_install = revision.clone();
-    let target = shelf.clone();
+    let target = shelf.as_ref().to_path_buf();
     let heads = revision_heads(revision);
     let (leases_sender, mut leases_receiver) = tokio::sync::oneshot::channel();
     state
@@ -76,13 +77,14 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
             let _shelf_lease = shelf_for_install;
             let (_canonical, full) = if full {
                 let canonical = lease_canonical(&state_for_install, &incarnation).await?;
-                let repos = ensure_full_object_repos(
+                let mut repos = ensure_full_object_repos(
                     &state_for_install,
                     &incarnation,
                     &config,
                     &request_for_install,
                 )
                 .await?;
+                repos.authored = target.clone();
                 (canonical, Some(repos))
             } else {
                 (None, None)
@@ -97,7 +99,7 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
                     None => PoolRepos::View(&request_for_install.view, &target),
                 },
             };
-            let leases = restore_revision_lineage(
+            let leases = install_revision_objects(
                 &state_for_install,
                 &target,
                 &request_for_install,
@@ -111,8 +113,9 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
         .await?;
     let mut leases = leases_receiver.try_recv().unwrap_or_default();
     leases.extend(main);
-    leases.extend(shelf_lease);
-    inspect_revision(state, &shelf, request, revision, leases, action).await
+    let path = shelf.as_ref().to_path_buf();
+    leases.push(shelf);
+    inspect_revision(state, &path, request, revision, leases, action).await
 }
 
 fn revision_heads(revision: &RequestRevision) -> Vec<String> {
@@ -128,101 +131,34 @@ fn revision_heads(revision: &RequestRevision) -> Vec<String> {
     .collect()
 }
 
-async fn restore_revision_lineage(
+async fn install_revision_objects(
     state: &AppState,
     shelf: &Path,
     request: &Request,
     revision: &RequestRevision,
     install: &PoolInstall<'_>,
 ) -> Result<Vec<GitRepoHandle>, ApiError> {
-    let mut leases = Vec::new();
-    let mut pending = vec![(request.clone(), revision.clone(), false)];
-    let mut visited = std::collections::BTreeSet::new();
-    while let Some((request, revision, restoring)) = pending.pop() {
-        if restoring {
-            let target = shelf.to_path_buf();
-            let heads = revision_heads(&revision);
-            if crate::git::blocking::run(move || {
-                present_commits(&target, heads.iter().map(String::as_str))
-                    .map(|present| heads.iter().all(|head| present.contains(head)))
-            })
-            .await?
-            {
-                continue;
-            }
-            leases.extend(install_revision_packs(state, install, &request, &revision).await?);
-            copy_full_scope_revision(state, install, shelf, &request, &revision).await?;
-            let state = state.clone();
-            let shelf = shelf.to_path_buf();
-            let request_ref = canonical_request_ref(&request.name);
-            let permit = state.runtime_budgets.try_git_materialization()?;
-            crate::git::blocking::run(move || {
-                let _permit = permit;
-                restore_revision(&state, &shelf, &request_ref, &revision)
-            })
-            .await?;
-            continue;
-        }
-        if !visited.insert(revision.id.clone()) {
-            continue;
-        }
-        leases.extend(install_revision_packs(state, install, &request, &revision).await?);
-        let heads = revision_heads(&revision);
-        let target = shelf.to_path_buf();
-        let present = crate::git::blocking::run(move || {
-            present_commits(&target, heads.iter().map(String::as_str))
-        })
+    let leases = install_revision_packs(state, install, request, revision).await?;
+    install
+        .copy_full_scope_packs(
+            state,
+            std::slice::from_ref(request),
+            &revision_heads(revision),
+        )
         .await?;
-        pending.push((request.clone(), revision.clone(), true));
-        if revision.old_head_oid != EMPTY_GIT_OID
-            && revision.old_head_oid != revision.new_head_oid
-            && !present.contains(&revision.old_head_oid)
-            && let Some(previous) = state
-                .metadata
-                .requests()
-                .latest_request_revision_through(&request.id, revision.position.saturating_sub(1))
-                .await?
-            && previous.new_head_oid == revision.old_head_oid
-        {
-            pending.push((request.clone(), previous, false));
+    let target = shelf.to_path_buf();
+    let heads = revision_heads(revision);
+    crate::git::blocking::run(move || {
+        let present = present_commits(&target, heads.iter().map(String::as_str))?;
+        if heads.iter().all(|head| present.contains(head)) {
+            Ok(())
+        } else {
+            Err(ApiError::infrastructure_unavailable(
+                "request revision shelf is missing comparison commits",
+            ))
         }
-        if let RequestBase::Request {
-            request_id,
-            revision_id,
-            head_oid,
-        } = &revision.base
-            && !present.contains(head_oid)
-        {
-            let parent = state
-                .metadata
-                .requests()
-                .request_by_id(request_id)
-                .await?
-                .filter(|parent| {
-                    parent.repo_id == request.repo_id
-                        && parent.view == request.view
-                        && (shares_objects(parent, install.config)
-                            || parent.object_author_id() == request.object_author_id())
-                })
-                .ok_or_else(|| {
-                    ApiError::infrastructure_unavailable(
-                        "request revision stack base is unavailable",
-                    )
-                })?;
-            let base = state
-                .metadata
-                .requests()
-                .request_revision(request_id, revision_id)
-                .await?
-                .filter(|base| &base.new_head_oid == head_oid)
-                .ok_or_else(|| {
-                    ApiError::infrastructure_unavailable(
-                        "request revision stack base is unavailable",
-                    )
-                })?;
-            pending.push((parent, base, false));
-        }
-    }
+    })
+    .await?;
     Ok(leases)
 }
 
@@ -241,122 +177,6 @@ async fn install_revision_packs(
     )
     .await?;
     Ok(leases)
-}
-
-async fn copy_full_scope_revision(
-    state: &AppState,
-    install: &PoolInstall<'_>,
-    shelf: &Path,
-    request: &Request,
-    revision: &RequestRevision,
-) -> Result<(), ApiError> {
-    if !matches!(install.repos, PoolRepos::View(..)) {
-        return Ok(());
-    }
-    let listed = state
-        .metadata
-        .repositories()
-        .git_pool_packs_for_requests(
-            install.incarnation.repository_id(),
-            std::slice::from_ref(&request.id),
-        )
-        .await?;
-    if !listed.iter().any(|pack| {
-        pack.head_oid == revision.new_head_oid
-            && pack.scope == scope_domain::repository::git::RequestPackScope::Full
-    }) {
-        return Ok(());
-    }
-    let main = lease_canonical(state, install.incarnation).await?;
-    let full =
-        ensure_full_object_repos(state, install.incarnation, install.config, request).await?;
-    let source = if shares_objects(request, install.config) {
-        &full.shared
-    } else {
-        &full.authored
-    };
-    copy_revision_heads(state, shelf, source, revision_heads(revision)).await?;
-    let leases = install_revision_packs(
-        state,
-        &PoolInstall {
-            incarnation: install.incarnation,
-            config: install.config,
-            repos: PoolRepos::Full(&full, request.object_author_id(), source),
-        },
-        request,
-        revision,
-    )
-    .await?;
-    copy_revision_heads(state, source, shelf, revision_heads(revision)).await?;
-    drop(leases);
-    drop(main);
-    Ok(())
-}
-
-async fn copy_revision_heads(
-    state: &AppState,
-    source: &Path,
-    target: &Path,
-    heads: Vec<String>,
-) -> Result<(), ApiError> {
-    let source = source.to_path_buf();
-    let target = target.to_path_buf();
-    let permit = state.runtime_budgets.try_git_materialization()?;
-    crate::git::blocking::run(move || {
-        let _permit = permit;
-        let present = present_commits(&source, heads.iter().map(String::as_str))?;
-        let retained = present_commits(&target, heads.iter().map(String::as_str))?;
-        for head in heads
-            .iter()
-            .filter(|head| present.contains(*head) && !retained.contains(*head))
-        {
-            run_git(
-                Some(&target),
-                &[
-                    "fetch",
-                    "--no-tags",
-                    "--no-write-fetch-head",
-                    source.to_string_lossy().as_ref(),
-                    &format!("+{head}:refs/scope/revisions/{head}"),
-                ],
-                "copying authorized revision objects between shelves",
-            )?;
-        }
-        Ok(())
-    })
-    .await
-}
-
-fn restore_revision(
-    state: &AppState,
-    shelf: &Path,
-    request_ref: &str,
-    revision: &RequestRevision,
-) -> Result<(), ApiError> {
-    let heads = revision_heads(revision);
-    let present = present_commits(shelf, heads.iter().map(String::as_str))?;
-    if !present.contains(&revision.new_head_oid) {
-        let retained = format!("refs/scope/revisions/{}", revision.new_head_oid);
-        fetch_snapshot_into_ref(
-            state,
-            shelf,
-            BundleRef {
-                source: request_ref,
-                destination: &retained,
-            },
-            &revision.git_snapshot,
-            None,
-            "restoring legacy revision objects onto the request shelf",
-        )?;
-    }
-    let present = present_commits(shelf, heads.iter().map(String::as_str))?;
-    if heads.iter().all(|oid| present.contains(oid)) {
-        Ok(())
-    } else {
-        Err(ApiError::infrastructure_unavailable(
-            "request revision shelf is missing comparison commits",
-        ))
-    }
 }
 
 async fn ensure_full_object_repos(

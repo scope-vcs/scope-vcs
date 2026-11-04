@@ -1,13 +1,10 @@
 use super::*;
-use crate::git::{command::run_git_output, import::git_snapshot_from_ref};
+use crate::git::command::run_git_output;
 use scope_domain::requests::RequestActorRole;
 use scope_domain::views::ViewId;
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::Arc;
 
-fn fixture() -> (crate::git::test_repo::TestRepo, RequestRevision, Vec<u8>) {
+fn fixture() -> (crate::git::test_repo::TestRepo, RequestRevision) {
     let source = crate::git::test_repo::TestRepo::init();
     crate::git::test_repo::pinned_identity_git(&source, &["branch", "-m", "topic"], None);
     fs::write(source.join("file.txt"), "base\n").unwrap();
@@ -16,8 +13,6 @@ fn fixture() -> (crate::git::test_repo::TestRepo, RequestRevision, Vec<u8>) {
     fs::write(source.join("file.txt"), "changed\n").unwrap();
     source.commit_all("fixture");
     let new_head_oid = source.oid("HEAD");
-    let (git_snapshot, bytes) =
-        git_snapshot_from_ref(&source, "refs/heads/topic", Some(&old_head_oid)).unwrap();
     (
         source,
         RequestRevision {
@@ -33,10 +28,8 @@ fn fixture() -> (crate::git::test_repo::TestRepo, RequestRevision, Vec<u8>) {
             rewrote_history: false,
             old_head_oid,
             new_head_oid,
-            git_snapshot,
             created_at_unix: 1,
         },
-        bytes,
     )
 }
 
@@ -56,7 +49,7 @@ fn request_fixture() -> Request {
         base_version: 1,
         main_ancestor_oid: "a".repeat(40),
         head_oid: "b".repeat(40),
-        git_snapshot: None,
+        pushed_at_unix: None,
         title: "request".into(),
         description_markdown: String::new(),
         activity_version: 1,
@@ -108,68 +101,20 @@ fn seed_repository(
     (incarnation, generation)
 }
 
-struct CountingStore {
-    inner: Arc<dyn scope_storage::ObjectStore>,
-    loads: Arc<AtomicUsize>,
-}
-#[async_trait::async_trait]
-impl scope_storage::ObjectStore for CountingStore {
-    async fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), scope_storage::ObjectStoreError> {
-        self.inner.put(key, bytes).await
-    }
-    async fn read_to(
-        &self,
-        key: &str,
-        max_bytes: u64,
-        output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
-    ) -> Result<u64, scope_storage::ObjectStoreError> {
-        self.loads.fetch_add(1, Ordering::SeqCst);
-        self.inner.read_to(key, max_bytes, output).await
-    }
-    async fn delete(&self, key: &str) -> Result<(), scope_storage::ObjectStoreError> {
-        self.inner.delete(key).await
-    }
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed_on_error() {
-    let (source, revision, bytes) = fixture();
-    let mut state = AppState::test_state();
-    state
-        .object_store
-        .put(&scope_storage::object_key(&revision.git_snapshot), bytes)
-        .await
-        .unwrap();
-    let loads = Arc::new(AtomicUsize::new(0));
-    state.object_store = Arc::new(CountingStore {
-        inner: state.object_store.clone(),
-        loads: loads.clone(),
-    });
+async fn revision_inspection_jobs_clean_up_and_keep_the_canonical_lease() {
+    let (source, revision) = fixture();
+    let state = AppState::test_state();
     let (incarnation, generation) = seed_repository(&state, Vec::new());
     let shelf = request_object_repos(&state, &incarnation, &generation, "owner")
         .unwrap()
         .shared;
     run_git(
         Some(&shelf),
-        &["fetch", source.to_str().unwrap(), &revision.old_head_oid],
-        "prepare legacy base",
+        &["fetch", source.to_str().unwrap(), &revision.new_head_oid],
+        "prepare pooled revision",
     )
     .unwrap();
-    let mut broken = revision.clone();
-    broken.git_snapshot.sha256 = "0".repeat(64);
-    assert!(
-        with_request_revision_store_repo(
-            &state,
-            &incarnation,
-            &request_fixture(),
-            &broken,
-            |_, _| Ok(())
-        )
-        .await
-        .is_err()
-    );
-    assert!(!super::super::request_ref_oid_is_commit(&shelf, &revision.new_head_oid).unwrap());
-    loads.store(0, Ordering::SeqCst);
     let read = || {
         let state = state.clone();
         let revision = revision.clone();
@@ -261,7 +206,6 @@ async fn legacy_revision_restores_once_for_concurrent_reads_and_jobs_are_removed
     .await;
     assert!(failed.is_err());
     assert!(!error_path.lock().unwrap().as_ref().unwrap().exists());
-    assert_eq!(loads.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -276,7 +220,7 @@ fn startup_removes_abandoned_revision_jobs() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn full_view_revision_job_cannot_borrow_authored_shelf_objects() {
-    let (source, mut revision, _) = fixture();
+    let (source, mut revision) = fixture();
     let hidden = revision.new_head_oid.clone();
     let state = AppState::test_state();
     let (incarnation, generation) = seed_repository(&state, Vec::new());

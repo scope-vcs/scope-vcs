@@ -12,17 +12,14 @@ use super::{
     repository_from_model,
     repository_rows::insert_repository,
     request_media::tombstone_repository_attachments,
-    request_revision_rows::revisions_for_request_ids,
     request_rows::requests_by_repo_id,
     run_retention::{delete_orphaned_workflow_revisions, delete_run_source_references},
 };
 use crate::error::PostgresError;
 use scope_domain::{
-    content::SourceBlob,
     repo_actions::{create_repo as create_repo_command, delete_repo as delete_repo_command},
     repository::credentials::{FirstPushToken, GitPushToken},
     repository::{Repository, RepositoryIncarnation, repo_id},
-    requests::Request,
     views::ViewId,
 };
 use sea_orm::{
@@ -166,19 +163,9 @@ pub(super) async fn delete_locked_repository(
 ) -> Result<String, PostgresError> {
     let repo_id = repo.record.id.clone();
     let mutation = delete_repo_command(repo, user_id, owner, name)?;
-    let requests = lock_requests_for_repo_postgres(tx, &repo_id).await?;
+    lock_requests_for_repo_postgres(tx, &repo_id).await?;
     tombstone_repository_attachments(tx, &repo_id, now_unix).await?;
-    let request_ids = requests
-        .iter()
-        .map(|request| request.id.clone())
-        .collect::<Vec<_>>();
-    let revisions = revisions_for_request_ids(tx, &request_ids).await?;
-    let mut retained_sources = request_git_snapshots_for_repo(&requests, &revisions);
-    let revision_ids = revisions
-        .iter()
-        .map(|revision| revision.id.clone())
-        .collect::<Vec<_>>();
-    delete_repository_object_references(tx, &repo_id, &request_ids, &revision_ids).await?;
+    delete_repository_object_references(tx, &repo_id).await?;
     let runs = entities::run::Entity::find()
         .filter(entities::run::Column::RepoId.eq(repo_id.clone()))
         .all(tx)
@@ -191,11 +178,11 @@ pub(super) async fn delete_locked_repository(
         .iter()
         .map(|run| run.workflow_revision_digest.clone())
         .collect::<BTreeSet<_>>();
-    retained_sources.extend(
-        runs.iter()
-            .flat_map(|run| run.source.retained_objects())
-            .cloned(),
-    );
+    let retained_sources = runs
+        .iter()
+        .flat_map(|run| run.source.retained_objects())
+        .cloned()
+        .collect::<Vec<_>>();
     delete_run_source_references(tx, &run_ids).await?;
 
     entities::repository_invite::Entity::delete_many()
@@ -258,10 +245,7 @@ where
     }
 }
 
-async fn lock_requests_for_repo_postgres<C>(
-    conn: &C,
-    repo_id: &str,
-) -> Result<Vec<Request>, PostgresError>
+async fn lock_requests_for_repo_postgres<C>(conn: &C, repo_id: &str) -> Result<(), PostgresError>
 where
     C: sea_orm::ConnectionTrait,
 {
@@ -272,36 +256,11 @@ where
         .collect::<Vec<_>>();
     request_ids.sort();
 
-    let mut requests = Vec::with_capacity(request_ids.len());
     for request_id in request_ids {
         acquire_aggregate_lock(conn, "request", &request_id).await?;
-        if let Some(request) = super::request_rows::request_by_id(conn, &request_id).await?
-            && request.repo_id == repo_id
-        {
-            requests.push(request);
-        }
     }
-    Ok(requests)
+    Ok(())
 }
-
-fn request_git_snapshots_for_repo(
-    requests: &[Request],
-    revisions: &[scope_domain::requests::RequestRevision],
-) -> Vec<SourceBlob> {
-    let mut snapshots = requests
-        .iter()
-        .filter_map(|request| request.git_snapshot.clone())
-        .chain(
-            revisions
-                .iter()
-                .map(|revision| revision.git_snapshot.clone()),
-        )
-        .collect::<Vec<_>>();
-    snapshots.sort_by(|left, right| left.content_ref.cmp(&right.content_ref));
-    snapshots.dedup_by(|left, right| left.content_ref == right.content_ref);
-    snapshots
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -12,20 +12,19 @@ pub(super) fn git_pack_state(
     repository_id: &str,
     label: &str,
     commits: &[SeedGitCommit<'_>],
-) -> Result<(GitHead, SeedMainPack), ApiError> {
+) -> Result<(GitHead, SeedPoolPack), ApiError> {
     with_seed_git_repo(label, |repo_path| {
         apply_seed_commits(repo_path, commits)?;
         store_seed_git_pack(git_segment_store, repository_id, repo_path)
     })
 }
 
-pub(super) fn update_demo_git_snapshot(
-    object_store: &SeedObjects,
+pub(super) fn update_demo_git_packs(
     git_segment_store: &scope_storage::GitSegmentStore,
     repository_id: &str,
     initial: SeedGitCommit<'_>,
     accepted: SeedGitCommit<'_>,
-) -> Result<(GitHead, SeedRequestGallery, SeedMainPack), ApiError> {
+) -> Result<(GitHead, SeedRequestGallery, SeedPoolPack), ApiError> {
     with_seed_git_repo("update-demo-live", |repo_path| {
         apply_seed_commits(repo_path, &[initial])?;
         let initial_oid = seed_git_head(repo_path)?;
@@ -47,15 +46,17 @@ pub(super) fn update_demo_git_snapshot(
             },
             &main_oid,
         )?;
-        let ready_snapshot = store_seed_bundle(
-            object_store,
+        let ready_pack = store_seed_request_pack(
+            git_segment_store,
+            repository_id,
             repo_path,
-            "req_demo_ready_0",
-            &[&canonical_request_ref("bounded-retry-timing")],
+            "req_demo_ready",
             &ready_oid,
+            &scope_domain::views::ViewId::public(),
         )?;
         let ready_revisions = request_revisions::seed_bounded_retry_revisions(
-            object_store,
+            git_segment_store,
+            repository_id,
             repo_path,
             &ready_oid,
             &main_oid,
@@ -98,40 +99,45 @@ pub(super) fn update_demo_git_snapshot(
         )?;
         let (main_head, main_pack) =
             store_seed_git_pack(git_segment_store, repository_id, repo_path)?;
-        let working_snapshot = store_seed_bundle(
-            object_store,
+        let working_pack = store_seed_request_pack(
+            git_segment_store,
+            repository_id,
             repo_path,
             "req_demo_working",
-            &[&canonical_request_ref("request-queue-copy")],
             &working_oid,
+            &scope_domain::views::ViewId::public(),
         )?;
-        let held_snapshot = store_seed_bundle(
-            object_store,
+        let held_pack = store_seed_request_pack(
+            git_segment_store,
+            repository_id,
             repo_path,
             "req_demo_held",
-            &[&canonical_request_ref("remote-troubleshooting")],
             &held_oid,
+            &scope_domain::views::ViewId::private(),
         )?;
-        let accepted_snapshot = store_seed_bundle(
-            object_store,
+        let accepted_pack = store_seed_request_pack(
+            git_segment_store,
+            repository_id,
             repo_path,
             "req_demo_accepted",
-            &[&accepted_ref],
             &main_oid,
+            &scope_domain::views::ViewId::private(),
         )?;
-        let rejected_snapshot = store_seed_bundle(
-            object_store,
+        let rejected_pack = store_seed_request_pack(
+            git_segment_store,
+            repository_id,
             repo_path,
             "req_demo_rejected",
-            &[&canonical_request_ref("verbose-cli-output")],
             &rejected_oid,
+            &scope_domain::views::ViewId::private(),
         )?;
-        let neutral_snapshot = store_seed_bundle(
-            object_store,
+        let neutral_pack = store_seed_request_pack(
+            git_segment_store,
+            repository_id,
             repo_path,
             "req_demo_neutral",
-            &[&canonical_request_ref("cache-observability-note")],
             &neutral_oid,
+            &scope_domain::views::ViewId::public(),
         )?;
         let gallery = vec![
             SeedRequest {
@@ -140,7 +146,7 @@ pub(super) fn update_demo_git_snapshot(
                 title: "Tighten request queue copy",
                 base_oid: main_oid.clone(),
                 head_oid: working_oid,
-                snapshot: working_snapshot,
+                pack: working_pack,
                 description_markdown: Some("A private working draft for the request author."),
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Draft,
@@ -153,7 +159,7 @@ pub(super) fn update_demo_git_snapshot(
                 title: "Add bounded retry timing",
                 base_oid: main_oid.clone(),
                 head_oid: ready_oid,
-                snapshot: ready_snapshot,
+                pack: ready_pack,
                 description_markdown: Some(request_discussions::READY_REQUEST_DESCRIPTION),
                 revisions: ready_revisions,
                 outcome: SeedRequestOutcome::Open,
@@ -166,7 +172,7 @@ pub(super) fn update_demo_git_snapshot(
                 title: "Add remote troubleshooting",
                 base_oid: main_oid.clone(),
                 head_oid: held_oid,
-                snapshot: held_snapshot,
+                pack: held_pack,
                 description_markdown: None,
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Open,
@@ -179,7 +185,7 @@ pub(super) fn update_demo_git_snapshot(
                 title: "Document the release flow",
                 base_oid: initial_oid,
                 head_oid: main_oid.clone(),
-                snapshot: accepted_snapshot,
+                pack: accepted_pack,
                 description_markdown: None,
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Merged,
@@ -192,7 +198,7 @@ pub(super) fn update_demo_git_snapshot(
                 title: "Try verbose CLI output",
                 base_oid: main_oid.clone(),
                 head_oid: rejected_oid,
-                snapshot: rejected_snapshot,
+                pack: rejected_pack,
                 description_markdown: None,
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Closed,
@@ -205,7 +211,7 @@ pub(super) fn update_demo_git_snapshot(
                 title: "Document the cache tradeoff",
                 base_oid: main_oid,
                 head_oid: neutral_oid,
-                snapshot: neutral_snapshot,
+                pack: neutral_pack,
                 description_markdown: Some("A public request kept as closed history."),
                 revisions: Vec::new(),
                 outcome: SeedRequestOutcome::Closed,
@@ -300,25 +306,6 @@ pub(super) fn apply_seed_commits(
         )?;
     }
     Ok(())
-}
-
-pub(super) fn store_seed_bundle(
-    object_store: &SeedObjects,
-    repo_path: &FsPath,
-    label: &str,
-    refs: &[&str],
-    head_oid: &str,
-) -> Result<SourceBlob, ApiError> {
-    let bundle_path = repo_path.join(format!("{label}.bundle"));
-    let bundle = bundle_path.to_string_lossy().to_string();
-    let mut args = vec!["bundle", "create", bundle.as_str()];
-    args.extend_from_slice(refs);
-    seed_git(Some(repo_path), &args, "creating seeded Git bundle")?;
-    let bytes = fs::read(&bundle_path).map_err(ApiError::internal)?;
-    fs::remove_file(&bundle_path).map_err(ApiError::internal)?;
-    let mut snapshot = object_store.add(ContentObjectKind::GitBundle, bytes);
-    snapshot.git_oid = head_oid.to_string();
-    Ok(snapshot)
 }
 
 pub(super) fn seed_git_head(repo_path: &FsPath) -> Result<String, ApiError> {

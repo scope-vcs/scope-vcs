@@ -1,8 +1,7 @@
 use super::*;
 use crate::requests::{
     RecordRequestRevisionInput, RequestActorRole, RequestCheckContext, RequestRevisionGitFacts,
-    fixtures::{open_request, source_blob},
-    record_request_revision,
+    fixtures::open_request, record_request_revision,
 };
 
 fn parent() -> Request {
@@ -11,7 +10,7 @@ fn parent() -> Request {
     request.view = ViewId::private();
     request.author_role = RequestActorRole::Owner;
     request.head_oid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
-    request.git_snapshot = Some(source_blob(&request.head_oid));
+    request.pushed_at_unix = Some(1);
     request
 }
 
@@ -27,7 +26,6 @@ fn revision(parent: &Request) -> RequestRevision {
         base: parent.base.clone(),
         main_ancestor_oid: parent.main_ancestor_oid.clone(),
         rewrote_history: false,
-        git_snapshot: source_blob(&parent.head_oid),
         created_at_unix: parent.updated_at_unix,
     }
 }
@@ -43,7 +41,7 @@ fn child(parent: &Request) -> Request {
     child.stack_depth = 2;
     child.stack_status = RequestStackStatus::WaitingForParent;
     child.head_oid = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into();
-    child.git_snapshot = Some(source_blob(&child.head_oid));
+    child.pushed_at_unix = Some(1);
     child
 }
 
@@ -56,7 +54,6 @@ fn publication_input(request: &Request) -> RecordRequestRevisionInput {
         actor_can_edit: true,
         expected_old_head_oid: Some(request.head_oid.clone()),
         new_head_oid: request.head_oid.clone(),
-        git_snapshot: source_blob(&request.head_oid),
         git_facts: RequestRevisionGitFacts {
             contains_old_head: true,
             contained_main_oid: Some(request.main_ancestor_oid.clone()),
@@ -259,7 +256,7 @@ fn containing_landing_preserves_child_evidence_and_separate_main_ancestor() {
     );
     assert_eq!(result.request.head_oid, child.head_oid);
     assert_eq!(result.request.main_ancestor_oid, child.main_ancestor_oid);
-    assert_eq!(result.request.git_snapshot, child.git_snapshot);
+    assert_eq!(result.request.pushed_at_unix, child.pushed_at_unix);
     assert_eq!(result.request.base_version, child.base_version + 1);
     let rebound = RequestCheckContext::for_revision(&result.request, &saved).unwrap();
     assert_eq!(rebound.revision_id, original_context.revision_id);
@@ -457,7 +454,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
     );
     assert_eq!(marked.request.base, request.base);
     assert_eq!(marked.request.head_oid, request.head_oid);
-    assert_eq!(marked.request.git_snapshot, request.git_snapshot);
+    assert_eq!(marked.request.pushed_at_unix, request.pushed_at_unix);
     assert_eq!(marked.request.base_version, original.base_version);
     assert_eq!(
         marked.effects.stop_auto_merge,
@@ -500,7 +497,7 @@ fn integration_conflict_preserves_review_evidence_until_a_changed_publication() 
             new_base: None,
             new_base_stack_depth: None,
             new_head_oid: new_head.into(),
-            git_snapshot: source_blob(new_head),
+
             ..input
         },
     )
@@ -562,7 +559,7 @@ fn restricted_parent_landing_requires_current_view_main_and_preserves_saved_laye
                     child.base.review_base_oid()
                 );
                 assert_eq!(result.request.head_oid, child.head_oid);
-                assert_eq!(result.request.git_snapshot, child.git_snapshot);
+                assert_eq!(result.request.pushed_at_unix, child.pushed_at_unix);
                 assert_eq!(result.request.base_version, child.base_version + 1);
                 assert_eq!(result.request.activity_version, child.activity_version + 1);
                 assert_eq!(
@@ -616,7 +613,6 @@ fn main_update_block_survives_unchanged_publication_and_clears_on_repaired_head(
             false,
             RecordRequestRevisionInput {
                 new_head_oid: "repaired-head".into(),
-                git_snapshot: source_blob("repaired-head"),
                 git_facts: RequestRevisionGitFacts {
                     contains_old_head: true,
                     contained_main_oid: Some("accepted-view-main".into()),

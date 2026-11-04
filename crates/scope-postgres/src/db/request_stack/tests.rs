@@ -63,15 +63,6 @@ fn input(request: &Request, head: &str, event: &str, now: u64) -> RecordRequestR
         actor_can_edit: true,
         expected_old_head_oid: Some(request.head_oid.clone()),
         new_head_oid: head.into(),
-        git_snapshot: scope_domain::content::SourceBlob {
-            content_ref: scope_domain::content_ref::ContentRef::git_bundle_sha256(format!(
-                "sha256-{head}"
-            )),
-            sha256: format!("sha256-{head}"),
-            git_oid: head.into(),
-            git_file_mode: scope_domain::content::DEFAULT_GIT_FILE_MODE.into(),
-            size_bytes: 1,
-        },
         git_facts: RequestRevisionGitFacts {
             contains_old_head: true,
             contained_main_oid: None,

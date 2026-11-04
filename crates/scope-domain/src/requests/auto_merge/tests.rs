@@ -3,7 +3,7 @@ use crate::{
     requests::{
         GitHubCheckResults, NativeRequestCheck, RequestCheck, RequestCheckEvaluationState,
         RequestCheckResults,
-        fixtures::{self, source_blob},
+        fixtures::{self},
     },
     runs::run::RunState,
 };
@@ -47,7 +47,7 @@ fn open_request() -> Request {
         },
         main_ancestor_oid: "c".repeat(40),
         head_oid: HEAD.into(),
-        git_snapshot: Some(source_blob(HEAD)),
+        pushed_at_unix: Some(1),
         activity_version: 2,
         submitted_at_unix: Some(2),
         created_at_unix: 1,
@@ -70,7 +70,6 @@ fn revision(head_oid: &str) -> RequestRevision {
         },
         main_ancestor_oid: "c".repeat(40),
         rewrote_history: false,
-        git_snapshot: open_request().git_snapshot.unwrap(),
         created_at_unix: 2,
     }
 }

@@ -1,3 +1,5 @@
+mod full_scope;
+
 use super::{pack_consolidation::consolidate_pool_repos, view_pool::view_object_repos};
 use crate::{
     error::ApiError,
@@ -91,26 +93,6 @@ pub(crate) enum PoolRepos<'a> {
     View(&'a ViewId, &'a FsPath),
 }
 
-impl<'a> PoolRepos<'a> {
-    pub(crate) fn pack_target(
-        self,
-        scope: &RequestPackScope,
-        shared: bool,
-        author: bool,
-    ) -> Option<&'a FsPath> {
-        match self {
-            Self::View(view, repo) => (scope.view() == Some(view)).then_some(repo),
-            Self::Full(repos, _, staging) => Some(if shared && scope.view().is_none() {
-                &repos.shared
-            } else if author && scope.view().is_none() {
-                &repos.authored
-            } else {
-                staging
-            }),
-        }
-    }
-}
-
 pub(crate) struct PoolInstall<'a> {
     pub(crate) incarnation: &'a RepositoryIncarnation,
     pub(crate) config: &'a RepoConfig,
@@ -118,6 +100,15 @@ pub(crate) struct PoolInstall<'a> {
 }
 
 impl PoolInstall<'_> {
+    pub(super) async fn copy_full_scope_packs(
+        &self,
+        state: &AppState,
+        requests: &[Request],
+        heads: &[String],
+    ) -> Result<usize, ApiError> {
+        full_scope::copy_full_scope_packs(state, self, requests, heads).await
+    }
+
     pub(crate) async fn lease_view_base(
         &self,
         state: &AppState,
@@ -146,7 +137,14 @@ pub(crate) async fn install_request_pool_packs(
         .iter()
         .map(|request| request.head_oid.clone())
         .collect::<Vec<_>>();
-    let restore = install_missing_request_packs(state, install, missing, &heads);
+    let restore = async {
+        let (mut installed, leases) =
+            install_missing_request_packs(state, install, missing, &heads).await?;
+        installed += install
+            .copy_full_scope_packs(state, missing, &heads)
+            .await?;
+        Ok::<_, ApiError>((installed, leases))
+    };
     match restore.boxed().await {
         Ok((installed, leases)) => {
             tracing::info!(
@@ -162,7 +160,7 @@ pub(crate) async fn install_request_pool_packs(
             tracing::warn!(
                 repository_id = install.incarnation.repository_id(),
                 error = %error.operator_diagnostic(),
-                "request pool packs were not installed; missing requests restore from their snapshots"
+                "request pool packs were not installed"
             );
             Vec::new()
         }
@@ -194,7 +192,8 @@ pub(crate) async fn install_missing_request_packs(
     if matches!(install.repos, PoolRepos::Full(..)) {
         for view in listed
             .iter()
-            .filter_map(|pack| pack.scope.view())
+            .map(|pack| &pack.request_view)
+            .filter(|view| *view != install.config.views.full())
             .collect::<BTreeSet<_>>()
         {
             leases.extend(install.lease_view_base(state, view).await?);
@@ -274,14 +273,22 @@ fn pack_target<'a>(install: &PoolInstall<'a>, listed: &PooledRequestPack) -> Opt
         return None;
     }
     match install.repos {
-        PoolRepos::View(..) => install.repos.pack_target(&listed.scope, false, false),
-        PoolRepos::Full(_, actor_user_id, _) => {
+        PoolRepos::View(reader, repo) => (scope == Some(reader)).then_some(repo),
+        PoolRepos::Full(repos, actor_user_id, staging) => {
             let shared = request_visible_to_every_maintainer(view, listed.request_submitted, views);
             let author = listed.request_author_id.as_deref() == Some(actor_user_id);
             if !shared && !author && !listed.request_invitees.iter().any(|id| id == actor_user_id) {
                 return None;
             }
-            install.repos.pack_target(&listed.scope, shared, author)
+            Some(if scope.is_some() || view != views.full() {
+                staging
+            } else if shared {
+                &repos.shared
+            } else if author {
+                &repos.authored
+            } else {
+                staging
+            })
         }
     }
 }
@@ -337,6 +344,10 @@ async fn install_staged_pool_pack(
                     .objects,
             )
         }
+        GitPoolPackOwner::Request {
+            scope: RequestPackScope::Full,
+            ..
+        } if &request.view != config.views.full() => return Ok(()),
         _ if !shared && !request.is_author(pusher_id) => return Ok(()),
         _ => None,
     };

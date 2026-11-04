@@ -158,7 +158,7 @@ pub(crate) async fn publish(
                         new_head_oid: context.expected_head_oid.clone(),
                         new_base: Some(base),
                         new_base_stack_depth: None,
-                        git_snapshot: revision.git_snapshot.clone(),
+
                         git_facts,
                         event_id: event_id.clone(),
                         body: None,

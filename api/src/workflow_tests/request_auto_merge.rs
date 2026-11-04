@@ -98,14 +98,6 @@ async fn record_revision(
     now_unix: u64,
 ) -> String {
     let event_id = format!("event_{request_id}_revision_{position}");
-    let mut git_snapshot = scope_storage::put_content_object(
-        state.object_store.as_ref(),
-        ContentObjectKind::GitBundle,
-        format!("snapshot for {event_id}").into_bytes(),
-    )
-    .await
-    .unwrap();
-    git_snapshot.git_oid = new_head_oid.to_string();
     state
         .metadata
         .requests()
@@ -117,7 +109,6 @@ async fn record_revision(
             actor_can_edit: true,
             expected_old_head_oid: expected_old_head_oid.map(str::to_string),
             new_head_oid: new_head_oid.to_string(),
-            git_snapshot,
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: true,
                 contained_main_oid: None,
@@ -162,12 +153,24 @@ async fn record_queued_request_check(state: &AppState, request_id: &str) -> Stri
         .map(|revision| RequestCheck::Native(NativeRequestCheck::for_revision(revision)))
         .collect();
     let mut evaluation = RequestCheckEvaluation::awaiting_approval(&context, checks, 5).unwrap();
+    let mut run_source = scope_storage::content_object_for_bytes(
+        scope_storage::ContentObjectKind::GitBundle,
+        b"request check run",
+    );
+    run_source.git_oid = request.head_oid.clone();
     let runs = evaluation
         .native_checks()
         .zip(&revisions)
         .map(|(check, revision)| {
             check
-                .run(&request, &evaluation.id, revision, &test_owner_id(), 5)
+                .run(
+                    &request,
+                    Some(&run_source),
+                    &evaluation.id,
+                    revision,
+                    &test_owner_id(),
+                    5,
+                )
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -645,33 +648,9 @@ async fn public_main_advance_stops_authorization_as_merge_conflict() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn private_request_snapshots_leave_out_main_and_restore_from_the_private_replica() {
+async fn private_request_pool_restores_from_the_private_replica() {
     let (state, source, remote, request_id, _head, _server) =
         native_open_request("thin-private-snapshot", ViewId::private()).await;
-    let request = state
-        .metadata
-        .requests()
-        .request_for_tests(&request_id)
-        .await
-        .unwrap()
-        .unwrap();
-    let snapshot = source_blob_bytes(
-        state.object_store.as_ref(),
-        request.git_snapshot.as_ref().unwrap(),
-        usize::MAX,
-    )
-    .await
-    .unwrap();
-    let header_end = snapshot
-        .windows(2)
-        .position(|pair| pair == b"\n\n")
-        .unwrap();
-    let header = String::from_utf8_lossy(&snapshot[..header_end]);
-    assert!(
-        header.contains(&format!("\n-{}", request.main_ancestor_oid)),
-        "snapshot should require its base instead of carrying main: {header}"
-    );
-
     fs::remove_dir_all(crate::git::storage::request_objects_root(
         &state,
         &test_repo_incarnation(),

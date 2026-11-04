@@ -77,7 +77,7 @@ struct QueueModel {
     updated_at_unix: i64,
     activity_version: i64,
     attention_at_unix: i64,
-    has_git_snapshot: bool,
+    has_pushed_head: bool,
     viewer_is_invitee: bool,
     attention_state: Option<String>,
     attention_reason: Option<String>,
@@ -219,7 +219,7 @@ impl QueueModel {
                 merged_at_unix: optional_u64(self.merged_at_unix, "request merge time")?,
                 updated_at_unix,
                 activity_version,
-                has_git_snapshot: self.has_git_snapshot,
+                has_pushed_head: self.has_pushed_head,
             },
             attention: classification,
             claim,
@@ -467,7 +467,7 @@ const QUEUE_SQL: &str = r#"
 WITH facts AS (
     SELECT r.id, r.name, r.title, r.author_user_id, r.author_role, r.audience,
         r.head_oid, r.base_kind, r.review_base_oid, r.parent_request_id, r.parent_revision_id, r.parent_head_oid, r.base_version, r.main_ancestor_oid, r.stack_status, r.stack_depth, r.submitted_at_unix, r.closed_at_unix, r.merged_at_unix,
-        r.updated_at_unix, r.activity_version, r.git_snapshot IS NOT NULL AS has_git_snapshot,
+        r.updated_at_unix, r.activity_version, r.pushed_at_unix IS NOT NULL AS has_pushed_head,
         GREATEST(r.updated_at_unix,
             CASE WHEN $3 THEN COALESCE(a.updated_at_unix, 0) ELSE 0 END,
             CASE WHEN $3 AND a.state = 'snoozed' AND a.snoozed_until_unix <= $6
@@ -496,7 +496,7 @@ WITH facts AS (
 )
 SELECT id, name, title, author_user_id, author_role, audience, head_oid, base_kind, review_base_oid, parent_request_id, parent_revision_id, parent_head_oid, base_version, main_ancestor_oid, stack_status, stack_depth,
     submitted_at_unix, closed_at_unix, merged_at_unix, updated_at_unix,
-    activity_version, attention_at_unix, has_git_snapshot, viewer_is_invitee, attention_state,
+    activity_version, attention_at_unix, has_pushed_head, viewer_is_invitee, attention_state,
     attention_reason, through_activity_version, snoozed_until_unix,
     attention_updated_at_unix, attention_revision, claimer_user_id, claimed_at_unix,
     claim_updated_at_unix

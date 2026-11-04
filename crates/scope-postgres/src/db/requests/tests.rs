@@ -12,7 +12,6 @@ use super::super::{
 use super::*;
 use scope_domain::{
     account::UserAccount,
-    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
     repository::{RepoLifecycleState, Repository},
     requests::{
         RecordRequestRevisionInput, RequestActorRole, RequestDiscussionAnchor,
@@ -40,7 +39,6 @@ async fn revision_window_bounds_recent_rows_and_keeps_an_explicit_older_revision
                 actor_can_edit: true,
                 expected_old_head_oid: Some(old_head),
                 new_head_oid: new_head.clone(),
-                git_snapshot: source_blob(&new_head),
                 git_facts: RequestRevisionGitFacts {
                     contains_old_head: true,
                     contained_main_oid: None,
@@ -87,7 +85,6 @@ async fn rewritten_revision_moves_the_stored_request_base() {
             actor_can_edit: true,
             expected_old_head_oid: Some("head".to_string()),
             new_head_oid: "rebased".to_string(),
-            git_snapshot: source_blob("rebased"),
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: false,
                 contained_main_oid: Some("newer-main".to_string()),
@@ -501,15 +498,6 @@ async fn discussion_replies_are_read_as_flat_chronological_pages() {
 async fn close_draft_request_deletes_request_and_events() {
     let store = postgres_store();
     start_public_request(&store).await;
-    let snapshot_refs = [
-        source_blob("head").content_ref,
-        source_blob("head-2").content_ref,
-    ];
-    let initial_references =
-        super::super::object_references::referenced_content_refs(store.db.as_ref())
-            .await
-            .unwrap();
-    assert!(initial_references.contains(&snapshot_refs[0]));
     let pool_segment = scope_domain::repository::git::GitSegmentRef {
         segment_id: "pool-draft".to_string(),
         sha256: "e".repeat(64),
@@ -547,7 +535,6 @@ async fn close_draft_request_deletes_request_and_events() {
                 actor_can_edit: false,
                 expected_old_head_oid: Some("head".to_string()),
                 new_head_oid: "head-2".to_string(),
-                git_snapshot: source_blob("head-2"),
                 git_facts: RequestRevisionGitFacts {
                     contains_old_head: true,
                     contained_main_oid: None,
@@ -599,12 +586,6 @@ async fn close_draft_request_deletes_request_and_events() {
         .await
         .unwrap();
 
-    let referenced_before =
-        super::super::object_references::referenced_content_refs(store.db.as_ref())
-            .await
-            .unwrap();
-    assert!(referenced_before.contains(&snapshot_refs[1]));
-
     let mutation = store
         .requests()
         .close_request(CloseRequestCommand {
@@ -635,32 +616,6 @@ async fn close_draft_request_deletes_request_and_events() {
             .await
             .unwrap()
             .is_empty()
-    );
-    let pending_blobs = store
-        .cleanup()
-        .pending_source_blob_cleanups_for_tests()
-        .await
-        .unwrap();
-    let pending_refs = pending_blobs
-        .iter()
-        .map(|blob| blob.content_ref.clone())
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(
-        pending_refs,
-        [
-            scope_domain::content_ref::ContentRef::git_bundle_sha256("sha256-head"),
-            scope_domain::content_ref::ContentRef::git_bundle_sha256("sha256-head-2"),
-        ]
-        .into_iter()
-        .collect()
-    );
-    let referenced = super::super::object_references::referenced_content_refs(store.db.as_ref())
-        .await
-        .unwrap();
-    assert!(
-        snapshot_refs
-            .iter()
-            .all(|reference| !referenced.contains(reference))
     );
     let pool_upload_state = sea_orm::ConnectionTrait::query_one_raw(
         store.db.as_ref(),
@@ -818,20 +773,7 @@ pub(crate) fn public_upload_input() -> RecordWorkingRequestUploadInput {
         actor_can_edit: true,
         expected_old_head_oid: None,
         new_head_oid: "head".to_string(),
-        git_snapshot: source_blob("head"),
         now_unix: 3,
-    }
-}
-
-pub(crate) fn source_blob(git_oid: &str) -> SourceBlob {
-    SourceBlob {
-        content_ref: scope_domain::content_ref::ContentRef::git_bundle_sha256(format!(
-            "sha256-{git_oid}"
-        )),
-        sha256: format!("sha256-{git_oid}"),
-        git_oid: git_oid.to_string(),
-        git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-        size_bytes: 1,
     }
 }
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::{
     MetadataStore,
-    requests::tests::{postgres_store, source_blob, start_public_request},
+    requests::tests::{postgres_store, start_public_request},
 };
 use scope_domain::requests::{
     RecordRequestRevisionInput, RequestRevisionGitFacts, RevisionDiffStatBuilder,
@@ -18,7 +18,6 @@ async fn revise(store: &MetadataStore, old_head: &str, new_head: &str) -> String
             actor_can_edit: true,
             expected_old_head_oid: Some(old_head.to_string()),
             new_head_oid: new_head.to_string(),
-            git_snapshot: source_blob(new_head),
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: true,
                 contained_main_oid: None,

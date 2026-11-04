@@ -100,57 +100,13 @@ async fn fetch_folders_keep_draft_visibility_separate() {
     assert!(paths.iter().all(|path| !path.exists()));
 }
 
-struct SnapshotReadFails {
-    snapshot_key: String,
-    readable: Arc<dyn ObjectStore>,
-}
-
-#[async_trait::async_trait]
-impl ObjectStore for SnapshotReadFails {
-    async fn put(&self, key: &str, bytes: Vec<u8>) -> Result<(), scope_storage::ObjectStoreError> {
-        self.readable.put(key, bytes).await
-    }
-
-    async fn read_to(
-        &self,
-        key: &str,
-        max_bytes: u64,
-        output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
-    ) -> Result<u64, scope_storage::ObjectStoreError> {
-        if key == self.snapshot_key {
-            return Err(scope_storage::ObjectStoreError::service_unavailable(
-                "snapshot read failed for test",
-            ));
-        }
-        self.readable.read_to(key, max_bytes, output).await
-    }
-
-    async fn delete(&self, key: &str) -> Result<(), scope_storage::ObjectStoreError> {
-        self.readable.delete(key).await
-    }
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fetch_omits_an_unreadable_pack_and_snapshot_then_restores_the_legacy_snapshot_once() {
+async fn fetch_omits_an_unreadable_pool_pack() {
     let state = test_state_with_request().await;
-    let (source, _remote, _server, head) =
+    let (_source, _remote, _server, _head) =
         request_checkout(&state, "read-view-unreadable-snapshot").await;
     let mut legacy = stored_request(&state, REQUEST_ID).await;
-    run_git(
-        Some(&source),
-        &["update-ref", "refs/heads/legacy", &head],
-        "seed legacy snapshot ref",
-    )
-    .unwrap();
-    let (snapshot, bytes) =
-        crate::git::import::git_snapshot_from_ref(&source, "refs/heads/legacy", None).unwrap();
-    state
-        .object_store
-        .put(&scope_storage::object_key(&snapshot), bytes)
-        .await
-        .unwrap();
     legacy.name = "legacy".to_string();
-    legacy.git_snapshot = Some(snapshot.clone());
     state
         .metadata
         .requests()
@@ -188,12 +144,7 @@ async fn fetch_omits_an_unreadable_pack_and_snapshot_then_restores_the_legacy_sn
         )
         .await
         .unwrap();
-    let mut state = state.replica_for_tests();
-    let readable = state.object_store.clone();
-    state.object_store = Arc::new(SnapshotReadFails {
-        snapshot_key: scope_storage::object_key(&snapshot),
-        readable: readable.clone(),
-    });
+    let state = state.replica_for_tests();
     let author = &authorization_headers(bearer_header_for(PUBLIC_SUBJECT, PUBLIC_EMAIL));
     let read =
         |state: AppState| async move { fetch_folder(&state, author, &ViewId::public()).await };
@@ -207,14 +158,4 @@ async fn fetch_omits_an_unreadable_pack_and_snapshot_then_restores_the_legacy_sn
         )
         .is_err()
     );
-
-    state.object_store = readable;
-    let recovered = read(state.clone()).await;
-    assert_eq!(ref_head(recovered.as_ref(), "refs/heads/legacy"), head);
-    state.object_store = Arc::new(SnapshotReadFails {
-        snapshot_key: scope_storage::object_key(&snapshot),
-        readable: state.object_store.clone(),
-    });
-    let reused = read(state.clone()).await;
-    assert_eq!(ref_head(&reused, "refs/heads/legacy"), head);
 }

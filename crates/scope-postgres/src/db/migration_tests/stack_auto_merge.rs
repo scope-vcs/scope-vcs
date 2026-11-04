@@ -28,7 +28,7 @@ async fn stack_stop_reason_migration_preserves_intents_and_enforces_transition_s
             id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
             base_kind, review_base_oid, base_version, main_ancestor_oid, rewrote_history, git_snapshot, created_at_unix
         ) VALUES ('auto-revision', 'auto-request', 1, 'auto-owner', repeat('a',40), repeat('b',40),
-            'Main', repeat('a',40), 1, repeat('a',40), FALSE, '{}', 1);
+            'Main', repeat('a',40), 1, repeat('a',40), FALSE, jsonb_build_object('content_ref', jsonb_build_object('GitBundleSha256', repeat('f',64)), 'sha256', repeat('f',64), 'git_oid', repeat('b',40), 'git_file_mode', '100644', 'size_bytes', 1), 1);
         INSERT INTO scope_request_auto_merge_intents (
             id, repo_id, repository_incarnation_id, request_id, revision_id, head_oid,
             actor_user_id, status, reason, created_position, next_attempt_at_unix, created_at_unix, updated_at_unix

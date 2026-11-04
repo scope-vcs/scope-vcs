@@ -82,8 +82,7 @@ pub(crate) async fn prepare(
         .leases
         .into_iter()
         .fold(folder, GitRepoHandle::with_dependency);
-    let attached =
-        refs::attach_refs(state, &folder, selection, bases, &main_oid, objects.shelves).await?;
+    let attached = refs::attach_refs(&folder, selection, bases, &main_oid).await?;
     if ask.is_listing() {
         state
             .metadata

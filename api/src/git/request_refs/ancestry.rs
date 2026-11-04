@@ -3,32 +3,7 @@ use crate::{
     git::command::{git_is_ancestor, run_git_output},
 };
 use scope_domain::requests::RequestRevisionGitFacts;
-use scope_domain::views::ViewId;
 use std::path::Path as FsPath;
-
-pub(super) fn thin_snapshot_base<'a>(
-    view: ViewId,
-    base_oid: &'a str,
-    accepted_main_oid: Option<&str>,
-    staging_repo: &FsPath,
-) -> Result<Option<&'a str>, ApiError> {
-    if view != ViewId::private() {
-        return Ok(None);
-    }
-    let Some(main_oid) = accepted_main_oid else {
-        return Ok(None);
-    };
-    if !request_ref_oid_is_commit(staging_repo, main_oid)? {
-        return Ok(None);
-    }
-    git_is_ancestor(
-        staging_repo,
-        base_oid,
-        main_oid,
-        "checking request base in accepted Git main",
-    )
-    .map(|in_main| in_main.then_some(base_oid))
-}
 
 pub(super) fn ensure_request_ref_descends_from_base(
     repo: &FsPath,

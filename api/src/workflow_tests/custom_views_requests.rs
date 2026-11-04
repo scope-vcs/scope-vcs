@@ -383,7 +383,7 @@ async fn an_agent_request_push_touching_a_path_the_agent_view_never_showed_is_re
         .await
         .unwrap()
         .unwrap();
-    assert!(request.git_snapshot.is_none());
+    assert!(request.pushed_at_unix.is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

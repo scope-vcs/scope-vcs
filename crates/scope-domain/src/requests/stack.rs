@@ -92,7 +92,7 @@ pub fn validate_request_stack_base(
     let revision = parent_current_revision
         .ok_or_else(|| DomainError::conflict("parent requires a saved current revision"))?;
     if parent.state() != RequestState::Open
-        || parent.git_snapshot.is_none()
+        || parent.pushed_at_unix.is_none()
         || parent.id != *request_id
         || revision.id != *revision_id
         || revision.request_id != parent.id

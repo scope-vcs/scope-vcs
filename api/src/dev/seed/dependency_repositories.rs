@@ -228,7 +228,7 @@ pub(super) fn seed_dependency_repositories(
     object_store: &SeedObjects,
     git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
-) -> Result<Vec<(Repository, SeedMainPack)>, ApiError> {
+) -> Result<Vec<(Repository, SeedPoolPack)>, ApiError> {
     DEPENDENCY_REPOSITORIES
         .iter()
         .map(|fixture| {
@@ -249,7 +249,7 @@ fn dependency_repository(
     owner: &UserAccount,
     name: &str,
     files: &[SeedFile],
-) -> Result<(Repository, SeedMainPack), ApiError> {
+) -> Result<(Repository, SeedPoolPack), ApiError> {
     let mut repository = repo(owner, name, ViewId::public())?;
     repository
         .policy

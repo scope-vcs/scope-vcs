@@ -141,7 +141,6 @@ async fn line_anchor_columns_are_all_set_or_all_null() {
             actor_can_edit: true,
             expected_old_head_oid: Some("head".into()),
             new_head_oid: "head_lines".into(),
-            git_snapshot: source_blob("head_lines"),
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: true,
                 contained_main_oid: None,

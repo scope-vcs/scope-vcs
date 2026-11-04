@@ -54,7 +54,7 @@ pub fn submit_request(
     if !input.actor_can_submit {
         return Err(DomainError::forbidden("request submission access required"));
     }
-    if request.git_snapshot.is_none() {
+    if request.pushed_at_unix.is_none() {
         return Err(DomainError::conflict(
             "request branch must be pushed before submission",
         ));

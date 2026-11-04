@@ -110,13 +110,48 @@ async fn public_request_checks_use_trusted_main_without_exposing_its_workflow() 
     assert_eq!(first_run.state, RunState::Queued);
     assert_eq!(first_run.trigger, RunTrigger::Request);
     assert_eq!(first_run.source.git_oid(), first_head);
-    assert_eq!(
-        first_run.source.ephemeral_bundle(),
-        stored_request(&state, REQUEST_ID)
-            .await
-            .git_snapshot
-            .as_ref()
+    assert!(first_run.source.ephemeral_bundle().is_some());
+    run_git(
+        Some(&source),
+        &["update-ref", REQUEST_REF, &first_head],
+        "retain the former request bundle ref",
+    )
+    .unwrap();
+    let (former_bundle, bytes) =
+        crate::git::import::git_snapshot_from_ref(&source, REQUEST_REF, None).unwrap();
+    assert_ne!(
+        first_run.source.ephemeral_bundle().unwrap().content_ref,
+        former_bundle.content_ref
     );
+    let key = scope_storage::object_key(&former_bundle);
+    state.object_store.put(&key, bytes).await.unwrap();
+    state.object_store.delete(&key).await.unwrap();
+    let materialized = crate::git::run_source::materialize_run_source_bundle(
+        &state.replica_for_tests(),
+        &first_run,
+        4 * 1024 * 1024,
+    )
+    .await
+    .unwrap();
+    let bytes = axum::body::to_bytes(materialized.into_body(), 4 * 1024 * 1024)
+        .await
+        .unwrap();
+    let bundle = source.join("runner.bundle");
+    fs::write(&bundle, bytes).unwrap();
+    let runner = source.join("runner.git");
+    run_git(
+        None,
+        &[
+            "clone",
+            "--bare",
+            "--no-local",
+            bundle.to_str().unwrap(),
+            runner.to_str().unwrap(),
+        ],
+        "clone pool-backed request run after bundle deletion",
+    )
+    .unwrap();
+    assert_eq!(ref_head(&runner, "refs/heads/main"), first_head);
 
     push_change(
         &source,

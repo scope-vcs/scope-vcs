@@ -300,7 +300,6 @@ async fn seed_editable_request_refs_for_repo(
             address_view,
             &refs_for,
             staging_repo,
-            view_bases,
         )
         .await?;
         return Ok(SeededRequestRefs {
@@ -311,10 +310,9 @@ async fn seed_editable_request_refs_for_repo(
     let unreachable = attached.unreachable;
     if !unreachable.is_empty() {
         let view_bases = request_view_bases(state, &git, views, &unreachable, address_view).await?;
-        let state = state.clone();
         let staging_path = staging_repo.to_path_buf();
         crate::git::blocking::run(move || {
-            attach_visible_request_refs(&state, &unreachable, &staging_path, &view_bases)
+            attach_visible_request_refs(&unreachable, &staging_path, &view_bases)
         })
         .await?;
     }
@@ -464,7 +462,6 @@ pub(super) async fn persist_request_ref_revision(
                 new_head_oid: update.new_head_oid.clone(),
                 new_base: publication.map(|publication| publication.base),
                 new_base_stack_depth: None,
-                git_snapshot: persisted.git_snapshot.clone(),
                 git_facts: persisted.git_facts.clone(),
                 event_id: crate::persistence_ids::generate_prefixed_id("event_request_revision")?,
                 body: None,
@@ -492,7 +489,7 @@ pub(super) async fn persist_request_ref_revision(
             state
                 .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestRevised)
                 .await;
-            persisted.fence.release().await;
+
             retain_staged_pool_pack(
                 state,
                 &incarnation,
@@ -530,12 +527,7 @@ pub(super) async fn persist_request_ref_revision(
                 .pool_pack
                 .discard(state, incarnation.repository_id())
                 .await;
-            crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
-                state,
-                std::slice::from_ref(&persisted.git_snapshot),
-            )
-            .await;
-            persisted.fence.release().await;
+
             return Err(error.into());
         }
     }

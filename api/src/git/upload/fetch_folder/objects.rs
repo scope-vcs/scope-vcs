@@ -5,10 +5,7 @@ use crate::{
         cache::GitRepoHandle,
         repository_git::RepositoryGit,
         request_refs::{
-            pool::{
-                PoolInstall, PoolRepos, install_request_pool_packs, request_object_repos,
-                shares_objects,
-            },
+            pool::{PoolInstall, PoolRepos, install_request_pool_packs, request_object_repos},
             view_pool::view_object_repo,
         },
     },
@@ -17,7 +14,7 @@ use crate::{
 use scope_domain::{repo_config::RepoConfig, requests::Request};
 use scope_postgres::db::GitFetchReader;
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -25,7 +22,6 @@ use std::{
 pub(super) struct FetchObjects {
     pub(super) alternates: Vec<PathBuf>,
     pub(super) leases: Vec<GitRepoHandle>,
-    pub(super) shelves: BTreeMap<(String, String), PathBuf>,
 }
 
 pub(super) async fn install_objects(
@@ -41,7 +37,6 @@ pub(super) async fn install_objects(
     let full = view == config.views.full();
     let mut alternates = Vec::new();
     let mut shelf_leases = Vec::new();
-    let mut shelves = BTreeMap::new();
     if full {
         let shelf_state = state.clone();
         let incarnation = git.incarnation.clone();
@@ -56,6 +51,20 @@ pub(super) async fn install_objects(
             repos.shared.clone(),
             repos.authored.clone(),
         ]);
+        {
+            let target = folder.share()?;
+            let borrowed = alternates.clone();
+            blocking::run(move || {
+                for repo in borrowed {
+                    crate::git::staging::add_receive_pack_alternate(
+                        &target,
+                        &repo.join("objects"),
+                    )?;
+                }
+                Ok(())
+            })
+            .await?;
+        }
         shelf_leases.extend(
             install_request_pool_packs(
                 state,
@@ -68,21 +77,6 @@ pub(super) async fn install_objects(
             )
             .await,
         );
-        for request in requests {
-            let target = if shares_objects(request, config) {
-                Some(&repos.shared)
-            } else if user.is_some_and(|user| request.is_author(user)) {
-                Some(&repos.authored)
-            } else {
-                None
-            };
-            if let Some(target) = target {
-                shelves.insert(
-                    (request.id.clone(), request.head_oid.clone()),
-                    target.clone(),
-                );
-            }
-        }
     }
     let request_views = requests
         .iter()
@@ -96,17 +90,12 @@ pub(super) async fn install_objects(
             &git.incarnation,
             config,
             &request_view,
-            (!full).then_some(user.unwrap_or_default()),
+            Some(user.unwrap_or_default()),
         )
         .await?;
         let subset = requests
             .iter()
-            .filter(|request| {
-                request.view == request_view
-                    && (full
-                        || request.is_submitted()
-                        || user.is_some_and(|user| request.is_author(user)))
-            })
+            .filter(|request| request.view == request_view)
             .cloned()
             .collect::<Vec<_>>();
         if !full {
@@ -124,18 +113,12 @@ pub(super) async fn install_objects(
             )
             .await,
         );
-        for request in subset {
-            shelves
-                .entry((request.id, request.head_oid))
-                .or_insert_with(|| shelf.as_ref().to_path_buf());
-        }
         alternates.push(shelf.as_ref().to_path_buf());
         shelf_leases.push(shelf);
     }
     Ok(FetchObjects {
         alternates,
         leases: shelf_leases,
-        shelves,
     })
 }
 

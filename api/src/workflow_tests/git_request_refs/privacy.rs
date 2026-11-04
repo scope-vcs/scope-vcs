@@ -150,7 +150,7 @@ async fn assert_private_history_push_rejected(history: PrivacyHistory, source_la
     .unwrap();
     let request_before = stored_request(&state, REQUEST_ID).await;
     assert_eq!(request_before.head_oid, git_head_oid(&source));
-    assert!(request_before.git_snapshot.is_some());
+    assert!(request_before.pushed_at_unix.is_some());
     let event_count_before = request_event_count(&state).await;
 
     let private_source = TempGitRepo(unique_test_path(&format!("{source_label}-private-source")));
