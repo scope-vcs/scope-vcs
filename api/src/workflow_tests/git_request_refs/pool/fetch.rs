@@ -305,3 +305,25 @@ async fn an_unpushed_child_of_a_closed_parent_keeps_its_ref_without_the_parents(
     );
     assert!(has_commit(&folder, &head));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cached_copy_whose_head_names_an_unborn_branch_still_advertises_main() {
+    let (state, _main, head) =
+        super::super::super::push_intent_completion::published_git_fixture("fetch-unborn-head")
+            .await;
+    let headers = authorization_headers(bearer_header());
+    drop(fetch_folder(&state, &headers, &ViewId::private()).await);
+    let canonical = state
+        .repository_engine
+        .repository_path(&test_repo_incarnation());
+    run_git(
+        Some(&canonical),
+        &["symbolic-ref", "HEAD", "refs/heads/master"],
+        "leave the cached head on an unborn branch",
+    )
+    .unwrap();
+
+    let folder = fetch_folder(&state, &headers, &ViewId::private()).await;
+
+    assert_eq!(ref_head(&folder, "refs/heads/main"), head);
+}

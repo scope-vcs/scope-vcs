@@ -436,7 +436,9 @@ pub(crate) async fn projection_bare_repo_for_state(
             move || async move {
                 let permit = state_for_build.runtime_budgets.try_git_materialization()?;
                 let state = state_for_build.clone();
+                let parent_span = tracing::Span::current();
                 tokio::task::spawn_blocking(move || {
+                    let _entered = parent_span.enter();
                     let _permit = permit;
                     let prefix = cached_projection_prefix(
                         &state.repository_engine,

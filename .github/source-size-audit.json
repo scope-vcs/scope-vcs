@@ -17,11 +17,6 @@
       "reason": "Existing list, queue, lifecycle and start endpoints share HTTP input and response translation; dependency policy lives in scope-domain, metadata reads in scope-postgres and the paged children handler in its own module."
     },
     {
-      "path": "api/src/use_cases/request_checks.rs",
-      "owner": "request check evaluation and recovery",
-      "reason": "Native and GitHub evaluations share revision identity, check-commit renewal, persistence, and recovery; source-bundle preparation and approval uploads live in request_check_sources."
-    },
-    {
       "path": "crates/scope-domain/src/requests/attachments/rules.rs",
       "owner": "request attachment aggregate",
       "reason": "Upload, processing, binding, access, and media-manifest rules share source, derivative, and quota invariants; keeping these pure rules together preserves one policy owner independent of persistence and delivery."

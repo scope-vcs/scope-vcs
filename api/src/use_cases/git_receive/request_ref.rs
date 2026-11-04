@@ -17,7 +17,7 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    repository::{RepoLifecycleState, access::RepositoryAccess},
+    repository::{RepoLifecycleState, access::RepositoryAccess, git::RequestPackScope},
     requests::{
         RecordRequestRevisionInput, Request, RequestCheckReviewer, RequestViewer,
         canonical_request_ref, request_policy,
@@ -48,10 +48,12 @@ pub(crate) struct RequestStagingRepo {
     pub(crate) seed: GitRepoHandle,
     pub(crate) seeded: SeededRequestRefs,
     pub(crate) object_generation: String,
+    pub(crate) full_view: bool,
 }
 
 #[derive(Default)]
 pub(crate) struct SeededRequestRefs {
+    pub(crate) leases: Vec<GitRepoHandle>,
     pub(crate) advertised: Vec<(String, String)>,
     pub(crate) deferred_objects: Option<DeferredRequestObjects>,
 }
@@ -67,7 +69,7 @@ pub(super) async fn actor_has_open_editable_request(
     for (request, is_invitee) in state
         .metadata
         .requests()
-        .requests_with_invitee_status(repo_id, Some(actor_user_id))
+        .branch_mutable_requests_with_invitee_status(repo_id, actor_user_id)
         .await?
     {
         if views.may_read(address_view, &request.view)
@@ -124,7 +126,7 @@ pub(crate) async fn prepare_request_staging_repo(
     let candidates = state
         .metadata
         .requests()
-        .requests_with_invitee_status(&context.repo_id, Some(actor_user_id))
+        .branch_mutable_requests_with_invitee_status(&context.repo_id, actor_user_id)
         .await?;
     if matches!(kind, RequestStagingKind::RequestRefsOnly)
         && !candidates.iter().any(|(request, is_invitee)| {
@@ -198,6 +200,7 @@ pub(crate) async fn prepare_request_staging_repo(
         seed: seed_repo,
         seeded,
         object_generation: context.repo_config.object_generation(),
+        full_view: seeds_canonical_main,
     })
 }
 
@@ -211,7 +214,7 @@ pub(super) async fn seed_editable_request_refs(
     let candidates = state
         .metadata
         .requests()
-        .requests_with_invitee_status(&context.repo_id, Some(actor_user_id))
+        .branch_mutable_requests_with_invitee_status(&context.repo_id, actor_user_id)
         .await?;
     seed_editable_request_refs_for_repo(
         state,
@@ -258,7 +261,7 @@ async fn seed_editable_request_refs_for_repo(
                     .into_iter()
                     .map(|request| (canonical_request_ref(&request.name), request.head_oid))
                     .collect(),
-                deferred_objects: None,
+                ..Default::default()
             });
         }
         RequestRefSeeding::Pushed(_) if !reads_every_request => (Vec::new(), requests),
@@ -290,7 +293,7 @@ async fn seed_editable_request_refs_for_repo(
         )
         .await?
     } else {
-        attach_view_request_refs_from_pool(
+        let leases = attach_view_request_refs_from_pool(
             state,
             &context.incarnation,
             &context.repo_config,
@@ -299,7 +302,10 @@ async fn seed_editable_request_refs_for_repo(
             staging_repo,
         )
         .await?;
-        return Ok(SeededRequestRefs::default());
+        return Ok(SeededRequestRefs {
+            leases,
+            ..Default::default()
+        });
     };
     let unreachable = attached.unreachable;
     if !unreachable.is_empty() {
@@ -313,6 +319,7 @@ async fn seed_editable_request_refs_for_repo(
     Ok(SeededRequestRefs {
         advertised: Vec::new(),
         deferred_objects: attached.deferred,
+        leases: attached.leases,
     })
 }
 
@@ -354,6 +361,7 @@ pub(super) async fn git_push_context(
 pub(super) struct RequestRevisionStaging<'a> {
     pub(super) repo: &'a Path,
     pub(super) object_generation: String,
+    pub(super) full_view: bool,
 }
 
 #[tracing::instrument(skip_all, name = "use_case.git_receive.request_revision")]
@@ -371,6 +379,7 @@ pub(super) async fn persist_request_ref_revision(
     let RequestRevisionStaging {
         repo: staging_repo,
         object_generation,
+        full_view,
     } = staging;
     let expected_incarnation = access.incarnation();
     let actor_user_id = access.author_id();
@@ -421,6 +430,11 @@ pub(super) async fn persist_request_ref_revision(
         .old_head_oid
         .clone()
         .or_else(|| Some(request.head_oid.clone()));
+    let scope = if full_view {
+        RequestPackScope::Full
+    } else {
+        RequestPackScope::View(request.view.clone())
+    };
     let persisted = persist_request_ref(
         state,
         &git,
@@ -428,6 +442,7 @@ pub(super) async fn persist_request_ref_revision(
         staging_repo,
         &published_request,
         &update,
+        scope,
     )
     .await?;
     let expected_base_version = publication
@@ -503,6 +518,7 @@ pub(super) async fn persist_request_ref_revision(
                 &incarnation,
                 &mutation.request,
                 &mutation.revision,
+                Some(staging_repo),
             )
             .await;
         }

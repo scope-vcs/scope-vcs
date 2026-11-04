@@ -62,16 +62,19 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
         .await?
     };
     let main_for_install = main.as_ref().map(GitRepoHandle::share).transpose()?;
+    let shelf_for_install = shelf.share()?;
     let state_for_install = state.clone();
     let incarnation = incarnation.clone();
     let request_for_install = request.clone();
     let revision_for_install = revision.clone();
     let target = shelf.as_ref().to_path_buf();
     let heads = revision_heads(revision);
+    let (leases_sender, mut leases_receiver) = tokio::sync::oneshot::channel();
     state
         .repository_engine
         .install_request_objects(&shelf, heads, move || async move {
             let _main_lease = main_for_install;
+            let _shelf_lease = shelf_for_install;
             let (_canonical, full) = if full {
                 let canonical = lease_canonical(&state_for_install, &incarnation).await?;
                 let mut repos = ensure_full_object_repos(
@@ -96,17 +99,23 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
                     None => PoolRepos::View(&request_for_install.view, &target),
                 },
             };
-            install_revision_objects(
+            let leases = install_revision_objects(
                 &state_for_install,
                 &target,
                 &request_for_install,
                 &revision_for_install,
                 &install,
             )
-            .await
+            .await?;
+            let _ = leases_sender.send(leases);
+            Ok(())
         })
         .await?;
-    inspect_revision(state, &shelf, request, revision, main, action).await
+    let mut leases = leases_receiver.try_recv().unwrap_or_default();
+    leases.extend(main);
+    let path = shelf.as_ref().to_path_buf();
+    leases.push(shelf);
+    inspect_revision(state, &path, request, revision, leases, action).await
 }
 
 fn revision_heads(revision: &RequestRevision) -> Vec<String> {
@@ -128,8 +137,15 @@ async fn install_revision_objects(
     request: &Request,
     revision: &RequestRevision,
     install: &PoolInstall<'_>,
-) -> Result<(), ApiError> {
-    install_revision_packs(state, install, request, revision).await?;
+) -> Result<Vec<GitRepoHandle>, ApiError> {
+    let leases = install_revision_packs(state, install, request, revision).await?;
+    install
+        .copy_full_scope_packs(
+            state,
+            std::slice::from_ref(request),
+            &revision_heads(revision),
+        )
+        .await?;
     let target = shelf.to_path_buf();
     let heads = revision_heads(revision);
     crate::git::blocking::run(move || {
@@ -142,7 +158,8 @@ async fn install_revision_objects(
             ))
         }
     })
-    .await
+    .await?;
+    Ok(leases)
 }
 
 async fn install_revision_packs(
@@ -150,16 +167,16 @@ async fn install_revision_packs(
     install: &PoolInstall<'_>,
     request: &Request,
     revision: &RequestRevision,
-) -> Result<(), ApiError> {
+) -> Result<Vec<GitRepoHandle>, ApiError> {
     let _permit = state.runtime_budgets.try_git_materialization()?;
-    install_missing_request_packs(
+    let (_, leases) = install_missing_request_packs(
         state,
         install,
         std::slice::from_ref(request),
         &revision_heads(revision),
     )
     .await?;
-    Ok(())
+    Ok(leases)
 }
 
 async fn ensure_full_object_repos(
@@ -210,7 +227,7 @@ async fn inspect_revision<T: Send + 'static>(
     shelf: &Path,
     request: &Request,
     revision: &RequestRevision,
-    main: Option<GitRepoHandle>,
+    leases: Vec<GitRepoHandle>,
     action: impl FnOnce(&Path, &RequestRevision) -> Result<T, ApiError> + Send + 'static,
 ) -> Result<T, ApiError> {
     let permit = state.runtime_budgets.wait_git_materialization().await?;
@@ -220,7 +237,7 @@ async fn inspect_revision<T: Send + 'static>(
     let revision = revision.clone();
     crate::git::blocking::run(move || {
         let _permit = permit;
-        let _main = main;
+        let _leases = leases;
         crate::persistence::ensure_private_dir(&root)?;
         let job = tempfile::Builder::new()
             .prefix("revision-")

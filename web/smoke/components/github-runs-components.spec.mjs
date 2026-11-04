@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
+import { fixtureClerk, fixtureRepositorySearch, openFixture } from '../support/fixture-server.mjs'
 
 async function screenshot(page, options) {
   await page.mouse.move(0, 0)
@@ -10,7 +10,7 @@ async function screenshot(page, options) {
   await page.screenshot(options)
 }
 
-const githubRunsFixture = { aliases: [fixtureClerk], tailwind: true }
+const githubRunsFixture = { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true }
 
 test('GitHub workflow runs open on Scope, keep their list across navigation and refresh in place', async (t) => {
   const { base, errors, page } = await openFixture(t, 'github-runs', githubRunsFixture)

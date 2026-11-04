@@ -18,10 +18,17 @@ const PENDING_SOURCE_LINES: { id: string; length: LineSkeletonLength }[] = [
 export function FileNavigatorSkeleton({ showVisibility = true }: { showVisibility?: boolean }) {
   return (
     <div>
-      <div className="mb-2">
-        <BlockSkeleton className="h-8 w-full" />
-      </div>
       <FileSystemTreeSkeleton metaColumnLabel={null} showVisibility={showVisibility} />
+    </div>
+  )
+}
+
+export function ReadmeSkeleton() {
+  return (
+    <div className="space-y-3 px-(--app-inset) py-6">
+      {PENDING_SOURCE_LINES.map((line) => (
+        <LineSkeleton key={line.id} length={line.length} />
+      ))}
     </div>
   )
 }

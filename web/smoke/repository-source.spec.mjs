@@ -11,8 +11,8 @@ import {
 } from './browser-smoke.mjs'
 
 test('public repository exposes only its projected source', async () => {
-  await withPage(repoPath, async (page) => {
-    await assertCurrentRepoSection(page, 'Code')
+  await withPage(`${repoPath}/code`, async (page) => {
+    await assertCurrentRepoSection(page, 'Home')
     await assertPageHeading(page, 'Code')
     const fileList = page.getByLabel('Repository file navigator')
     await fileList.getByRole('heading', { name: 'Files', exact: true }).waitFor()
@@ -158,10 +158,7 @@ test('public repository exposes only its projected source', async () => {
       }
       requestAnimationFrame(sample)
     })
-    await page
-      .getByRole('navigation', { name: 'Primary' })
-      .getByRole('link', { name: 'Code', exact: true })
-      .click()
+    await page.goBack()
     await assertPageHeading(page, 'Code')
     await preview.waitFor()
     const sawCodeReturnLoading = await page.evaluate(() => {

@@ -3,9 +3,9 @@ import { useCachedResource } from '@/lib/use-cached-resource'
 import { nextRequestAttentionAt } from './request-list-model'
 import { refreshRequestQueue, requestQueueResource, type LoadRequestQueuePage } from './request-queue-cache'
 
-export function useRequestQueue(identity: string | null, version: string, loadPage: LoadRequestQueuePage) {
+export function useRequestQueue(identity: string | null, version: string, loadPage: LoadRequestQueuePage, enabled = true) {
   const load = useCallback((signal: AbortSignal) => refreshRequestQueue(identity!, loadPage, signal), [identity, loadPage])
-  const current = useCachedResource({ identity, version, load, resource: requestQueueResource, fallbackError: 'Could not load requests.' })
+  const current = useCachedResource({ enabled, identity, version, load, resource: requestQueueResource, fallbackError: 'Could not load requests.' })
   const expiry = current.value ? nextRequestAttentionAt(current.value.pages) : null
   useEffect(() => {
     if (!identity || expiry === null) return

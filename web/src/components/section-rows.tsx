@@ -16,12 +16,14 @@ export function SectionRows({
 }
 
 export function SectionRow({
+  actions,
   children,
   description,
   icon,
   id,
   title,
 }: {
+  actions?: ReactNode
   children: ReactNode
   description?: ReactNode
   icon?: ReactNode
@@ -40,6 +42,7 @@ export function SectionRow({
             {description}
           </p>
         )}
+        {actions && <div className="mt-2">{actions}</div>}
       </div>
       <div className="min-w-0 md:pt-0.5">{children}</div>
     </section>

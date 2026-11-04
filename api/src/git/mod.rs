@@ -567,6 +567,7 @@ async fn handle_git_receive_pack_body(
             .map(|requests| receive_pack::DeferredObjects {
                 requests,
                 refs_before: preparation.refs_before.as_deref(),
+                leases: &mut preparation.request_object_leases,
             }),
     )
     .await?;

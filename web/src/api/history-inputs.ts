@@ -14,6 +14,7 @@ export function parseHistoryPageInput(input: unknown): HistoryPageInput {
     ...parseRepoParams(input),
     view: parseOptionalView(input),
     before: parseOptionalBefore(input),
+    search: parseOptionalSearch(input),
     feed: parseHistoryFeed((input as { feed?: unknown } | null)?.feed),
   }
 }
@@ -48,6 +49,11 @@ function parseOptionalView(input: unknown): ViewId | null {
     return null
   }
   return parseViewId(view)
+}
+
+function parseOptionalSearch(input: unknown) {
+  const data = input as { search?: unknown } | null
+  return typeof data?.search === 'string' ? data.search.trim() || null : null
 }
 
 function parseOptionalBefore(input: unknown) {

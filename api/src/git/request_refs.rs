@@ -37,10 +37,10 @@ pub(super) mod view_pool;
 pub(crate) use ancestry::request_revision_git_facts;
 use ancestry::{ensure_request_ref_descends_from_base, request_ref_oid_is_commit};
 #[cfg(test)]
-pub(crate) use pool::RequestObjectRepos;
-#[cfg(test)]
 pub(crate) use pool::request_object_repos;
 pub(crate) use pool::retain_staged_pool_pack;
+#[cfg(test)]
+pub(crate) use pool::{PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs};
 pub(crate) use revision::{sweep_revision_jobs, with_request_revision_store_repo};
 pub(crate) use seeding::{
     DeferredRequestObjects, attach_request_refs_from_pool, attach_view_request_refs_from_pool,
@@ -267,6 +267,7 @@ pub(crate) async fn persist_request_ref(
     staging_repo: &FsPath,
     request: &Request,
     update: &RequestRefUpdate,
+    scope: RequestPackScope,
 ) -> Result<PersistedRequestRef, ApiError> {
     let path = staging_repo.to_path_buf();
     let base_oid = request.base.review_base_oid().to_string();
@@ -280,7 +281,6 @@ pub(crate) async fn persist_request_ref(
     .await?;
     let accepted_main_oid = git.git_head.as_ref().map(|head| head.head_oid.clone());
     let views = repo_config.views();
-    let scope = RequestPackScope::for_view(&request.view, views);
     let main_oid = if &request.view == views.full() {
         accepted_main_oid.clone()
     } else {

@@ -13,7 +13,7 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    repository::RepositoryIncarnation,
+    repository::{RepositoryIncarnation, git::RequestPackScope},
     requests::{
         MainPushRequestName, MainPushRequestOutcome, Request, RequestCheckReviewer,
         StartMainPushRequestInput, StartRequestFacts, StartRequestInput, canonical_request_ref,
@@ -137,6 +137,7 @@ pub(super) async fn complete_view_main_push(
         staging_repo,
         &request,
         &update,
+        RequestPackScope::View(push.view.clone()),
     )
     .await?;
     let mutation = state
@@ -210,6 +211,7 @@ pub(super) async fn complete_view_main_push(
         &push.incarnation,
         &mutation.request,
         &mutation.revision,
+        None,
     )
     .await;
     Ok(ViewMainPushOutcome::Landed)

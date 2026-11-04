@@ -1,5 +1,5 @@
 import { LoaderCircle, Search, X } from 'lucide-react'
-import { useEffect, useRef, type KeyboardEventHandler } from 'react'
+import { useEffect, useRef, type InputHTMLAttributes, type KeyboardEventHandler } from 'react'
 import { isTypingTarget } from '@/lib/keyboard-target'
 import { cn } from '@/lib/utils'
 
@@ -13,6 +13,9 @@ export function NavigationSearch({
   onKeyDown,
   describedBy,
   status,
+  input,
+  onEscape,
+  shortcut = true,
 }: {
   label: string
   placeholder: string
@@ -23,9 +26,13 @@ export function NavigationSearch({
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>
   describedBy?: string
   status?: string
+  input?: InputHTMLAttributes<HTMLInputElement>
+  onEscape?: () => void
+  shortcut?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
+    if (!shortcut) return
     function focusSearch(event: KeyboardEvent) {
       if (
         event.key !== '/' ||
@@ -44,7 +51,7 @@ export function NavigationSearch({
     }
     document.addEventListener('keydown', focusSearch)
     return () => document.removeEventListener('keydown', focusSearch)
-  }, [onOpen])
+  }, [onOpen, shortcut])
 
   function clear() {
     onChange('')
@@ -58,6 +65,7 @@ export function NavigationSearch({
         className="pointer-events-none absolute left-2 size-3.5 text-muted-foreground"
       />
       <input
+        {...input}
         aria-describedby={describedBy}
         aria-label={label}
         autoComplete="off"
@@ -70,6 +78,7 @@ export function NavigationSearch({
           if (event.key === 'Escape') {
             event.preventDefault()
             clear()
+            onEscape?.()
           } else onKeyDown?.(event)
         }}
         placeholder={placeholder}

@@ -525,7 +525,10 @@ fn request_file_response(change: InspectedRequestChange) -> CommitFileResponse {
     }
 }
 
-fn git_blob_content(repo: &FsPath, oid: &str) -> Result<ReviewFileContentResponse, ApiError> {
+pub(crate) fn git_blob_content(
+    repo: &FsPath,
+    oid: &str,
+) -> Result<ReviewFileContentResponse, ApiError> {
     Ok(match request_blob_content(repo, oid)? {
         RequestBlobContent::Text(text) => ReviewFileContentResponse::Text { text },
         RequestBlobContent::Binary { size_bytes } => binary_content_response(oid, size_bytes),
