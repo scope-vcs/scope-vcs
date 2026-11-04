@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { RequestQueueItemResponse } from '../../api/types.generated'
 import {
   requestAgeLabel,
   requestAttentionStale,
+  requestStatusLabel,
   resolveCustomSnooze,
   requestSnoozeLandingLabel,
   requestSnoozeUntil,
@@ -72,4 +74,15 @@ test('a custom duration counts elapsed time from confirmation', () => {
   for (const amount of ['', '0', '-1', 'NaN', 'Infinity', '1e300', '0.000001']) {
     assert.equal(resolveCustomSnooze({ mode: 'duration', amount, unit: 'hours' }, now), null, amount)
   }
+})
+
+test('your own request names its next step when you cannot merge it', () => {
+  const own = (status: string, next_step: string) => ({
+    request: { mergeability: { status } },
+    attention: { reason: 'authored' },
+    next_step,
+  }) as unknown as RequestQueueItemResponse
+  assert.equal(requestStatusLabel(own('NotMaintainer', 'fix_checks'), true), 'Checks need attention')
+  assert.equal(requestStatusLabel(own('NotMaintainer', 'wait'), true), 'Maintainer merges')
+  assert.equal(requestStatusLabel(own('ChecksFailed', 'fix_checks'), true), 'CI failed')
 })

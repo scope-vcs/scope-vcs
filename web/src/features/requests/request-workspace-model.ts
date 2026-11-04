@@ -30,7 +30,10 @@ const REASONS: Record<Exclude<RequestAttentionReason, 'authored'>, string> = {
 
 export function requestStatusLabel(item: RequestQueueItemResponse, hydrated: boolean) {
   const { attention, claimer, request } = item
-  if (attention.reason === 'authored') return requestMergeabilityLabel(request)
+  if (attention.reason === 'authored') {
+    const mergeability = requestMergeabilityLabel(request)
+    return request.mergeability.status === 'NotMaintainer' ? (REQUEST_NEXT_STEP_ACTIONS[item.next_step] ?? mergeability) : mergeability
+  }
   if (attention.reason === 'claimed_elsewhere' && claimer) return `Reviewing: ${claimer.handle}`
   if (attention.reason === 'snoozed' && attention.snoozed_until_unix) {
     return `Snoozed until ${formatUnixSnoozeUntil(attention.snoozed_until_unix, hydrated)}`
@@ -58,7 +61,7 @@ export const REQUEST_ATTENTION_GROUP_LABELS: Record<RequestAttentionGroup, strin
 
 export const REQUEST_NEXT_STEP_ACTIONS: Partial<Record<RequestQueueNextStep, string>> = {
   merge: 'Ready to merge',
-  fix_checks: 'Checks failed',
+  fix_checks: 'Checks need attention',
   update: 'Needs an update',
 }
 
