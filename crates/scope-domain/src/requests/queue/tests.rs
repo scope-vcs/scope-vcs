@@ -52,6 +52,8 @@ fn a_stack_shows_with_its_member_that_needs_you_and_others_keep_their_group() {
         member("sibling", Some("parent"), Waiting),
         member("waiting", None, Waiting),
         member("orphan", Some("elsewhere"), Waiting),
+        member("off-page-sibling", Some("off-page"), NeedsYou),
+        member("off-page-waiting", Some("off-page"), Waiting),
         member("set-aside", Some("parent"), SetAside),
         member("alone", None, NeedsYou),
         member("alone-child", Some("alone"), SetAside),
@@ -59,7 +61,8 @@ fn a_stack_shows_with_its_member_that_needs_you_and_others_keep_their_group() {
     assert_eq!(
         request_queue_stack_groups(&members),
         [
-            NeedsYou, NeedsYou, NeedsYou, NeedsYou, Waiting, Waiting, SetAside, NeedsYou, SetAside,
+            NeedsYou, NeedsYou, NeedsYou, NeedsYou, Waiting, Waiting, NeedsYou, NeedsYou, SetAside,
+            NeedsYou, SetAside,
         ]
     );
 }
