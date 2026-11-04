@@ -535,7 +535,7 @@ export type RequestQueueSection = "active" | "unclaimed" | "set_aside" | "done";
 
 export type RequestQueueGroup = "needs_you" | "waiting" | "unclaimed" | "set_aside" | "done";
 
-export type RequestQueueNextStep = "review" | "reply" | "revisit" | "merge" | "fix_checks" | "update" | "wait" | "done";
+export type RequestQueueNextStep = "review" | "reply" | "revisit" | "merge" | "fix_checks" | "approve_checks" | "update" | "submit" | "wait" | "done";
 
 export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled";
 
@@ -543,9 +543,16 @@ export type RequestAttentionReason = "authored" | "invited" | "claimed" | "uncla
 
 export type RequestAttentionResponse = {
 /**
- * The group this row shows in for its viewer.
+ * The viewer's group for this request on its own. Group counts and flat
+ * lists use it.
  */
-group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null,
+group: RequestQueueGroup,
+/**
+ * The group a view that draws stacks together shows this row in. A
+ * waiting request moves to Needs you when another request in its stack
+ * on the same queue page needs the viewer; otherwise this equals `group`.
+ */
+stack_group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null,
 /**
  * Counts the writes to the viewer's attention record; zero without one.
  */

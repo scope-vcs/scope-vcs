@@ -3,7 +3,7 @@ import type { RequestQueueNextStep } from '@/api/types.generated'
 import { Link } from '@tanstack/react-router'
 import type { CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { RequestNextStepIcon } from './request-workspace-rail-marker'
+import { RequestStatusGlyph } from './request-status-glyph'
 import './request-workspace-rail-hint.css'
 
 const RAIL_HINT_VIEWPORT_MARGIN = 8
@@ -86,7 +86,7 @@ function RailHintRequestLine({ request }: { request: RailHintRequest }) {
   return (
     <>
       <span className="request-workspace-rail-hint-step-slot" title={request.status}>
-        <RequestNextStepIcon className="request-workspace-rail-hint-step" nextStep={request.nextStep} />
+        <RequestStatusGlyph className="request-status-glyph" nextStep={request.nextStep} />
       </span>
       <span className="request-workspace-rail-hint-title">{request.title}</span>
       {request.age && <span className="request-workspace-rail-hint-age">{request.age}</span>}

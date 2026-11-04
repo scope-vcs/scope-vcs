@@ -11,7 +11,7 @@ function row(id: string, overrides: Partial<RequestQueueItemResponse['attention'
     author: { handle: 'dev' },
     claimer: null,
     attention: {
-      group: 'waiting', state: 'active', reason: 'authored', activity_version: 3, through_activity_version: 3, revision: 4,
+      group: 'waiting', stack_group: 'waiting', state: 'active', reason: 'authored', activity_version: 3, through_activity_version: 3, revision: 4,
       snoozed_until_unix: null, can_claim: false, can_set_aside: true, can_restore: false, can_release: false,
       ...overrides,
     },
@@ -57,7 +57,7 @@ test('a snoozed row carries its wake time', () => {
 })
 
 test('a restored row returns to active and can be set aside again', () => {
-  const a = row('a', { group: 'set_aside', state: 'settled', reason: 'settled', can_set_aside: false, can_restore: true })
+  const a = row('a', { group: 'set_aside', stack_group: 'set_aside', state: 'settled', reason: 'settled', can_set_aside: false, can_restore: true })
   const shown = applyAttentionMoves(pages({ set_aside: [a] }), [{ item: a, command: { action: 'restore' }, atUnix: 500, confirmed: null }])
   assert.deepEqual(ids(shown.set_aside.requests), [])
   assert.deepEqual(ids(shown.active.requests), ['a'])

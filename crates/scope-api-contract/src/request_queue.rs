@@ -28,8 +28,13 @@ pub struct RequestQueueItemResponse {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestAttentionResponse {
-    /// The group this row shows in for its viewer.
+    /// The viewer's group for this request on its own. Group counts and flat
+    /// lists use it.
     pub group: RequestQueueGroup,
+    /// The group a view that draws stacks together shows this row in. A
+    /// waiting request moves to Needs you when another request in its stack
+    /// on the same queue page needs the viewer; otherwise this equals `group`.
+    pub stack_group: RequestQueueGroup,
     pub state: RequestAttentionState,
     pub reason: RequestAttentionReason,
     pub activity_version: u64,

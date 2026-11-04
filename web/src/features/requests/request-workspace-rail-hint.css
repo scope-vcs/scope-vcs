@@ -79,22 +79,6 @@
   place-items: center;
 }
 
-.request-workspace-rail-hint-step {
-  display: grid;
-  width: 14px;
-  height: 14px;
-  place-items: center;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--foreground) 22%, var(--popover));
-  color: var(--foreground);
-}
-
-.request-workspace-rail-hint-step svg {
-  width: 8px;
-  height: 8px;
-  stroke-width: 2.75;
-}
-
 .request-workspace-rail-hint-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -105,14 +89,4 @@
   color: var(--muted-foreground);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
-}
-
-.request-workspace-rail-hint-step[data-step="fix_checks"] {
-  background: var(--danger);
-  color: var(--background);
-}
-
-.request-workspace-rail-hint-step[data-step="merge"] {
-  background: var(--success);
-  color: var(--background);
 }
