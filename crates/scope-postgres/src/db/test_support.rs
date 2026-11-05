@@ -46,6 +46,9 @@ pub(super) mod fixtures;
 mod database_templates;
 
 #[cfg(any(test, feature = "test-support"))]
+mod process_server;
+
+#[cfg(any(test, feature = "test-support"))]
 mod stale_cleanup;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -131,11 +134,7 @@ impl Drop for TestSchemaLease {
 #[cfg(any(test, feature = "test-support"))]
 impl TestDatabaseTarget {
     pub fn required() -> anyhow::Result<Self> {
-        let database_url = std::env::var("SCOPE_TEST_DATABASE_URL")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "postgres://scope:scope@127.0.0.1:5432/scope_test".to_string());
-        validate_test_database_url(&database_url)?;
+        let database_url = process_server::database_url()?;
         Ok(Self {
             database_url,
             #[cfg(test)]
@@ -747,49 +746,6 @@ fn complete_test_users(catalog: &mut CatalogFixture) {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
-fn validate_test_database_url(database_url: &str) -> anyhow::Result<()> {
-    let lower = database_url.trim().to_ascii_lowercase();
-    if !(lower.starts_with("postgres://") || lower.starts_with("postgresql://")) {
-        anyhow::bail!("SCOPE_TEST_DATABASE_URL must be a postgres:// or postgresql:// URL");
-    }
-
-    let target = lower
-        .split_once("://")
-        .and_then(|(_, rest)| rest.split_once('/').map(|(_, path)| path))
-        .unwrap_or_default();
-    let database_name = target.split(['?', '#']).next().unwrap_or_default();
-    let query = target
-        .split_once('?')
-        .map(|(_, query)| query.split('#').next().unwrap_or_default())
-        .unwrap_or_default();
-    let has_test_marker = has_scope_test_marker(database_name)
-        || query
-            .split('&')
-            .filter_map(|part| part.split_once('='))
-            .any(|(key, value)| {
-                matches!(
-                    key,
-                    "search_path" | "schema" | "current_schema" | "currentschema"
-                ) && has_scope_test_marker(value)
-            });
-
-    if !has_test_marker {
-        anyhow::bail!(
-            "SCOPE_TEST_DATABASE_URL must visibly target a Scope test database or schema; include scope_test, scope-test, scope_vcs_test, or scope-vcs-test in the database name or search_path/schema query"
-        );
-    }
-    Ok(())
-}
-
-#[cfg(any(test, feature = "test-support"))]
-fn has_scope_test_marker(value: &str) -> bool {
-    value.contains("scope_test")
-        || value.contains("scope-test")
-        || value.contains("scope_vcs_test")
-        || value.contains("scope-vcs-test")
-}
-
 #[cfg(test)]
 fn unique_test_schema_name() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -814,31 +770,10 @@ fn quote_pg_ident(identifier: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "local-dev")]
     use super::*;
     #[cfg(feature = "local-dev")]
     use sea_orm::DatabaseBackend;
-
-    #[test]
-    fn test_database_url_accepts_only_explicit_postgres_test_targets() {
-        for url in [
-            "postgres://localhost/scope_test",
-            "postgres://localhost/scope-vcs-test",
-            "postgres://localhost/postgres?search_path=scope_test_run",
-        ] {
-            validate_test_database_url(url).unwrap();
-        }
-        for url in [
-            "postgres://localhost/scope_staging",
-            "postgres://localhost/prod?application_name=scope_test",
-            "postgres://localhost/prod?foo=scope_test",
-            "sqlite://scope_test",
-        ] {
-            assert!(
-                validate_test_database_url(url).is_err(),
-                "{url} must be rejected"
-            );
-        }
-    }
 
     #[cfg(feature = "local-dev")]
     #[test]

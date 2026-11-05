@@ -4,6 +4,98 @@ use sea_orm::sqlx::Connection as _;
 const EXIT_CLEANUP_CHILD: &str = "SCOPE_TEST_DATABASE_EXIT_CLEANUP_CHILD";
 
 #[test]
+fn fixtures_ignore_a_shared_server_without_connection_slots() {
+    const CHILD: &str = "SCOPE_TEST_ISOLATION_CHILD";
+    let target = TestDatabaseTarget::required().unwrap();
+    if std::env::var_os(CHILD).is_some() {
+        assert_ne!(
+            target.database_url,
+            std::env::var("SCOPE_TEST_DATABASE_URL").unwrap(),
+            "fixtures must not use the shared server's exhausted role"
+        );
+        let own: sea_orm::sqlx::postgres::PgConnectOptions = target.database_url.parse().unwrap();
+        let parent: sea_orm::sqlx::postgres::PgConnectOptions =
+            std::env::var("SCOPE_TEST_PARENT_SERVER_URL")
+                .unwrap()
+                .parse()
+                .unwrap();
+        assert_ne!(
+            (own.get_socket(), own.get_host(), own.get_port()),
+            (parent.get_socket(), parent.get_host(), parent.get_port())
+        );
+        run_test_future(async {
+            let shared_url = std::env::var("SCOPE_TEST_DATABASE_URL").unwrap();
+            let error = sea_orm::sqlx::PgConnection::connect(&shared_url)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error
+                    .as_database_error()
+                    .and_then(|error| error.code())
+                    .as_deref(),
+                Some("53300")
+            );
+        });
+        let store = connect_postgres_test_store(&target).unwrap();
+        run_test_future(async move {
+            let row = store
+                .db
+                .query_one_raw(Statement::from_string(
+                    store.db.get_database_backend(),
+                    "SELECT rolsuper AS superuser FROM pg_roles WHERE rolname = current_user"
+                        .to_owned(),
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(!row.try_get::<bool>("", "superuser").unwrap());
+            let settings = store
+                .db
+                .query_one_raw(Statement::from_string(
+                    store.db.get_database_backend(),
+                    "SELECT current_setting('server_encoding') AS encoding,
+                        current_setting('TimeZone') AS timezone,
+                        datcollate, datctype, datlocprovider::text AS provider
+                 FROM pg_database WHERE datname = current_database()"
+                        .to_owned(),
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            for (key, expected) in [
+                ("encoding", "UTF8"),
+                ("timezone", "UTC"),
+                ("datcollate", "en_US.utf8"),
+                ("datctype", "en_US.utf8"),
+                ("provider", "c"),
+            ] {
+                assert_eq!(
+                    settings.try_get::<String>("", key).unwrap(),
+                    expected,
+                    "{key}"
+                );
+            }
+        });
+        return;
+    }
+    let mut blocked_url = url::Url::parse(&target.database_url).unwrap();
+    blocked_url.set_username("scope_blocked").unwrap();
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "db::test_support::database_templates::tests::fixtures_ignore_a_shared_server_without_connection_slots"])
+        .env(CHILD, "1")
+        .env("PGPORT", "5433")
+        .env("SCOPE_TEST_PARENT_SERVER_URL", &target.database_url)
+        .env("SCOPE_TEST_DATABASE_URL", blocked_url.as_str())
+        .output().unwrap();
+    assert!(
+        child.status.success(),
+        "isolated fixture child failed:\n{}\n{}",
+        String::from_utf8_lossy(&child.stdout),
+        String::from_utf8_lossy(&child.stderr)
+    );
+}
+
+#[test]
 fn database_url_replaces_database_and_preserves_query() {
     assert_eq!(
         database_url(
@@ -137,7 +229,11 @@ fn dropped_stores_release_their_connections_while_database_drops_are_queued() {
 #[test]
 fn process_exit_removes_only_its_registered_databases() {
     if let Some(mode) = std::env::var_os(EXIT_CLEANUP_CHILD) {
-        let target = TestDatabaseTarget::required().unwrap();
+        let target = TestDatabaseTarget {
+            database_url: std::env::var("SCOPE_TEST_PARENT_DATABASE_URL").unwrap(),
+            schema_name: unique_test_schema_name(),
+            active_database: Arc::default(),
+        };
         let store = connect_postgres_test_store(&target).unwrap();
         if mode == "orphaned-lease" {
             let name = orphaned_client_with_idle_connection(&store, &target);
@@ -374,7 +470,7 @@ fn cleanup_child(target: &TestDatabaseTarget, mode: &str) -> (u32, std::process:
             "db::test_support::database_templates::tests::process_exit_removes_only_its_registered_databases",
         )
         .env(EXIT_CLEANUP_CHILD, mode)
-        .env("SCOPE_TEST_DATABASE_URL", &target.database_url)
+        .env("SCOPE_TEST_PARENT_DATABASE_URL", &target.database_url)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     let child = command.spawn().unwrap();
