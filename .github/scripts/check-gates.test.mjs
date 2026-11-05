@@ -459,8 +459,49 @@ test('runner base images take packages from the live Debian archive refreshed ea
   }
   const dockerfile = read('runner-runtime/Dockerfile');
   assert.doesNotMatch(dockerfile, /snapshot\.debian\.org/);
-  assert.match(dockerfile, /RUN test -n "\$IMAGE_DEPENDENCY_EPOCH" \\\n\s+&& apt-get .* update/);
+  const aptLayers = runnerAptLayers();
+  assert.ok(aptLayers.length > 0);
+  for (const layer of aptLayers) assert.match(layer, /^RUN test -n "\$IMAGE_DEPENDENCY_EPOCH" && /);
 });
+
+test('the runner installs its fixed APT first with retries disabled, and every apt layer has a deadline', () => {
+  const layers = runnerAptLayers();
+  const scripts = layers.map(layer => {
+    const bounded = layer.match(/timeout --verbose --kill-after=(\d+)s (\d+)s sh -ec '([^']+)'/);
+    assert.ok(bounded, `${layer.slice(0, 60)} must run apt under a wall-clock deadline`);
+    assert.ok(Number(bounded[1]) + Number(bounded[2]) < 360);
+    assert.equal(layer.match(/\bapt-get\b/g).length, bounded[3].match(/\bapt-get\b/g).length);
+    return bounded[3];
+  });
+  const [bootstrap, ...rest] = layers;
+  assert.match(bootstrap, /URIs: http:\/\/deb\.debian\.org\/debian-security' 'Suites: bookworm-security'/);
+  assert.match(bootstrap, / && mv \/etc\/apt\/sources\.list\.d\/debian\.sources \/tmp\/debian\.sources /);
+  assert.match(bootstrap, /mv \/tmp\/debian\.sources \/etc\/apt\/sources\.list\.d\/debian\.sources/);
+  assert.deepEqual([...new Set(bootstrap.match(/Acquire::Retries=\d+/g))], ['Acquire::Retries=0'],
+    'the vulnerable APT must not retry while it installs its own fix');
+  assert.deepEqual(scripts[0].match(/install --yes --no-install-recommends (.+)$/)[1].trim().split(/\s+/),
+    ['"apt=${APT_VERSION}"', '"libapt-pkg6.0=${APT_VERSION}"']);
+  for (const layer of rest) assert.doesNotMatch(layer, /apt=|libapt-pkg/);
+  const dir = mkdtempSync(resolve(tmpdir(), 'scope-runner-apt-'));
+  try {
+    writeFileSync(resolve(dir, 'apt-get'), '#!/bin/sh\nprintf "%s\\n" "$*"\nexit "${APT_EXIT_STATUS:-0}"\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
+    const packages = spawnSync('sh', ['-ec', scripts.at(-1)], { env, encoding: 'utf8' });
+    assert.equal(packages.status, 0, packages.stderr);
+    assert.deepEqual(packages.stdout.trim().split('\n').map(line => line.replace(/^(?:-o \S+ )+/, '').split(' ')[0]), ['update', 'upgrade', 'install']);
+    const failure = spawnSync('sh', ['-ec', scripts.at(-1)], { env: { ...env, APT_EXIT_STATUS: '100' }, encoding: 'utf8' });
+    assert.equal(failure.status, 100, failure.stderr);
+    assert.equal(failure.stdout.trim().split('\n').length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function runnerAptLayers() {
+  const dockerfile = read('runner-runtime/Dockerfile');
+  const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+  return runtime.replaceAll(/[ \t]*\\\n\s*/g, ' ').split('\n').filter(line => line.startsWith('RUN ') && /\bapt-get\b/.test(line));
+}
 
 test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
   const ci = read('.github/workflows/ci.yml');

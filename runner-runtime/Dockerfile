@@ -37,15 +37,28 @@ ARG GIT_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
-    && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
+    && mv /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
+    && printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian-security' 'Suites: bookworm-security' \
+        'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/apt-security.sources \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg6.0=${APT_VERSION}"' \
+    && rm /etc/apt/sources.list.d/apt-security.sources \
+    && mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
     && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 upgrade --yes \
     && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
-        "apt=${APT_VERSION}" "libapt-pkg6.0=${APT_VERSION}" \
         ca-certificates \
         libcurl4 \
         libexpat1 \
         libssl3 \
-        zlib1g \
+        zlib1g' \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=git-builder /opt/git /opt/git
