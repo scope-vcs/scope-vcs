@@ -89,7 +89,7 @@ require_unrun_object_deletions() {
   local since attempted
   since="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$1" --jq '.created_at | fromdateiso8601')"
   [[ "$since" =~ ^[1-9][0-9]*$ ]]
-  attempted="$(staging_sql "SELECT count(*) FROM scope_orphan_object_jobs WHERE created_at_unix >= $since AND (attempts > 0 OR completed_at_unix IS NOT NULL)")"
+  attempted="$(staging_sql "SELECT count(*) FROM scope_orphan_object_jobs WHERE updated_at_unix >= $since AND (attempts > 0 OR completed_at_unix IS NOT NULL)")"
   [[ "$attempted" == 0 ]] || {
     echo "Object deletions queued since baseline run $1 have already run; this snapshot cannot be restored." >&2
     return 1

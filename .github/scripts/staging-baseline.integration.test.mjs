@@ -172,13 +172,14 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
 
   const provision = () => spawnSync('bash', ['.github/scripts/staging-baseline.sh', 'provision', '12'],
     { env, encoding: 'utf8', timeout: 60_000 });
-  sql(`CREATE TABLE scope_orphan_object_jobs(created_at_unix bigint, attempts int, completed_at_unix bigint);
-    INSERT INTO scope_orphan_object_jobs VALUES (${runCreatedUnix - 60}, 2, ${runCreatedUnix - 30}), (${runCreatedUnix + 60}, 1, NULL)`);
+  sql(`CREATE TABLE scope_orphan_object_jobs(created_at_unix bigint, updated_at_unix bigint, attempts int, completed_at_unix bigint);
+    INSERT INTO scope_orphan_object_jobs VALUES (${runCreatedUnix - 90}, ${runCreatedUnix - 30}, 2, ${runCreatedUnix - 30}),
+      (${runCreatedUnix - 60}, ${runCreatedUnix + 60}, 1, NULL)`);
   result = provision();
   assert.notEqual(result.status, 0, 'Provisioning must refuse a snapshot after its queued object deletions ran');
   assert.match(result.stderr, /have already run/);
   assert.match(sql('SELECT version FROM seaql_migrations ORDER BY version'), /m0003_external_storage/);
-  sql(`UPDATE scope_orphan_object_jobs SET attempts = 0 WHERE created_at_unix = ${runCreatedUnix + 60}`);
+  sql(`UPDATE scope_orphan_object_jobs SET attempts = 0 WHERE updated_at_unix = ${runCreatedUnix + 60}`);
   prepared('35');
   result = provision();
   assert.notEqual(result.status, 0, 'Provisioning must run only the baseline run\'s maintenance binary');
