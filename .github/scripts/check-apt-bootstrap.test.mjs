@@ -22,12 +22,16 @@ function verifyBootstrap(layer, version, distro, label) {
   ], label);
   assert.equal(version, distro.version, `${label}: pin the vendor-fixed APT release`);
   assert.match(layer, new RegExp(`'URIs: ${distro.uri}' 'Suites: ${distro.suite}-security'`), label);
-  assert.match(layer, /mv \/etc\/apt\/sources\.list\.d \/tmp\/apt-sources\.list\.d/, label);
-  assert.match(layer, /mv \/etc\/apt\/sources\.list \/tmp\/apt-sources\.list/, label);
-  assert.match(layer, /mv \/tmp\/apt-sources\.list\.d \/etc\/apt\/sources\.list\.d/, label);
-  assert.match(layer, /mv \/tmp\/apt-sources\.list \/etc\/apt\/sources\.list/, label);
-  assert.ok(layer.indexOf('rm -rf /var/lib/apt/lists/*') < layer.indexOf('apt-get'), `${label}: discard inherited package indexes`);
-  return bounded[3];
+  if (label === 'runner-runtime/Dockerfile:final') {
+    assert.match(layer, /mv \/etc\/apt\/sources\.list\.d\/debian\.sources \/tmp\/debian\.sources/, label);
+    assert.match(layer, /mv \/tmp\/debian\.sources \/etc\/apt\/sources\.list\.d\/debian\.sources/, label);
+  } else {
+    assert.match(layer, /mv \/etc\/apt\/sources\.list\.d \/tmp\/apt-sources\.list\.d/, label);
+    assert.match(layer, /mv \/etc\/apt\/sources\.list \/tmp\/apt-sources\.list/, label);
+    assert.match(layer, /mv \/tmp\/apt-sources\.list\.d \/etc\/apt\/sources\.list\.d/, label);
+    assert.match(layer, /mv \/tmp\/apt-sources\.list \/etc\/apt\/sources\.list/, label);
+    assert.ok(layer.indexOf('rm -rf /var/lib/apt/lists/*') < layer.indexOf('apt-get'), `${label}: discard inherited package indexes`);
+  }
 }
 
 test('image stages bootstrap fixed APT from security with retries disabled before other package downloads', () => {
@@ -54,7 +58,6 @@ test('image stages bootstrap fixed APT from security with retries disabled befor
       if (!line.startsWith('RUN ')) continue;
       const script = line.includes('/tmp/install-git.sh') ? gitInstaller.replaceAll(/\\\n\s*/g, ' ').split('\napt-get update')[0] : line;
       if (!/\bapt-get\b/.test(script) || stage.fixed) continue;
-      if (path === 'runner-runtime/Dockerfile' && stage.name === 'final') continue;
       try {
         const distro = distros[stage.distro];
         assert.ok(distro, `${path}:${stage.name}: unknown APT distribution`);
@@ -76,22 +79,23 @@ test('bootstrap sources exclude inherited archives and cached indexes, then rest
     try {
       const apt = resolve(directory, 'etc/apt');
       const lists = resolve(directory, 'var/lib/apt/lists');
+      const sources = path === 'runner-runtime/Dockerfile'
+        ? [['sources.list.d/debian.sources', 'inherited Debian source']]
+        : [['sources.list', 'inherited legacy source'], ['sources.list.d/pgdg.list', 'inherited PostgreSQL source']];
       mkdirSync(`${apt}/sources.list.d`, { recursive: true });
       mkdirSync(lists, { recursive: true });
       mkdirSync(`${directory}/bin`);
-      writeFileSync(`${apt}/sources.list`, 'inherited legacy source');
-      writeFileSync(`${apt}/sources.list.d/pgdg.list`, 'inherited PostgreSQL source');
-      writeFileSync(`${lists}/inherited-Packages`, 'inherited package index');
+      for (const [name, content] of sources) writeFileSync(`${apt}/${name}`, content);
+      if (path !== 'runner-runtime/Dockerfile') writeFileSync(`${lists}/inherited-Packages`, 'inherited package index');
       writeFileSync(`${directory}/bin/apt-get`, '#!/bin/sh\nset -eu\ntest ! -f "$APT_ROOT/sources.list"\ntest "$(ls "$APT_ROOT/sources.list.d")" = apt-security.sources\ntest -z "$(ls "$APT_LISTS")"\ncat "$APT_ROOT/sources.list.d/apt-security.sources"\n', { mode: 0o755 });
-      const isolated = script.replaceAll('/etc/apt', apt).replaceAll('/var/lib/apt/lists', lists).replaceAll('/tmp/apt-sources', `${directory}/saved-apt-sources`);
-      const result = spawnSync('bash', ['-ec', isolated, 'bootstrap-probe', '2.55.0', '0'.repeat(64)], { env: { ...process.env, PATH: `${directory}/bin:${process.env.PATH}`, APT_VERSION: 'test-pin', APT_ROOT: apt, APT_LISTS: lists }, encoding: 'utf8' });
+      const isolated = script.replaceAll('/etc/apt', apt).replaceAll('/var/lib/apt/lists', lists).replaceAll('/tmp/apt-sources', `${directory}/saved-apt-sources`).replaceAll('/tmp/debian.sources', `${directory}/debian.sources`);
+      const result = spawnSync('bash', ['-ec', isolated, 'bootstrap-probe', '2.55.0', '0'.repeat(64)], { env: { ...process.env, PATH: `${directory}/bin:${process.env.PATH}`, APT_VERSION: 'test-pin', IMAGE_DEPENDENCY_EPOCH: 'fixture', APT_ROOT: apt, APT_LISTS: lists }, encoding: 'utf8' });
       assert.equal(result.status, 0, `${path}: ${result.stderr}`);
-      const sources = result.stdout.trim().split('\n');
-      assert.equal(sources.length, 10, path);
-      assert.equal(sources.filter(line => /^Suites: (bookworm|trixie|noble)-security$/.test(line)).length, 2, path);
-      assert.equal(sources.filter(line => /^URIs: http:\/\/(deb.debian.org\/debian-security|security.ubuntu.com\/ubuntu)$/.test(line)).length, 2, path);
-      assert.equal(readFileSync(`${apt}/sources.list`, 'utf8'), 'inherited legacy source', path);
-      assert.equal(readFileSync(`${apt}/sources.list.d/pgdg.list`, 'utf8'), 'inherited PostgreSQL source', path);
+      const observed = result.stdout.trim().split('\n');
+      assert.equal(observed.length, 10, path);
+      assert.equal(observed.filter(line => /^Suites: (bookworm|trixie|noble)-security$/.test(line)).length, 2, path);
+      assert.equal(observed.filter(line => /^URIs: http:\/\/(deb.debian.org\/debian-security|security.ubuntu.com\/ubuntu)$/.test(line)).length, 2, path);
+      for (const [name, content] of sources) assert.equal(readFileSync(`${apt}/${name}`, 'utf8'), content, path);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
