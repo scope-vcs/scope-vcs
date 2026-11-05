@@ -9,9 +9,12 @@ RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
 
 FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
 ARG IMAGE_DEPENDENCY_EPOCH=local
+ARG APT_VERSION=2.8.4ubuntu0.1
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
     && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 libexpat1 libssl3t64 zlib1g \
+    && apt-get install -y --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg6.0t64=${APT_VERSION}" \
+        ca-certificates libcurl4t64 libexpat1 libssl3t64 zlib1g \
     && rm -rf /var/lib/apt/lists/*
 ARG GIT_VERSION
 ARG SCOPE_ANALYTICS_RELEASE

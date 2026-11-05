@@ -80,9 +80,11 @@ ARG PCRE2_VERSION=10.46-1~deb13u3
 ARG LIBRSVG_VERSION=2.60.0+dfsg-1+deb13u1
 ARG EXPAT_VERSION=2.9.0-1~deb13u1
 ARG BROTLI_VERSION=1.1.0-2+deb13u1
+ARG APT_VERSION=3.0.4
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg7.0=${APT_VERSION}" \
         ca-certificates=20250419+deb13u1 \
         ffmpeg=7:7.1.5-0+deb13u1 \
         libaom3 libde265-0 libjpeg62-turbo libpng16-16t64 libx265-215 \
