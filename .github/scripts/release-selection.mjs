@@ -121,22 +121,40 @@ function selection(prepared, recoveryId = "", resumeStaging = false, selected = 
 async function selectRollback({ rollbackTo = "", repository, releases, deployments, loadPrepared,
   configChanged }, request) {
   if (rollbackTo && !/^[0-9a-f]{40}$/.test(rollbackTo)) throw new Error("rollback_to must be a full commit SHA");
-  const [current, ...earlier] = releases;
+  const [current] = releases;
   if (!current) throw new Error("Rollback requires a verified production release");
   const replaced = new Set([current.receipt.sourceSha, current.receipt.rollbackOf].filter(Boolean));
-  const newer = new Set([current.receipt.sourceSha]);
-  const target = earlier.find(({ receipt }) => {
+  const targetIndex = releases.findIndex(({ receipt }, index) => {
+    if (index === 0) return false;
     const found = rollbackTo ? receipt.sourceSha === rollbackTo : !replaced.has(receipt.sourceSha);
-    if (!found) {
-      newer.add(receipt.sourceSha);
-      if (receipt.rollbackOf) replaced.add(receipt.rollbackOf);
-    }
+    if (!found && receipt.rollbackOf) replaced.add(receipt.rollbackOf);
     return found;
   });
-  if (!target) {
+  if (targetIndex === -1) {
     throw new Error(rollbackTo ? `${rollbackTo} has no earlier verified production release` : "No earlier verified production release exists");
   }
+  const target = releases[targetIndex];
   const targetSha = target.receipt.sourceSha;
+
+  const verifiedAt = new Map();
+  releases.forEach(({ receipt }, index) => Object.values(receipt.components).forEach(({ evidenceId }) => {
+    if (!verifiedAt.has(evidenceId)) verifiedAt.set(evidenceId, index);
+  }));
+  const selected = components.filter(component => {
+    const index = verifiedAt.get(deployments[component]?.evidenceId);
+    if (index === undefined) {
+      throw new Error(`Production ${component} runs a deployment no recent verified release recorded; repair it before rolling back`);
+    }
+    return index < targetIndex;
+  });
+  if (selected.length === 0) throw new Error(`Production already runs ${targetSha}`);
+  const restorable = new Set(releases.filter(({ receipt }) => receipt.sourceSha === targetSha)
+    .flatMap(({ receipt }) => Object.keys(receipt.components)));
+  const missing = selected.filter(component => !restorable.has(component));
+  if (missing.length) {
+    throw new Error(`The ${targetSha} release did not deploy ${missing.join(", ")}; choose an older rollback_to`);
+  }
+
   if (!target.runId) throw new Error(`The ${targetSha} release receipt does not name its Release run`);
   const run = await request(`/actions/runs/${target.runId}`);
   if (run.path !== ".github/workflows/release.yml" || run.head_branch !== "main"
@@ -146,18 +164,9 @@ async function selectRollback({ rollbackTo = "", repository, releases, deploymen
     throw new Error(`Run ${target.runId} is not a successful Release run on main`);
   }
   const prepared = await loadPrepared(target.runId, targetSha);
-  validatePreparedRelease(prepared, { sourceSha: targetSha, services: deploymentManifest().services });
-  await validateRecoveryPreparation(prepared, request, repository);
-
-  const selected = components.filter(component => {
-    const deployed = deployments[component]?.sourceSha;
-    return deployed !== targetSha && newer.has(deployed);
-  });
-  if (selected.length === 0) throw new Error(`Production already runs ${targetSha}`);
-  const missing = selected.filter(component => !prepared.components[component]);
-  if (missing.length) {
-    throw new Error(`The ${targetSha} release did not deploy ${missing.join(", ")}; choose an older rollback_to`);
-  }
+  const deployment = deploymentManifest();
+  validatePreparedRelease(prepared, { sourceSha: targetSha, services: deployment.services });
+  await validateRecoveryPreparation(prepared, request, repository, deployment, selected);
   const runtimeConfigs = selected.map(component => deploymentComponent(component).runtimeConfig);
   if (configChanged(targetSha, runtimeConfigs)) {
     throw new Error(`Railway runtime config changed after ${targetSha}; roll forward instead`);
@@ -231,7 +240,7 @@ async function main() {
     sourceRunId: process.env.SOURCE_RUN_ID || "", resumeStaging: process.env.RESUME_STAGING === 'true',
     rollback: process.env.ROLLBACK === 'true', rollbackTo: process.env.ROLLBACK_TO || "",
     scheduled: Boolean(process.env.SCHEDULE_INTENT), repository: process.env.GITHUB_REPOSITORY,
-    loadPrepared: downloadPrepared, loadReleases: () => successfulReleaseHistory(20),
+    loadPrepared: downloadPrepared, loadReleases: () => successfulReleaseHistory(50),
     loadDeployments: () => latestSuccessfulDeployments(), configChanged: runtimeConfigChanged }, githubRequest);
   const { prepared, ...outputs } = result;
   if (prepared) writeFileSync("selected-release.json", `${JSON.stringify(prepared, null, 2)}\n`);

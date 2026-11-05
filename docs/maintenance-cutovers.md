@@ -129,7 +129,7 @@ Rollback reads the `production/release` receipts, downloads the target's
 prepared manifest from the Release run that recorded it, and checks that its
 preparation ran on main. Validation, image builds, and staging are skipped
 because those exact images already passed them and ran in production. It
-redeploys only the components whose receipts changed after the target, through
+redeploys only the components that a later verified release changed, through
 the ordinary production preflight, deploy jobs, observation, and final health
 gate.
 
@@ -139,6 +139,8 @@ Rollback refuses, and changes nothing, when:
   target's maintenance binary;
 - a component's Railway runtime config changed after the target;
 - a component changed after the target, but the target release did not deploy it;
+- a live component's deployment was not recorded by one of the last 50 verified
+  releases, for example after a deploy whose final health gate failed;
 - a cutover is unresolved.
 
 In those cases, roll forward with a fix. CLI downloads and the runner base image

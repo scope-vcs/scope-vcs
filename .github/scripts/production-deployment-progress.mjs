@@ -71,11 +71,18 @@ function releaseEvidence(deployment) {
     payload?.kind !== "scope-production-release"
     || payload.sourceSha !== deployment.sha
     || !SOURCE_SHA_PATTERN.test(payload.sourceSha ?? "")
+    || typeof payload.components !== "object"
+    || payload.components === null
+    || !Object.values(payload.components).every(evidence => typeof evidence?.evidenceId === "string")
     || (payload.rollbackOf !== undefined && !SOURCE_SHA_PATTERN.test(payload.rollbackOf))
   ) {
     return null;
   }
-  return { sourceSha: payload.sourceSha, ...(payload.rollbackOf ? { rollbackOf: payload.rollbackOf } : {}) };
+  return {
+    sourceSha: payload.sourceSha,
+    components: payload.components,
+    ...(payload.rollbackOf ? { rollbackOf: payload.rollbackOf } : {}),
+  };
 }
 
 async function successfulReceipts(environment, evidence, limit, fetchImpl) {
