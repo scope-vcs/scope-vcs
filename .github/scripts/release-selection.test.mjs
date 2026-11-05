@@ -312,7 +312,11 @@ function rollback(state, { releases, deployments, rollbackTo = "", configChanged
     loadDeployments: async () => deployments
       ?? Object.fromEntries(applicationComponents.map(component => [component, { sourceSha: badSha }])),
     loadPrepared: async (...args) => { state.downloads.push(args); return state.prepared; },
-    configChanged }, path => path.startsWith("/deployments?") ? [] : state.request(path));
+    configChanged }, path => {
+    if (path.startsWith("/deployments?")) return [];
+    if (path === "/actions/runs/555") return { ...state.run, id: 555, head_sha: mainSha, conclusion: "success", ...state.releaseRun };
+    return state.request(path);
+  });
 }
 
 test("rollback redeploys the previous verified release without staging", async () => {
@@ -356,6 +360,10 @@ test("rollback refuses targets it cannot restore exactly", async () => {
     ["target did not deploy a changed component", state => { delete state.prepared.components.web; }, {}, /did not deploy web/],
     ["runtime config changed", () => {}, { configChanged: () => true }, /runtime config changed/],
     ["untrusted preparation", state => { state.jobs[1].conclusion = "failure"; }, {}, /preparation job/],
+    ["receipt names another workflow", state => { state.releaseRun = { path: ".github/workflows/ci.yml" }; }, {},
+      /not a successful Release run/],
+    ["receipt names an unfinished run", state => { state.releaseRun = { conclusion: "failure" }; }, {},
+      /not a successful Release run/],
     ["no earlier release", () => {}, { releases: [{ receipt: { sourceSha: badSha }, runId: "901" }] },
       /No earlier verified/],
     ["unknown target", () => {}, { rollbackTo: "f".repeat(40) }, /has no earlier verified/],

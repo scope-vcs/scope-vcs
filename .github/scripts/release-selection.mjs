@@ -138,6 +138,13 @@ async function selectRollback({ rollbackTo = "", repository, releases, deploymen
   }
   const targetSha = target.receipt.sourceSha;
   if (!target.runId) throw new Error(`The ${targetSha} release receipt does not name its Release run`);
+  const run = await request(`/actions/runs/${target.runId}`);
+  if (run.path !== ".github/workflows/release.yml" || run.head_branch !== "main"
+      || run.repository?.full_name !== repository || run.head_repository?.full_name !== repository
+      || !["schedule", "workflow_dispatch"].includes(run.event)
+      || run.status !== "completed" || run.conclusion !== "success") {
+    throw new Error(`Run ${target.runId} is not a successful Release run on main`);
+  }
   const prepared = await loadPrepared(target.runId, targetSha);
   validatePreparedRelease(prepared, { sourceSha: targetSha, services: deploymentManifest().services });
   await validateRecoveryPreparation(prepared, request, repository);
