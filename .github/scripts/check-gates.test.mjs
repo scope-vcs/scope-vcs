@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { classifyChanges } from './plan-production-deployment.mjs';
+import { checkMainAdvisories } from './main-advisories.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
@@ -32,6 +33,25 @@ test('the backend gate covers the whole workspace and the API feature suites exp
   assert.ok(backend.includes(`cargo test -p api --locked -- --skip ${apiFilter}`));
   assert.ok(backend.includes('cargo test -p api --features local-dev --locked dev::'));
   assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
+});
+
+test('the daily main advisory job runs both PR advisory commands with only JSON formatting added', () => {
+  const workflow = read('.github/workflows/main-advisories.yml');
+  assert.match(workflow, /schedule:\n    - cron: '[^']+ \* \* \*'/);
+  assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /run: \.\/dev\/install-cargo-deny.sh/);
+  assert.match(workflow, /run: node \.github\/scripts\/main-advisories.mjs "\$RUNNER_TEMP\/main-advisories.json"/);
+  const scheduled = checkMainAdvisories((file, args) => ({
+    status: 0, stdout: commands(basename(file), ...args).join('\n'),
+  }));
+  const gated = ['backend', 'cli'].flatMap(gate => commands(gate).filter(line => line.startsWith('cargo deny ')));
+  assert.deepEqual(scheduled.map(check => check.output.trim().replace(' --format json', '')), gated);
+  const selected = classifyChanges(manifest, ['dev/checks/advisories']);
+  for (const gate of ['backend', 'cli']) {
+    for (const [component, required] of Object.entries(classifyChanges(manifest, [`dev/checks/${gate}`]))) {
+      if (required) assert.equal(selected[component], true, `${component} must check shared advisory changes`);
+    }
+  }
 });
 
 test('GitHub runs every backend gate lane exactly once', () => {
@@ -128,7 +148,7 @@ const alwaysOnGateInputs = [
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.sh)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|main-advisories|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 

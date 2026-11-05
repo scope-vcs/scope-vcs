@@ -31,6 +31,7 @@ node --test \
   .github/scripts/scan-report.test.mjs \
   .github/scripts/push-image-tags.test.mjs \
   .github/scripts/audit-railway-experiments.test.mjs \
+  .github/scripts/main-advisories.test.mjs \
   .github/scripts/check-backend-binary-sizes.test.mjs \
   .github/scripts/check-production-backups.test.mjs \
   .github/scripts/production-deployment-progress.test.mjs \
