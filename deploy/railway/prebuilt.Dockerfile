@@ -12,10 +12,25 @@ ARG INSTALL_GIT=0
 ARG IMAGE_DEPENDENCY_EPOCH=local
 ENV _RJEM_MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000
 ARG APT_VERSION=2.8.4ubuntu0.1
+RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
+    && if [ -f /etc/apt/sources.list ]; then mv /etc/apt/sources.list /tmp/apt-sources.list; fi \
+    && mkdir /etc/apt/sources.list.d \
+    && printf '%s\n' 'Types: deb' 'URIs: http://security.ubuntu.com/ubuntu' 'Suites: noble-security' \
+        'Components: main' 'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/apt-security.sources \
+    && rm -rf /var/lib/apt/lists/* \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg6.0t64=${APT_VERSION}"' \
+    && rm -rf /etc/apt/sources.list.d \
+    && mv /tmp/apt-sources.list.d /etc/apt/sources.list.d \
+    && if [ -f /tmp/apt-sources.list ]; then mv /tmp/apt-sources.list /etc/apt/sources.list; fi \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        "apt=${APT_VERSION}" "libapt-pkg6.0t64=${APT_VERSION}" \
         ca-certificates libssl3t64 \
     && if [ "$INSTALL_GIT" = 1 ]; then apt-get install -y --no-install-recommends libcurl4t64 libexpat1 zlib1g; fi \
     && rm -rf /var/lib/apt/lists/*
