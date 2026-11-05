@@ -92,26 +92,33 @@ restore_snapshot() {
 
 record_deletions_since() {
   cat <<SQL
-CREATE TEMP TABLE scope_baseline_deletions ON COMMIT DROP AS
-  SELECT 'source' AS kind, object_key::text AS key FROM public.scope_orphan_object_jobs
-    WHERE updated_at_unix >= $1 AND (attempts > 0 OR completed_at_unix IS NOT NULL)
-  UNION ALL SELECT 'repository', repo_id || ':' || generation FROM public.scope_repo_storage_cleanup_jobs
-    WHERE updated_at_unix >= $1 AND (attempts > 0 OR completed_at_unix IS NOT NULL)
-  UNION ALL SELECT 'media', attachment_id FROM public.scope_request_media_cleanup_jobs
-    WHERE updated_at_unix >= $1 AND (attempt > 0 OR completed_at_unix IS NOT NULL);
+CREATE TEMP TABLE scope_deleted_sources ON COMMIT DROP AS
+  SELECT object_key::text AS object_key FROM public.scope_orphan_object_jobs
+  WHERE updated_at_unix >= $1 AND (attempts > 0 OR completed_at_unix IS NOT NULL);
+CREATE TEMP TABLE scope_deleted_repository_storage ON COMMIT DROP AS
+  SELECT repo_id::text AS repo_id, generation::text AS generation, incarnation_id::text AS incarnation_id
+  FROM public.scope_repo_storage_cleanup_jobs
+  WHERE updated_at_unix >= $1 AND (attempts > 0 OR completed_at_unix IS NOT NULL);
+CREATE TEMP TABLE scope_deleted_media ON COMMIT DROP AS
+  SELECT attachment_id::text AS attachment_id FROM public.scope_request_media_cleanup_jobs
+  WHERE updated_at_unix >= $1 AND (attempt > 0 OR completed_at_unix IS NOT NULL);
 SQL
 }
 
 require_snapshot_expected_deletions() {
   cat <<'SQL'
 DO $guard$ BEGIN
-  IF EXISTS (SELECT 1 FROM pg_temp.scope_baseline_deletions deletion WHERE NOT EXISTS (
-      SELECT 1 FROM public.scope_orphan_object_jobs job WHERE deletion.kind = 'source'
-        AND job.object_key = deletion.key AND job.completed_at_unix IS NULL
-      UNION ALL SELECT 1 FROM public.scope_repo_storage_cleanup_jobs job WHERE deletion.kind = 'repository'
-        AND job.repo_id || ':' || job.generation = deletion.key AND job.completed_at_unix IS NULL
-      UNION ALL SELECT 1 FROM public.scope_request_media_cleanup_jobs job WHERE deletion.kind = 'media'
-        AND job.attachment_id = deletion.key AND job.completed_at_unix IS NULL)) THEN
+  IF EXISTS (SELECT 1 FROM pg_temp.scope_deleted_sources deleted
+      JOIN public.scope_object_references reference ON reference.object_key = deleted.object_key)
+    OR EXISTS (SELECT 1 FROM pg_temp.scope_deleted_repository_storage deleted
+      JOIN public.scope_repositories repository ON repository.id = deleted.repo_id
+        AND (deleted.incarnation_id IS NULL OR repository.incarnation_id = deleted.incarnation_id)
+      WHERE NOT EXISTS (SELECT 1 FROM public.scope_repo_storage_cleanup_jobs job
+        WHERE job.repo_id = deleted.repo_id AND job.generation = deleted.generation AND job.completed_at_unix IS NULL))
+    OR EXISTS (SELECT 1 FROM pg_temp.scope_deleted_media deleted
+      JOIN public.scope_request_media_attachments attachment ON attachment.id = deleted.attachment_id
+      WHERE NOT EXISTS (SELECT 1 FROM public.scope_request_media_cleanup_jobs job
+        WHERE job.attachment_id = deleted.attachment_id AND job.completed_at_unix IS NULL)) THEN
     RAISE EXCEPTION 'Objects live in this snapshot were deleted after it was taken';
   END IF;
 END $guard$;
