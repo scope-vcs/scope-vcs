@@ -9,9 +9,12 @@ RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
 
 FROM postgres:18.6@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
 ARG IMAGE_DEPENDENCY_EPOCH=local
+ARG APT_VERSION=3.0.4
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
     && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 libexpat1 zlib1g \
+    && apt-get install -y --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg7.0=${APT_VERSION}" \
+        ca-certificates libcurl4t64 libexpat1 zlib1g \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 65532 --user-group --create-home --shell /usr/sbin/nologin scope \
     && mkdir -p /app/.scope /home/scope/.cache \
