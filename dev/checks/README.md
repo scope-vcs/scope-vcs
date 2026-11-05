@@ -8,6 +8,7 @@ root, regardless of the caller's working directory.
 | --- | --- |
 | `backend` | Workspace formatting, dependency advisories, tests, API test support, local development helpers, Clippy; `backend <lane>` runs one of `lint`, `workspace`, `api-git-refs`, `api`, or `features`, which GitHub runs as parallel jobs |
 | `cli` | Standalone formatting, dependency advisories, tests, distribution selector, Clippy |
+| `advisories workspace\|cli` | Shared cargo-deny advisory commands used by PR gates and the daily main check |
 | `cli-bundle` | Host release binaries, archive size cap, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |

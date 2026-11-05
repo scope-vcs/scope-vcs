@@ -8,7 +8,7 @@ api_git_refs=workflow_tests::git_request_refs::
 
 lint() {
   cargo fmt --all --check
-  cargo deny --locked check advisories
+  ./dev/checks/advisories workspace
   cargo clippy --workspace --all-targets --locked -- -D warnings
 }
 
