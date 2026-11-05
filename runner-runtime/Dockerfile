@@ -30,10 +30,23 @@ RUN cargo build --locked --release -p scope-runner-runtime
 
 FROM --platform=linux/amd64 debian:bookworm-slim@sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867
 
-ARG DEBIAN_SNAPSHOT=20261104T150000Z
+ARG DEBIAN_SNAPSHOT=20261102T142815Z
 ARG GIT_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+ARG APT_VERSION=2.6.2
+RUN mv /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
+    && printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian-security' 'Suites: bookworm-security' \
+        'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/apt-security.sources \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg6.0=${APT_VERSION}"' \
+    && rm /etc/apt/sources.list.d/apt-security.sources \
+    && mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN sed -i \
         -e "s|http://deb.debian.org/debian-security|http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}|" \

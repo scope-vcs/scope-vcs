@@ -469,6 +469,30 @@ test('runner validation reads a durable registry cache refreshed only from main'
   }
 });
 
+test('runner apt fixes come pinned from the live security archive under a deadline', () => {
+  const dockerfile = read('runner-runtime/Dockerfile').replaceAll(/\\\n/g, ' ');
+  for (const layer of dockerfile.split('\n').filter(line => line.startsWith('RUN ') && /\bapt-get\b/.test(line))) {
+    const bounded = layer.match(/timeout --verbose --kill-after=(\d+)s (\d+)s sh -ec '([^']+)'/);
+    assert.ok(bounded, `${layer.slice(0, 60)} must run apt under a wall-clock deadline`);
+    assert.ok(Number(bounded[1]) + Number(bounded[2]) < 360);
+    assert.equal(layer.match(/\bapt-get\b/g).length, bounded[3].match(/\bapt-get\b/g).length);
+  }
+  const lines = dockerfile.split('\n');
+  const fix = lines.find(line => line.includes('apt-security.sources') && /\bapt-get\b/.test(line));
+  assert.ok(fix, 'runner apt fixes need their own live security layer');
+  assert.ok(lines.indexOf(fix) < lines.findIndex(line => line.startsWith('RUN sed -i ')),
+    'the fixed APT must be installed before any other package download');
+  assert.deepEqual([...new Set(fix.match(/Acquire::Retries=\d+/g))], ['Acquire::Retries=0'],
+    'the vulnerable APT must not retry while it installs its own fix');
+  assert.match(fix, /URIs: http:\/\/deb\.debian\.org\/debian-security' 'Suites: bookworm-security'/);
+  assert.doesNotMatch(fix, /snapshot\.debian\.org/);
+  assert.match(fix, /^RUN mv \/etc\/apt\/sources\.list\.d\/debian\.sources \/tmp\/debian\.sources /);
+  assert.match(fix, /mv \/tmp\/debian\.sources \/etc\/apt\/sources\.list\.d\/debian\.sources/);
+  const packages = fix.match(/install --yes --no-install-recommends ([^']+)'/)[1].trim().split(/\s+/);
+  assert.deepEqual(packages, ['"apt=${APT_VERSION}"', '"libapt-pkg6.0=${APT_VERSION}"']);
+  assert.match(dockerfile, /^ARG APT_VERSION=\d+\.\d+\.\d+$/m);
+});
+
 test('runner snapshot acquisition bounds all apt operations and propagates failures', () => {
   const dockerfile = read('runner-runtime/Dockerfile').replaceAll(/\\\n/g, ' ');
   const layer = dockerfile.split('\n').find(line => line.startsWith('RUN sed -i '));
