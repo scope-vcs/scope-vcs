@@ -446,6 +446,19 @@ test('runner base images pass the container lifecycle gate and scan before publi
   assert.match(publish.slice(push), /bash \.github\/scripts\/push-image-tags\.sh <<< "\$IMAGE"/);
 });
 
+test('runner base images take packages from the live Debian archive refreshed each week', () => {
+  const runner = read('.github/workflows/scope-runner-image.yml');
+  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
+  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
+  for (const lane of [candidate, publish]) {
+    assert.match(lane, /echo "dependency_epoch=\$\(date -u \+%G-W%V\)" >> "\$GITHUB_OUTPUT"/);
+    assert.match(lane, /IMAGE_DEPENDENCY_EPOCH=\$\{\{ steps\.git\.outputs\.dependency_epoch \}\}/);
+  }
+  const dockerfile = read('runner-runtime/Dockerfile');
+  assert.doesNotMatch(dockerfile, /snapshot\.debian\.org/);
+  assert.match(dockerfile, /RUN test -n "\$IMAGE_DEPENDENCY_EPOCH" \\\n\s+&& apt-get .* update/);
+});
+
 test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
   const ci = read('.github/workflows/ci.yml');
   const release = read('.github/workflows/release.yml');
