@@ -16,7 +16,6 @@ if [[ -n "${SCOPE_REPLACE_FAILED_WEB_RUN_ID:-}" ]]; then
 fi
 if [[ -n "${SCOPE_REPLACE_REDEPLOYED_COMPONENT:-}" ]]; then
   replacement="$(SCOPE_DEPLOYMENT_MANIFEST_JSON="$(jq -c . "$manifest")" \
-    SCOPE_PRODUCTION_DEPLOYMENTS_JSON="$deployments" \
     SCOPE_RAILWAY_SERVICES_JSON="$services" \
     node .github/scripts/redeployed-service-replacement.mjs)"
   deployments="$(jq -ec --argjson replacement "$replacement" '. + $replacement' <<< "$deployments")"

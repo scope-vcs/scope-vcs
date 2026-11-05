@@ -114,6 +114,41 @@ node .github/scripts/release-cutover-journal.mjs cutover-read --id DEPLOYMENT_ID
 `plan` emits `exact`, ordered `applied` migration names, and pending names. `verify`
 succeeds only for an exact ledger.
 
+## Roll back
+
+To put back the images of the previous verified production release:
+
+```sh
+gh workflow run release.yml --ref main -f rollback=true
+```
+
+Add `-f rollback_to=FULL_SHA` to choose an earlier verified release. The default
+skips the current release and every release that an earlier rollback replaced.
+
+Rollback reads the `production/release` receipts, downloads the target's
+prepared manifest from the Release run that recorded it, and checks that its
+preparation ran on main. Validation, image builds, and staging are skipped
+because those exact images already passed them and ran in production. It
+redeploys only the components whose receipts changed after the target, through
+the ordinary production preflight, deploy jobs, observation, and final health
+gate.
+
+Rollback refuses, and changes nothing, when:
+
+- the production migration ledger differs from the target's, checked with the
+  target's maintenance binary;
+- a component's Railway runtime config changed after the target;
+- a component changed after the target, but the target release did not deploy it;
+- a cutover is unresolved.
+
+In those cases, roll forward with a fix. CLI downloads and the runner base image
+are never rolled back.
+
+The rollback's release receipt records the commit it rolled back from. While it
+is the newest release receipt, the daily release deploys nothing and reports the
+pause in its summary. Merge the revert or fix, then dispatch Release manually; the
+next manually dispatched release that ships clears the pause.
+
 ## Resume staging after a smoke failure
 
 When a release completed `Deploy candidate once` but failed a later smoke check,

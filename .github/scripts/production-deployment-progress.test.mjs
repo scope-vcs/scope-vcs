@@ -9,6 +9,7 @@ import {
   recordEvidenceFile,
   recordSuccessfulDeployment,
   recordSuccessfulRelease,
+  successfulReleaseHistory,
 } from "./production-deployment-progress.mjs";
 
 const SOURCE_SHA = "a".repeat(40);
@@ -190,14 +191,39 @@ test("aggregate success pins component evidence and keeps downtime warnings sepa
     }
     return response([{ state: "success" }]);
   };
-  await recordSuccessfulRelease({ sourceSha: SOURCE_SHA, components: { api: true, web: true }, warning: "Downtime exceeded 30 minutes" }, fetchImpl);
+  await recordSuccessfulRelease({ sourceSha: SOURCE_SHA, components: { api: true, web: true }, warning: "Downtime exceeded 30 minutes",
+    rollbackOf: PREVIOUS_SHA }, fetchImpl);
   assert.equal(aggregate.environment, "production/release");
   assert.equal(aggregate.ref, SOURCE_SHA);
   assert.equal(aggregate.payload.kind, "scope-production-release");
   assert.equal(aggregate.payload.sourceSha, SOURCE_SHA);
   assert.equal(aggregate.payload.warning, "Downtime exceeded 30 minutes");
+  assert.equal(aggregate.payload.rollbackOf, PREVIOUS_SHA);
   assert.deepEqual(Object.keys(aggregate.payload.components), ["api", "web"]);
   assert.equal(aggregate.payload.components.web.evidenceId, "web-immutable-id");
   assert.equal(aggregateStatus.state, "success");
   await assert.rejects(recordSuccessfulRelease({ sourceSha: PREVIOUS_SHA, components: ["web"] }, fetchImpl), /missing successful web evidence/);
+});
+
+test("release history keeps verified releases with their rollback origin and Release run", async () => {
+  const release = (id, payload) => ({ id, sha: payload.sourceSha ?? SOURCE_SHA, payload });
+  const fetchImpl = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/deployments")) {
+      assert.equal(parsed.searchParams.get("environment"), "production/release");
+      return response([
+        release("rollback", { kind: "scope-production-release", sourceSha: PREVIOUS_SHA, rollbackOf: SOURCE_SHA }),
+        release("unverified", { kind: "scope-production-release", sourceSha: SOURCE_SHA }),
+        release("cutover", { kind: "scope-release-cutover", sourceSha: SOURCE_SHA }),
+        release("original", JSON.stringify({ kind: "scope-production-release", sourceSha: SOURCE_SHA })),
+      ]);
+    }
+    if (parsed.pathname.includes("/unverified/")) return response([{ state: "failure" }]);
+    const runId = parsed.pathname.includes("/rollback/") ? "42" : "41";
+    return response([{ state: "success", log_url: `https://github.com/scope-vcs/scope-vcs/actions/runs/${runId}` }]);
+  };
+  assert.deepEqual(await successfulReleaseHistory(20, fetchImpl), [
+    { receipt: { sourceSha: PREVIOUS_SHA, rollbackOf: SOURCE_SHA }, runId: "42" },
+    { receipt: { sourceSha: SOURCE_SHA }, runId: "41" },
+  ]);
 });

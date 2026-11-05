@@ -283,6 +283,7 @@ test("recovery overrides new main and rejects a different replay run", async () 
   assert.deepEqual(result.prepared, state.prepared);
   await assert.rejects(selectRelease({ sourceSha: mainSha, sourceRunId: "999", repository }, request), /original preparation/);
   await assert.rejects(selectRelease({ sourceSha: mainSha, sourceRunId, resumeStaging: true, repository }, request), /production cutover/);
+  await assert.rejects(selectRelease({ sourceSha: mainSha, rollback: true, repository }, request), /before rolling back/);
 
   for (const [mutate, expected] of [
     [() => { state.run.head_branch = "candidate"; }, /on main/],
@@ -296,4 +297,85 @@ test("recovery overrides new main and rejects a different replay run", async () 
     Object.assign(state.comparison, original.comparison);
     state.jobs.splice(0, state.jobs.length, ...original.jobs);
   }
+});
+
+const badSha = "e".repeat(40);
+const applicationComponents = ["api", "run-worker", "git-router", "media-api", "media-worker", "web"];
+
+function rollback(state, { releases, deployments, rollbackTo = "", configChanged = () => false } = {}) {
+  state.downloads = [];
+  return selectRelease({ sourceSha: mainSha, rollback: true, rollbackTo, repository,
+    loadReleases: async () => releases ?? [
+      { receipt: { sourceSha: badSha }, runId: "901" },
+      { receipt: { sourceSha }, runId: "555" },
+    ],
+    loadDeployments: async () => deployments
+      ?? Object.fromEntries(applicationComponents.map(component => [component, { sourceSha: badSha }])),
+    loadPrepared: async (...args) => { state.downloads.push(args); return state.prepared; },
+    configChanged }, path => path.startsWith("/deployments?") ? [] : state.request(path));
+}
+
+test("rollback redeploys the previous verified release without staging", async () => {
+  const state = fixture();
+  const result = await rollback(state);
+  assert.deepEqual(state.downloads, [["555", sourceSha]]);
+  assert.equal(result.sha, sourceSha);
+  assert.equal(result.prepared_run_id, sourceRunId);
+  assert.equal(result.resume_staging, false);
+  assert.equal(result.rollback, true);
+  assert.equal(result.rollback_of, badSha);
+  assert.deepEqual(applicationComponents.filter(component => result.recover_components[component]), applicationComponents);
+
+  const webOnly = await rollback(fixture(), { deployments: { ...Object.fromEntries(applicationComponents
+    .map(component => [component, { sourceSha }])), web: { sourceSha: badSha } } });
+  assert.deepEqual(applicationComponents.filter(component => webOnly.recover_components[component]), ["web"]);
+  assert.equal(webOnly.recover_components.backend, false);
+});
+
+test("repeated rollbacks skip every release they rolled back from", async () => {
+  const rolledBack = "f".repeat(40);
+  const rolledBackAgain = "9".repeat(40);
+  const state = fixture();
+  const result = await rollback(state, {
+    releases: [
+      { receipt: { sourceSha: rolledBackAgain, rollbackOf: rolledBack }, runId: "905" },
+      { receipt: { sourceSha: rolledBack, rollbackOf: badSha }, runId: "903" },
+      { receipt: { sourceSha: badSha }, runId: "901" },
+      { receipt: { sourceSha: rolledBack }, runId: "700" },
+      { receipt: { sourceSha: rolledBackAgain }, runId: "650" },
+      { receipt: { sourceSha }, runId: "555" },
+    ],
+    deployments: Object.fromEntries(applicationComponents.map(component => [component, { sourceSha: rolledBackAgain }])),
+  });
+  assert.deepEqual(state.downloads, [["555", sourceSha]]);
+  assert.equal(result.rollback_of, rolledBackAgain);
+});
+
+test("rollback refuses targets it cannot restore exactly", async () => {
+  for (const [name, mutate, options, expected] of [
+    ["target did not deploy a changed component", state => { delete state.prepared.components.web; }, {}, /did not deploy web/],
+    ["runtime config changed", () => {}, { configChanged: () => true }, /runtime config changed/],
+    ["untrusted preparation", state => { state.jobs[1].conclusion = "failure"; }, {}, /preparation job/],
+    ["no earlier release", () => {}, { releases: [{ receipt: { sourceSha: badSha }, runId: "901" }] },
+      /No earlier verified/],
+    ["unknown target", () => {}, { rollbackTo: "f".repeat(40) }, /has no earlier verified/],
+    ["receipt without a run", () => {}, { releases: [{ receipt: { sourceSha: badSha }, runId: "901" },
+      { receipt: { sourceSha }, runId: null }] }, /does not name its Release run/],
+    ["production already at target", () => {}, { deployments: Object.fromEntries(applicationComponents
+      .map(component => [component, { sourceSha }])) }, /already runs/],
+  ]) {
+    const state = fixture();
+    mutate(state);
+    await assert.rejects(rollback(state, options), expected, name);
+  }
+});
+
+test("daily releases pause while a rollback is the newest verified release", async () => {
+  const rolledBack = async () => [{ receipt: { sourceSha, rollbackOf: badSha }, runId: "903" }];
+  const select = (scheduled, loadReleases) => selectRelease({ sourceSha: mainSha, scheduled, repository, loadReleases },
+    async () => []);
+  assert.equal((await select(true, rolledBack)).paused_after_rollback_of, badSha);
+  assert.equal((await select(false, rolledBack)).paused_after_rollback_of, undefined);
+  assert.equal((await select(true, async () => [{ receipt: { sourceSha: mainSha }, runId: "904" }]))
+    .paused_after_rollback_of, undefined);
 });
