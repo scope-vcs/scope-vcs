@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { previewEnvironmentName } from './preview-environment-identity.mjs';
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -9,7 +10,7 @@ import { railwayClient } from './railway-client.mjs';
 import { retryRailway } from './railway-retry.mjs';
 import {
   RUNTIME_ROLES, assertPreviewEnvironment, changedVariables, unreviewedStagingVariables, databaseBootstrap, databaseBootstrapPending,
-  generatePreviewSecrets, previewDomains, previewEnvironmentName, previewVariables, releaseEnvironmentIds,
+  generatePreviewSecrets, previewDomains, previewVariables, releaseEnvironmentIds,
   rolePassword,
 } from './preview-environment-plan.mjs';
 
