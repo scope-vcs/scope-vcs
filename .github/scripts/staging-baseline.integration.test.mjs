@@ -159,16 +159,17 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
   assert.equal(sql("SELECT count(*) FROM information_schema.tables WHERE table_name='candidate_only'"), '0');
   assert.equal(sql("SELECT count(*) FROM information_schema.columns WHERE table_name='scope_repositories' AND column_name='candidate'"), '0');
   const metadataPath = join(env.SCOPE_STAGING_BASELINE_DIR, 'baseline.json');
-  sql(`CREATE TABLE scope_orphan_object_jobs(object_key varchar, updated_at_unix bigint, attempts int, completed_at_unix bigint);
+  sql(`CREATE TABLE scope_orphan_object_jobs(object_key varchar, updated_at_unix bigint, next_run_at_unix bigint,
+      attempts int, completed_at_unix bigint);
     CREATE TABLE scope_object_references(object_key varchar, ref_kind varchar, ref_id varchar);
     CREATE TABLE scope_repo_storage_cleanup_jobs(repo_id varchar, generation varchar, incarnation_id varchar,
-      updated_at_unix bigint, attempts int, completed_at_unix bigint);
+      updated_at_unix bigint, next_run_at_unix bigint, attempts int, completed_at_unix bigint);
     CREATE TABLE scope_request_media_attachments(id text);
     CREATE TABLE scope_request_media_cleanup_jobs(attachment_id text, updated_at_unix bigint, attempt int, completed_at_unix bigint);
     ALTER TABLE scope_repositories ADD COLUMN incarnation_id varchar;
     UPDATE scope_repositories SET incarnation_id = 'current';
-    INSERT INTO scope_orphan_object_jobs VALUES ('queued-blob', ${runCreatedUnix - 60}, 0, NULL),
-      ('referenced-blob', ${runCreatedUnix - 60}, 0, NULL);
+    INSERT INTO scope_orphan_object_jobs VALUES ('queued-blob', ${runCreatedUnix - 60}, ${runCreatedUnix + 540}, 0, NULL),
+      ('referenced-blob', ${runCreatedUnix - 60}, ${runCreatedUnix + 540}, 0, NULL);
     INSERT INTO scope_object_references VALUES ('referenced-blob', 'request_snapshot', 'req_1');
     INSERT INTO scope_request_media_attachments VALUES ('deleted-request-media'), ('live-media');
     INSERT INTO scope_request_media_cleanup_jobs VALUES ('deleted-request-media', ${runCreatedUnix - 60}, 1, NULL)`);
@@ -190,7 +191,7 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
       WHERE object_key = 'queued-blob';
     UPDATE scope_request_media_cleanup_jobs SET attempt = 2, completed_at_unix = ${deleted}, updated_at_unix = ${deleted};
     INSERT INTO scope_request_media_cleanup_jobs VALUES ('post-snapshot-smoke-media', ${deleted}, 1, ${deleted});
-    INSERT INTO scope_repo_storage_cleanup_jobs VALUES ('existing-repo', 'old', 'retired', ${deleted}, 1, ${deleted})`);
+    INSERT INTO scope_repo_storage_cleanup_jobs VALUES ('existing-repo', 'old', 'retired', ${deleted}, ${deleted}, 1, ${deleted})`);
   const refusedAfter = (deletion, undo, reason) => {
     sql(deletion);
     result = provision();
@@ -203,12 +204,16 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
       WHERE object_key = 'referenced-blob'`,
     "UPDATE scope_orphan_object_jobs SET attempts = 0, completed_at_unix = NULL WHERE object_key = 'referenced-blob'",
     'Provisioning must refuse a snapshot whose referenced blob was deleted, even with a pending cleanup job');
+  refusedAfter(`UPDATE scope_orphan_object_jobs SET updated_at_unix = ${deleted}, next_run_at_unix = ${deleted + 300}
+      WHERE object_key = 'referenced-blob'`,
+    `UPDATE scope_orphan_object_jobs SET next_run_at_unix = ${deleted + 600} WHERE object_key = 'referenced-blob'`,
+    'Provisioning must refuse a snapshot whose referenced blob was claimed for deletion');
   refusedAfter(`INSERT INTO scope_request_media_cleanup_jobs VALUES ('live-media', ${deleted}, 1, ${deleted})`,
     "DELETE FROM scope_request_media_cleanup_jobs WHERE attachment_id = 'live-media'",
     'Provisioning must refuse a snapshot after its live media was deleted');
-  refusedAfter(`INSERT INTO scope_repo_storage_cleanup_jobs VALUES ('existing-repo', 'live', 'current', ${deleted}, 1, ${deleted})`,
+  refusedAfter(`INSERT INTO scope_repo_storage_cleanup_jobs VALUES ('existing-repo', 'live', 'current', ${deleted}, ${deleted + 300}, 0, NULL)`,
     "DELETE FROM scope_repo_storage_cleanup_jobs WHERE generation = 'live'",
-    'Provisioning must refuse a snapshot after its live repository storage was deleted');
+    'Provisioning must refuse a snapshot after its live repository storage was claimed for deletion');
   prepared('35');
   result = provision();
   assert.notEqual(result.status, 0, 'Provisioning must run only the baseline run\'s maintenance binary');

@@ -34,3 +34,11 @@ test('staging workflows scope the encryption key to baseline handling and retain
     '${{ runner.temp }}/staging-baseline/baseline.json',
   ]);
 });
+
+test('provisioning recognizes unclaimed source blob cleanup by the queue grace period', () => {
+  const script = readFileSync(new URL('./staging-baseline.sh', import.meta.url), 'utf8');
+  const queue = readFileSync(new URL('../../crates/scope-postgres/src/db/cleanup_queue/queue.rs', import.meta.url), 'utf8');
+  const grace = queue.match(/const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = (\d+);/)?.[1];
+  assert.ok(grace);
+  assert.match(script, new RegExp(`^source_blob_queue_delay_seconds=${grace}$`, 'm'));
+});
