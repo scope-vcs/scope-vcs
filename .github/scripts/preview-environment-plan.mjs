@@ -1,8 +1,8 @@
 import { createPublicKey, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { renderPolicy } from '../../deploy/postgres/runtime-roles.mjs';
 import { serviceIds } from './deployment-components.mjs';
+import { previewPullRequestNumber } from './preview-environment-identity.mjs';
 
-const PREVIEW_NAME = /^pr-[1-9][0-9]{0,8}$/;
 const UUID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const ROLE_PASSWORD = /^[a-f0-9]{64}$/;
 const POSTGRES = 'scope-postgres';
@@ -15,12 +15,6 @@ export const RUNTIME_ROLES = Object.freeze({
   'media-worker': 'scope_media_worker',
 });
 
-export function previewEnvironmentName(pullRequest) {
-  const name = `pr-${pullRequest}`;
-  if (!PREVIEW_NAME.test(name)) throw new Error('A positive pull request number is required.');
-  return name;
-}
-
 export function releaseEnvironmentIds(manifest) {
   const production = manifest?.environments?.production?.environmentId;
   const staging = manifest?.environments?.staging?.environmentId;
@@ -32,7 +26,7 @@ export function releaseEnvironmentIds(manifest) {
 
 export function assertPreviewEnvironment(manifest, environment, name) {
   const { production, staging } = releaseEnvironmentIds(manifest);
-  if (!PREVIEW_NAME.test(name) || environment?.name !== name || environment.isEphemeral !== true ||
+  if (previewPullRequestNumber(name) === null || environment?.name !== name || environment.isEphemeral !== true ||
       !UUID.test(environment.id ?? '') || environment.id === production || environment.id === staging) {
     throw new Error(`Railway environment ${name} is not an ephemeral preview environment.`);
   }
