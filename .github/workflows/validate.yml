@@ -46,7 +46,6 @@ jobs:
     if: ${{ !inputs.reuse_artifacts && inputs.runner_image == 'true' }}
     permissions:
       contents: read
-      packages: read
       deployments: write
       id-token: write
     uses: ./.github/workflows/scope-runner-image.yml

@@ -30,13 +30,14 @@ RUN cargo build --locked --release -p scope-runner-runtime
 
 FROM --platform=linux/amd64 debian:bookworm-slim@sha256:5ae3c39ebd15e229dcedd5cee596b2497182493d41ff162e824ba13fc1b2b867
 
-ARG DEBIAN_SNAPSHOT=20261102T142815Z
+ARG IMAGE_DEPENDENCY_EPOCH=local
+ARG APT_VERSION=2.6.2
 ARG GIT_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-ARG APT_VERSION=2.6.2
-RUN mv /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
+RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
+    && mv /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
     && printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian-security' 'Suites: bookworm-security' \
         'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
         > /etc/apt/sources.list.d/apt-security.sources \
@@ -48,11 +49,7 @@ RUN mv /etc/apt/sources.list.d/debian.sources /tmp/debian.sources \
     && mv /tmp/debian.sources /etc/apt/sources.list.d/debian.sources \
     && rm -rf /var/lib/apt/lists/*
 
-RUN sed -i \
-        -e "s|http://deb.debian.org/debian-security|http://snapshot.debian.org/archive/debian-security/${DEBIAN_SNAPSHOT}|" \
-        -e "s|http://deb.debian.org/debian|http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}|" \
-        /etc/apt/sources.list.d/debian.sources \
-    && printf '%s\n' 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot \
+RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
     && timeout --verbose --kill-after=10s 300s sh -ec '\
     apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
     && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 upgrade --yes \

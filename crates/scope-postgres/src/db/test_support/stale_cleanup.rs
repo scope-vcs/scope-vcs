@@ -36,6 +36,77 @@ pub(super) async fn sweep(admin_url: &str, deadline: tokio::time::Instant) -> an
     Ok(())
 }
 
+#[cfg(unix)]
+pub(super) fn sweep_process_servers(
+    parent: &std::path::Path,
+    bin: &std::path::Path,
+) -> anyhow::Result<()> {
+    use std::{fs, os::unix::fs::MetadataExt as _};
+
+    for entry in fs::read_dir(parent)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let Some(pid) = server_owner_pid(name) else {
+            continue;
+        };
+        let metadata = match entry.metadata() {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        // SAFETY: geteuid has no arguments or memory safety requirements.
+        if !metadata.is_dir()
+            || metadata.uid() != unsafe { libc::geteuid() }
+            || process_is_alive(pid)
+        {
+            continue;
+        }
+        let directory = match fs::File::open(entry.path()) {
+            Ok(directory) => directory,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        match directory.try_lock() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => continue,
+            Err(std::fs::TryLockError::Error(error)) => return Err(error.into()),
+        }
+        if entry.path().exists() && !process_is_alive(pid) {
+            super::process_server::stop(&entry.path(), bin)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub(super) fn sweep_process_servers(
+    _: &std::path::Path,
+    _: &std::path::Path,
+) -> anyhow::Result<()> {
+    anyhow::bail!("PostgreSQL test servers require a Unix host")
+}
+
+#[cfg(unix)]
+fn server_owner_pid(name: &str) -> Option<libc::pid_t> {
+    let (pid, suffix) = name.strip_prefix("scope-pg-")?.split_once('-')?;
+    if suffix.len() != 16 || !suffix.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    pid.parse::<libc::pid_t>().ok().filter(|pid| *pid > 0)
+}
+
+#[cfg(unix)]
+fn process_is_alive(pid: libc::pid_t) -> bool {
+    // SAFETY: signal zero checks an existing positive pid without sending a signal.
+    unsafe {
+        libc::kill(pid, 0) == 0
+            || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+    }
+}
+
 async fn abandoned(
     admin: &DatabaseConnection,
     names_sql: &str,

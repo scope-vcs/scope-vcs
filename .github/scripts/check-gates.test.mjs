@@ -39,6 +39,9 @@ test('GitHub runs every backend gate lane exactly once', () => {
   const testLanes = workflow.match(/lane: \[([^\]]+)\]/)[1].split(', ');
   const lanes = [workflow.match(/dev\/checks\/backend (lint)$/m)[1], ...testLanes];
   assert.deepEqual(lanes.flatMap((lane) => commands('backend', lane)).sort(), commands('backend').sort());
+  assert.match(workflow, /run: sudo \.\/dev\/install-test-postgres\.sh/);
+  assert.ok(workflow.indexOf('Install PostgreSQL test server') < workflow.indexOf('Test Rust workspace lane'));
+  assert.doesNotMatch(workflow, /SCOPE_TEST_DATABASE_URL|services:/);
 });
 
 test('the backend gate bounds PostgreSQL test concurrency on larger hosts', () => {
@@ -446,74 +449,59 @@ test('runner base images pass the container lifecycle gate and scan before publi
   assert.match(publish.slice(push), /bash \.github\/scripts\/push-image-tags\.sh <<< "\$IMAGE"/);
 });
 
-test('runner validation reads a durable registry cache refreshed only from main', () => {
+test('runner base images take packages from the live Debian archive refreshed each week', () => {
   const runner = read('.github/workflows/scope-runner-image.yml');
   const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
   const publish = runner.slice(runner.indexOf('\n  publish:\n'));
-  const cache = candidate.match(/cache-from: type=registry,ref=(ghcr\.io\/[^\s]+)\n/)?.[1];
-  assert.ok(cache, 'candidate cache must survive Actions cache eviction');
-  assert.doesNotMatch(candidate, /cache-to:|type=gha|packages: write/);
-  assert.match(candidate, /packages: read/);
-  assert.match(candidate, /registry: ghcr\.io\n\s+username:.*\n\s+password: \$\{\{ github\.token \}\}/);
-  assert.doesNotMatch(publish, /cache-from:.*type=registry/);
-  const warmer = read('.github/workflows/warm-ci-caches.yml');
-  assert.match(warmer.split('\nconcurrency:')[0], /push:\n\s+branches: \[main\]/);
-  const job = warmer.slice(warmer.indexOf('\n  runner-image:\n'));
-  assert.match(job, /if: github\.ref == 'refs\/heads\/main'/);
-  assert.match(job, /packages: write/);
-  assert.match(job, /file: runner-runtime\/Dockerfile/);
-  assert.ok(job.includes(`cache-to: type=registry,ref=${cache},mode=max,image-manifest=true,oci-mediatypes=true`));
-  assert.match(job, /outputs: type=cacheonly/);
-  for (const path of ['runner-runtime/**', 'dev/tool-versions.json', 'deploy/railway/install-git.sh', '.github/workflows/scope-runner-image.yml']) {
-    assert.ok(warmer.split('\nconcurrency:')[0].includes(`      - ${path}\n`), `${path} must refresh the runner cache`);
+  for (const lane of [candidate, publish]) {
+    assert.match(lane, /echo "dependency_epoch=\$\(date -u \+%G-W%V\)" >> "\$GITHUB_OUTPUT"/);
+    assert.match(lane, /IMAGE_DEPENDENCY_EPOCH=\$\{\{ steps\.git\.outputs\.dependency_epoch \}\}/);
   }
+  const dockerfile = read('runner-runtime/Dockerfile');
+  assert.doesNotMatch(dockerfile, /snapshot\.debian\.org/);
+  const aptLayers = runnerAptLayers();
+  assert.ok(aptLayers.length > 0);
+  for (const layer of aptLayers) assert.match(layer, /^RUN test -n "\$IMAGE_DEPENDENCY_EPOCH" && /);
 });
 
-test('runner apt fixes come pinned from the live security archive under a deadline', () => {
-  const dockerfile = read('runner-runtime/Dockerfile').replaceAll(/\\\n/g, ' ');
-  for (const layer of dockerfile.split('\n').filter(line => line.startsWith('RUN ') && /\bapt-get\b/.test(line))) {
+test('the runner installs its fixed APT first with retries disabled, and every apt layer has a deadline', () => {
+  const layers = runnerAptLayers();
+  const scripts = layers.map(layer => {
     const bounded = layer.match(/timeout --verbose --kill-after=(\d+)s (\d+)s sh -ec '([^']+)'/);
     assert.ok(bounded, `${layer.slice(0, 60)} must run apt under a wall-clock deadline`);
     assert.ok(Number(bounded[1]) + Number(bounded[2]) < 360);
     assert.equal(layer.match(/\bapt-get\b/g).length, bounded[3].match(/\bapt-get\b/g).length);
-  }
-  const lines = dockerfile.split('\n');
-  const fix = lines.find(line => line.includes('apt-security.sources') && /\bapt-get\b/.test(line));
-  assert.ok(fix, 'runner apt fixes need their own live security layer');
-  assert.ok(lines.indexOf(fix) < lines.findIndex(line => line.startsWith('RUN sed -i ')),
-    'the fixed APT must be installed before any other package download');
-  assert.deepEqual([...new Set(fix.match(/Acquire::Retries=\d+/g))], ['Acquire::Retries=0'],
+    return bounded[3];
+  });
+  const [bootstrap, ...rest] = layers;
+  assert.match(bootstrap, /URIs: http:\/\/deb\.debian\.org\/debian-security' 'Suites: bookworm-security'/);
+  assert.match(bootstrap, / && mv \/etc\/apt\/sources\.list\.d\/debian\.sources \/tmp\/debian\.sources /);
+  assert.match(bootstrap, /mv \/tmp\/debian\.sources \/etc\/apt\/sources\.list\.d\/debian\.sources/);
+  assert.deepEqual([...new Set(bootstrap.match(/Acquire::Retries=\d+/g))], ['Acquire::Retries=0'],
     'the vulnerable APT must not retry while it installs its own fix');
-  assert.match(fix, /URIs: http:\/\/deb\.debian\.org\/debian-security' 'Suites: bookworm-security'/);
-  assert.doesNotMatch(fix, /snapshot\.debian\.org/);
-  assert.match(fix, /^RUN mv \/etc\/apt\/sources\.list\.d\/debian\.sources \/tmp\/debian\.sources /);
-  assert.match(fix, /mv \/tmp\/debian\.sources \/etc\/apt\/sources\.list\.d\/debian\.sources/);
-  const packages = fix.match(/install --yes --no-install-recommends ([^']+)'/)[1].trim().split(/\s+/);
-  assert.deepEqual(packages, ['"apt=${APT_VERSION}"', '"libapt-pkg6.0=${APT_VERSION}"']);
-  assert.match(dockerfile, /^ARG APT_VERSION=\d+\.\d+\.\d+$/m);
-});
-
-test('runner snapshot acquisition bounds all apt operations and propagates failures', () => {
-  const dockerfile = read('runner-runtime/Dockerfile').replaceAll(/\\\n/g, ' ');
-  const layer = dockerfile.split('\n').find(line => line.startsWith('RUN sed -i '));
-  const bounded = layer.match(/timeout --verbose --kill-after=(\d+)s (\d+)s sh -ec '([^']+)'/);
-  assert.ok(bounded, 'all snapshot operations must share a wall-clock deadline');
-  assert.ok(Number(bounded[1]) + Number(bounded[2]) < 360);
-  assert.equal(layer.match(/\bapt-get\b/g).length, bounded[3].match(/\bapt-get\b/g).length);
-  const dir = mkdtempSync(resolve(tmpdir(), 'scope-snapshot-acquisition-'));
+  assert.deepEqual(scripts[0].match(/install --yes --no-install-recommends (.+)$/)[1].trim().split(/\s+/),
+    ['"apt=${APT_VERSION}"', '"libapt-pkg6.0=${APT_VERSION}"']);
+  for (const layer of rest) assert.doesNotMatch(layer, /apt=|libapt-pkg/);
+  const dir = mkdtempSync(resolve(tmpdir(), 'scope-runner-apt-'));
   try {
     writeFileSync(resolve(dir, 'apt-get'), '#!/bin/sh\nprintf "%s\\n" "$*"\nexit "${APT_EXIT_STATUS:-0}"\n', { mode: 0o755 });
     const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
-    const success = spawnSync('sh', ['-ec', bounded[3]], { env, encoding: 'utf8' });
-    assert.equal(success.status, 0, success.stderr);
-    assert.deepEqual(success.stdout.trim().split('\n').map(line => line.replace(/^(?:-o \S+ )+/, '').split(' ')[0]), ['update', 'upgrade', 'install']);
-    const failure = spawnSync('sh', ['-ec', bounded[3]], { env: { ...env, APT_EXIT_STATUS: '100' }, encoding: 'utf8' });
+    const packages = spawnSync('sh', ['-ec', scripts.at(-1)], { env, encoding: 'utf8' });
+    assert.equal(packages.status, 0, packages.stderr);
+    assert.deepEqual(packages.stdout.trim().split('\n').map(line => line.replace(/^(?:-o \S+ )+/, '').split(' ')[0]), ['update', 'upgrade', 'install']);
+    const failure = spawnSync('sh', ['-ec', scripts.at(-1)], { env: { ...env, APT_EXIT_STATUS: '100' }, encoding: 'utf8' });
     assert.equal(failure.status, 100, failure.stderr);
     assert.equal(failure.stdout.trim().split('\n').length, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+function runnerAptLayers() {
+  const dockerfile = read('runner-runtime/Dockerfile');
+  const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+  return runtime.replaceAll(/[ \t]*\\\n\s*/g, ' ').split('\n').filter(line => line.startsWith('RUN ') && /\bapt-get\b/.test(line));
+}
 
 test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
   const ci = read('.github/workflows/ci.yml');
