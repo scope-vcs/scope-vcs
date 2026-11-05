@@ -148,24 +148,39 @@ async function selectRollback({ rollbackTo = "", repository, releases, deploymen
     return index < targetIndex;
   });
   if (selected.length === 0) throw new Error(`Production already runs ${targetSha}`);
-  const restorable = new Set(releases.filter(({ receipt }) => receipt.sourceSha === targetSha)
-    .flatMap(({ receipt }) => Object.keys(receipt.components)));
-  const missing = selected.filter(component => !restorable.has(component));
+  const provenBy = new Map();
+  for (const { receipt, runId } of releases) {
+    if (receipt.sourceSha !== targetSha) continue;
+    for (const component of Object.keys(receipt.components)) {
+      if (!provenBy.has(component)) provenBy.set(component, runId);
+    }
+  }
+  const missing = selected.filter(component => !provenBy.has(component));
   if (missing.length) {
     throw new Error(`The ${targetSha} release did not deploy ${missing.join(", ")}; choose an older rollback_to`);
   }
 
-  if (!target.runId) throw new Error(`The ${targetSha} release receipt does not name its Release run`);
-  const run = await request(`/actions/runs/${target.runId}`);
-  if (run.path !== ".github/workflows/release.yml" || run.head_branch !== "main"
-      || run.repository?.full_name !== repository || run.head_repository?.full_name !== repository
-      || !["schedule", "workflow_dispatch"].includes(run.event)
-      || run.status !== "completed" || run.conclusion !== "success") {
-    throw new Error(`Run ${target.runId} is not a successful Release run on main`);
-  }
-  const prepared = await loadPrepared(target.runId, targetSha);
   const deployment = deploymentManifest();
-  validatePreparedRelease(prepared, { sourceSha: targetSha, services: deployment.services });
+  const manifests = new Map();
+  for (const runId of new Set(selected.map(component => provenBy.get(component)))) {
+    if (!runId) throw new Error(`A ${targetSha} release receipt does not name its Release run`);
+    const run = await request(`/actions/runs/${runId}`);
+    if (run.path !== ".github/workflows/release.yml" || run.head_branch !== "main"
+        || run.repository?.full_name !== repository || run.head_repository?.full_name !== repository
+        || !["schedule", "workflow_dispatch"].includes(run.event)
+        || run.status !== "completed" || run.conclusion !== "success") {
+      throw new Error(`Run ${runId} is not a successful Release run on main`);
+    }
+    const manifest = await loadPrepared(runId, targetSha);
+    validatePreparedRelease(manifest, { sourceSha: targetSha, services: deployment.services });
+    manifests.set(runId, manifest);
+  }
+  const prepared = manifests.get(provenBy.get(selected[0]));
+  const rebuilt = selected.filter(component =>
+    prepared.components[component]?.image !== manifests.get(provenBy.get(component)).components[component]?.image);
+  if (rebuilt.length) {
+    throw new Error(`The ${targetSha} releases deployed differently built ${rebuilt.join(", ")} images; choose another rollback_to`);
+  }
   await validateRecoveryPreparation(prepared, request, repository, deployment, selected);
   const runtimeConfigs = selected.map(component => deploymentComponent(component).runtimeConfig);
   if (configChanged(targetSha, runtimeConfigs)) {

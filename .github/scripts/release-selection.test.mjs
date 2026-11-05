@@ -318,10 +318,13 @@ function rollback(state, { releases, deployments, rollbackTo = "", configChanged
   return selectRelease({ sourceSha: mainSha, rollback: true, rollbackTo, repository,
     loadReleases: async () => releases ?? [release(badSha, "bad", "901"), release(sourceSha, "good", "555")],
     loadDeployments: async () => deployments ?? live("bad"),
-    loadPrepared: async (...args) => { state.downloads.push(args); return state.prepared; },
+    loadPrepared: async (...args) => { state.downloads.push(args); return state.preparedByRun?.[args[0]] ?? state.prepared; },
     configChanged }, path => {
     if (path.startsWith("/deployments?")) return [];
-    if (path === "/actions/runs/555") return { ...state.run, id: 555, head_sha: mainSha, conclusion: "success", ...state.releaseRun };
+    const releaseRun = path.match(/^\/actions\/runs\/([0-9]+)$/)?.[1];
+    if (releaseRun && releaseRun !== sourceRunId) {
+      return { ...state.run, id: Number(releaseRun), head_sha: mainSha, conclusion: "success", ...state.releaseRun };
+    }
     return state.request(path);
   });
 }
@@ -387,6 +390,19 @@ test("a partial rollback receipt does not hide the full release of the same comm
     deployments: { ...live("bad", backendComponents), ...live("web-rollback", ["web"]) },
   });
   assert.deepEqual(rolledBack(result), backendComponents);
+  assert.deepEqual(state.downloads, [["700", sourceSha]]);
+});
+
+test("rollback refuses images that differ from the run whose receipt proved them", async () => {
+  const state = fixture();
+  const rebuild = structuredClone(state.prepared);
+  rebuild.components.api.image = rebuild.components.api.image.replace(/d{64}$/, "0".repeat(64));
+  state.preparedByRun = { 555: rebuild };
+  await assert.rejects(rollback(state, {
+    releases: [release(badSha, "bad", "901"), release(sourceSha, "api-rebuild", "555", ["api"]),
+      release(sourceSha, "good", "700")],
+    deployments: live("bad"),
+  }), /differently built api images/);
 });
 
 test("rollback refuses targets it cannot restore exactly", async () => {
