@@ -17,7 +17,7 @@ root, regardless of the caller's working directory.
 | `integration journey` | Signed-in browser contribution journey against a freshly started, signed-in seeded stack |
 | `ops` | Deployment, backend binary size caps, staging, benchmark, and AWS infrastructure tests |
 
-Callers install Rust, cargo-deny (`dev/install-cargo-deny.sh`), Node and pnpm dependencies, configure databases and secrets,
+Callers install Rust, cargo-deny (`dev/install-cargo-deny.sh`), Node and pnpm dependencies, configure secrets,
 and start/stop integration stacks. The contract check needs Rust and web
 dependencies. It runs with the backend checks because the API crate generates
 the contract, so the web gate does not install Rust. CLI integration requires
@@ -46,3 +46,11 @@ target builds on a GitHub-hosted runner. Run the
 installer check against an existing native build and matching bundle with
 `SCOPE_TEST_BINARY=/absolute/path/to/scope SCOPE_TEST_ARTIFACT=/absolute/path/to/scope-target.tar.gz SCOPE_TEST_SERVICE=/absolute/path/to/scope-cli-service node --test cli/distribution/install-smoke.test.mjs`.
 Build the service with `cargo build -p scope-cli-downloads --release --locked`.
+
+Rust database tests start a private PostgreSQL server per test process through
+`scope-postgres` test support. Install PostgreSQL server tools and run tests as a
+non-root user. The harness finds tools with `pg_config --bindir`; set
+`SCOPE_TEST_POSTGRES_BIN` to select another installation. It uses a private Unix
+socket, a non-superuser test role, and 100 connection slots. It ignores
+`SCOPE_TEST_DATABASE_URL`, so other checkouts' dev stacks cannot consume its
+connections. Normal process exit stops the server and removes its data directory.
