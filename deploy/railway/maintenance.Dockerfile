@@ -3,6 +3,23 @@ ARG INSTALL_GIT=1
 ARG GIT_VERSION
 ARG GIT_SOURCE_SHA256
 ARG IMAGE_DEPENDENCY_EPOCH=local
+ARG APT_VERSION=2.6.2
+RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
+    && if [ -f /etc/apt/sources.list ]; then mv /etc/apt/sources.list /tmp/apt-sources.list; fi \
+    && mkdir /etc/apt/sources.list.d \
+    && printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian-security' 'Suites: bookworm-security' \
+        'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/apt-security.sources \
+    && rm -rf /var/lib/apt/lists/* \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg6.0=${APT_VERSION}"' \
+    && rm -rf /etc/apt/sources.list.d \
+    && mv /tmp/apt-sources.list.d /etc/apt/sources.list.d \
+    && if [ -f /tmp/apt-sources.list ]; then mv /tmp/apt-sources.list /etc/apt/sources.list; fi \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY install-git.sh /tmp/install-git.sh
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
     && if [ "$INSTALL_GIT" = 1 ]; then bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"; else mkdir -p /opt/git; fi
@@ -10,10 +27,25 @@ RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
 FROM postgres:18.6@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
 ARG IMAGE_DEPENDENCY_EPOCH=local
 ARG APT_VERSION=3.0.4
+RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
+    && if [ -f /etc/apt/sources.list ]; then mv /etc/apt/sources.list /tmp/apt-sources.list; fi \
+    && mkdir /etc/apt/sources.list.d \
+    && printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian-security' 'Suites: trixie-security' \
+        'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/apt-security.sources \
+    && rm -rf /var/lib/apt/lists/* \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg7.0=${APT_VERSION}"' \
+    && rm -rf /etc/apt/sources.list.d \
+    && mv /tmp/apt-sources.list.d /etc/apt/sources.list.d \
+    && if [ -f /tmp/apt-sources.list ]; then mv /tmp/apt-sources.list /etc/apt/sources.list; fi \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        "apt=${APT_VERSION}" "libapt-pkg7.0=${APT_VERSION}" \
         ca-certificates libcurl4t64 libexpat1 zlib1g \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 65532 --user-group --create-home --shell /usr/sbin/nologin scope \
