@@ -40,14 +40,15 @@ RUN sed -i \
         -e "s|http://deb.debian.org/debian|http://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}|" \
         /etc/apt/sources.list.d/debian.sources \
     && printf '%s\n' 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot \
-    && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 update \
     && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 upgrade --yes \
     && apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
         ca-certificates \
         libcurl4 \
         libexpat1 \
         libssl3 \
-        zlib1g \
+        zlib1g' \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=git-builder /opt/git /opt/git

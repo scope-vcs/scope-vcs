@@ -446,6 +446,51 @@ test('runner base images pass the container lifecycle gate and scan before publi
   assert.match(publish.slice(push), /bash \.github\/scripts\/push-image-tags\.sh <<< "\$IMAGE"/);
 });
 
+test('runner validation reads a durable registry cache refreshed only from main', () => {
+  const runner = read('.github/workflows/scope-runner-image.yml');
+  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
+  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
+  const cache = candidate.match(/cache-from: type=registry,ref=(ghcr\.io\/[^\s]+)\n/)?.[1];
+  assert.ok(cache, 'candidate cache must survive Actions cache eviction');
+  assert.doesNotMatch(candidate, /cache-to:|type=gha|packages: write/);
+  assert.match(candidate, /packages: read/);
+  assert.match(candidate, /registry: ghcr\.io\n\s+username:.*\n\s+password: \$\{\{ github\.token \}\}/);
+  assert.doesNotMatch(publish, /cache-from:.*type=registry/);
+  const warmer = read('.github/workflows/warm-ci-caches.yml');
+  assert.match(warmer.split('\nconcurrency:')[0], /push:\n\s+branches: \[main\]/);
+  const job = warmer.slice(warmer.indexOf('\n  runner-image:\n'));
+  assert.match(job, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(job, /packages: write/);
+  assert.match(job, /file: runner-runtime\/Dockerfile/);
+  assert.ok(job.includes(`cache-to: type=registry,ref=${cache},mode=max,image-manifest=true,oci-mediatypes=true`));
+  assert.match(job, /outputs: type=cacheonly/);
+  for (const path of ['runner-runtime/**', 'dev/tool-versions.json', 'deploy/railway/install-git.sh', '.github/workflows/scope-runner-image.yml']) {
+    assert.ok(warmer.split('\nconcurrency:')[0].includes(`      - ${path}\n`), `${path} must refresh the runner cache`);
+  }
+});
+
+test('runner snapshot acquisition bounds all apt operations and propagates failures', () => {
+  const dockerfile = read('runner-runtime/Dockerfile').replaceAll(/\\\n/g, ' ');
+  const layer = dockerfile.split('\n').find(line => line.startsWith('RUN sed -i '));
+  const bounded = layer.match(/timeout --verbose --kill-after=(\d+)s (\d+)s sh -ec '([^']+)'/);
+  assert.ok(bounded, 'all snapshot operations must share a wall-clock deadline');
+  assert.ok(Number(bounded[1]) + Number(bounded[2]) < 360);
+  assert.equal(layer.match(/\bapt-get\b/g).length, bounded[3].match(/\bapt-get\b/g).length);
+  const dir = mkdtempSync(resolve(tmpdir(), 'scope-snapshot-acquisition-'));
+  try {
+    writeFileSync(resolve(dir, 'apt-get'), '#!/bin/sh\nprintf "%s\\n" "$*"\nexit "${APT_EXIT_STATUS:-0}"\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
+    const success = spawnSync('sh', ['-ec', bounded[3]], { env, encoding: 'utf8' });
+    assert.equal(success.status, 0, success.stderr);
+    assert.deepEqual(success.stdout.trim().split('\n').map(line => line.replace(/^(?:-o \S+ )+/, '').split(' ')[0]), ['update', 'upgrade', 'install']);
+    const failure = spawnSync('sh', ['-ec', bounded[3]], { env: { ...env, APT_EXIT_STATUS: '100' }, encoding: 'utf8' });
+    assert.equal(failure.status, 100, failure.stderr);
+    assert.equal(failure.stdout.trim().split('\n').length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
   const ci = read('.github/workflows/ci.yml');
   const release = read('.github/workflows/release.yml');
