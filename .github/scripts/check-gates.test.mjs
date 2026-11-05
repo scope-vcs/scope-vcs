@@ -151,7 +151,7 @@ const alwaysOnGateInputs = [
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.sh)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|main-advisories|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|main-advisories|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment|provision-staging-baseline)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 

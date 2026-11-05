@@ -14,7 +14,7 @@ const postgresMajor = postgres[1].split('.')[0];
 assert.equal(read('dev/install-test-postgres.sh').match(/^postgres_version=(\d+\.\d+)$/m)?.[1], postgres[1]);
 assert.ok(read('.github/workflows/rust-workspace-checks.yml').includes(`SCOPE_TEST_POSTGRES_BIN: /usr/lib/postgresql/${postgresMajor}/bin`));
 assert.equal(
-  read('.github/workflows/deploy-staging.yml').split(`postgres:${postgres[1]}@${postgres[2]}`).length - 1,
+  read('.github/actions/install-postgres-clients/action.yml').split(`postgres:${postgres[1]}@${postgres[2]}`).length - 1,
   2,
 );
 

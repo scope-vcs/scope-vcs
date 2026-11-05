@@ -47,19 +47,33 @@ if(process.argv[2] === 'preflight' && process.env.TEST_SCHEMA_DRIFT === '1') pro
 const applied = execFileSync('psql',[process.env.DATABASE_URL,'-XAt','-c','SELECT version FROM seaql_migrations ORDER BY version'],{encoding:'utf8'}).trim().split('\\n');
 console.log(JSON.stringify({applied,pending:[],exact:true}));
 `);
+  const runCreatedAt = '2026-01-01T00:00:00Z';
+  const runCreatedUnix = Date.parse(runCreatedAt) / 1000;
+  const baselineName = `staging-baseline-${createHash('sha256').update(JSON.stringify(['m0001_initial'])).digest('hex')}`;
   executable('gh', `#!/usr/bin/env node
 const {readFileSync,appendFileSync}=require('node:fs');
-const path=process.argv.find(a=>a.startsWith('repos/'));
+const {execFileSync}=require('node:child_process');
+const args=process.argv.slice(2);
+const path=args.find(a=>a.startsWith('repos/'));
 appendFileSync(process.env.TEST_GH_TRACE,path+'\\n');
 if(path === 'repos/scope-vcs/scope-vcs') { console.log('false'); process.exit(0); }
-if(path.endsWith('/zip')) process.stdout.write(readFileSync(process.env.TEST_ARCHIVE));
-else if(path.includes('/artifacts?')) console.log('12');
-else if(path.endsWith('/artifacts/12')) console.log('34');
-else console.log('true');
+if(path.endsWith('/zip')) { process.stdout.write(readFileSync(process.env.TEST_ARCHIVE)); process.exit(0); }
+const run={id:34,head_branch:'main'};
+const artifact={id:12,name:${JSON.stringify(baselineName)},expired:false,workflow_run:run};
+const responses={
+  'repos/scope-vcs/scope-vcs/actions/artifacts/12':artifact,
+  'repos/scope-vcs/scope-vcs/actions/runs/34':{path:'.github/workflows/release.yml',head_branch:'main',event:'workflow_dispatch',created_at:${JSON.stringify(runCreatedAt)}},
+};
+const body=path.includes('/artifacts?') ? {artifacts:[artifact]} : responses[path];
+if(!body) process.exit(1);
+const filter=args[args.indexOf('--jq')+1];
+process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body),encoding:'utf8'}));
 `);
   const binary = join(root, 'bin/maintenance');
-  writeFileSync(join(root, 'prepared.json'), JSON.stringify({ schemaVersion: 1, sourceSha: 'a'.repeat(40), components: {},
+  const prepared = (preparationRunId) => writeFileSync(join(root, 'prepared.json'), JSON.stringify({ schemaVersion: 1,
+    sourceSha: 'a'.repeat(40), components: {}, preparationRunId,
     maintenanceSha256: createHash('sha256').update(readFileSync(binary)).digest('hex') }));
+  prepared('34');
   const plan = { metadataRestoreSafe: true, applied: ['m0001_initial'], pending: [{ name: 'm0002_metadata' }], exact: false };
   writeFileSync(join(root, 'production.json'), JSON.stringify(plan));
   const env = { ...process.env, PATH: `${join(root, 'bin')}:${pgBin}:${process.env.PATH}`, RAILWAY_TOKEN: 'test', RAILWAY_API_TOKEN: '',
@@ -153,5 +167,27 @@ else console.log('true');
   sql("INSERT INTO seaql_migrations VALUES ('m0003_external_storage')");
   result = run();
   assert.notEqual(result.status, 0);
-  assert.match(sql('SELECT version FROM seaql_migrations'), /m0003_external_storage/);
+  assert.match(result.stderr, /not metadata-restore-safe/);
+  assert.match(sql('SELECT version FROM seaql_migrations ORDER BY version'), /m0003_external_storage/);
+
+  const provision = () => spawnSync('bash', ['.github/scripts/staging-baseline.sh', 'provision', '12'],
+    { env, encoding: 'utf8', timeout: 60_000 });
+  sql(`CREATE TABLE scope_orphan_object_jobs(created_at_unix bigint, attempts int, completed_at_unix bigint);
+    INSERT INTO scope_orphan_object_jobs VALUES (${runCreatedUnix - 60}, 2, ${runCreatedUnix - 30}), (${runCreatedUnix + 60}, 1, NULL)`);
+  result = provision();
+  assert.notEqual(result.status, 0, 'Provisioning must refuse a snapshot after its queued object deletions ran');
+  assert.match(result.stderr, /have already run/);
+  assert.match(sql('SELECT version FROM seaql_migrations ORDER BY version'), /m0003_external_storage/);
+  sql(`UPDATE scope_orphan_object_jobs SET attempts = 0 WHERE created_at_unix = ${runCreatedUnix + 60}`);
+  prepared('35');
+  result = provision();
+  assert.notEqual(result.status, 0, 'Provisioning must run only the baseline run\'s maintenance binary');
+  assert.match(result.stderr, /must come from baseline run 34/);
+  prepared('34');
+  result = provision();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(sql('SELECT version FROM seaql_migrations'), 'm0001_initial');
+  assert.equal(sql("SELECT count(*) FROM information_schema.tables WHERE table_name='scope_orphan_object_jobs'"), '0');
+  assert.equal(sql('SELECT id FROM scope_repositories'), 'existing-repo');
+  assert.equal(existsSync(join(env.SCOPE_STAGING_BASELINE_DIR, 'restore')), false);
 });

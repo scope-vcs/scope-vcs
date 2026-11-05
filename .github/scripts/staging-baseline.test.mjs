@@ -17,11 +17,15 @@ test('unknown and empty baselines cannot select a retained snapshot', () => {
   }
 });
 
-test('staging workflow scopes the encryption key to baseline handling and retains only ciphertext', () => {
+test('staging workflows scope the encryption key to baseline handling and retain only ciphertext', () => {
   const workflow = readFileSync(new URL('../workflows/deploy-staging.yml', import.meta.url), 'utf8');
   const baselineStep = workflow.split('      - name: Reconcile and snapshot staging baseline\n')[1].split('\n      - name:')[0];
   assert.match(baselineStep, /SCOPE_STAGING_BASELINE_KEY: \$\{\{ secrets\.SCOPE_STAGING_BASELINE_KEY \}\}/);
   assert.equal(workflow.replace(baselineStep, '').includes('SCOPE_STAGING_BASELINE_KEY'), false);
+  const provisioning = readFileSync(new URL('../workflows/provision-staging-baseline.yml', import.meta.url), 'utf8');
+  const restoreStep = provisioning.split('      - name: Restore retained staging baseline\n')[1].split('\n      - name:')[0];
+  assert.match(restoreStep, /SCOPE_STAGING_BASELINE_KEY: \$\{\{ secrets\.SCOPE_STAGING_BASELINE_KEY \}\}/);
+  assert.equal(provisioning.replace(restoreStep, '').includes('SCOPE_STAGING_BASELINE_KEY'), false);
   const uploadStep = workflow.split('      - name: Retain staging baseline before migration\n')[1].split('\n      - name:')[0];
   const paths = uploadStep.split('          path: |\n')[1].split('          retention-days:')[0].trim().split('\n').map(line => line.trim());
   assert.deepEqual(paths, [

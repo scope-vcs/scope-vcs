@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
+shopt -s inherit_errexit
 umask 077
-: "${SCOPE_PRODUCTION_MIGRATION_PLAN:?Production migration plan is required}"
+mode="${1:-reconcile}"
+case "$mode:$#" in
+  reconcile:0|reconcile:1)
+    : "${SCOPE_PRODUCTION_MIGRATION_PLAN:?Production migration plan is required}" ;;
+  provision:2)
+    artifact_id="$2"
+    [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]] || { echo 'Baseline artifact ID must be a positive integer.' >&2; exit 2; }
+    : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to restore a snapshot}" ;;
+  *) echo 'Usage: staging-baseline.sh [reconcile | provision ARTIFACT_ID]' >&2; exit 2 ;;
+esac
 : "${SCOPE_STAGING_BASELINE_DIR:?Staging baseline directory is required}"
 : "${SCOPE_MAINTENANCE_BINARY:?Pinned maintenance binary is required}"
 [[ -n "${RAILWAY_TOKEN:-}" && -z "${RAILWAY_API_TOKEN:-}" ]]
@@ -11,6 +21,30 @@ environment="$(jq -er '.environments.staging.environmentId' "$manifest")"
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$scripts/railway-private-command.sh"
 maintenance() { bash "$scripts/railway-private-maintenance.sh" "$environment" "$@"; }
+staging_sql() {
+  railway_private_read "$environment" sh -c 'exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline "$1" < /dev/null
+}
+release_baseline_run() {
+  local run_id
+  : "${GITHUB_REPOSITORY:?}"
+  run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$1" \
+    --jq 'select(.expired == false and .workflow_run.head_branch == "main") | .workflow_run.id')"
+  [[ "$run_id" =~ ^[1-9][0-9]*$ ]] || { echo 'Retained staging baseline is expired or not from main.' >&2; return 1; }
+  gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
+    --jq '.path == ".github/workflows/release.yml" and .head_branch == "main" and (.event == "schedule" or .event == "workflow_dispatch")' | grep -qx true
+  printf '%s\n' "$run_id"
+}
+
+if [[ "$mode" == provision ]]; then
+  : "${GITHUB_REPOSITORY:?}"
+  key="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" --jq '.name | capture("^staging-baseline-(?<key>[0-9a-f]{64})$").key')"
+  [[ "$key" =~ ^[0-9a-f]{64}$ ]] || { echo 'Artifact is not a retained staging baseline.' >&2; exit 1; }
+  run_id="$(release_baseline_run "$artifact_id")"
+  jq -e --arg run "$run_id" '.preparationRunId == $run' "${SCOPE_PREPARED_RELEASE_PATH:?Prepared release manifest is required}" >/dev/null || {
+    echo "The maintenance binary must come from baseline run $run_id." >&2
+    exit 1
+  }
+fi
 [[ "$environment" != "$(jq -er '.environments.production.environmentId' "$manifest")" ]]
 scope=(--project "$project" --environment "$environment")
 SCOPE_DEPLOYMENT_MANIFEST_JSON="$(cat "$manifest")" \
@@ -26,25 +60,21 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
-key="$(node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
-if ! (maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
-  node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null); then
-  : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to restore a snapshot}"
-  : "${GITHUB_REPOSITORY:?}"
-  artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?name=staging-baseline-$key&per_page=100" \
-    --jq '.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main") | .id' | sed -n '1p')"
-  [[ -n "$artifact_id" ]] || { echo 'No retained staging baseline matches production; explicit baseline provisioning is required.' >&2; exit 1; }
-  run_id="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" --jq '.workflow_run.id')"
-  gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" \
-    --jq '.path == ".github/workflows/release.yml" and .head_branch == "main" and (.event == "schedule" or .event == "workflow_dispatch")' | grep -qx true
-  gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > "$SCOPE_STAGING_BASELINE_DIR/restore.zip"
+
+download_snapshot() {
+  local artifact="$1" key="$2"
+  gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$SCOPE_STAGING_BASELINE_DIR/restore.zip"
   unzip -q "$SCOPE_STAGING_BASELINE_DIR/restore.zip" -d "$SCOPE_STAGING_BASELINE_DIR/restore"
   jq -e --arg environment "$environment" --arg key "$key" \
-    '.environmentId == $environment and .ledgerHash == $key and .metadataRestoreSafe == true' "$SCOPE_STAGING_BASELINE_DIR/restore/baseline.json" >/dev/null
+    '.environmentId == $environment and .ledgerHash == $key and (.metadataRestoreSafe | type) == "boolean"' \
+    "$SCOPE_STAGING_BASELINE_DIR/restore/baseline.json" >/dev/null
   (cd "$SCOPE_STAGING_BASELINE_DIR/restore" &&
     [[ "$(wc -l < database.sha256)" == 1 ]] &&
     grep -Eq '^[0-9a-f]{64}  database\.dump\.enc$' database.sha256 &&
     sha256sum --check database.sha256 >/dev/null)
+}
+
+restore_snapshot() {
   node .github/scripts/staging-baseline-crypto.mjs decrypt \
     "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump.enc" \
     "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump" \
@@ -53,11 +83,54 @@ if ! (maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
     --file="$SCOPE_STAGING_BASELINE_DIR/restore/database.sql" "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump"
   { printf '%s\n' 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'; cat "$SCOPE_STAGING_BASELINE_DIR/restore/database.sql"; } | \
     railway_private_command "$environment" sh -c 'exec psql "$DATABASE_URL" -X --single-transaction -v ON_ERROR_STOP=1' >/dev/null
+}
+
+require_unrun_object_deletions() {
+  local since attempted
+  since="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$1" --jq '.created_at | fromdateiso8601')"
+  [[ "$since" =~ ^[1-9][0-9]*$ ]]
+  attempted="$(staging_sql "SELECT count(*) FROM scope_orphan_object_jobs WHERE created_at_unix >= $since AND (attempts > 0 OR completed_at_unix IS NOT NULL)")"
+  [[ "$attempted" == 0 ]] || {
+    echo "Object deletions queued since baseline run $1 have already run; this snapshot cannot be restored." >&2
+    return 1
+  }
+}
+
+require_seeded_staging() {
+  maintenance preflight >/dev/null
+  [[ "$(staging_sql 'SELECT count(*) > 0 FROM scope_repositories')" == t ]]
+}
+
+if [[ "$mode" == provision ]]; then
+  download_snapshot "$artifact_id" "$key"
+  require_unrun_object_deletions "$run_id"
+  restore_snapshot
+  maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json"
+  [[ "$(node .github/scripts/staging-baseline.mjs "$SCOPE_STAGING_BASELINE_DIR/current-plan.json")" == "$key" ]]
+  require_seeded_staging
+  echo "Restored staging baseline artifact $artifact_id from release run $run_id; writers stay fenced until the next release migrates staging."
+  exit 0
+fi
+
+key="$(node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN")"
+if ! (maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" &&
+  node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null); then
+  : "${SCOPE_STAGING_BASELINE_KEY:?Staging baseline encryption key is required to restore a snapshot}"
+  : "${GITHUB_REPOSITORY:?}"
+  artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?name=staging-baseline-$key&per_page=100" \
+    --jq '.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main") | .id' | sed -n '1p')"
+  [[ -n "$artifact_id" ]] || { echo 'No retained staging baseline matches production; explicit baseline provisioning is required.' >&2; exit 1; }
+  release_baseline_run "$artifact_id" >/dev/null
+  download_snapshot "$artifact_id" "$key"
+  jq -e '.metadataRestoreSafe' "$SCOPE_STAGING_BASELINE_DIR/restore/baseline.json" >/dev/null || {
+    echo "Retained staging baseline $artifact_id is not metadata-restore-safe; restore it with the Provision staging baseline workflow." >&2
+    exit 1
+  }
+  restore_snapshot
   maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json"
   node .github/scripts/staging-baseline.mjs "$SCOPE_PRODUCTION_MIGRATION_PLAN" "$SCOPE_STAGING_BASELINE_DIR/current-plan.json" >/dev/null
 fi
-maintenance preflight >/dev/null
-[[ "$(railway_private_read "$environment" sh -c 'exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline 'SELECT count(*) > 0 FROM scope_repositories' < /dev/null)" == t ]]
+require_seeded_staging
 if jq -e '.pending | length == 0' "$SCOPE_PRODUCTION_MIGRATION_PLAN" >/dev/null; then
   exit 0
 fi
