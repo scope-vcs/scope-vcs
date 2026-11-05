@@ -20,7 +20,8 @@ printf 'deb [signed-by=%s] https://apt.postgresql.org/pub/repos/apt %s-pgdg main
   > /etc/apt/sources.list.d/postgresql.list
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install --yes --no-install-recommends postgresql-common
+apt-get install --yes --no-install-recommends postgresql-common locales
+localedef -i en_US -f UTF-8 en_US.utf8
 sed -i -E 's/^#?[[:space:]]*create_main_cluster[[:space:]]*=.*/create_main_cluster = false/' \
   /etc/postgresql-common/createcluster.conf
 package_version="$(apt-cache madison "postgresql-$postgres_major" | awk -v prefix="$postgres_version-" 'index($3, prefix) == 1 {print $3; exit}')"

@@ -174,7 +174,11 @@ impl CacheStore {
                 return Ok(());
             }
             match tokio::time::timeout(UPLOAD_DELETE_TIMEOUT, delete()).await {
-                Ok(result) => result?,
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    tx.rollback().await?;
+                    return Err(error);
+                }
                 Err(_) => {
                     tx.rollback().await?;
                     return Err(PostgresError::internal_message(format!(

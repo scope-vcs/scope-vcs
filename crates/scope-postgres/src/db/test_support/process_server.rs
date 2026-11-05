@@ -10,7 +10,15 @@ static SERVER: OnceLock<anyhow::Result<ProcessServer>> = OnceLock::new();
 
 pub(super) fn database_url() -> anyhow::Result<String> {
     SERVER
-        .get_or_init(ProcessServer::start)
+        .get_or_init(|| {
+            let server = ProcessServer::start()?;
+            // SAFETY: the callback has C linkage, no arguments, and remains valid until process exit.
+            let registered = unsafe { libc::atexit(stop_server_at_exit) };
+            if registered != 0 {
+                bail!("registering PostgreSQL test server shutdown failed with {registered}");
+            }
+            Ok(server)
+        })
         .as_ref()
         .map(|server| server.database_url.clone())
         .map_err(|error| anyhow::anyhow!("{error:#}"))
@@ -28,6 +36,7 @@ impl ProcessServer {
             Some(bin) => PathBuf::from(bin),
             None => PathBuf::from(run(Command::new("pg_config").arg("--bindir"))?.trim()),
         };
+        super::stale_cleanup::sweep_process_servers(&std::env::temp_dir(), &bin)?;
         let mut random = [0_u8; 8];
         getrandom::fill(&mut random).map_err(|error| anyhow::anyhow!("{error}"))?;
         let root = std::env::temp_dir().join(format!(
@@ -48,11 +57,6 @@ impl ProcessServer {
             database_url: String::new(),
         };
         server.initialize()?;
-        // SAFETY: the callback has C linkage, no arguments, and remains valid until process exit.
-        let registered = unsafe { libc::atexit(stop_server_at_exit) };
-        if registered != 0 {
-            bail!("registering PostgreSQL test server shutdown failed with {registered}");
-        }
         Ok(server)
     }
 
@@ -62,7 +66,8 @@ impl ProcessServer {
                 "-U",
                 "postgres",
                 "--auth=trust",
-                "--no-locale",
+                "--locale-provider=libc",
+                "--locale=en_US.utf8",
                 "-E",
                 "UTF8",
                 "-D",
@@ -73,7 +78,7 @@ impl ProcessServer {
         fs::write(
             self.root.join("data/postgresql.auto.conf"),
             format!(
-                "listen_addresses = ''\nport = 5432\nunix_socket_directories = '{}'\nmax_connections = 100\nsuperuser_reserved_connections = 3\nfsync = off\nfull_page_writes = off\n",
+                "listen_addresses = ''\nport = 5432\nunix_socket_directories = '{}'\nmax_connections = 100\nsuperuser_reserved_connections = 3\nfsync = off\nfull_page_writes = off\ntimezone = 'UTC'\nlog_timezone = 'UTC'\n",
                 socket.display().to_string().replace('\'', "''")
             ),
         )?;
@@ -113,14 +118,35 @@ impl ProcessServer {
     }
 
     fn stop(&self) -> anyhow::Result<()> {
-        if self.root.join("data/postmaster.pid").exists() {
-            run(Command::new(self.bin.join("pg_ctl"))
+        stop(&self.root, &self.bin)
+    }
+}
+
+pub(super) fn stop(root: &Path, bin: &Path) -> anyhow::Result<()> {
+    if root.join("data/postmaster.pid").exists() {
+        let status = Command::new(bin.join("pg_ctl"))
+            .arg("-D")
+            .arg(root.join("data"))
+            .arg("status")
+            .output()
+            .context("checking PostgreSQL test server status")?;
+        if status.status.success() {
+            run(Command::new(bin.join("pg_ctl"))
                 .arg("-D")
-                .arg(self.root.join("data"))
+                .arg(root.join("data"))
                 .args(["-w", "-m", "immediate", "stop"]))?;
+        } else if status.status.code() != Some(3) {
+            bail!(
+                "checking PostgreSQL test server status failed: {}{}",
+                String::from_utf8_lossy(&status.stdout),
+                String::from_utf8_lossy(&status.stderr)
+            );
         }
-        fs::remove_dir_all(&self.root)?;
-        Ok(())
+    }
+    match fs::remove_dir_all(root) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -162,3 +188,6 @@ fn run(command: &mut Command) -> anyhow::Result<String> {
     }
     Ok(String::from_utf8(output.stdout)?)
 }
+
+#[cfg(all(test, unix))]
+mod tests;

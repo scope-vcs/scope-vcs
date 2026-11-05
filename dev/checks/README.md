@@ -53,4 +53,7 @@ non-root user. The harness finds tools with `pg_config --bindir`; set
 `SCOPE_TEST_POSTGRES_BIN` to select another installation. It uses a private Unix
 socket, a non-superuser test role, and 100 connection slots. It ignores
 `SCOPE_TEST_DATABASE_URL`, so other checkouts' dev stacks cannot consume its
-connections. Normal process exit stops the server and removes its data directory.
+connections. The server uses UTF-8, the libc en_US.utf8 locale, and UTC, matching the
+pinned PostgreSQL image. Normal process exit stops the server and removes its
+data directory. Startup also stops and removes private servers whose owning
+process has died, including after an interrupt, abort, or SIGKILL.

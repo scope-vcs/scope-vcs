@@ -49,6 +49,32 @@ fn fixtures_ignore_a_shared_server_without_connection_slots() {
                 .unwrap()
                 .unwrap();
             assert!(!row.try_get::<bool>("", "superuser").unwrap());
+            let settings = store
+                .db
+                .query_one_raw(Statement::from_string(
+                    store.db.get_database_backend(),
+                    "SELECT current_setting('server_encoding') AS encoding,
+                        current_setting('TimeZone') AS timezone,
+                        datcollate, datctype, datlocprovider::text AS provider
+                 FROM pg_database WHERE datname = current_database()"
+                        .to_owned(),
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            for (key, expected) in [
+                ("encoding", "UTF8"),
+                ("timezone", "UTC"),
+                ("datcollate", "en_US.utf8"),
+                ("datctype", "en_US.utf8"),
+                ("provider", "c"),
+            ] {
+                assert_eq!(
+                    settings.try_get::<String>("", key).unwrap(),
+                    expected,
+                    "{key}"
+                );
+            }
         });
         return;
     }
