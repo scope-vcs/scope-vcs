@@ -3,6 +3,23 @@ ARG INSTALL_GIT=1
 ARG GIT_VERSION
 ARG GIT_SOURCE_SHA256
 ARG IMAGE_DEPENDENCY_EPOCH=local
+ARG APT_VERSION=2.6.2
+RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
+    && if [ -f /etc/apt/sources.list ]; then mv /etc/apt/sources.list /tmp/apt-sources.list; fi \
+    && mkdir /etc/apt/sources.list.d \
+    && printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian-security' 'Suites: bookworm-security' \
+        'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/apt-security.sources \
+    && rm -rf /var/lib/apt/lists/* \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg6.0=${APT_VERSION}"' \
+    && rm -rf /etc/apt/sources.list.d \
+    && mv /tmp/apt-sources.list.d /etc/apt/sources.list.d \
+    && if [ -f /tmp/apt-sources.list ]; then mv /tmp/apt-sources.list /etc/apt/sources.list; fi \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY install-git.sh /tmp/install-git.sh
 RUN test -n "$IMAGE_DEPENDENCY_EPOCH" \
     && if [ "$INSTALL_GIT" = 1 ]; then bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"; else mkdir -p /opt/git; fi
