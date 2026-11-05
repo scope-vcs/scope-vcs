@@ -89,6 +89,5 @@ The PostgreSQL tests cover fresh initialization, empty-schema and baseline
 schema checks, ledger rejection, schema drift, rollback, repeated application, writer-fence enforcement and run-state parity:
 
 ```sh
-SCOPE_TEST_DATABASE_URL=postgres://scope:scope@127.0.0.1:5432/scope_test \
-  CARGO_BUILD_JOBS=2 cargo test -p scope-postgres migration
+CARGO_BUILD_JOBS=2 cargo test -p scope-postgres migration
 ```

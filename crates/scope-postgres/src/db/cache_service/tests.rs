@@ -203,14 +203,42 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
         })
         .await
         .unwrap();
-    assert!(
-        caches
-            .cleanup_upload(&reclaimed[0], || async {
-                Err(PostgresError::internal_message("object store unavailable"))
-            })
-            .await
-            .is_err()
-    );
+    let schema = caches
+        .db
+        .query_one_raw(statement("SELECT current_schema() AS name", vec![]))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<String>("", "name")
+        .unwrap();
+    let options = caches.db.get_postgres_connection_pool().connect_options();
+    let release = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
+    let pool = sea_orm::sqlx::postgres::PgPoolOptions::new()
+        .min_connections(0)
+        .max_connections(1)
+        .after_release({
+            let release = release.clone();
+            move |_, _| {
+                let release = release.clone();
+                Box::pin(async move {
+                    let _ = release.acquire().await;
+                    Ok(false)
+                })
+            }
+        })
+        .connect_lazy_with((*options).clone().options([("search_path", schema)]));
+    let cleanup_caches = CacheStore {
+        db: std::sync::Arc::new(sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(
+            pool,
+        )),
+    };
+    let failed = cleanup_caches
+        .cleanup_upload(&reclaimed[0], || async {
+            Err(PostgresError::internal_message("object store unavailable"))
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(failed.message, "object store unavailable");
     assert!(
         caches
             .expire_uploads(cleanup_now + 300, 10)
@@ -219,6 +247,7 @@ async fn cache_store_restores_exact_then_compatible_and_never_repoints_exact() {
             .is_empty()
     );
     let retried = caches.expire_uploads(cleanup_now + 600, 10).await.unwrap();
+    release.close();
     assert_eq!(retried.len(), 1);
     caches
         .cleanup_upload(&retried[0], || async { Ok(()) })

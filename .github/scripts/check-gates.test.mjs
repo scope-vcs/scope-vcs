@@ -59,6 +59,9 @@ test('GitHub runs every backend gate lane exactly once', () => {
   const testLanes = workflow.match(/lane: \[([^\]]+)\]/)[1].split(', ');
   const lanes = [workflow.match(/dev\/checks\/backend (lint)$/m)[1], ...testLanes];
   assert.deepEqual(lanes.flatMap((lane) => commands('backend', lane)).sort(), commands('backend').sort());
+  assert.match(workflow, /run: sudo \.\/dev\/install-test-postgres\.sh/);
+  assert.ok(workflow.indexOf('Install PostgreSQL test server') < workflow.indexOf('Test Rust workspace lane'));
+  assert.doesNotMatch(workflow, /SCOPE_TEST_DATABASE_URL|services:/);
 });
 
 test('the backend gate bounds PostgreSQL test concurrency on larger hosts', () => {
@@ -464,6 +467,19 @@ test('runner base images pass the container lifecycle gate and scan before publi
   const push = publish.indexOf('- name: Publish verified image');
   assert(verify >= 0 && scan > verify && push > scan);
   assert.match(publish.slice(push), /bash \.github\/scripts\/push-image-tags\.sh <<< "\$IMAGE"/);
+});
+
+test('runner base images take packages from the live Debian archive refreshed each week', () => {
+  const runner = read('.github/workflows/scope-runner-image.yml');
+  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
+  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
+  for (const lane of [candidate, publish]) {
+    assert.match(lane, /echo "dependency_epoch=\$\(date -u \+%G-W%V\)" >> "\$GITHUB_OUTPUT"/);
+    assert.match(lane, /IMAGE_DEPENDENCY_EPOCH=\$\{\{ steps\.git\.outputs\.dependency_epoch \}\}/);
+  }
+  const dockerfile = read('runner-runtime/Dockerfile');
+  assert.doesNotMatch(dockerfile, /snapshot\.debian\.org/);
+  assert.match(dockerfile, /RUN test -n "\$IMAGE_DEPENDENCY_EPOCH" \\\n\s+&& apt-get .* update/);
 });
 
 test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
