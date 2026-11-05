@@ -159,6 +159,12 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
   assert.equal(sql("SELECT count(*) FROM information_schema.tables WHERE table_name='candidate_only'"), '0');
   assert.equal(sql("SELECT count(*) FROM information_schema.columns WHERE table_name='scope_repositories' AND column_name='candidate'"), '0');
   const metadataPath = join(env.SCOPE_STAGING_BASELINE_DIR, 'baseline.json');
+  sql(`CREATE TABLE scope_orphan_object_jobs(object_key varchar, updated_at_unix bigint, attempts int, completed_at_unix bigint);
+    CREATE TABLE scope_repo_storage_cleanup_jobs(repo_id varchar, generation varchar, updated_at_unix bigint, attempts int, completed_at_unix bigint);
+    CREATE TABLE scope_request_media_cleanup_jobs(attachment_id text, updated_at_unix bigint, attempt int, completed_at_unix bigint);
+    INSERT INTO scope_orphan_object_jobs VALUES ('queued-blob', ${runCreatedUnix - 60}, 0, NULL),
+      ('reuploaded-blob', ${runCreatedUnix - 600}, 1, ${runCreatedUnix - 600});
+    INSERT INTO scope_request_media_cleanup_jobs VALUES ('deleted-request-media', ${runCreatedUnix - 60}, 1, NULL)`);
   writeFileSync(join(root, 'production.json'), JSON.stringify({ ...plan, metadataRestoreSafe: false, pending: [{ name: 'm0003_external_storage' }] }));
   result = run();
   assert.equal(result.status, 0, result.stderr);
@@ -172,14 +178,22 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
 
   const provision = () => spawnSync('bash', ['.github/scripts/staging-baseline.sh', 'provision', '12'],
     { env, encoding: 'utf8', timeout: 60_000 });
-  sql(`CREATE TABLE scope_orphan_object_jobs(created_at_unix bigint, updated_at_unix bigint, attempts int, completed_at_unix bigint);
-    INSERT INTO scope_orphan_object_jobs VALUES (${runCreatedUnix - 90}, ${runCreatedUnix - 30}, 2, ${runCreatedUnix - 30}),
-      (${runCreatedUnix - 60}, ${runCreatedUnix + 60}, 1, NULL)`);
-  result = provision();
-  assert.notEqual(result.status, 0, 'Provisioning must refuse a snapshot after its queued object deletions ran');
-  assert.match(result.stderr, /have already run/);
-  assert.match(sql('SELECT version FROM seaql_migrations ORDER BY version'), /m0003_external_storage/);
-  sql(`UPDATE scope_orphan_object_jobs SET attempts = 0 WHERE updated_at_unix = ${runCreatedUnix + 60}`);
+  sql(`UPDATE scope_orphan_object_jobs SET attempts = 2, completed_at_unix = ${runCreatedUnix + 60}, updated_at_unix = ${runCreatedUnix + 60}
+      WHERE object_key = 'queued-blob';
+    UPDATE scope_request_media_cleanup_jobs SET attempt = 2, completed_at_unix = ${runCreatedUnix + 60}, updated_at_unix = ${runCreatedUnix + 60};
+    UPDATE scope_orphan_object_jobs SET attempts = 1, completed_at_unix = ${runCreatedUnix + 90}, updated_at_unix = ${runCreatedUnix + 90}
+      WHERE object_key = 'reuploaded-blob'`);
+  const refused = (reason) => {
+    result = provision();
+    assert.notEqual(result.status, 0, reason);
+    assert.match(result.stderr, /Objects live in this snapshot were deleted after it was taken/);
+    assert.match(sql('SELECT version FROM seaql_migrations ORDER BY version'), /m0003_external_storage/);
+  };
+  refused('Provisioning must refuse a snapshot whose completed cleanup job was requeued and deleted again');
+  sql(`DELETE FROM scope_orphan_object_jobs WHERE object_key = 'reuploaded-blob';
+    INSERT INTO scope_request_media_cleanup_jobs VALUES ('live-media', ${runCreatedUnix + 30}, 1, ${runCreatedUnix + 30})`);
+  refused('Provisioning must refuse a snapshot after its live media was deleted');
+  sql("DELETE FROM scope_request_media_cleanup_jobs WHERE attachment_id = 'live-media'");
   prepared('35');
   result = provision();
   assert.notEqual(result.status, 0, 'Provisioning must run only the baseline run\'s maintenance binary');
@@ -188,7 +202,7 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
   result = provision();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(sql('SELECT version FROM seaql_migrations'), 'm0001_initial');
-  assert.equal(sql("SELECT count(*) FROM information_schema.tables WHERE table_name='scope_orphan_object_jobs'"), '0');
+  assert.equal(sql("SELECT object_key FROM scope_orphan_object_jobs WHERE completed_at_unix IS NULL"), 'queued-blob');
   assert.equal(sql('SELECT id FROM scope_repositories'), 'existing-repo');
   assert.equal(existsSync(join(env.SCOPE_STAGING_BASELINE_DIR, 'restore')), false);
 });

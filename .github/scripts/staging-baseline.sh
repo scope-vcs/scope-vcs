@@ -75,25 +75,47 @@ download_snapshot() {
 }
 
 restore_snapshot() {
+  local since="${1:-}"
   node .github/scripts/staging-baseline-crypto.mjs decrypt \
     "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump.enc" \
     "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump" \
     "$SCOPE_STAGING_BASELINE_DIR/restore/baseline.json"
   pg_restore --no-owner --no-privileges --exit-on-error \
     --file="$SCOPE_STAGING_BASELINE_DIR/restore/database.sql" "$SCOPE_STAGING_BASELINE_DIR/restore/database.dump"
-  { printf '%s\n' 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'; cat "$SCOPE_STAGING_BASELINE_DIR/restore/database.sql"; } | \
-    railway_private_command "$environment" sh -c 'exec psql "$DATABASE_URL" -X --single-transaction -v ON_ERROR_STOP=1' >/dev/null
+  {
+    [[ -z "$since" ]] || record_deletions_since "$since"
+    printf '%s\n' 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+    cat "$SCOPE_STAGING_BASELINE_DIR/restore/database.sql"
+    [[ -z "$since" ]] || require_snapshot_expected_deletions
+  } | railway_private_command "$environment" sh -c 'exec psql "$DATABASE_URL" -X --single-transaction -v ON_ERROR_STOP=1' >/dev/null
 }
 
-require_unrun_object_deletions() {
-  local since attempted
-  since="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$1" --jq '.created_at | fromdateiso8601')"
-  [[ "$since" =~ ^[1-9][0-9]*$ ]]
-  attempted="$(staging_sql "SELECT count(*) FROM scope_orphan_object_jobs WHERE updated_at_unix >= $since AND (attempts > 0 OR completed_at_unix IS NOT NULL)")"
-  [[ "$attempted" == 0 ]] || {
-    echo "Object deletions queued since baseline run $1 have already run; this snapshot cannot be restored." >&2
-    return 1
-  }
+record_deletions_since() {
+  cat <<SQL
+CREATE TEMP TABLE scope_baseline_deletions ON COMMIT DROP AS
+  SELECT 'source' AS kind, object_key::text AS key FROM public.scope_orphan_object_jobs
+    WHERE updated_at_unix >= $1 AND (attempts > 0 OR completed_at_unix IS NOT NULL)
+  UNION ALL SELECT 'repository', repo_id || ':' || generation FROM public.scope_repo_storage_cleanup_jobs
+    WHERE updated_at_unix >= $1 AND (attempts > 0 OR completed_at_unix IS NOT NULL)
+  UNION ALL SELECT 'media', attachment_id FROM public.scope_request_media_cleanup_jobs
+    WHERE updated_at_unix >= $1 AND (attempt > 0 OR completed_at_unix IS NOT NULL);
+SQL
+}
+
+require_snapshot_expected_deletions() {
+  cat <<'SQL'
+DO $guard$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_temp.scope_baseline_deletions deletion WHERE NOT EXISTS (
+      SELECT 1 FROM public.scope_orphan_object_jobs job WHERE deletion.kind = 'source'
+        AND job.object_key = deletion.key AND job.completed_at_unix IS NULL
+      UNION ALL SELECT 1 FROM public.scope_repo_storage_cleanup_jobs job WHERE deletion.kind = 'repository'
+        AND job.repo_id || ':' || job.generation = deletion.key AND job.completed_at_unix IS NULL
+      UNION ALL SELECT 1 FROM public.scope_request_media_cleanup_jobs job WHERE deletion.kind = 'media'
+        AND job.attachment_id = deletion.key AND job.completed_at_unix IS NULL)) THEN
+    RAISE EXCEPTION 'Objects live in this snapshot were deleted after it was taken';
+  END IF;
+END $guard$;
+SQL
 }
 
 require_seeded_staging() {
@@ -103,8 +125,9 @@ require_seeded_staging() {
 
 if [[ "$mode" == provision ]]; then
   download_snapshot "$artifact_id" "$key"
-  require_unrun_object_deletions "$run_id"
-  restore_snapshot
+  since="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.created_at | fromdateiso8601')"
+  [[ "$since" =~ ^[1-9][0-9]*$ ]]
+  restore_snapshot "$since"
   maintenance plan > "$SCOPE_STAGING_BASELINE_DIR/current-plan.json"
   [[ "$(node .github/scripts/staging-baseline.mjs "$SCOPE_STAGING_BASELINE_DIR/current-plan.json")" == "$key" ]]
   require_seeded_staging
