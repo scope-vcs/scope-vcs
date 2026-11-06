@@ -31,6 +31,10 @@ set -euo pipefail
 [[ "$1" == ssh ]]
 touch "$TEST_CALLED"
 printf 'ssh\\n' >> "$TEST_ATTEMPTS"
+if (( "$(wc -l < "$TEST_ATTEMPTS")" <= \${TEST_SSH_CONNECT_FAILURES:-0} )); then
+  printf 'ssh: connect to host ssh.railway.com port 22: Connection timed out\\n' >&2
+  exit 255
+fi
 if (( "$(wc -l < "$TEST_ATTEMPTS")" <= \${TEST_SSH_FAILURES:-0} )); then
   # A dropped connection may consume input and emit partial output first.
   cat > /dev/null
@@ -111,7 +115,17 @@ test('read-only maintenance outlasts a Railway SSH outage longer than three atte
   assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8').split('\n').length - 1, 30);
 });
 
-test('mutating maintenance attempts SSH once after a transport failure', t => {
+test('mutating maintenance retries SSH that never connected with the same binary', t => {
+  const f = fixture(t);
+  const result = f.run([production, 'apply'], { TEST_SSH_CONNECT_FAILURES: '2' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(f.env.TEST_ATTEMPTS, 'utf8'), 'ssh\nssh\nssh\nssh\n');
+  assert.equal(readFileSync(f.env.TEST_RESULT, 'utf8').trim().split('\n').at(-1), 'apply');
+  assert.match(readFileSync(f.env.TEST_GRANTS, 'utf8'), /GRANT/);
+  assert.match(result.stderr, /ssh: connect to host ssh\.railway\.com port 22: Connection timed out/);
+});
+
+test('mutating maintenance attempts SSH once after a connected session drops', t => {
   const f = fixture(t);
   const result = f.run([staging, 'apply'], { TEST_SSH_FAILURES: '1' });
   assert.equal(result.status, 255);

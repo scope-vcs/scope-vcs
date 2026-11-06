@@ -6,7 +6,7 @@ command="${2:?Maintenance command is required}"
 [[ "$#" == 2 ]]
 case "$command" in
   preflight|plan|verify|validate-workflow-catalogs) private_command=railway_private_read ;;
-  fence|drain-writers|apply) private_command=railway_private_command ;;
+  fence|drain-writers|apply) private_command=railway_private_write ;;
   *) echo 'Unsupported private maintenance command.' >&2; exit 2 ;;
 esac
 if [[ -n "${SCOPE_ROLE_GRANTS_SQL:-}" ]]; then
@@ -37,5 +37,5 @@ statement="$(jq -er '.releasePolicy.migrationStatementTimeoutSeconds | select(ty
   "$directory/scope-maintenance" "$2"
 ' scope-maintenance "$digest" "$command" "$lock" "$statement" < "$binary"
 if [[ "$command" == apply ]]; then
-  grants | railway_private_command "$environment" sh -ceu 'exec psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1' >/dev/null
+  grants | railway_private_write "$environment" sh -ceu 'exec psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1' >/dev/null
 fi

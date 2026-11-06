@@ -34,20 +34,39 @@ railway_private_command() (
   PATH="$ssh_bin:$PATH" railway ssh --project "$project" --environment "$environment" --service "$service" "${identity[@]}" -- "$remote"
 )
 
-railway_private_read() (
-  local attempt status read_attempts=30 retry_delay_seconds=10
-  scope_read_input="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-read.XXXXXXXX")" || return
-  scope_read_output="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-read.XXXXXXXX")" || return
-  trap 'rm -f -- "$scope_read_input" "$scope_read_output"' EXIT
-  cat >| "$scope_read_input" || return
+railway_ssh_never_connected() {
+  grep -Eq '^ssh: (connect to host [^ ]+ port [0-9]+: |Could not resolve hostname )' -- "$1"
+}
+
+railway_ssh_transport_failed() {
+  return 0
+}
+
+railway_private_retry() (
+  local retryable="$1" description="$2"; shift 2
+  local attempt status attempts=30 retry_delay_seconds=10
+  scope_retry_input="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-retry.XXXXXXXX")" || return
+  scope_retry_output="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-retry.XXXXXXXX")" || return
+  scope_retry_error="$(mktemp "${RUNNER_TEMP:-/tmp}/scope-railway-retry.XXXXXXXX")" || return
+  trap 'rm -f -- "$scope_retry_input" "$scope_retry_output" "$scope_retry_error"' EXIT
+  cat >| "$scope_retry_input" || return
   for ((attempt = 1; ; attempt++)); do
     status=0
-    railway_private_command "$@" < "$scope_read_input" >| "$scope_read_output" || status=$?
-    if [[ "$status" != 255 || "$attempt" == "$read_attempts" ]]; then
-      cat -- "$scope_read_output" || return
+    railway_private_command "$@" < "$scope_retry_input" >| "$scope_retry_output" 2> >(tee -- "$scope_retry_error" >&2) || status=$?
+    wait "$!" || return
+    if [[ "$status" != 255 || "$attempt" == "$attempts" ]] || ! "$retryable" "$scope_retry_error"; then
+      cat -- "$scope_retry_output" || return
       return "$status"
     fi
-    echo "Railway SSH transport failed; retrying read-only command ($attempt/$read_attempts)." >&2
+    echo "Railway SSH $description ($attempt/$attempts)." >&2
     sleep "$retry_delay_seconds"
   done
 )
+
+railway_private_read() {
+  railway_private_retry railway_ssh_transport_failed 'transport failed; retrying read-only command' "$@"
+}
+
+railway_private_write() {
+  railway_private_retry railway_ssh_never_connected 'never connected; retrying command' "$@"
+}
