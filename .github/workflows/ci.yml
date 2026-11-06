@@ -24,6 +24,7 @@ jobs:
       pull-requests: read
     outputs:
       number: ${{ steps.find.outputs.number }}
+      run_id: ${{ steps.find.outputs.run_id }}
     steps:
       - name: Find a pull request run that tests this commit
         id: find
@@ -33,6 +34,7 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           number=""
+          run_id=""
           for attempt in {1..8}; do
             (( attempt == 1 )) || sleep 30
             candidate="$(gh api "repos/$REPOSITORY/commits/$SHA/pulls" --jq "[.[] | select(
@@ -43,10 +45,12 @@ jobs:
               --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $candidate))][0].id // empty")" || continue
             if [[ -n "$run" ]]; then
               number="$candidate"
+              run_id="$run"
               break
             fi
           done
           echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
 
   plan:
     name: Plan selected components
@@ -162,7 +166,15 @@ jobs:
     timeout-minutes: 150
     permissions:
       actions: read
+      contents: read
+      pull-requests: read
     steps:
+      - name: Checkout reporter
+        if: ${{ needs.pull-request.outputs.number != '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
       - name: Report the pull request's result
         if: ${{ needs.pull-request.outputs.number != '' }}
         env:
@@ -170,21 +182,8 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           SHA: ${{ github.sha }}
           PULL_REQUEST: ${{ needs.pull-request.outputs.number }}
-        run: |
-          [[ "$PULL_REQUEST" =~ ^[0-9]+$ ]]
-          echo "Pull request #$PULL_REQUEST tests $SHA"
-          while :; do
-            run="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$SHA" \
-              --jq "[.workflow_runs[] | select(any(.pull_requests[]; .number == $PULL_REQUEST))][0] // empty
-                | \"\\(.html_url) \\(.status) \\(.conclusion)\"")" || run=""
-            read -r url status conclusion <<< "$run"
-            if [[ "$status" == completed ]]; then
-              echo "$url: $conclusion"
-              test "$conclusion" = success
-              exit
-            fi
-            sleep 30
-          done
+          RUN_ID: ${{ needs.pull-request.outputs.run_id }}
+        run: node .github/scripts/report-pr-checks.mjs
 
       - name: Require successful planning and validation
         if: ${{ needs.pull-request.outputs.number == '' }}

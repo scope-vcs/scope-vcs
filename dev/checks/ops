@@ -29,6 +29,7 @@ bash -n deploy/aws/recovery/remote-snapshot.sh
 node --test \
   dev/analytics/*.test.mjs \
   .github/scripts/scan-report.test.mjs \
+  .github/scripts/report-pr-checks.test.mjs \
   .github/scripts/push-image-tags.test.mjs \
   .github/scripts/audit-railway-experiments.test.mjs \
   .github/scripts/main-advisories.test.mjs \
