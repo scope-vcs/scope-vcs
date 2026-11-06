@@ -48,6 +48,11 @@ function Request() {
   const [checks, setChecks] = useState(running)
   Object.assign(window, {
     showNative: () => setChecks(native),
+    showPassed: () => setChecks({
+      ...native, checks: native.checks.slice(1), private_request_on_public_github: true,
+      github_pull_request: { state: 'open', number: 12, url: 'https://github.com/octo/demo/pull/12', error: null },
+      review_bots: [{ login: 'octo-reviewer[bot]', required: true, state: 'clear' }],
+    }),
     showState: (state: RequestChecksResponse['state']) => setChecks({
       ...running, state, checks: [], github_push: null, private_request_on_public_github: false,
     }),
@@ -74,9 +79,8 @@ function Request() {
             return true
           },
         }}
-        requestViewName="Agent"
       />
-      <RequestChecksSection checks={checks} error={null} params={{ owner: owner!, repo: repo! }} requestViewName="Agent" />
+      <RequestChecksSection checks={checks} error={null} params={{ owner: owner!, repo: repo! }} />
     </main>
   )
 }
