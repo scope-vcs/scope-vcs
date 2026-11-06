@@ -26,6 +26,7 @@ use scope_domain::{
 
 mod history_metadata;
 mod history_rewrite_baselines;
+mod lean_model;
 mod request_views;
 mod rules;
 mod views;

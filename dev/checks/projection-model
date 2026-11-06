@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+
+expected="$(jq -er '.lean.version' dev/tool-versions.json)"
+test "$(cat verification/projection/lean-toolchain)" = "leanprover/lean4:v${expected}"
+lean --version | grep -q "version ${expected},"
+
+(cd verification/projection && lake build)
+SCOPE_PROJECTION_MODEL="$PWD/verification/projection/.lake/build/bin/projection-model" \
+  cargo test --locked -p scope-domain --test domain lean_model -- --ignored

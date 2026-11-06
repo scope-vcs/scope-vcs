@@ -245,6 +245,9 @@
         "dev/checks/advisories",
         "deny.toml",
         "dev/install-cargo-deny.sh",
+        "dev/install-lean.sh",
+        "dev/checks/projection-model",
+        ".github/actions/install-lean/action.yml",
         ".github/scripts/deployment-components.mjs",
         ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
@@ -254,7 +257,8 @@
       ],
       "prefixes": [
         "crates/",
-        "worker/"
+        "worker/",
+        "verification/projection/"
       ]
     },
     "media-worker": {
@@ -275,6 +279,9 @@
         "dev/checks/advisories",
         "deny.toml",
         "dev/install-cargo-deny.sh",
+        "dev/install-lean.sh",
+        "dev/checks/projection-model",
+        ".github/actions/install-lean/action.yml",
         ".github/scripts/railway-artifact.mjs",
         "dev/local-process.py",
         "dev/local-identity.py",
@@ -284,7 +291,8 @@
       ],
       "prefixes": [
         "media-worker/",
-        "crates/"
+        "crates/",
+        "verification/projection/"
       ]
     },
     "api": {
@@ -308,6 +316,9 @@
         "dev/checks/advisories",
         "deny.toml",
         "dev/install-cargo-deny.sh",
+        "dev/install-lean.sh",
+        "dev/checks/projection-model",
+        ".github/actions/install-lean/action.yml",
         ".github/scripts/deployment-components.mjs",
         ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
@@ -318,7 +329,8 @@
       ],
       "prefixes": [
         "api/",
-        "crates/"
+        "crates/",
+        "verification/projection/"
       ]
     },
     "media-api": {
@@ -340,6 +352,9 @@
         "dev/checks/advisories",
         "deny.toml",
         "dev/install-cargo-deny.sh",
+        "dev/install-lean.sh",
+        "dev/checks/projection-model",
+        ".github/actions/install-lean/action.yml",
         ".github/scripts/deployment-components.mjs",
         ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
@@ -353,7 +368,8 @@
       ],
       "prefixes": [
         "media-service/",
-        "crates/"
+        "crates/",
+        "verification/projection/"
       ]
     },
     "git-router": {
@@ -369,6 +385,9 @@
         "dev/checks/advisories",
         "deny.toml",
         "dev/install-cargo-deny.sh",
+        "dev/install-lean.sh",
+        "dev/checks/projection-model",
+        ".github/actions/install-lean/action.yml",
         ".github/scripts/deployment-components.mjs",
         ".github/scripts/check-backend-binary-sizes.mjs",
         ".github/scripts/prepare-railway-artifact.sh",
@@ -378,7 +397,8 @@
       ],
       "prefixes": [
         "crates/",
-        "repo-router/"
+        "repo-router/",
+        "verification/projection/"
       ]
     },
     "web": {
