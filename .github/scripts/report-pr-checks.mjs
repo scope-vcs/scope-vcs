@@ -26,6 +26,8 @@ export async function reportPullRequestChecks({
     throw new Error('Repository, commit SHA, pull request number and run ID are required.');
   }
   const deadline = now() + timeout;
+  const supersessionGrace = 3 * 60_000;
+  let superseded;
   const runPath = `repos/${repository}/actions/runs/${runId}`;
   const runUrl = `https://github.com/${repository}/actions/runs/${runId}`;
   const requireTime = () => {
@@ -45,26 +47,31 @@ export async function reportPullRequestChecks({
   report(`Pull request #${pullRequest} tests ${sha}; waiting on ${runUrl}`);
   while (true) {
     requireTime();
-    const pull = await read(`repos/${repository}/pulls/${pullRequest}`);
+    const run = await read(runPath);
     requireTime();
-    if (pull) {
-      if (pull.state !== 'open' || pull.merged || pull.head?.sha !== sha) {
-        throw new Error(`Pull request #${pullRequest} superseded ${sha}: state=${pull.state}, merged=${Boolean(pull.merged)}, head=${pull.head?.sha}; refusing to report success.`);
+    if (run) {
+      if (String(run.id) !== String(runId) || run.event !== 'pull_request' || run.head_sha !== sha) {
+        throw new Error(`${runUrl} does not test pull request commit ${sha}.`);
       }
-      const run = await read(runPath);
-      requireTime();
-      if (run) {
-        if (String(run.id) !== String(runId) || run.event !== 'pull_request' || run.head_sha !== sha) {
-          throw new Error(`${runUrl} does not test pull request commit ${sha}.`);
-        }
-        if (run.status === 'completed') {
-          report(`${runUrl}: ${run.conclusion}`);
-          if (run.conclusion !== 'success') throw new Error(`Pull request run concluded ${run.conclusion}; required checks failed.`);
-          return;
-        }
+      if (run.status === 'completed') {
+        report(`${runUrl}: ${run.conclusion}`);
+        if (run.conclusion !== 'success') throw new Error(`Pull request run concluded ${run.conclusion}; required checks failed.`);
+        return;
       }
     }
-    await pause(Math.min(interval, deadline - now()));
+    if (!superseded) {
+      const pull = await read(`repos/${repository}/pulls/${pullRequest}`);
+      requireTime();
+      if (pull && (pull.state !== 'open' || pull.merged || pull.head?.sha !== sha)) {
+        superseded = { pull, deadline: now() + supersessionGrace };
+        report(`Pull request #${pullRequest} moved on; waiting up to ${supersessionGrace / 60_000} minutes for ${runUrl} to complete or cancel.`);
+      }
+    }
+    if (superseded && now() >= superseded.deadline) {
+      const { pull } = superseded;
+      throw new Error(`Pull request #${pullRequest} superseded ${sha}: state=${pull.state}, merged=${Boolean(pull.merged)}, head=${pull.head?.sha}; run did not complete within ${supersessionGrace / 60_000} minutes; refusing to report success.`);
+    }
+    await pause(Math.min(interval, deadline - now(), superseded ? superseded.deadline - now() : Infinity));
   }
 }
 

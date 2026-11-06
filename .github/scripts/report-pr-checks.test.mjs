@@ -45,11 +45,43 @@ test('reports success only after the pinned run completes, even without a PR ass
   assert.match(result.messages.at(-1), /actions\/runs\/123: success/);
 });
 
-test('fails promptly when the PR head moves mid-wait and its old run loses association', async () => {
-  const result = scenario({ pulls: [pull, { ...pull, head: { sha: 'b'.repeat(40) } }] });
-  await assert.rejects(result.result, /superseded.*head=bbbb.*refusing to report success/);
-  assert.equal(result.pauses(), 1);
-  assert.equal(result.paths.filter(path => path.endsWith('/runs/123')).length, 1);
+test('reports the pinned completed conclusion after merge, including at the grace boundary', async () => {
+  for (const conclusion of ['success', 'failure']) {
+    for (const completionTime of [30_000, 210_000]) {
+      const result = scenario({
+        pulls: [pull, { ...pull, state: 'closed', merged: true }],
+        runs: [...Array(completionTime / 30_000).fill(run), { ...run, status: 'completed', conclusion }],
+        timeout: 140 * 60_000,
+      });
+      if (conclusion === 'success') await result.result;
+      else await assert.rejects(result.result, /run concluded failure; required checks failed/);
+      assert.equal(result.elapsed(), completionTime);
+      assert.match(result.messages.at(-1), new RegExp(`actions/runs/123: ${conclusion}`));
+    }
+  }
+});
+
+test('reports the pinned cancellation during the supersession grace period', async () => {
+  const result = scenario({
+    pulls: [pull, { ...pull, head: { sha: 'b'.repeat(40) } }],
+    runs: [run, run, { ...run, status: 'completed', conclusion: 'cancelled' }],
+  });
+  await assert.rejects(result.result, /run concluded cancelled; required checks failed/);
+  assert.equal(result.elapsed(), 60_000);
+  assert.match(result.messages.at(-1), /actions\/runs\/123: cancelled/);
+});
+
+test('fails explicitly after the grace period despite stuck runs or transient API errors', async () => {
+  for (const response of [run, new Error('HTTP 502')]) {
+    const result = scenario({
+      pulls: [pull, { ...pull, head: { sha: 'b'.repeat(40) } }],
+      runs: [run, run, response],
+      timeout: 140 * 60_000,
+    });
+    await assert.rejects(result.result, /superseded.*head=bbbb.*refusing to report success/);
+    assert.equal(result.elapsed(), 210_000);
+    assert.equal(result.paths.filter(path => path.endsWith('/runs/123')).length, 8);
+  }
 });
 
 test('fails at its deadline for a run stuck in progress or repeated API failures', async () => {
@@ -64,11 +96,11 @@ test('fails at its deadline for a run stuck in progress or repeated API failures
   }
 });
 
-test('fails promptly when the PR closes or merges during the wait', async () => {
+test('bounds the wait for a stuck run when the PR closes or merges', async () => {
   for (const merged of [false, true]) {
-    const result = scenario({ pulls: [pull, { ...pull, state: 'closed', merged }] });
+    const result = scenario({ pulls: [pull, { ...pull, state: 'closed', merged }], timeout: 140 * 60_000 });
     await assert.rejects(result.result, /superseded.*state=closed/);
-    assert.equal(result.pauses(), 1);
+    assert.equal(result.elapsed(), 210_000);
   }
 });
 
@@ -77,7 +109,7 @@ test('retries transient errors reading either the PR or its pinned run', async (
     const success = { ...run, status: 'completed', conclusion: 'success' };
     const result = scenario({
       pulls: endpoint === 'pulls' ? [new Error('HTTP 502'), pull] : [pull],
-      runs: endpoint === 'runs' ? [new Error('HTTP 502'), success] : [success],
+      runs: endpoint === 'runs' ? [new Error('HTTP 502'), success] : [run, success],
     });
     await result.result;
     assert.equal(result.pauses(), 1);
