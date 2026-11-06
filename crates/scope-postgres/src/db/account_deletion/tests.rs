@@ -200,6 +200,20 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
     .await;
     assert_eq!(leftover_email, json!([]));
 
+    assert!(
+        store
+            .auth()
+            .resolve_existing_clerk_user(&ExternalIdentity {
+                provider: "clerk".into(),
+                subject: "user_clerk_leaver".into(),
+                email: Some(leaver.email.clone()),
+                email_verified: true,
+            })
+            .await
+            .unwrap()
+            .is_none()
+    );
+
     let refused = store
         .auth()
         .resolve_clerk_user(

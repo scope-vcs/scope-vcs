@@ -33,4 +33,4 @@ tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
-sea-orm = { version = "2.0.3", default-features = false, features = ["mock"] }
+sea-orm = { version = "2.0.3", default-features = false, features = ["mock", "tracing-spans"] }
