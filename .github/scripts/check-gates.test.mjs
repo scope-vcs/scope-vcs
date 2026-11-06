@@ -594,25 +594,10 @@ test("a Scope request revision that an open pull request tests reports that pull
   const gate = ci.slice(ci.indexOf('\n  required-pr-checks:\n'));
   assert.match(gate, /- name: Report the pull request's result\n        if: \$\{\{ needs\.pull-request\.outputs\.number != '' \}\}\n/);
   assert.match(gate, /- name: Require successful planning and validation\n        if: \$\{\{ needs\.pull-request\.outputs\.number == '' \}\}\n/);
-  const script = stepScript(gate, "Report the pull request's result");
-  const report = (answers) => {
-    const dir = mkdtempSync(resolve(tmpdir(), 'scope-ci-report-'));
-    try {
-      writeFileSync(resolve(dir, 'answers'), answers.join('\n') + '\n');
-      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\nn=$(cat "${dir}/count" 2>/dev/null || echo 0); echo $((n + 1)) > "${dir}/count"\nline=$(sed -n "$((n + 1))p" "${dir}/answers")\n[[ "$line" == error ]] && exit 1\necho "$line"\n`, { mode: 0o755 });
-      writeFileSync(resolve(dir, 'sleep'), '#!/bin/sh\n', { mode: 0o755 });
-      return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
-        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, REPOSITORY: 'o/r', SHA: 'a'.repeat(40), PULL_REQUEST: '7' },
-        encoding: 'utf8',
-      }).status;
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  };
-  assert.equal(report(['', 'error', 'u in_progress null', 'u completed success']), 0);
-  for (const conclusion of ['failure', 'cancelled', 'timed_out', 'skipped']) {
-    assert.notEqual(report([`u completed ${conclusion}`]), 0, conclusion);
-  }
+  assert.match(gate, /RUN_ID: \$\{\{ needs\.pull-request\.outputs\.run_id \}\}/);
+  assert.match(gate, /run: node \.github\/scripts\/report-pr-checks\.mjs/);
+  assert.match(gate, /contents: read\n      pull-requests: read/);
+  assert.ok(gate.indexOf('name: Checkout reporter') < gate.indexOf("name: Report the pull request's result"));
 });
 
 test('a Scope request revision reuses an open pull request run, waiting briefly for GitHub to start it', () => {
@@ -637,12 +622,12 @@ test('a Scope request revision reuses an open pull request run, waiting briefly 
       rmSync(dir, { recursive: true, force: true });
     }
   };
-  assert.deepEqual(find({}), { output: 'number=7\n', slept: 0 });
-  assert.deepEqual(find({ pulls: ['', '7'], runs: ['', '123'] }), { output: 'number=7\n', slept: 2 }, 'the pull request and its run can appear after the push');
-  assert.deepEqual(find({ pulls: [''] }), { output: 'number=\n', slept: 7 });
-  assert.deepEqual(find({ runs: [''] }), { output: 'number=\n', slept: 7 }, 'a pull request with conflicts never gets a run to wait for');
-  assert.deepEqual(find({ pulls: ['error', '7'] }), { output: 'number=7\n', slept: 1 }, 'a failed pull request lookup moves on to the next attempt');
-  assert.deepEqual(find({ runs: ['error', '123'] }), { output: 'number=7\n', slept: 1 }, 'a failed run lookup moves on to the next attempt');
+  assert.deepEqual(find({}), { output: 'number=7\nrun_id=123\n', slept: 0 });
+  assert.deepEqual(find({ pulls: ['', '7'], runs: ['', '123'] }), { output: 'number=7\nrun_id=123\n', slept: 2 }, 'the pull request and its run can appear after the push');
+  assert.deepEqual(find({ pulls: [''] }), { output: 'number=\nrun_id=\n', slept: 7 });
+  assert.deepEqual(find({ runs: [''] }), { output: 'number=\nrun_id=\n', slept: 7 }, 'a pull request with conflicts never gets a run to wait for');
+  assert.deepEqual(find({ pulls: ['error', '7'] }), { output: 'number=7\nrun_id=123\n', slept: 1 }, 'a failed pull request lookup moves on to the next attempt');
+  assert.deepEqual(find({ runs: ['error', '123'] }), { output: 'number=7\nrun_id=123\n', slept: 1 }, 'a failed run lookup moves on to the next attempt');
 });
 
 test('validation gate allows unselected jobs and reused artifacts but fails selected jobs and cancellation', () => {
