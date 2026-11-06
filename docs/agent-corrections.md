@@ -200,3 +200,19 @@ The full web, policy, and repaired backend gates passed locally, including
 workspace tests, both API feature suites, and workspace all-target clippy.
 The focused Rust tests and historical negative controls also passed their
 expected success/failure assertions. CI uses these same shared entry points.
+
+## Request header alignment
+
+The request header mixed status, branch, view, diff statistics and author in a
+wrapping flex row, then centered its actions against the entire block. The author
+position depended on remaining width and the buttons drifted between text rows.
+The approved mockup also exposed a font-dependent text chevron.
+
+`RequestDetailHeader` now owns separate summary and author rows. Its container
+rules align compact actions with the summary and move the group below on narrow
+containers. Controls retain the shared SVG icons. The browser spec renders the
+production components and CSS, comparing cropped screenshots around the container
+breakpoint, at desktop and phone widths, with a long branch and an open Changes
+menu. Baseline updates are explicit and forbidden in CI. Restoring the old flex
+layout or substituting a text chevron must fail the visual comparison. This
+protects rendered alignment without unit assertions about CSS strings.
