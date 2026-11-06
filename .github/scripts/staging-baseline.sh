@@ -20,6 +20,7 @@ project="$(jq -er '.railway.projectId' "$manifest")"
 environment="$(jq -er '.environments.staging.environmentId' "$manifest")"
 scripts="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$scripts/railway-private-command.sh"
+source "$scripts/staging-deletion-window.sh"
 maintenance() { bash "$scripts/railway-private-maintenance.sh" "$environment" "$@"; }
 staging_sql() {
   railway_private_read "$environment" sh -c 'exec psql "$DATABASE_URL" -XAt -v ON_ERROR_STOP=1 -c "$1"' scope-baseline "$1" < /dev/null
@@ -90,19 +91,17 @@ restore_snapshot() {
   } | railway_private_command "$environment" sh -c 'exec psql "$DATABASE_URL" -X --single-transaction -v ON_ERROR_STOP=1' >/dev/null
 }
 
-source_blob_queue_delay_seconds=600
-
 record_deletions_since() {
   cat <<SQL
 CREATE TEMP TABLE scope_deleted_sources ON COMMIT DROP AS
   SELECT object_key::text AS object_key FROM public.scope_orphan_object_jobs
   WHERE updated_at_unix >= $1 AND (attempts > 0 OR completed_at_unix IS NOT NULL
-    OR next_run_at_unix - updated_at_unix <> $source_blob_queue_delay_seconds);
+    OR next_run_at_unix - updated_at_unix NOT IN ($source_blob_queue_delay_seconds, $staging_deletion_window_seconds));
 CREATE TEMP TABLE scope_deleted_repository_storage ON COMMIT DROP AS
   SELECT repo_id::text AS repo_id, generation::text AS generation, incarnation_id::text AS incarnation_id
   FROM public.scope_repo_storage_cleanup_jobs
   WHERE updated_at_unix >= $1 AND (attempts > 0 OR completed_at_unix IS NOT NULL
-    OR next_run_at_unix <> updated_at_unix);
+    OR next_run_at_unix - updated_at_unix NOT IN (0, $staging_deletion_window_seconds));
 CREATE TEMP TABLE scope_deleted_media ON COMMIT DROP AS
   SELECT attachment_id::text AS attachment_id FROM public.scope_request_media_cleanup_jobs
   WHERE updated_at_unix >= $1 AND (attempt > 0 OR completed_at_unix IS NOT NULL);
