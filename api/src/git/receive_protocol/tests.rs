@@ -144,3 +144,45 @@ async fn reading_commands_stops_at_the_deadline_when_the_client_stalls() {
     assert!(read.is_err());
     drop(sender);
 }
+
+fn commands_stream(lines: &[(bool, String)]) -> Vec<u8> {
+    let mut stream = Vec::new();
+    for (index, (shallow, refname)) in lines.iter().enumerate() {
+        if *shallow {
+            stream.extend(pkt_line(format!("shallow {OLD}\n").as_bytes()));
+        }
+        stream.extend(command(refname, index == 0));
+    }
+    stream.extend_from_slice(FLUSH);
+    stream
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config { cases: 128, ..Default::default() })]
+
+    #[test]
+    fn every_command_ref_is_read_and_no_prefix_reports_fewer(
+        lines in proptest::collection::vec((proptest::bool::ANY, "refs/[a-z0-9/._ -]{1,24}"), 1..5),
+        tail in proptest::collection::vec(proptest::num::u8::ANY, 0..32),
+    ) {
+        let stream = commands_stream(&lines);
+        let expected = lines.iter().map(|(_, refname)| refname.clone()).collect::<Vec<_>>();
+        proptest::prop_assert_eq!(
+            command_refs(&[stream.as_slice(), &tail].concat()).unwrap(),
+            Some(expected)
+        );
+        for cut in 0..stream.len() {
+            proptest::prop_assert_eq!(command_refs(&stream[..cut]).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn arbitrary_receive_pack_input_never_panics(
+        bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..96),
+        header in "[0-9a-fA-F+ -]{4}",
+    ) {
+        let _ = command_refs(&bytes);
+        let _ = command_refs(&[header.as_bytes(), &bytes].concat());
+        let _ = advertise_additional_refs(&bytes, &[("refs/heads/x".into(), ZERO.into())]);
+    }
+}

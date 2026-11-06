@@ -220,3 +220,65 @@ fn stored_rules_in_any_order_resolve_the_nearest_ancestor_and_last_duplicate() {
         assert_eq!(policy.label(&path(file), &views), expected, "{file}");
     }
 }
+
+fn strings_up_to(alphabet: &[char], length: usize) -> Vec<String> {
+    let mut all = vec![String::new()];
+    let mut frontier = all.clone();
+    for _ in 0..length {
+        frontier = frontier
+            .iter()
+            .flat_map(|prefix| alphabet.iter().map(move |c| format!("{prefix}{c}")))
+            .collect();
+        all.extend(frontier.iter().cloned());
+    }
+    all
+}
+
+fn assert_scope_path_contract(raw: &str) {
+    let segments = raw.split('/').filter(|segment| !segment.is_empty());
+    let acceptable = raw.starts_with('/')
+        && segments
+            .clone()
+            .all(|segment| segment != "." && segment != "..");
+    match ScopePath::parse(raw) {
+        Ok(parsed) => {
+            assert!(acceptable, "{raw:?} parsed");
+            let text = parsed.as_str();
+            assert!(text.starts_with('/'), "{raw:?}");
+            assert!(
+                text == "/"
+                    || text[1..]
+                        .split('/')
+                        .all(|s| !s.is_empty() && s != "." && s != ".."),
+                "{raw:?} -> {text:?}"
+            );
+            assert_eq!(
+                text[1..]
+                    .split('/')
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>(),
+                segments.collect::<Vec<_>>()
+            );
+            assert_eq!(ScopePath::parse(parsed.to_string()), Ok(parsed));
+        }
+        Err(_) => assert!(!acceptable, "{raw:?} rejected"),
+    }
+}
+
+#[test]
+fn scope_path_parsing_is_exhaustively_correct_up_to_seven_characters() {
+    for raw in strings_up_to(&['/', '.', 'a', ' '], 7) {
+        assert_scope_path_contract(&raw);
+    }
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config { cases: 256, ..Default::default() })]
+
+    #[test]
+    fn scope_path_parsing_never_panics_and_round_trips(
+        raw in proptest::string::string_regex("(/|\\.|\\.\\.|[a-z]|\\\\|%2e|\\x00|\\PC)*").unwrap()
+    ) {
+        assert_scope_path_contract(&raw);
+    }
+}

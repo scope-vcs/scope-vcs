@@ -14,6 +14,7 @@ tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sig
 tracing.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 scope_service_runtime = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = "0.1.17"

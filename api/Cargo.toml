@@ -67,6 +67,7 @@ ts-rs = { workspace = true, optional = true }
 tikv-jemallocator = "0.7.0"
 
 [dev-dependencies]
+proptest.workspace = true
 scope_product_analytics = { workspace = true, features = ["test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 scope_storage = { workspace = true, features = ["test-support"] }

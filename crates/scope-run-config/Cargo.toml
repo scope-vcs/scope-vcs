@@ -10,3 +10,6 @@ scope_domain.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 yaml_serde = "0.10.4"
+
+[dev-dependencies]
+proptest.workspace = true
