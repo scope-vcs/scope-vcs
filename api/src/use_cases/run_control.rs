@@ -1,5 +1,6 @@
 use super::{
-    content_cleanup::best_effort_cleanup_rollback_source_blobs, run_inspection::InspectedRun,
+    content_cleanup::best_effort_cleanup_rollback_source_blobs,
+    run_inspection::{InspectedRun, require_full_view_member},
 };
 use crate::{
     error::ApiError, git::run_source::inspect_manual_run_bundle, persistence::unix_now,
@@ -122,6 +123,7 @@ pub(crate) async fn cancel_run(
     repo_name: &str,
     run_id: &str,
 ) -> Result<InspectedRun, ApiError> {
+    require_full_view_member(state, user_id, owner, repo_name).await?;
     let run = state
         .metadata
         .runs()
@@ -137,6 +139,7 @@ pub(crate) async fn retry_run(
     repo_name: &str,
     run_id: &str,
 ) -> Result<InspectedRun, ApiError> {
+    require_full_view_member(state, user_id, owner, repo_name).await?;
     let run = state
         .metadata
         .runs()

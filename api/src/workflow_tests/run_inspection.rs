@@ -257,7 +257,7 @@ async fn run_inspection_enforces_repository_access() {
 
     let public = bearer_header_for(public_subject, "run-public@example.com");
     let response = get_as(&fixture.state, &run_path, &public).await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let mut other = test_repo(&test_owner_id());
     other.record.id = "owner/other".to_string();
