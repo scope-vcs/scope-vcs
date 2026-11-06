@@ -63,5 +63,16 @@ test('request header keeps metadata and actions aligned across container widths'
   await menu.getByText('No pushes in recent activity.').waitFor()
   const box = await menu.boundingBox()
   assert(box.x >= 0 && box.x + box.width <= 390, 'Changes menu stays within the phone viewport')
+  await page.keyboard.press('Escape')
+  await page.setViewportSize({ width: 320, height: 700 })
+  for (const name of [
+    'Maintainers responsible for deployment approvals and repository access',
+    'ReleaseEngineeringAndRepositorySecurityMaintainersWithoutAnyWordBreaks',
+  ]) {
+    await page.evaluate((viewName) => window.setViewName(viewName), name)
+    await page.getByText(`${name} view`, { exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Long view names stay inside the phone viewport')
+  }
+  await compareScreenshot(header, 'long-view')
   assert.deepEqual(errors, [])
 })

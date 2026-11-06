@@ -75,9 +75,9 @@ export function RequestDetailHeader({
                 ) : null}
               </span>
             ) : null}
-            <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+            <span className="inline-flex min-w-0 max-w-full items-baseline gap-1.5">
               {queueItem ? <span aria-hidden="true">·</span> : null}
-              <span>{viewName} view</span>
+              <span className="truncate" title={`${viewName} view`}>{viewName} view</span>
             </span>
           </div>
         </div>

@@ -33,15 +33,16 @@ const autoMerge = {
 
 function App() {
   const [name, setName] = useState(request.name)
+  const [viewName, setViewName] = useState('Maintainer')
   const more = useRef<HTMLButtonElement | null>(null)
-  Object.assign(window, { setBranch: setName })
+  Object.assign(window, { setBranch: setName, setViewName })
   return <main className="request-detail-pane">
     <RequestWorkspaceProvider value={{
       selected: { author: { handle: 'adamblumoff' }, claimer: null } as RequestQueueItemResponse,
       claim: () => {}, release: () => {},
     }}>
       <RequestDetailHeader
-        params={params} request={{ ...request, name }} viewName="Maintainer"
+        params={params} request={{ ...request, name }} viewName={viewName}
         diffStat={{ additions: 5495, deletions: 2578, changed_files: 203 }}
         backLink={<a href="#requests">Requests</a>}
         actions={<>
