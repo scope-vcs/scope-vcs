@@ -36,9 +36,19 @@ test('staging workflows scope the encryption key to baseline handling and retain
 });
 
 test('provisioning recognizes unclaimed source blob cleanup by the queue grace period', () => {
-  const script = readFileSync(new URL('./staging-baseline.sh', import.meta.url), 'utf8');
+  const script = readFileSync(new URL('./staging-deletion-window.sh', import.meta.url), 'utf8');
   const queue = readFileSync(new URL('../../crates/scope-postgres/src/db/cleanup_queue/queue.rs', import.meta.url), 'utf8');
   const grace = queue.match(/const SOURCE_BLOB_DELETE_GRACE_SECONDS: u64 = (\d+);/)?.[1];
   assert.ok(grace);
   assert.match(script, new RegExp(`^source_blob_queue_delay_seconds=${grace}$`, 'm'));
+});
+
+test('staging postpones migration deletions beyond the retained baseline', () => {
+  const deletionWindowScript = readFileSync(new URL('./staging-deletion-window.sh', import.meta.url), 'utf8');
+  const seconds = Number(deletionWindowScript.match(/^staging_deletion_window_seconds=\$\(\((\d+) \* 24 \* 60 \* 60\)\)$/m)?.[1]) * 24 * 60 * 60;
+  const workflow = readFileSync(new URL('../workflows/deploy-staging.yml', import.meta.url), 'utf8');
+  const uploadStep = workflow.split('      - name: Retain staging baseline before migration\n')[1].split('\n      - name:')[0];
+  const retentionDays = Number(uploadStep.match(/retention-days: (\d+)/)?.[1]);
+  assert.ok(retentionDays > 0);
+  assert.ok(seconds > retentionDays * 24 * 60 * 60);
 });

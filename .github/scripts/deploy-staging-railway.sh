@@ -29,6 +29,8 @@ if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
 fi
 
 source "$(dirname "${BASH_SOURCE[0]}")/railway-service-health.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/railway-private-command.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/staging-deletion-window.sh"
 
 railway_scope=(
   --project "$project_id"
@@ -102,7 +104,10 @@ if jq -e '.components.api' "$SCOPE_PREPARED_RELEASE_PATH" >/dev/null; then
   else
     run_maintenance plan >/dev/null
     run_maintenance validate-workflow-catalogs
+    migration_started_at="$(( $(date +%s) - runner_clock_skew_allowance_seconds ))"
     run_maintenance apply
+    defer_staging_deletions_sql "$migration_started_at" | railway_private_command "$staging_environment_id" \
+      sh -c 'exec psql "$DATABASE_URL" -X --single-transaction -v ON_ERROR_STOP=1' >/dev/null
   fi
   run_maintenance verify
 fi

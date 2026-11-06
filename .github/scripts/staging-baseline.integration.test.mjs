@@ -165,7 +165,8 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
     CREATE TABLE scope_repo_storage_cleanup_jobs(repo_id varchar, generation varchar, incarnation_id varchar,
       updated_at_unix bigint, next_run_at_unix bigint, attempts int, completed_at_unix bigint);
     CREATE TABLE scope_request_media_attachments(id text);
-    CREATE TABLE scope_request_media_cleanup_jobs(attachment_id text, updated_at_unix bigint, attempt int, completed_at_unix bigint);
+    CREATE TABLE scope_request_media_cleanup_jobs(attachment_id text, updated_at_unix bigint, attempt int, completed_at_unix bigint,
+      state text DEFAULT 'Queued', lease_token text, available_at_unix bigint DEFAULT 0);
     ALTER TABLE scope_repositories ADD COLUMN incarnation_id varchar;
     UPDATE scope_repositories SET incarnation_id = 'current';
     INSERT INTO scope_orphan_object_jobs VALUES ('queued-blob', ${runCreatedUnix - 60}, ${runCreatedUnix + 540}, 0, NULL),
@@ -214,6 +215,21 @@ process.stdout.write(execFileSync('jq',['-r',filter],{input:JSON.stringify(body)
   refusedAfter(`INSERT INTO scope_repo_storage_cleanup_jobs VALUES ('existing-repo', 'live', 'current', ${deleted}, ${deleted + 300}, 0, NULL)`,
     "DELETE FROM scope_repo_storage_cleanup_jobs WHERE generation = 'live'",
     'Provisioning must refuse a snapshot after its live repository storage was claimed for deletion');
+  sql(`UPDATE scope_orphan_object_jobs SET updated_at_unix = ${deleted}, next_run_at_unix = ${deleted + 600}
+      WHERE object_key = 'referenced-blob';
+    INSERT INTO scope_repo_storage_cleanup_jobs VALUES ('existing-repo', 'deferred', 'current', ${deleted}, ${deleted}, 0, NULL);
+    INSERT INTO scope_request_media_cleanup_jobs (attachment_id, updated_at_unix, attempt, completed_at_unix)
+      VALUES ('live-media', ${deleted}, 0, NULL)`);
+  const processedNextRun = sql("SELECT next_run_at_unix FROM scope_orphan_object_jobs WHERE object_key = 'queued-blob'");
+  const deferral = command('bash', ['-c', 'source .github/scripts/staging-deletion-window.sh && defer_staging_deletions_sql "$1"',
+    'defer', String(runCreatedUnix)]);
+  sql(deferral);
+  const deletionWindow = Number(command('bash', ['-c', 'source .github/scripts/staging-deletion-window.sh && echo $staging_deletion_window_seconds']));
+  assert.equal(sql("SELECT next_run_at_unix - updated_at_unix FROM scope_orphan_object_jobs WHERE object_key = 'referenced-blob'"), String(deletionWindow));
+  assert.equal(sql("SELECT next_run_at_unix - updated_at_unix FROM scope_repo_storage_cleanup_jobs WHERE generation = 'deferred'"), String(deletionWindow));
+  assert.equal(sql("SELECT available_at_unix - updated_at_unix FROM scope_request_media_cleanup_jobs WHERE attachment_id = 'live-media'"), String(deletionWindow));
+  assert.equal(sql("SELECT next_run_at_unix FROM scope_orphan_object_jobs WHERE object_key = 'queued-blob'"), processedNextRun,
+    'Deferral must leave processed jobs unchanged');
   prepared('35');
   result = provision();
   assert.notEqual(result.status, 0, 'Provisioning must run only the baseline run\'s maintenance binary');
