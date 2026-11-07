@@ -49,6 +49,10 @@
   max-width: 20rem;
 }
 
+.request-detail-header-author {
+  line-height: 1rem;
+}
+
 .request-detail-header-actions {
   display: flex;
   flex-wrap: wrap;

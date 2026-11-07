@@ -38,7 +38,7 @@ export function RequestDetailPagePending() {
                 <BlockSkeleton className="h-5 w-40 rounded-md" />
                 <TextSkeleton className="h-6 py-1.5" length="long" size="meta" />
               </div>
-              <TextSkeleton className="h-5 py-1" length="medium" size="meta" />
+              <TextSkeleton length="medium" size="meta" />
             </div>
             <div className="request-detail-header-actions">
               <BlockSkeleton className="h-7 w-[6.5rem]" />
