@@ -116,6 +116,7 @@ ARG PCRE2_VERSION=10.46-1~deb13u3
 ARG LIBRSVG_VERSION=2.60.0+dfsg-1+deb13u1
 ARG EXPAT_VERSION=2.9.0-1~deb13u1
 ARG BROTLI_VERSION=1.1.0-2+deb13u1
+ARG ZLIB_VERSION=1:1.3.dfsg+really1.3.1-1+deb13u1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -129,6 +130,7 @@ RUN apt-get update \
         "librsvg2-2=${LIBRSVG_VERSION}" \
         "libexpat1=${EXPAT_VERSION}" \
         "libbrotli1=${BROTLI_VERSION}" \
+        "zlib1g=${ZLIB_VERSION}" \
     && rm -rf /var/lib/apt/lists/* \
     && echo /opt/libheif/lib > /etc/ld.so.conf.d/libheif.conf \
     && mkdir -p /tmp/scope-media-worker /scope/licenses \

@@ -4124,6 +4124,16 @@ Repository: "micromatch/picomatch"
 LICENSE: text 9219a3ebed1d1e1bc469cc605ca626c8433997a1a3013aba1338e03e381bbe11
 
 ==============================================================================
+pixelmatch 8.0.0
+Declared license: ISC
+Selected license: ISC
+Source: https://registry.npmjs.org/pixelmatch/-/pixelmatch-8.0.0.tgz
+
+Published author metadata: "Volodymyr Agafonkin"
+Repository: {"type": "git", "url": "git+https://github.com/mapbox/pixelmatch.git"}
+LICENSE: text b82b71fd7b679e18d84458c935ad75760bd90803cb1eee4b09f0a25f6722460b
+
+==============================================================================
 playwright 1.64.0
 Declared license: Apache-2.0
 Selected license: Apache-2.0
@@ -4144,6 +4154,15 @@ Published author metadata: {"name": "Microsoft Corporation"}
 Repository: {"type": "git", "url": "git+https://github.com/microsoft/playwright.git"}
 LICENSE: text 5b475effab78d12623dfa54915387571ec075e7f7e026cc0a196cfce2d764049
 NOTICE: text 7b1444e03705067d36e59fc8cd3260daf245b8d06006cad06d462578fb92eab5
+
+==============================================================================
+pngjs 7.0.0
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/pngjs/-/pngjs-7.0.0.tgz
+
+Repository: {"type": "git", "url": "git://github.com/pngjs/pngjs.git"}
+LICENSE: text 6c638538bce703631813b20bbe119dc66120591e0a0c24f6d406e6bb2dae71a0
 
 ==============================================================================
 postcss 8.5.30
@@ -6386,6 +6405,12 @@ Copyright (c) 2021-present Floating UI contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 
+--- text 6c638538bce703631813b20bbe119dc66120591e0a0c24f6d406e6bb2dae71a0 ---
+pngjs original work Copyright (c) 2015 Luke Page & Original Contributors
+pngjs derived work Copyright (c) 2012 Kuba Niegowski
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
 --- text 6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a ---
 [Shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99]
 
@@ -7610,6 +7635,23 @@ The MIT License (MIT)
 Copyright (c) Espen Hovlandsdal
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text b82b71fd7b679e18d84458c935ad75760bd90803cb1eee4b09f0a25f6722460b ---
+ISC License
+
+Copyright (c) 2025, Mapbox
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
 
 --- text b8778b155bfde5a28b023a558753c0fa058a52bb9de35c343c250be1bbcdedab ---
 Copyright 2019 Justin Ridgewell <jridgewell@google.com>

@@ -74,7 +74,7 @@ async function settleFirstNavigation(client, fixture) {
 }
 
 export async function launchBrowser(t) {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ headless: true, args: ['--disable-lcd-text'] })
   t.after(() => browser.close())
   return browser
 }
