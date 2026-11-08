@@ -1,3 +1,4 @@
+import { scopeBrand } from '@/lib/brand'
 import { forceSignedOut, signedOutPublishableKey } from '@/auth-mode'
 import { RouteNotFoundPage } from '@/components/route-not-found-page'
 import { signedOutClerk } from '@/lib/signed-out-clerk'
@@ -30,8 +31,10 @@ export const Route = createRootRoute({
       {
         rel: 'icon',
         type: 'image/svg+xml',
-        href: '/favicon.svg',
+        href: scopeBrand.favicon,
       },
+      { rel: 'icon', type: 'image/png', sizes: '32x32', href: scopeBrand.faviconPng },
+      { rel: 'apple-touch-icon', sizes: '180x180', href: scopeBrand.touchIcon },
       ...preloadedFonts.map((href) => ({
         rel: 'preload',
         as: 'font',
@@ -71,7 +74,7 @@ export const Route = createRootRoute({
       },
       {
         property: 'og:image',
-        content: 'https://scopevcs.com/brand/scope-social.png',
+        content: `https://scopevcs.com${scopeBrand.social}`,
       },
       {
         property: 'og:image:width',
@@ -99,7 +102,7 @@ export const Route = createRootRoute({
       },
       {
         name: 'twitter:image',
-        content: 'https://scopevcs.com/brand/scope-social.png',
+        content: `https://scopevcs.com${scopeBrand.social}`,
       },
       {
         name: 'twitter:image:alt',

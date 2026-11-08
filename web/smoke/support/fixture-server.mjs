@@ -37,6 +37,7 @@ function fixtureConfig(fixture, { aliases = [], plugins = [], ssr = false, tailw
   return {
     configFile: false,
     root: fixturePath(fixture),
+    publicDir: webPath('public'),
     plugins: [
       ...(tailwind ? [tailwindcss()] : []),
       ...(ownPage ? [] : [sharedPage]),
