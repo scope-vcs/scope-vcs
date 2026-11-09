@@ -149,7 +149,6 @@ pub(crate) async fn update_repository_member(
 ) -> Result<Json<RepositoryMemberResponse>, ApiError> {
     let now_unix = unix_now()?;
     let user = require_owner(&state, &headers, &owner, &repo_name).await?;
-    let member_user = state.metadata.repositories().user(&member_user_id).await?;
     let mutation = state
         .metadata
         .repositories()
@@ -158,12 +157,13 @@ pub(crate) async fn update_repository_member(
                 owner,
                 name: repo_name,
                 owner_user_id: user.id,
-                member_user_id,
+                member_user_id: member_user_id.clone(),
                 permissions: input.permissions.into(),
                 now_unix,
             },
         )
         .await?;
+    let member_user = state.metadata.repositories().user(&member_user_id).await?;
     let member = publish_committed_mutation(
         &state,
         map_committed_mutation(mutation, |member| {
@@ -207,12 +207,12 @@ pub(crate) async fn delete_repository_member(
 ) -> Result<Json<RepositoryMemberResponse>, ApiError> {
     let now_unix = unix_now()?;
     let user = require_owner(&state, &headers, &owner, &repo_name).await?;
-    let member_user = state.metadata.repositories().user(&member_user_id).await?;
     let mutation = state
         .metadata
         .repositories()
         .remove_repository_member(&owner, &repo_name, &user.id, &member_user_id, now_unix)
         .await?;
+    let member_user = state.metadata.repositories().user(&member_user_id).await?;
     let member = publish_committed_mutation(
         &state,
         map_committed_mutation(mutation, |member| {

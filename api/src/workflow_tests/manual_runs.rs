@@ -296,7 +296,7 @@ async fn known_manual_source_is_pinned_once_and_replay_survives_catalog_changes(
         ))
         .await
         .unwrap();
-    assert_eq!(outsider.status(), StatusCode::FORBIDDEN);
+    assert_eq!(outsider.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

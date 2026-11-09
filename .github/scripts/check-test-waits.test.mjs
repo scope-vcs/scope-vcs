@@ -12,7 +12,7 @@ test('classifies test sources by path', () => {
   assert.equal(testLanguage('crates/scope-postgres/src/db/test_support/database_templates.rs'), 'rust')
   assert.equal(testLanguage('api/src/background_work.rs'), 'rust-inline')
   assert.equal(testLanguage('web/src/analytics/delivery.test.ts'), 'script')
-  assert.equal(testLanguage('web/smoke/skeleton-layout.spec.mjs'), 'script')
+  assert.equal(testLanguage('web/smoke/skeleton-layout-desktop.spec.mjs'), 'script')
   assert.equal(testLanguage('web/smoke/browser-smoke.mjs'), 'script')
   assert.equal(testLanguage('web/src/analytics/delivery.ts'), null)
   assert.equal(testLanguage('dev/test_local_stack.py'), 'python')

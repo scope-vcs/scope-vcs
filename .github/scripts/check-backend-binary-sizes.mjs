@@ -3,14 +3,19 @@ import { appendFileSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { backendBinaryCaps } from './deployment-components.mjs';
 
-const [directory] = process.argv.slice(2);
-if (!directory) throw new Error('usage: check-backend-binary-sizes.mjs <binary-directory>');
+const [directory, flag, component] = process.argv.slice(2);
+if (!directory || (flag !== undefined && (flag !== '--component' || !component))) {
+  throw new Error('usage: check-backend-binary-sizes.mjs <binary-directory> [--component <component>]');
+}
 const manifestPath = process.env.SCOPE_DEPLOYMENT_MANIFEST;
 const caps = new Map(backendBinaryCaps(manifestPath ? JSON.parse(readFileSync(manifestPath, 'utf8')) : undefined)
+  .filter(cap => !component || cap.component === component)
   .map(({ binary, maxBytes }) => [binary, maxBytes]));
+if (caps.size === 0) throw new Error(`Component ${component} has no capped backend binaries.`);
+const scope = component ? ` for component ${component}` : ' in the deployment manifest';
 const built = readdirSync(directory).sort();
 const failures = [
-  ...built.filter(binary => !caps.has(binary)).map(binary => `${binary} has no size cap in the deployment manifest`),
+  ...built.filter(binary => !caps.has(binary)).map(binary => `${binary} has no size cap${scope}`),
   ...[...caps.keys()].filter(binary => !built.includes(binary)).map(binary => `${binary} was not built`),
 ];
 const table = ['| Binary | Bytes | MiB | Cap | Over |', '| --- | ---: | ---: | ---: | ---: |'];

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { backendBinaryCaps } from './deployment-components.mjs';
+import { backendBinaryCaps, backendPrebuiltComponents, buildBackendComponent } from './deployment-components.mjs';
 
 const script = fileURLToPath(new URL('./check-backend-binary-sizes.mjs', import.meta.url));
 const binary = (name, maxBytes, extra = {}) => ({ kind: 'binary', binary: name, maxBytes, ...extra });
@@ -18,7 +18,7 @@ const manifest = {
   },
 };
 
-function check(t, sizes) {
+function check(t, sizes, args = []) {
   const root = mkdtempSync(join(tmpdir(), 'scope-binary-sizes-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, 'bin'));
@@ -28,7 +28,7 @@ function check(t, sizes) {
   }
   writeFileSync(join(root, 'manifest.json'), JSON.stringify(manifest));
   const summary = join(root, 'summary.md');
-  const result = spawnSync(process.execPath, [script, join(root, 'bin')], {
+  const result = spawnSync(process.execPath, [script, join(root, 'bin'), ...args], {
     encoding: 'utf8',
     env: { ...process.env, SCOPE_DEPLOYMENT_MANIFEST: join(root, 'manifest.json'), GITHUB_STEP_SUMMARY: summary },
   });
@@ -59,6 +59,44 @@ test('built and capped binaries must match', t => {
     'scope-extra has no size cap in the deployment manifest',
     'scope-worker was not built',
   ]);
+});
+
+test('a component check covers only that component binaries', t => {
+  const passed = check(t, { 'scope-api': 100, 'scope-maintenance': 50 }, ['--component', 'api']);
+  assert.equal(passed.status, 0, passed.stderr);
+  assert.doesNotMatch(passed.summary, /scope-worker/);
+  const missing = check(t, { 'scope-api': 100 }, ['--component', 'api']);
+  assert.equal(missing.status, 1);
+  assert.deepEqual(missing.stderr.trim().split('\n'), ['scope-maintenance was not built']);
+  const foreign = check(t, { 'scope-worker': 1 }, ['--component', 'api']);
+  assert.equal(foreign.status, 1);
+  assert.match(foreign.stderr, /scope-worker has no size cap for component api/);
+});
+
+test('each backend component builds in its own cargo selection so shared crates keep its feature set', t => {
+  const root = mkdtempSync(join(tmpdir(), 'scope-backend-build-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const builds = [];
+  const run = (program, args) => {
+    assert.equal(program, 'cargo');
+    if (args[0] === 'metadata') return JSON.stringify({ target_directory: join(root, 'target') });
+    builds.push(args);
+    mkdirSync(join(root, 'target/release'), { recursive: true });
+    for (let index = args.indexOf('--bin'); index !== -1; index = args.indexOf('--bin', index + 1)) {
+      writeFileSync(join(root, 'target/release', args[index + 1]), args[index + 1]);
+    }
+  };
+  for (const component of backendPrebuiltComponents()) buildBackendComponent(component, join(root, 'bin'), { run, root });
+  assert.deepEqual(builds.map(args => args.filter(arg => arg !== '--bin').slice(4)), [
+    ['worker/Cargo.toml', 'worker'],
+    ['repo-router/Cargo.toml', 'scope-repo-router'],
+    ['media-service/Cargo.toml', 'scope-media-service'],
+    ['api/Cargo.toml', 'api', 'scope-maintenance'],
+  ]);
+  assert.ok(builds.every(args => !args.includes('-p') && !args.includes('--workspace')));
+  assert.equal(readFileSync(join(root, 'bin/scope-vcs'), 'utf8'), 'api');
+  assert.equal(statSync(join(root, 'bin/scope-worker')).mode & 0o777, 0o755);
+  assert.deepEqual(readdirSync(join(root, 'bin')).sort(), backendBinaryCaps().map(({ binary }) => binary).sort());
 });
 
 test('caps must be positive integers', () => {

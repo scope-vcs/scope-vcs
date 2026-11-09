@@ -7,12 +7,9 @@ postgres_major="${postgres_version%%.*}"
 key_sha256=0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76
 key=/etc/apt/keyrings/postgresql.asc
 
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
-curl --fail --location --silent --show-error --retry 3 --retry-all-errors \
-  https://www.postgresql.org/media/keys/ACCC4CF8.asc --output "$work/postgresql.asc"
-printf '%s  %s\n' "$key_sha256" "$work/postgresql.asc" | sha256sum --check --strict
-install -D -m 0644 "$work/postgresql.asc" "$key"
+vendored_key="$(dirname "$0")/install-test-postgres.asc"
+printf '%s  %s\n' "$key_sha256" "$vendored_key" | sha256sum --check --strict
+install -D -m 0644 "$vendored_key" "$key"
 
 # shellcheck source=/dev/null
 . /etc/os-release
