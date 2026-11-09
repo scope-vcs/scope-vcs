@@ -274,6 +274,9 @@ fn an_ended_requests_branch_waits_for_open_pull_requests_based_on_it() {
         based_on("main", GitHubPullRequestState::Open),
         based_on(&branch, GitHubPullRequestState::Open),
     ]));
+    let mut open_elsewhere = based_on(&branch, GitHubPullRequestState::Open);
+    open_elsewhere.destination.github_repository_id += 1;
+    assert!(!retains(&[open_elsewhere]));
     assert!(!retains(&[
         based_on("main", GitHubPullRequestState::Open),
         based_on(&branch, GitHubPullRequestState::ClosedOnGitHub),

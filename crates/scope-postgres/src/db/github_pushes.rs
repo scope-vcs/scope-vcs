@@ -330,11 +330,13 @@ impl RequestStore {
     ) -> Result<(), PostgresError> {
         let tx = self.db.begin().await?;
         super::locks::acquire_shared_repository_lock(&tx, repo_id).await?;
+        let connection =
+            super::github_connections::repository_github_connection(&tx, repo_id).await?;
         for request_id in request_ids {
             let branch = GitHubBranch::Request(request_id.clone());
             let based_on_branch =
                 super::github_pull_requests::pull_requests_based_on(&tx, repo_id, &branch).await?;
-            if !branch.is_base_of_open_pull_request(&based_on_branch) {
+            if !branch.is_base_of_open_pull_request(connection.as_ref(), &based_on_branch) {
                 queue_pushed_branch_deletion(&tx, repo_id, &branch, now_unix).await?;
             }
         }

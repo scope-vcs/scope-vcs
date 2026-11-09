@@ -188,14 +188,22 @@ pub fn retains_request_branch_for_carrier(
     !request.is_terminal()
         || (!closes_carrier_pull_request(request, connection)
             && carrier.is_some_and(GitHubPullRequest::is_open_on_github))
-        || GitHubBranch::Request(request.id.clone()).is_base_of_open_pull_request(pull_requests)
+        || GitHubBranch::Request(request.id.clone())
+            .is_base_of_open_pull_request(connection, pull_requests)
 }
 
 impl GitHubBranch {
-    pub fn is_base_of_open_pull_request(&self, pull_requests: &[GitHubPullRequest]) -> bool {
+    pub fn is_base_of_open_pull_request(
+        &self,
+        connection: Option<&GitHubConnection>,
+        pull_requests: &[GitHubPullRequest],
+    ) -> bool {
         let branch = self.name();
         pull_requests.iter().any(|pull_request| {
             pull_request.is_open_on_github()
+                && connection.is_some_and(|connection| {
+                    pull_request.destination.is_connected_through(connection)
+                })
                 && pull_request
                     .pull_request
                     .as_ref()
