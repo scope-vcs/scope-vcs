@@ -149,6 +149,11 @@ impl RequestStore {
             .await?
             .and_then(|recorded| recorded.pull_request)
             .map(|opened| opened.base);
+        if let Some(base_branch @ GitHubBranch::Request(_)) =
+            base_before.as_deref().and_then(GitHubBranch::parse)
+        {
+            acquire_github_push_lock(&tx, &progress.repo_id, &base_branch).await?;
+        }
         let finished = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,

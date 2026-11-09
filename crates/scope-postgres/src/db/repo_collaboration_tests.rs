@@ -282,7 +282,7 @@ async fn unless_blocked_by<T>(
     }
 }
 
-async fn blocked_by(held: &DatabaseTransaction) {
+pub(in crate::db) async fn blocked_by(held: &DatabaseTransaction) {
     let waiting_on_holder = Statement::from_string(
         DatabaseBackend::Postgres,
         "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted \

@@ -5,12 +5,21 @@ use crate::db::{
         github_pull_request, queue_carrier_for_pushed_head,
         tests::{claim, push_succeeds},
     },
-    github_pushes::latest_github_push,
+    github_pushes::{acquire_github_push_lock, latest_github_push},
+    repo_collaboration_tests::blocked_by,
 };
 use scope_domain::{
     github_connection::ConnectGitHubRepository,
-    requests::{GitHubPullRequest, GitHubPullRequestIntent},
+    requests::{GitHubBranch, GitHubPullRequest, GitHubPullRequestIntent},
 };
+
+fn carrier_of(claimed: &[GitHubPullRequest], request: &Request) -> GitHubPullRequest {
+    claimed
+        .iter()
+        .find(|carrier| carrier.request_id == request.id)
+        .unwrap()
+        .clone()
+}
 
 async fn opt_in(store: &MetadataStore) {
     let repositories = store.repositories();
@@ -59,21 +68,24 @@ async fn closing_a_parent_moves_its_childs_carrier_onto_main_and_keeps_its_branc
     )
     .await;
     let child = start(&store, "child", pin(&store, &parent).await, 8).await;
+    let sibling = start(&store, "sibling", pin(&store, &parent).await, 9).await;
     let db = store.db.as_ref();
     push_succeeds(&store, &parent.id, 'a', 12).await;
-    queue_carrier_for_pushed_head(db, &child.id, &child.head_oid, 12)
-        .await
-        .unwrap();
-    let finish_child = async |token: &str, at: u64, record: fn(&mut GitHubPullRequest)| {
-        let mut claimed = claim(&store, token, at)
+    for stacked in [&child, &sibling] {
+        queue_carrier_for_pushed_head(db, &stacked.id, &stacked.head_oid, 12)
             .await
-            .into_iter()
-            .find(|carrier| carrier.request_id == child.id)
             .unwrap();
-        record(&mut claimed);
+    }
+    let finish = async |request: &Request,
+                        claimed: &[GitHubPullRequest],
+                        token: &str,
+                        at: u64,
+                        record: fn(&mut GitHubPullRequest)| {
+        let mut carrier = carrier_of(claimed, request);
+        record(&mut carrier);
         store
             .requests()
-            .finish_github_pull_request(&claimed, token, GitHubJobOutcome::Succeeded(()), at)
+            .finish_github_pull_request(&carrier, token, GitHubJobOutcome::Succeeded(()), at)
             .await
             .unwrap();
     };
@@ -84,10 +96,20 @@ async fn closing_a_parent_moves_its_childs_carrier_onto_main_and_keeps_its_branc
             .unwrap()
             .target_oid
     };
-    finish_child("opening", 13, |opened| {
+    let opening = claim(&store, "opening", 13).await;
+    finish(&child, &opening, "opening", 13, |opened| {
         opened.record_opened(
             6,
             "https://github.com/octo/checks/pull/6".into(),
+            "scope/requests/parent".into(),
+            None,
+        )
+    })
+    .await;
+    finish(&sibling, &opening, "opening", 13, |opened| {
+        opened.record_opened(
+            7,
+            "https://github.com/octo/checks/pull/7".into(),
             "scope/requests/parent".into(),
             None,
         )
@@ -128,7 +150,35 @@ async fn closing_a_parent_moves_its_childs_carrier_onto_main_and_keeps_its_branc
     );
     assert!(parent_branch_target().await.is_some());
 
-    finish_child("moving", 16, |opened| {
+    let moving = claim(&store, "moving", 16).await;
+    let mut leaving_child = carrier_of(&moving, &child);
+    leaving_child.record_retargeted("main".into());
+    let other_writer = store.db.begin().await.unwrap();
+    acquire_github_push_lock(
+        &other_writer,
+        &parent.repo_id,
+        &GitHubBranch::Request(parent.id.clone()),
+    )
+    .await
+    .unwrap();
+    let requests = store.requests();
+    let leaving = requests.finish_github_pull_request(
+        &leaving_child,
+        "moving",
+        GitHubJobOutcome::Succeeded(()),
+        16,
+    );
+    tokio::pin!(leaving);
+    tokio::select! {
+        biased;
+        _ = &mut leaving => panic!("the child left its parent's branch beside another writer"),
+        () = blocked_by(&other_writer) => {}
+    }
+    other_writer.commit().await.unwrap();
+    assert!(leaving.await.unwrap());
+    assert!(parent_branch_target().await.is_some());
+
+    finish(&sibling, &moving, "moving", 17, |opened| {
         opened.record_retargeted("main".into())
     })
     .await;
