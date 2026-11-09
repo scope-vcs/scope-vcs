@@ -30,7 +30,7 @@ try {
   }, master)
   const svg = (width, height, content) => `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${content}</svg>\n`
   const mark = svg(24, 24, artwork.markBody)
-  const icon = svg(32, 32, `<rect width="32" height="32" rx="6" fill="#24231f"/><g color="#f4f2ec" transform="translate(3 3) scale(${26 / 24})">${artwork.markBody}</g>`)
+  const iconBody = `<rect width="32" height="32" rx="6" fill="#24231f"/><g color="#f4f2ec" transform="translate(3 3) scale(${26 / 24})">${artwork.markBody}</g>`
   await mkdir(output, { recursive: true })
 
   async function save(name, bytes) {
@@ -47,18 +47,18 @@ try {
     assert(actual.data.equals(expected.data), `${name} pixels differ from the brand master`)
   }
 
-  async function raster(name, source, width, height, color = '#24231f') {
+  async function raster(name, source, width, height) {
     await page.setViewportSize({ width, height })
-    await page.setContent(`<html><body style="margin:0;color:${color};background:transparent">${source}</body></html>`)
+    await page.setContent(`<html><body style="margin:0;color:#24231f;background:transparent">${source}</body></html>`)
     const bytes = await page.locator('svg').first().screenshot({ omitBackground: true })
     await save(name, bytes)
   }
 
   await save('scope-lockup.svg', artwork.lockup + '\n')
   await save('scope-mark.svg', mark)
-  await save('favicon.svg', icon)
+  await save('favicon.svg', svg(32, 32, iconBody))
   for (const [name, size] of [['favicon.png', 32], ['apple-touch-icon.png', 180], ['scope-avatar.png', 512]]) {
-    const scaled = svg(size, size, `<g transform="scale(${size / 32})">${icon.match(/<svg[^>]*>([\s\S]*)<\/svg>/)[1]}</g>`)
+    const scaled = svg(size, size, `<g transform="scale(${size / 32})">${iconBody}</g>`)
     await raster(name, scaled, size, size)
   }
   const social = svg(1200, 630, `<rect width="1200" height="630" fill="#24231f"/><g color="#f4f2ec" transform="translate(${(1200 - artwork.width * 6) / 2} ${(630 - artwork.height * 6) / 2}) scale(6)">${artwork.lockupBody}</g>`)
@@ -72,7 +72,6 @@ try {
   const updated = html
     .replace(/<symbol id="mark"[\s\S]*?<\/symbol>/, symbol('mark', '0 0 24 24', artwork.markBody))
     .replace(/<symbol id="logo"[\s\S]*?<\/symbol>/, symbol('logo', `0 0 ${artwork.width} ${artwork.height}`, artwork.lockupBody))
-    .replaceAll('viewBox="0 0 270.04 69.52"', `viewBox="0 0 ${artwork.width} ${artwork.height}"`)
   if (check) assert.equal(html, updated, 'README.html contains stale brand symbols')
   else await writeFile(readme, updated)
   console.log(`${check ? 'Checked' : 'Generated'} Scope brand exports and repository homepage symbols`)

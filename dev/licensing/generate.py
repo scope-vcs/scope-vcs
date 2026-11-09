@@ -18,13 +18,15 @@ ROOT = Path(__file__).resolve().parents[2]
 CACHE = Path(tempfile.gettempdir()) / "scope-license-archives"
 LOCKFILES = ["Cargo.lock", "cli/Cargo.lock", "web/pnpm-lock.yaml"]
 LICENSE_NAME = re.compile(r"^(licen[cs]e|copying|copyright|notice|ofl|unlicense)([._-].*)?$", re.I)
-SHARED_TERMS = re.compile((
+SHARED_TERMS = re.compile(
     r"Permission\s+is\s+hereby\s+granted,.*?OTHER\s+DEALINGS\s+IN\s+THE\s+SOFTWARE\."
     r"|Apache\s+License\s+Version\s+2\.0,\s+January\s+2004.*?END\s+OF\s+TERMS\s+AND\s+CONDITIONS"
-    r"|SIL OPEN FONT LICENSE Version 1\.1 - 26 February 2007.*?OTHER DEALINGS IN THE FONT SOFTWARE\."
-    r"|Permission to use, copy, modify, and/or distribute this software.*?IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE\."
-    r"|Redistribution and use in source and binary forms, with or without.*?POSSIBILITY OF SUCH DAMAGES?\."
-    ).replace(" ", r"\s+"),
+    r"|SIL\s+OPEN\s+FONT\s+LICENSE\s+Version\s+1\.1\s+-\s+26\s+February\s+2007"
+    r".*?OTHER\s+DEALINGS\s+IN\s+THE\s+FONT\s+SOFTWARE\."
+    r"|Permission\s+to\s+use,\s+copy,\s+modify,\s+and/or\s+distribute\s+this\s+software"
+    r".*?IN\s+CONNECTION\s+WITH\s+THE\s+USE\s+OR\s+PERFORMANCE\s+OF\s+THIS\s+SOFTWARE\."
+    r"|Redistribution\s+and\s+use\s+in\s+source\s+and\s+binary\s+forms,\s+with\s+or\s+without"
+    r".*?POSSIBILITY\s+OF\s+SUCH\s+DAMAGES?\.",
     re.S,
 )
 

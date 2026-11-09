@@ -5,7 +5,7 @@
     "web/pnpm-lock.yaml": "d42308c8bffe52eae18467808ae0db05ce6e0d187b58272d6ab55ec5db0f1083"
   },
   "inputs": {
-    "dev/licensing/generate.py": "50ebe980a28958453a8c585d2b30a24898b52bc962c6d29405db430b6010eba4",
+    "dev/licensing/generate.py": "6312836d258dd2b6fe865c580e244fb6532ffbfe5b4634031d9d8a6d04d0cd68",
     "dev/licensing/requirements.txt": "0969da99a0bc2a1b71ed50584560f4588a37567ac63af3ddbaf3c4617ca5621a",
     "legal/copied-sources.json": "9090b1e82ee97fa10def12887a72b64edbec4263b39367a4a8988a1d56d90cea",
     "legal/git-sources.json": "a8db269598ef5d4df96efe4083b2fec7daa289f10c628cc5d20fa0e91a38e092",
