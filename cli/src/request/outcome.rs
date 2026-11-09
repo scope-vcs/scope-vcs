@@ -47,6 +47,7 @@ pub(super) enum RequestCommandResult {
     Close(TargetResponse<RequestCloseResponse>),
     Discussion(DiscussionResult),
     DiscussionReply(DiscussionReplyResult),
+    DiscussionList(DiscussionListResult),
     Rating(TargetResponse<RequestRatingResponse>),
     Attention(TargetResponse<RequestAttentionMutationResponse>),
 }
@@ -99,6 +100,13 @@ pub(super) struct DiscussionResult {
     pub(super) discussion: RequestDiscussionSummaryResponse,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
+}
+
+#[derive(Serialize)]
+pub(super) struct DiscussionListResult {
+    pub(super) repo: RepoSummaryResponse,
+    pub(super) request_id: String,
+    pub(super) discussions: Vec<RequestDiscussionSummaryResponse>,
 }
 
 #[derive(Serialize)]

@@ -340,6 +340,17 @@ The receipt shows the anchor as `/src/lib.rs:7-9 (new)`. When the request has a
 newer revision, it also shows where those lines are on the latest revision, or
 `outdated` when they changed there or the file was renamed or deleted.
 
+`scope request discussion list` prints every discussion on a request with its
+ID, status, author, anchor, reply count, and the first line of its body. Add
+`--open` to keep only unresolved ones, for example to find the discussion that
+holds a request at `ReviewFindingsOpen`, then pass its ID to
+`scope request discussion resolve`:
+
+```sh
+scope request discussion list --open
+scope request discussion resolve dsc_abc123
+```
+
 Read Markdown from stdin without shell interpolation:
 
 ```sh

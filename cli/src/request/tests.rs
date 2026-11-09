@@ -1,4 +1,7 @@
-use super::{ViewId, ensure_request_paths_allowed, new_client_mutation_id, start_view};
+use super::{
+    ViewId, discussion::collect_discussions, ensure_request_paths_allowed, new_client_mutation_id,
+    start_view,
+};
 use crate::{
     api::RepositoryActor,
     error::CliError,
@@ -7,6 +10,64 @@ use crate::{
 };
 use scope_domain::views::Views;
 use std::fs;
+
+fn discussion_page(
+    discussions: &[(&str, &str)],
+    next_cursor: Option<&str>,
+) -> crate::api::RequestDiscussionPageResponse {
+    let discussions = discussions
+        .iter()
+        .map(|(id, status)| {
+            serde_json::json!({
+                "id": id, "request_id": "req_one", "client_discussion_id": id,
+                "opened_position": 1, "last_activity_position": 1, "author": null,
+                "body_markdown": "body", "anchor": null, "status": status,
+                "reply_count": 0, "read_through_position": 0, "unread_count": 0,
+                "latest_replies": [], "created_at_unix": 1, "resolved_at_unix": null,
+                "resolved_by": null
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::from_value(serde_json::json!({
+        "discussions": discussions, "next_cursor": next_cursor, "snapshot_version": 1
+    }))
+    .unwrap()
+}
+
+fn paged_discussions(open_only: bool) -> (Vec<String>, Vec<Option<String>>) {
+    let mut pages = vec![
+        discussion_page(&[("dsc_a", "Open"), ("dsc_b", "Resolved")], Some("page-2")),
+        discussion_page(&[("dsc_c", "Resolved")], Some("page-3")),
+        discussion_page(&[("dsc_d", "Open")], None),
+    ]
+    .into_iter();
+    let mut cursors = Vec::new();
+    let discussions = collect_discussions(open_only, |cursor| {
+        cursors.push(cursor.map(str::to_owned));
+        Ok(pages.next().unwrap())
+    })
+    .unwrap();
+    (discussions.into_iter().map(|d| d.id).collect(), cursors)
+}
+
+#[test]
+fn discussion_listing_follows_every_cursor_until_the_last_page() {
+    let (ids, cursors) = paged_discussions(false);
+
+    assert_eq!(ids, ["dsc_a", "dsc_b", "dsc_c", "dsc_d"]);
+    assert_eq!(
+        cursors,
+        [None, Some("page-2".to_string()), Some("page-3".to_string())]
+    );
+}
+
+#[test]
+fn open_discussion_listing_drops_resolved_ones_on_every_page() {
+    let (ids, cursors) = paged_discussions(true);
+
+    assert_eq!(ids, ["dsc_a", "dsc_d"]);
+    assert_eq!(cursors.len(), 3);
+}
 
 #[test]
 fn client_mutation_ids_are_unique_across_kinds() {
