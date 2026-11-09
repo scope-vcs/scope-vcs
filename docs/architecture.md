@@ -178,8 +178,11 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   `scope-domain/src/runs/cache/identity.rs`, persist metadata through
   `scope-postgres/src/db/cache_service.rs`, and presign object transfers
   against the cache bucket (`SCOPE_CACHE_BUCKET_*`, labeled by
-  `SCOPE_CACHE_BACKEND`). Reconciliation claims expired uploads, references and
-  deletions with expiring database claims, so every API replica can run it;
+  `SCOPE_CACHE_BACKEND`). Runs triggered by a request may restore caches but
+  not save them (`Run::may_save_caches` in `scope-domain/src/runs/run.rs`), so
+  only main-push and manual runs write cache entries. Reconciliation claims
+  expired uploads, references and deletions with expiring database claims, so
+  every API replica can run it;
 - `native_runs.rs` for the list of accounts that may use Scope's hosted
   runner, which operators manage with `scope-maintenance native-runs`.
   `scope-domain/src/runs/availability.rs` owns the rule:

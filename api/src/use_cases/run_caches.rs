@@ -77,6 +77,7 @@ struct AuthorizedCache {
     exact_digest: String,
     compatibility_group_digest: String,
     signed_url_ttl: u32,
+    may_save: bool,
 }
 
 async fn authorize(
@@ -90,6 +91,7 @@ async fn authorize(
         workflow,
         job,
         lease_expires_at_unix,
+        may_save,
     } = state
         .metadata
         .runs()
@@ -111,7 +113,18 @@ async fn authorize(
         exact_digest: identity.exact_digest(),
         compatibility_group_digest: identity.compatibility_group_digest(),
         signed_url_ttl: signed_url_ttl(remaining),
+        may_save,
     })
+}
+
+fn ensure_may_save(authorized: &AuthorizedCache) -> Result<(), ApiError> {
+    if authorized.may_save {
+        Ok(())
+    } else {
+        Err(ApiError::forbidden(
+            "request runs restore caches but do not save them",
+        ))
+    }
 }
 
 fn signed_url_ttl(remaining_lease_seconds: u64) -> u32 {
@@ -174,6 +187,7 @@ pub(crate) async fn prepare_upload(
 ) -> Result<PrepareAttemptCacheUploadResponse, ApiError> {
     let now = unix_now()?;
     let authorized = authorize(state, attempt_id, token_hash, &request.cache, now).await?;
+    ensure_may_save(&authorized)?;
     let storage = &state.run_caches;
     let prepared = state
         .metadata
@@ -225,6 +239,7 @@ pub(crate) async fn commit_upload(
 ) -> Result<(), ApiError> {
     let now = unix_now()?;
     let authorized = authorize(state, attempt_id, token_hash, &request.cache, now).await?;
+    ensure_may_save(&authorized)?;
     let storage = &state.run_caches;
     let upload = state.metadata.caches().upload(&request.lease_id).await?;
     if upload.repository_id != authorized.repository_id

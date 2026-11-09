@@ -228,11 +228,11 @@ fn seed_repository(state: &AppState) -> String {
     repository_id
 }
 
-async fn dispatch_attempt(fixture: &Fixture) {
+async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger) {
     let image = format!("alpine@sha256:{}", "a".repeat(64));
     let cache = "{ name: cargo, path: /scope/cache/cargo, format: tar-zstd-v1, compatibility: { source: false }, exact: { source: false } }";
     let yaml = format!(
-        "name: Caches\non: {{ manual: true }}\ncontainer: {{ image: {image} }}\ntimeout: 10m\ncaches: [{cache}]\njobs:\n  checks:\n    steps: [{{ name: Test, run: \"true\" }}]\n"
+        "name: Caches\non: {{ manual: true, request: true }}\ncontainer: {{ image: {image} }}\ntimeout: 10m\ncaches: [{cache}]\njobs:\n  checks:\n    steps: [{{ name: Test, run: \"true\" }}]\n"
     );
     let revision = scope_run_config::parse_workflow("/.scope/runs/caches.yml", yaml.as_bytes())
         .unwrap()
@@ -254,7 +254,7 @@ async fn dispatch_attempt(fixture: &Fixture) {
             "run-cache-test",
             revision.workflow().clone(),
             revision.digest(),
-            RunTrigger::Manual,
+            trigger,
             Some("user_run_cache".to_string()),
             source,
             fixture.now,
@@ -301,7 +301,7 @@ async fn post_json(
 #[tokio::test]
 async fn attempt_cache_round_trip_is_cold_then_warm_then_unchanged_and_ends_with_the_attempt() {
     let fixture = Fixture::new().await;
-    dispatch_attempt(&fixture).await;
+    dispatch_attempt(&fixture, RunTrigger::Manual).await;
     let app = router(fixture.state.clone());
     let cache = AttemptCacheKey {
         cache_name: "cargo".to_string(),
@@ -424,6 +424,62 @@ async fn attempt_cache_round_trip_is_cold_then_warm_then_unchanged_and_ends_with
         post_json(&app, &restore_path, &restore).await.0,
         StatusCode::UNAUTHORIZED
     );
+}
+
+#[tokio::test]
+async fn request_runs_restore_caches_but_cannot_save_them() {
+    let fixture = Fixture::new().await;
+    dispatch_attempt(&fixture, RunTrigger::Request).await;
+    let app = router(fixture.state.clone());
+    let cache = AttemptCacheKey {
+        cache_name: "cargo".to_string(),
+        compatibility_inputs_digest: "1".repeat(64),
+        exact_inputs_digest: "2".repeat(64),
+    };
+    let restore = RestoreAttemptCacheRequest {
+        cache: cache.clone(),
+    };
+    let (status, cold) =
+        post_json(&app, &routes::attempt_cache_restore(ATTEMPT_ID), &restore).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<RestoreAttemptCacheResponse>(&cold).unwrap(),
+        RestoreAttemptCacheResponse::Miss
+    );
+
+    let object_digest = "4".repeat(64);
+    let prepare = PrepareAttemptCacheUploadRequest {
+        cache: cache.clone(),
+        object_digest: object_digest.clone(),
+        size_bytes: 1,
+    };
+    assert_eq!(
+        post_json(
+            &app,
+            &routes::attempt_cache_upload_prepare(ATTEMPT_ID),
+            &prepare
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let commit = CommitAttemptCacheUploadRequest {
+        cache,
+        lease_id: "none".to_string(),
+        object_digest,
+        size_bytes: 1,
+    };
+    assert_eq!(
+        post_json(
+            &app,
+            &routes::attempt_cache_upload_commit(ATTEMPT_ID),
+            &commit
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert!(fixture.objects.objects.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
