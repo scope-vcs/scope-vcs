@@ -220,6 +220,8 @@ pub(super) struct RequestDiscussionArgs {
 
 #[derive(Subcommand)]
 pub(super) enum RequestDiscussionCommand {
+    #[command(about = "List a request's discussions with their IDs")]
+    List(RequestDiscussionListArgs),
     #[command(about = "Start a top-level discussion")]
     Start(RequestDiscussionStartArgs),
     #[command(about = "Reply to an open discussion")]
@@ -333,6 +335,14 @@ pub(super) struct RequestDiscussionReplyArgs {
     pub(super) target: RequestTargetArgs,
     #[command(flatten)]
     pub(super) content: RequestDiscussionBodyArgs,
+}
+
+#[derive(Parser)]
+pub(super) struct RequestDiscussionListArgs {
+    #[command(flatten)]
+    pub(super) target: RequestTargetArgs,
+    #[arg(long, help = "Show only unresolved discussions")]
+    pub(super) open: bool,
 }
 
 #[derive(Parser)]
