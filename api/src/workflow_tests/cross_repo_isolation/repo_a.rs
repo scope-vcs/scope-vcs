@@ -6,7 +6,6 @@ use super::seeds::{
 use super::write_bodies::{WriteBodies, write_bodies};
 use scope_api_contract::routes;
 use scope_domain::{
-    requests::{RecordRequestRevisionInput, RequestRevisionGitFacts},
     runs::{
         log::RunLogChunk,
         run::Run,
@@ -119,8 +118,7 @@ async fn owner_json(
 
 struct PushedRepoA {
     head: String,
-    revision_head: String,
-    revision_bundle: Vec<u8>,
+    source: TempGitRepo,
 }
 
 async fn push_repo_a(state: &AppState) -> PushedRepoA {
@@ -138,30 +136,30 @@ async fn push_repo_a(state: &AppState) -> PushedRepoA {
     commit_all(&source, COMMIT_MESSAGE);
     let bare = clone_test_repo(&source, "cross-repo-isolation-bare", true);
     apply_first_push_from_staging_repo(state, &bare, isolation_config()).await;
+    PushedRepoA {
+        head: git_head_oid(&bare),
+        source,
+    }
+}
+
+async fn push_request_revision(state: &AppState, source: &FsPath) -> String {
+    let (origin, _server) = spawn_test_server(state).await;
+    let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
+    configure_bearer_header(source, &remote, &bearer_header());
     run_git(
-        Some(&source),
+        Some(source),
         &["checkout", "-b", REQUEST_NAME],
         "branch the request",
     )
     .unwrap();
-    commit_file(&source, PRIVATE_PATH, REVISION_CONTENT);
-    let bundle = source.join("request.bundle");
+    commit_file(source, PRIVATE_PATH, REVISION_CONTENT);
     run_git(
-        Some(&source),
-        &[
-            "bundle",
-            "create",
-            bundle.to_str().unwrap(),
-            &format!("refs/heads/{REQUEST_NAME}"),
-        ],
-        "bundle the request",
+        Some(source),
+        &["push", &remote, &format!("HEAD:refs/heads/{REQUEST_NAME}")],
+        "push the request revision",
     )
     .unwrap();
-    PushedRepoA {
-        head: git_head_oid(&bare),
-        revision_head: git_head_oid(&source),
-        revision_bundle: fs::read(bundle).unwrap(),
-    }
+    git_head_oid(source)
 }
 
 async fn active_run(state: &AppState) -> (String, String) {
@@ -294,37 +292,7 @@ pub(super) async fn repo_a() -> RepoA {
         Some(serde_json::json!({ "description_markdown": REQUEST_DESCRIPTION }).to_string()),
     )
     .await;
-    let mut git_snapshot = scope_storage::put_content_object(
-        state.object_store.as_ref(),
-        ContentObjectKind::GitBundle,
-        pushed.revision_bundle,
-    )
-    .await
-    .unwrap();
-    git_snapshot.git_oid = pushed.revision_head.clone();
-    state
-        .metadata
-        .requests()
-        .record_request_revision(RecordRequestRevisionInput {
-            new_base: None,
-            new_base_stack_depth: None,
-            request_id: request_id.clone(),
-            actor_user_id: owner_id.clone(),
-            actor_can_edit: true,
-            expected_old_head_oid: None,
-            new_head_oid: pushed.revision_head.clone(),
-            git_snapshot,
-            git_facts: RequestRevisionGitFacts {
-                contains_old_head: true,
-                contained_main_oid: None,
-                contained_main_descends_from_base: false,
-            },
-            event_id: "event_isolation_revision".to_string(),
-            body: None,
-            now_unix: unix_now(),
-        })
-        .await
-        .unwrap();
+    let revision_head = push_request_revision(&state, &pushed.source).await;
     let revisions = owner_json(&state, "GET", &format!("{request}/changes"), None).await;
     let revision_id = revisions["revisions"][0]["id"]
         .as_str()
@@ -426,7 +394,7 @@ pub(super) async fn repo_a() -> RepoA {
         ("view", "private".to_string()),
         ("request_id", request_id.clone()),
         ("revision_id", revision_id),
-        ("commit_oid", pushed.revision_head.clone()),
+        ("commit_oid", revision_head),
         ("head_oid", head.clone()),
         ("discussion_id", discussion_id),
         (
