@@ -394,6 +394,7 @@
         ".github/workflows/playwright-cache.yml",
         ".github/actions/install-playwright-chromium/action.yml",
         "dev/checks/web",
+        "dev/checks/web-components",
         "dev/checks/integration",
         ".github/scripts/deploy-railway.sh",
         ".github/scripts/prepare-railway-artifact.sh",

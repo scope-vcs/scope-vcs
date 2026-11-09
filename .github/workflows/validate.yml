@@ -82,6 +82,7 @@ jobs:
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.actor != 'dependabot[bot]'))) }}
       validate_service_release: ${{ inputs.release }}
+      distribution_mode: ${{ inputs.release && 'release' || 'pull-request' }}
     secrets: inherit
 
   integration-validation:
