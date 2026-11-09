@@ -42,7 +42,7 @@ export function LandingContent({
       <div className={landingShell}>
         <header className="relative flex h-[76px] items-center justify-between">
           <Link aria-label="Scope home" to="/">
-            <ScopeLogo className="landing-logo w-[112px] max-[521px]:w-[100px]" />
+            <ScopeLogo className="landing-logo" />
           </Link>
           <Note className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap max-[901px]:whitespace-normal max-[421px]:left-0 max-[421px]:top-[calc(100%-4px)] max-[421px]:translate-none" id="nav">
             <span className="pointer-coarse:hidden">{notes.nav}</span>
@@ -96,7 +96,7 @@ export function LandingContent({
         </main>
 
         <footer className="relative flex min-h-24 flex-wrap items-center justify-between gap-5 text-[13px] text-muted-foreground max-[901px]:pb-8">
-          <Link aria-label="Scope home" to="/"><ScopeLogo className="landing-logo w-[84px] opacity-65" /></Link>
+          <Link aria-label="Scope home" to="/"><ScopeLogo className="landing-logo h-5 opacity-65" /></Link>
           <Note className="absolute left-1/2 top-1/2 max-w-[44ch] -translate-x-1/2 -translate-y-1/2 text-center max-[1151px]:static max-[1151px]:order-last max-[1151px]:block max-[1151px]:max-w-none max-[1151px]:basis-full max-[1151px]:translate-none max-[1151px]:text-left" id="footer" />
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <SiteLinks className="flex gap-6 [&_a:hover]:text-success-strong" label={isPublic ? 'Project' : undefined} />
