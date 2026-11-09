@@ -18,6 +18,7 @@ root, regardless of the caller's working directory.
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |
 | `integration journey` | Signed-in browser contribution journey against a freshly started, signed-in seeded stack |
 | `ops` | Deployment, backend binary size caps, staging, benchmark, and AWS infrastructure tests |
+| `runner-runtime-container --image IMAGE` | Runner image entrypoint and process lifecycle against a protocol fixture; needs Docker on a Linux host and runs from the runner image workflow, not `dev/check` |
 
 Callers install Rust, cargo-deny (`dev/install-cargo-deny.sh`), Node and pnpm dependencies, configure secrets,
 and start/stop integration stacks. The contract check needs Rust and web

@@ -6,7 +6,7 @@ layers.
 
 ## Dependency direction
 
-The root Cargo workspace contains eighteen packages and excludes `cli/`, which
+The root Cargo workspace contains twenty packages and excludes `cli/`, which
 is a separate workspace. Current `cargo metadata` gives these internal
 dependencies:
 
@@ -21,21 +21,25 @@ dependencies:
 | `scope-git` | Projection identity and Git snapshot preparation/materialization | `scope-domain`, optionally `scope-storage` |
 | `scope-postgres` | Metadata stores, migrations, read models, and transaction owners | `scope-domain`, `scope-cache-domain`, `scope-git`, `scope-run-config` |
 | `scope-media-storage` | Encrypted, chunked attachment storage for the domain media object manifests | `scope-domain`, `scope-storage` |
-| `scope-media-service` | Grant-authorized attachment upload and media delivery | `scope-api-contract`, `scope-domain`, `scope-media-storage`, `scope-storage`, `scope-postgres` |
-| `scope-media-worker` | Attachment validation, derivative generation, and media cleanup | `scope-domain`, `scope-media-storage`, `scope-storage`, `scope-postgres` |
+| `scope-media-service` | Grant-authorized attachment upload and media delivery | `scope-api-contract`, `scope-domain`, `scope-media-storage`, `scope-postgres`, `scope-service-runtime`, `scope-storage` |
+| `scope-media-worker` | Attachment validation, derivative generation, and media cleanup | `scope-domain`, `scope-media-storage`, `scope-postgres`, `scope-service-runtime`, `scope-storage` |
 | `scope-content-lifecycle` | Shared source-blob cleanup orchestration | `scope-domain`, `scope-storage`, `scope-postgres` |
+| `scope-service-runtime` | Shared service bootstrap, HTTP serving and proxying, outbound HTTP, readiness, replica discovery, grants, and telemetry | `scope-api-contract`, `scope-postgres` |
+| `scope-product-analytics` | Product analytics events and their transport | `scope-domain` |
+| `scope-dependency-analyzer` | Dependency scanning and resolution over repository snapshots, and its findings | `scope-domain` |
 | `api` | Authentication, HTTP/SSE delivery, application use cases, and composition | the contracts, domain crates, orchestration crate, and infrastructure adapters |
 | `worker` | Run control, Git compaction, and cleanup polling | domain, API contract, orchestration, and infrastructure adapters |
-| `scope-repo-router` | Repository Git/HTTP routing proxy | none |
-| `scope-runner-runtime` | Claimed-job setup, cache transfer, process execution, logs, and completion | API contract and domain crates |
+| `scope-repo-router` | Repository Git/HTTP routing proxy | `scope-service-runtime` |
+| `scope-cli-downloads` | CLI distribution manifest and installer download service | `scope-product-analytics`, `scope-service-runtime` |
+| `scope-runner-runtime` | Claimed-job setup, cache transfer, process execution, logs, and completion | `scope-api-contract`, `scope-cache-domain`, `scope-domain`, `scope-git-process`, `scope-service-runtime` |
 
 The dependency rules are:
 
-- `scope-domain`, `scope-cache-domain`, `scope-git-process`, and
-  `scope-repo-router` are internal leaves. They do not depend on another
-  workspace package. `scope-storage` depends on the process leaf only for
-  the cooperative cancellation signal shared by a Git producer and its
-  storage consumer; it does not own subprocess policy.
+- `scope-domain`, `scope-cache-domain`, and `scope-git-process` are internal
+  leaves. They do not depend on another workspace package. `scope-storage`
+  depends on the process leaf only for the cooperative cancellation signal
+  shared by a Git producer and its storage consumer; it does not own
+  subprocess policy.
 - Contract crates may depend only on their corresponding domain crate.
 - Reusable crates do not depend on application packages, including `api`,
   `worker`, the media service, the media worker, and `scope-runner-runtime`.
@@ -131,8 +135,8 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   recover abandoned attempts;
 - `invite_email_delivery.rs` for sending queued repository invite emails. It
   creates the invite link at send time, so only the link's hash is ever stored,
-  sends through `invite_mailer.rs` (Resend, keyed per email so a repeated
-  attempt cannot send twice), and records the attempt. The API process polls
+  sends through `api/src/invite_mailer.rs` (Resend, keyed per email so a
+  repeated attempt cannot send twice), and records the attempt. The API process polls
   for due emails; an expiring database claim lets several API processes share
   them without working on the same email at once. `SCOPE_RESEND_API_KEY` enables delivery; without it emails
   fail at once and owners copy links instead;
@@ -140,8 +144,8 @@ Cross-system behavior belongs in `api/src/use_cases/`. Its current homes are:
   while the account owns repositories other members use; owned repositories
   leave through repository deletion, and authored work elsewhere stays with a
   deleted author. `clerk_user_deletion.rs` then deletes the Clerk user through
-  `clerk_users.rs`, retrying from a database queue until Clerk confirms or
-  answers 404. `CLERK_SECRET_KEY` enables it; without it deletions stay queued;
+  `api/src/clerk_users.rs`, retrying from a database queue until Clerk
+  confirms or answers 404. `CLERK_SECRET_KEY` enables it; without it deletions stay queued;
 - `git_receive/` for receive authorization, the separate main-push and
   request-ref completion paths, and completing open requests whose head a
   committed main push carries;
@@ -253,7 +257,7 @@ Follow these paths from application coordination to durable rules and storage:
 | Git receive | `api/src/use_cases/git_receive/` | reviewed-update, repository, request-revision, and workflow-catalog rules in `scope-domain` | `repo_mutation.rs`, `content_push_transactions.rs`, request persistence; upload lifecycle under `api/src/git/import/segment_upload.rs`; bounded ingest under `scope-storage` |
 | Discussion mutation | `api/src/use_cases/request_discussion_mutation.rs` | `scope-domain/src/requests/discussions.rs` | `scope-postgres/src/db/request_discussions.rs`; HTTP projection in `api/src/http/request_discussions.rs` |
 | Run inspection and control | `api/src/use_cases/run_inspection.rs`, `run_control.rs` | `scope-domain/src/runs/` | `run_details.rs`, `run_log_reads.rs`, `runs.rs`, and run-attempt modules; response mapping in `api/src/http/run_*` |
-| Content cleanup | `api/src/use_cases/content_cleanup.rs`, `worker/src/cleanup.rs` | `scope-content-lifecycle/src/lib.rs` and `scope-domain::repo_actions` | `scope-postgres/src/db/cleanup_queue/` and `scope-object-store` |
+| Content cleanup | `api/src/use_cases/content_cleanup.rs`, `worker/src/cleanup.rs` | `scope-content-lifecycle/src/lib.rs` and `scope-domain::repo_actions` | `scope-postgres/src/db/cleanup_queue/` and `scope-storage` |
 
 ## Persistence transaction ownership
 
