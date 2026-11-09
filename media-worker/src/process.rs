@@ -137,7 +137,6 @@ async fn join_output(
 }
 
 fn install_process_limits(command: &mut Command, limits: CodecProcessLimits) {
-    // SAFETY: this closure only invokes async-signal-safe setrlimit calls before exec.
     unsafe {
         command.pre_exec(move || {
             set_limit(libc::RLIMIT_CORE, 0)?;
@@ -155,7 +154,6 @@ fn set_limit(resource: libc::__rlimit_resource_t, value: u64) -> io::Result<()> 
         rlim_cur: value,
         rlim_max: value,
     };
-    // SAFETY: limit points to a valid rlimit value for the duration of the call.
     if unsafe { libc::setrlimit(resource, &limit) } == 0 {
         Ok(())
     } else {

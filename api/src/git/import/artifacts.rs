@@ -4,7 +4,7 @@ use super::pushed_tree::{
 use super::repo_io::{
     PushedCommit, StagedGitPush, describe_refs, git_push_from_repo, git_refs, pushed_commit,
 };
-use super::staging::{ReceivePackFileChange, ReceivePackUpdate, ensure_default_branch};
+use super::staging::{ReceivePackUpdate, ensure_default_branch};
 use crate::{
     error::ApiError,
     git::{
@@ -22,6 +22,7 @@ use scope_domain::landing_file::{
 use scope_domain::policy::ScopePath;
 use scope_domain::repo_config::RepoConfig;
 use scope_domain::repository::{RepoLifecycleState, Repository, git::GitHead};
+use scope_domain::reviewed_updates::content::ReviewedContentChange;
 use scope_domain::runs::{
     catalog::{
         MAX_REPOSITORY_WORKFLOW_FILES, MAX_WORKFLOW_DEFINITION_BYTES, RepositoryWorkflowCatalog,
@@ -288,7 +289,7 @@ fn ensure_pushed_head_extends(
 struct InspectedReceiveTree {
     message: String,
     occurred_at_unix: Option<i64>,
-    changes: Vec<ReceivePackFileChange>,
+    changes: Vec<ReviewedContentChange>,
     landing_file_mutation: RepositoryLandingFileMutation,
     workflow_catalog: RepositoryWorkflowCatalog,
     diff_ms: u128,
@@ -321,7 +322,7 @@ fn inspect_received_tree(
         capture_repository_workflow_catalog(staging_repo, repository_id, head_oid, change_version)?;
     let changes = pushed_entries
         .into_iter()
-        .map(|(path, entry)| ReceivePackFileChange {
+        .map(|(path, entry)| ReviewedContentChange {
             path,
             content: entry.map(|entry| git_blob_reference(entry.oid, entry.mode, entry.size_bytes)),
         })

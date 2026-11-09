@@ -166,7 +166,6 @@ pub(crate) struct HistoryPageRequest {
     pub(crate) feed: Option<HistoryFeed>,
     pub(crate) view: Option<ViewId>,
     pub(crate) before: Option<String>,
-    /// Matches entry messages, source IDs and visibility-change paths.
     pub(crate) search: Option<String>,
 }
 
@@ -196,9 +195,7 @@ pub(crate) struct RequestFileDiffRequest {
 pub(crate) struct RepoFileContentRequest {
     pub(crate) path: String,
     pub(crate) view: Option<ViewId>,
-    /// Reads the request's latest push instead of main. Excludes `update`.
     pub(crate) request: Option<String>,
-    /// Reads main as of this history entry's `source_id`. Excludes `request`.
     pub(crate) update: Option<String>,
 }
 
@@ -206,9 +203,7 @@ pub(crate) struct RepoFileContentRequest {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct RepoFilesRequest {
     pub(crate) view: Option<ViewId>,
-    /// Reads the request's latest push instead of main. Excludes `update`.
     pub(crate) request: Option<String>,
-    /// Reads main as of this history entry's `source_id`. Excludes `request`.
     pub(crate) update: Option<String>,
 }
 
@@ -250,7 +245,6 @@ pub(crate) struct HistoryEntryDetailResponse {
     pub(crate) occurred_at_unix: Option<i64>,
     pub(crate) id: String,
     pub(crate) source_id: String,
-    /// Adjacent entries in all activity, addressed by source id.
     pub(crate) older_source_id: Option<String>,
     pub(crate) newer_source_id: Option<String>,
     pub(crate) kind: HistoryEntryKind,
@@ -266,7 +260,6 @@ pub(crate) struct HistoryEntryDetailResponse {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct HistoryNativeCommitsResponse {
-    /// The view the request that made these commits was merged through.
     pub(crate) view: ViewId,
     pub(crate) commits: Vec<NativeHistoryCommitResponse>,
 }
@@ -310,21 +303,6 @@ pub(crate) struct HistoryEntryFileResponse {
     pub(crate) old_oid: Option<String>,
     pub(crate) new_oid: Option<String>,
     pub(crate) label: ViewId,
-}
-
-pub(crate) fn repo_summary_for_user(
-    repo: &Repository,
-    user_id: &str,
-    open_request_count: usize,
-    git_origin: &str,
-) -> Option<RepoSummaryResponse> {
-    repo_summary_for_access(
-        &repo.record,
-        repo.access_for_user_id(user_id),
-        repo.repo_config.views(),
-        open_request_count,
-        git_origin,
-    )
 }
 
 pub(crate) fn repo_summary_for_access(
@@ -372,32 +350,28 @@ pub(crate) fn repository_access_response(access: RepositoryAccess) -> Repository
 
 pub(crate) fn repo_init_response(
     repo: &Repository,
-    user_id: &str,
-    git_origin: &str,
+    repo_summary: RepoSummaryResponse,
     now_unix: u64,
-    secret: Option<String>,
-    push_secret: Option<String>,
-) -> Result<RepoInitResponse, ApiError> {
-    ensure_repo_init_access(repo, user_id)?;
-    let repo_summary = repo_summary_for_user(repo, user_id, 0, git_origin)
-        .ok_or_else(|| ApiError::internal_message("init repository is not readable"))?;
+    secret: String,
+    push_secret: String,
+) -> RepoInitResponse {
     let token = repo
         .first_push_token
         .as_ref()
-        .map(|stored_token| first_push_token_response(stored_token, now_unix, secret));
+        .map(|stored_token| first_push_token_response(stored_token, now_unix, Some(secret)));
     let push_token = repo
         .git_push_token
         .as_ref()
-        .map(|stored_token| git_push_token_response(stored_token, push_secret));
+        .map(|stored_token| git_push_token_response(stored_token, Some(push_secret)));
 
-    Ok(RepoInitResponse {
+    RepoInitResponse {
         git_remote_url: repo_summary.git_remote_url.clone(),
         remote_name: "scope".to_string(),
         push_branch: DEFAULT_GIT_BRANCH.to_string(),
         repo: repo_summary,
         token,
         push_token,
-    })
+    }
 }
 
 pub(crate) fn repository_git_remote_url(
@@ -411,21 +385,6 @@ pub(crate) fn repository_git_remote_url(
         git_origin.trim_end_matches('/'),
         scope_api_contract::routes::git_repo(view.as_str(), owner, repo)
     )
-}
-
-fn ensure_repo_init_access(repo: &Repository, user_id: &str) -> Result<(), ApiError> {
-    if !repo.is_owner_user(user_id) {
-        return Err(ApiError::not_found(format!(
-            "repo {} not found",
-            repo.record.id
-        )));
-    }
-    if !repo.is_waiting_for_first_push() {
-        return Err(ApiError::conflict(
-            "init token is only available before the first push",
-        ));
-    }
-    Ok(())
 }
 
 pub(crate) fn first_push_token_response(

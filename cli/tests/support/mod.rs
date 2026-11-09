@@ -32,19 +32,6 @@ pub fn scope_failure<const N: usize>(cwd: &Path, args: [&str; N], expected: &str
 }
 
 #[allow(dead_code)]
-pub fn scope_failure_with_code<const N: usize>(
-    cwd: &Path,
-    args: [&str; N],
-    expected: &str,
-    code: i32,
-) -> String {
-    let output = scope_command(cwd).args(args).output().unwrap();
-    assert_eq!(output.status.code(), Some(code), "{output:?}");
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains(expected), "{stderr}");
-    stderr
-}
-#[allow(dead_code)]
 pub fn create_repo_with_head(cwd: &Path) {
     run_git(cwd, ["-c", "init.defaultBranch=main", "init"]);
     fs::write(cwd.join("README.md"), "initial\n").unwrap();

@@ -36,7 +36,6 @@ pub(crate) struct RepositoryInviteResponse {
     pub(crate) permissions: RepositoryMemberPermissions,
     pub(crate) state: RepositoryInviteState,
     pub(crate) expires_at_unix: u64,
-    /// The newest email for this invite. `None` when it was never emailed.
     pub(crate) email: Option<RepositoryInviteEmailResponse>,
 }
 
@@ -47,7 +46,6 @@ pub(crate) struct RepositoryInviteEmailResponse {
     pub(crate) requested_at_unix: u64,
 }
 
-/// `sent` means the provider accepted the email, not that it reached an inbox.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -77,10 +75,6 @@ pub(crate) struct RepositoryInviteLinkResponse {
     pub(crate) invite_url: String,
 }
 
-/// What an invite link shows its viewer. Only the repository owner can invite,
-/// so `owner_handle` is also the inviter. Only an open link names the invited
-/// email; a link someone else used, a revoked link, and an unknown link name
-/// nothing.
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]

@@ -1,5 +1,10 @@
-use crate::{S3Settings, objects::ObjectStoreError};
+use crate::{GitSegmentStoreConfig, S3Settings, objects::ObjectStoreError};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use std::path::PathBuf;
+
+const SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_CHUNK_BYTES";
+const SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES";
+const SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV: &str = "SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY";
 
 pub fn nonempty_env(name: &str) -> Option<String> {
     std::env::var(name)
@@ -10,6 +15,31 @@ pub fn nonempty_env(name: &str) -> Option<String> {
 pub fn required_env(name: &str) -> Result<String, ObjectStoreError> {
     nonempty_env(name)
         .ok_or_else(|| ObjectStoreError::internal_message(format!("{name} is required")))
+}
+
+impl GitSegmentStoreConfig {
+    pub fn from_env(local_root: impl Into<PathBuf>) -> Result<Self, ObjectStoreError> {
+        let mut config = Self::new(local_root);
+        config.chunk_bytes = usize_env(SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV, config.chunk_bytes)?;
+        config.multipart_part_bytes = usize_env(
+            SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV,
+            config.multipart_part_bytes,
+        )?;
+        config.channel_capacity = usize_env(
+            SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV,
+            config.channel_capacity,
+        )?;
+        Ok(config)
+    }
+}
+
+fn usize_env(name: &str, default: usize) -> Result<usize, ObjectStoreError> {
+    match nonempty_env(name) {
+        Some(value) => value.parse::<usize>().map_err(|error| {
+            ObjectStoreError::internal_message(format!("{name} must be an integer: {error}"))
+        }),
+        None => Ok(default),
+    }
 }
 
 impl S3Settings {

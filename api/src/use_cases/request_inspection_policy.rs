@@ -27,7 +27,6 @@ pub(crate) fn resolve_revision(
     selected_commit: Option<&str>,
     commit_limit: usize,
 ) -> Result<Option<Policy>, ApiError> {
-    let mut paths = BTreeSet::new();
     let comparison = scope_domain::requests::RequestComparison::push(revision, reader.clone());
     let mut commits = super::request_revision_inspection::request_revision_commit_oids(
         raw_repo,
@@ -40,16 +39,9 @@ pub(crate) fn resolve_revision(
     if let Some(commit) = selected_commit {
         commits.push(commit.to_string());
     }
-    let mut commits = commits.join("\n").into_bytes();
-    commits.push(b'\n');
-    if !collect_paths(
-        raw_repo,
-        &["--stdin", "--diff-merges=first-parent"],
-        Some(commits),
-        &mut paths,
-    )? {
+    let Some(paths) = collect_commit_paths(raw_repo, &commits)? else {
         return Ok(None);
-    }
+    };
     resolve_paths(state, repo, reader, paths).map(Some)
 }
 
@@ -67,10 +59,9 @@ pub(crate) fn resolve_comparison(
         args.push(base.as_str());
     }
     args.push(comparison.identity().head_oid.as_str());
-    let mut paths = BTreeSet::new();
-    if !collect_paths(raw_repo, &args, None, &mut paths)? {
+    let Some(paths) = collect_paths(raw_repo, &args, None)? else {
         return Ok(None);
-    }
+    };
     resolve_paths(state, repo, reader, paths).map(Some)
 }
 
@@ -91,19 +82,11 @@ pub(crate) fn resolve_commits(
     raw_repo: &Path,
     commits: &[String],
 ) -> Result<Policy, ApiError> {
-    let mut paths = BTreeSet::new();
-    let mut input = commits.join("\n").into_bytes();
-    input.push(b'\n');
-    if !collect_paths(
-        raw_repo,
-        &["--stdin", "--diff-merges=first-parent"],
-        Some(input),
-        &mut paths,
-    )? {
+    let Some(paths) = collect_commit_paths(raw_repo, commits)? else {
         return Err(ApiError::infrastructure_unavailable(
             "request visibility inspection exceeds its path budget",
         ));
-    }
+    };
     resolve_paths(state, repo, reader, paths)
 }
 
@@ -124,12 +107,24 @@ pub(crate) fn resolve_paths(
         .for_request_paths(&repo.repo_config, &history, reader, &paths))
 }
 
+fn collect_commit_paths(
+    raw_repo: &Path,
+    commits: &[String],
+) -> Result<Option<BTreeSet<ScopePath>>, ApiError> {
+    let mut input = commits.join("\n").into_bytes();
+    input.push(b'\n');
+    collect_paths(
+        raw_repo,
+        &["--stdin", "--diff-merges=first-parent"],
+        Some(input),
+    )
+}
+
 fn collect_paths(
     raw_repo: &Path,
     args: &[&str],
     input: Option<Vec<u8>>,
-    paths: &mut BTreeSet<ScopePath>,
-) -> Result<bool, ApiError> {
+) -> Result<Option<BTreeSet<ScopePath>>, ApiError> {
     let mut command = Command::new("git");
     command
         .arg("-C")
@@ -146,7 +141,7 @@ fn collect_paths(
         .args(args);
     let span = crate::git::command::prepare_git_subprocess(&mut command)?;
     let _entered = span.enter();
-    let mut collected = paths.clone();
+    let mut collected = BTreeSet::new();
     let output = run_with_stdout(
         &mut command,
         input,
@@ -207,6 +202,5 @@ fn collect_paths(
         ));
     }
     let (collected, complete) = output.value;
-    *paths = collected;
-    Ok(complete)
+    Ok(complete.then_some(collected))
 }

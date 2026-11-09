@@ -20,12 +20,6 @@ use std::path::Path;
 mod headers;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct RequestBasePublication {
-    pub(crate) base: RequestBase,
-    pub(crate) expected_base_version: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RequestBasePublicationHeaders {
     pub(crate) base: RequestBase,
     pub(crate) expected_base_version: u64,
@@ -36,27 +30,19 @@ pub(crate) async fn prepare_request_base_publication(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     request: &Request,
-    headers: Option<RequestBasePublicationHeaders>,
+    headers: Option<&RequestBasePublicationHeaders>,
     staging_repo: &Path,
     new_head_oid: &str,
     expected_repo_change_version: u64,
-) -> Result<
-    (
-        Option<RequestBasePublication>,
-        Option<RequestBasePublicationFacts>,
-    ),
-    ApiError,
-> {
-    if let Some(headers) = &headers
+) -> Result<RequestBasePublicationFacts, ApiError> {
+    if let Some(headers) = headers
         && headers.expected_base_version != request.base_version
     {
         return Err(ApiError::conflict(
             "request base publication context changed; refresh and retry",
         ));
     }
-    let selected_base = headers
-        .as_ref()
-        .map_or(&request.base, |headers| &headers.base);
+    let selected_base = headers.map_or(&request.base, |headers| &headers.base);
     let RequestBase::Request {
         request_id,
         head_oid,
@@ -64,12 +50,9 @@ pub(crate) async fn prepare_request_base_publication(
     } = selected_base
     else {
         let Some(headers) = headers else {
-            return Ok((
-                None,
-                Some(RequestBasePublicationFacts::Unchanged {
-                    expected_repo_change_version,
-                }),
-            ));
+            return Ok(RequestBasePublicationFacts::Unchanged {
+                expected_repo_change_version,
+            });
         };
         if headers.expected_parent_base_version.is_some() {
             return Err(ApiError::bad_request(
@@ -98,17 +81,11 @@ pub(crate) async fn prepare_request_base_publication(
                 "request branch must contain its selected main",
             ));
         }
-        return Ok((
-            Some(RequestBasePublication {
-                base: headers.base,
-                expected_base_version: headers.expected_base_version,
-            }),
-            Some(RequestBasePublicationFacts::Main {
-                main_head_oid: main_head,
-                child_contains_main: true,
-                expected_repo_change_version,
-            }),
-        ));
+        return Ok(RequestBasePublicationFacts::Main {
+            main_head_oid: main_head,
+            child_contains_main: true,
+            expected_repo_change_version,
+        });
     };
     let parent = state
         .metadata
@@ -138,7 +115,7 @@ pub(crate) async fn prepare_request_base_publication(
             "parent request revision changed; retry publication",
         ));
     }
-    if let Some(headers) = &headers
+    if let Some(headers) = headers
         && (headers.base != current_base
             || headers.expected_parent_base_version != Some(parent.base_version))
     {
@@ -171,21 +148,16 @@ pub(crate) async fn prepare_request_base_publication(
             "request branch must contain its selected parent pin",
         ));
     }
-    let facts = RequestBasePublicationFacts::Request(RequestParentPublicationFacts {
-        request_id: parent.id,
-        revision_id: revision.id,
-        head_oid: parent.head_oid,
-        base_version: parent.base_version,
-        parent_contains_pin,
-        child_contains_pin,
-        expected_repo_change_version,
-    });
-    Ok((
-        headers.map(|headers| RequestBasePublication {
-            base: headers.base,
-            expected_base_version: headers.expected_base_version,
-        }),
-        Some(facts),
+    Ok(RequestBasePublicationFacts::Request(
+        RequestParentPublicationFacts {
+            request_id: parent.id,
+            revision_id: revision.id,
+            head_oid: parent.head_oid,
+            base_version: parent.base_version,
+            parent_contains_pin,
+            child_contains_pin,
+            expected_repo_change_version,
+        },
     ))
 }
 

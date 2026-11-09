@@ -25,6 +25,20 @@ export async function runAvailabilityProbe(paths, { fetchImpl = fetch } = {}) {
   const evidence = new AvailabilityEvidence(config);
   const targets = availabilityTargets(config);
   let nextSample = 0;
+  const recordRunnerFailure = (kind, error) => {
+    const at = new Date().toISOString();
+    const event = {
+      at,
+      error: { kind, message: safeErrorMessage(error) },
+      ok: false,
+      phase: evidence.phase(at),
+      release: config.release,
+      sample: nextSample,
+      target: "probe-runner",
+    };
+    evidence.record(event);
+    return event;
+  };
   let writeQueue = Promise.resolve();
   const active = new Set();
   let interval;
@@ -70,17 +84,7 @@ export async function runAvailabilityProbe(paths, { fetchImpl = fetch } = {}) {
 
   const startSample = () => {
     const running = sample().catch((error) => {
-      const at = new Date().toISOString();
-      const event = {
-        at,
-        error: { kind: "probe", message: safeErrorMessage(error) },
-        ok: false,
-        phase: evidence.phase(at),
-        release: config.release,
-        sample: nextSample,
-        target: "probe-runner",
-      };
-      evidence.record(event);
+      const event = recordRunnerFailure("probe", error);
       writeQueue = writeQueue.then(() => appendFile(paths.events, `${JSON.stringify(event)}\n`, { mode: 0o600 }));
     }).finally(() => active.delete(running));
     active.add(running);
@@ -101,16 +105,7 @@ export async function runAvailabilityProbe(paths, { fetchImpl = fetch } = {}) {
         await readMaintenanceMarkers(config, evidence);
         if (await exists(paths.stop)) requestStop();
       } catch (error) {
-        const at = new Date().toISOString();
-        evidence.record({
-          at,
-          error: { kind: "control", message: safeErrorMessage(error) },
-          ok: false,
-          phase: evidence.phase(at),
-          release: config.release,
-          sample: nextSample,
-          target: "probe-runner",
-        });
+        recordRunnerFailure("control", error);
         requestStop();
       }
     }, Math.min(250, config.intervalMs));
@@ -124,17 +119,7 @@ export async function runAvailabilityProbe(paths, { fetchImpl = fetch } = {}) {
     await writeJsonAtomic(paths.summary, summary);
     return summary;
   } catch (error) {
-    const at = new Date().toISOString();
-    const event = {
-      at,
-      error: { kind: "probe", message: safeErrorMessage(error) },
-      ok: false,
-      phase: evidence.phase(at),
-      release: config.release,
-      sample: nextSample,
-      target: "probe-runner",
-    };
-    evidence.record(event);
+    const event = recordRunnerFailure("probe", error);
     await appendFile(paths.events, `${JSON.stringify(event)}\n`, { mode: 0o600 }).catch(() => {});
     const summary = evidence.finish();
     summary.passed = false;

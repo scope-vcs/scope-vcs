@@ -90,6 +90,28 @@ pub(crate) async fn get_history_page(
     )?))
 }
 
+async fn history_entry_page(
+    state: &AppState,
+    repo: &RepositoryAccessContext,
+    view: &ViewId,
+    entry_id: &str,
+) -> Result<scope_postgres::db::RepositoryHistoryPage, ApiError> {
+    Ok(state
+        .metadata
+        .repositories()
+        .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
+            incarnation: &repo.incarnation(),
+            change_version: repo.record.change_version,
+            view,
+            feed: scope_domain::history::HistoryFeed::All,
+            before: None,
+            entry_source_id: Some(entry_id),
+            search: None,
+            limit: 1,
+        })
+        .await?)
+}
+
 pub(crate) async fn get_history_entry(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -97,20 +119,7 @@ pub(crate) async fn get_history_entry(
     Query(input): Query<HistoryEntryRequest>,
 ) -> Result<Json<crate::http::responses::HistoryEntryDetailResponse>, ApiError> {
     let (repo, view) = repo_and_view(&state, &headers, &owner, &repo_name, input.view).await?;
-    let page = state
-        .metadata
-        .repositories()
-        .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
-            incarnation: &repo.incarnation(),
-            change_version: repo.record.change_version,
-            view: &view,
-            feed: scope_domain::history::HistoryFeed::All,
-            before: None,
-            entry_source_id: Some(&entry_id),
-            search: None,
-            limit: 1,
-        })
-        .await?;
+    let page = history_entry_page(&state, &repo, &view, &entry_id).await?;
     let history = page.view;
     let entry = history_entry_for_id(&history.entries, &entry_id)?;
     let neighbors = page.neighbors.unwrap_or_default();
@@ -149,20 +158,7 @@ pub(crate) async fn get_history_entry_file_diff(
     Query(input): Query<HistoryEntryFileDiffRequest>,
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
     let (repo, view) = repo_and_view(&state, &headers, &owner, &repo_name, input.view).await?;
-    let page = state
-        .metadata
-        .repositories()
-        .repository_history_page(scope_postgres::db::RepositoryHistoryQuery {
-            incarnation: &repo.incarnation(),
-            change_version: repo.record.change_version,
-            view: &view,
-            feed: scope_domain::history::HistoryFeed::All,
-            before: None,
-            entry_source_id: Some(&entry_id),
-            search: None,
-            limit: 1,
-        })
-        .await?;
+    let page = history_entry_page(&state, &repo, &view, &entry_id).await?;
     let history = page.view;
     let entry = history_entry_for_id(&history.entries, &entry_id)?;
     let path = repo_scope_path(&input.path)?;

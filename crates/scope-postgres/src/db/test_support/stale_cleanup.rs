@@ -57,7 +57,6 @@ pub(super) fn sweep_process_servers(
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) => return Err(error.into()),
         };
-        // SAFETY: geteuid has no arguments or memory safety requirements.
         if !metadata.is_dir()
             || metadata.uid() != unsafe { libc::geteuid() }
             || process_is_alive(pid)
@@ -100,7 +99,6 @@ fn server_owner_pid(name: &str) -> Option<libc::pid_t> {
 
 #[cfg(unix)]
 fn process_is_alive(pid: libc::pid_t) -> bool {
-    // SAFETY: signal zero checks an existing positive pid without sending a signal.
     unsafe {
         libc::kill(pid, 0) == 0
             || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)

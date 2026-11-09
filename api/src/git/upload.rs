@@ -21,8 +21,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use scope_domain::{
-    repository::RepoLifecycleState, repository::access::RepositoryActor, requests::GitFetchAsk,
-    views::ViewId,
+    repository::RepoLifecycleState, repository::access::RepositoryActor, views::ViewId,
 };
 use scope_git_process::{ProcessLimits, StreamingProcessError, run_with_stdout};
 use scope_postgres::db::GitReadSource;
@@ -35,6 +34,8 @@ use std::{
 };
 use tracing::Instrument as _;
 pub(super) mod fetch_folder;
+#[cfg(test)]
+pub(crate) use fetch_folder::prepare as git_upload_pack_repo_for_request;
 #[cfg(test)]
 mod fetch_tests;
 mod protocol;
@@ -88,17 +89,6 @@ pub(crate) async fn authorized_git_read(
 
 fn repo_not_found(owner: &str, repo_name: &str) -> ApiError {
     ApiError::not_found(format!("repo {owner}/{repo_name} not found"))
-}
-
-pub(crate) async fn git_upload_pack_repo_for_request(
-    state: &AppState,
-    headers: &HeaderMap,
-    owner: &str,
-    repo_name: &str,
-    view: &ViewId,
-    ask: &GitFetchAsk,
-) -> Result<GitRepoHandle, ApiError> {
-    fetch_folder::prepare(state, headers, owner, repo_name, view, ask).await
 }
 
 pub(crate) async fn git_upload_pack_response(
@@ -206,9 +196,7 @@ fn upload_pack_packets(request: &[u8]) -> Result<Vec<UploadPackPacket<'_>>, ApiE
         let header = request
             .get(offset..offset + 4)
             .ok_or_else(|| ApiError::bad_request("malformed Git upload-pack packet"))?;
-        let length = std::str::from_utf8(header)
-            .ok()
-            .and_then(|header| usize::from_str_radix(header, 16).ok())
+        let length = pkt_line_length(header)
             .ok_or_else(|| ApiError::bad_request("malformed Git upload-pack packet"))?;
         offset += 4;
         if length <= 2 {
@@ -430,6 +418,12 @@ pub(crate) fn git_upload_pack_error(message: impl AsRef<str>) -> Response {
 
 pub(crate) fn git_error_body(message: &str) -> Vec<u8> {
     pkt_line(format!("ERR {message}\n").as_bytes())
+}
+
+pub(crate) fn pkt_line_length(header: &[u8]) -> Option<usize> {
+    std::str::from_utf8(header)
+        .ok()
+        .and_then(|header| usize::from_str_radix(header, 16).ok())
 }
 
 pub(crate) fn pkt_line(payload: &[u8]) -> Vec<u8> {

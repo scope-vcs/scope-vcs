@@ -1,5 +1,4 @@
 mod projection_identity;
-#[cfg(feature = "storage")]
 mod snapshot;
 mod tree_path;
 
@@ -7,14 +6,11 @@ pub use projection_identity::{
     PROJECTION_IDENTITY_VERSION, ProjectionHead, ProjectionIdentityError, projection_commit_oids,
     projection_head_oid,
 };
-#[cfg(feature = "storage")]
 pub use snapshot::{PreparedGitPush, prepare_git_push};
 pub use tree_path::{GitTreePath, GitTreePathError};
 
 use scope_domain::content::SourceBlob;
 use scope_domain::content_ref::ContentRef;
-#[cfg(feature = "storage")]
-use scope_storage::ObjectStoreError;
 use thiserror::Error;
 
 pub const DEFAULT_GIT_BRANCH: &str = "main";
@@ -36,16 +32,6 @@ impl GitStorageLimits {
     pub fn max_object_bytes(self) -> usize {
         self.max_object_bytes
     }
-
-    pub fn next_push_sequence(
-        self,
-        previous_sequence: Option<u64>,
-    ) -> Result<u64, GitStorageLimitError> {
-        previous_sequence
-            .unwrap_or(0)
-            .checked_add(1)
-            .ok_or(GitStorageLimitError::SequenceOverflow)
-    }
 }
 
 impl Default for GitStorageLimits {
@@ -62,15 +48,6 @@ pub enum GitStorageLimitError {
     ZeroObjectBytes,
     #[error("Git push sequence overflow")]
     SequenceOverflow,
-}
-
-#[derive(Debug, Error)]
-pub enum GitSnapshotError {
-    #[error(transparent)]
-    StorageLimit(#[from] GitStorageLimitError),
-    #[cfg(feature = "storage")]
-    #[error(transparent)]
-    ObjectStore(#[from] ObjectStoreError),
 }
 
 pub fn git_blob_reference(oid: String, mode: String, size_bytes: u64) -> SourceBlob {

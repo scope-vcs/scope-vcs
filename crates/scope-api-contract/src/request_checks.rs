@@ -37,21 +37,17 @@ wire_enum!(
     }
 );
 
-/// One check the request head asks for, and what answers it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "provider", rename_all = "kebab-case")]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(rename_all = "kebab-case"))]
 pub enum RequestCheckResponse {
-    /// A workflow Scope runs, answered by its run.
     Native {
         workflow_path: String,
         workflow_name: String,
         run_id: Option<String>,
         run_state: Option<RunState>,
     },
-    /// A check GitHub reports for the tested commit. `status` is `None` until
-    /// GitHub reports a run under this name.
     #[serde(rename = "github")]
     #[cfg_attr(feature = "ts", ts(rename = "github"))]
     GitHub {
@@ -59,14 +55,10 @@ pub enum RequestCheckResponse {
         status: Option<GitHubCheckStatus>,
         conclusion: Option<GitHubCheckConclusion>,
         details_url: Option<String>,
-        /// The workflow run and job on Scope's run page that answer the
-        /// check, when it is a GitHub Actions job the viewer may open there.
         run: Option<RequestCheckRunResponse>,
     },
 }
 
-/// A GitHub Actions job on Scope's run page:
-/// `/{owner}/{repo}/runs/{run_id}#run-job-{job_id}`.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestCheckRunResponse {
@@ -80,21 +72,17 @@ pub struct RequestCheckRunResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
 pub enum RequestGitHubPushState {
-    /// Nothing leaves Scope until a maintainer approves.
     AwaitingApproval,
-    /// Queued or being pushed; `error` says why the last attempt failed.
     Sending,
     Sent,
     Failed,
 }
 
-/// Where the tested commit is on its way to the branch GitHub runs workflows on.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestGitHubPushResponse {
     pub state: RequestGitHubPushState,
     pub branch: String,
-    /// Only maintainers see what GitHub answered.
     pub error: Option<String>,
 }
 
@@ -103,85 +91,53 @@ pub struct RequestGitHubPushResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
 pub enum RequestGitHubPullRequestState {
-    /// Scope is opening the pull request; `error` says why the last attempt failed.
     Opening,
     Open,
-    /// Scope closed it because the request ended.
     Closed,
-    /// Someone closed it on GitHub while the request was open. Scope leaves it closed.
     #[serde(rename = "closed_on_github")]
     #[cfg_attr(feature = "ts", ts(rename = "closed_on_github"))]
     ClosedOnGitHub,
-    /// Scope gave up; `error` says why.
     Failed,
 }
 
-/// The GitHub pull request Scope keeps open for the request so review bots
-/// on GitHub review it.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestGitHubPullRequestResponse {
     pub state: RequestGitHubPullRequestState,
-    /// `None` until Scope opens or adopts the pull request.
     pub number: Option<u64>,
     pub url: Option<String>,
-    /// Only maintainers see what GitHub answered.
     pub error: Option<String>,
 }
 
-/// A review bot listed for the repository and how far it got with the
-/// request's current head.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestReviewBotResponse {
     pub login: String,
-    /// Whether the request waits for this bot to finish its head before it can merge.
     pub required: bool,
     pub state: RequestReviewBotState,
 }
 
-/// Starts the checks of the head the maintainer reviewed. A newer head is
-/// refused, because approving runs its code.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct ApproveRequestChecksRequest {
     pub expected_head_oid: GitOid,
 }
 
-/// The checks recorded for the request's current head.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestChecksResponse {
     pub request_id: String,
     pub head_oid: GitOid,
-    /// `None` while the head has no evaluation: nothing is known about its checks yet.
     pub state: Option<RequestCheckEvaluationState>,
-    /// What the head's required checks add up to, the answer mergeability
-    /// gates on: `clear` once every one passed or none is required,
-    /// `pending` while any is unfinished, `failed` once one did not succeed.
     pub outcome: RequestChecksOutcome,
     pub message: Option<String>,
     pub checks: Vec<RequestCheckResponse>,
-    /// Whether the viewer can start checks that wait for a maintainer.
     pub can_approve: bool,
-    /// Set when the repository's checks run on GitHub and the head is on its
-    /// way there or waits for approval to go.
     pub github_push: Option<RequestGitHubPushResponse>,
-    /// Set when the repository opens pull requests for review bots and this
-    /// request has one, or Scope is opening one.
     pub github_pull_request: Option<RequestGitHubPullRequestResponse>,
-    /// The repository's review bots, in their listed order, for full-view
-    /// requests; empty when none is listed or the request is narrower.
     pub review_bots: Vec<RequestReviewBotResponse>,
-    /// Whether required review bots hold the merge. They do only while the
-    /// repository opens pull requests for review bots, since a bot can only
-    /// review a request through that pull request.
     pub review_bots_enforced: bool,
-    /// Whether approving would run workflow files this request changes. Only
-    /// worked out for a viewer who can approve GitHub checks.
     pub changes_github_workflows: bool,
-    /// Whether this private request's checks run in a public GitHub
-    /// repository, where everything Scope pushes is public.
     pub private_request_on_public_github: bool,
     pub mergeability: RequestMergeabilityResponse,
 }

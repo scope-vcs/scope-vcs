@@ -1,4 +1,7 @@
-use crate::{error::ApiError, git::upload::pkt_line};
+use crate::{
+    error::ApiError,
+    git::upload::{pkt_line, pkt_line_length},
+};
 use axum::body::{Body, Bytes};
 use futures_util::{StreamExt, stream};
 use std::time::Duration;
@@ -62,10 +65,7 @@ fn command_refs(buffer: &[u8]) -> Result<Option<Vec<String>>, ApiError> {
         let Some(header) = buffer.get(offset..offset + 4) else {
             return Ok(None);
         };
-        let length = std::str::from_utf8(header)
-            .ok()
-            .and_then(|header| usize::from_str_radix(header, 16).ok())
-            .ok_or_else(invalid)?;
+        let length = pkt_line_length(header).ok_or_else(invalid)?;
         if length == 0 {
             return Ok(Some(refs));
         }
@@ -103,10 +103,7 @@ pub(crate) fn advertise_additional_refs(
     let mut offset = 0;
     while offset < body.len() {
         let header = body.get(offset..offset + 4).ok_or_else(invalid)?;
-        let length = std::str::from_utf8(header)
-            .ok()
-            .and_then(|header| usize::from_str_radix(header, 16).ok())
-            .ok_or_else(invalid)?;
+        let length = pkt_line_length(header).ok_or_else(invalid)?;
         let end = if length == 0 {
             offset + 4
         } else {

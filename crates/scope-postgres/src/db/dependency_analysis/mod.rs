@@ -144,12 +144,12 @@ impl JobStore {
         .map_err(PostgresError::internal)?;
         let content_version =
             database_u64(&job, "repo_version", "dependency target repository version")?;
+        let analyzer_version = database_value::<String>(&job, "analyzer_version")?;
         if incarnation.incarnation_id() != database_value::<String>(&job, "incarnation_id")?
             || content_version
                 != database_u64(&repository, "content_version", "repository content version")?
             || head.head_oid != database_value::<String>(&job, "head_oid")?
         {
-            let analyzer_version = database_value::<String>(&job, "analyzer_version")?;
             enqueue_dependency_analysis_target(
                 &tx,
                 &incarnation,
@@ -176,7 +176,6 @@ impl JobStore {
                 })
             })
             .collect::<Result<Vec<_>, PostgresError>>()?;
-        let analyzer_version = database_value::<String>(&job, "analyzer_version")?;
         let reusable_analysis = load_reusable_analysis(
             &tx,
             &repo_id,
@@ -327,13 +326,7 @@ impl JobStore {
             [
                 claim.incarnation.repository_id().into(),
                 claim.incarnation.incarnation_id().into(),
-                i64::try_from(claim.content_version)
-                    .map_err(|_| {
-                        PostgresError::internal_message(
-                            "dependency repository version exceeds database bigint",
-                        )
-                    })?
-                    .into(),
+                dependency_version(claim.content_version)?.into(),
                 claim.git_head.head_oid.clone().into(),
                 claim.analyzer_version.clone().into(),
                 serde_json::to_value(&report)
@@ -415,9 +408,7 @@ pub(super) async fn enqueue_dependency_analysis_target<C: ConnectionTrait>(
     now_unix: u64,
 ) -> Result<(), PostgresError> {
     validate_analyzer_version(analyzer_version)?;
-    let version = i64::try_from(repo_version).map_err(|_| {
-        PostgresError::internal_message("dependency repository version exceeds database bigint")
-    })?;
+    let version = dependency_version(repo_version)?;
     let now = dependency_time(now_unix)?;
     conn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
@@ -489,13 +480,7 @@ async fn current_claim_repository<C: ConnectionTrait>(
             claim.lease_generation.clone().into(),
             now.into(),
             claim.incarnation.incarnation_id().into(),
-            i64::try_from(claim.content_version)
-                .map_err(|_| {
-                    PostgresError::internal_message(
-                        "dependency repository version exceeds database bigint",
-                    )
-                })?
-                .into(),
+            dependency_version(claim.content_version)?.into(),
             claim.git_head.head_oid.clone().into(),
             claim.analyzer_version.clone().into(),
         ],
@@ -548,6 +533,12 @@ fn lease_expiry(now: i64, lease_seconds: u64) -> Result<i64, PostgresError> {
     })?)
     .ok_or_else(|| {
         PostgresError::internal_message("dependency analysis lease expiry exceeds database bigint")
+    })
+}
+
+fn dependency_version(version: u64) -> Result<i64, PostgresError> {
+    i64::try_from(version).map_err(|_| {
+        PostgresError::internal_message("dependency repository version exceeds database bigint")
     })
 }
 

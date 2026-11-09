@@ -2,7 +2,7 @@ use crate::error::CliError;
 use anyhow::Context;
 use reqwest::{
     StatusCode,
-    blocking::{Client, ClientBuilder, Response},
+    blocking::{Client, ClientBuilder, RequestBuilder, Response},
     header::{HeaderMap, HeaderValue},
 };
 pub use scope_api_contract::routes::{
@@ -98,6 +98,11 @@ pub(crate) fn decode_json_response<T: DeserializeOwned>(
     response
         .json()
         .with_context(|| format!("parse {context} response"))
+}
+
+fn execute<R: DeserializeOwned>(request: RequestBuilder, context: String) -> anyhow::Result<R> {
+    let response = request.send().with_context(|| context.clone())?;
+    decode_json_response(response, &context)
 }
 
 pub(crate) fn successful_response(response: Response, context: &str) -> anyhow::Result<Response> {
@@ -251,12 +256,11 @@ pub fn create_repo(api: ApiSession<'_>, name: String) -> anyhow::Result<CreateRe
         name,
         file_default_view: None,
     };
-    let response = api
-        .request(reqwest::Method::POST, routes::REPOS)
-        .json(&request)
-        .send()
-        .context("create Scope repository")?;
-    decode_json_response(response, "create Scope repository")
+    execute(
+        api.request(reqwest::Method::POST, routes::REPOS)
+            .json(&request),
+        "create Scope repository".to_string(),
+    )
 }
 
 pub fn get_repo(
@@ -264,11 +268,10 @@ pub fn get_repo(
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepoSummaryResponse> {
-    let response = api
-        .request(reqwest::Method::GET, routes::repo(owner, repo))
-        .send()
-        .with_context(|| format!("load Scope repo {owner}/{repo}"))?;
-    decode_json_response(response, &format!("load Scope repo {owner}/{repo}"))
+    execute(
+        api.request(reqwest::Method::GET, routes::repo(owner, repo)),
+        format!("load Scope repo {owner}/{repo}"),
+    )
 }
 
 pub fn get_repo_config(
@@ -276,12 +279,10 @@ pub fn get_repo_config(
     owner: &str,
     repo: &str,
 ) -> anyhow::Result<RepoConfigContext> {
-    let response = api
-        .request(reqwest::Method::GET, routes::repo_config(owner, repo))
-        .send()
-        .with_context(|| format!("get repo config for {owner}/{repo}"))?;
-    let response: RepoConfigResponse =
-        decode_json_response(response, &format!("get repo config for {owner}/{repo}"))?;
+    let response: RepoConfigResponse = execute(
+        api.request(reqwest::Method::GET, routes::repo_config(owner, repo)),
+        format!("get repo config for {owner}/{repo}"),
+    )?;
     Ok(RepoConfigContext {
         config: response
             .config
@@ -298,8 +299,8 @@ pub fn create_push_intent(
     api: ApiSession<'_>,
     params: CreatePushIntentParams<'_>,
 ) -> anyhow::Result<CreatePushIntentResponse> {
-    let response = api
-        .request(
+    execute(
+        api.request(
             reqwest::Method::POST,
             routes::repo_push_intents(params.owner, params.repo),
         )
@@ -308,12 +309,8 @@ pub fn create_push_intent(
             base_config_hash: params.base_config_hash.map(str::to_string),
             config: params.config.cloned().map(Into::into),
             view: params.view.clone().into(),
-        })
-        .send()
-        .with_context(|| format!("create push intent for {}/{}", params.owner, params.repo))?;
-    decode_json_response(
-        response,
-        &format!("create push intent for {}/{}", params.owner, params.repo),
+        }),
+        format!("create push intent for {}/{}", params.owner, params.repo),
     )
 }
 

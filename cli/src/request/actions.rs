@@ -12,12 +12,7 @@ pub(super) fn load_exact_request(
 )> {
     let context = load_context(git_repo, api, target.remote.as_deref())?;
     let request_id = request_id_for_context(api, &context, target.request)?;
-    let detail = get_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )?;
+    let detail = get_request(api, api_target(&context, &request_id))?;
     Ok((context, request_id, detail))
 }
 

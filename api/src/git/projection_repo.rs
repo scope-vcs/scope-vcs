@@ -47,7 +47,7 @@ impl Drop for ProjectionBuildArtifacts {
 
 fn projection_bare_repo_with_loader(
     cache_root: &FsPath,
-    incarnation: Option<&RepositoryIncarnation>,
+    incarnation: &RepositoryIncarnation,
     labels: &[ViewId],
     projection: &Projection,
     native_source_repo: Option<&FsPath>,
@@ -57,12 +57,7 @@ fn projection_bare_repo_with_loader(
     let expected_head = scope_git::projection_head_oid(projection).map_err(ApiError::internal)?;
     let cache_key = projection_cache_key(incarnation, labels, projection)?;
     let repo_path = cache_root.join(format!("{cache_key}.git"));
-    if repo_path
-        .join("refs")
-        .join("heads")
-        .join(DEFAULT_GIT_BRANCH)
-        .is_file()
-    {
+    if projection_cache_is_ready(&repo_path) {
         return Ok(repo_path);
     }
 
@@ -417,7 +412,7 @@ pub(crate) async fn projection_bare_repo_for_state(
         .transpose()?;
     let cache_root = state.repository_engine.cache_root().to_path_buf();
     let labels = view_labels(views, &projection.view_key);
-    let cache_key = projection_cache_key(Some(incarnation), &labels, projection)?;
+    let cache_key = projection_cache_key(incarnation, &labels, projection)?;
     let repo_path = cache_root.join(format!("{cache_key}.git"));
     let repo_path_for_ready = repo_path.clone();
     let is_ready = move || projection_cache_is_ready(&repo_path_for_ready);
@@ -450,7 +445,7 @@ pub(crate) async fn projection_bare_repo_for_state(
                     let canonical_path = canonical_for_build.as_deref();
                     projection_bare_repo_with_loader(
                         &cache_root_for_build,
-                        Some(&incarnation_for_build),
+                        &incarnation_for_build,
                         &labels,
                         &projection_for_build,
                         canonical_path,
@@ -482,12 +477,8 @@ pub(crate) fn cached_projection_repo(
     head_oid: Option<&str>,
 ) -> Result<Option<GitRepoHandle>, ApiError> {
     let labels = view_labels(views, view);
-    let key = projection_cache_key_for_head(
-        Some(incarnation),
-        incarnation.repository_id(),
-        &labels,
-        head_oid,
-    );
+    let key =
+        projection_cache_key_for_head(incarnation, incarnation.repository_id(), &labels, head_oid);
     let path = state
         .repository_engine
         .cache_root()
@@ -522,7 +513,7 @@ fn projection_cache_is_ready(repo_path: &FsPath) -> bool {
 }
 
 fn projection_cache_key(
-    incarnation: Option<&RepositoryIncarnation>,
+    incarnation: &RepositoryIncarnation,
     labels: &[ViewId],
     projection: &Projection,
 ) -> Result<String, ApiError> {
@@ -536,7 +527,7 @@ fn view_labels(views: &Views, view: &ViewId) -> Vec<ViewId> {
 }
 
 fn projection_cache_keys(
-    incarnation: Option<&RepositoryIncarnation>,
+    incarnation: &RepositoryIncarnation,
     projection: &Projection,
     labels: &[ViewId],
 ) -> Result<Vec<String>, ApiError> {
@@ -550,7 +541,7 @@ fn projection_cache_keys(
 }
 
 pub(crate) fn projection_cache_key_for_head(
-    incarnation: Option<&RepositoryIncarnation>,
+    incarnation: &RepositoryIncarnation,
     repo_id: &str,
     labels: &[ViewId],
     head_oid: Option<&str>,
@@ -561,13 +552,11 @@ pub(crate) fn projection_cache_key_for_head(
         b"semantics",
         PROJECTION_CACHE_SEMANTICS_VERSION.as_bytes(),
     );
-    if let Some(incarnation) = incarnation {
-        hash_field(
-            &mut hasher,
-            b"incarnation",
-            incarnation.incarnation_id().as_bytes(),
-        );
-    }
+    hash_field(
+        &mut hasher,
+        b"incarnation",
+        incarnation.incarnation_id().as_bytes(),
+    );
     hash_field(&mut hasher, b"repo", repo_id.as_bytes());
     let mut labels = labels
         .iter()
@@ -599,7 +588,7 @@ fn cached_projection_prefix(
     projection: &Projection,
     verified_root: Option<&FsPath>,
 ) -> Result<Option<ProjectionPrefix>, ApiError> {
-    let keys = projection_cache_keys(Some(incarnation), projection, labels)?;
+    let keys = projection_cache_keys(incarnation, projection, labels)?;
     for count in (1..projection.commits.len()).rev() {
         if matches!(
             projection.commits[count - 1].materialization,

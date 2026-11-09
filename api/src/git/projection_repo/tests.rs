@@ -71,7 +71,7 @@ fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
 
     let repo = projection_bare_repo_with_loader(
         &root,
-        None,
+        &test_incarnation(),
         &labels(&projection),
         &projection,
         None,
@@ -127,7 +127,7 @@ fn projection_identity_and_materializer_reject_the_same_reserved_path() {
         .to_string();
     let materialization_error = projection_bare_repo_with_loader(
         &root,
-        None,
+        &test_incarnation(),
         &labels(&projection),
         &projection,
         None,
@@ -299,7 +299,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let incarnation = RepositoryIncarnation::new("repo", "repoi_native").unwrap();
     let repo = projection_bare_repo_with_loader(
         &cache,
-        Some(&incarnation),
+        &incarnation,
         &labels(&projection),
         &projection,
         Some(&source),
@@ -429,7 +429,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     assert_eq!(prefix.commits, projection.commits.len());
     let extended_repo = projection_bare_repo_with_loader(
         &cache,
-        Some(&incarnation),
+        &incarnation,
         &labels(&extended),
         &extended,
         None,
@@ -452,7 +452,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     *tree_oid = "0000000000000000000000000000000000000000".to_string();
     let error = projection_bare_repo_with_loader(
         &cache,
-        None,
+        &RepositoryIncarnation::new("repo", "repoi_corrupted").unwrap(),
         &labels(&corrupted),
         &corrupted,
         Some(&source),
@@ -505,12 +505,12 @@ fn projection_cache_key_uses_labels_and_logical_history() {
     second.commits[0].parent_projected_id = Some("pv_private_parent_0".into());
 
     assert_eq!(
-        projection_cache_keys(None, &first, &[ViewId::public()]).unwrap(),
-        projection_cache_keys(None, &second, &[ViewId::public()]).unwrap()
+        projection_cache_keys(&test_incarnation(), &first, &[ViewId::public()]).unwrap(),
+        projection_cache_keys(&test_incarnation(), &second, &[ViewId::public()]).unwrap()
     );
     assert_ne!(
-        projection_cache_key(None, &labels(&first), &first).unwrap(),
-        projection_cache_key(None, &labels(&second), &second).unwrap()
+        projection_cache_key(&test_incarnation(), &labels(&first), &first).unwrap(),
+        projection_cache_key(&test_incarnation(), &labels(&second), &second).unwrap()
     );
 }
 
@@ -553,7 +553,7 @@ fn git_backed_projection_borrows_blob_without_loading_it() {
     };
     let repo = projection_bare_repo_with_loader(
         &cache,
-        None,
+        &test_incarnation(),
         &labels(&projection),
         &projection,
         Some(&source),
@@ -664,7 +664,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     let cold_started = std::time::Instant::now();
     let base = projection_bare_repo_with_loader(
         root.path(),
-        Some(&incarnation),
+        &incarnation,
         &labels(&projection),
         &projection,
         None,
@@ -711,7 +711,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     let warm_started = std::time::Instant::now();
     let appended = projection_bare_repo_with_loader(
         root.path(),
-        Some(&incarnation),
+        &incarnation,
         &labels(&projection),
         &projection,
         None,
@@ -776,7 +776,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     assert_eq!(prefix.commits, 21);
     let mode_only = projection_bare_repo_with_loader(
         root.path(),
-        Some(&incarnation),
+        &incarnation,
         &labels(&projection),
         &projection,
         None,
@@ -805,7 +805,7 @@ fn generated_projection_reuses_only_a_matching_history_prefix() {
     );
     let rewritten = projection_bare_repo_with_loader(
         root.path(),
-        Some(&incarnation),
+        &incarnation,
         &labels(&projection),
         &projection,
         None,
@@ -873,7 +873,7 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
     };
     let repo = projection_bare_repo_with_loader(
         root.path(),
-        None,
+        &test_incarnation(),
         &labels(&projection),
         &projection,
         None,
@@ -887,6 +887,10 @@ fn incremental_index_handles_deletes_modes_and_directory_replacement() {
             .unwrap()
             .unwrap()
     );
+}
+
+fn test_incarnation() -> RepositoryIncarnation {
+    RepositoryIncarnation::new("repo", "repoi_projection").unwrap()
 }
 
 fn labels(projection: &Projection) -> Vec<ViewId> {

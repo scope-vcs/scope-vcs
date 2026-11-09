@@ -28,6 +28,7 @@ import {
   readRequestAttachmentDraft,
   requestAttachmentDraftKey,
   requestAttachmentMarkdownReference,
+  resumesDraftAttachment,
   seedRequestAttachmentDraft,
   setRequestAttachmentDraftText,
   subscribeRequestAttachmentDraft,
@@ -194,9 +195,9 @@ export function RequestAttachmentEditor({
       setValidationError(environment.attachmentsError ?? 'Attachment limits are still loading.')
       return
     }
-    const resumableCount = draft.attachments.filter((attachment) => attachment.file === null && files.some((file) =>
-      attachment.name === (file.name || 'Pasted image') && attachment.size === file.size,
-    )).length
+    const resumableCount = draft.attachments.filter((attachment) =>
+      files.some((file) => resumesDraftAttachment(attachment, file)),
+    ).length
     const accepted = validateFiles(files, attachmentCount - resumableCount, limits)
     setValidationError(accepted.error)
     const attachments = addRequestAttachmentDraftFiles(draftKey, accepted.files)

@@ -2,41 +2,32 @@ import type {
   CreateRequestAttachmentMediaGrantResponse,
   RequestAttachmentListResponse,
   RequestAttachmentLimitsResponse,
-  RequestAttachmentMediaTarget,
   RequestAttachmentResponse,
 } from '@/api/types.generated'
 import { repoResourceScope } from '@/features/repo-detail/repo-resource-scope'
 import { useCachedResource } from '@/lib/use-cached-resource'
 import { createContext, type ReactNode, use, useCallback, useEffect, useMemo } from 'react'
-import type { RepoLiveState } from '@/api/types'
+import type { RepoLiveState, RequestParams } from '@/api/types'
+import type { GrantAttachmentInput, RetryAttachmentInput } from './request-attachment-api'
 import {
   activateRequestAttachmentResourceScope,
   requestAttachmentResource,
   requestAttachmentResourceIdentity,
 } from './request-attachment-resource'
-import type {
-  AttachmentUploadActions,
-  AttachmentUploadParams,
-} from './request-attachment-upload'
+import type { AttachmentUploadActions } from './request-attachment-upload'
 import { activateRequestAttachmentDraftScope } from './request-attachment-drafts'
 
 export type RequestAttachmentActions = AttachmentUploadActions & {
-  grant: (input: AttachmentUploadParams & {
-    attachment_id: string
-    target: RequestAttachmentMediaTarget
-  }) => Promise<CreateRequestAttachmentMediaGrantResponse>
+  grant: (input: GrantAttachmentInput) => Promise<CreateRequestAttachmentMediaGrantResponse>
   list: (
-    input: AttachmentUploadParams,
+    input: RequestParams,
     signal?: AbortSignal,
   ) => Promise<RequestAttachmentListResponse>
   limits: (
-    input: AttachmentUploadParams,
+    input: RequestParams,
     signal?: AbortSignal,
   ) => Promise<RequestAttachmentLimitsResponse>
-  retry: (input: AttachmentUploadParams & {
-    attachment_id: string
-    operation_id: string
-  }) => Promise<RequestAttachmentResponse>
+  retry: (input: RetryAttachmentInput) => Promise<RequestAttachmentResponse>
 }
 
 type RequestAttachmentContextValue = {
@@ -47,7 +38,7 @@ type RequestAttachmentContextValue = {
   attachmentsLoading: boolean
   limits: RequestAttachmentLimitsResponse | null
   isMaintainer: boolean
-  params: AttachmentUploadParams
+  params: RequestParams
   repoId: string
   requestId: string
   viewerId: string

@@ -49,7 +49,7 @@ pub(super) fn run(
     let context = load_context(Some(repo), api, args.remote.as_deref())?;
     local::require_git_remote(&context)?;
     let id = local::attached_request_id(&branch, &context)?;
-    let request = get_request(api, &context.target.owner, &context.target.repo, &id)?.request;
+    let request = get_request(api, api_target(&context, &id))?.request;
     if !request.permissions.can_push_branch {
         return Err(crate::error::CliError::new(ErrorResponse::new(
             ErrorCode::Forbidden,
@@ -66,8 +66,7 @@ pub(super) fn run(
     require_rebase_ready(repo, &branch, stack::base_head(&request.base), &head)?;
     let selected = stack::select_base(repo, api, &context, &request, &selector, None)?;
     require_preserved_main(repo, &request, &selected.base)?;
-    let history =
-        crate::api::request_revisions(api, api_target(&context, &request.id), None, None, None)?;
+    let history = stack::current_revisions(api, &context, &request.id)?;
     let revision = history.review_revision_id;
     let backup_ref = format!(
         "refs/scope/restacks/{}/{}",

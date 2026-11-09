@@ -60,7 +60,7 @@ impl VerifiedProjections {
         let views = committed.repo_config.views();
         let incarnation = committed.incarnation();
         let labels = view_labels(views, &proposed.view_key);
-        let keys = projection_cache_keys(Some(&incarnation), &proposed, &labels)?;
+        let keys = projection_cache_keys(&incarnation, &proposed, &labels)?;
         let extends_latest = self
             .latest
             .get(&proposed.view_key)
@@ -137,7 +137,7 @@ fn build_proposed_projection(
     )?;
     let repo = projection_bare_repo_with_loader(
         verified_root,
-        Some(incarnation),
+        incarnation,
         labels,
         projection,
         Some(native_source_repo),

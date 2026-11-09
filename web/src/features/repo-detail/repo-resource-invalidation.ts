@@ -41,6 +41,7 @@ export function invalidateRepoResources(
   const repositoryChanged = event && typeof event.kind === 'object' && 'RepositoryChanged' in event.kind
   const recovery = !event || event.kind === 'Connected'
   const prefix = `${JSON.stringify([scope]).slice(0, -1)},`
+  const inScope = (identity: string) => identity.startsWith(`${scope}\0`)
   if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed) {
     invalidateRunHistoryScope(scope, recovery)
   }
@@ -52,29 +53,29 @@ export function invalidateRepoResources(
   if (!event || event.kind === 'Connected' || event.kind === 'Lagged' || typeof event.kind === 'object' && 'RepositoryChanged' in event.kind) {
     if (!summaryPending) invalidateRequestQueues(scope)
     repoSettingsResource.invalidate(scope)
-    requestChangesResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    requestDiscussionReferenceResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    historyFeedResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    historyEntryResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-    requestAttachmentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+    requestChangesResource.invalidateMatching(inScope)
+    requestDiscussionReferenceResource.invalidateMatching(inScope)
+    historyFeedResource.invalidateMatching(inScope)
+    historyEntryResource.invalidateMatching(inScope)
+    requestAttachmentResource.invalidateMatching(inScope)
     if (repositoryChanged || !versioned) {
-      repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-      repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
-      repositoryActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+      repoContentResource.invalidateMatching(inScope)
+      repoFileResource.invalidateMatching(inScope)
+      repositoryActivityResource.invalidateMatching(inScope)
       repositoryDependencyResource.invalidate(scope)
     }
     runWorkflowsResource.invalidate(scope)
-    requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+    requestActivityResource.invalidateMatching(inScope)
     refreshRequestState(scope)
     invalidateGitHubWorkflowRuns(scope)
     githubWorkflowNamesResource.invalidate(scope)
     invalidateGitHubWorkflowRunDetails(scope)
-    requestRatingsResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+    requestRatingsResource.invalidateMatching(inScope)
   } else if (typeof event.kind === 'object' && 'RequestStateChanged' in event.kind) {
     const requestId = event.kind.RequestStateChanged.request_id
     const version = `\0${repositoryVersionKey({ kind: 'request', id: requestId })}`
-    repoContentResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) && identity.endsWith(version))
-    repoFileResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) && identity.includes(`${version}\0`))
+    repoContentResource.invalidateMatching((identity) => inScope(identity) && identity.endsWith(version))
+    repoFileResource.invalidateMatching((identity) => inScope(identity) && identity.includes(`${version}\0`))
     refreshRequestState(scope, requestId)
     refreshRequestDiscussionReferences(scope, requestId)
     if (!summaryPending) invalidateRequestQueues(scope)
@@ -100,10 +101,10 @@ export function invalidateRepoResources(
   } else if (typeof event.kind === 'object' && 'RunChanged' in event.kind) {
     if (event.kind.RunChanged.change === 'StatusChanged') {
       invalidateRequestQueues(scope)
-      requestActivityResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`))
+      requestActivityResource.invalidateMatching(inScope)
     }
     const runId = event.kind.RunChanged.run_id
-    requestStateResource.invalidateMatching((identity) => identity.startsWith(`${scope}\0`) &&
+    requestStateResource.invalidateMatching((identity) => inScope(identity) &&
       (requestStateResource.getSnapshot(identity).pending ||
         Boolean(requestStateResource.peek(identity)?.state?.checks.checks.some((check) =>
           check.provider === 'native' && check.run_id === runId))))

@@ -1,5 +1,5 @@
 import type { RequestParams } from '@/api/types'
-import type { RequestSummaryResponse } from '@/api/types.generated'
+import type { RequestActorSummaryResponse, RequestSummaryResponse } from '@/api/types.generated'
 import { EmptyState } from '@/components/empty-state'
 import { mainScrollContainer } from '@/components/main-content'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,6 @@ import type { RequestDiscussionActions } from './request-discussion-store'
 import { useRequestDiscussionStore } from './request-discussion-store'
 import { RequestDiscussionThread } from './request-discussion-thread'
 import type {
-  RequestActorSummary,
   RequestDiscussion,
   RequestDiscussionPage,
 } from './request-discussion-types'
@@ -36,7 +35,7 @@ export function RequestDiscussionWorkbench({
   threadActions,
 }: {
   actions: RequestDiscussionActions
-  actor: RequestActorSummary
+  actor: RequestActorSummaryResponse
   canResolve: (discussion: RequestDiscussion) => boolean
   focusedDiscussionId?: string
   initialPage: RequestDiscussionPage

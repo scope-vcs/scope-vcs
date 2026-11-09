@@ -1,7 +1,7 @@
 use super::{MergeRequestCommand, RequestMergeFailure};
 use crate::{error::ApiError, state::AppState};
 use scope_domain::{
-    repository::access::{RepositoryAccess, RepositoryActor},
+    repository::access::RepositoryActor,
     requests::{
         MergeGateAuthority, MergeGateInput, Request, RequestViewer, evaluate_merge_gate,
         request_policy,
@@ -10,7 +10,6 @@ use scope_domain::{
 
 pub(super) struct CheckedMerge {
     pub(super) context: scope_domain::repository::access::RepositoryAccessContext,
-    pub(super) access: RepositoryAccess,
     pub(super) request: Request,
     is_invitee: bool,
 }
@@ -26,7 +25,7 @@ pub(super) async fn authorize_merge(
         Some(&command.actor_user_id),
     )
     .await?;
-    let access = context.access.clone();
+    let access = &context.access;
     let request = state
         .metadata
         .requests()
@@ -60,7 +59,6 @@ pub(super) async fn authorize_merge(
     }
     Ok(CheckedMerge {
         context,
-        access,
         request,
         is_invitee,
     })
@@ -73,13 +71,17 @@ pub(super) async fn ensure_checks_cleared(
 ) -> Result<(), RequestMergeFailure> {
     let CheckedMerge {
         context,
-        access,
         request,
         is_invitee,
     } = checked;
-    let viewer = RequestViewer::new(access.clone(), Some(&command.actor_user_id), *is_invitee);
-    let checks =
-        crate::use_cases::request_checks::checks_outcome(state, &context.record, request).await?;
+    let viewer = RequestViewer::new(
+        context.access.clone(),
+        Some(&command.actor_user_id),
+        *is_invitee,
+    );
+    let checks = crate::use_cases::request_checks::checks_view(state, &context.record, request)
+        .await?
+        .outcome;
     let decision = evaluate_merge_gate(MergeGateInput::RequestMerge {
         repository_lifecycle: context.record.lifecycle_state,
         subject: request.into(),

@@ -33,9 +33,6 @@ on:
       release:
         type: boolean
         default: false
-    outputs:
-      media_worker_image:
-        value: ${{ jobs.server-validation.outputs.media_worker_image }}
 
 permissions:
   contents: read
@@ -76,8 +73,7 @@ jobs:
       validate_targets: >-
         ${{ (inputs.release) ||
         (inputs.cli_distribution == 'true' &&
-        (github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/scope/')) ||
+        ((github.event_name == 'push' && startsWith(github.ref, 'refs/heads/scope/')) ||
         (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
         github.actor != 'dependabot[bot]'))) }}

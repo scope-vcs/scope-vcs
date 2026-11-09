@@ -1,5 +1,4 @@
 use super::{
-    mapping::encode_content_ref,
     queue::{queue_pending_repo_storage_cleanup_row, queue_pending_source_blob_deletion_rows},
     types::{
         LoadedRepoStorageCleanup, LoadedSourceBlobCleanup, RepoStorageCleanupBatch,
@@ -7,7 +6,9 @@ use super::{
     },
 };
 use crate::{
-    db::{CleanupStore, entities, integer_columns::u64_to_i64},
+    db::{
+        CleanupStore, entities, integer_columns::u64_to_i64, object_references::encode_content_ref,
+    },
     error::PostgresError,
 };
 use scope_domain::{

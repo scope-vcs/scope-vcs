@@ -14,7 +14,7 @@ export type TopbarItem = {
 type TopbarFact = {
   id: string
   label: ReactNode
-  semantic?: 'danger' | 'info' | 'success' | 'warning'
+  semantic?: 'warning'
 }
 
 const EMPTY_ITEMS: TopbarItem[] = []

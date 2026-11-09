@@ -33,6 +33,7 @@ impl GitSegmentStore {
         self.verified_cache.evict_to(target_bytes)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn delete_remote(&self, object_key: &str) -> Result<(), GitStorageError> {
         self.backend.delete(object_key).await.map_err(Into::into)
     }

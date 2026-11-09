@@ -30,10 +30,8 @@ activate collection.
 | Server logs: request method, path, timing, errors; Railway HTTP logs also record client IP addresses | Railway logs | Railway log retention | Railway |
 | Application logs and request traces: service log lines, which can include repository names, file paths and error details; spans with internal IDs, routes and timing | PostHog US project, sent by each service over OpenTelemetry | PostHog log and trace retention, 14 days by default | PostHog |
 
-The analytics collection contract, including excluded fields, is in
-[docs/product-analytics.md](../docs/product-analytics.md). Planned location
-analytics measures where visitors use Scope at country, region and city level
-to guide product improvements. It uses IP-based estimates, not browser GPS or
+Planned location analytics measures where visitors use Scope at country, region
+and city level to guide product improvements. It uses IP-based estimates, not browser GPS or
 device location access. Backend events keep GeoIP enrichment disabled.
 Railway's operational HTTP logs continue to include client IP addresses under
 Railway's retention policy. Until location analytics is activated, the web
@@ -43,8 +41,6 @@ Analytics identifiers are pseudonymous. Signed-out events use a fresh random ID
 held in page memory. Signed-in events use the internal Scope user ID, and events
 captured before sign-in within the same page can be linked to it. Approximate
 location will follow the same association and retention as those events.
-
-What services export as logs and traces is in [docs/observability.md](../docs/observability.md).
 
 ## Browser storage
 

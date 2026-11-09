@@ -606,7 +606,7 @@ fn history_folded_in_steps_matches_history_folded_at_once() {
                 .iter()
                 .any(|entry| entry.kind == HistoryEntryKind::ViewsChange)
         );
-        let mut history = HistoryCursor::start("owner/repo", &current, &view_key);
+        let mut history = HistoryCursor::start("owner/repo", &view_key);
         let mut tree = BTreeMap::new();
         prefix.apply_to(&mut tree);
         let mut entries = history_entries_after(

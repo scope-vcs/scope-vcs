@@ -44,6 +44,15 @@ pub struct RequestStateSnapshot {
 }
 
 impl RequestStateSnapshot {
+    pub fn checks_outcome(&self) -> scope_domain::requests::RequestChecksOutcome {
+        scope_domain::requests::request_checks_outcome(
+            &self.request.id,
+            &self.request.head_oid,
+            self.evaluation.as_ref(),
+            &self.results,
+        )
+    }
+
     pub fn reviews_outcome(&self) -> scope_domain::requests::RequestReviewsOutcome {
         scope_domain::requests::request_reviews_outcome(
             &self.request.view,

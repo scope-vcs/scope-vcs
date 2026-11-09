@@ -1,7 +1,13 @@
 import { createApiClient } from '@/api/client'
 import { requestRoute } from '@/api/paths'
 import type { RequestParams } from '@/api/types'
-import { ApiRouteTemplates, buildApiPath } from '@/api/types.generated'
+import {
+  ApiRouteTemplates,
+  buildApiPath,
+  type CreateRequestDiscussionReplyRequest,
+  type CreateRequestDiscussionRequest,
+  type RequestDiscussionRepliesPageResponse,
+} from '@/api/types.generated'
 import {
   RequestActivityPageResponseValidator,
   RequestDiscussionChangesResponseValidator,
@@ -12,11 +18,6 @@ import {
   RequestDiscussionReplyMutationResponseValidator,
   RequestMutationResponseValidator,
 } from '@/api/validators.generated'
-import type {
-  CreateRequestDiscussionInput,
-  CreateRequestDiscussionReplyInput,
-  RequestDiscussionReply,
-} from './request-discussion-types'
 
 export type LoadDiscussionsInput = RequestParams & {
   commit_oid?: string
@@ -38,8 +39,8 @@ export type RequestDiscussionActionInput = RequestParams & {
   discussion_id: string
 }
 
-export type CreateDiscussionInput = RequestParams & CreateRequestDiscussionInput
-export type CreateReplyInput = RequestDiscussionActionInput & CreateRequestDiscussionReplyInput
+export type CreateDiscussionInput = RequestParams & CreateRequestDiscussionRequest
+export type CreateReplyInput = RequestDiscussionActionInput & CreateRequestDiscussionReplyRequest
 export type MarkDiscussionReadInput = RequestDiscussionActionInput & {
   through_position: number
 }
@@ -50,10 +51,7 @@ export type UpdateDescriptionInput = RequestParams & {
 
 export const REQUEST_ACTIVITY_PAGE_SIZE = 50
 
-export type RequestDiscussionRepliesPage = {
-  next_before_position: number | null
-  replies: RequestDiscussionReply[]
-}
+export type RequestDiscussionRepliesPage = RequestDiscussionRepliesPageResponse
 
 export async function loadRequestDiscussionsForRequest(
   data: LoadDiscussionsInput,

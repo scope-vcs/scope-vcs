@@ -30,7 +30,7 @@ pub(super) fn required(label: &str, value: String) -> Result<String, DomainError
     }
 }
 
-pub(super) fn is_kebab_name(name: &str, max_bytes: usize) -> bool {
+pub(crate) fn is_kebab_name(name: &str, max_bytes: usize) -> bool {
     !name.is_empty()
         && name.len() <= max_bytes
         && !name.starts_with('-')

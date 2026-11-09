@@ -10,7 +10,7 @@ use axum::{
 use distribution::{DistributionManifest, Download};
 use installers::{posix_install_script, windows_install_script};
 use scope_product_analytics::{EventSource, ProductAnalytics, ProductEvent};
-use scope_service_runtime::{init_telemetry, shutdown_signal};
+use scope_service_runtime::{init_telemetry, port_from_env, shutdown_signal};
 use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 
 mod distribution;
@@ -36,10 +36,7 @@ fn main() -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn run() -> anyhow::Result<()> {
-    let port = env::var("PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(8080);
+    let port = port_from_env(8080);
     let state = AppState {
         artifact_dir: Arc::new(
             env::var("SCOPE_CLI_ARTIFACT_DIR")

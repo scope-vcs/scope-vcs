@@ -81,15 +81,6 @@ impl RequestStore {
             .collect()
     }
 
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requests_with_invitee_status"))]
-    pub async fn requests_with_invitee_status(
-        &self,
-        repository_id: &str,
-        viewer_user_id: Option<&str>,
-    ) -> Result<Vec<(scope_domain::requests::Request, bool)>, PostgresError> {
-        requests_with_invitee_status(self.db.as_ref(), repository_id, viewer_user_id).await
-    }
-
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "request_invitees"))]
     pub async fn request_invitees(
         &self,
@@ -224,39 +215,6 @@ fn ensure_exact_visibility(visible: bool) -> Result<(), PostgresError> {
     } else {
         Err(PostgresError::not_found("request not found"))
     }
-}
-
-async fn requests_with_invitee_status<C: ConnectionTrait>(
-    conn: &C,
-    repository_id: &str,
-    viewer_user_id: Option<&str>,
-) -> Result<Vec<(scope_domain::requests::Request, bool)>, PostgresError> {
-    let requests = super::request_rows::requests_by_repo_id(conn, repository_id).await?;
-    let invitees = match viewer_user_id {
-        Some(user_id) => conn
-            .query_all_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT i.request_id FROM scope_request_invitees i
-                 JOIN scope_requests r ON r.id = i.request_id
-                 WHERE r.repo_id = $1 AND i.user_id = $2",
-                [repository_id.into(), user_id.into()],
-            ))
-            .await?
-            .into_iter()
-            .map(|row| {
-                row.try_get::<String>("", "request_id")
-                    .map_err(PostgresError::internal)
-            })
-            .collect::<Result<BTreeSet<_>, _>>()?,
-        None => BTreeSet::new(),
-    };
-    Ok(requests
-        .into_iter()
-        .map(|request| {
-            let is_invitee = invitees.contains(&request.id);
-            (request, is_invitee)
-        })
-        .collect())
 }
 
 pub(super) async fn request_invitee_map<C>(

@@ -3,10 +3,7 @@ mod lifecycle;
 mod runner;
 mod stdio;
 
-pub use lifecycle::{
-    ProcessSnapshot, configure_process_group, current_process_snapshot,
-    install_pid1_reaper_if_needed, kill_process_group,
-};
+pub use lifecycle::{configure_process_group, install_pid1_reaper_if_needed, kill_process_group};
 pub use runner::{
     ProcessCancellation, ProcessError, ProcessLimits, StreamedOutput, StreamingProcessError, run,
     run_cancellable, run_with_stdin_reader, run_with_stdout,

@@ -2,6 +2,7 @@ use crate::{
     error::CliError,
     git_repo::{GitRepo, GitSnapshot, scope_api_url_from_git_config},
     git_transport::{DEFAULT_SCOPE_REMOTE, ScopeRemote, scope_path_origin},
+    request::REQUEST_REMOTE_KEY,
 };
 use anyhow::Context;
 use std::{env, path::PathBuf, process::Command};
@@ -181,7 +182,7 @@ fn resolve(
     if selected.is_none()
         && let Some(branch) = checkout.branch()
     {
-        if let Some(remote) = checkout.branch_config_value(branch, "scopeRequestRemote") {
+        if let Some(remote) = checkout.branch_config_value(branch, REQUEST_REMOTE_KEY) {
             return load(remote, push);
         }
         if let Some(remote) = checkout.branch_config_value(branch, "remote")

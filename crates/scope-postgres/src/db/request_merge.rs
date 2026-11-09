@@ -13,10 +13,7 @@ use super::{
     request_revision_rows::latest_revision_for_request,
     request_rows::request_by_id,
 };
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
-    TransactionTrait,
-};
+use sea_orm::{ConnectionTrait, DatabaseTransaction, EntityTrait, QuerySelect, TransactionTrait};
 use {
     crate::error::PostgresError,
     scope_domain::{
@@ -210,14 +207,7 @@ async fn merge_one_request(
             .ok_or_else(|| PostgresError::conflict("auto-merge claim is no longer current"))?;
         Some(StoredIntent::from_model(row)?)
     } else {
-        entities::request_auto_merge_intent::Entity::find()
-            .filter(entities::request_auto_merge_intent::Column::RequestId.eq(&request.id))
-            .filter(entities::request_auto_merge_intent::Column::Status.eq("Active"))
-            .lock_exclusive()
-            .one(tx)
-            .await?
-            .map(StoredIntent::from_model)
-            .transpose()?
+        lock_active_intent_for_request(tx, &request.id).await?
     };
     let latest_revision = latest_revision_for_request(tx, &request.id).await?;
     let authorized_revision_is_current = locked_auto_merge.as_ref().is_none_or(|locked| {

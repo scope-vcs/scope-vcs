@@ -216,7 +216,6 @@ impl ProcessTree {
 
     fn terminate(&self, child: &Child) {
         if let Ok(process_group) = i32::try_from(child.id()) {
-            // SAFETY: the child was spawned as the leader of this process group.
             unsafe {
                 libc::kill(-process_group, libc::SIGKILL);
             }

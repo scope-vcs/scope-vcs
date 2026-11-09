@@ -205,6 +205,7 @@ pub mod repo_storage_cleanup_job {
 }
 pub mod source_blob_cleanup_job {
     use super::*;
+    use crate::db::object_references::{decode_content_ref, encode_content_ref};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_orphan_object_jobs")]
@@ -237,8 +238,7 @@ pub mod source_blob_cleanup_job {
         ) -> Result<Self, PostgresError> {
             let now_unix = u64_to_i64(now_unix, "cleanup creation time")?;
             Ok(Self {
-                object_key: serde_json::to_string(&blob.content_ref)
-                    .map_err(PostgresError::internal)?,
+                object_key: encode_content_ref(&blob.content_ref)?,
                 generation,
                 sha256: blob.sha256.clone(),
                 git_oid: blob.git_oid.clone(),
@@ -255,8 +255,7 @@ pub mod source_blob_cleanup_job {
 
         pub fn try_into_domain(self) -> Result<SourceBlob, PostgresError> {
             Ok(SourceBlob {
-                content_ref: serde_json::from_str(&self.object_key)
-                    .map_err(PostgresError::internal)?,
+                content_ref: decode_content_ref(&self.object_key)?,
                 sha256: self.sha256,
                 git_oid: self.git_oid,
                 git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),

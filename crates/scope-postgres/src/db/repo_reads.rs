@@ -1,5 +1,6 @@
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities,
+    integer_columns::i64_to_u64,
     landing_files::repository_landing_file,
     projection_read_models::{
         ProjectionFileLookup, load_live_projection_file_for_view,
@@ -193,14 +194,10 @@ async fn repo_summary_tx<C>(
 where
     C: ConnectionTrait,
 {
-    let Some(row) = repo_read_row_by_owner_name(conn, owner, name).await? else {
+    let Some((row, access)) = readable_repo_row(conn, owner, name, viewer_user_id).await? else {
         return Ok(None);
     };
-    let permissions = member_permissions_for_viewer(conn, &row, viewer_user_id).await?;
-    let access = access_for_row(&row, viewer_user_id, permissions)?;
-    let Some(mut summary) = summary_for_viewer_row(conn, row, access).await? else {
-        return Ok(None);
-    };
+    let mut summary = summary_from_row(row, access)?;
     load_open_request_counts(conn, std::slice::from_mut(&mut summary)).await?;
     Ok(Some(summary))
 }
@@ -215,14 +212,9 @@ async fn repo_live_files_tx<C>(
 where
     C: ConnectionTrait,
 {
-    let Some(row) = repo_read_row_by_owner_name(conn, owner, name).await? else {
+    let Some((row, access)) = readable_repo_row(conn, owner, name, viewer_user_id).await? else {
         return Ok(None);
     };
-    let permissions = member_permissions_for_viewer(conn, &row, viewer_user_id).await?;
-    let access = access_for_row(&row, viewer_user_id, permissions)?;
-    if !viewer_can_read(conn, &row, &access).await? {
-        return Ok(None);
-    }
 
     let view = readable_view(&access, &row.views()?, requested_view)?;
     if let Some(files) =
@@ -250,14 +242,9 @@ async fn repo_live_file_with_landing_content_tx<C>(
 where
     C: ConnectionTrait,
 {
-    let Some(row) = repo_read_row_by_owner_name(conn, owner, name).await? else {
+    let Some((row, access)) = readable_repo_row(conn, owner, name, viewer_user_id).await? else {
         return Ok(None);
     };
-    let permissions = member_permissions_for_viewer(conn, &row, viewer_user_id).await?;
-    let access = access_for_row(&row, viewer_user_id, permissions)?;
-    if !viewer_can_read(conn, &row, &access).await? {
-        return Ok(None);
-    }
     let view = readable_view(&access, &row.views()?, requested_view)?;
     let lookup =
         load_live_projection_file_for_view(conn, &row.id, row.content_version()?, view, path)
@@ -418,6 +405,26 @@ where
     repository_from_model(conn, row).await
 }
 
+async fn readable_repo_row<C>(
+    conn: &C,
+    owner: &str,
+    name: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<Option<(RepoReadRow, RepositoryAccess)>, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let Some(row) = repo_read_row_by_owner_name(conn, owner, name).await? else {
+        return Ok(None);
+    };
+    let permissions = member_permissions_for_viewer(conn, &row, viewer_user_id).await?;
+    let access = access_for_row(&row, viewer_user_id, permissions)?;
+    if !viewer_can_read(conn, &row, &access).await? {
+        return Ok(None);
+    }
+    Ok(Some((row, access)))
+}
+
 async fn summary_for_viewer_row<C>(
     conn: &C,
     row: RepoReadRow,
@@ -531,15 +538,11 @@ impl RepoReadRow {
     }
 
     fn change_version(&self) -> Result<u64, PostgresError> {
-        u64::try_from(self.change_version).map_err(|_| {
-            PostgresError::internal_message("repository change version cannot be negative")
-        })
+        i64_to_u64(self.change_version, "repository change version")
     }
 
     fn content_version(&self) -> Result<u64, PostgresError> {
-        u64::try_from(self.content_version).map_err(|_| {
-            PostgresError::internal_message("repository content version cannot be negative")
-        })
+        i64_to_u64(self.content_version, "repository content version")
     }
 }
 

@@ -69,7 +69,6 @@ jobs:
       resume_staging: ${{ steps.release.outputs.resume_staging }}
       rollback: ${{ steps.release.outputs.rollback }}
       rollback_of: ${{ steps.release.outputs.rollback_of }}
-      deployed_revisions: ${{ steps.progress.outputs.revisions }}
       deployed_components: ${{ steps.progress.outputs.deployments }}
       runner_image: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['runner-image'] || false) || steps.plan.outputs.runner_image }}
       backend_selected: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components).backend || false) || steps.plan.outputs.backend_selected }}
@@ -144,7 +143,6 @@ jobs:
 
       - name: Read successful production revisions
         id: progress
-        if: github.ref == 'refs/heads/main'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/production-deployment-progress.mjs read
@@ -154,14 +152,12 @@ jobs:
         id: plan
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ steps.release.outputs.sha }}
-          REQUESTED_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'changed' }}
+          REQUESTED_SCOPE: ${{ inputs.scope }}
           DEPLOYED_REVISIONS: ${{ steps.progress.outputs.revisions }}
         run: >-
           node .github/scripts/plan-production-deployment.mjs
           --manifest .github/deployment-services.json
-          --base "$BASE_SHA"
           --head "$HEAD_SHA"
           --scope "$REQUESTED_SCOPE"
           --deployed-revisions "$DEPLOYED_REVISIONS"
@@ -291,7 +287,6 @@ jobs:
       prepare_router: >-
         ${{ needs.plan.outputs.backend_selected == 'true' }}
       prepare_web: ${{ needs.plan.outputs.web == 'true' }}
-      recover_cutover_id: ${{ needs.plan.outputs.recover_cutover_id || '' }}
       prepared_run_id: ${{ needs.plan.outputs.prepared_run_id }}
       media_worker_image: ${{ needs.server-validation.outputs.media_worker_image || '' }}
     secrets: inherit

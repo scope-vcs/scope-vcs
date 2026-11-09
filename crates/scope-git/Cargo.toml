@@ -5,12 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[features]
-default = ["storage"]
-storage = ["dep:scope_storage"]
-
 [dependencies]
 hex.workspace = true
 scope_domain.workspace = true
-scope_storage = { workspace = true, optional = true }
 thiserror.workspace = true

@@ -9,12 +9,6 @@ use crate::{
 use scope_domain::repository::RepositoryIncarnation;
 use scope_postgres::db::{MetadataStore, NativeRunsAccountListing, NativeRunsWithdrawal};
 
-pub(crate) async fn list_accounts(
-    metadata: &MetadataStore,
-) -> Result<Vec<NativeRunsAccountListing>, ApiError> {
-    Ok(metadata.native_runs().accounts().await?)
-}
-
 pub(crate) async fn add_account(
     metadata: &MetadataStore,
     bus: &RepoChangeBus,

@@ -100,15 +100,6 @@ pub(crate) struct PoolInstall<'a> {
 }
 
 impl PoolInstall<'_> {
-    pub(super) async fn copy_full_scope_packs(
-        &self,
-        state: &AppState,
-        requests: &[Request],
-        heads: &[String],
-    ) -> Result<usize, ApiError> {
-        full_scope::copy_full_scope_packs(state, self, requests, heads).await
-    }
-
     pub(crate) async fn lease_view_base(
         &self,
         state: &AppState,

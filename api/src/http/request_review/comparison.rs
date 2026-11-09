@@ -115,13 +115,10 @@ pub(crate) async fn get_request_revision_file_diff(
     Query(input): Query<RequestComparisonFileDiffRequest>,
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
     let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
-    let access = repo.context.access.clone();
     let mode = selected_mode(input.comparison, false)?;
     let (request, _) = visible_request(
         &state,
-        &repo.context.record.id,
-        &repo.context.views,
-        access.clone(),
+        &repo.context,
         viewer_user_id.as_deref(),
         &request_id,
     )

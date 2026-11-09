@@ -153,12 +153,7 @@ async fn reconcile_claim(
             subject: (&request).into(),
             viewer: &viewer,
             views: &context.views,
-            checks: scope_domain::requests::request_checks_outcome(
-                &request.id,
-                &request.head_oid,
-                checks.evaluation.as_ref(),
-                &checks.results,
-            ),
+            checks: checks.outcome,
             reviews: state
                 .metadata
                 .requests()

@@ -1,8 +1,5 @@
 use super::*;
 use crate::api::ApiSession;
-use anyhow::Context;
-use reqwest::blocking::RequestBuilder;
-use serde::de::DeserializeOwned;
 
 #[derive(Clone, Copy)]
 pub struct RequestTarget<'a> {
@@ -117,15 +114,8 @@ pub fn apply_request_attention(
 
 pub fn get_request(
     api: ApiSession<'_>,
-    owner: &str,
-    repo: &str,
-    request_id: &str,
+    target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestDetailResponse> {
-    let target = RequestTarget {
-        owner,
-        repo,
-        request_id,
-    };
     execute(
         api.request(reqwest::Method::GET, request_path(target)),
         format!(
@@ -239,15 +229,8 @@ pub fn approve_request_checks(
 
 pub fn close_request(
     api: ApiSession<'_>,
-    owner: &str,
-    repo: &str,
-    request_id: &str,
+    target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestCloseResponse> {
-    let target = RequestTarget {
-        owner,
-        repo,
-        request_id,
-    };
     execute(
         api.request(reqwest::Method::DELETE, request_path(target)),
         format!(
@@ -596,14 +579,6 @@ fn request_discussion_action_path(
         discussion_id,
         action,
     )
-}
-
-pub(super) fn execute<R: DeserializeOwned>(
-    request: RequestBuilder,
-    context: String,
-) -> anyhow::Result<R> {
-    let response = request.send().with_context(|| context.clone())?;
-    decode_json_response(response, &context)
 }
 
 #[cfg(test)]

@@ -90,17 +90,14 @@ pub(crate) async fn merge_request_inner(
         .await?;
     ensure_checks_cleared(state, command, &checked).await?;
     let CheckedMerge {
-        context,
-        access,
-        request,
-        ..
+        context, request, ..
     } = checked;
     let analytics_event = ProductEvent::request_merged(
         &command.actor_user_id,
         &context.record.incarnation_id,
         &request.id,
         request.view.clone(),
-        request_actor_role(access.clone()),
+        request_actor_role(context.access.clone()),
     );
     let merged_event_id = crate::persistence_ids::generate_prefixed_id("event_request_merged")
         .map_err(RequestMergeFailure::Other)?;
@@ -142,12 +139,8 @@ pub(crate) async fn merge_request_inner(
     })
 }
 
-fn retries_preparation(
-    failure: &RequestMergeFailure,
-    repository_moved: bool,
-    attempt: usize,
-) -> bool {
-    failure.is_conflict() && repository_moved && attempt < MERGE_ATTEMPTS
+fn retries_preparation(failure: &RequestMergeFailure, attempt: usize) -> bool {
+    failure.is_conflict() && attempt < MERGE_ATTEMPTS
 }
 
 #[cfg(test)]

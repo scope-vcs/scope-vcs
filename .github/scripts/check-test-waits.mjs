@@ -1,10 +1,6 @@
-import { execFile } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-
-const execFileAsync = promisify(execFile)
+import { repositorySources } from './repository-files.mjs'
 
 export const maxFixedWaitMs = 5_000
 
@@ -145,27 +141,10 @@ export function findLongWaits(file, contents) {
     .map(({ line, waitMs, text }) => ({ file, line, waitMs, text }))
 }
 
-async function repositoryFiles(root) {
-  const { stdout } = await execFileAsync(
-    'git',
-    ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-    { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
-  )
-  return stdout.split('\0').filter(Boolean)
-}
-
 async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
   const waits = []
-  for (const file of await repositoryFiles(root)) {
-    if (!testLanguage(file)) continue
-    let contents
-    try {
-      contents = await readFile(path.join(root, file), 'utf8')
-    } catch (error) {
-      if (error.code === 'ENOENT' || error.code === 'EISDIR') continue
-      throw error
-    }
+  for await (const { file, contents } of repositorySources(root, testLanguage)) {
     waits.push(...findLongWaits(file, contents))
   }
   if (waits.length > 0) {

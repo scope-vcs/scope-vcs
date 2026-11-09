@@ -12,7 +12,6 @@ pub(super) fn database_url() -> anyhow::Result<String> {
     SERVER
         .get_or_init(|| {
             let server = ProcessServer::start()?;
-            // SAFETY: the callback has C linkage, no arguments, and remains valid until process exit.
             let registered = unsafe { libc::atexit(stop_server_at_exit) };
             if registered != 0 {
                 bail!("registering PostgreSQL test server shutdown failed with {registered}");

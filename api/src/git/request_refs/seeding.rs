@@ -51,11 +51,10 @@ impl DeferredRequestObjects {
         .await?;
         provide_request_objects(
             state,
-            PoolInstall {
-                incarnation: &self.incarnation,
-                config: &self.config,
-                repos: PoolRepos::Full(&repos, &self.actor_user_id, staging_repo),
-            },
+            &self.incarnation,
+            &self.config,
+            &repos,
+            &self.actor_user_id,
             &self.requests,
             staging_repo,
         )
@@ -76,11 +75,10 @@ pub(crate) async fn attach_request_refs_from_pool(
 
     let leases = provide_request_objects(
         state,
-        PoolInstall {
-            incarnation,
-            config,
-            repos: PoolRepos::Full(&repos, actor_user_id, staging_repo),
-        },
+        incarnation,
+        config,
+        &repos,
+        actor_user_id,
         &refs_for,
         staging_repo,
     )
@@ -203,22 +201,25 @@ async fn object_repos(
 
 async fn provide_request_objects(
     state: &AppState,
-    install: PoolInstall<'_>,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    repos: &RequestObjectRepos,
+    actor_user_id: &str,
     requests: &[Request],
     staging_repo: &FsPath,
 ) -> Result<Vec<GitRepoHandle>, ApiError> {
-    let PoolRepos::Full(repos, _, _) = install.repos else {
-        return Err(ApiError::internal_message(
-            "full request seeding requires full shelves",
-        ));
-    };
     let missing = missing_request_heads(staging_repo, requests.to_vec()).await?;
     if missing.is_empty() {
         return Ok(Vec::new());
     }
+    let install = PoolInstall {
+        incarnation,
+        config,
+        repos: PoolRepos::Full(repos, actor_user_id, staging_repo),
+    };
     let leases = install_request_pool_packs(state, &install, &missing).await;
     consolidate_pool_repos(
-        install.incarnation.repository_id(),
+        incarnation.repository_id(),
         vec![repos.shared.clone(), repos.authored.clone()],
     )
     .await;

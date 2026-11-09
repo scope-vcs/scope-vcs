@@ -84,12 +84,7 @@ pub(crate) fn detail_response(
     viewer: RequestViewer<'_>,
     diff_stat: Option<DiffStat>,
 ) -> Result<RequestDetailResponse, ApiError> {
-    let checks = scope_domain::requests::request_checks_outcome(
-        &snapshot.request.id,
-        &snapshot.request.head_oid,
-        snapshot.evaluation.as_ref(),
-        &snapshot.results,
-    );
+    let checks = snapshot.checks_outcome();
     Ok(RequestDetailResponse {
         diff_stat: diff_stat.map(super::responses::diff_stat_response),
         stack_navigation: scope_api_contract::RequestStackNavigationResponse {

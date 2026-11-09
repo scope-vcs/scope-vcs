@@ -149,7 +149,7 @@ const alwaysOnGateInputs = [
   /^deploy\/railway\/(maintenance\.Dockerfile|test-runtime-containers\.sh)$/,
   /^deploy\/railway\/(ssh-bin\/ssh|ssh_known_hosts)$/,
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
-  /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.sh)$/,
+  /^dev\/checks\/(ops|policy)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.sh)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
   /^\.github\/workflows\/(audit-railway-experiments|main-advisories|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment|provision-staging-baseline)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
@@ -204,7 +204,7 @@ test('policy rejects oversized non-web source in a complete checkout', () => {
   try {
     mkdirSync(resolve(dir, '.github/scripts'), { recursive: true });
     mkdirSync(resolve(dir, 'worker/src'), { recursive: true });
-    cpSync(resolve(root, '.github/scripts/check-source-size.mjs'), resolve(dir, '.github/scripts/check-source-size.mjs'));
+    for (const script of ['check-source-size.mjs', 'repository-files.mjs']) cpSync(resolve(root, '.github/scripts', script), resolve(dir, '.github/scripts', script));
     writeFileSync(resolve(dir, '.github/source-size-audit.json'), JSON.stringify({ version: 1, production: [] }));
     writeFileSync(resolve(dir, 'worker/src/oversized.rs'), '// outside web\n'.repeat(1001));
     execFileSync('git', ['init', '--quiet', dir]);
@@ -222,7 +222,7 @@ test('the CLI checks avoid release builds and publication downloads the service 
   assert.match(upload, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
   assert.match(upload, /path: artifacts\/scope-cli-service\.tar\.gz/);
   const publish = read('.github/workflows/publish-cli.yml');
-  assert.match(publish, /name: cli-service-release-\$\{\{ inputs\.source_sha \|\| github\.sha \}\}/);
+  assert.match(publish, /name: cli-service-release-\$\{\{ github\.sha \}\}/);
   assert.match(publish, /--file artifacts\/scope-cli-service\.tar\.gz[\s\\]+--directory \.railway-cli\/bin/);
 });
 

@@ -22,7 +22,7 @@ fn view_request_range_is_oldest_first_with_exact_git_facts() {
     repo.commit_all("second request commit");
     let second = repo.oid("HEAD");
 
-    let commits = commits_after(&repo, VIEW_REQUEST_BASE_REF, &second).unwrap();
+    let commits = commits_after(&repo, &second).unwrap();
     assert_eq!(commits, [first.clone(), second.clone()]);
 
     let first_path = ScopePath::parse("/agent.txt").unwrap();
@@ -177,7 +177,7 @@ fn merge_path_validation_ignores_rules_inherited_from_current_view_main() {
     .unwrap();
     let merge_oid = repo.oid("HEAD");
 
-    let paths = request_changed_paths(&repo, &merge_oid).unwrap();
+    let paths = request_changed_paths(&repo, &current_view_head, &merge_oid).unwrap();
 
     assert_eq!(paths, ["request.txt"]);
 
@@ -197,7 +197,7 @@ fn merge_path_validation_ignores_rules_inherited_from_current_view_main() {
     let amended_merge_oid = repo.oid("HEAD");
 
     assert_eq!(
-        request_changed_paths(&repo, &amended_merge_oid).unwrap(),
+        request_changed_paths(&repo, &current_view_head, &amended_merge_oid).unwrap(),
         [".scope/RULES.md", "request.txt"]
     );
 }

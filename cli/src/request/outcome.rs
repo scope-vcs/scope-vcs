@@ -97,7 +97,7 @@ pub(super) struct DiscussionResult {
     pub(super) repo: RepoSummaryResponse,
     pub(super) request_id: String,
     pub(super) discussion: RequestDiscussionSummaryResponse,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
 }
 
@@ -107,7 +107,7 @@ pub(super) struct DiscussionReplyResult {
     pub(super) request_id: String,
     pub(super) discussion: RequestDiscussionSummaryResponse,
     pub(super) reply: RequestDiscussionReplyResponse,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
 }
 
@@ -115,7 +115,7 @@ pub(super) struct DiscussionReplyResult {
 pub(super) struct MutationResult {
     pub(super) repo: RepoSummaryResponse,
     pub(super) response: RequestMutationResponse,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) attachments: Vec<scope_api_contract::attachments::RequestAttachmentResponse>,
 }
 

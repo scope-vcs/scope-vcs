@@ -90,7 +90,7 @@ scope_cache_domain = { package = "scope-cache-domain", path = "crates/scope-cach
 scope_content_lifecycle = { package = "scope-content-lifecycle", path = "crates/scope-content-lifecycle" }
 scope_dependency_analyzer = { package = "scope-dependency-analyzer", path = "crates/scope-dependency-analyzer" }
 scope_domain = { package = "scope-domain", path = "crates/scope-domain" }
-scope_git = { package = "scope-git", path = "crates/scope-git", default-features = false }
+scope_git = { package = "scope-git", path = "crates/scope-git" }
 scope_git_process = { package = "scope-git-process", path = "crates/scope-git-process" }
 scope_storage = { package = "scope-storage", path = "crates/scope-storage" }
 scope_product_analytics = { package = "scope-product-analytics", path = "crates/scope-product-analytics" }

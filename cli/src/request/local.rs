@@ -13,11 +13,11 @@ use crate::{
     repository_views::repository_views,
 };
 use anyhow::{Context, bail};
-use scope_api_contract::{ErrorCode, ErrorResponse, ViewId};
+use scope_api_contract::ViewId;
 use scope_domain::views::Views;
 
-const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
-const REQUEST_ID_KEY: &str = "scopeRequestId";
+pub(crate) const REQUEST_REMOTE_KEY: &str = "scopeRequestRemote";
+pub(crate) const REQUEST_ID_KEY: &str = "scopeRequestId";
 const REQUEST_NAME_KEY: &str = "scopeRequestName";
 const REQUEST_OWNER_KEY: &str = "scopeRequestOwner";
 const REQUEST_REPO_KEY: &str = "scopeRequestRepo";
@@ -126,11 +126,7 @@ pub(super) fn push_request_head(
 
 pub(super) fn request_push_error(error: anyhow::Error, request_id: &str) -> anyhow::Error {
     if error.is::<StaleRefLease>() {
-        CliError::new(ErrorResponse::new(
-            ErrorCode::Conflict,
-            STALE_REQUEST_PUSH_ERROR,
-        ))
-        .into()
+        CliError::conflict(STALE_REQUEST_PUSH_ERROR).into()
     } else {
         error.context(format!("push request branch for {request_id}"))
     }
@@ -150,11 +146,7 @@ pub(super) fn last_seen_request_head(
     {
         return Ok(lease);
     }
-    Err(CliError::new(ErrorResponse::new(
-        ErrorCode::Conflict,
-        STALE_REQUEST_PUSH_ERROR,
-    ))
-    .into())
+    Err(CliError::conflict(STALE_REQUEST_PUSH_ERROR).into())
 }
 
 fn branch_reflog_includes(git_repo: &GitRepo, branch: &str, oid: &str) -> anyhow::Result<bool> {

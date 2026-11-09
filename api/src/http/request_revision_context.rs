@@ -31,20 +31,7 @@ pub(crate) async fn publish(
     Json(input): Json<RequestRevisionContextRequest>,
 ) -> Result<Json<RequestRevisionContextResponse>, ApiError> {
     let actor = require_scope_user(&state, &headers).await?;
-    let base = match input.base {
-        scope_api_contract::RequestBase::Request {
-            request_id,
-            revision_id,
-            head_oid,
-        } => RequestBase::Request {
-            request_id,
-            revision_id,
-            head_oid: head_oid.as_str().to_string(),
-        },
-        scope_api_contract::RequestBase::Main { review_base_oid } => RequestBase::Main {
-            review_base_oid: review_base_oid.as_str().to_string(),
-        },
-    };
+    let base: RequestBase = input.base.into();
     let context = RequestRevisionContextPublication {
         operation_key: input.operation_key,
         expected_revision_id: input.expected_revision_id,
@@ -92,20 +79,18 @@ pub(crate) async fn publish(
                 expected_base_version: context.expected_base_version,
                 expected_parent_base_version: context.expected_parent_base_version,
             };
-            let (_, parent) = prepare_request_base_publication(
+            let parent = prepare_request_base_publication(
                 &state,
                 &incarnation,
                 request,
-                Some(publication_headers),
+                Some(&publication_headers),
                 &staging,
                 &request.head_oid,
                 snapshot.repository.record.change_version,
             )
             .await?;
             let main = match &parent {
-                Some(RequestBasePublicationFacts::Main { main_head_oid, .. }) => {
-                    main_head_oid.clone()
-                }
+                RequestBasePublicationFacts::Main { main_head_oid, .. } => main_head_oid.clone(),
                 _ => restore_request_main(&state, &incarnation, &request.view, &staging).await?,
             };
             if &request.view != snapshot.repository.views.full() {
@@ -165,7 +150,7 @@ pub(crate) async fn publish(
                         now_unix: unix_now()?,
                     },
                     context,
-                    parent,
+                    Some(parent),
                     children,
                 )
                 .await

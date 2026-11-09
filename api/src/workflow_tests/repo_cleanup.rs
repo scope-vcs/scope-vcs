@@ -6,7 +6,7 @@ fn cleanup_paths(state: &AppState, suffix: &str) -> (PathBuf, PathBuf, PathBuf) 
     let request_refs = request_objects_root(state, &incarnation);
     let rx = git_repo_storage_root(state).join("git-rx").join(format!(
         "{}-{suffix}.git",
-        receive_pack_staging_repo_prefix(&incarnation)
+        repository_storage_key(&incarnation)
     ));
     for path in [&raw, &request_refs, &rx] {
         fs::create_dir_all(path).unwrap();
@@ -95,14 +95,8 @@ async fn cleanup_removes_only_the_deleted_repository_incarnation() {
     let deleted_refs = request_objects_root(&state, &deleted);
     let recreated_refs = request_objects_root(&state, &recreated);
     let rx_root = git_repo_storage_root(&state).join("git-rx");
-    let deleted_rx = rx_root.join(format!(
-        "{}-test.git",
-        receive_pack_staging_repo_prefix(&deleted)
-    ));
-    let recreated_rx = rx_root.join(format!(
-        "{}-test.git",
-        receive_pack_staging_repo_prefix(&recreated)
-    ));
+    let deleted_rx = rx_root.join(format!("{}-test.git", repository_storage_key(&deleted)));
+    let recreated_rx = rx_root.join(format!("{}-test.git", repository_storage_key(&recreated)));
     for path in [
         &deleted_raw,
         &recreated_raw,
