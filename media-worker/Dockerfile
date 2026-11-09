@@ -1,6 +1,6 @@
 ARG APT_VERSION=3.0.4
 
-FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS apt-base
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS apt-base
 ARG APT_VERSION
 RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
     && if [ -f /etc/apt/sources.list ]; then mv /etc/apt/sources.list /tmp/apt-sources.list; fi \
