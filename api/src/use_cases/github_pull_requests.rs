@@ -26,7 +26,7 @@ use scope_domain::{
         may_carry_on_github, review_request_comment_body, review_request_marker,
     },
 };
-use scope_postgres::db::GitHubJobOutcome;
+use scope_postgres::db::{GitHubJobOutcome, GitHubMergeLandingAttempt};
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -89,12 +89,19 @@ async fn run_claimed(
         .await
     {
         Ok(true) => {
-            if let Err(error) = land_request_merged_on_github(state, &carrier).await {
-                tracing::warn!(
-                    request_id = carrier.request_id,
-                    error = %error.operator_diagnostic(),
-                    "could not land a request whose pull request merged on GitHub"
-                );
+            match land_request_merged_on_github(state, &carrier).await {
+                Ok(GitHubMergeLandingAttempt::MainMoved) => {
+                    retry_landing_later(state, &carrier, now_unix).await;
+                }
+                Ok(GitHubMergeLandingAttempt::Landed | GitHubMergeLandingAttempt::NotLanded) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        request_id = carrier.request_id,
+                        error = %error.operator_diagnostic(),
+                        "could not land a request whose pull request merged on GitHub; retrying"
+                    );
+                    retry_landing_later(state, &carrier, now_unix).await;
+                }
             }
             publish_pull_request_change(state, &carrier.repo_id, &carrier.request_id).await
         }
@@ -107,22 +114,44 @@ async fn run_claimed(
     }
 }
 
+async fn retry_landing_later(state: &AppState, carrier: &GitHubPullRequest, now_unix: u64) {
+    let Some(retry_at_unix) = github_retry_at(1, now_unix) else {
+        return;
+    };
+    if let Err(error) = state
+        .metadata
+        .requests()
+        .requeue_github_pull_request(
+            carrier.destination.github_repository_id,
+            &carrier.request_id,
+            retry_at_unix,
+        )
+        .await
+    {
+        tracing::warn!(
+            request_id = carrier.request_id,
+            %error,
+            "could not requeue a pull request whose merged request did not land"
+        );
+    }
+}
+
 async fn land_request_merged_on_github(
     state: &AppState,
     carrier: &GitHubPullRequest,
-) -> Result<(), ApiError> {
+) -> Result<GitHubMergeLandingAttempt, ApiError> {
     let requests = state.metadata.requests();
     let Some(request) = requests.request_by_id(&carrier.request_id).await? else {
-        return Ok(());
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
     };
     let Some(merge) = carrier
         .merge_of(&request)
         .filter(|_| lands_with_main(&request))
     else {
-        return Ok(());
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
     };
     let Some(incarnation) = state.repository_incarnation(&carrier.repo_id).await? else {
-        return Ok(());
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
     };
     let Some(main) = state
         .metadata
@@ -130,7 +159,7 @@ async fn land_request_merged_on_github(
         .repository_content_source(&incarnation)
         .await?
     else {
-        return Ok(());
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
     };
     let repo = state
         .repository_engine
@@ -146,22 +175,24 @@ async fn land_request_merged_on_github(
         )
     })
     .await?;
-    if main_contains_merge
-        && requests
-            .land_request_merged_on_github(
-                &request.id,
-                &main.head_oid,
-                &merge.merge_commit_oid,
-                unix_now()?,
-            )
-            .await?
-    {
+    if !main_contains_merge {
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
+    }
+    let attempt = requests
+        .land_request_merged_on_github(
+            &request.id,
+            &main.head_oid,
+            &merge.merge_commit_oid,
+            unix_now()?,
+        )
+        .await?;
+    if attempt == GitHubMergeLandingAttempt::Landed {
         state.wakeups.auto_merge.notify_one();
         state
             .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
             .await;
     }
-    Ok(())
+    Ok(attempt)
 }
 
 async fn advance(

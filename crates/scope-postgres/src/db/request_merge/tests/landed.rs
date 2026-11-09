@@ -320,3 +320,24 @@ async fn landed_completion_skips_a_non_maintainer_without_failing_the_transactio
         RequestState::Open
     );
 }
+
+#[tokio::test]
+async fn a_github_merge_landing_asks_again_after_main_moved_and_waits_for_a_main_pusher() {
+    let store = merge_store().await;
+    let requests = store.requests();
+
+    assert_eq!(
+        requests
+            .land_request_merged_on_github("req_1", MERGED_HEAD, MERGED_HEAD, 9)
+            .await
+            .unwrap(),
+        crate::db::GitHubMergeLandingAttempt::MainMoved
+    );
+    assert_eq!(
+        requests
+            .land_request_merged_on_github("req_1", BASE_HEAD, MERGED_HEAD, 9)
+            .await
+            .unwrap(),
+        crate::db::GitHubMergeLandingAttempt::NotLanded
+    );
+}

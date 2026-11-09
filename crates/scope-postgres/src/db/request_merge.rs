@@ -470,6 +470,13 @@ pub(super) async fn complete_main_push(
     Ok(completed)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GitHubMergeLandingAttempt {
+    Landed,
+    NotLanded,
+    MainMoved,
+}
+
 impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "land_request_merged_on_github"))]
     pub async fn land_request_merged_on_github(
@@ -478,25 +485,29 @@ impl RequestStore {
         main_oid: &str,
         merge_commit_oid: &str,
         now_unix: u64,
-    ) -> Result<bool, PostgresError> {
+    ) -> Result<GitHubMergeLandingAttempt, PostgresError> {
         let tx = self.db.begin().await?;
         let Some(request) = request_by_id(&tx, request_id).await? else {
-            return Ok(false);
+            return Ok(GitHubMergeLandingAttempt::NotLanded);
         };
         acquire_aggregate_lock(&tx, "repository", &request.repo_id).await?;
-        let Some(main_pushed_by_user_id) = tx
+        let Some(head) = tx
             .query_one_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
-                "SELECT main_pushed_by_user_id FROM scope_git_heads
-                  WHERE repo_id = $1 AND head_oid = $2",
-                [request.repo_id.clone().into(), main_oid.into()],
+                "SELECT head_oid, main_pushed_by_user_id FROM scope_git_heads WHERE repo_id = $1",
+                [request.repo_id.clone().into()],
             ))
             .await?
-            .map(|row| row.try_get::<Option<String>>("", "main_pushed_by_user_id"))
-            .transpose()?
-            .flatten()
         else {
-            return Ok(false);
+            return Ok(GitHubMergeLandingAttempt::NotLanded);
+        };
+        if head.try_get::<String>("", "head_oid")? != main_oid {
+            return Ok(GitHubMergeLandingAttempt::MainMoved);
+        }
+        let Some(main_pushed_by_user_id) =
+            head.try_get::<Option<String>>("", "main_pushed_by_user_id")?
+        else {
+            return Ok(GitHubMergeLandingAttempt::NotLanded);
         };
         let completed = complete_landed_requests(
             &tx,
@@ -515,7 +526,11 @@ impl RequestStore {
         )
         .await?;
         tx.commit().await?;
-        Ok(completed == 1)
+        Ok(if completed == 1 {
+            GitHubMergeLandingAttempt::Landed
+        } else {
+            GitHubMergeLandingAttempt::NotLanded
+        })
     }
 }
 
