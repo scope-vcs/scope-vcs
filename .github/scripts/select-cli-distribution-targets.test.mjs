@@ -17,9 +17,14 @@ test("releases build every configured target", () => {
   );
   assert.equal(plan.include.filter(({ smoke }) => smoke).length, 4);
   assert.ok(plan.include.every(({ artifact }) => artifact.endsWith(".tar.gz")));
+  assert.ok(plan.include.every(({ profile }) => profile === "release"));
+  assert.equal(
+    plan.include.find(({ target }) => target === "x86_64-pc-windows-msvc").binary,
+    "target/x86_64-pc-windows-msvc/release/scope.exe",
+  );
 });
 
-test("pull requests build only the Linux and Windows x64 targets", () => {
+test("pull requests build only the Linux and Windows x64 targets without the shipped LTO profile", () => {
   const plan = selectCliDistributionTargets(configuration, "pull-request");
 
   assert.deepEqual(
@@ -27,6 +32,10 @@ test("pull requests build only the Linux and Windows x64 targets", () => {
     ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"],
   );
   assert.ok(plan.include.every(({ smoke }) => smoke));
+  assert.deepEqual(plan.include.map(({ binary }) => binary), [
+    "target/x86_64-unknown-linux-gnu/release-check/scope",
+    "target/x86_64-pc-windows-msvc/release-check/scope.exe",
+  ]);
 });
 
 test("configurations without targets or a known mode fail", () => {

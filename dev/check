@@ -16,7 +16,7 @@ usage: ./dev/check [all|guardrails|rust|contract|cli|web|ops|smoke]
   cli         format, test, and lint the CLI workspace, then build and check its bundle
   web         test, check, and build the web application
   ops         test deployment orchestration and benchmark scripts
-  smoke       run the browser smoke suite against an already running local stack
+  smoke       run the browser component suite, then the browser smoke suite against an already running local stack
 EOF
 }
 
@@ -36,6 +36,7 @@ smoke() {
       smoke_repo="$handle/public-demo"
     fi
   fi
+  ./dev/checks/web-components
   env ${smoke_repo:+SCOPE_SMOKE_REPO="$smoke_repo"} ./dev/checks/integration web
 }
 

@@ -6,13 +6,19 @@ on:
     paths:
       - Cargo.lock
       - '**/Cargo.toml'
+      - cli/Cargo.lock
+      - cli/distribution/targets.json
       - rust-toolchain.toml
       - media-worker/Dockerfile
       - dev/checks/backend
+      - dev/checks/cli
       - .github/workflows/warm-ci-caches.yml
       - .github/workflows/rust-workspace-checks.yml
       - .github/workflows/scope-api-ci.yml
+      - .github/workflows/scope-cli-build.yml
       - .github/workflows/scope-media-worker-image.yml
+      - .github/scripts/deployment-components.mjs
+      - .github/scripts/select-cli-distribution-targets.mjs
 
 concurrency:
   group: warm-ci-caches
@@ -25,6 +31,15 @@ jobs:
   backend:
     name: Backend caches
     uses: ./.github/workflows/scope-api-ci.yml
+    with:
+      warm_cache: true
+
+  cli:
+    name: CLI caches
+    uses: ./.github/workflows/scope-cli-build.yml
+    with:
+      validate_targets: true
+      distribution_mode: pull-request
 
   media-worker-image:
     name: Media worker image cache

@@ -26,10 +26,161 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  integration:
-    name: Seeded local stack integration
+  web-smoke:
+    name: Seeded local stack browser smoke
     if: >-
-      (inputs.run_web || inputs.run_cli || inputs.run_media_smoke) &&
+      inputs.run_web &&
+      (github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18.6@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
+        env:
+          POSTGRES_DB: scope_dev
+          POSTGRES_PASSWORD: scope
+          POSTGRES_USER: scope
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scope -d scope_dev"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install media codecs
+        uses: ./.github/actions/install-media-codecs
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.98.1
+
+      - name: Cache Rust dependencies for the local stack
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-bin: false
+          cache-on-failure: true
+          shared-key: web-smoke
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+          version: 11.1.0
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 26
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install web dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        uses: ./.github/actions/install-playwright-chromium
+
+      - name: Configure seeded database
+        shell: bash
+        run: |
+          printf '%s\n' \
+            'DATABASE_URL=postgres://scope:scope@127.0.0.1:5432/scope_dev' \
+            'SCOPE_DEV_USER_EMAIL=smoke@example.test' \
+            'SCOPE_DEV_USER_HANDLE=dev' > .env.local
+
+      - name: Configure Clerk for browser smoke
+        env:
+          CLERK_DEVELOPMENT_PUBLISHABLE_KEY: ${{ secrets.CLERK_DEVELOPMENT_PUBLISHABLE_KEY }}
+          CLERK_DEVELOPMENT_SECRET_KEY: ${{ secrets.CLERK_DEVELOPMENT_SECRET_KEY }}
+        shell: bash
+        run: |
+          if [[ "$CLERK_DEVELOPMENT_PUBLISHABLE_KEY" != pk_test_* ]]; then
+            echo "::error::Repository secret CLERK_DEVELOPMENT_PUBLISHABLE_KEY must contain a Clerk development publishable key (pk_test_*)."
+            exit 1
+          fi
+          if [[ "$CLERK_DEVELOPMENT_SECRET_KEY" != sk_test_* ]]; then
+            echo "::error::Repository secret CLERK_DEVELOPMENT_SECRET_KEY must contain the matching Clerk development secret key (sk_test_*)."
+            exit 1
+          fi
+          printf 'VITE_CLERK_PUBLISHABLE_KEY=%s\nCLERK_SECRET_KEY=%s\nVITE_SCOPE_WEB_FORCE_SIGNED_OUT=1\n' \
+            "$CLERK_DEVELOPMENT_PUBLISHABLE_KEY" \
+            "$CLERK_DEVELOPMENT_SECRET_KEY" > web/.env.local
+
+      - name: Start seeded local stack
+        id: stack
+        env:
+          SCOPE_DEV_HEADLESS_E2E: '0'
+        run: ./dev/scope-dev up
+
+      - name: Wait for seeded projections
+        id: projections
+        if: steps.stack.outcome == 'success'
+        shell: bash
+        run: |
+          request_url='http://localhost:8080/v1/repos/dev/update-demo/requests/req_demo_ready'
+          last_status='unavailable'
+          for _ in $(seq 1 90); do
+            last_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 2 "$request_url" || true)"
+            if [[ "$last_status" == '200' ]]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Seeded request projection did not become ready (last HTTP status: $last_status)."
+          exit 1
+
+      - name: Run browser smoke
+        if: steps.projections.outcome == 'success'
+        working-directory: web
+        env:
+          SCOPE_SMOKE_REPO: dev/public-demo
+          SCOPE_WEB_BASE_URL: http://localhost:3000
+        run: ../dev/checks/integration web
+
+      - name: Check compiled web through HTTPS proxy
+        if: steps.projections.outcome == 'success'
+        working-directory: web
+        run: |
+          pnpm build
+          node --test smoke/built-runtime-https.mjs
+
+      - name: Upload local stack logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: local-stack-logs
+          path: .tmp/local-dev/*.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Print local stack logs
+        if: failure()
+        shell: bash
+        run: |
+          for log in .tmp/local-dev/*.log; do
+            [[ -f "$log" ]] || continue
+            echo "::group::$log"
+            tail -n 300 "$log"
+            echo "::endgroup::"
+          done
+
+      - name: Stop local stack
+        if: always()
+        run: ./dev/scope-dev down
+
+  cli-media:
+    name: Seeded local stack CLI and media
+    if: >-
+      (inputs.run_cli || inputs.run_media_smoke) &&
       (github.event_name != 'pull_request' ||
       (github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor != 'dependabot[bot]'))
@@ -74,9 +225,8 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-bin: false
-          cache-on-failure: true
           shared-key: web-smoke
-          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          save-if: false
 
       - name: Cache Rust dependencies for CLI integration
         if: inputs.run_cli
@@ -95,21 +245,10 @@ jobs:
         with:
           version: 11.1.0
 
-      - name: Install Node and cache pnpm only when the web lane installs it
+      - name: Install Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 26
-          cache: ${{ inputs.run_web && 'pnpm' || '' }}
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: Install web dependencies
-        if: inputs.run_web
-        working-directory: web
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium
-        if: inputs.run_web
-        uses: ./.github/actions/install-playwright-chromium
 
       - name: Configure seeded database
         shell: bash
@@ -119,27 +258,7 @@ jobs:
             'SCOPE_DEV_USER_EMAIL=smoke@example.test' \
             'SCOPE_DEV_USER_HANDLE=dev' > .env.local
 
-      - name: Configure Clerk for browser smoke
-        if: inputs.run_web
-        env:
-          CLERK_DEVELOPMENT_PUBLISHABLE_KEY: ${{ secrets.CLERK_DEVELOPMENT_PUBLISHABLE_KEY }}
-          CLERK_DEVELOPMENT_SECRET_KEY: ${{ secrets.CLERK_DEVELOPMENT_SECRET_KEY }}
-        shell: bash
-        run: |
-          if [[ "$CLERK_DEVELOPMENT_PUBLISHABLE_KEY" != pk_test_* ]]; then
-            echo "::error::Repository secret CLERK_DEVELOPMENT_PUBLISHABLE_KEY must contain a Clerk development publishable key (pk_test_*)."
-            exit 1
-          fi
-          if [[ "$CLERK_DEVELOPMENT_SECRET_KEY" != sk_test_* ]]; then
-            echo "::error::Repository secret CLERK_DEVELOPMENT_SECRET_KEY must contain the matching Clerk development secret key (sk_test_*)."
-            exit 1
-          fi
-          printf 'VITE_CLERK_PUBLISHABLE_KEY=%s\nCLERK_SECRET_KEY=%s\nVITE_SCOPE_WEB_FORCE_SIGNED_OUT=1\n' \
-            "$CLERK_DEVELOPMENT_PUBLISHABLE_KEY" \
-            "$CLERK_DEVELOPMENT_SECRET_KEY" > web/.env.local
-
-      - name: Configure fake Clerk without the browser lane
-        if: ${{ !inputs.run_web }}
+      - name: Configure fake Clerk for the headless stack
         shell: bash
         run: |
           clerk_host='scope-e2e.clerk.accounts.dev$'
@@ -154,7 +273,7 @@ jobs:
       - name: Start seeded local stack
         id: stack
         env:
-          SCOPE_DEV_HEADLESS_E2E: ${{ inputs.run_web && '0' || '1' }}
+          SCOPE_DEV_HEADLESS_E2E: '1'
         run: ./dev/scope-dev up
 
       - name: Wait for seeded projections
@@ -173,21 +292,6 @@ jobs:
           done
           echo "::error::Seeded request projection did not become ready (last HTTP status: $last_status)."
           exit 1
-
-      - name: Run browser smoke
-        if: inputs.run_web && steps.projections.outcome == 'success'
-        working-directory: web
-        env:
-          SCOPE_SMOKE_REPO: dev/public-demo
-          SCOPE_WEB_BASE_URL: http://localhost:3000
-        run: ../dev/checks/integration web
-
-      - name: Check compiled web through HTTPS proxy
-        if: inputs.run_web && steps.projections.outcome == 'success'
-        working-directory: web
-        run: |
-          pnpm build
-          node --test smoke/built-runtime-https.mjs
 
       - name: Run two-actor CLI contribution flow
         if: inputs.run_cli && !cancelled() && steps.projections.outcome == 'success'
@@ -213,14 +317,12 @@ jobs:
               --file "$fixture_dir/fixture.mp4" \
               --require-video
 
-      - name: Upload browser diagnostics and local stack logs
+      - name: Upload local stack logs
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: local-stack-logs
-          path: |
-            .tmp/local-dev/*.log
-            web/.tmp/request-header/*.png
+          name: cli-media-stack-logs
+          path: .tmp/local-dev/*.log
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

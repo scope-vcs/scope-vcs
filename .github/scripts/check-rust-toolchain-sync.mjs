@@ -19,11 +19,11 @@ function workflowReplica(path, count = 1) {
 const REPLICAS = [
   workflowReplica(".github/workflows/rust-workspace-checks.yml", 2),
   workflowReplica(".github/workflows/main-advisories.yml"),
-  workflowReplica(".github/workflows/scope-api-ci.yml"),
+  workflowReplica(".github/workflows/scope-api-ci.yml", 2),
   workflowReplica(".github/workflows/ci.yml", 2),
   workflowReplica(".github/workflows/release.yml", 2),
   workflowReplica(".github/workflows/scope-cli-build.yml", 3),
-  workflowReplica(".github/workflows/scope-integration-ci.yml", 2),
+  workflowReplica(".github/workflows/scope-integration-ci.yml", 3),
   workflowReplica(".github/workflows/prepare-smoke-tools.yml"),
   {
     path: "runner-runtime/Dockerfile",

@@ -11,9 +11,10 @@ root, regardless of the caller's working directory.
 | `advisories workspace\|cli` | Shared cargo-deny advisory commands used by PR gates and the daily main check |
 | `cli-bundle` | Host release binaries, archive size cap, native installer check |
 | `web` | Tests, types, observer boundary, React health, structure, build |
+| `web-components` | Brand assets and browser component specs against Vite fixture servers; needs Chromium but no stack |
 | `contract` | Generated API TypeScript and validator comparison, owned by the backend gate |
 | `policy` | License inventory freshness, complete-tree source size, comments, test waits, Rust boundaries, toolchain pins, workflow job timeouts, gate inventory |
-| `integration web` | Browser smoke against a running seeded stack |
+| `integration web` | Browser smoke against a running seeded stack; GitHub runs it on a different runner from `web-components` so fixture bundling cannot starve the stack |
 | `integration cli` | Opt-in two-actor contribution flow against a running seeded stack |
 | `integration journey` | Signed-in browser contribution journey against a freshly started, signed-in seeded stack |
 | `ops` | Deployment, backend binary size caps, staging, benchmark, and AWS infrastructure tests |
@@ -29,8 +30,10 @@ test; ordinary CLI test runs report it as ignored. The journey also requires
 `web/.env.local`. It creates or reuses Clerk users for the seeded collaborators.
 On failure it writes screenshots and accessibility snapshots to `web/.tmp/journey`.
 GitHub retains native distribution build matrices; these scripts do not select
-platforms or provision credentials. The matrix release-builds, packages, and
-checks the installer for every selected target, so GitHub runs `cli-bundle` only
+platforms or provision credentials. The matrix builds, packages, and
+checks the installer for every selected target. Releases use the shipped
+`release` profile; pull requests use `release-check`, which keeps release
+optimizations but drops fat LTO so native builds and tests finish quickly, so GitHub runs `cli-bundle` only
 when the matrix is not selected; it covers the host so no pull request loses the
 release build or installer check. `dev/check cli` always runs both. Repository policy always checks the full checkout, including
 source outside `web/`.

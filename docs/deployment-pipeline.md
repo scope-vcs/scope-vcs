@@ -59,7 +59,10 @@ second list of function IDs.
 
 PR checks also enforce three requirements that once failed only during release.
 Selected backend changes build the deployment binaries and compare them with
-the manifest's size caps, using the release job. The runtime role test applies
+the manifest's size caps, using the release build. Each component builds in its
+own job with its own Cargo selection, so shared crates keep the feature set that
+component ships with; a release joins the binaries into one artifact. Only the
+main-branch cache warmer saves the shared dependency cache. The runtime role test applies
 the production migration chain before checking the role policy, so a new
 relation without reviewed grants fails before merge. Changes that select the API
 or media components run `dev/media-smoke.mjs` against the seeded local stack,

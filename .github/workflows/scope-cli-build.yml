@@ -9,6 +9,9 @@ on:
       validate_service_release:
         type: boolean
         default: false
+      distribution_mode:
+        type: string
+        default: pull-request
 
 permissions:
   contents: read
@@ -33,12 +36,9 @@ jobs:
         id: targets
         shell: bash
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          GIT_REF: ${{ github.ref }}
+          MODE: ${{ inputs.distribution_mode }}
         run: |
-          mode=release
-          [[ "$EVENT_NAME" == "pull_request" || "$GIT_REF" == refs/heads/scope/* ]] && mode=pull-request
-          matrix="$(node .github/scripts/select-cli-distribution-targets.mjs --mode "$mode")"
+          matrix="$(node .github/scripts/select-cli-distribution-targets.mjs --mode "$MODE")"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   checks:
@@ -121,7 +121,7 @@ jobs:
     env:
       SCOPE_BUILD_SHA: ${{ github.sha }}
       CROSS_CONFIG: ${{ github.workspace }}/Cross.toml
-    needs: [checks, prepare]
+    needs: prepare
     if: inputs.validate_targets
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -174,8 +174,8 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           cache-bin: ${{ matrix.builder == 'cross' }}
-          shared-key: cli-build-${{ matrix.target }}
-          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          shared-key: cli-build-${{ matrix.profile }}-${{ matrix.target }}
+          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && matrix.profile != 'release' }}
           workspaces: |
             cli -> target
             . -> target
@@ -191,32 +191,24 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.builder }}" = "cross" ]; then
-            cross build --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --bin scope
+            cross build --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked --target "${{ matrix.target }}" --bin scope
           else
-            cargo build --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --bin scope
+            cargo build --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked --target "${{ matrix.target }}" --bin scope
           fi
 
       - name: Test portable command contracts
         if: matrix.smoke
         shell: bash
         run: >
-          cargo test --manifest-path cli/Cargo.toml --release --locked
+          cargo test --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked
           --target "${{ matrix.target }}" --test version --test licenses
 
-      - name: Test authentication boundaries without accessing native credential stores
-        if: matrix.smoke
-        shell: bash
-        run: |
-          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib auth::tests
-          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib git_credential::tests
-          cargo test --manifest-path cli/Cargo.toml --release --locked --target "${{ matrix.target }}" --lib login::tests
-
-      - name: Test native progress and cancellation
+      - name: Test authentication boundaries, progress, and cancellation without native credential stores
         if: matrix.smoke
         shell: bash
         run: >
-          cargo test --manifest-path cli/Cargo.toml --release --locked
-          --target "${{ matrix.target }}" --lib progress::
+          cargo test --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked
+          --target "${{ matrix.target }}" --lib -- auth::tests git_credential::tests login::tests progress::
 
       - name: Test Windows installer quoting
         if: matrix.smoke && runner.os == 'Windows'

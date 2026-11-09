@@ -22,11 +22,14 @@ export function selectCliDistributionTargets(configuration, mode) {
   if (targets.length === 0) {
     throw new Error(`CLI distribution mode ${mode} selected no targets`);
   }
+  const profile = mode === "release" ? "release" : "release-check";
 
   return {
-    include: targets.map(({ triple, ...target }) => ({
+    include: targets.map(({ triple, executable, ...target }) => ({
       ...target,
       target: triple,
+      profile,
+      binary: `target/${triple}/${profile}/${executable}`,
     })),
   };
 }

@@ -6,11 +6,12 @@ import { basename, dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { classifyChanges } from './plan-production-deployment.mjs';
 import { checkMainAdvisories } from './main-advisories.mjs';
+import { backendPrebuiltComponents } from './deployment-components.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
 const manifest = JSON.parse(read('.github/deployment-services.json'));
-const gates = ['backend', 'cli', 'cli-bundle', 'web', 'contract', 'policy', 'integration', 'ops'];
+const gates = ['backend', 'cli', 'cli-bundle', 'web', 'web-components', 'contract', 'policy', 'integration', 'ops'];
 
 function commands(gate, ...args) {
   const dir = mkdtempSync(resolve(tmpdir(), 'scope-gates-'));
@@ -52,6 +53,12 @@ test('the daily main advisory job runs both PR advisory commands with only JSON 
       if (required) assert.equal(selected[component], true, `${component} must check shared advisory changes`);
     }
   }
+});
+
+test('GitHub builds every prebuilt backend component in its own deployment job', () => {
+  const workflow = read('.github/workflows/scope-api-ci.yml');
+  const matrix = workflow.match(/\n        component: \[([^\]]+)\]\n/)[1].split(', ');
+  assert.deepEqual([...matrix].sort(), [...backendPrebuiltComponents()].sort());
 });
 
 test('GitHub runs every backend gate lane exactly once', () => {
@@ -101,6 +108,10 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   assert.ok(bundleCommands.includes('node --test cli/distribution/install-smoke.test.mjs'));
   assert.deepEqual(commands('integration', 'cli'), ['cargo test --manifest-path cli/Cargo.toml --test contribution_flow --locked -- --ignored --nocapture']);
   assert.deepEqual(commands('integration', 'web'), ['pnpm test:smoke']);
+  assert.deepEqual(commands('web-components'), ['pnpm test:components']);
+  const scripts = JSON.parse(read('web/package.json')).scripts;
+  assert.match(scripts['test:components'], /^pnpm check:brand && node --test "smoke\/components\/\*\.spec\.mjs"$/);
+  assert.doesNotMatch(scripts['test:smoke'], /components/);
   assert.deepEqual(commands('integration', 'journey'), ['cargo build --manifest-path cli/Cargo.toml --locked --bin scope', 'pnpm test:journey']);
 });
 
