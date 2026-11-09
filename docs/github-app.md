@@ -460,7 +460,9 @@ one after 30 seconds, 2, 10, and 30 minutes, then gives up.
   `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{id}/comments`, then
   creates the review's discussions in one transaction with one attention
   change for the request author. A non-empty review body becomes a discussion
-  on the reviewed revision. Each comment becomes a discussion anchored to the
+  on the reviewed revision, unless a listed review bot wrote the review and it
+  has inline comments: GitHub cannot resolve a review body, so the bot's
+  comments carry its findings. Each comment becomes a discussion anchored to the
   newest revision whose head is the comment's commit: `RIGHT` is the new
   side, `LEFT` the old, `start_line` to `line` the range, and a file comment
   anchors to the file. An outdated comment (no `line`) uses its original

@@ -17,8 +17,8 @@ use scope_domain::{
     requests::{
         GitHubReviewImportSubject, Request, RequestDiscussion, RequestDiscussionStatus,
         RequestRevision, github_comment_anchors, github_comment_body, github_retry_at,
-        github_review_anchor, github_review_client_id, github_review_comment_client_id,
-        github_thread_status,
+        github_review_anchor, github_review_body, github_review_client_id,
+        github_review_comment_client_id, github_thread_status,
     },
 };
 use scope_postgres::db::{
@@ -280,6 +280,13 @@ async fn import_comments(
         .iter()
         .map(|comment| comment.id)
         .collect::<BTreeSet<_>>();
+    let review_body = review.as_ref().and_then(|review| {
+        github_review_body(
+            &authors.standing(&review.author),
+            &review.body,
+            !known.is_empty(),
+        )
+    });
     let missing_roots = comments
         .iter()
         .filter_map(|comment| comment.in_reply_to_id)
@@ -325,7 +332,7 @@ async fn import_comments(
     let mut accounts = BTreeMap::<u64, GitHubAccount>::new();
     let mut imported = Vec::new();
     if let Some(review) = review
-        && let Some(body) = github_comment_body(&review.body)
+        && let Some(body) = review_body
     {
         accounts.insert(review.author.id, review.author.clone());
         imported.push(GitHubImportedComment {
