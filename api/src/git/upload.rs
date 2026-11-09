@@ -76,11 +76,12 @@ pub(crate) async fn authorized_git_read(
             repo_not_found(owner, repo_name)
         });
     }
-    let readable = context.can_read(source.public_files_visible) && context.can_read_view(view);
-    match (readable, anonymous) {
-        (true, _) => Ok((source, viewer_user_id)),
-        (false, true) => Err(credentials_required()),
-        (false, false) => Err(ApiError::not_found(format!(
+    let repository_readable = context.can_read(source.public_files_visible);
+    match (repository_readable, context.can_read_view(view), anonymous) {
+        (true, true, _) => Ok((source, viewer_user_id)),
+        (_, _, true) => Err(credentials_required()),
+        (false, _, false) => Err(repo_not_found(owner, repo_name)),
+        (true, false, false) => Err(ApiError::not_found(format!(
             "Git view {view} of {owner}/{repo_name} not found"
         ))),
     }
