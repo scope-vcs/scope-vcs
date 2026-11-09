@@ -36,7 +36,8 @@ const SCENARIOS = [
   ] : [],
 ]
 
-for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {
+export function testSkeletonLayout(viewportName) {
+  const viewport = VIEWPORTS[viewportName]
   for (const scenario of SCENARIOS) {
     const id = `${viewportName} ${scenario.name}`
     test(`skeleton layout: ${id}`, async () => {

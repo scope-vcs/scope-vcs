@@ -196,6 +196,13 @@ jobs:
             cargo build --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked --target "${{ matrix.target }}" --bin scope
           fi
 
+      - name: Build native test binaries
+        if: matrix.smoke
+        shell: bash
+        run: >
+          cargo test --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked
+          --target "${{ matrix.target }}" --no-run --test version --test licenses --lib
+
       - name: Test portable command contracts
         if: matrix.smoke
         shell: bash
