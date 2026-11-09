@@ -64,7 +64,7 @@ impl ScopeMain {
     }
 }
 
-async fn set_publication(state: &AppState, enabled: bool) -> Response {
+pub(super) async fn set_publication(state: &AppState, enabled: bool) -> Response {
     github_api(
         state,
         "PUT",

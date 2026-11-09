@@ -329,7 +329,8 @@ Review bots on GitHub review pull requests, not branches. A maintainer can
 turn on **Open pull requests for review bots** in the repository's CI
 settings. Scope then keeps one carrier pull request per submitted request,
 from `scope/requests/<request id>` into `main`, or into the parent's branch
-for a stacked request whose parent is still open. Its title is the
+for a stacked request whose parent is still open and whose parent's pull
+request has not been merged or closed on GitHub. Its title is the
 request's title, and its body links to the request in Scope and then repeats
 the description. Scope never opens a draft.
 
@@ -357,10 +358,16 @@ one. When a pull request Scope created gets out of step with the request's
 title or description, Scope rewrites its title and body; it never rewrites
 an adopted pull request's text. When a stacked request's parent closes or
 merges, the same transaction requeues each open child's carrier to move it
-onto `main`. If GitHub closes the child's pull request first, because Scope
-deleted the parent's branch, that close happened while Scope was moving the
-base, so it counts as Scope's and the next run opens a new pull request
-against `main`. When the
+onto `main`. The same happens when Scope records that the parent's pull
+request was merged or closed on GitHub while the parent request is still
+open, so Scope does not move a child back onto a branch whose pull request
+has ended. Scope keeps the parent's branch on GitHub while any open pull
+request is recorded with that branch as its base, and deletes it once the
+child's move is recorded or the child's pull request closes, so the child
+keeps its pull request. If GitHub closes a child's pull request anyway,
+because its base branch disappeared some other way, that close happened
+while Scope was moving the base, so it counts as Scope's and the next run
+opens a new pull request against `main`. When the
 repository sets a **Review request comment**, up to 500 characters, Scope
 posts it once per pushed head: after opening the pull request and after each
 later head. Some bots review only when asked, so this is where a mention
@@ -378,10 +385,13 @@ GitHub close the pull request instead of marking it merged; the branch is
 deleted once GitHub reports the carrier closed or merged, or once a main
 publication whose commit contains the merge succeeds
 (`main_publication_contains_merge`, answered from the repository's git
-history), so a missed webhook cannot leave the branch behind. The decisions live
+history), so a missed webhook cannot leave the branch behind. Either
+deletion waits while an open pull request is still based on the branch. The
+decisions live
 in `closes_carrier_pull_request` and `retains_request_branch_for_carrier` in
-`scope-domain` and read the connection and the carrier record when the
-request ends and whenever the carrier is observed again. Once a request has
+`scope-domain` and read the connection, the carrier record and the pull
+requests based on the branch when the request ends and whenever a carrier is
+observed again. Once a request has
 ended, Scope no longer opens, retargets, rewrites or comments on its carrier.
 A close counts only when
 GitHub confirms it or reports the pull request already closed or merged; a

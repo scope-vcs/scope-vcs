@@ -34,7 +34,7 @@ fn full_view_request() -> Request {
 }
 
 fn intent(connection: &GitHubConnection, request: &Request) -> Option<GitHubPullRequestIntent> {
-    carrier_pull_request_intent(connection, request, None, &Views::builtin(), HEAD)
+    carrier_pull_request_intent(connection, request, None, None, &Views::builtin(), HEAD)
 }
 
 fn open_intent(base: &str) -> GitHubPullRequestIntent {
@@ -91,7 +91,7 @@ fn only_an_open_full_view_request_on_a_connected_opted_in_repository_wants_a_car
 }
 
 #[test]
-fn a_stacked_request_targets_its_parent_branch_only_while_the_parent_is_open() {
+fn a_stacked_request_targets_its_parent_branch_until_the_parent_or_its_pull_request_ends() {
     let parent = Request {
         id: "request_parent".into(),
         ..full_view_request()
@@ -105,17 +105,40 @@ fn a_stacked_request_targets_its_parent_branch_only_while_the_parent_is_open() {
         },
         ..full_view_request()
     };
-    let base = |parent: &Request| {
-        carrier_pull_request_intent(&connection(), &child, Some(parent), &Views::builtin(), HEAD)
+    let base = |parent: &Request, parent_carrier: Option<&GitHubPullRequest>| {
+        carrier_pull_request_intent(
+            &connection(),
+            &child,
+            Some(parent),
+            parent_carrier,
+            &Views::builtin(),
+            HEAD,
+        )
     };
+    let parent_branch = Some(open_intent("scope/requests/request_parent"));
+    assert_eq!(base(&parent, None), parent_branch);
     assert_eq!(
-        base(&parent),
-        Some(open_intent("scope/requests/request_parent"))
+        base(&parent, Some(&carrier(open_intent("main")))),
+        parent_branch
     );
+    assert_eq!(
+        base(&parent, Some(&opened_carrier(GitHubPullRequestState::Open))),
+        parent_branch
+    );
+    for ended in [
+        GitHubPullRequestState::ClosedOnGitHub,
+        GitHubPullRequestState::Closed,
+    ] {
+        assert_eq!(
+            base(&parent, Some(&opened_carrier(ended))),
+            Some(open_intent("main")),
+            "{ended:?}"
+        );
+    }
 
     let mut merged_parent = parent.clone();
     merged_parent.merged_at_unix = Some(40);
-    assert_eq!(base(&merged_parent), Some(open_intent("main")));
+    assert_eq!(base(&merged_parent, None), Some(open_intent("main")));
 }
 
 #[test]
@@ -179,36 +202,42 @@ fn a_merged_requests_branch_waits_only_for_a_carrier_github_still_has_open() {
     merged.merged_at_unix = Some(30);
     let open_carrier = opened_carrier(GitHubPullRequestState::Open);
 
-    assert!(retains_request_branch_for_carrier(&open, None, None));
+    assert!(retains_request_branch_for_carrier(&open, None, None, &[]));
     assert!(!retains_request_branch_for_carrier(
         &closed,
         Some(&publishing),
-        Some(&open_carrier)
+        Some(&open_carrier),
+        &[]
     ));
     assert!(!retains_request_branch_for_carrier(
         &merged,
         Some(&connection()),
-        Some(&open_carrier)
+        Some(&open_carrier),
+        &[]
     ));
     assert!(!retains_request_branch_for_carrier(
         &merged,
         None,
-        Some(&open_carrier)
+        Some(&open_carrier),
+        &[]
     ));
     assert!(!retains_request_branch_for_carrier(
         &merged,
         Some(&publishing),
-        None
+        None,
+        &[]
     ));
     assert!(!retains_request_branch_for_carrier(
         &merged,
         Some(&publishing),
-        Some(&carrier(open_intent("main")))
+        Some(&carrier(open_intent("main"))),
+        &[]
     ));
     assert!(retains_request_branch_for_carrier(
         &merged,
         Some(&publishing),
-        Some(&open_carrier)
+        Some(&open_carrier),
+        &[]
     ));
     for ended in [
         GitHubPullRequestState::ClosedOnGitHub,
@@ -217,9 +246,36 @@ fn a_merged_requests_branch_waits_only_for_a_carrier_github_still_has_open() {
         assert!(!retains_request_branch_for_carrier(
             &merged,
             Some(&publishing),
-            Some(&opened_carrier(ended))
+            Some(&opened_carrier(ended)),
+            &[]
         ));
     }
+}
+
+#[test]
+fn an_ended_requests_branch_waits_for_open_pull_requests_based_on_it() {
+    let mut closed = full_view_request();
+    closed.closed_at_unix = Some(30);
+    let based_on = |base: &str, state: GitHubPullRequestState| {
+        let mut child = opened_carrier(state);
+        child.record_retargeted(base.into());
+        child
+    };
+    let branch = format!("scope/requests/{}", closed.id);
+    let retains = |pull_requests: &[GitHubPullRequest]| {
+        retains_request_branch_for_carrier(&closed, Some(&connection()), None, pull_requests)
+    };
+
+    assert!(retains(&[
+        based_on("main", GitHubPullRequestState::Open),
+        based_on(&branch, GitHubPullRequestState::Open),
+    ]));
+    assert!(!retains(&[
+        based_on("main", GitHubPullRequestState::Open),
+        based_on(&branch, GitHubPullRequestState::ClosedOnGitHub),
+        based_on(&branch, GitHubPullRequestState::Closed),
+        carrier(open_intent(&branch)),
+    ]));
 }
 
 #[test]

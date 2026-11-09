@@ -102,6 +102,7 @@ pub fn carrier_pull_request_intent(
     connection: &GitHubConnection,
     request: &Request,
     parent: Option<&Request>,
+    parent_carrier: Option<&GitHubPullRequest>,
     views: &Views,
     pushed_head_oid: &str,
 ) -> Option<GitHubPullRequestIntent> {
@@ -111,7 +112,7 @@ pub fn carrier_pull_request_intent(
         && GitHubCheckTarget::for_request(request, views) == GitHubCheckTarget::Head
         && may_carry_on_github(connection, request);
     wanted.then(|| GitHubPullRequestIntent::Open {
-        base: carrier_pull_request_base(request, parent),
+        base: carrier_pull_request_base(request, parent, parent_carrier),
         head_oid: pushed_head_oid.to_string(),
     })
 }
@@ -124,12 +125,21 @@ pub fn carries_private_request(request: &Request) -> bool {
     !request.view.is_public()
 }
 
-fn carrier_pull_request_base(request: &Request, parent: Option<&Request>) -> String {
+fn carrier_pull_request_base(
+    request: &Request,
+    parent: Option<&Request>,
+    parent_carrier: Option<&GitHubPullRequest>,
+) -> String {
+    let parent_ended_on_github = parent_carrier.is_some_and(GitHubPullRequest::has_ended_on_github);
     request
         .base
         .parent_request_id()
         .and_then(|parent_id| {
-            parent.filter(|parent| parent.id == parent_id && parent.state() == RequestState::Open)
+            parent.filter(|parent| {
+                parent.id == parent_id
+                    && parent.state() == RequestState::Open
+                    && !parent_ended_on_github
+            })
         })
         .map_or_else(
             || MAIN_BRANCH.to_string(),
@@ -170,10 +180,25 @@ pub fn retains_request_branch_for_carrier(
     request: &Request,
     connection: Option<&GitHubConnection>,
     carrier: Option<&GitHubPullRequest>,
+    pull_requests: &[GitHubPullRequest],
 ) -> bool {
     !request.is_terminal()
         || (!closes_carrier_pull_request(request, connection)
             && carrier.is_some_and(GitHubPullRequest::is_open_on_github))
+        || GitHubBranch::Request(request.id.clone()).is_base_of_open_pull_request(pull_requests)
+}
+
+impl GitHubBranch {
+    pub fn is_base_of_open_pull_request(&self, pull_requests: &[GitHubPullRequest]) -> bool {
+        let branch = self.name();
+        pull_requests.iter().any(|pull_request| {
+            pull_request.is_open_on_github()
+                && pull_request
+                    .pull_request
+                    .as_ref()
+                    .is_some_and(|opened| opened.base == branch)
+        })
+    }
 }
 
 pub fn review_delivery_belongs_to_request(
@@ -192,6 +217,10 @@ pub fn carrier_may_change(request: &Request) -> bool {
 impl GitHubPullRequest {
     pub fn branch(&self) -> GitHubBranch {
         GitHubBranch::Request(self.request_id.clone())
+    }
+
+    pub fn has_ended_on_github(&self) -> bool {
+        self.pull_request.is_some() && !self.is_open_on_github()
     }
 
     pub fn is_open_on_github(&self) -> bool {

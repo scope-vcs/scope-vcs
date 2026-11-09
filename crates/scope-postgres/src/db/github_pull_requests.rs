@@ -13,9 +13,9 @@ use crate::error::PostgresError;
 use scope_domain::{
     github_connection::GitHubConnection,
     requests::{
-        GitHubPullRequest, GitHubPullRequestIntent, GitHubPushDestination, GitHubReviewRequest,
-        OpenedGitHubPullRequest, Request, carrier_pull_request_intent, closes_carrier_pull_request,
-        retains_request_branch_for_carrier,
+        GitHubBranch, GitHubPullRequest, GitHubPullRequestIntent, GitHubPushDestination,
+        GitHubReviewRequest, OpenedGitHubPullRequest, Request, carrier_pull_request_intent,
+        closes_carrier_pull_request, retains_request_branch_for_carrier,
     },
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
@@ -145,6 +145,10 @@ impl RequestStore {
         let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
         acquire_github_push_lock(&tx, &progress.repo_id, &progress.branch()).await?;
+        let base_before = github_pull_request(&tx, &progress.request_id)
+            .await?
+            .and_then(|recorded| recorded.pull_request)
+            .map(|opened| opened.base);
         let finished = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -167,7 +171,11 @@ impl RequestStore {
             .rows_affected()
             > 0;
         if finished {
-            release_request_branch_after_carrier_change(&tx, progress, now_unix).await?;
+            release_request_branches_after_carrier_change(&tx, progress, base_before, now_unix)
+                .await?;
+            if progress.has_ended_on_github() {
+                queue_carriers_after_parent_ended(&tx, &progress.request_id, now_unix).await?;
+            }
         }
         tx.commit().await?;
         Ok(finished)
@@ -289,14 +297,22 @@ pub(super) async fn queue_carrier_for_pushed_head<C: ConnectionTrait>(
     let Some(connection) = repository_github_connection(conn, &request.repo_id).await? else {
         return Ok(());
     };
-    let parent = match request.base.parent_request_id() {
-        Some(parent_id) => request_by_id(conn, parent_id).await?,
-        None => None,
+    let (parent, parent_carrier) = match request.base.parent_request_id() {
+        Some(parent_id) => (
+            request_by_id(conn, parent_id).await?,
+            github_pull_request(conn, parent_id).await?,
+        ),
+        None => (None, None),
     };
     let views = repository_views(conn, &request.repo_id).await?;
-    let Some(GitHubPullRequestIntent::Open { base, head_oid }) =
-        carrier_pull_request_intent(&connection, &request, parent.as_ref(), &views, head_oid)
-    else {
+    let Some(GitHubPullRequestIntent::Open { base, head_oid }) = carrier_pull_request_intent(
+        &connection,
+        &request,
+        parent.as_ref(),
+        parent_carrier.as_ref(),
+        &views,
+        head_oid,
+    ) else {
         return Ok(());
     };
     let destination = GitHubPushDestination::of(&connection);
@@ -387,14 +403,16 @@ pub(super) async fn queue_carriers_for_repository<C: ConnectionTrait>(
 
 pub(super) async fn queue_carriers_after_parent_ended<C: ConnectionTrait>(
     conn: &C,
-    parent: &Request,
+    parent_id: &str,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    for child in super::request_stack::children(conn, &parent.id).await? {
+    let parent_branch = GitHubBranch::Request(parent_id.to_string()).name();
+    for child in super::request_stack::children(conn, parent_id).await? {
         if let Some(GitHubPullRequest {
-            intent: GitHubPullRequestIntent::Open { head_oid, .. },
+            intent: GitHubPullRequestIntent::Open { base, head_oid },
             ..
         }) = github_pull_request(conn, &child.id).await?
+            && base == parent_branch
         {
             queue_carrier_for_pushed_head(conn, &child.id, &head_oid, now_unix).await?;
         }
@@ -440,16 +458,44 @@ pub(super) async fn fence_running_carriers<C: ConnectionTrait>(
     Ok(())
 }
 
-async fn release_request_branch_after_carrier_change<C: ConnectionTrait>(
+async fn release_request_branches_after_carrier_change<C: ConnectionTrait>(
     conn: &C,
     carrier: &GitHubPullRequest,
+    base_before: Option<String>,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    let Some(request) = request_by_id(conn, &carrier.request_id).await? else {
-        return Ok(());
-    };
-    let connection = repository_github_connection(conn, &request.repo_id).await?;
-    if retains_request_branch_for_carrier(&request, connection.as_ref(), Some(carrier)) {
+    let base_before = base_before.as_deref().and_then(GitHubBranch::parse);
+    for branch in [Some(carrier.branch()), base_before] {
+        let Some(GitHubBranch::Request(request_id)) = branch else {
+            continue;
+        };
+        let Some(request) = request_by_id(conn, &request_id)
+            .await?
+            .filter(|request| request.repo_id == carrier.repo_id)
+        else {
+            continue;
+        };
+        let connection = repository_github_connection(conn, &request.repo_id).await?;
+        release_request_branch_unless_retained(conn, &request, connection.as_ref(), now_unix)
+            .await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn release_request_branch_unless_retained<C: ConnectionTrait>(
+    conn: &C,
+    request: &Request,
+    connection: Option<&GitHubConnection>,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    let carrier = github_pull_request(conn, &request.id).await?;
+    let based_on_branch = pull_requests_based_on(
+        conn,
+        &request.repo_id,
+        &GitHubBranch::Request(request.id.clone()),
+    )
+    .await?;
+    if retains_request_branch_for_carrier(request, connection, carrier.as_ref(), &based_on_branch) {
         return Ok(());
     }
     super::github_pushes::queue_github_branch_deletion(
@@ -459,6 +505,26 @@ async fn release_request_branch_after_carrier_change<C: ConnectionTrait>(
         now_unix,
     )
     .await
+}
+
+pub(super) async fn pull_requests_based_on<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    branch: &GitHubBranch,
+) -> Result<Vec<GitHubPullRequest>, PostgresError> {
+    PullRequestRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "SELECT {SELECT_PULL_REQUEST} FROM scope_github_pull_requests
+              WHERE repo_id = $1 AND base = $2"
+        ),
+        [repo_id.into(), branch.name().into()],
+    ))
+    .all(conn)
+    .await?
+    .into_iter()
+    .map(PullRequestRow::into_domain)
+    .collect()
 }
 
 pub(super) async fn queue_carrier_close<C: ConnectionTrait>(
