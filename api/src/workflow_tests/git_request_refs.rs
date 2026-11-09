@@ -186,7 +186,7 @@ async fn insert_private_request_for_public_user(state: &AppState) {
             base_version: 1,
             main_ancestor_oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             head_oid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
-            git_snapshot: None,
+            pushed_at_unix: None,
             title: "Former member request".to_string(),
             description_markdown: String::new(),
             activity_version: 0,
@@ -242,7 +242,7 @@ async fn assert_request_branch_unchanged(state: &AppState) {
     let request = stored_request(state, REQUEST_ID).await;
     assert_eq!(request.state(), RequestState::Draft);
     assert_eq!(request.head_oid, request.main_ancestor_oid);
-    assert!(request.git_snapshot.is_none());
+    assert!(request.pushed_at_unix.is_none());
     assert_eq!(request_event_count(state).await, 1);
 }
 
@@ -343,4 +343,24 @@ fn contributor_user_id() -> String {
 
 fn member_user_id() -> String {
     scope_postgres::db::scope_user_id_for_auth_identity("clerk", MEMBER_SUBJECT)
+}
+
+async fn fetch_folder(
+    state: &AppState,
+    headers: &HeaderMap,
+    view: &ViewId,
+) -> crate::git::cache::GitRepoHandle {
+    let ask = scope_domain::requests::GitFetchAsk::Listing {
+        named_refs: [REQUEST_REF.to_string()].into(),
+    };
+    git_upload_pack_repo_for_request(state, headers, TEST_REPO_OWNER, TEST_REPO_NAME, view, &ask)
+        .await
+        .unwrap()
+}
+
+fn ref_head(repo: &FsPath, reference: &str) -> String {
+    git_stdout_text(repo, &["rev-parse", reference], "read test ref")
+        .unwrap()
+        .trim()
+        .to_string()
 }

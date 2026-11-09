@@ -110,6 +110,13 @@ impl RepositoryEngine {
         self.cache.remove(incarnation)
     }
 
+    pub(crate) fn lease_repository(
+        self: &Arc<Self>,
+        incarnation: &RepositoryIncarnation,
+    ) -> Result<GitRepoHandle, ApiError> {
+        self.cache.lease(incarnation)
+    }
+
     pub(crate) fn lease_derived(
         self: &Arc<Self>,
         path: PathBuf,
@@ -117,6 +124,7 @@ impl RepositoryEngine {
         self.cache.lease_derived(path)
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn materialize_derived<IsReady, Build, BuildFuture>(
         self: &Arc<Self>,
         incarnation: &RepositoryIncarnation,
@@ -145,7 +153,8 @@ impl RepositoryEngine {
                 built_for_build.store(true, Ordering::Relaxed);
                 let result = build().await;
                 if result.is_ok() {
-                    let pruned = tokio::task::spawn_blocking(move || engine_for_build.prune()).await;
+                    let parent_span = tracing::Span::current();
+                    let pruned = tokio::task::spawn_blocking(move || parent_span.in_scope(|| engine_for_build.prune())).await;
                     match pruned {
                         Ok(Ok(())) => {}
                         Ok(Err(error)) => tracing::warn!(error = %error.operator_diagnostic(), "failed to prune derived Git caches"),
@@ -168,6 +177,7 @@ impl RepositoryEngine {
         result
     }
 
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn materialize_repository(
         self: &Arc<Self>,
         state: &AppState,
@@ -308,7 +318,9 @@ impl RepositoryEngine {
         result?;
         if built.load(Ordering::Relaxed) {
             let engine = self.clone();
-            match tokio::task::spawn_blocking(move || engine.prune()).await {
+            let parent_span = tracing::Span::current();
+            match tokio::task::spawn_blocking(move || parent_span.in_scope(|| engine.prune())).await
+            {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
                     tracing::warn!(error = %error.operator_diagnostic(), "Git cache pruning failed")
@@ -450,6 +462,30 @@ impl RepositoryEngine {
                 PushedPackLink::Linked
             }
         })
+    }
+
+    pub(crate) async fn install_request_objects<Build, BuildFuture>(
+        &self,
+        shelf: &Path,
+        heads: Vec<String>,
+        build: Build,
+    ) -> Result<(), ApiError>
+    where
+        Build: FnOnce() -> BuildFuture + Send + 'static,
+        BuildFuture: std::future::Future<Output = Result<(), ApiError>> + Send + 'static,
+    {
+        let path = shelf.to_path_buf();
+        self.materializations
+            .materialize_async(
+                GitDerivedCacheNamespace::RequestObjects,
+                shelf.to_string_lossy().into_owned(),
+                move || {
+                    present_commits(&path, heads.iter().map(String::as_str))
+                        .is_ok_and(|present| heads.iter().all(|oid| present.contains(oid)))
+                },
+                build,
+            )
+            .await
     }
 
     async fn coordinate_repository<IsReady, Operation, OperationFuture>(

@@ -1,0 +1,36 @@
+name: Warm CI caches
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - '**/Cargo.toml'
+      - rust-toolchain.toml
+      - media-worker/Dockerfile
+      - dev/checks/backend
+      - .github/workflows/warm-ci-caches.yml
+      - .github/workflows/rust-workspace-checks.yml
+      - .github/workflows/scope-api-ci.yml
+      - .github/workflows/scope-media-worker-image.yml
+
+concurrency:
+  group: warm-ci-caches
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend caches
+    uses: ./.github/workflows/scope-api-ci.yml
+
+  media-worker-image:
+    name: Media worker image cache
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/scope-media-worker-image.yml
+    with:
+      source_sha: ${{ github.sha }}

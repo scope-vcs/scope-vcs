@@ -17,32 +17,26 @@ const entry = (id: string, entered: number, left: number): HistoryEntrySummaryRe
 })
 
 const summarize = (newestFirst: HistoryEntrySummaryResponse[]) =>
-  visibilityTimelineBars(newestFirst).map((bar) => [bar.entry.id, bar.direction, bar.signedCount, bar.label])
+  visibilityTimelineBars(newestFirst).map((bar) => [bar.entry.id, bar.direction, bar.signedCount, bar.labeled])
 
 const labels = (newestFirst: HistoryEntrySummaryResponse[]) =>
-  visibilityTimelineBars(newestFirst).flatMap((bar) => bar.label === null ? [] : [[bar.entry.id, bar.label]])
+  visibilityTimelineBars(newestFirst).flatMap((bar) => bar.labeled ? [bar.entry.id] : [])
 
 test('bars run oldest to newest with entries into the view above and exits below the baseline', () => {
   assert.deepEqual(summarize([entry('newest', 3, 0), entry('mixed', 2, 1), entry('oldest', 0, 4)]), [
-    ['oldest', 'left', -4, '4'],
-    ['mixed', 'entered', 2, null],
-    ['mixed', 'left', -1, null],
-    ['newest', 'entered', 3, '3'],
+    ['oldest', 'left', -4, true],
+    ['mixed', 'entered', 2, false],
+    ['mixed', 'left', -1, false],
+    ['newest', 'entered', 3, true],
   ])
 })
 
 test('the newest and the largest changes are labeled', () => {
-  assert.deepEqual(labels([entry('newest', 1, 0), entry('largest', 282, 0), entry('other', 5, 0)]), [
-    ['largest', '282'],
-    ['newest', '1'],
-  ])
+  assert.deepEqual(labels([entry('newest', 1, 0), entry('largest', 282, 0), entry('other', 5, 0)]), ['largest', 'newest'])
 })
 
 test('a history where paths only left the view labels its largest exit', () => {
-  assert.deepEqual(labels([entry('newest', 0, 2), entry('largest', 0, 282), entry('oldest', 0, 1)]), [
-    ['largest', '282'],
-    ['newest', '2'],
-  ])
+  assert.deepEqual(labels([entry('newest', 0, 2), entry('largest', 0, 282), entry('oldest', 0, 1)]), ['largest', 'newest'])
 })
 
 test('older pages loaded into the shared feed stay out of the timeline', () => {

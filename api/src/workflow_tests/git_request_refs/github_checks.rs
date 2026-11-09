@@ -144,7 +144,6 @@ pub(super) async fn record_github_checks(
             actor_can_edit: true,
             expected_old_head_oid: Some(request.head_oid.clone()),
             new_head_oid: head.into(),
-            git_snapshot: request.git_snapshot.clone().unwrap(),
             git_facts: scope_domain::requests::RequestRevisionGitFacts {
                 contains_old_head: true,
                 contained_main_oid: None,
@@ -286,7 +285,7 @@ async fn a_maintainers_push_reaches_github_and_github_results_decide_the_merge()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_new_revision_replaces_the_branch_and_an_older_green_run_does_not_count() {
+async fn a_new_revision_checks_workflows_in_staging_and_replaces_older_green_results() {
     let request = owner_request("github-checks-revision", &[REQUIRED_CHECK]).await;
     let (state, fake) = (&request.state, &request.fake);
     let first_head = request.head();
@@ -298,16 +297,45 @@ async fn a_new_revision_replaces_the_branch_and_an_older_green_run_does_not_coun
     deliver_check_run(state, GITHUB_REPOSITORY_ID, &first_head).await;
     assert_eq!(request.checks().await["mergeability"]["status"], "Ready");
 
+    let revision_repos = || {
+        fs::read_dir(state.repository_engine.cache_root())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().starts_with("revision-"))
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let before_push = revision_repos();
+    fs::create_dir_all(request.source.join(".github/workflows")).unwrap();
     push_change(
         &request.source,
         &request.remote,
         "refs/heads/checks",
-        "request.txt",
-        "revised work\n",
+        ".github/workflows/ci.yml",
+        "on: push\n",
         "revise request",
     )
     .unwrap();
     let second_head = request.head();
+    let evaluation = state
+        .metadata
+        .requests()
+        .request_check_evaluation(&request.request_id, &second_head)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(evaluation.changes_github_workflows, Some(true));
+    assert_eq!(
+        revision_repos(),
+        before_push,
+        "push checks and diff stats must use staging without materializing a revision repo"
+    );
+    let totals = state
+        .metadata
+        .requests()
+        .current_request_diff_totals(std::slice::from_ref(&request.request_id))
+        .await
+        .unwrap();
+    assert!(totals.contains_key(&request.request_id));
     let revised = request.checks().await;
     assert_eq!(revised["head_oid"], second_head);
     assert_eq!(revised["checks"][0]["status"], serde_json::Value::Null);

@@ -22,7 +22,6 @@ fn independent_revision(new_head: &str) -> RecordRequestRevisionInput {
         actor_can_edit: true,
         expected_old_head_oid: Some("base".to_string()),
         new_head_oid: new_head.to_string(),
-        git_snapshot: source_blob(new_head),
         git_facts: RequestRevisionGitFacts {
             contains_old_head: true,
             contained_main_oid: None,

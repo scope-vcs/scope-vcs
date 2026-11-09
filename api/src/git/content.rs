@@ -23,7 +23,9 @@ pub(crate) async fn source_content_bytes(
         .await?;
     let state = state.clone();
     let blob = blob.clone();
+    let parent_span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _entered = parent_span.enter();
         source_content_bytes_from_repo(&state, &blob, Some(repo.as_ref()))
     })
     .await

@@ -1,4 +1,24 @@
-FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS heif-builder
+ARG APT_VERSION=3.0.4
+
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS apt-base
+ARG APT_VERSION
+RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
+    && if [ -f /etc/apt/sources.list ]; then mv /etc/apt/sources.list /tmp/apt-sources.list; fi \
+    && mkdir /etc/apt/sources.list.d \
+    && printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian-security' 'Suites: trixie-security' \
+        'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/apt-security.sources \
+    && rm -rf /var/lib/apt/lists/* \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg7.0=${APT_VERSION}"' \
+    && rm -rf /etc/apt/sources.list.d \
+    && mv /tmp/apt-sources.list.d /etc/apt/sources.list.d \
+    && if [ -f /tmp/apt-sources.list ]; then mv /tmp/apt-sources.list /etc/apt/sources.list; fi \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM apt-base AS heif-builder
 
 ARG LIBHEIF_VERSION=1.23.5
 ARG LIBHEIF_SHA256=fd9036064c4432f0550d15072ddf34956a248279ee9aeaff0fba3fa0f77d8f1a
@@ -45,9 +65,25 @@ COPY worker ./worker
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
+ARG APT_VERSION
+RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
+    && if [ -f /etc/apt/sources.list ]; then mv /etc/apt/sources.list /tmp/apt-sources.list; fi \
+    && mkdir /etc/apt/sources.list.d \
+    && printf '%s\n' 'Types: deb' 'URIs: http://deb.debian.org/debian-security' 'Suites: trixie-security' \
+        'Components: main' 'Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/apt-security.sources \
+    && rm -rf /var/lib/apt/lists/* \
+    && timeout --verbose --kill-after=10s 300s sh -ec '\
+    apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 update \
+    && apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=30 install --yes --no-install-recommends \
+        "apt=${APT_VERSION}" "libapt-pkg7.0=${APT_VERSION}"' \
+    && rm -rf /etc/apt/sources.list.d \
+    && mv /tmp/apt-sources.list.d /etc/apt/sources.list.d \
+    && if [ -f /tmp/apt-sources.list ]; then mv /tmp/apt-sources.list /etc/apt/sources.list; fi \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=heif-builder /opt/libheif /opt/libheif
-ENV PATH=/opt/libheif/bin:$PATH LD_LIBRARY_PATH=/opt/libheif/lib CARGO_BUILD_JOBS=2
+ENV PATH=/opt/libheif/bin:$PATH LD_LIBRARY_PATH=/opt/libheif/lib
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -62,18 +98,16 @@ ENV SCOPE_MEDIA_HEIF_CONVERT=/opt/libheif/bin/heif-convert \
     SCOPE_MEDIA_HEIF_INFO=/opt/libheif/bin/heif-info
 
 COPY --from=planner /scope/recipe.json recipe.json
-RUN cargo chef cook --locked --release --tests -p scope-media-worker --recipe-path recipe.json \
-    && cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
+RUN cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
 COPY --from=planner /scope ./
-RUN cargo test --locked --release -p scope-media-worker \
-    && cargo build --locked --release -p scope-media-worker \
+RUN cargo build --locked --release -p scope-media-worker \
     && chmod +x media-worker/tests/*.sh \
     && media-worker/tests/generate-codec-fixtures.sh /tmp/scope-media-fixtures \
     && SCOPE_MEDIA_FFMPEG=/scope/media-worker/tests/ffmpeg-many-cpus.sh \
         target/release/scope-media-worker codec-self-test /tmp/scope-media-fixtures \
     && media-worker/tests/assert-codec-output.sh /tmp/scope-media-fixtures/processed
 
-FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM apt-base
 
 LABEL org.opencontainers.image.source="https://github.com/scope-vcs/scope-vcs"
 
@@ -82,6 +116,7 @@ ARG PCRE2_VERSION=10.46-1~deb13u3
 ARG LIBRSVG_VERSION=2.60.0+dfsg-1+deb13u1
 ARG EXPAT_VERSION=2.9.0-1~deb13u1
 ARG BROTLI_VERSION=1.1.0-2+deb13u1
+ARG ZLIB_VERSION=1:1.3.dfsg+really1.3.1-1+deb13u1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -95,6 +130,7 @@ RUN apt-get update \
         "librsvg2-2=${LIBRSVG_VERSION}" \
         "libexpat1=${EXPAT_VERSION}" \
         "libbrotli1=${BROTLI_VERSION}" \
+        "zlib1g=${ZLIB_VERSION}" \
     && rm -rf /var/lib/apt/lists/* \
     && echo /opt/libheif/lib > /etc/ld.so.conf.d/libheif.conf \
     && mkdir -p /tmp/scope-media-worker /scope/licenses \

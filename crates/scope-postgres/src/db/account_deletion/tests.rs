@@ -37,6 +37,9 @@ async fn query_json(store: &MetadataStore, sql: &str) -> Value {
 }
 
 const CONTRIBUTIONS: &str = r#"
+    INSERT INTO scope_git_fetch_advertisements
+        (repo_id, visibility_fingerprint, view_id, reader_id, head_oid, requests, expires_at_unix)
+        VALUES ('owner/shared', 'visibility', 'private', 'leaver', repeat('a', 40), NULL, 999);
     INSERT INTO scope_auth_identities VALUES ('clerk', 'user_clerk_leaver', 'leaver');
     INSERT INTO scope_cli_sessions (id, token_hash, user_id, label, created_at_unix, expires_at_unix)
         VALUES ('cli', repeat('f', 64), 'leaver', 'laptop', 1, 999);
@@ -58,9 +61,9 @@ const CONTRIBUTIONS: &str = r#"
         VALUES ('event', 'authored', 'leaver', 'Closed',
             2, jsonb_build_object('Closed', jsonb_build_object('head_oid', repeat('b', 40))), 3);
     INSERT INTO scope_request_revisions (id, request_id, position, actor_user_id, old_head_oid,
-        new_head_oid, main_ancestor_oid, base_kind, review_base_oid, base_version, rewrote_history, git_snapshot, created_at_unix)
+        new_head_oid, main_ancestor_oid, base_kind, review_base_oid, base_version, rewrote_history, created_at_unix)
         VALUES ('revision', 'open', 1, 'leaver', repeat('a', 40), repeat('b', 40),
-            repeat('a', 40), 'Main', repeat('a', 40), 1, FALSE, '{}', 2);
+            repeat('a', 40), 'Main', repeat('a', 40), 1, FALSE, 2);
     INSERT INTO scope_request_discussions (id, request_id, opened_position, last_activity_position,
         author_user_id, body_markdown, status, client_discussion_id, created_at_unix)
         VALUES ('discussion', 'merged', 1, 2, 'leaver', 'Looks good', 'Open', 'client', 2);
@@ -141,6 +144,7 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
                 + (SELECT count(*) FROM scope_repository_invites)
                 + (SELECT count(*) FROM scope_auth_identities)
                 + (SELECT count(*) FROM scope_cli_sessions)
+                + (SELECT count(*) FROM scope_git_fetch_advertisements WHERE reader_id = 'leaver')
                 + (SELECT count(*) FROM scope_users WHERE id = 'leaver'),
             'clerk', (SELECT jsonb_agg(clerk_user_id) FROM scope_clerk_user_deletions)
         )"#,
@@ -195,6 +199,20 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
     )
     .await;
     assert_eq!(leftover_email, json!([]));
+
+    assert!(
+        store
+            .auth()
+            .resolve_existing_clerk_user(&ExternalIdentity {
+                provider: "clerk".into(),
+                subject: "user_clerk_leaver".into(),
+                email: Some(leaver.email.clone()),
+                email_verified: true,
+            })
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     let refused = store
         .auth()

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RequestQueueItemResponse, RequestStackParentResponse } from '../../api/types.generated'
-import { foldStackedRequestRows, requestStackMembers, stackRequestRows } from './request-workspace-stack'
+import { foldStackedRequestRows, requestRailRows, requestStackMembers, stackRequestRows } from './request-workspace-stack'
 
 function row(id: string, parent: string | 'unavailable' | null = null) {
   const stack_parent: RequestStackParentResponse | null =
@@ -100,4 +100,19 @@ test('requests whose shared parent is outside the list form one stack starting a
   const members = (id: string) => requestStackMembers(stacked, id).map(({ row, depth }) => [row.item.request.id, depth])
   assert.deepEqual(members('sibling'), [['child', 0], ['sibling', 0]])
   assert.deepEqual(members('opaque'), [])
+})
+
+test('the collapsed rail closes a stack outline on the last row it shows, and keeps the selected row', () => {
+  const ids = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7']
+  const visible = foldStackedRequestRows(stackRequestRows(ids.map((id, index) => row(id, index ? 's0' : null))), new Set())
+  const rail = (selected?: string) => requestRailRows(visible, selected).map(({ shown, edge }) => (shown ? edge : 'hidden'))
+  assert.deepEqual(rail(), ['start', 'middle', 'middle', 'middle', 'middle', 'end', 'hidden', 'hidden'])
+  assert.deepEqual(rail('s7'), ['start', 'middle', 'middle', 'middle', 'middle', 'middle', 'hidden', 'end'])
+  const prefixed = (count: number) => foldStackedRequestRows(stackRequestRows([
+    ...Array.from({ length: count }, (_, index) => row(`p${index}`)),
+    ...ids.map((id, index) => row(id, index ? 's0' : null)),
+  ]), new Set())
+  assert.equal(requestRailRows(prefixed(5), undefined)[5].edge, 'single')
+  assert.equal(requestRailRows(prefixed(5), 's7').at(-1)?.edge, 'end')
+  assert.equal(requestRailRows(prefixed(6), 's7').at(-1)?.edge, 'single')
 })

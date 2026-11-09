@@ -1,7 +1,6 @@
 use super::*;
 use crate::requests::{
-    RequestBase, RequestStackStatus, RetargetRequestAfterParentMergeInput,
-    fixtures::{open_request, source_blob},
+    RequestBase, RequestStackStatus, RetargetRequestAfterParentMergeInput, fixtures::open_request,
     retarget_request_after_parent_merge,
 };
 use crate::views::ViewId;
@@ -27,7 +26,7 @@ fn containing_main_lands_conflicted_child_after_parent_retarget_without_changing
     let mut child = parent.clone();
     child.id = "child".into();
     child.head_oid = "child-head".into();
-    child.git_snapshot = Some(source_blob(&child.head_oid));
+    child.pushed_at_unix = Some(1);
     child.base = RequestBase::Request {
         request_id: parent.id.clone(),
         revision_id: "parent-revision".into(),

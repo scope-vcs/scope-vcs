@@ -120,6 +120,7 @@ impl NativeRequestCheck {
     pub fn run(
         &self,
         request: &Request,
+        source: Option<&crate::content::SourceBlob>,
         evaluation_id: &str,
         revision: &WorkflowRevision,
         requested_by_user_id: &str,
@@ -132,13 +133,14 @@ impl NativeRequestCheck {
                 "request check does not match the workflow revision",
             ));
         }
-        let snapshot = request
-            .git_snapshot
-            .clone()
-            .ok_or_else(|| DomainError::conflict("request branch has not been pushed"))?;
-        if snapshot.git_oid != request.head_oid {
+        if request.pushed_at_unix.is_none() {
+            return Err(DomainError::conflict("request branch has not been pushed"));
+        }
+        let source =
+            source.ok_or_else(|| DomainError::conflict("request run source is unavailable"))?;
+        if source.git_oid != request.head_oid {
             return Err(DomainError::conflict(
-                "request snapshot does not match its head",
+                "request run source does not match its head",
             ));
         }
         let idempotency_key = format!(
@@ -155,14 +157,7 @@ impl NativeRequestCheck {
             revision.digest(),
             RunTrigger::Request,
             Some(requested_by_user_id.to_string()),
-            if request.view.is_private() {
-                RunSource::request_git_snapshot(
-                    snapshot,
-                    request.base.review_base_oid().to_string(),
-                )?
-            } else {
-                RunSource::ephemeral_git_bundle(snapshot)?
-            },
+            RunSource::ephemeral_git_bundle(source.clone())?,
             now_unix,
         )
     }
@@ -630,7 +625,7 @@ fn native_verdict(check: &NativeRequestCheck, runs: &[(String, RunState)]) -> Ch
 
 pub fn request_head_awaits_evaluation(request: &Request, outcome: RequestChecksOutcome) -> bool {
     outcome == RequestChecksOutcome::NotEvaluated
-        && request.git_snapshot.is_some()
+        && request.pushed_at_unix.is_some()
         && !request.is_terminal()
 }
 

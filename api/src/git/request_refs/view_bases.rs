@@ -20,7 +20,7 @@ pub(crate) async fn request_view_bases(
 ) -> Result<RequestViewBases, ApiError> {
     let unseeded_views = requests
         .iter()
-        .filter(|request| request.git_snapshot.is_none() && &request.view != seeded_view)
+        .filter(|request| request.pushed_at_unix.is_none() && &request.view != seeded_view)
         .map(|request| &request.view)
         .filter(|view| views.get(view).is_some())
         .collect::<BTreeSet<_>>();
@@ -29,13 +29,4 @@ pub(crate) async fn request_view_bases(
         bases.insert(view.clone(), git.view_repo(state, views, view).await?);
     }
     Ok(bases)
-}
-
-pub(crate) fn share_request_view_bases(
-    bases: &RequestViewBases,
-) -> Result<RequestViewBases, ApiError> {
-    bases
-        .iter()
-        .map(|(view, base)| Ok((view.clone(), base.share()?)))
-        .collect()
 }

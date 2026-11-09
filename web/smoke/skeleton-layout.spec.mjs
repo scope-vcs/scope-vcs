@@ -21,8 +21,8 @@ const storageState = process.env.SCOPE_SMOKE_STORAGE_STATE
 
 const SCENARIOS = [
   { name: 'profile', from: repoPath, to: `/${owner}` },
-  { name: 'code from profile', from: `/${owner}`, to: repoPath },
-  { name: 'code from update', from: `${repoPath}/updates/dev-public-1`, to: repoPath },
+  { name: 'code from profile', from: `/${owner}`, to: `${repoPath}/code` },
+  { name: 'code from update', from: `${repoPath}/updates/dev-public-1`, to: `${repoPath}/code` },
   { name: 'update from profile', from: `/${owner}`, to: `${repoPath}/updates/dev-public-1` },
   { name: 'update from code', from: repoPath, to: `${repoPath}/updates/dev-public-1` },
   { name: 'requests from profile', from: `/${owner}`, to: `${requestRepoPath}/requests` },

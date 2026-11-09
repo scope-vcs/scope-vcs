@@ -262,13 +262,7 @@ async fn merge_route_persists_git_content_once() {
     .await
     .unwrap();
     assert_eq!(
-        git_stdout_text(
-            &public_repo,
-            &["rev-parse", &format!("refs/heads/{DEFAULT_GIT_BRANCH}")],
-            "read public main after request merge",
-        )
-        .unwrap()
-        .trim(),
+        ref_head(&public_repo, &format!("refs/heads/{DEFAULT_GIT_BRANCH}")),
         request_head
     );
     run_git(

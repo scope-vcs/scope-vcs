@@ -19,6 +19,7 @@ pub(crate) mod repository_collaboration;
 pub(crate) mod repository_workflows;
 pub(crate) mod request_anchor_projection;
 pub(crate) mod request_auto_merge;
+pub(crate) mod request_check_sources;
 pub(crate) mod request_checks;
 pub(crate) mod request_close;
 pub(crate) mod request_diff_file;

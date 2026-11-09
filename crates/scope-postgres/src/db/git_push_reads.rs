@@ -1,9 +1,10 @@
+use super::joined_rows::{joined, prefixed_columns};
 use super::{
     RepositoryStore, begin_metadata_read_snapshot, entities, repository_access::load_repo_record,
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, IdenStatic, Iterable,
-    QueryResult, Statement,
+    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, IdenStatic, QueryResult,
+    Statement,
 };
 use std::sync::OnceLock;
 use {
@@ -169,10 +170,6 @@ fn git_push_state_from_row(
     })
 }
 
-fn joined(row: &QueryResult, column: &str) -> Result<bool, PostgresError> {
-    Ok(row.try_get::<Option<String>>("", column)?.is_some())
-}
-
 #[derive(FromQueryResult)]
 struct PushRepositoryRow {
     incarnation_id: String,
@@ -213,11 +210,4 @@ const GIT_PUSH_STATE_FROM: &str = "FROM scope_repositories repo
 fn git_push_state_sql() -> &'static str {
     static SQL: OnceLock<String> = OnceLock::new();
     SQL.get_or_init(|| format!("SELECT {} {GIT_PUSH_STATE_FROM}", git_push_state_columns()))
-}
-
-fn prefixed_columns<C: Iterable + IdenStatic>(table: &str, prefix: &str) -> String {
-    C::iter()
-        .map(|column| format!("{table}.\"{0}\" AS \"{prefix}{0}\"", column.as_str()))
-        .collect::<Vec<_>>()
-        .join(", ")
 }

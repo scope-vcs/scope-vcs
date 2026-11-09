@@ -36,13 +36,6 @@ pub(super) async fn open_request_with_revision(store: &crate::db::MetadataStore)
             actor_can_edit: true,
             expected_old_head_oid: Some("head".into()),
             new_head_oid: "a".repeat(40),
-            git_snapshot: SourceBlob {
-                content_ref: ContentRef::git_bundle_sha256("sha256-auto-merge"),
-                sha256: "sha256-auto-merge".into(),
-                git_oid: "a".repeat(40),
-                git_file_mode: DEFAULT_GIT_FILE_MODE.into(),
-                size_bytes: 1,
-            },
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: true,
                 contained_main_oid: Some("f".repeat(40)),

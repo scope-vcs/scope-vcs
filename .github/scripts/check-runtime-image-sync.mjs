@@ -9,11 +9,12 @@ const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const maintenance = read('deploy/railway/maintenance.Dockerfile');
 const postgres = maintenance.match(/FROM postgres:(\d+\.\d+)@(sha256:[0-9a-f]{64})/);
 assert.ok(postgres, 'maintenance image must pin PostgreSQL and its digest');
-for (const workflow of ['rust-workspace-checks', 'scope-integration-ci']) {
-  assert.ok(read(`.github/workflows/${workflow}.yml`).includes(`postgres:${postgres[1]}@${postgres[2]}`));
-}
+assert.ok(read('.github/workflows/scope-integration-ci.yml').includes(`postgres:${postgres[1]}@${postgres[2]}`));
+const postgresMajor = postgres[1].split('.')[0];
+assert.equal(read('dev/install-test-postgres.sh').match(/^postgres_version=(\d+\.\d+)$/m)?.[1], postgres[1]);
+assert.ok(read('.github/workflows/rust-workspace-checks.yml').includes(`SCOPE_TEST_POSTGRES_BIN: /usr/lib/postgresql/${postgresMajor}/bin`));
 assert.equal(
-  read('.github/workflows/deploy-staging.yml').split(`postgres:${postgres[1]}@${postgres[2]}`).length - 1,
+  read('.github/actions/install-postgres-clients/action.yml').split(`postgres:${postgres[1]}@${postgres[2]}`).length - 1,
   2,
 );
 

@@ -5,20 +5,25 @@ import test from 'node:test'
 import { launchBrowser, startFixtureServer } from '../support/fixture-server.mjs'
 
 test('browser analytics transport uses the bounded proxy while analytics domains are blocked', async (t) => {
-  let runtime
-  const deliveries = []
+  const scenarios = new Map()
+  let releaseCapture
+  const captureReleased = new Promise(resolve => { releaseCapture = resolve })
+  t.after(() => releaseCapture())
   const server = await startFixtureServer(t, 'analytics', {
     plugins: [{ name: 'scope-analytics-proxy-test', configureServer(vite) {
       vite.middlewares.use(async (incoming, outgoing, next) => {
         if (!incoming.url.startsWith('/e/')) return next()
         try {
+          const scenario = scenarios.get(incoming.headers['x-scope-analytics-scenario'])
           const { analyticsEndpointResponse } = await vite.ssrLoadModule('@/server/analytics-endpoint-handler.ts')
-          const request = new Request(new URL(incoming.url, runtime.SCOPE_ANALYTICS_ORIGIN), {
+          const request = new Request(new URL(incoming.url, scenario.runtime.SCOPE_ANALYTICS_ORIGIN), {
             method: incoming.method, headers: { ...incoming.headers, 'x-real-ip': '89.160.20.129' },
             ...(incoming.method === 'POST' ? { body: Readable.toWeb(incoming), duplex: 'half' } : {}),
           })
-          const response = await analyticsEndpointResponse(request, { runtime, fetchUpstream: async (url, options) => {
-            deliveries.push({ url: String(url), headers: Object.fromEntries(new Headers(options.headers)), body: Buffer.from(options.body) })
+          const response = await analyticsEndpointResponse(request, { runtime: scenario.runtime, fetchUpstream: async (url, options) => {
+            scenario.deliveries.push({ url: String(url), headers: Object.fromEntries(new Headers(options.headers)), body: Buffer.from(options.body) })
+            scenario.notifyDelivery()
+            await captureReleased
             return Response.json({ status: 1 })
           } })
           outgoing.writeHead(response.status, Object.fromEntries(response.headers))
@@ -28,24 +33,31 @@ test('browser analytics transport uses the bounded proxy while analytics domains
     } }],
   })
   const origin = server.resolvedUrls.local[0].replace(/\/$/, '')
-  runtime = {
+  const runtime = {
     SCOPE_ANALYTICS_ENVIRONMENT: 'test', SCOPE_ANALYTICS_ORIGIN: origin,
     POSTHOG_PROJECT_TOKEN: 'phc_fixture_only', SCOPE_ANALYTICS_RELEASE: 'fixture-release',
   }
   const browser = await launchBrowser(t)
   const browserOptions = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36' }
-  const context = await browser.newContext(browserOptions)
-  await context.addInitScript(normalVisitor)
+  const { context, deliveries } = await openScenario(
+    browser, browserOptions, scenarios, runtime,
+  )
   const requests = []
   await context.route(/https:\/\/.*posthog\.com\//, route => route.abort('blockedbyclient'))
   await context.addCookies([{ name: 'scope_session', value: 'SECRET session', url: origin }])
   const page = await context.newPage()
+  await page.clock.install()
   page.on('request', request => requests.push(request.url()))
   page.on('pageerror', error => console.log('pageerror:', error.message))
+  const captureStarted = page.waitForRequest(request => new URL(request.url()).pathname === '/e/e/')
   await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await captureStarted
+  await page.clock.runFor(1_000)
+  assert.equal(await page.evaluate(() => Boolean(window.analyticsReady)), false,
+    'identity transitions must await delivery while the proxy response is held')
+  releaseCapture()
   await page.waitForFunction(() => window.analyticsReady)
   assert.equal(await page.evaluate(() => window.analyticsEnabled), true, JSON.stringify(requests))
-  await waitFor(() => deliveries.flatMap(decodeCapture).length >= 7)
   assert.equal(await page.evaluate(() => localStorage.length), 0, 'analytics must not store identities')
   const events = deliveries.flatMap(decodeCapture)
   assert.deepEqual(events.map(event => event.event).sort(), [
@@ -95,39 +107,44 @@ test('browser analytics transport uses the bounded proxy while analytics domains
   assert.equal(diagnostics.find(
     event => event.properties.error_origin === 'route',
   ).properties.distinct_id, 'scope_usr_two')
-  runtime = { ...runtime, SCOPE_ANALYTICS_GEOIP: 'enabled', RAILWAY_ENVIRONMENT_ID: 'fixture',
-    SCOPE_ANALYTICS_ORIGIN: origin.replace('http:', 'https:') }
-  const beforeGeoip = deliveries.length
-  const located = await browser.newPage()
+  await context.close()
+  const geoip = await openScenario(browser, browserOptions, scenarios, {
+    ...runtime, SCOPE_ANALYTICS_GEOIP: 'enabled', RAILWAY_ENVIRONMENT_ID: 'fixture',
+    SCOPE_ANALYTICS_ORIGIN: origin.replace('http:', 'https:'),
+  })
+  const located = await geoip.context.newPage()
   await located.goto(origin, { waitUntil: 'domcontentloaded' })
   await located.waitForFunction(() => window.analyticsReady)
-  await waitFor(() => deliveries.length >= beforeGeoip + 7)
-  for (const delivery of deliveries.slice(beforeGeoip)) {
+  assert.equal(geoip.deliveries.flatMap(decodeCapture).length, 7)
+  for (const delivery of geoip.deliveries) {
     assert.equal(delivery.headers['x-forwarded-for'], '89.160.20.129')
     for (const event of decodeCapture(delivery)) {
       assert.equal(event.properties.$geoip_disable, false)
       assert.equal(event.properties.$ip, '89.160.20.129')
     }
   }
+  await geoip.context.close()
   for (const preference of ['globalPrivacyControl', 'doNotTrack']) {
-    const privateContext = await browser.newContext(browserOptions)
+    const privateScenario = await openScenario(browser, browserOptions, scenarios, runtime, false)
+    const privateContext = privateScenario.context
     await privateContext.addInitScript(({ preference }) => {
       Object.defineProperty(navigator, preference, { get: () => preference === 'globalPrivacyControl' ? true : '1' })
     }, { preference })
     const privatePage = await privateContext.newPage()
-    const beforePrivate = deliveries.length
     await privatePage.goto(origin, { waitUntil: 'domcontentloaded' })
     await privatePage.waitForFunction(() => window.analyticsReady)
-    assert.equal(deliveries.length, beforePrivate)
+    assert.equal(privateScenario.deliveries.length, 0)
     await privateContext.close()
   }
-  const beforeStaging = deliveries.length
-  runtime = { ...runtime, SCOPE_ANALYTICS_ENVIRONMENT: 'production', RAILWAY_ENVIRONMENT_NAME: 'staging' }
-  const staging = await browser.newPage()
+  const stagingScenario = await openScenario(browser, browserOptions, scenarios, {
+    ...runtime, SCOPE_ANALYTICS_ENVIRONMENT: 'production', RAILWAY_ENVIRONMENT_NAME: 'staging',
+  })
+  const staging = await stagingScenario.context.newPage()
   await staging.goto(origin, { waitUntil: 'domcontentloaded' })
   await staging.waitForFunction(() => window.analyticsReady)
   assert.equal(await staging.evaluate(() => window.analyticsEnabled), false)
-  assert.equal(deliveries.length, beforeStaging, 'Staging cannot use production analytics')
+  assert.equal(stagingScenario.deliveries.length, 0, 'Staging cannot use production analytics')
+  await stagingScenario.context.close()
 })
 
 function decodeCapture(delivery) {
@@ -141,12 +158,30 @@ function decodeCapture(delivery) {
   return Array.isArray(parsed) ? parsed : parsed.batch ?? [parsed]
 }
 
-async function waitFor(condition) {
-  const deadline = Date.now() + 15000
-  while (!condition()) {
-    assert.ok(Date.now() < deadline, 'analytics transport did not deliver its queued events')
-    await new Promise(resolve => setTimeout(resolve, 50))
-  }
+async function openScenario(browser, browserOptions, scenarios, runtime, deliveryEnabled = true) {
+  const id = String(scenarios.size)
+  const deliveries = []
+  const listeners = new Set()
+  scenarios.set(id, {
+    runtime,
+    deliveries,
+    notifyDelivery: () => {
+      for (const listener of listeners) listener()
+      listeners.clear()
+    },
+  })
+  const context = await browser.newContext({
+    ...browserOptions,
+    extraHTTPHeaders: { 'x-scope-analytics-scenario': id },
+  })
+  await context.addInitScript(normalVisitor)
+  await context.exposeFunction('analyticsDelivered', async (count) => {
+    if (!deliveryEnabled) return
+    while (deliveries.flatMap(decodeCapture).length < count) {
+      await new Promise(resolve => listeners.add(resolve))
+    }
+  })
+  return { context, deliveries }
 }
 
 function normalVisitor() {

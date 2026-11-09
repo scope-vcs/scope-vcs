@@ -5,4 +5,5 @@ exec /usr/bin/ssh -F /dev/null \
   -o StrictHostKeyChecking=yes \
   -o "UserKnownHostsFile=$known_hosts" \
   -o GlobalKnownHostsFile=/dev/null \
-  -o UpdateHostKeys=no "$@"
+  -o UpdateHostKeys=no \
+  -o ConnectTimeout=20 "$@"

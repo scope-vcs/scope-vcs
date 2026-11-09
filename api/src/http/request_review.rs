@@ -54,7 +54,6 @@ const MAX_LISTED_REQUEST_REVISIONS: usize = 50;
 const MAX_LISTED_COMMITS_PER_REVISION: usize = 100;
 const MAX_LISTED_REQUEST_COMMITS: usize = 100;
 const MAX_IMPORTED_REQUEST_REVISIONS: usize = 5;
-const MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Deserialize)]
 pub(crate) struct RequestRevisionListRequest {
@@ -125,7 +124,7 @@ pub(crate) async fn list_request_revisions(
     let mut comparison_response = None;
     for index in processing_order {
         let revision = &revisions[index];
-        let commit_limit = work_budget.claim_revision(revision.git_snapshot.size_bytes);
+        let commit_limit = work_budget.claim_revision();
         let (commits, inspection) = if let Some(commit_limit) = commit_limit {
             let repo_for_inspection = repo.clone();
             let inspection_state = state.clone();
@@ -273,7 +272,6 @@ struct RequestRevisionListWorkBudget {
     remaining_commits: usize,
     remaining_files: usize,
     remaining_revisions: usize,
-    remaining_snapshot_bytes: u64,
 }
 
 impl RequestRevisionListWorkBudget {
@@ -283,20 +281,15 @@ impl RequestRevisionListWorkBudget {
             remaining_files:
                 crate::use_cases::request_inspection_policy::MAX_REQUEST_INSPECTION_PATHS,
             remaining_revisions: MAX_IMPORTED_REQUEST_REVISIONS,
-            remaining_snapshot_bytes: MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES,
         }
     }
 
-    fn claim_revision(&mut self, snapshot_bytes: u64) -> Option<usize> {
+    fn claim_revision(&mut self) -> Option<usize> {
         let commit_limit = self.remaining_commits.min(MAX_LISTED_COMMITS_PER_REVISION);
-        if commit_limit == 0
-            || self.remaining_revisions == 0
-            || snapshot_bytes > self.remaining_snapshot_bytes
-        {
+        if commit_limit == 0 || self.remaining_revisions == 0 {
             return None;
         }
         self.remaining_revisions -= 1;
-        self.remaining_snapshot_bytes -= snapshot_bytes;
         Some(commit_limit)
     }
 

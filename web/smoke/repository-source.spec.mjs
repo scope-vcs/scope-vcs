@@ -9,6 +9,7 @@ import {
   within,
   withPage,
 } from './browser-smoke.mjs'
+import { controlRepositoryEvents } from './repo-refresh-smoke.mjs'
 
 test('public repository exposes only its projected source', async () => {
   await withPage(`${repoPath}/code`, async (page) => {
@@ -178,6 +179,8 @@ test('public repository exposes only its projected source', async () => {
       'same-document',
     )
     const navigator = page.getByLabel('Repository file navigator')
+    const codeMatchId = await page.evaluate(() => globalThis.__TSR_ROUTER__.state.matches
+      .find((match) => match.routeId === '/$owner/$repo/_code/code').id)
     await navigator.evaluate((element) => {
       element.dataset.persistenceProbe = 'same-route'
     })
@@ -221,6 +224,13 @@ test('public repository exposes only its projected source', async () => {
         )
         if (!navigator || navigator.getClientRects().length === 0) {
           globalThis.__scopeTransitionFrames.hiddenRepository = true
+          globalThis.__scopeTransitionFrames.evidence ??= {
+            location: location.href,
+            pendingRoutes: globalThis.__TSR_ROUTER__.state.matches
+              .filter((match) => match.status === 'pending')
+              .map((match) => match.routeId),
+            navigatorAttached: Boolean(navigator),
+          }
         }
         requestAnimationFrame(sample)
       }
@@ -231,6 +241,9 @@ test('public repository exposes only its projected source', async () => {
     await expandSrc.click()
     const openFile = page.getByRole('button', { name: 'app.ts', exact: true }).click()
     await within(fileRequestStarted, 10_000, 'file request did not start')
+    assert.equal(await page.evaluate(() => globalThis.__TSR_ROUTER__.state.matches
+      .find((match) => match.routeId === '/$owner/$repo/_code/code').id), codeMatchId,
+    'file selection must retain the loaded Code route')
     await page.waitForURL((url) => url.searchParams.get('file') === 'src/app.ts')
     const pendingFileViewer = page.locator(
       '#repository-code-files-panel [aria-busy="true"]',
@@ -255,7 +268,7 @@ test('public repository exposes only its projected source', async () => {
       return globalThis.__scopeTransitionFrames
     })
     assert.equal(transitionFrames.emptyViewer, false)
-    assert.equal(transitionFrames.hiddenRepository, false)
+    assert.equal(transitionFrames.hiddenRepository, false, JSON.stringify(transitionFrames))
     assert.equal(
       await navigator.getAttribute('data-persistence-probe'),
       'same-route',
@@ -320,5 +333,5 @@ test('public repository exposes only its projected source', async () => {
       0,
     )
     assert.equal(await page.getByRole('heading', { name: 'Runners' }).count(), 0)
-  })
+  }, { prepare: (page) => controlRepositoryEvents(page, { initialConnected: true }) })
 })

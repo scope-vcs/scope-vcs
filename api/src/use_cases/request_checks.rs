@@ -2,7 +2,6 @@ use crate::{
     background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness},
     error::ApiError,
     git::{
-        command::{run_git_output, successful_git_output},
         import::{ReadWorkflowFiles, read_repository_workflow_files},
         repository_git::RepositoryGit,
         request_refs::with_request_revision_store_repo,
@@ -17,8 +16,8 @@ use scope_domain::{
     requests::{
         GitHubCheckTarget, GitHubRequestChecks, GitHubTestedCommit, Request, RequestCheckContext,
         RequestCheckEvaluation, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
-        RequestCheckReviewer, RequestChecksOutcome, RequestComparison, RequestRevision,
-        changes_github_workflows, request_checks_outcome, request_head_awaits_evaluation,
+        RequestCheckReviewer, RequestChecksOutcome, RequestRevision, request_checks_outcome,
+        request_head_awaits_evaluation,
     },
     runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
     views::Views,
@@ -28,6 +27,10 @@ use scope_postgres::db::{
 };
 use std::{collections::HashMap, future::Future, path::Path, time::Duration};
 
+mod workflow_changes;
+
+use workflow_changes::changes_github_workflow_files;
+
 const CHECK_RECOVERY_INTERVAL: Duration = Duration::from_secs(30);
 
 type NativeRevisions = Result<Vec<WorkflowRevision>, String>;
@@ -35,6 +38,7 @@ type NativeRevisions = Result<Vec<WorkflowRevision>, String>;
 struct RequestCheckSource<'a> {
     request: &'a Request,
     revision: &'a RequestRevision,
+    staging_repo: Option<&'a Path>,
 }
 
 pub(crate) struct RequestChecksView {
@@ -161,6 +165,7 @@ async fn evaluate_saved_head(
         RequestCheckSource {
             request,
             revision: &revision,
+            staging_repo: None,
         },
         views,
         reviewing_pusher,
@@ -240,7 +245,11 @@ pub(crate) async fn best_effort_evaluate_request_checks(
     let evaluated = evaluate_request_checks(
         state,
         &git.incarnation,
-        RequestCheckSource { request, revision },
+        RequestCheckSource {
+            request,
+            revision,
+            staging_repo: Some(staging_repo),
+        },
         views,
         reviewing_pusher,
         native_revisions,
@@ -352,75 +361,6 @@ pub(crate) fn renew_stale_check_commits_in_background(state: &AppState, owner: &
     });
 }
 
-async fn changes_github_workflow_files(
-    state: &AppState,
-    repo: &RepoRecord,
-    request: &Request,
-    evaluation: &RequestCheckEvaluation,
-    views: &Views,
-) -> Result<bool, ApiError> {
-    const ACTION: &str = "reading request workflow changes";
-    let changed = async {
-        let Some(revision) = state
-            .metadata
-            .requests()
-            .request_revision_with_head(&request.id, &request.head_oid)
-            .await?
-        else {
-            return Ok(true);
-        };
-        let execution_base_oid = match GitHubCheckTarget::for_request(request, views) {
-            GitHubCheckTarget::Head => None,
-            GitHubCheckTarget::CheckCommit => {
-                let Some(base) = &evaluation.check_commit_base else {
-                    return Ok(true);
-                };
-                Some(base.view_base_oid.clone())
-            }
-        };
-        let request_view = request.view.clone();
-        with_request_revision_store_repo(
-            state,
-            &repo.incarnation(),
-            request,
-            &revision,
-            move |path, revision| {
-                let comparison = RequestComparison::request(revision, request_view);
-                let range = comparison.membership();
-                let output = successful_git_output(
-                    run_git_output(
-                        Some(path),
-                        &[
-                            "diff",
-                            "--name-only",
-                            "-z",
-                            execution_base_oid
-                                .as_deref()
-                                .or(comparison.identity().base_oid.as_deref())
-                                .ok_or_else(|| {
-                                    ApiError::conflict("request comparison has no review base")
-                                })?,
-                            range.head_oid(),
-                            "--",
-                            ".github/workflows",
-                        ],
-                        ACTION,
-                    )?,
-                    ACTION,
-                )?;
-                Ok(changes_github_workflows(
-                    output
-                        .stdout
-                        .split(|byte| *byte == 0)
-                        .filter_map(|path| std::str::from_utf8(path).ok()),
-                ))
-            },
-        )
-        .await
-    };
-    changed.await
-}
-
 fn warn_evaluation_failed(request: &Request, error: &ApiError) {
     tracing::warn!(
         request_id = request.id,
@@ -439,7 +379,11 @@ async fn evaluate_request_checks(
     native_revisions: impl Future<Output = Result<NativeRevisions, ApiError>>,
     check_commit: impl Future<Output = Result<GitHubTestedCommit, ApiError>>,
 ) -> Result<RequestChecksMutation, ApiError> {
-    let RequestCheckSource { request, revision } = source;
+    let RequestCheckSource {
+        request,
+        revision,
+        staging_repo,
+    } = source;
     let repositories = state.metadata.repositories();
     let repo = repositories
         .repository_record(&request.repo_id)
@@ -456,58 +400,88 @@ async fn evaluate_request_checks(
         .await?;
     let context = RequestCheckContext::for_revision(request, revision)?;
     let now_unix = unix_now()?;
-    let (mut plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref()) {
-        RequestCheckProvider::GitHub => {
-            let required = repositories
-                .github_required_checks(&request.repo_id)
-                .await?;
-            let tested = match GitHubCheckTarget::for_request(request, views) {
-                GitHubCheckTarget::Head => GitHubTestedCommit::Head,
-                GitHubCheckTarget::CheckCommit => check_commit.await?,
-            };
-            (
-                RequestCheckPlan::evaluate_github(
-                    request,
-                    &context,
-                    views,
-                    GitHubRequestChecks {
-                        github_repository_id: connection
-                            .as_ref()
-                            .expect("GitHub provider has a connection")
-                            .github_repository_id,
-                        tested,
-                        required_check_names: &required,
-                    },
-                    reviewing_pusher,
-                    now_unix,
-                )?,
-                Vec::new(),
+    let mut source = None;
+    let result = async {
+        let (mut plan, revisions) = match RequestCheckProvider::for_repository(connection.as_ref())
+        {
+            RequestCheckProvider::GitHub => {
+                let required = repositories
+                    .github_required_checks(&request.repo_id)
+                    .await?;
+                let tested = match GitHubCheckTarget::for_request(request, views) {
+                    GitHubCheckTarget::Head => GitHubTestedCommit::Head,
+                    GitHubCheckTarget::CheckCommit => check_commit.await?,
+                };
+                (
+                    RequestCheckPlan::evaluate_github(
+                        request,
+                        &context,
+                        views,
+                        GitHubRequestChecks {
+                            github_repository_id: connection
+                                .as_ref()
+                                .expect("GitHub provider has a connection")
+                                .github_repository_id,
+                            tested,
+                            required_check_names: &required,
+                        },
+                        reviewing_pusher,
+                        now_unix,
+                    )?,
+                    Vec::new(),
+                )
+            }
+            RequestCheckProvider::Native => {
+                let native_runs = native_runs_availability(state, request).await?;
+                let revisions = if native_runs.is_available() {
+                    native_revisions.await?
+                } else {
+                    Ok(Vec::new())
+                };
+                if reviewing_pusher.is_some()
+                    && RequestCheckPlan::starts_on_push(request)
+                    && revisions
+                        .as_ref()
+                        .is_ok_and(|revisions| !revisions.is_empty())
+                {
+                    source = Some(
+                        super::request_check_sources::prepare(
+                            state,
+                            incarnation,
+                            request,
+                            revision,
+                        )
+                        .await?,
+                    );
+                }
+                (
+                    RequestCheckPlan::evaluate(
+                        request,
+                        source.as_ref().map(
+                            |source: &super::request_check_sources::PreparedRequestRunSource| {
+                                &source.object
+                            },
+                        ),
+                        &context,
+                        native_runs,
+                        revisions.as_deref().map_err(String::as_str),
+                        reviewing_pusher,
+                        now_unix,
+                    )?,
+                    revisions.unwrap_or_default(),
+                )
+            }
+        };
+        if plan.evaluation.asks_github() {
+            plan.evaluation.changes_github_workflows = match changes_github_workflow_files(
+                state,
+                &repo,
+                request,
+                &plan.evaluation,
+                views,
+                staging_repo,
             )
-        }
-        RequestCheckProvider::Native => {
-            let native_runs = native_runs_availability(state, request).await?;
-            let revisions = if native_runs.is_available() {
-                native_revisions.await?
-            } else {
-                Ok(Vec::new())
-            };
-            (
-                RequestCheckPlan::evaluate(
-                    request,
-                    &context,
-                    native_runs,
-                    revisions.as_deref().map_err(String::as_str),
-                    reviewing_pusher,
-                    now_unix,
-                )?,
-                revisions.unwrap_or_default(),
-            )
-        }
-    };
-    if plan.evaluation.asks_github() {
-        plan.evaluation.changes_github_workflows =
-            match changes_github_workflow_files(state, &repo, request, &plan.evaluation, views)
-                .await
+            .await
             {
                 Ok(changed) => Some(changed),
                 Err(error) => {
@@ -519,20 +493,26 @@ async fn evaluate_request_checks(
                     None
                 }
             };
+        }
+        state
+            .metadata
+            .requests()
+            .record_request_checks(RecordRequestChecksCommand {
+                repository_incarnation: incarnation.clone(),
+                expected_canonical_main_oid,
+                evaluation: plan.evaluation,
+                revisions,
+                runs: plan.runs,
+                push_to_github: plan.push_to_github,
+            })
+            .await
+            .map_err(Into::into)
     }
-    state
-        .metadata
-        .requests()
-        .record_request_checks(RecordRequestChecksCommand {
-            repository_incarnation: incarnation.clone(),
-            expected_canonical_main_oid,
-            evaluation: plan.evaluation,
-            revisions,
-            runs: plan.runs,
-            push_to_github: plan.push_to_github,
-        })
-        .await
-        .map_err(Into::into)
+    .await;
+    match source {
+        Some(source) => source.finish(state, result).await,
+        None => result,
+    }
 }
 
 async fn trusted_main_workflow_revisions(
@@ -659,7 +639,7 @@ pub(crate) async fn reconcile_request_checks_once(
                 let git = RepositoryGit::load(state, &repo.incarnation()).await?;
                 let views = git.views(state).await?;
                 let changed =
-                    changes_github_workflow_files(state, &repo, &request, evaluation, &views)
+                    changes_github_workflow_files(state, &repo, &request, evaluation, &views, None)
                         .await?;
                 if state
                     .metadata

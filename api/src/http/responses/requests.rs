@@ -65,7 +65,7 @@ pub(crate) fn request_list_row_subject(request: &RequestListRow) -> RequestMerge
         author_user_id: request.author_user_id.as_deref(),
         view: &request.view,
         state: request.state,
-        has_git_snapshot: request.has_git_snapshot,
+        has_pushed_head: request.has_pushed_head,
         stack_status: request.stack_status,
     }
 }

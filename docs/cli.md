@@ -503,3 +503,16 @@ and download URLs, publishes the complete release together, generates installers
 with the correct URL, and supplies equivalent deployment verification. No such
 replacement is wired into the deployment graph today. Keep this small service
 until that cutover is implemented and verified.
+
+A plain `git fetch` or `scope pull` downloads main and the active requests you
+started or were invited to. Git also fetches the request your current branch
+tracks. To get anyone else's visible request, name it: `scope request checkout
+--request <name>` or `git fetch scope <name>`. Naming needs Git's protocol v2,
+the default since Git 2.26. `scope pull` prunes, so the tracking ref of another
+author's request you have checked out but are not on is removed until you check
+it out again. Closed and merged request branches are not advertised.
+`scope request checkout` reports this before fetching a terminal request; use
+its existing local branch or fetch main instead.
+An active child already contains its pinned parent's commit, including after the
+parent closes or merges, so checking out that child does not need a terminal
+parent branch.

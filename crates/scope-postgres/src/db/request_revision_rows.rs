@@ -1,7 +1,6 @@
 use super::{
     entities,
     integer_columns::{i64_to_u64, u64_to_i64},
-    object_references::replace_object_reference,
 };
 use crate::error::PostgresError;
 use scope_domain::requests::RequestRevision;
@@ -210,12 +209,5 @@ where
         .into_active_model()
         .insert(conn)
         .await?;
-    replace_object_reference(
-        conn,
-        "request_revision_snapshot",
-        &value.id,
-        Some(&value.git_snapshot),
-    )
-    .await?;
     Ok(())
 }

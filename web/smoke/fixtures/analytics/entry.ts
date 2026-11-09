@@ -2,6 +2,12 @@ import { loadAnalyticsBootstrap } from '../../../src/analytics/bootstrap'
 import { applyAnalyticsIdentityTransition } from '../../../src/analytics/client-identity'
 import { pageViewProperties } from '../../../src/analytics/privacy'
 
+declare global {
+  interface Window {
+    analyticsDelivered: (count: number) => Promise<void>
+  }
+}
+
 const bootstrap = await loadAnalyticsBootstrap(new AbortController().signal)
 if (bootstrap.client) {
   const client = bootstrap.client
@@ -15,26 +21,22 @@ if (bootstrap.client) {
   })
 
   capturePageView()
-  await pauseForDelivery()
+  await window.analyticsDelivered(1)
   applyAnalyticsIdentityTransition(client, 'scope_usr_one', bootstrap.eventContext)
-  await pauseForDelivery()
+  await window.analyticsDelivered(2)
   captureError('window')
-  await pauseForDelivery()
+  await window.analyticsDelivered(3)
 
   applyAnalyticsIdentityTransition(client, null, bootstrap.eventContext)
   capturePageView()
-  await pauseForDelivery()
+  await window.analyticsDelivered(4)
   applyAnalyticsIdentityTransition(client, 'scope_usr_one', bootstrap.eventContext)
-  await pauseForDelivery()
+  await window.analyticsDelivered(5)
   applyAnalyticsIdentityTransition(client, 'scope_usr_two', bootstrap.eventContext)
-  await pauseForDelivery()
   capturePageView()
   captureError('route')
 
   client.capture('unexpected_event', { secret: 'SECRET source text' })
+  await window.analyticsDelivered(7)
 }
 Object.assign(window, { analyticsReady: true, analyticsEnabled: Boolean(bootstrap.client) })
-
-async function pauseForDelivery() {
-  await new Promise(resolve => setTimeout(resolve, 150))
-}

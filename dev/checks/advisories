@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+
+workspace="${1:?usage: dev/checks/advisories workspace|cli [cargo-deny options]}"
+shift
+case "$workspace" in
+  workspace) cargo deny --locked "$@" check advisories ;;
+  cli) cargo deny --locked --manifest-path cli/Cargo.toml --config cli/deny.toml "$@" check advisories ;;
+  *) exit 2 ;;
+esac

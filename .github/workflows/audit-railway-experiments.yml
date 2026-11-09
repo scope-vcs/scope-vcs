@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: audit-railway-experiments
@@ -34,7 +35,12 @@ jobs:
           source .github/scripts/railway-graphql.sh
           project_id="$(jq -er '.railway.projectId' .github/deployment-services.json)"
           # shellcheck disable=SC2016
-          query='query($id:String!){project(id:$id){id environments(first:100){pageInfo{hasNextPage} edges{node{id name createdAt}}}}}'
+          query='query($id:String!){project(id:$id){id environments(first:100){pageInfo{hasNextPage} edges{node{id name createdAt isEphemeral sourceEnvironment{id}}}}}}'
           railway_graphql read "$query" "$(jq -cn --arg id "$project_id" '{id:$id}')" > "$RUNNER_TEMP/railway-environments.json"
+      - name: Read open pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" | jq 'add | map({number, state})' > "$RUNNER_TEMP/open-pull-requests.json"
       - name: Audit experiment owners and expiry
-        run: node .github/scripts/audit-railway-experiments.mjs "$RUNNER_TEMP/railway-environments.json"
+        run: node .github/scripts/audit-railway-experiments.mjs "$RUNNER_TEMP/railway-environments.json" "$RUNNER_TEMP/open-pull-requests.json"

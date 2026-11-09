@@ -158,11 +158,7 @@ async fn create_database(
         ),
     )
     .await
-    .with_context(|| {
-        format!(
-            "creating PostgreSQL test database {database_name}; the SCOPE_TEST_DATABASE_URL role must have CREATEDB"
-        )
-    });
+    .with_context(|| format!("creating private PostgreSQL test database {database_name}"));
     let close_result = admin.close().await;
     if let Err(error) = create_result {
         let _ = try_drop_database(admin_url, database_name).await;
@@ -303,9 +299,9 @@ fn registered_process_databases() -> Vec<(String, String)> {
 
 fn database_url(admin_url: &str, database_name: &str) -> anyhow::Result<String> {
     let (base, query) = admin_url.split_once('?').unwrap_or((admin_url, ""));
-    let (authority, _) = base
-        .rsplit_once('/')
-        .ok_or_else(|| anyhow::anyhow!("SCOPE_TEST_DATABASE_URL must include a database name"))?;
+    let (authority, _) = base.rsplit_once('/').ok_or_else(|| {
+        anyhow::anyhow!("PostgreSQL test server URL must include a database name")
+    })?;
     Ok(format!(
         "{authority}/{database_name}{}{query}",
         if query.is_empty() { "" } else { "?" }

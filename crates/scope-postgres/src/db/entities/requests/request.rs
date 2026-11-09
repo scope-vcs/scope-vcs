@@ -22,7 +22,7 @@ pub struct Model {
     pub current_check_evaluation_id: Option<String>,
     pub main_ancestor_oid: String,
     pub head_oid: String,
-    pub git_snapshot: Option<Json>,
+    pub pushed_at_unix: Option<i64>,
     pub title: String,
     pub description_markdown: String,
     pub activity_version: i64,
@@ -67,7 +67,7 @@ impl Model {
             current_check_evaluation_id: None,
             main_ancestor_oid: request.main_ancestor_oid.clone(),
             head_oid: request.head_oid.clone(),
-            git_snapshot: request.git_snapshot.as_ref().map(encode_json).transpose()?,
+            pushed_at_unix: optional_u64_to_i64(request.pushed_at_unix, "request push time")?,
             title: request.title.clone(),
             description_markdown: request.description_markdown.clone(),
             activity_version: u64_to_i64(request.activity_version, "request activity version")?,
@@ -110,10 +110,7 @@ impl Model {
                 .map_err(PostgresError::internal)?,
             main_ancestor_oid: self.main_ancestor_oid,
             head_oid: self.head_oid,
-            git_snapshot: self
-                .git_snapshot
-                .map(decode_json::<SourceBlob>)
-                .transpose()?,
+            pushed_at_unix: optional_i64_to_u64(self.pushed_at_unix, "request push time")?,
             title: self.title,
             description_markdown: self.description_markdown,
             activity_version: i64_to_u64(self.activity_version, "request activity version")?,

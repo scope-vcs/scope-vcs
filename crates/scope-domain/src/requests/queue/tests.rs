@@ -6,34 +6,66 @@ use crate::requests::fixtures::open_request;
 fn groups_split_active_rows_by_who_acts_next() {
     use RequestAttentionReason as Reason;
     use RequestQueueGroup::{NeedsYou, Waiting};
-    for (reason, expected) in [
-        (Reason::Invited, NeedsYou),
-        (Reason::Claimed, NeedsYou),
-        (Reason::NewActivity, NeedsYou),
-        (Reason::Restored, NeedsYou),
-        (Reason::SnoozeExpired, NeedsYou),
-        (Reason::Authored, Waiting),
+    use RequestQueueNextStep as Step;
+    for (reason, step, maintainer, expected) in [
+        (Reason::Invited, Step::Review, false, NeedsYou),
+        (Reason::Claimed, Step::Review, false, NeedsYou),
+        (Reason::NewActivity, Step::Wait, true, NeedsYou),
+        (Reason::Restored, Step::Wait, true, NeedsYou),
+        (Reason::SnoozeExpired, Step::Wait, true, NeedsYou),
+        (Reason::Authored, Step::FixChecks, false, Waiting),
+        (Reason::Authored, Step::FixChecks, true, NeedsYou),
+        (Reason::Authored, Step::Merge, true, NeedsYou),
+        (Reason::Authored, Step::Wait, true, Waiting),
+        (Reason::Authored, Step::Submit, true, NeedsYou),
+        (Reason::Authored, Step::ApproveChecks, true, NeedsYou),
     ] {
         assert_eq!(
-            request_queue_group(RequestQueueSection::Active, reason, false),
+            request_queue_group(RequestQueueSection::Active, reason, step, maintainer),
             expected,
-            "{reason:?}"
+            "{reason:?} {step:?} maintainer={maintainer}"
         );
     }
-    assert_eq!(
-        request_queue_group(RequestQueueSection::Active, Reason::Authored, true),
-        NeedsYou
-    );
     for (section, expected) in [
         (RequestQueueSection::Unclaimed, RequestQueueGroup::Unclaimed),
         (RequestQueueSection::SetAside, RequestQueueGroup::SetAside),
         (RequestQueueSection::Done, RequestQueueGroup::Done),
     ] {
         assert_eq!(
-            request_queue_group(section, Reason::Settled, true),
+            request_queue_group(section, Reason::Settled, Step::Wait, true),
             expected
         );
     }
+}
+
+#[test]
+fn a_stack_shows_with_its_member_that_needs_you_and_others_keep_their_group() {
+    use RequestQueueGroup::{NeedsYou, SetAside, Waiting};
+    let member = |request_id, parent_request_id, group| RequestQueueStackMember {
+        request_id,
+        parent_request_id,
+        group,
+    };
+    let members = [
+        member("parent", None, Waiting),
+        member("child", Some("parent"), NeedsYou),
+        member("grandchild", Some("child"), Waiting),
+        member("sibling", Some("parent"), Waiting),
+        member("waiting", None, Waiting),
+        member("orphan", Some("elsewhere"), Waiting),
+        member("off-page-sibling", Some("off-page"), NeedsYou),
+        member("off-page-waiting", Some("off-page"), Waiting),
+        member("set-aside", Some("parent"), SetAside),
+        member("alone", None, NeedsYou),
+        member("alone-child", Some("alone"), SetAside),
+    ];
+    assert_eq!(
+        request_queue_stack_groups(&members),
+        [
+            NeedsYou, NeedsYou, NeedsYou, NeedsYou, Waiting, Waiting, NeedsYou, NeedsYou, SetAside,
+            NeedsYou, SetAside,
+        ]
+    );
 }
 
 #[test]
@@ -42,23 +74,45 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
     use RequestMergeabilityStatus as Status;
     use RequestQueueNextStep as Step;
     let author = Some("author");
-    for (status, expected) in [
-        (Status::Ready, Step::Merge),
-        (Status::ChecksFailed, Step::FixChecks),
-        (Status::IntegrationConflict, Step::Update),
-        (Status::ChecksPending, Step::Wait),
+    let maintainer = ViewerAbilities {
+        merge: true,
+        approve_pending_checks: false,
+    };
+    let approver = ViewerAbilities {
+        merge: false,
+        approve_pending_checks: true,
+    };
+    let contributor = ViewerAbilities {
+        merge: false,
+        approve_pending_checks: false,
+    };
+    for (status, viewer, expected) in [
+        (Status::Ready, maintainer, Step::Merge),
+        (Status::Ready, contributor, Step::Wait),
+        (Status::ChecksFailed, maintainer, Step::FixChecks),
+        (Status::IntegrationConflict, maintainer, Step::Update),
+        (Status::ChecksPending, maintainer, Step::Wait),
+        (
+            Status::ChecksAwaitingApproval,
+            approver,
+            Step::ApproveChecks,
+        ),
+        (Status::ChecksAwaitingApproval, contributor, Step::Wait),
+        (Status::WaitingForParent, approver, Step::ApproveChecks),
+        (Status::AncestorBlocked, approver, Step::ApproveChecks),
+        (Status::WaitingForParent, maintainer, Step::Wait),
+        (Status::ParentRewritten, approver, Step::Update),
+        (Status::Draft, contributor, Step::Submit),
+        (Status::MissingRequestBranch, contributor, Step::Update),
     ] {
         assert_eq!(
-            next_step_for(author, author, Reason::NewActivity, status, true),
+            next_step_for(author, author, Reason::NewActivity, status, viewer),
             expected,
-            "{status:?}"
+            "{status:?} merge={} approve_pending_checks={}",
+            viewer.merge,
+            viewer.approve_pending_checks
         );
     }
-    assert_eq!(
-        next_step_for(author, author, Reason::NewActivity, Status::Ready, false),
-        Step::Wait,
-        "a contributor waits for a maintainer to merge"
-    );
     for (reason, expected) in [
         (Reason::Invited, Step::Review),
         (Reason::NewActivity, Step::Reply),
@@ -67,17 +121,23 @@ fn next_step_follows_readiness_for_the_author_and_attention_for_others() {
         (Reason::Merged, Step::Done),
     ] {
         assert_eq!(
-            next_step_for(author, Some("reviewer"), reason, Status::ChecksFailed, true),
+            next_step_for(
+                author,
+                Some("reviewer"),
+                reason,
+                Status::ChecksFailed,
+                maintainer
+            ),
             expected,
             "{reason:?}"
         );
     }
     assert_eq!(
-        next_step_for(author, author, Reason::Closed, Status::Closed, false),
+        next_step_for(author, author, Reason::Closed, Status::Closed, contributor),
         Step::Done
     );
     assert_eq!(
-        next_step_for(None, None, Reason::Open, Status::Ready, false),
+        next_step_for(None, None, Reason::Open, Status::Ready, contributor),
         Step::Wait
     );
 }

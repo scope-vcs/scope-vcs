@@ -17,7 +17,6 @@ import { useRepoViews } from './repo-layout-context'
 import { hasRepositoryAbout, RepositoryAbout } from './repository-about'
 import { ReadmeSkeleton } from './repository-code-skeletons'
 import { RepositoryFileContent } from './repository-file-content'
-import { RepositoryLatestActivity } from './repository-latest-activity'
 import { RepoViewingAsPicker, useViewingAs } from './use-viewing-as'
 import { ViewingAsStatus } from './viewing-as-picker'
 
@@ -77,8 +76,8 @@ export function RepoHomePage({
         )}
         summary={hasRepositoryAbout(repo) ? <RepositoryAbout repo={repo} /> : undefined}
         title="Home"
+        titleHidden
       />
-      <RepositoryLatestActivity params={params} repo={repo} />
       <section aria-label="Repository README" className="border-t border-border">
         <RepositoryReadme content={content} file={file} params={params} ready={ready} selectedPath={selectedPath} />
       </section>

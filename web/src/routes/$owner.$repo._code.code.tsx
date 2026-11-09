@@ -34,21 +34,21 @@ function parseRepoCodeSearch(search: Record<string, unknown>): RepoCodeSearch {
 export const Route = createFileRoute('/$owner/$repo/_code/code')({
   validateSearch: parseRepoCodeSearch,
   loaderDeps: ({ search }) => ({
-    file: search.file ?? null,
     request: search.request,
     update: search.update,
     view: search.view ?? null,
   }),
-  loader: async ({ abortController, deps, params, parentMatchPromise }) => {
+  loader: async ({ abortController, deps, location, params, parentMatchPromise }) => {
     if (typeof window !== 'undefined') return EMPTY_REPO_CODE_LOADER_DATA
     const live = (await parentMatchPromise).loaderData as RepoLiveState
     const { userId } = await auth()
     const scope = repoResourceScope(live.repo, userId)
     const view = resolveViewingAs(repoViews(live.repo.views), live.repo.access.view, deps.view)
     const version = repositoryVersion(deps)
+    const file = parseRepoCodeSearch(location.search).file ?? null
     return prepareRepoCodeLoaderData({
-      file: deps.file,
-      keys: repoCodeCacheKeys(live.repo, scope, view, deps.file, version),
+      file,
+      keys: repoCodeCacheKeys(live.repo, scope, view, file, version),
       params,
       signal: abortController.signal,
       version,

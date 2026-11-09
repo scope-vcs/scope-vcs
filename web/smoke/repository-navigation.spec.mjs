@@ -14,6 +14,7 @@ import {
   within,
   withPage,
 } from './browser-smoke.mjs'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 import { assertUpdateFileSelectionKeepsDocument } from './update-navigation-smoke.mjs'
 import { assertRepositoryMarkdownUsesClientNavigation } from './repository-markdown-navigation-smoke.mjs'
 
@@ -28,8 +29,36 @@ test('central search finds repository history and opens its update page', async 
     await waitForClientHydration(trigger)
     const documentSentinel = 'scope-history-menu-navigation'
     await markDocument(page, documentSentinel)
-    await trigger.fill('Projected public')
+    const initialHistory = page.waitForResponse((response) =>
+      serverFunctionName(response.request()) === 'loadHistoryPage_createServerFn_handler'
+      && decodeURIComponent(response.url()).includes('Projected'))
+    await trigger.fill('Projected')
+    await initialHistory
     const update = page.getByRole('option', { name: /Projected public update/ })
+    await update.waitFor()
+    let releaseHistory
+    let historyStarted
+    const heldHistory = new Promise((resolve) => { releaseHistory = resolve })
+    const filteredHistory = new Promise((resolve) => { historyStarted = resolve })
+    await page.route('**/_serverFn/**', async (route) => {
+      if (serverFunctionName(route.request()) === 'loadHistoryPage_createServerFn_handler') {
+        historyStarted()
+        await heldHistory
+      }
+      await route.continue()
+    })
+    await page.clock.install()
+    await page.clock.pauseAt(new Date())
+    try {
+      await trigger.fill('Projected public')
+      assert.equal(await update.count(), 0, 'Previous-query options must not be offered during debounce')
+      await page.clock.runFor(200)
+      await within(filteredHistory, 10_000, 'filtered history search did not start')
+      assert.equal(await update.count(), 0, 'Previous-query options must not be offered while search is pending')
+    } finally {
+      releaseHistory()
+      await page.clock.resume()
+    }
     await update.waitFor()
     await update.click()
     await page.waitForURL((url) => url.pathname === `${repoPath}/code` && url.searchParams.get('update') === 'dev-public-1')

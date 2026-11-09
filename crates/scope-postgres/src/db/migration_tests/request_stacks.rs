@@ -32,7 +32,7 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
             id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
             base_kind, review_base_oid, main_ancestor_oid, rewrote_history, git_snapshot, created_at_unix
         ) SELECT name || '-revision', name, 1, 'stack-owner', repeat('a',40), repeat('b',40),
-                 'Main', repeat('a',40), repeat('a',40), FALSE, '{}', 1
+                 'Main', repeat('a',40), repeat('a',40), FALSE, jsonb_build_object('content_ref', jsonb_build_object('GitBundleSha256', repeat('f',64)), 'sha256', repeat('f',64), 'git_oid', repeat('b',40), 'git_file_mode', '100644', 'size_bytes', 1), 1
           FROM (VALUES ('parent'), ('child'), ('other')) AS fixture(name);
         UPDATE scope_requests SET submitted_at_unix = 1,
             git_snapshot = jsonb_build_object(
@@ -65,10 +65,7 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
         open_parent.state(),
         scope_domain::requests::RequestState::Open
     );
-    assert_eq!(
-        open_parent.git_snapshot.as_ref().unwrap().git_oid,
-        "b".repeat(40)
-    );
+    assert_eq!(open_parent.head_oid, "b".repeat(40));
     db.execute_unprepared(
         r#"
         UPDATE scope_requests SET base_kind = 'Request', parent_request_id = 'parent',
@@ -83,15 +80,10 @@ async fn stack_migration_preserves_main_and_enforces_parent_pins_and_receipt_ide
             VALUES ('child','context-1',repeat('d',64),'child-revision',2);
         INSERT INTO scope_request_revisions (
             id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
-            base_kind, review_base_oid, base_version, main_ancestor_oid, rewrote_history, git_snapshot, created_at_unix
+            base_kind, review_base_oid, base_version, main_ancestor_oid, rewrote_history, created_at_unix
         ) VALUES ('parent-rewrite', 'parent', 2, 'stack-owner', repeat('b',40), repeat('c',40),
-            'Main', repeat('a',40), 1, repeat('a',40), TRUE, jsonb_build_object(
-                'content_ref', jsonb_build_object('GitBundleSha256', repeat('e',64)),
-                'sha256', repeat('e',64), 'git_oid', repeat('c',40),
-                'git_file_mode', '100644', 'size_bytes', 1
-            ), 2);
+            'Main', repeat('a',40), 1, repeat('a',40), TRUE, 2);
         UPDATE scope_requests SET head_oid = repeat('c',40),
-            git_snapshot = (SELECT git_snapshot FROM scope_request_revisions WHERE id = 'parent-rewrite'),
             activity_version = 2, closed_at_unix = 2, closed_by_user_id = 'stack-owner', updated_at_unix = 2
             WHERE id = 'parent';
     "#,
@@ -264,7 +256,7 @@ async fn stack_migration_backfills_revision_versions_from_ordered_base_transitio
             id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
             base_main_oid, rewrote_history, git_snapshot, created_at_unix
         ) SELECT 'legacy-' || position, 'legacy', position, 'version-owner',
-            repeat('f',40), repeat('f',40), repeat(base,40), FALSE, '{}', position
+            repeat('f',40), repeat('f',40), repeat(base,40), FALSE, jsonb_build_object('content_ref', jsonb_build_object('GitBundleSha256', repeat('f',64)), 'sha256', repeat('f',64), 'git_oid', repeat('b',40), 'git_file_mode', '100644', 'size_bytes', 1), position
           FROM (VALUES (1,'b'), (2,'a')) AS fixture(position,base);
     "#,
     )
@@ -283,14 +275,14 @@ async fn stack_migration_backfills_revision_versions_from_ordered_base_transitio
             base_kind, review_base_oid, main_ancestor_oid, rewrote_history, git_snapshot, created_at_unix
         ) SELECT 'history-' || position, 'history', position, 'version-owner',
             repeat('f',40), repeat('f',40), 'Main', repeat(base,40), repeat(base,40),
-            rewrote, '{}', position
+            rewrote, jsonb_build_object('content_ref', jsonb_build_object('GitBundleSha256', repeat('f',64)), 'sha256', repeat('f',64), 'git_oid', repeat('b',40), 'git_file_mode', '100644', 'size_bytes', 1), position
           FROM (VALUES (1,'a',FALSE), (2,'a',TRUE), (3,'b',TRUE),
             (4,'b',FALSE), (5,'a',TRUE), (6,'a',FALSE)) AS fixture(position,base,rewrote);
         INSERT INTO scope_request_revisions (
             id, request_id, position, actor_user_id, old_head_oid, new_head_oid,
             base_kind, review_base_oid, main_ancestor_oid, rewrote_history, git_snapshot, created_at_unix
         ) VALUES ('first-change-1', 'first-change', 1, 'version-owner', repeat('a',40),
-            repeat('f',40), 'Main', repeat('b',40), repeat('b',40), TRUE, '{}', 1);
+            repeat('f',40), 'Main', repeat('b',40), repeat('b',40), TRUE, jsonb_build_object('content_ref', jsonb_build_object('GitBundleSha256', repeat('f',64)), 'sha256', repeat('f',64), 'git_oid', repeat('b',40), 'git_file_mode', '100644', 'size_bytes', 1), 1);
     "#).await.unwrap();
     migrations::Migrator::up(db.as_ref(), None).await.unwrap();
     let versions = db

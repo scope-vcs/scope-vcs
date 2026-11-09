@@ -36,7 +36,7 @@ use scope_domain::{
     repository::{RepoLifecycleState, RepoRecord, Repository},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
-use scope_storage::{ContentObjectKind, ObjectStore, put_source_blob, source_blob_bytes};
+use scope_storage::{ContentObjectKind, ObjectStore, put_source_blob};
 use std::{
     collections::BTreeMap,
     fs,
@@ -876,36 +876,6 @@ impl ObjectStore for DeleteFailsObjectStore {
         Err(scope_storage::ObjectStoreError::service_unavailable(
             "delete failed",
         ))
-    }
-}
-
-struct PutFailsObjectStore {
-    readable: Arc<dyn ObjectStore>,
-}
-
-#[async_trait::async_trait]
-impl ObjectStore for PutFailsObjectStore {
-    async fn put(
-        &self,
-        _key: &str,
-        _bytes: Vec<u8>,
-    ) -> Result<(), scope_storage::ObjectStoreError> {
-        Err(scope_storage::ObjectStoreError::service_unavailable(
-            "object PUT failed for test",
-        ))
-    }
-
-    async fn read_to(
-        &self,
-        key: &str,
-        max_bytes: u64,
-        output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
-    ) -> Result<u64, scope_storage::ObjectStoreError> {
-        self.readable.read_to(key, max_bytes, output).await
-    }
-
-    async fn delete(&self, key: &str) -> Result<(), scope_storage::ObjectStoreError> {
-        self.readable.delete(key).await
     }
 }
 

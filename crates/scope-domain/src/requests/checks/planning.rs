@@ -19,8 +19,13 @@ pub struct RequestCheckPlan {
 }
 
 impl RequestCheckPlan {
+    pub fn starts_on_push(request: &Request) -> bool {
+        request.state() != RequestState::Merged
+    }
+
     pub fn evaluate(
         request: &Request,
+        source: Option<&crate::content::SourceBlob>,
         context: &RequestCheckContext,
         native_runs: NativeRunsAvailability,
         revisions: Result<&[WorkflowRevision], &str>,
@@ -57,10 +62,11 @@ impl RequestCheckPlan {
             .map(RequestCheck::Native)
             .collect();
         let mut evaluation = RequestCheckEvaluation::awaiting_approval(context, checks, now_unix)?;
-        let runs = if let Some(starter) = reviewing_pusher.filter(|_| checks_start_on_push(request))
+        let runs = if let Some(starter) = reviewing_pusher.filter(|_| Self::starts_on_push(request))
         {
             let runs = plan_runs(
                 request,
+                source,
                 &evaluation.id,
                 evaluation.native_checks(),
                 revisions,
@@ -114,7 +120,7 @@ impl RequestCheckPlan {
                 return Ok(Self::native(evaluation, Vec::new()));
             }
         };
-        let starts = reviewing_pusher.is_some() && checks_start_on_push(request);
+        let starts = reviewing_pusher.is_some() && Self::starts_on_push(request);
         let checks = required_check_names
             .iter()
             .map(|name| RequestCheck::GitHub { name: name.clone() })
@@ -191,6 +197,7 @@ impl RequestCheckPlan {
 
     pub fn approve(
         request: &Request,
+        source: Option<&crate::content::SourceBlob>,
         mut evaluation: RequestCheckEvaluation,
         revisions: &[WorkflowRevision],
         approver: RequestCheckReviewer<'_>,
@@ -204,6 +211,7 @@ impl RequestCheckPlan {
         }
         let runs = plan_runs(
             request,
+            source,
             &evaluation.id,
             evaluation.native_checks(),
             revisions,
@@ -227,12 +235,9 @@ impl RequestCheckPlan {
     }
 }
 
-fn checks_start_on_push(request: &Request) -> bool {
-    request.state() != RequestState::Merged
-}
-
 fn plan_runs<'a>(
     request: &Request,
+    source: Option<&crate::content::SourceBlob>,
     evaluation_id: &str,
     checks: impl IntoIterator<Item = &'a NativeRequestCheck>,
     revisions: &[WorkflowRevision],
@@ -249,7 +254,14 @@ fn plan_runs<'a>(
         .into_iter()
         .zip(revisions)
         .map(|(check, revision)| {
-            check.run(request, evaluation_id, revision, actor_user_id, now_unix)
+            check.run(
+                request,
+                source,
+                evaluation_id,
+                revision,
+                actor_user_id,
+                now_unix,
+            )
         })
         .collect()
 }

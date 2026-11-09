@@ -11,6 +11,7 @@ test('Railway SSH keeps strict pinned trust even when later arguments request pe
   assert.ok(output.split('\n').includes(`userknownhostsfile ${pin}`));
   assert.match(output, /^globalknownhostsfile \/dev\/null$/m);
   assert.match(output, /^updatehostkeys false$/m);
+  assert.match(output, /^connecttimeout 20$/m);
   const keys = execFileSync('ssh-keygen', ['-F','ssh.railway.com','-f',pin], {encoding:'utf8'});
   assert.match(keys, /^ssh\.railway\.com ssh-ed25519 /m);
 });

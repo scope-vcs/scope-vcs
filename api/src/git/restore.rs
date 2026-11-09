@@ -45,7 +45,9 @@ async fn restore_main_head_inner(
 ) -> Result<(), ApiError> {
     let repository_id = incarnation.repository_id();
     let repo_root_for_cleanup = repo_root.to_path_buf();
+    let parent_span = tracing::Span::current();
     tokio::task::spawn_blocking(move || {
+        let _entered = parent_span.enter();
         if repo_root_for_cleanup.exists() {
             fs::remove_dir_all(repo_root_for_cleanup).map_err(ApiError::internal)?;
         }

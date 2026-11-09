@@ -27,7 +27,7 @@ use scope_domain::{
         request_checks_message, request_mergeability,
     },
 };
-use scope_postgres::db::{ApproveRequestChecksCommand, GitHubWorkflowRunReference};
+use scope_postgres::db::GitHubWorkflowRunReference;
 use std::collections::HashMap;
 
 pub(crate) async fn get_request_checks(
@@ -63,17 +63,16 @@ pub(crate) async fn approve_request_checks(
         &request_id,
     )
     .await?;
-    request_checks::checks_view(&state, &repo.record, &request).await?;
-    let mutation = state
-        .metadata
-        .requests()
-        .approve_request_checks(ApproveRequestChecksCommand {
-            request_id: request.id.clone(),
-            actor_user_id: user.id.clone(),
-            reviewed_head_oid: input.expected_head_oid.as_str().to_string(),
-            now_unix: unix_now()?,
-        })
-        .await?;
+    RequestCheckReviewer::for_actor(&user.id, &access, &repo.views)
+        .ok_or_else(|| ApiError::forbidden(RequestCheckReviewer::refusal(&access, &repo.views)))?;
+    let mutation = crate::use_cases::request_check_sources::approve(
+        &state,
+        &repo.record,
+        &request,
+        &user.id,
+        input.expected_head_oid.as_str(),
+    )
+    .await?;
     request_checks::publish_request_checks_change(&state, &repo.incarnation(), &mutation).await;
     let snapshot =
         super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;

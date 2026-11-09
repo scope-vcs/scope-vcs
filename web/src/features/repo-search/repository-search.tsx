@@ -40,6 +40,7 @@ const FILTERS: { label: string; value: RepositorySearchFilter }[] = [
   { label: 'Visibility', value: 'visibility' },
   { label: 'Files', value: 'files' },
 ]
+const EMPTY_SEARCH_RESULTS = { history: [], requests: [] }
 const SEARCH_DELAY_MS = 200
 const PAGE_SEARCH_ROUTE = /\/(?:updates\/|requests\/[^/]+\/changes(?:\/|$))/
 
@@ -95,13 +96,14 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
     resource: repoContentResource,
     version: repoCodeRefreshVersion(repo, version),
   })
+  const queryPending = search !== settledQuery
   const groups = useMemo(() => repositorySearchGroups({
     files: files.value?.files ?? [],
     filter,
     query: search,
-    results: found.results,
+    results: queryPending ? EMPTY_SEARCH_RESULTS : found.results,
     version,
-  }), [files.value, filter, found.results, search, version])
+  }), [files.value, filter, found.results, queryPending, search, version])
   const rows = groups.flatMap((group) => group.rows)
   const active = Math.min(activeIndex, Math.max(0, rows.length - 1))
   const activeRow = rows[active]
@@ -122,17 +124,17 @@ export function RepositorySearch({ params, repo }: { params: RepoParams; repo: R
       setActiveIndex((active + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length)
     } else if (event.key === 'Enter') {
       event.preventDefault()
-      if (search !== settledQuery && activeRow?.kind !== 'file') return
+      if (queryPending && activeRow?.kind !== 'file') return
       listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.click()
     }
   }
 
-  const settled = found.loaded && search === settledQuery
+  const settled = found.loaded && !queryPending
   const failure = found.failure ?? (files.error ? files : null)
   const pagingRequests = filter === 'requests'
-  const canLoadMore = pagingRequests
+  const canLoadMore = !queryPending && (pagingRequests
     ? found.hasMoreRequests
-    : feed !== 'all' && found.hasMoreHistory
+    : feed !== 'all' && found.hasMoreHistory)
 
   async function loadMore() {
     setMore({ error: null, loading: true })

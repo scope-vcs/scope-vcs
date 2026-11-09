@@ -4,10 +4,29 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 export RUST_TEST_THREADS=4
 
-cargo fmt --all --check
-cargo deny --locked check advisories
-cargo test --workspace --locked
-cargo test -p api --features local-dev --locked dev::
-env -u SCOPE_OBJECT_ENCRYPTION_KEY -u SCOPE_BUCKET_ENDPOINT \
-  cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests
-cargo clippy --workspace --all-targets --locked -- -D warnings
+api_git_refs=workflow_tests::git_request_refs::
+
+lint() {
+  cargo fmt --all --check
+  ./dev/checks/advisories workspace
+  cargo clippy --workspace --all-targets --locked -- -D warnings
+}
+
+workspace() { cargo test --workspace --exclude api --locked; }
+api-git-refs() { cargo test -p api --locked --lib -- "$api_git_refs"; }
+api() { cargo test -p api --locked -- --skip "$api_git_refs"; }
+
+features() {
+  cargo test -p api --features local-dev --locked dev::
+  env -u SCOPE_OBJECT_ENCRYPTION_KEY -u SCOPE_BUCKET_ENDPOINT \
+    cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests
+}
+
+case "${1:-all}" in
+  all) lint; workspace; api-git-refs; api; features ;;
+  lint | workspace | api-git-refs | api | features) "$1" ;;
+  *)
+    echo "usage: dev/checks/backend [all|lint|workspace|api-git-refs|api|features]" >&2
+    exit 2
+    ;;
+esac

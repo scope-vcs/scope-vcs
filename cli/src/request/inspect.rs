@@ -27,7 +27,7 @@ pub(super) fn checkout_request(
     if !detail.request.permissions.can_pull_branch {
         return Err(crate::error::CliError::new(ErrorResponse::new(
             ErrorCode::Forbidden,
-            "you do not have permission to check out this request branch",
+            "request branch is unavailable or no longer advertised; use an existing local branch or fetch main",
         ))
         .into());
     }
@@ -74,15 +74,20 @@ pub(super) fn checkout_request(
         )? {
             let parent =
                 get_request(api, &context.target.owner, &context.target.repo, parent_id)?.request;
-            crate::git_repo::fetch_scope_parent_with_bearer(
-                git_repo,
-                &context
-                    .target
-                    .url_for_view(&detail.request.view.clone().into()),
-                &parent.name,
-                parent_id,
-                api.token,
-            )?;
+            if matches!(
+                parent.state,
+                scope_api_contract::RequestState::Draft | scope_api_contract::RequestState::Open
+            ) {
+                crate::git_repo::fetch_scope_parent_with_bearer(
+                    git_repo,
+                    &context
+                        .target
+                        .url_for_view(&detail.request.view.clone().into()),
+                    &parent.name,
+                    parent_id,
+                    api.token,
+                )?;
+            }
         }
         if !try_run_git_in_repo(
             git_repo,

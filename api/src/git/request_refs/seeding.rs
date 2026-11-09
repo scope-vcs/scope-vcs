@@ -2,17 +2,13 @@ use super::{
     RequestViewBases, attach_visible_request_refs,
     pack_consolidation::consolidate_pool_repos,
     pool::{
-        PoolInstall, RequestObjectRepos, install_request_pool_packs, request_object_repos,
-        shares_objects,
+        PoolInstall, PoolRepos, RequestObjectRepos, install_request_pool_packs,
+        request_object_repos,
     },
-    snapshot::{BundleRef, fetch_snapshot_into_ref},
 };
 use crate::{
     error::ApiError,
-    git::{
-        command::git_command_output, pool_install::present_commits,
-        staging::add_receive_pack_alternate,
-    },
+    git::{cache::GitRepoHandle, pool_install::present_commits},
     state::AppState,
 };
 use scope_domain::{
@@ -20,9 +16,10 @@ use scope_domain::{
     repository::RepositoryIncarnation,
     requests::{Request, canonical_request_ref},
 };
-use std::{path::Path as FsPath, process::Command};
+use std::path::Path as FsPath;
 
 pub(crate) struct AttachedRequestRefs {
+    pub(crate) leases: Vec<GitRepoHandle>,
     pub(crate) unreachable: Vec<Request>,
     pub(crate) deferred: Option<DeferredRequestObjects>,
 }
@@ -43,7 +40,7 @@ impl DeferredRequestObjects {
         &self,
         state: &AppState,
         staging_repo: &FsPath,
-    ) -> Result<(), ApiError> {
+    ) -> Result<Vec<GitRepoHandle>, ApiError> {
         let repos = object_repos(
             state,
             &self.incarnation,
@@ -57,8 +54,7 @@ impl DeferredRequestObjects {
             PoolInstall {
                 incarnation: &self.incarnation,
                 config: &self.config,
-                repos: &repos,
-                actor_user_id: &self.actor_user_id,
+                repos: PoolRepos::Full(&repos, &self.actor_user_id, staging_repo),
             },
             &self.requests,
             staging_repo,
@@ -77,32 +73,22 @@ pub(crate) async fn attach_request_refs_from_pool(
     view_bases: RequestViewBases,
 ) -> Result<AttachedRequestRefs, ApiError> {
     let repos = object_repos(state, incarnation, config, actor_user_id, staging_repo).await?;
-    let (stored, snapshotless): (Vec<_>, Vec<_>) = refs_for
-        .into_iter()
-        .partition(|request| request.git_snapshot.is_some());
-    provide_request_objects(
+
+    let leases = provide_request_objects(
         state,
         PoolInstall {
             incarnation,
             config,
-            repos: &repos,
-            actor_user_id,
+            repos: PoolRepos::Full(&repos, actor_user_id, staging_repo),
         },
-        &stored,
+        &refs_for,
         staging_repo,
     )
     .await?;
     let (deferred, unreachable) = {
-        let state = state.clone();
         let staging_repo = staging_repo.to_path_buf();
         crate::git::blocking::run(move || {
-            update_refs(
-                &staging_repo,
-                stored
-                    .iter()
-                    .map(|request| (canonical_request_ref(&request.name), &request.head_oid)),
-            )?;
-            attach_visible_request_refs(&state, &snapshotless, &staging_repo, &view_bases)?;
+            attach_visible_request_refs(&refs_for, &staging_repo, &view_bases)?;
             let present = present_commits(
                 &staging_repo,
                 objects_for.iter().map(|request| request.head_oid.as_str()),
@@ -110,11 +96,12 @@ pub(crate) async fn attach_request_refs_from_pool(
             Ok(objects_for
                 .into_iter()
                 .filter(|request| !present.contains(&request.head_oid))
-                .partition::<Vec<_>, _>(|request| request.git_snapshot.is_some()))
+                .partition::<Vec<_>, _>(|request| request.pushed_at_unix.is_some()))
         })
         .await?
     };
     Ok(AttachedRequestRefs {
+        leases,
         unreachable,
         deferred: (!deferred.is_empty()).then(|| DeferredRequestObjects {
             incarnation: incarnation.clone(),
@@ -123,6 +110,75 @@ pub(crate) async fn attach_request_refs_from_pool(
             requests: deferred,
         }),
     })
+}
+
+pub(crate) async fn attach_view_request_refs_from_pool(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &RepoConfig,
+    view: &scope_domain::views::ViewId,
+    requests: &[Request],
+    staging_repo: &FsPath,
+) -> Result<Vec<GitRepoHandle>, ApiError> {
+    let views = requests
+        .iter()
+        .map(|request| request.view.clone())
+        .chain(std::iter::once(view.clone()))
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut leases = Vec::new();
+    for view in views {
+        let repo = super::view_pool::view_object_repos(state, incarnation, config, &view)
+            .await?
+            .objects;
+        let requests = requests
+            .iter()
+            .filter(|request| request.view == view)
+            .cloned()
+            .collect::<Vec<_>>();
+        let missing = missing_request_heads(&repo, requests.clone()).await?;
+        leases.extend(
+            install_request_pool_packs(
+                state,
+                &PoolInstall {
+                    incarnation,
+                    config,
+                    repos: PoolRepos::View(&view, &repo),
+                },
+                &missing,
+            )
+            .await,
+        );
+        let staging_repo = staging_repo.to_path_buf();
+        let repo = crate::git::blocking::run(move || {
+            let present = present_commits(
+                &repo,
+                requests.iter().map(|request| request.head_oid.as_str()),
+            )?;
+            for request in requests
+                .iter()
+                .filter(|request| present.contains(&request.head_oid))
+            {
+                crate::git::command::run_git(
+                    Some(&staging_repo),
+                    &[
+                        "fetch",
+                        "--no-tags",
+                        repo.to_string_lossy().as_ref(),
+                        &format!(
+                            "+{}:{}",
+                            request.head_oid,
+                            canonical_request_ref(&request.name)
+                        ),
+                    ],
+                    "copying authorized request objects from the view shelf",
+                )?;
+            }
+            Ok(repo)
+        })
+        .await?;
+        leases.push(repo);
+    }
+    Ok(leases)
 }
 
 async fn object_repos(
@@ -139,9 +195,7 @@ async fn object_repos(
     let staging_repo = staging_repo.to_path_buf();
     crate::git::blocking::run(move || {
         let repos = request_object_repos(&state, &incarnation, &generation, &actor_user_id)?;
-        for repo in [&repos.shared, &repos.authored] {
-            add_receive_pack_alternate(&staging_repo, &repo.join("objects"))?;
-        }
+        repos.add_alternates_to(&staging_repo)?;
         Ok(repos)
     })
     .await
@@ -152,40 +206,23 @@ async fn provide_request_objects(
     install: PoolInstall<'_>,
     requests: &[Request],
     staging_repo: &FsPath,
-) -> Result<(), ApiError> {
+) -> Result<Vec<GitRepoHandle>, ApiError> {
+    let PoolRepos::Full(repos, _, _) = install.repos else {
+        return Err(ApiError::internal_message(
+            "full request seeding requires full shelves",
+        ));
+    };
     let missing = missing_request_heads(staging_repo, requests.to_vec()).await?;
     if missing.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
-    install_request_pool_packs(state, &install, &missing).await;
-    let missing = missing_request_heads(staging_repo, missing).await?;
-    if !missing.is_empty() {
-        let state = state.clone();
-        let config = install.config.clone();
-        let repos = install.repos.clone();
-        let actor_user_id = install.actor_user_id.to_string();
-        let staging_repo = staging_repo.to_path_buf();
-        crate::git::blocking::run(move || {
-            for request in &missing {
-                let (target, prerequisites_from) = if shares_objects(request, &config) {
-                    (repos.shared.as_path(), Some(staging_repo.as_path()))
-                } else if request.is_author(&actor_user_id) {
-                    (repos.authored.as_path(), Some(staging_repo.as_path()))
-                } else {
-                    (staging_repo.as_path(), None)
-                };
-                restore_request_objects(&state, target, prerequisites_from, request)?;
-            }
-            Ok(())
-        })
-        .await?;
-    }
+    let leases = install_request_pool_packs(state, &install, &missing).await;
     consolidate_pool_repos(
         install.incarnation.repository_id(),
-        vec![install.repos.shared.clone(), install.repos.authored.clone()],
+        vec![repos.shared.clone(), repos.authored.clone()],
     )
     .await;
-    Ok(())
+    Ok(leases)
 }
 
 async fn missing_request_heads(
@@ -204,57 +241,4 @@ async fn missing_request_heads(
             .collect())
     })
     .await
-}
-
-fn restore_request_objects(
-    state: &AppState,
-    target_repo: &FsPath,
-    prerequisites_from: Option<&FsPath>,
-    request: &Request,
-) -> Result<(), ApiError> {
-    let Some(snapshot) = request.git_snapshot.as_ref() else {
-        return Ok(());
-    };
-    let request_ref = canonical_request_ref(&request.name);
-    let seeded_ref = format!("refs/scope/seeded/{}", request.name);
-    let restored = fetch_snapshot_into_ref(
-        state,
-        target_repo,
-        BundleRef {
-            source: &request_ref,
-            destination: &seeded_ref,
-        },
-        snapshot,
-        prerequisites_from,
-        "restoring request objects",
-    )
-    .and_then(|stored| stored.map_err(ApiError::from));
-    if present_commits(target_repo, std::iter::once(request.head_oid.as_str()))?
-        .contains(&request.head_oid)
-    {
-        return Ok(());
-    }
-    restored.and(Err(ApiError::infrastructure_unavailable(
-        "stored request branch snapshot does not match request metadata",
-    )))
-}
-
-fn update_refs<'a>(
-    repo: &FsPath,
-    refs: impl Iterator<Item = (String, &'a String)>,
-) -> Result<(), ApiError> {
-    let input = refs
-        .map(|(refname, oid)| format!("update {refname} {oid}\n"))
-        .collect::<String>();
-    if input.is_empty() {
-        return Ok(());
-    }
-    git_command_output(
-        Command::new("git")
-            .arg("-C")
-            .arg(repo)
-            .args(["update-ref", "--stdin"]),
-        Some(input.as_bytes()),
-    )?;
-    Ok(())
 }

@@ -7,7 +7,7 @@ export type VisibilityDirection = 'entered' | 'left'
 export type VisibilityTimelineBar = {
   direction: VisibilityDirection
   entry: HistoryEntrySummaryResponse
-  label: string | null
+  labeled: boolean
   signedCount: number
 }
 
@@ -16,14 +16,14 @@ export function visibilityTimelineBars(newestFirst: readonly HistoryEntrySummary
   const bars = oldestFirst.flatMap(entryBars)
   const newest = oldestFirst.at(-1)
   const labeled = new Set([bars.find((bar) => bar.entry === newest), largestBar(bars)])
-  return bars.map((bar) => labeled.has(bar) ? { ...bar, label: String(Math.abs(bar.signedCount)) } : bar)
+  return bars.map((bar) => ({ ...bar, labeled: labeled.has(bar) }))
 }
 
 function entryBars(entry: HistoryEntrySummaryResponse): VisibilityTimelineBar[] {
   const { entered_count: entered, left_count: left } = entry.visibility_summary
   return [
-    ...entered > 0 ? [{ direction: 'entered' as const, entry, label: null, signedCount: entered }] : [],
-    ...left > 0 ? [{ direction: 'left' as const, entry, label: null, signedCount: -left }] : [],
+    ...entered > 0 ? [{ direction: 'entered' as const, entry, labeled: false, signedCount: entered }] : [],
+    ...left > 0 ? [{ direction: 'left' as const, entry, labeled: false, signedCount: -left }] : [],
   ]
 }
 

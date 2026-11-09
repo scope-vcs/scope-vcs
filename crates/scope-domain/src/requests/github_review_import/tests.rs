@@ -1,6 +1,6 @@
 use super::*;
 use crate::error::DomainErrorKind;
-use crate::requests::fixtures::{open_request, source_blob};
+use crate::requests::fixtures::open_request;
 use crate::requests::{RequestAttentionReason, RequestAttentionState, RequestBase};
 
 fn revision(id: &str, position: u64, head: &str) -> RequestRevision {
@@ -17,7 +17,6 @@ fn revision(id: &str, position: u64, head: &str) -> RequestRevision {
         base_version: 0,
         main_ancestor_oid: "base".to_string(),
         rewrote_history: false,
-        git_snapshot: source_blob(head),
         created_at_unix: position,
     }
 }

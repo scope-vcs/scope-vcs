@@ -9,7 +9,7 @@ function fixture() {
   return {
     component: 'api',
     selected: { api: true },
-    receipt,
+    receipts: [receipt],
     liveDeploymentId: 'redeployed',
     history: [
       { id: 'redeployed', status: 'SUCCESS', createdAt: '2026-10-05T00:02:11Z',
@@ -33,7 +33,19 @@ test('a same-image Railway failover replaces the receipt like a redeploy', () =>
 
   const otherImage = fixture();
   otherImage.history[0].meta = { reason: 'failover', imageDigest: `sha256:${'d'.repeat(64)}` };
-  assert.throws(() => verifyRedeployedReplacement(otherImage), /not a redeploy of the receipted image/);
+  assert.throws(() => verifyRedeployedReplacement(otherImage), /not a redeploy or rollback of a receipted image/);
+});
+
+test('a Railway rollback to an earlier receipted image restores that receipt', () => {
+  const earlierReceipt = { sourceSha: 'f'.repeat(40), provider: 'railway', evidenceId: 'earlier' };
+  const rolledBack = fixture();
+  rolledBack.receipts.push(earlierReceipt);
+  rolledBack.history[0].meta = { reason: 'rollback', imageDigest: `sha256:${'c'.repeat(64)}` };
+  assert.deepEqual(verifyRedeployedReplacement(rolledBack), { ...earlierReceipt, evidenceId: 'redeployed' });
+
+  const unreceipted = fixture();
+  unreceipted.history[0].meta = { reason: 'rollback', imageDigest: `sha256:${'c'.repeat(64)}` };
+  assert.throws(() => verifyRedeployedReplacement(unreceipted), /not a redeploy or rollback of a receipted image/);
 });
 
 test('the release must deploy the redeployed component', () => {
@@ -46,12 +58,12 @@ test('the release must deploy the redeployed component', () => {
 test('the live deployment must run the receipted image through redeploys only', () => {
   const otherImage = fixture();
   otherImage.history[0].meta.imageDigest = `sha256:${'d'.repeat(64)}`;
-  assert.throws(() => verifyRedeployedReplacement(otherImage), /not a redeploy of the receipted image/);
+  assert.throws(() => verifyRedeployedReplacement(otherImage), /not a redeploy or rollback of a receipted image/);
 
   const intervening = fixture();
   intervening.history.splice(1, 0, { id: 'manual', status: 'REMOVED', createdAt: '2026-10-04T12:00:00Z',
     meta: { reason: 'deploy', imageDigest: digest } });
-  assert.throws(() => verifyRedeployedReplacement(intervening), /not a redeploy of the receipted image/);
+  assert.throws(() => verifyRedeployedReplacement(intervening), /not a redeploy or rollback of a receipted image/);
 
   assert.throws(() => verifyRedeployedReplacement({ ...fixture(), liveDeploymentId: 'receipted' }),
     /not a successful redeploy/);
@@ -63,7 +75,7 @@ test('the receipted deployment must be superseded and carry an exact digest', ()
   assert.throws(() => verifyRedeployedReplacement(active), /has not been superseded/);
 
   const pinned = fixture();
-  pinned.receipt = { ...receipt, artifactDigest: `sha256:${'e'.repeat(64)}` };
+  pinned.receipts = [{ ...receipt, artifactDigest: `sha256:${'e'.repeat(64)}` }];
   assert.throws(() => verifyRedeployedReplacement(pinned), /no matching image digest/);
 });
 
@@ -75,7 +87,7 @@ test('loading reads the production service history and returns the replaced rece
     { node: { serviceId: 'api-service', activeDeployments: [{ id: 'redeployed', status: 'SUCCESS' }] } },
   ] } } }] } };
   let args;
-  const result = loadRedeployedReplacement({ component: 'api', selected, deployments: { api: receipt },
+  const result = loadRedeployedReplacement({ component: 'api', selected, receipts: [receipt],
     status, manifest, railway: (value) => { args = value; return history; } });
   assert.deepEqual(result, { api: { ...receipt, evidenceId: 'redeployed' } });
   assert.deepEqual(args, ['deployment', 'list', '--project', 'project', '--service', 'api-service',

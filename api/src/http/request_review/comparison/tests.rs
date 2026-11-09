@@ -2,12 +2,7 @@ use super::*;
 use crate::git::test_repo::pinned_identity_git as git;
 use crate::http::request_review::tests::read_policy;
 use scope_domain::{
-    account::UserAccount,
-    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-    content_ref::ContentRef,
-    policy::ScopePath,
-    repository::Repository,
-    requests::RequestBase,
+    account::UserAccount, policy::ScopePath, repository::Repository, requests::RequestBase,
     views::ViewId,
 };
 
@@ -70,13 +65,6 @@ fn request_comparison_keeps_cumulative_net_changes_separate_from_push_and_commit
         },
         main_ancestor_oid: root.clone(),
         rewrote_history: false,
-        git_snapshot: SourceBlob {
-            content_ref: ContentRef::blob_sha256("snapshot"),
-            sha256: "snapshot".to_string(),
-            git_oid: "snapshot".to_string(),
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            size_bytes: 1,
-        },
         created_at_unix: 1,
     };
     let owner = UserAccount {

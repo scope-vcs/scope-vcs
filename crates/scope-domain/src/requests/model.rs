@@ -1,4 +1,4 @@
-use crate::{content::SourceBlob, error::DomainError};
+use crate::error::DomainError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,7 +30,7 @@ pub struct Request {
     pub stack_depth: u32,
     pub main_ancestor_oid: String,
     pub head_oid: String,
-    pub git_snapshot: Option<SourceBlob>,
+    pub pushed_at_unix: Option<u64>,
     pub title: String,
     pub description_markdown: String,
     pub activity_version: u64,
@@ -46,6 +46,10 @@ pub struct Request {
 }
 
 impl RequestState {
+    pub fn advertised_in_git(self) -> bool {
+        matches!(self, Self::Draft | Self::Open)
+    }
+
     pub fn from_timestamps(
         merged_at_unix: Option<u64>,
         closed_at_unix: Option<u64>,
@@ -64,6 +68,10 @@ impl RequestState {
 }
 
 impl Request {
+    pub fn object_author_id(&self) -> &str {
+        self.author_user_id.as_deref().unwrap_or(&self.id)
+    }
+
     pub fn state(&self) -> RequestState {
         RequestState::from_timestamps(
             self.merged_at_unix,

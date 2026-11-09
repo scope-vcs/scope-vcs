@@ -13,8 +13,7 @@ use tracing::Instrument as _;
 pub(crate) enum GitDerivedCacheNamespace {
     Projection,
     Repository,
-    RequestReadView,
-    RequestRevision,
+    RequestObjects,
     RunSource,
 }
 
@@ -73,7 +72,10 @@ impl GitDerivedCacheCoordinator {
                 state
                     .followers
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                wait_for_cache_build_async(&state).await?;
+                let outcome = wait_for_cache_build_async(&state).await;
+                if namespace != GitDerivedCacheNamespace::RequestObjects {
+                    outcome?;
+                }
                 continue;
             }
             let build = build
@@ -271,6 +273,70 @@ async fn wait_for_cache_build_async(state: &CacheBuildState) -> Result<(), ApiEr
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[tokio::test]
+    async fn failed_build_only_fails_its_own_request_revision() {
+        for namespace in [
+            GitDerivedCacheNamespace::RequestObjects,
+            GitDerivedCacheNamespace::Repository,
+        ] {
+            let coordinator = Arc::new(GitDerivedCacheCoordinator::default());
+            let started = Arc::new(Notify::new());
+            let release = Arc::new(Notify::new());
+            let leader = {
+                let coordinator = coordinator.clone();
+                let started = started.clone();
+                let release = release.clone();
+                tokio::spawn(async move {
+                    coordinator
+                        .materialize_async(
+                            namespace,
+                            "shelf".into(),
+                            || false,
+                            move || async move {
+                                started.notify_one();
+                                release.notified().await;
+                                Err(ApiError::infrastructure_unavailable(
+                                    "revision X snapshot is unreadable",
+                                ))
+                            },
+                        )
+                        .await
+                })
+            };
+            started.notified().await;
+            let ready = Arc::new(AtomicBool::new(false));
+            let follower = {
+                let coordinator = coordinator.clone();
+                let check = ready.clone();
+                let ready = ready.clone();
+                tokio::spawn(async move {
+                    coordinator
+                        .materialize_async(
+                            namespace,
+                            "shelf".into(),
+                            move || check.load(Ordering::SeqCst),
+                            move || async move {
+                                ready.store(true, Ordering::SeqCst);
+                                Ok(())
+                            },
+                        )
+                        .await
+                })
+            };
+            while coordinator.follower_count(namespace, "shelf") == 0 {
+                tokio::task::yield_now().await;
+            }
+            release.notify_one();
+            assert!(leader.await.unwrap().is_err());
+            let result = follower.await.unwrap();
+            assert_eq!(
+                result.is_ok(),
+                namespace == GitDerivedCacheNamespace::RequestObjects
+            );
+            assert_eq!(ready.load(Ordering::SeqCst), result.is_ok());
+        }
+    }
 
     #[tokio::test]
     async fn async_followers_share_one_build_even_when_the_leader_request_is_cancelled() {

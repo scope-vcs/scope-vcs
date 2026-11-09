@@ -125,7 +125,9 @@ fn invite_email_message(
     now: u64,
 ) -> Result<InviteEmailMessage, ApiError> {
     let origin = public_app_origin("building repository invite email")?;
-    let link = format!("{}/invites/{secret}", origin.trim_end_matches('/'));
+    let origin = origin.trim_end_matches('/');
+    let link = format!("{origin}/invites/{secret}");
+    let brand_image = format!("{origin}/brand/contour-v1/scope-email.png");
     let owner = &repo.owner_handle;
     let repository = format!("{owner}/{}", repo.name);
     let push = if invite.permissions.can_push {
@@ -156,11 +158,15 @@ fn invite_email_message(
              {access}\n\nView invitation: {link}\n\n{footer}\n"
         ),
         html: format!(
-            "<p>@{owner} invited you to become a member of <strong>{repository}</strong> on Scope.</p>\
+            "<p style=\"margin:0 0 24px;padding:16px;background-color:#f4f2ec\">\
+             <img src=\"{brand_image}\" alt=\"Scope\" width=\"94\" height=\"24\" \
+             style=\"display:block;border:0;color:#24231f;font-family:Arial,sans-serif;font-size:20px\"></p>\
+             <p>@{owner} invited you to become a member of <strong>{repository}</strong> on Scope.</p>\
              <p>{access}</p>\
              <p><a href=\"{link}\">View invitation</a></p>\
              <p style=\"color:#666;font-size:13px\">{footer}</p>",
             owner = escape_html(owner),
+            brand_image = escape_html(&brand_image),
             repository = escape_html(&repository),
             access = escape_html(&access),
             footer = escape_html(&footer),
@@ -239,6 +245,28 @@ mod tests {
         assert!(fresh.text.contains("/invites/secret\n"));
         assert_eq!(fresh.reply_to, "owner@example.com");
         assert_eq!(fresh.idempotency_key, "email");
+        let (image_url, image) = fresh
+            .html
+            .split_once("<img src=\"")
+            .unwrap()
+            .1
+            .split_once('"')
+            .unwrap();
+        let image = image.split_once('>').unwrap().0;
+        let invitation_url = fresh
+            .html
+            .split_once("href=\"")
+            .unwrap()
+            .1
+            .split_once('"')
+            .unwrap()
+            .0;
+        assert_eq!(
+            image_url.split_once("/brand/").unwrap().0,
+            invitation_url.split_once("/invites/").unwrap().0
+        );
+        assert!(image.contains("alt=\"Scope\""));
+        assert!(image.contains("width=\"94\" height=\"24\""));
         assert!(fresh.html.contains("&lt;b&gt;odd&lt;/b&gt;@example.com"));
         assert!(!fresh.html.contains("<b>odd"));
     }

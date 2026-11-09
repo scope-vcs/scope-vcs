@@ -56,7 +56,7 @@ pub(super) async fn context_for(
 pub(super) async fn publish(
     store: &MetadataStore,
     child: &Request,
-    mut publication: RecordRequestRevisionInput,
+    publication: RecordRequestRevisionInput,
     facts: Option<RequestBasePublicationFacts>,
     same_head: bool,
 ) -> Result<scope_domain::requests::RequestRevisionMutation, PostgresError> {
@@ -69,13 +69,6 @@ pub(super) async fn publish(
             &publication.event_id,
         )
         .await;
-        publication.git_snapshot = store
-            .requests()
-            .latest_request_revision(&child.id)
-            .await
-            .unwrap()
-            .unwrap()
-            .git_snapshot;
         store
             .requests()
             .record_request_revision_context(publication, context, facts, Vec::new())
@@ -124,20 +117,4 @@ pub(super) async fn seed_checks(
         .await
         .unwrap();
     evaluation
-}
-
-pub(super) async fn reference_count(store: &MetadataStore, revision_id: &str) -> i64 {
-    store
-        .db
-        .query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "SELECT count(*) AS count FROM scope_object_references
-         WHERE ref_kind = 'request_revision_snapshot' AND ref_id = $1",
-            [revision_id.into()],
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get("", "count")
-        .unwrap()
 }

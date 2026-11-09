@@ -17,7 +17,8 @@ function workflowReplica(path, count = 1) {
 }
 
 const REPLICAS = [
-  workflowReplica(".github/workflows/rust-workspace-checks.yml"),
+  workflowReplica(".github/workflows/rust-workspace-checks.yml", 2),
+  workflowReplica(".github/workflows/main-advisories.yml"),
   workflowReplica(".github/workflows/scope-api-ci.yml"),
   workflowReplica(".github/workflows/ci.yml", 2),
   workflowReplica(".github/workflows/release.yml", 2),

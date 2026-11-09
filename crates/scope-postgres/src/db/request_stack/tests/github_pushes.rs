@@ -78,7 +78,6 @@ async fn github_push_claim_obeys_stack_gate_without_delaying_recovery() {
         };
         request.stack_depth = 1;
         request.head_oid = "a".repeat(40);
-        request.git_snapshot.as_mut().unwrap().git_oid = request.head_oid.clone();
         super::super::super::request_rows::save_request_row(store.db.as_ref(), &request)
             .await
             .unwrap();

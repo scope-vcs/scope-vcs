@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { classifyChanges } from './plan-production-deployment.mjs';
+import { checkMainAdvisories } from './main-advisories.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
 const read = (path) => readFileSync(resolve(root, path), 'utf8');
@@ -27,10 +28,40 @@ function commands(gate, ...args) {
 test('the backend gate covers the whole workspace and the API feature suites explicitly', () => {
   const backend = commands('backend');
   assert.ok(backend.includes('cargo deny --locked check advisories'));
-  assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --locked'));
-  assert.ok(backend.includes('cargo test --workspace --locked'));
+  assert.ok(backend.indexOf('cargo deny --locked check advisories') < backend.indexOf('cargo test --workspace --exclude api --locked'));
+  const [apiFilter] = backend.find((command) => command.startsWith('cargo test -p api --locked --lib -- ')).split(' ').slice(-1);
+  assert.ok(backend.includes(`cargo test -p api --locked -- --skip ${apiFilter}`));
   assert.ok(backend.includes('cargo test -p api --features local-dev --locked dev::'));
   assert.ok(backend.includes('cargo test -p api --features smoke-seed --locked --lib smoke_seed::tests'));
+});
+
+test('the daily main advisory job runs both PR advisory commands with only JSON formatting added', () => {
+  const workflow = read('.github/workflows/main-advisories.yml');
+  assert.match(workflow, /schedule:\n    - cron: '[^']+ \* \* \*'/);
+  assert.match(workflow, /if: github.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /run: \.\/dev\/install-cargo-deny.sh/);
+  assert.match(workflow, /run: node \.github\/scripts\/main-advisories.mjs "\$RUNNER_TEMP\/main-advisories.json"/);
+  const scheduled = checkMainAdvisories((file, args) => ({
+    status: 0, stdout: commands(basename(file), ...args).join('\n'),
+  }));
+  const gated = ['backend', 'cli'].flatMap(gate => commands(gate).filter(line => line.startsWith('cargo deny ')));
+  assert.deepEqual(scheduled.map(check => check.output.trim().replace(' --format json', '')), gated);
+  const selected = classifyChanges(manifest, ['dev/checks/advisories']);
+  for (const gate of ['backend', 'cli']) {
+    for (const [component, required] of Object.entries(classifyChanges(manifest, [`dev/checks/${gate}`]))) {
+      if (required) assert.equal(selected[component], true, `${component} must check shared advisory changes`);
+    }
+  }
+});
+
+test('GitHub runs every backend gate lane exactly once', () => {
+  const workflow = read('.github/workflows/rust-workspace-checks.yml');
+  const testLanes = workflow.match(/lane: \[([^\]]+)\]/)[1].split(', ');
+  const lanes = [workflow.match(/dev\/checks\/backend (lint)$/m)[1], ...testLanes];
+  assert.deepEqual(lanes.flatMap((lane) => commands('backend', lane)).sort(), commands('backend').sort());
+  assert.match(workflow, /run: sudo \.\/dev\/install-test-postgres\.sh/);
+  assert.ok(workflow.indexOf('Install PostgreSQL test server') < workflow.indexOf('Test Rust workspace lane'));
+  assert.doesNotMatch(workflow, /SCOPE_TEST_DATABASE_URL|services:/);
 });
 
 test('the backend gate bounds PostgreSQL test concurrency on larger hosts', () => {
@@ -120,7 +151,7 @@ const alwaysOnGateInputs = [
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy|README\.md)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.sh)$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|main-advisories|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment|provision-staging-baseline)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 
@@ -438,6 +469,60 @@ test('runner base images pass the container lifecycle gate and scan before publi
   assert.match(publish.slice(push), /bash \.github\/scripts\/push-image-tags\.sh <<< "\$IMAGE"/);
 });
 
+test('runner base images take packages from the live Debian archive refreshed each week', () => {
+  const runner = read('.github/workflows/scope-runner-image.yml');
+  const candidate = runner.slice(runner.indexOf('\n  validate:\n'), runner.indexOf('\n  publish:\n'));
+  const publish = runner.slice(runner.indexOf('\n  publish:\n'));
+  for (const lane of [candidate, publish]) {
+    assert.match(lane, /echo "dependency_epoch=\$\(date -u \+%G-W%V\)" >> "\$GITHUB_OUTPUT"/);
+    assert.match(lane, /IMAGE_DEPENDENCY_EPOCH=\$\{\{ steps\.git\.outputs\.dependency_epoch \}\}/);
+  }
+  const dockerfile = read('runner-runtime/Dockerfile');
+  assert.doesNotMatch(dockerfile, /snapshot\.debian\.org/);
+  const aptLayers = runnerAptLayers();
+  assert.ok(aptLayers.length > 0);
+  for (const layer of aptLayers) assert.match(layer, /^RUN test -n "\$IMAGE_DEPENDENCY_EPOCH" && /);
+});
+
+test('the runner installs its fixed APT first with retries disabled, and every apt layer has a deadline', () => {
+  const layers = runnerAptLayers();
+  const scripts = layers.map(layer => {
+    const bounded = layer.match(/timeout --verbose --kill-after=(\d+)s (\d+)s sh -ec '([^']+)'/);
+    assert.ok(bounded, `${layer.slice(0, 60)} must run apt under a wall-clock deadline`);
+    assert.ok(Number(bounded[1]) + Number(bounded[2]) < 360);
+    assert.equal(layer.match(/\bapt-get\b/g).length, bounded[3].match(/\bapt-get\b/g).length);
+    return bounded[3];
+  });
+  const [bootstrap, ...rest] = layers;
+  assert.match(bootstrap, /URIs: http:\/\/deb\.debian\.org\/debian-security' 'Suites: bookworm-security'/);
+  assert.match(bootstrap, / && mv \/etc\/apt\/sources\.list\.d\/debian\.sources \/tmp\/debian\.sources /);
+  assert.match(bootstrap, /mv \/tmp\/debian\.sources \/etc\/apt\/sources\.list\.d\/debian\.sources/);
+  assert.deepEqual([...new Set(bootstrap.match(/Acquire::Retries=\d+/g))], ['Acquire::Retries=0'],
+    'the vulnerable APT must not retry while it installs its own fix');
+  assert.deepEqual(scripts[0].match(/install --yes --no-install-recommends (.+)$/)[1].trim().split(/\s+/),
+    ['"apt=${APT_VERSION}"', '"libapt-pkg6.0=${APT_VERSION}"']);
+  for (const layer of rest) assert.doesNotMatch(layer, /apt=|libapt-pkg/);
+  const dir = mkdtempSync(resolve(tmpdir(), 'scope-runner-apt-'));
+  try {
+    writeFileSync(resolve(dir, 'apt-get'), '#!/bin/sh\nprintf "%s\\n" "$*"\nexit "${APT_EXIT_STATUS:-0}"\n', { mode: 0o755 });
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}` };
+    const packages = spawnSync('sh', ['-ec', scripts.at(-1)], { env, encoding: 'utf8' });
+    assert.equal(packages.status, 0, packages.stderr);
+    assert.deepEqual(packages.stdout.trim().split('\n').map(line => line.replace(/^(?:-o \S+ )+/, '').split(' ')[0]), ['update', 'upgrade', 'install']);
+    const failure = spawnSync('sh', ['-ec', scripts.at(-1)], { env: { ...env, APT_EXIT_STATUS: '100' }, encoding: 'utf8' });
+    assert.equal(failure.status, 100, failure.stderr);
+    assert.equal(failure.stdout.trim().split('\n').length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function runnerAptLayers() {
+  const dockerfile = read('runner-runtime/Dockerfile');
+  const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+  return runtime.replaceAll(/[ \t]*\\\n\s*/g, ' ').split('\n').filter(line => line.startsWith('RUN ') && /\bapt-get\b/.test(line));
+}
+
 test('CI runs on pull requests and Scope request branches, and Release dispatch is owned by the watcher', () => {
   const ci = read('.github/workflows/ci.yml');
   const release = read('.github/workflows/release.yml');
@@ -509,25 +594,10 @@ test("a Scope request revision that an open pull request tests reports that pull
   const gate = ci.slice(ci.indexOf('\n  required-pr-checks:\n'));
   assert.match(gate, /- name: Report the pull request's result\n        if: \$\{\{ needs\.pull-request\.outputs\.number != '' \}\}\n/);
   assert.match(gate, /- name: Require successful planning and validation\n        if: \$\{\{ needs\.pull-request\.outputs\.number == '' \}\}\n/);
-  const script = stepScript(gate, "Report the pull request's result");
-  const report = (answers) => {
-    const dir = mkdtempSync(resolve(tmpdir(), 'scope-ci-report-'));
-    try {
-      writeFileSync(resolve(dir, 'answers'), answers.join('\n') + '\n');
-      writeFileSync(resolve(dir, 'gh'), `#!/bin/bash\nn=$(cat "${dir}/count" 2>/dev/null || echo 0); echo $((n + 1)) > "${dir}/count"\nline=$(sed -n "$((n + 1))p" "${dir}/answers")\n[[ "$line" == error ]] && exit 1\necho "$line"\n`, { mode: 0o755 });
-      writeFileSync(resolve(dir, 'sleep'), '#!/bin/sh\n', { mode: 0o755 });
-      return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
-        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, REPOSITORY: 'o/r', SHA: 'a'.repeat(40), PULL_REQUEST: '7' },
-        encoding: 'utf8',
-      }).status;
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  };
-  assert.equal(report(['', 'error', 'u in_progress null', 'u completed success']), 0);
-  for (const conclusion of ['failure', 'cancelled', 'timed_out', 'skipped']) {
-    assert.notEqual(report([`u completed ${conclusion}`]), 0, conclusion);
-  }
+  assert.match(gate, /RUN_ID: \$\{\{ needs\.pull-request\.outputs\.run_id \}\}/);
+  assert.match(gate, /run: node \.github\/scripts\/report-pr-checks\.mjs/);
+  assert.match(gate, /contents: read\n      pull-requests: read/);
+  assert.ok(gate.indexOf('name: Checkout reporter') < gate.indexOf("name: Report the pull request's result"));
 });
 
 test('a Scope request revision reuses an open pull request run, waiting briefly for GitHub to start it', () => {
@@ -552,12 +622,12 @@ test('a Scope request revision reuses an open pull request run, waiting briefly 
       rmSync(dir, { recursive: true, force: true });
     }
   };
-  assert.deepEqual(find({}), { output: 'number=7\n', slept: 0 });
-  assert.deepEqual(find({ pulls: ['', '7'], runs: ['', '123'] }), { output: 'number=7\n', slept: 2 }, 'the pull request and its run can appear after the push');
-  assert.deepEqual(find({ pulls: [''] }), { output: 'number=\n', slept: 7 });
-  assert.deepEqual(find({ runs: [''] }), { output: 'number=\n', slept: 7 }, 'a pull request with conflicts never gets a run to wait for');
-  assert.deepEqual(find({ pulls: ['error', '7'] }), { output: 'number=7\n', slept: 1 }, 'a failed pull request lookup moves on to the next attempt');
-  assert.deepEqual(find({ runs: ['error', '123'] }), { output: 'number=7\n', slept: 1 }, 'a failed run lookup moves on to the next attempt');
+  assert.deepEqual(find({}), { output: 'number=7\nrun_id=123\n', slept: 0 });
+  assert.deepEqual(find({ pulls: ['', '7'], runs: ['', '123'] }), { output: 'number=7\nrun_id=123\n', slept: 2 }, 'the pull request and its run can appear after the push');
+  assert.deepEqual(find({ pulls: [''] }), { output: 'number=\nrun_id=\n', slept: 7 });
+  assert.deepEqual(find({ runs: [''] }), { output: 'number=\nrun_id=\n', slept: 7 }, 'a pull request with conflicts never gets a run to wait for');
+  assert.deepEqual(find({ pulls: ['error', '7'] }), { output: 'number=7\nrun_id=123\n', slept: 1 }, 'a failed pull request lookup moves on to the next attempt');
+  assert.deepEqual(find({ runs: ['error', '123'] }), { output: 'number=7\nrun_id=123\n', slept: 1 }, 'a failed run lookup moves on to the next attempt');
 });
 
 test('validation gate allows unselected jobs and reused artifacts but fails selected jobs and cancellation', () => {

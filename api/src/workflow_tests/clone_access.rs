@@ -153,6 +153,7 @@ async fn public_git_read_view_physically_excludes_private_objects() {
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &ViewId::public(),
+        &scope_domain::requests::GitFetchAsk::listing(),
     )
     .await
     .unwrap();
@@ -182,6 +183,7 @@ async fn warm_public_clone_reads_no_repository_history() {
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &ViewId::public(),
+        &scope_domain::requests::GitFetchAsk::listing(),
     )
     .await
     .unwrap();
@@ -202,6 +204,7 @@ async fn warm_public_clone_reads_no_repository_history() {
             TEST_REPO_OWNER,
             TEST_REPO_NAME,
             &ViewId::public(),
+            &scope_domain::requests::GitFetchAsk::listing(),
         ),
     )
     .await
@@ -209,5 +212,6 @@ async fn warm_public_clone_reads_no_repository_history() {
     .unwrap();
     held.rollback().await.unwrap();
 
-    assert_eq!(warm.as_ref(), cold_path.as_path());
+    assert_ne!(warm.as_ref(), cold_path.as_path());
+    assert!(!cold_path.exists());
 }

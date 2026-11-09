@@ -19,6 +19,7 @@ use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelec
 pub struct GitReadSource {
     pub context: RepositoryAccessContext,
     pub public_files_visible: bool,
+    pub repo_config: scope_domain::repo_config::RepoConfig,
     pub git_head: Option<GitHead>,
 }
 
@@ -29,6 +30,22 @@ pub struct RepositoryGitState {
 }
 
 impl RepositoryStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_object_config"))]
+    pub async fn repository_object_config(
+        &self,
+        incarnation: &RepositoryIncarnation,
+    ) -> Result<scope_domain::repo_config::RepoConfig, PostgresError> {
+        let config = entities::repository::Entity::find_by_id(incarnation.repository_id())
+            .select_only()
+            .column(entities::repository::Column::RepoConfig)
+            .filter(entities::repository::Column::IncarnationId.eq(incarnation.incarnation_id()))
+            .into_tuple::<serde_json::Value>()
+            .one(self.db.as_ref())
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repository incarnation not found"))?;
+        serde_json::from_value(config).map_err(PostgresError::internal)
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "repository_git_state"))]
     pub async fn repository_git_state(
         &self,
@@ -71,8 +88,17 @@ impl RepositoryStore {
             .await?
             .map(entities::git_head::Model::try_into_domain)
             .transpose()?;
+        let config = entities::repository::Entity::find_by_id(&context.record.id)
+            .select_only()
+            .column(entities::repository::Column::RepoConfig)
+            .into_tuple::<serde_json::Value>()
+            .one(&tx)
+            .await?
+            .ok_or_else(|| PostgresError::not_found("repo not found"))?;
+        let repo_config = super::json::decode_json(config)?;
         tx.commit().await?;
         Ok(Some(GitReadSource {
+            repo_config,
             context,
             public_files_visible,
             git_head,

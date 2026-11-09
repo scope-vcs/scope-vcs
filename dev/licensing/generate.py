@@ -20,7 +20,13 @@ LOCKFILES = ["Cargo.lock", "cli/Cargo.lock", "web/pnpm-lock.yaml"]
 LICENSE_NAME = re.compile(r"^(licen[cs]e|copying|copyright|notice|ofl|unlicense)([._-].*)?$", re.I)
 SHARED_TERMS = re.compile(
     r"Permission\s+is\s+hereby\s+granted,.*?OTHER\s+DEALINGS\s+IN\s+THE\s+SOFTWARE\."
-    r"|Apache\s+License\s+Version\s+2\.0,\s+January\s+2004.*?END\s+OF\s+TERMS\s+AND\s+CONDITIONS",
+    r"|Apache\s+License\s+Version\s+2\.0,\s+January\s+2004.*?END\s+OF\s+TERMS\s+AND\s+CONDITIONS"
+    r"|SIL\s+OPEN\s+FONT\s+LICENSE\s+Version\s+1\.1\s+-\s+26\s+February\s+2007"
+    r".*?OTHER\s+DEALINGS\s+IN\s+THE\s+FONT\s+SOFTWARE\."
+    r"|Permission\s+to\s+use,\s+copy,\s+modify,\s+and/or\s+distribute\s+this\s+software"
+    r".*?IN\s+CONNECTION\s+WITH\s+THE\s+USE\s+OR\s+PERFORMANCE\s+OF\s+THIS\s+SOFTWARE\."
+    r"|Redistribution\s+and\s+use\s+in\s+source\s+and\s+binary\s+forms,\s+with\s+or\s+without"
+    r".*?POSSIBILITY\s+OF\s+SUCH\s+DAMAGES?\.",
     re.S,
 )
 
@@ -120,7 +126,7 @@ def collect(package):
             if path == manifest_path:
                 raw = bundle.extractfile(member).read().decode("utf-8")
                 metadata = tomllib.loads(raw)["package"] if package["ecosystem"] == "rust" else json.loads(raw)
-            is_document = Path(path).suffix.lower() not in {".rs", ".js", ".ts", ".c", ".h", ".cc", ".cpp", ".json", ".map"}
+            is_document = Path(path).suffix.lower() not in {".rs", ".js", ".mjs", ".cjs", ".ts", ".c", ".h", ".cc", ".cpp", ".json", ".map"}
             if package.get("source") and not (str(Path(path).parent) in license_roots or
                     Path(path).is_relative_to(Path(manifest_path).parent)):
                 continue

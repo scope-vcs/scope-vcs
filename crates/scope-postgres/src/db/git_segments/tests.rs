@@ -226,6 +226,7 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
     let inline = GitPoolPack {
         id: "pool-inline".to_string(),
         owner: GitPoolPackOwner::Request {
+            scope: scope_domain::repository::git::RequestPackScope::Full,
             request_id: "req_wanted".to_string(),
         },
         head_oid: "a".repeat(40),
@@ -237,6 +238,7 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
     let segment = GitPoolPack {
         id: "pool-segment".to_string(),
         owner: GitPoolPackOwner::Request {
+            scope: scope_domain::repository::git::RequestPackScope::Full,
             request_id: "req_wanted".to_string(),
         },
         head_oid: "b".repeat(40),
@@ -246,6 +248,7 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
     let other = GitPoolPack {
         id: "pool-other".to_string(),
         owner: GitPoolPackOwner::Request {
+            scope: scope_domain::repository::git::RequestPackScope::Full,
             request_id: "req_other".to_string(),
         },
         head_oid: "f".repeat(40),
@@ -293,6 +296,7 @@ async fn request_and_main_pool_packs_are_listed_only_for_their_owner() {
             .map(|listed| GitPoolPack {
                 id: listed.id.clone(),
                 owner: GitPoolPackOwner::Request {
+                    scope: scope_domain::repository::git::RequestPackScope::Full,
                     request_id: listed.request_id.clone(),
                 },
                 head_oid: listed.head_oid.clone(),

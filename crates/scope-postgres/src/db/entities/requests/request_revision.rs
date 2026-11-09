@@ -18,7 +18,6 @@ pub struct Model {
     pub parent_head_oid: Option<String>,
     pub main_ancestor_oid: String,
     pub rewrote_history: bool,
-    pub git_snapshot: Json,
     pub created_at_unix: i64,
 }
 
@@ -45,7 +44,6 @@ impl Model {
             parent_head_oid: base.parent_head_oid,
             main_ancestor_oid: value.main_ancestor_oid.clone(),
             rewrote_history: value.rewrote_history,
-            git_snapshot: encode_json(&value.git_snapshot)?,
             created_at_unix: u64_to_i64(value.created_at_unix, "request revision creation time")?,
         })
     }
@@ -69,7 +67,6 @@ impl Model {
             base_version: i64_to_u64(self.base_version, "request revision base version")?,
             main_ancestor_oid: self.main_ancestor_oid,
             rewrote_history: self.rewrote_history,
-            git_snapshot: decode_json::<SourceBlob>(self.git_snapshot)?,
             created_at_unix: i64_to_u64(self.created_at_unix, "request revision creation time")?,
         })
     }

@@ -16,7 +16,6 @@ fn explicit_base_publication_transitions_between_main_and_different_parents() {
         new_base: Some(selected.clone()),
         new_base_stack_depth: Some(3),
         new_head_oid: "restacked-head".into(),
-        git_snapshot: source_blob("restacked-head"),
         git_facts: RequestRevisionGitFacts {
             contains_old_head: false,
             contained_main_oid: Some("accepted-main".into()),
@@ -46,7 +45,6 @@ fn explicit_base_publication_transitions_between_main_and_different_parents() {
             new_base: Some(replacement.clone()),
             new_base_stack_depth: Some(2),
             new_head_oid: "replacement-head".into(),
-            git_snapshot: source_blob("replacement-head"),
             git_facts: RequestRevisionGitFacts {
                 contains_old_head: false,
                 contained_main_oid: Some("accepted-main".into()),
@@ -81,7 +79,7 @@ fn explicit_base_publication_transitions_between_main_and_different_parents() {
                 contained_main_descends_from_base: true,
             },
             new_head_oid: "main-restacked-head".into(),
-            git_snapshot: source_blob("main-restacked-head"),
+
             ..publication_input(&blocked)
         },
     )
@@ -307,7 +305,7 @@ fn explicit_unchanged_review_context_cannot_clear_a_block_or_create_a_revision()
         false,
         RecordRequestRevisionInput {
             new_head_oid: "repaired-head".into(),
-            git_snapshot: source_blob("repaired-head"),
+
             ..unchanged
         },
     )

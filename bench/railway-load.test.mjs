@@ -53,7 +53,25 @@ test('load target guard requires an explicit staging opt-in', () => {
     () => assertSafeTarget('https://scope-api-production.up.railway.app', 'staging'),
     /refusing non-staging target/,
   );
-  assert.throws(() => validateTargetKind('production'), /must be loadtest or staging/);
+  assert.throws(() => validateTargetKind('production'), /must be loadtest, staging, or preview/);
+});
+
+test('load target guard accepts preview hosts only with an explicit opt-in', () => {
+  const preview = 'https://scope-api-pr-880.up.railway.app';
+  assert.throws(() => assertSafeTarget(preview), /refusing non-loadtest target/);
+  assert.doesNotThrow(() => assertSafeTarget(preview, 'preview'));
+  assert.doesNotThrow(() => assertSafeTarget('https://scope-git-pr-12.up.railway.app', 'preview'));
+  assert.doesNotThrow(() => assertSafeTarget('http://localhost:8080', 'preview'));
+  for (const host of [
+    'https://scope-api-production.up.railway.app',
+    'https://scope-api-pr-abc.up.railway.app',
+    'https://scope-api-loadtest.up.railway.app',
+    'https://scope-api-xpr-880.up.railway.app',
+    'https://scope-api-production-pr-880.up.railway.app',
+    'https://api.example.com/pr-880',
+  ]) {
+    assert.throws(() => assertSafeTarget(host, 'preview'), /refusing non-preview target/, host);
+  }
 });
 
 test('numeric workload controls are unique and sorted', () => {

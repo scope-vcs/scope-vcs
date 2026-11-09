@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { RequestQueueItemResponse } from '../../api/types.generated'
 import {
   requestAgeLabel,
-  requestAttentionHeat,
+  requestAttentionStale,
+  requestStatusLabel,
   resolveCustomSnooze,
   requestSnoozeLandingLabel,
   requestSnoozeUntil,
@@ -20,13 +22,10 @@ test('row age reads as a compact unit', () => {
   assert.match(requestAgeLabel(now - 90 * 86400, now, false), /^[A-Z][a-z]{2} \d{1,2}$/)
 })
 
-test('attention heat steps up with the wait', () => {
+test('attention turns stale after a day', () => {
   const now = 1_800_000_000
-  assert.equal(requestAttentionHeat(now + 60, now), 0)
-  assert.equal(requestAttentionHeat(now - 3600, now), 0)
-  assert.equal(requestAttentionHeat(now - 2 * 86400, now), 1)
-  assert.equal(requestAttentionHeat(now - 5 * 86400, now), 2)
-  assert.equal(requestAttentionHeat(now - 30 * 86400, now), 3)
+  assert.equal(requestAttentionStale(now - 86_399, now), false)
+  assert.equal(requestAttentionStale(now - 86_400, now), true)
 })
 
 test('snooze choices land an hour on, tomorrow at nine, or next Monday at nine', () => {
@@ -75,4 +74,17 @@ test('a custom duration counts elapsed time from confirmation', () => {
   for (const amount of ['', '0', '-1', 'NaN', 'Infinity', '1e300', '0.000001']) {
     assert.equal(resolveCustomSnooze({ mode: 'duration', amount, unit: 'hours' }, now), null, amount)
   }
+})
+
+test('your own request names its next step when you cannot merge it', () => {
+  const own = (status: string, next_step: string) => ({
+    request: { mergeability: { status } },
+    attention: { reason: 'authored' },
+    next_step,
+  }) as unknown as RequestQueueItemResponse
+  assert.equal(requestStatusLabel(own('NotMaintainer', 'fix_checks'), true), 'Checks need attention')
+  assert.equal(requestStatusLabel(own('NotMaintainer', 'wait'), true), 'Maintainer merges')
+  assert.equal(requestStatusLabel(own('ChecksFailed', 'fix_checks'), true), 'CI failed')
+  assert.equal(requestStatusLabel(own('WaitingForParent', 'approve_checks'), true), 'CI needs your approval')
+  assert.equal(requestStatusLabel(own('WaitingForParent', 'wait'), true), 'Waiting for parent')
 })

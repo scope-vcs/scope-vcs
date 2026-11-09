@@ -38,10 +38,10 @@ export function ApplicationTopbar({
       <PageRail className="flex min-h-14 flex-wrap items-center gap-x-3 md:flex-nowrap md:gap-x-6">
         <Link
           aria-label="Scope home"
-          className="flex shrink-0 items-center rounded-md text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           to="/"
         >
-          <ScopeMark className="size-6" />
+          <ScopeMark />
         </Link>
 
         {repository ? (

@@ -89,7 +89,6 @@ pub(super) async fn receipt<C: ConnectionTrait>(
         request: request.clone(),
         event,
         revision,
-        orphan_objects: Vec::new(),
     }))
 }
 
@@ -122,7 +121,6 @@ pub(super) async fn validate(
         || input.expected_old_head_oid.as_deref() != Some(context.expected_head_oid.as_str())
         || request.base_version != context.expected_base_version
         || input.new_base.as_ref() != Some(&context.base)
-        || input.git_snapshot != revision.git_snapshot
         || !parent_matches
     {
         return Err(PostgresError::conflict(

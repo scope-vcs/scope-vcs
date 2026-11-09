@@ -1,6 +1,7 @@
 use crate::{
     error::ApiError,
     git::{
+        cache::GitRepoHandle,
         http_backend::{CgiResponse, git_http_backend_streaming},
         request_refs::{DeferredRequestObjects, receive_pack_refs},
     },
@@ -42,6 +43,7 @@ impl ReceivePackRun<'_> {
 pub(super) struct DeferredObjects<'a> {
     pub(super) requests: &'a DeferredRequestObjects,
     pub(super) refs_before: Option<&'a [(String, String)]>,
+    pub(super) leases: &'a mut Vec<GitRepoHandle>,
 }
 
 pub(super) async fn receive_pack(
@@ -62,7 +64,9 @@ pub(super) async fn receive_pack(
         return Ok(cgi);
     }
     let started = Instant::now();
-    deferred.requests.restore(state, run.staging_repo).await?;
+    deferred
+        .leases
+        .extend(deferred.requests.restore(state, run.staging_repo).await?);
     tracing::info!(
         requests = deferred.requests.len(),
         duration_ms = started.elapsed().as_millis(),

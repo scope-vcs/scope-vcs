@@ -14,26 +14,6 @@ fn decode_content_ref(encoded: &str) -> Result<ContentRef, PostgresError> {
     serde_json::from_str(encoded).map_err(PostgresError::internal)
 }
 
-pub async fn replace_object_reference<C>(
-    conn: &C,
-    ref_kind: &str,
-    ref_id: &str,
-    object: Option<&SourceBlob>,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    entities::object_reference::Entity::delete_many()
-        .filter(entities::object_reference::Column::RefKind.eq(ref_kind.to_string()))
-        .filter(entities::object_reference::Column::RefId.eq(ref_id.to_string()))
-        .exec(conn)
-        .await?;
-    if let Some(object) = object {
-        insert_object_reference(conn, ref_kind, ref_id, object).await?;
-    }
-    Ok(())
-}
-
 pub async fn insert_object_reference<C>(
     conn: &C,
     ref_kind: &str,
@@ -54,22 +34,9 @@ where
     Ok(())
 }
 
-pub async fn delete_object_reference<C>(
-    conn: &C,
-    ref_kind: &str,
-    ref_id: &str,
-) -> Result<(), PostgresError>
-where
-    C: ConnectionTrait,
-{
-    replace_object_reference(conn, ref_kind, ref_id, None).await
-}
-
 pub async fn delete_repository_object_references<C>(
     conn: &C,
     repo_id: &str,
-    request_ids: &[String],
-    revision_ids: &[String],
 ) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
@@ -84,20 +51,6 @@ where
         .exec(conn)
         .await?;
 
-    if !request_ids.is_empty() {
-        entities::object_reference::Entity::delete_many()
-            .filter(entities::object_reference::Column::RefKind.eq("request_snapshot"))
-            .filter(entities::object_reference::Column::RefId.is_in(request_ids.to_vec()))
-            .exec(conn)
-            .await?;
-    }
-    if !revision_ids.is_empty() {
-        entities::object_reference::Entity::delete_many()
-            .filter(entities::object_reference::Column::RefKind.eq("request_revision_snapshot"))
-            .filter(entities::object_reference::Column::RefId.is_in(revision_ids.to_vec()))
-            .exec(conn)
-            .await?;
-    }
     Ok(())
 }
 
@@ -140,7 +93,7 @@ mod tests {
             .await
             .unwrap();
 
-        delete_repository_object_references(store.db.as_ref(), "owner-a/repo", &[], &[])
+        delete_repository_object_references(store.db.as_ref(), "owner-a/repo")
             .await
             .unwrap();
 

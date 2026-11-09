@@ -47,7 +47,9 @@ pub(crate) async fn create_manual_run(
     let bundle = command.bundle;
     let git_oid = command.request.git_oid().to_string();
     let workflow_name = command.request.workflow_name().to_string();
+    let parent_span = tracing::Span::current();
     let inspected = tokio::task::spawn_blocking(move || {
+        let _entered = parent_span.enter();
         inspect_manual_run_bundle(&inspect_root, &bundle, &git_oid, &workflow_name)
             .map(|workflow| (bundle, git_oid, workflow))
     })

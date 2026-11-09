@@ -22,7 +22,7 @@ mod runs;
 mod tests;
 #[path = "seed/workflow_files.rs"]
 mod workflow_files;
-use git_segments::{SeedMainPack, store_seed_git_pack};
+use git_segments::{SeedPoolPack, store_seed_git_pack, store_seed_request_pack};
 #[cfg(feature = "local-dev")]
 pub(crate) use request_discussion_gallery::seed_request_discussion_gallery;
 use request_revisions::SeedRequestRevision;
@@ -302,7 +302,7 @@ fn published_demo(
     object_store: &SeedObjects,
     git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
-) -> Result<(Repository, SeedMainPack), ApiError> {
+) -> Result<(Repository, SeedPoolPack), ApiError> {
     let mut repo = repo(owner, "public-demo", ViewId::public())?;
     let readme = blob(object_store, PUBLIC_DEMO_README_HTML)?;
     let app = blob(object_store, PUBLIC_DEMO_APP)?;
@@ -350,7 +350,7 @@ fn update_demo(
     object_store: &SeedObjects,
     git_segment_store: &scope_storage::GitSegmentStore,
     owner: &UserAccount,
-) -> Result<(Repository, SeedRequestGallery, SeedMainPack), ApiError> {
+) -> Result<(Repository, SeedRequestGallery, SeedPoolPack), ApiError> {
     let mut repo = repo(owner, "update-demo", ViewId::public())?;
     let initial_readme = blob(object_store, UPDATE_DEMO_INITIAL_README)?;
     let internal_notes = blob(object_store, UPDATE_DEMO_INTERNAL_NOTES)?;
@@ -400,13 +400,8 @@ fn update_demo(
         files: &[("docs/release.md", UPDATE_DEMO_RELEASE_GUIDE)],
         message: "Document release flow",
     };
-    let (head, gallery, main_pack) = update_demo_git_snapshot(
-        object_store,
-        git_segment_store,
-        &repo.record.id,
-        initial,
-        accepted,
-    )?;
+    let (head, gallery, main_pack) =
+        update_demo_git_packs(git_segment_store, &repo.record.id, initial, accepted)?;
     repo.git_head = Some(head);
     Ok((repo, gallery, main_pack))
 }
@@ -433,7 +428,7 @@ struct SeedRequest {
     title: &'static str,
     base_oid: String,
     head_oid: String,
-    snapshot: SourceBlob,
+    pack: SeedPoolPack,
     description_markdown: Option<&'static str>,
     revisions: Vec<SeedRequestRevision>,
     outcome: SeedRequestOutcome,
@@ -477,13 +472,14 @@ fn seed_owner_request(
         title,
         base_oid,
         head_oid,
-        snapshot,
+        pack,
         description_markdown,
         revisions,
         outcome,
         view,
         now_unix,
     } = request;
+    pack.add_to(catalog);
     let started = start_request(
         StartRequestFacts {
             stack_depth: 1,
@@ -523,7 +519,6 @@ fn seed_owner_request(
             actor_can_edit: true,
             expected_old_head_oid: None,
             new_head_oid: head_oid.clone(),
-            git_snapshot: snapshot,
             now_unix: now_unix + 1,
         },
     )?;
@@ -552,6 +547,7 @@ fn seed_owner_request(
     let mut current_head_oid = head_oid.clone();
     let mut lifecycle_at_unix = now_unix + 2;
     for (index, revision) in revisions.into_iter().enumerate() {
+        revision.pack.add_to(catalog);
         let event_id = format!("event_{id}_revision_{}", index + 1);
         let mutation = record_request_revision(
             request,
@@ -564,7 +560,6 @@ fn seed_owner_request(
                 actor_can_edit: true,
                 expected_old_head_oid: Some(current_head_oid),
                 new_head_oid: revision.head_oid.clone(),
-                git_snapshot: revision.snapshot,
                 git_facts: RequestRevisionGitFacts {
                     contains_old_head: true,
                     contained_main_oid: None,
