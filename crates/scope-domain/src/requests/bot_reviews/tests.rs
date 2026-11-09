@@ -77,7 +77,7 @@ fn commented(body: String) -> GitHubReviewBotSignal {
 }
 
 #[test]
-fn codex_state_comment_is_done_only_when_every_review_completed_the_head() {
+fn codex_state_comment_is_done_when_the_code_review_and_every_review_naming_the_head_completed() {
     let running = codex_comment(
         &part(HEAD, "running", "null"),
         &part(HEAD, "running", "null"),
@@ -118,14 +118,30 @@ fn codex_state_comment_is_done_only_when_every_review_completed_the_head() {
         CodexReviewState::parse(&older).unwrap().state_for(HEAD),
         None
     );
-    let mixed = codex_comment(
-        &part(HEAD, "completed", "false"),
-        &part(OLD, "completed", "false"),
-    );
-    assert_eq!(
-        CodexReviewState::parse(&mixed).unwrap().state_for(HEAD),
-        Some(GitHubReviewBotState::Working)
-    );
+    for (code_review, security_review, expected) in [
+        (
+            part(HEAD, "completed", "false"),
+            part(OLD, "completed", "true"),
+            GitHubReviewBotState::Clear,
+        ),
+        (
+            part(HEAD, "completed", "true"),
+            part(OLD, "running", "null"),
+            GitHubReviewBotState::Commented,
+        ),
+        (
+            part(OLD, "completed", "false"),
+            part(HEAD, "completed", "false"),
+            GitHubReviewBotState::Working,
+        ),
+    ] {
+        let comment = codex_comment(&code_review, &security_review);
+        assert_eq!(
+            CodexReviewState::parse(&comment).unwrap().state_for(HEAD),
+            Some(expected),
+            "{comment}"
+        );
+    }
     let not_run = "{\"commit_sha\":null,\"has_any_findings\":null,\"has_unresolved_findings\":null,\"status\":null}";
     let requested_code_review = codex_comment(&part(HEAD, "completed", "false"), not_run);
     assert_eq!(
