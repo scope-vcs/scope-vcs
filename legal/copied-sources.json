@@ -14,5 +14,20 @@
       }
     ],
     "license_evidence": "web/components.json declares the shadcn radix-nova component source. Scope UI components include adapted source. Preserve the upstream MIT notice. The license file revision is pinned; the original component import revision was not recorded."
+  },
+  {
+    "ecosystem": "web",
+    "name": "Adwaita Sans",
+    "version": "51.0-outlined-wordmark",
+    "license": "OFL-1.1",
+    "url": "https://gitlab.gnome.org/GNOME/adwaita-fonts",
+    "authors": null,
+    "documents": [
+      {
+        "path": "legal/upstream/adwaita-fonts-OFL.txt",
+        "sha256": "459687971d21c53923c1d1c9c062ec273a7ea03226b36195b79ec6af7d98dc81"
+      }
+    ],
+    "license_evidence": "The approved Scope wordmark contains glyph outlines derived from Adwaita Sans in the installed adwaita-fonts 51.0 package. Font files are not redistributed. Preserve the accompanying SIL Open Font License and copyright notices."
   }
 ]

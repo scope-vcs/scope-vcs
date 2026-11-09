@@ -43,6 +43,8 @@ class LicensingChecks(unittest.TestCase):
             "COPYRIGHT": "Copyright Example",
             "dist/esm/icons/copyright.js.map": '{"mappings":"AAAA"}',
             "dist/esm/icons/copyright.js": "export const Copyright = {};",
+            "dist/esm/icons/copyright.mjs": "export const Copyright = {};",
+            "dist/cjs/icons/copyright.cjs": "module.exports.Copyright = {};",
             "LICENSES/Apache-2.0.txt": "Apache license terms",
             "LICENSES/MIT.txt": "MIT license terms",
             "LICENSES/copyright.js.map": '{"mappings":"AAAA"}',
@@ -222,23 +224,32 @@ class LicensingChecks(unittest.TestCase):
                 generate.validate_selections({expression: expression})
 
     def test_shared_terms_preserve_attribution_and_distinct_license_wording(self):
-        terms = ("Permission is hereby granted, free of charge, to any person obtaining a copy.\n\n"
-            "THE SOFTWARE IS PROVIDED AS IS. OTHER DEALINGS IN THE SOFTWARE.")
-        original = [
-            "Copyright Alice\n\n" + terms + "\nAdditional notice from Alice.",
-            "Copyright Bob\n\n" + terms.replace(" ", "\n"),
-            "Copyright Carol\n\n" + terms.replace("free of charge", "subject to an additional condition"),
+        examples = [
+            "Permission is hereby granted, free of charge, to any person obtaining a copy.\n\n"
+            "THE SOFTWARE IS PROVIDED AS IS. OTHER DEALINGS IN THE SOFTWARE.",
+            "Permission to use, copy, modify, and/or distribute this software free of charge.\n\n"
+            "THE SOFTWARE IS PROVIDED AS IS. IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.",
+            "Redistribution and use in source and binary forms, with or without modification, free of charge.\n\n"
+            "THE SOFTWARE IS PROVIDED AS IS. POSSIBILITY OF SUCH DAMAGE.",
+            (Path(__file__).resolve().parents[2] / "legal/upstream/adwaita-fonts-OFL.txt").read_text(),
         ]
-        texts = {generate.digest(text.encode()): text for text in original}
-        shared = generate.shared_terms(texts)
-        self.assertEqual(len(shared), 1)
-        for text in original:
-            rendered = generate.reference_terms(text, shared)
-            restored = re.sub(r"\[Shared terms ([a-f0-9]{64})\]", lambda match: shared[match[1]], rendered)
-            self.assertEqual(" ".join(restored.split()), " ".join(text.split()))
-        self.assertIn("Copyright Alice", generate.reference_terms(original[0], shared))
-        self.assertIn("Additional notice from Alice.", generate.reference_terms(original[0], shared))
-        self.assertEqual(generate.reference_terms(original[2], shared), original[2])
+        for terms in examples:
+            with self.subTest(terms=terms[:50]):
+                original = [
+                    "Copyright Alice\n\n" + terms + "\nAdditional notice from Alice.",
+                    "Copyright Bob\n\n" + terms.replace(" ", "\n"),
+                    "Copyright Carol\n\n" + terms.replace("SOFTWARE", "MODIFIED SOFTWARE"),
+                ]
+                texts = {generate.digest(text.encode()): text for text in original}
+                shared = generate.shared_terms(texts)
+                self.assertEqual(len(shared), 1)
+                for text in original:
+                    rendered = generate.reference_terms(text, shared)
+                    restored = re.sub(r"\[Shared terms ([a-f0-9]{64})\]", lambda match: shared[match[1]], rendered)
+                    self.assertEqual(" ".join(restored.split()), " ".join(text.split()))
+                self.assertIn("Copyright Alice", generate.reference_terms(original[0], shared))
+                self.assertIn("Additional notice from Alice.", generate.reference_terms(original[0], shared))
+                self.assertEqual(generate.reference_terms(original[2], shared), original[2])
 
     def test_rendered_notices_include_all_referenced_terms(self):
         terms = "Apache License\nVersion 2.0, January 2004\nTerms.\nEND OF TERMS AND CONDITIONS"

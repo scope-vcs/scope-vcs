@@ -70,10 +70,7 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
         "fetch moved public main",
     )
     .unwrap();
-    let public_main = git_stdout_text(&source, &["rev-parse", "FETCH_HEAD"], "read public main")
-        .unwrap()
-        .trim()
-        .to_string();
+    let public_main = ref_head(&source, "FETCH_HEAD");
     rewrite_history(&source, &["rebase", "FETCH_HEAD"]);
     let rebased_head = git_head_oid(&source);
     lease_push(&source, &remote, REQUEST_REF, &first_head);
@@ -265,7 +262,7 @@ async fn maintainer_rebases_and_amends_a_private_request() {
     );
 }
 
-fn rewrite_history(repo: &FsPath, args: &[&str]) {
+pub(super) fn rewrite_history(repo: &FsPath, args: &[&str]) {
     let mut command = vec![
         "-c",
         "user.name=Scope Test",
@@ -276,7 +273,7 @@ fn rewrite_history(repo: &FsPath, args: &[&str]) {
     run_git(Some(repo), &command, "rewrite request history").unwrap();
 }
 
-fn lease_push(repo: &FsPath, remote: &str, request_ref: &str, expected_head: &str) {
+pub(super) fn lease_push(repo: &FsPath, remote: &str, request_ref: &str, expected_head: &str) {
     let output = run_git_output(
         Some(repo),
         &[

@@ -35,6 +35,14 @@ on:
         description: Failed main Release run whose live web activation needs a replacement
         type: string
         default: ""
+      rollback:
+        description: Redeploy the images of an earlier verified production release
+        type: boolean
+        default: false
+      rollback_to:
+        description: Full commit SHA of the release to roll back to (defaults to the previous release)
+        type: string
+        default: ""
       replace_redeployed_component:
         description: Railway component redeployed outside Release that this release replaces
         type: string
@@ -59,6 +67,8 @@ jobs:
       recover_cutover_id: ${{ steps.release.outputs.recover_cutover_id }}
       prepared_run_id: ${{ steps.release.outputs.prepared_run_id }}
       resume_staging: ${{ steps.release.outputs.resume_staging }}
+      rollback: ${{ steps.release.outputs.rollback }}
+      rollback_of: ${{ steps.release.outputs.rollback_of }}
       deployed_revisions: ${{ steps.progress.outputs.revisions }}
       deployed_components: ${{ steps.progress.outputs.deployments }}
       runner_image: ${{ steps.release.outputs.prepared_run_id != '' && format('{0}', fromJSON(steps.release.outputs.recover_components)['runner-image'] || false) || steps.plan.outputs.runner_image }}
@@ -85,7 +95,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           RESUME_STAGING: ${{ inputs.resume_staging }}
+          ROLLBACK: ${{ inputs.rollback }}
+          ROLLBACK_TO: ${{ inputs.rollback_to }}
+          SCHEDULE_INTENT: ${{ inputs.schedule_intent }}
         run: node .github/scripts/release-selection.mjs
+
+      - name: Report the daily release pause after a rollback
+        if: steps.release.outputs.paused_after_rollback_of != ''
+        env:
+          ROLLBACK_OF: ${{ steps.release.outputs.paused_after_rollback_of }}
+        run: |
+          message="Production was rolled back from $ROLLBACK_OF. Daily releases stay paused until a manually dispatched release ships."
+          echo "::notice::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Require an exact web replacement request
         if: inputs.replace_failed_web_run_id != ''
@@ -94,11 +116,13 @@ jobs:
           REQUESTED_SCOPE: ${{ inputs.scope }}
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           RECOVER_CUTOVER_ID: ${{ steps.release.outputs.recover_cutover_id }}
+          ROLLBACK: ${{ inputs.rollback }}
         run: |
           [[ "$FAILED_WEB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           test "$REQUESTED_SCOPE" = web
           test -z "$SOURCE_RUN_ID"
           test -z "$RECOVER_CUTOVER_ID"
+          test "$ROLLBACK" != true
 
       - name: Require an exact redeployed service replacement request
         if: inputs.replace_redeployed_component != ''
@@ -126,7 +150,7 @@ jobs:
         run: node .github/scripts/production-deployment-progress.mjs read
 
       - name: Select affected components
-        if: steps.release.outputs.prepared_run_id == ''
+        if: steps.release.outputs.prepared_run_id == '' && steps.release.outputs.paused_after_rollback_of == ''
         id: plan
         shell: bash
         env:
@@ -288,7 +312,7 @@ jobs:
     name: Inspect production migration baseline
     needs: [plan, release-preparation]
     if: >-
-      !cancelled() && needs.plan.outputs.prepared_run_id == '' &&
+      !cancelled() && (needs.plan.outputs.prepared_run_id == '' || needs.plan.outputs.rollback == 'true') &&
       needs.release-preparation.result == 'success' &&
       (needs.plan.outputs.backend_selected == 'true')
     runs-on: ubuntu-24.04
@@ -311,12 +335,21 @@ jobs:
         env:
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          ROLLBACK: ${{ needs.plan.outputs.rollback == 'true' }}
         run: |
           manifest=.github/deployment-services.json
+          rollback_refused() {
+            echo '::error::Production schema does not match the rollback target. Roll forward instead.' >&2
+            exit 1
+          }
           SCOPE_PREPARED_RELEASE_PATH=prepared-release.json \
             bash .github/scripts/railway-private-maintenance.sh \
-              "$(jq -er '.environments.production.environmentId' "$manifest")" preflight > production-migration-plan.json
+              "$(jq -er '.environments.production.environmentId' "$manifest")" preflight > production-migration-plan.json \
+            || { [[ "$ROLLBACK" == true ]] && rollback_refused; exit 1; }
           jq -e . production-migration-plan.json >/dev/null
+          if [[ "$ROLLBACK" == true ]]; then
+            jq -e '.exact == true and (.pending | length == 0)' production-migration-plan.json >/dev/null || rollback_refused
+          fi
           if jq -e '.pending | length > 0' production-migration-plan.json >/dev/null; then
             jq -e '.components | has("api") and has("run-worker") and has("git-router") and has("media-api") and has("media-worker") and has("web")' prepared-release.json >/dev/null || {
               echo 'Pending migrations require the full application release. Run Release with scope all.' >&2
@@ -355,12 +388,13 @@ jobs:
 
   backend-deploy:
     name: Backend deploy
-    needs: [plan, policy, ops, readiness-preflight, validation, release-preparation, staging]
+    needs: [plan, policy, ops, readiness-preflight, validation, release-preparation, production-preflight, staging]
     if: >-
       !cancelled() && github.ref == 'refs/heads/main' &&
       needs.validation.result == 'success' && needs.policy.result == 'success' && needs.ops.result == 'success' &&
       (needs.readiness-preflight.result == 'success' || needs.readiness-preflight.result == 'skipped') &&
       needs.release-preparation.result == 'success' &&
+      (needs.plan.outputs.rollback != 'true' || needs.production-preflight.result == 'success') &&
       ((needs.plan.outputs.prepared_run_id != '' && needs.plan.outputs.resume_staging != 'true') || needs.staging.result == 'success') &&
       (needs.plan.outputs.backend_selected == 'true')
     permissions:
@@ -492,6 +526,7 @@ jobs:
           SOURCE_SHA: ${{ needs.plan.outputs.release_sha }}
           LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           MAINTENANCE_WARNING: ${{ needs.backend-deploy.outputs.maintenance_warning }}
+          ROLLBACK_OF: ${{ needs.plan.outputs.rollback_of }}
           RELEASE_COMPONENTS: >-
             {"runner-image":${{ needs.plan.outputs.runner_image }},
             "run-worker":${{ needs.plan.outputs.worker }},"media-worker":${{ needs.plan.outputs.media_worker }},
@@ -500,3 +535,4 @@ jobs:
         run: >-
           node .github/scripts/production-deployment-progress.mjs record-release
           --source-sha "$SOURCE_SHA" --log-url "$LOG_URL" --components "$RELEASE_COMPONENTS" --warning "$MAINTENANCE_WARNING"
+          --rollback-of "$ROLLBACK_OF"

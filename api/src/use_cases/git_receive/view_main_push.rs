@@ -4,7 +4,7 @@ use crate::{
         command::{git_is_ancestor, run_git},
         repository_git::RepositoryGit,
         request_ref_view_safety::{RequestView, ensure_request_ref_is_view_safe},
-        request_refs::{RequestObjectSharing, RequestRefUpdate, persist_request_ref},
+        request_refs::{RequestRefUpdate, persist_request_ref, retain_staged_pool_pack},
     },
     persistence::unix_now,
     persistence_ids::generate_prefixed_id,
@@ -13,7 +13,7 @@ use crate::{
     state::AppState,
 };
 use scope_domain::{
-    repository::RepositoryIncarnation,
+    repository::{RepositoryIncarnation, git::RequestPackScope},
     requests::{
         MainPushRequestName, MainPushRequestOutcome, Request, RequestCheckReviewer,
         StartMainPushRequestInput, StartRequestFacts, StartRequestInput, canonical_request_ref,
@@ -28,6 +28,7 @@ use std::{collections::BTreeMap, path::Path};
 
 pub(super) struct ViewMainPush {
     pub(super) author_id: String,
+    pub(super) object_generation: String,
     pub(super) incarnation: RepositoryIncarnation,
     pub(super) view: ViewId,
     pub(super) push_intent: ValidatedPushIntent,
@@ -136,50 +137,61 @@ pub(super) async fn complete_view_main_push(
         staging_repo,
         &request,
         &update,
-        RequestObjectSharing::Private,
+        RequestPackScope::View(push.view.clone()),
     )
     .await?;
     let mutation = state
         .metadata
         .requests()
-        .start_main_push_request(StartMainPushRequestInput {
-            id: request_id,
-            repo_id: context.repo_id.clone(),
-            repository_incarnation_id: context.incarnation.incarnation_id().to_string(),
-            pusher_user_id: push.author_id.clone(),
-            pusher_handle,
-            validated_view: push.view.clone(),
-            name: request.name.clone(),
-            main_ancestor_oid: view_main_oid,
-            head_oid,
-            git_snapshot: persisted.git_snapshot.clone(),
-            git_facts: persisted.git_facts.clone(),
-            started_event_id: generate_prefixed_id("event_request_started")?,
-            revision_event_id: generate_prefixed_id("event_request_revision")?,
-            submitted_event_id: generate_prefixed_id("event_request_submitted")?,
-            auto_merge_intent_id: generate_prefixed_id("auto_merge")?,
-            auto_merge_event_id: generate_prefixed_id("event_auto_merge")?,
-            now_unix,
-        })
+        .start_main_push_request(
+            StartMainPushRequestInput {
+                id: request_id,
+                repo_id: context.repo_id.clone(),
+                repository_incarnation_id: context.incarnation.incarnation_id().to_string(),
+                pusher_user_id: push.author_id.clone(),
+                pusher_handle,
+                validated_view: push.view.clone(),
+                name: request.name.clone(),
+                main_ancestor_oid: view_main_oid,
+                head_oid,
+
+                git_facts: persisted.git_facts.clone(),
+                started_event_id: generate_prefixed_id("event_request_started")?,
+                revision_event_id: generate_prefixed_id("event_request_revision")?,
+                submitted_event_id: generate_prefixed_id("event_request_submitted")?,
+                auto_merge_intent_id: generate_prefixed_id("auto_merge")?,
+                auto_merge_event_id: generate_prefixed_id("event_auto_merge")?,
+                now_unix,
+            },
+            scope_postgres::db::PushedRevisionObjects {
+                object_generation: push.object_generation.clone(),
+                pool_pack: persisted.pool_pack.pack.clone(),
+            },
+        )
         .await;
     let mutation = match mutation {
-        Ok(MainPushRequestOutcome::Started(mutation)) => {
-            persisted.fence.release().await;
-            mutation
-        }
+        Ok(MainPushRequestOutcome::Started(mutation)) => mutation,
         outcome => {
-            crate::use_cases::content_cleanup::best_effort_cleanup_rollback_source_blobs(
-                state,
-                std::slice::from_ref(&persisted.git_snapshot),
-            )
-            .await;
-            persisted.fence.release().await;
+            persisted
+                .pool_pack
+                .discard(state, push.incarnation.repository_id())
+                .await;
+
             return match outcome {
                 Ok(_) => Ok(ViewMainPushOutcome::AlreadyOpen),
                 Err(error) => Err(error.into()),
             };
         }
     };
+    retain_staged_pool_pack(
+        state,
+        &push.incarnation,
+        (&context.repo_config, &push.object_generation),
+        &push.author_id,
+        &mutation.request,
+        persisted.pool_pack,
+    )
+    .await;
     state
         .publish_request_summary_refresh(&push.incarnation, RepoChangeReason::RequestStarted)
         .await;
@@ -199,6 +211,7 @@ pub(super) async fn complete_view_main_push(
         &push.incarnation,
         &mutation.request,
         &mutation.revision,
+        None,
     )
     .await;
     Ok(ViewMainPushOutcome::Landed)

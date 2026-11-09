@@ -14,10 +14,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 mod feed;
 mod generation;
 mod projection_history;
+mod tree;
 
 pub use feed::HistoryFeed;
 use generation::{history_generation_after, history_generation_start};
 use projection_history::{ProjectedAction, ProjectionHistory};
+pub use tree::{HistoryTreeFile, history_tree};
 
 pub const HISTORY_GENERATION_VERSION: &str = "v11";
 

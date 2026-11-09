@@ -1,6 +1,5 @@
 use super::entities;
 use super::integer_columns;
-use super::object_references::{delete_object_reference, replace_object_reference};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
     FromQueryResult, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
@@ -37,7 +36,7 @@ pub struct RequestListRow {
     pub merged_at_unix: Option<u64>,
     pub updated_at_unix: u64,
     pub activity_version: u64,
-    pub has_git_snapshot: bool,
+    pub has_pushed_head: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -74,7 +73,7 @@ pub(super) struct RequestListModel {
     merged_at_unix: Option<i64>,
     updated_at_unix: i64,
     activity_version: i64,
-    has_git_snapshot: bool,
+    has_pushed_head: bool,
 }
 
 impl RequestListModel {
@@ -126,7 +125,7 @@ impl RequestListModel {
                 self.activity_version,
                 "request activity version",
             )?,
-            has_git_snapshot: self.has_git_snapshot,
+            has_pushed_head: self.has_pushed_head,
         })
     }
 }
@@ -248,8 +247,8 @@ pub(super) fn request_list_projection() -> sea_orm::Select<entities::request::En
         .column(entities::request::Column::UpdatedAtUnix)
         .column(entities::request::Column::ActivityVersion)
         .expr_as(
-            Expr::col(entities::request::Column::GitSnapshot).is_not_null(),
-            "has_git_snapshot",
+            Expr::col(entities::request::Column::PushedAtUnix).is_not_null(),
+            "has_pushed_head",
         )
 }
 
@@ -425,13 +424,6 @@ where
         .into_active_model()
         .insert(conn)
         .await?;
-    replace_object_reference(
-        conn,
-        "request_snapshot",
-        &request.id,
-        request.git_snapshot.as_ref(),
-    )
-    .await?;
     Ok(())
 }
 
@@ -450,7 +442,6 @@ where
     entities::request::Entity::delete_by_id(request_id.to_string())
         .exec(conn)
         .await?;
-    delete_object_reference(conn, "request_snapshot", request_id).await?;
     Ok(())
 }
 
@@ -507,8 +498,8 @@ where
             Expr::value(row.head_oid),
         )
         .col_expr(
-            entities::request::Column::GitSnapshot,
-            Expr::value(row.git_snapshot),
+            entities::request::Column::PushedAtUnix,
+            Expr::value(row.pushed_at_unix),
         )
         .col_expr(
             entities::request::Column::ActivityVersion,
@@ -553,13 +544,6 @@ where
             "request row missing during update",
         ));
     }
-    replace_object_reference(
-        conn,
-        "request_snapshot",
-        &request.id,
-        request.git_snapshot.as_ref(),
-    )
-    .await?;
     Ok(())
 }
 
@@ -598,7 +582,7 @@ mod request_list_tests {
         let projection = sql.split(" FROM ").next().unwrap();
 
         assert!(!projection.contains("description_markdown"));
-        assert_eq!(projection.matches("\"git_snapshot\"").count(), 1);
-        assert!(projection.contains("git_snapshot\" IS NOT NULL"));
+        assert_eq!(projection.matches("\"pushed_at_unix\"").count(), 1);
+        assert!(projection.contains("pushed_at_unix\" IS NOT NULL"));
     }
 }

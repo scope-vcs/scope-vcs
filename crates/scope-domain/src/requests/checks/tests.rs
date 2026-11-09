@@ -146,7 +146,7 @@ fn only_a_pushed_head_that_can_still_merge_is_evaluated_on_a_look() {
         RequestChecksOutcome::Pending
     ));
     assert!(!awaits(&Request {
-        git_snapshot: None,
+        pushed_at_unix: None,
         ..pushed.clone()
     }));
     assert!(!awaits(&Request {

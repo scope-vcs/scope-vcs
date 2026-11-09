@@ -1,5 +1,5 @@
 use super::*;
-use crate::requests::{RequestBase, fixtures::source_blob};
+use crate::requests::RequestBase;
 
 fn revision() -> RequestRevision {
     RequestRevision {
@@ -15,7 +15,6 @@ fn revision() -> RequestRevision {
             review_base_oid: "saved-review-base".into(),
         },
         rewrote_history: false,
-        git_snapshot: source_blob("head"),
         created_at_unix: 1,
     }
 }

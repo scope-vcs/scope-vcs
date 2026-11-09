@@ -103,14 +103,7 @@ impl PublicStack {
             "fetch public main",
         )
         .unwrap();
-        git_stdout_text(
-            &self.source,
-            &["rev-parse", "FETCH_HEAD"],
-            "read public main",
-        )
-        .unwrap()
-        .trim()
-        .to_string()
+        ref_head(&self.source, "FETCH_HEAD")
     }
 
     async fn comparison(&self, revision: Option<&str>) -> serde_json::Value {
@@ -167,7 +160,7 @@ async fn exact_public_parent_landing_preserves_child_review_and_worker_renews_ap
     assert!(
         stored_request(&fixture.state, &fixture.child_id)
             .await
-            .git_snapshot
+            .pushed_at_unix
             .is_some()
     );
     let comparison = fixture.comparison(None).await;

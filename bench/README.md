@@ -55,7 +55,7 @@ The first unpressured sample is labeled `first-touch`, not cold. The kernel may 
 
 ## 2. Measure Scope end to end
 
-`railway-load.mjs` runs against an isolated Railway load-test environment or localhost by default. It refuses any non-local hostname without a `loadtest` label. Set `SCOPE_BENCH_TARGET_KIND=staging` only for an intentional staging run; that mode requires an exact `staging` hostname label and still rejects production. Fixture creation may retry a transient 5xx twice. Ordinary measured operations are never retried. The consistency workload polls a retryable projection rebuild on purpose and reports visibility p50/p95/p99, poll attempts, and transient read errors.
+`railway-load.mjs` runs against an isolated Railway load-test environment or localhost by default. It refuses any non-local hostname without a `loadtest` label. Set `SCOPE_BENCH_TARGET_KIND=staging` only for an intentional staging run; that mode requires an exact `staging` hostname label and still rejects production. Set `SCOPE_BENCH_TARGET_KIND=preview` for a pull request preview such as `scope-api-pr-880.up.railway.app`; that mode requires a hostname label containing `pr-<digits>` and rejects any host with a `production` label. Fixture creation may retry a transient 5xx twice. Ordinary measured operations are never retried. The consistency workload polls a retryable projection rebuild on purpose and reports visibility p50/p95/p99, poll attempts, and transient read errors.
 
 The suite covers:
 
@@ -213,13 +213,13 @@ The benchmark does not fake CAS or WAL behavior with a SQL-only microbenchmark. 
 
 ## 3. One repository, many agents
 
-`agent-load.mjs` measures a single repository under many concurrent agents, each working on its own request branch. It applies the same loadtest target guard as `railway-load.mjs` and refuses any non-local hostname without a `loadtest` label.
+`agent-load.mjs` measures a single repository under many concurrent agents, each working on its own request branch. It applies the same target guard as `railway-load.mjs`: any non-local hostname needs a `loadtest` label unless `SCOPE_BENCH_TARGET_KIND` is `staging` or `preview`.
 
 The run:
 
 1. Creates one repository and seeds `main` through a push intent, or reuses `SCOPE_AGENT_REPO`, which is cloned and never deleted.
 2. Starts one request per agent and builds a chain of commits per agent in a local bare repository that borrows the base clone's objects. Each commit adds one random file of `SCOPE_AGENT_DELTA_BYTES` under `agents/<branch>/`.
-3. In `push` mode, runs each stage by having the first `concurrency` agents push their next commit with `--force-with-lease` until the stage time ends. After a failed push it reads the remote ref and resumes from what the server holds.
+3. In `push` mode, runs each stage by having the first `concurrency` agents push their next commit with `--force-with-lease` until the stage time ends. After a failed push it reads the remote ref and resumes from what the server holds. After each successful push, `SCOPE_AGENT_FETCHES_PER_PUSH` independent readers fetch that request branch by exact name and check that the fetched tip is the pushed commit. Each reader has its own bare repository that borrows the base clone's objects. Readers run beside the pusher, so they do not slow its loop.
 4. In `merge` mode, pushes one commit per agent, submits every request, then merges a batch of `SCOPE_AGENT_MERGES_PER_STAGE` requests, or the stage's concurrency if larger, at that concurrency. `SCOPE_AGENT_COUNT` must cover every stage's batch, sending each request's pushed head as `expected_head_oid`.
 5. Deletes the repository it created and removes all local clones.
 
@@ -233,6 +233,7 @@ Requests created in a reused `SCOPE_AGENT_REPO` stay there. Use a distinct `SCOP
 | `SCOPE_AGENT_STAGES` | `1,8,32,128` | Concurrency stages |
 | `SCOPE_AGENT_STAGE_SECONDS` | `30` | Push stage duration; merge stages run one batch |
 | `SCOPE_AGENT_COUNT` | largest stage | Agents and requests to prepare; push mode needs at least the largest stage |
+| `SCOPE_AGENT_FETCHES_PER_PUSH` | `1` | Push mode only. Independent fetches of each pushed commit, like CI jobs reacting to a push. `0` turns the readers off |
 | `SCOPE_AGENT_COMMITS` | `40` | Prepared commits per agent |
 | `SCOPE_AGENT_DELTA_BYTES` | `4096` | Random bytes in each agent commit's file |
 | `SCOPE_AGENT_MERGES_PER_STAGE` | `40` | Minimum requests merged in each merge stage |
@@ -254,9 +255,18 @@ node bench/agent-load.mjs
 
 Measure landing instead of pushing by adding `SCOPE_AGENT_MODE=merge`.
 
-Each stage prints one JSON line and is written to `.tmp/bench/agent-load/<label>.json` with `concurrency`, `ok`, `perSec`, `errorRate`, `p50`, `p95`, `p99`, and HTTP error classes in `errors`. Latencies are milliseconds over successful operations. A push stage also reports `exhaustedAgents`, the number of agents that used all prepared commits before the stage ended; raise `SCOPE_AGENT_COMMITS` when it is not zero.
+Each stage prints one JSON line and is written to `.tmp/bench/agent-load/<label>.json` with `concurrency`, `ok`, `perSec`, `errorRate`, `p50`, `p95`, `p99`, and HTTP error classes in `errors`. Latencies are milliseconds over successful operations. A push stage also reports `fetchesPerPush` and, when it is not zero, two more summaries with the same fields (`operations`, `ok`, `errorRate`, `p50`, `p95`, `p99`, `errors`, `sampleError`):
+
+- `pushToFetch` is the time from the commit's first push attempt, retries included, until a reader has fetched and verified that exact commit.
+- `fetch` is the time of the reader's `git fetch` alone.
+
+A reader that fetches a tip that is neither the pushed commit nor a later commit on the same branch counts as a `stale-tip` error. Reader fetches are not retried. Fetches still running when the push window ends are awaited, so they do not change `perSec`.
+
+A push stage also reports `exhaustedAgents`, the number of agents that used all prepared commits before the stage ended; raise `SCOPE_AGENT_COMMITS` when it is not zero.
 
 ## 4. Collect Railway evidence
+
+Each agent stage row has `startedAt` and `completedAt`. Pass them as `SCOPE_RAILWAY_SINCE` and `SCOPE_RAILWAY_UNTIL` to get CPU and memory for one stage. The API does not log one stable line per fetch, so the bench reports no server Git work count. Compare CPU over the stage window and divide by the stage's `fetch.operations` instead.
 
 Collect logs and Railway CPU and memory metrics over the matching load window:
 

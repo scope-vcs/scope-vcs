@@ -392,7 +392,7 @@ mod tests {
                 },
                 "author": null,
                 "attention": {
-                    "group": "needs_you", "state": "active", "reason": reason, "activity_version": 3,
+                    "group": "needs_you", "stack_group": "needs_you", "state": "active", "reason": reason, "activity_version": 3,
                     "through_activity_version": 2, "snoozed_until_unix": null, "revision": 1,
                     "can_claim": false, "can_set_aside": true, "can_restore": false,
                     "can_release": false

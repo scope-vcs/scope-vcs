@@ -1,7 +1,5 @@
 use super::{
     CloseRequestCommand, EditRequestIdentityCommand, RequestStore, acquire_aggregate_lock,
-    cleanup_queue::queue::queue_pending_source_blob_deletion_rows,
-    object_references::delete_object_reference,
     request_access::{
         authorize_start_request, ensure_user_exists, lock_request_repository, repo_by_id,
         request_policy_for_user,
@@ -22,16 +20,13 @@ use super::{
 use sea_orm::{EntityTrait, QuerySelect, TransactionTrait};
 use {
     crate::error::PostgresError,
-    scope_domain::content::SourceBlob,
-    scope_domain::repository::git::GitPoolPackOwner,
     scope_domain::requests::{
         CloseRequestInput, CloseRequestMutation, EditRequestIdentityInput,
         RecordRequestRevisionInput, RecordWorkingRequestUploadInput, Request,
-        RequestAutoMergeStopReason, RequestEvent, RequestRevision, RequestRevisionMutation,
-        RequestTimelineMutation, StartRequestFacts, StartRequestInput, StartRequestMutation,
-        WorkingRequestUploadMutation, close_request, edit_request_identity,
-        record_request_revision, record_working_request_upload, start_request,
-        stop_request_auto_merge,
+        RequestAutoMergeStopReason, RequestEvent, RequestRevisionMutation, RequestTimelineMutation,
+        StartRequestFacts, StartRequestInput, StartRequestMutation, WorkingRequestUploadMutation,
+        close_request, edit_request_identity, record_request_revision,
+        record_working_request_upload, start_request, stop_request_auto_merge,
     },
 };
 
@@ -157,14 +152,11 @@ impl RequestStore {
             lock_request_repository(&tx, &input.request_id, &input.actor_user_id).await?;
         ensure_user_exists(&tx, &input.actor_user_id).await?;
         let mut input = input;
-        let now_unix = input.now_unix;
         input.actor_can_edit = request_policy_for_user(&tx, &repo, &request, &input.actor_user_id)
             .await?
             .branch_mutable;
         let mutation = record_working_request_upload(request, input)?;
         save_request_row(&tx, &mutation.request).await?;
-        queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects.clone(), now_unix)
-            .await?;
         tx.commit().await?;
         Ok(mutation)
     }
@@ -322,18 +314,14 @@ impl RequestStore {
         save_request_row(&tx, &mutation.request).await?;
         insert_request_event_row(&tx, &mutation.event).await?;
         insert_revision(&tx, &mutation.revision).await?;
-        if let Some(pack) = pushed.as_ref().and_then(|pushed| pushed.pool_pack.as_ref()) {
-            let owned_by_request = matches!(
-                &pack.owner,
-                GitPoolPackOwner::Request { request_id } if *request_id == mutation.request.id
-            );
-            if !owned_by_request || pack.head_oid != mutation.request.head_oid {
-                return Err(PostgresError::internal_message(
-                    "Git pool pack does not belong to the recorded revision",
-                ));
-            }
-            super::git_segments::register_git_pool_pack(&tx, &repo.record.id, pack, now_unix)
-                .await?;
+        if let Some(objects) = &pushed {
+            super::git_segments::register_request_pool_pack(
+                &tx,
+                &mutation.request,
+                &objects.pool_pack,
+                now_unix,
+            )
+            .await?;
         }
         super::request_checks::clear_current_evaluation(&tx, &mutation.request.id).await?;
         let mutation = if let Some(stored) = active_auto_merge {
@@ -360,8 +348,6 @@ impl RequestStore {
             mutation.revision.created_at_unix,
         )
         .await?;
-        queue_pending_source_blob_deletion_rows(&tx, mutation.orphan_objects.clone(), now_unix)
-            .await?;
         super::request_stack::refresh_children(&tx, &mutation.request, &children, now_unix).await?;
         if let Some(context) = &context {
             super::request_revision_context::save_receipt(&tx, context, &mutation).await?;
@@ -457,14 +443,8 @@ impl RequestStore {
         };
         let mut mutation = close_request(request, events, revisions, input)?;
         match &mut mutation {
-            CloseRequestMutation::DeletedDraft {
-                request,
-                revisions,
-                orphan_objects,
-                ..
-            } => {
-                persist_deleted_draft(&tx, request, revisions, orphan_objects.clone(), now_unix)
-                    .await?;
+            CloseRequestMutation::DeletedDraft { request, .. } => {
+                persist_deleted_draft(&tx, request, now_unix).await?;
             }
             CloseRequestMutation::Closed { request, event } => {
                 persist_lifecycle_mutation(&tx, request, std::slice::from_ref(event)).await?;
@@ -490,10 +470,10 @@ impl RequestStore {
 #[derive(Clone, Debug)]
 pub struct PushedRevisionObjects {
     pub object_generation: String,
-    pub pool_pack: Option<scope_domain::repository::git::GitPoolPack>,
+    pub pool_pack: scope_domain::repository::git::GitPoolPack,
 }
 
-async fn ensure_object_generation<C: sea_orm::ConnectionTrait>(
+pub(super) async fn ensure_object_generation<C: sea_orm::ConnectionTrait>(
     tx: &C,
     repo_id: &str,
     expected: &str,
@@ -519,19 +499,13 @@ async fn ensure_object_generation<C: sea_orm::ConnectionTrait>(
 pub(super) async fn persist_deleted_draft<C: sea_orm::ConnectionTrait>(
     tx: &C,
     request: &Request,
-    revisions: &[RequestRevision],
-    orphan_objects: Vec<SourceBlob>,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
     super::git_segments::retire_request_pool_packs(tx, &request.id, now_unix).await?;
     super::github_pushes::queue_github_branch_deletion(tx, &request.repo_id, &request.id, now_unix)
         .await?;
     tombstone_request_attachments(tx, &request.id, now_unix).await?;
-    for revision in revisions {
-        delete_object_reference(tx, "request_revision_snapshot", &revision.id).await?;
-    }
-    delete_request_rows(tx, &request.id).await?;
-    queue_pending_source_blob_deletion_rows(tx, orphan_objects, now_unix).await
+    delete_request_rows(tx, &request.id).await
 }
 
 #[cfg(test)]

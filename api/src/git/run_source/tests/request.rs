@@ -215,7 +215,10 @@ async fn private_request_full_projection_snapshot_survives_later_git_main() {
         .unwrap();
         let (snapshot, bytes) =
             git_snapshot_from_ref(repository.path(), "refs/heads/request", None).unwrap();
-        let source = RunSource::request_git_snapshot(snapshot.clone(), base_oid.clone()).unwrap();
+        let source = RunSource::RequestGitSnapshot {
+            object: snapshot.clone(),
+            base_oid: base_oid.clone(),
+        };
         assert_eq!(source.request_git_source().unwrap().1, base_oid);
         state
             .object_store

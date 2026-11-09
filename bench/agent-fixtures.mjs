@@ -9,10 +9,12 @@ export function slug(value, maxLength = 60) {
   return value.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, maxLength);
 }
 
+const REQUEST_NAME_MAX = 48;
+
 export function agentBranchName(label, index) {
   const labelHash = createHash('sha256').update(label).digest('hex').slice(0, 8);
   const suffix = `-${labelHash}-${index}`;
-  return slug(`agent-${label}`, 60 - suffix.length) + suffix;
+  return slug(`agent-${label}`, REQUEST_NAME_MAX - suffix.length) + suffix;
 }
 
 export function seedFilePath(index, fileCount) {

@@ -51,6 +51,7 @@ unrepresentable state. Evidence and proof for this audit are in
 
 | Rule requiring contributor judgment | Enforcement or explicit limit |
 | --- | --- |
+| Keep request header rows aligned and use SVG control icons. | `request-detail-header` owns row layout and compact action sizing. The request-header browser spec compares cropped screenshots at desktop, phone, and both sides of its container breakpoint, including a long branch and open Changes menu. Baseline changes require visual review. |
 | Keep domain policy and required effects in their owners. | Crate dependencies: `dev/checks/policy` and `check-rust-boundaries.mjs`. Lifecycle and refresh behavior: Rust domain/store/use-case tests. Placement of new policy still requires review. |
 | Reuse frontend resource owners; keep retained data scoped and refreshed. | `createCachedResource` owns retention and viewer resets. `pnpm check:resource-boundary` rejects effect-owned reads and direct route publication; resource behavior tests cover races. |
 | Assert callback behavior outside the code that can catch its failures. | `pnpm check:resource-boundary` checks test sources with `callback-assertions.mjs`; use `mock.fn()` and assert `mock.callCount()` after awaiting work. |

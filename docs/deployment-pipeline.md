@@ -102,14 +102,17 @@ must pass staging and the ordinary production observation gate. This option
 cannot be combined with `source_run_id` or an interrupted cutover.
 
 Change Railway variables with `--skip-deploys` and roll them out through
-Release. A redeploy from Railway replaces the receipted deployment ID, so
-preflight stops every later release. To recover, release with
+Release. A redeploy or platform failover from Railway replaces the receipted
+deployment ID, so preflight stops every later release. To recover, release with
 `replace_redeployed_component` set to that component; the release must deploy
 it. Preflight accepts the live deployment only if the receipted deployment was
-superseded and every later deployment is a Railway redeploy of the receipted
-image digest. Health, configuration, replica, and database checks still apply,
-and activation restores against the same verified baseline. The redeploy is
-never recorded as a release receipt. This option cannot be combined with
+superseded and every later deployment is a Railway redeploy, failover, or
+rollback whose image digest belongs to that component's receipted deployment or
+one of its earlier receipted deployments. A Railway rollback therefore becomes
+the baseline under the earlier receipt it restored. Health, configuration,
+replica, and database checks still apply, and activation restores against the
+same verified baseline. The redeploy is never recorded as a release receipt.
+This option cannot be combined with
 `replace_failed_web_run_id` or an interrupted cutover.
 
 ## Dispatch and supervision

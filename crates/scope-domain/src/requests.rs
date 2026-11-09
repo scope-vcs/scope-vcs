@@ -1,3 +1,7 @@
+mod git_fetch;
+pub use git_fetch::{
+    GitFetchAsk, GitFetchHead, GitFetchRequest, request_readable_in_git, retain_git_fetch_heads,
+};
 mod navigation;
 use crate::error::DomainError;
 pub use navigation::*;
@@ -32,9 +36,9 @@ pub use merge_gate::{
 };
 mod access;
 pub use access::{
-    RequestListPredicate, RequestPermissions, RequestPolicyDecision, RequestViewer,
-    request_actor_role, request_list_mergeability, request_list_predicate, request_mergeability,
-    request_policy, request_visible_to_every_maintainer,
+    REQUEST_BRANCH_MUTABLE_STATES, RequestListPredicate, RequestPermissions, RequestPolicyDecision,
+    RequestViewer, request_actor_role, request_list_mergeability, request_list_predicate,
+    request_mergeability, request_policy, request_visible_to_every_maintainer,
 };
 mod auto_merge;
 pub use auto_merge::{
@@ -140,8 +144,9 @@ pub use queue::{
     RequestAttentionMutation, RequestAttentionReason, RequestAttentionState, RequestClaim,
     RequestQueueClassification, RequestQueueFacts, RequestQueueGroup, RequestQueueNextStep,
     RequestQueuePredicate, RequestQueuePredicateAtom, RequestQueueRule, RequestQueueSection,
-    apply_request_attention_action, classify_request_queue_item, reactivate_request_attention,
-    reactivate_request_attention_for_stack_blocker, request_queue_group, request_queue_next_step,
+    RequestQueueStackMember, apply_request_attention_action, classify_request_queue_item,
+    reactivate_request_attention, reactivate_request_attention_for_stack_blocker,
+    request_queue_group, request_queue_next_step, request_queue_stack_groups,
     request_queue_visibility_predicate,
 };
 mod ratings;

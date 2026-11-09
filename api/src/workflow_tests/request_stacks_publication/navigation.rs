@@ -307,3 +307,25 @@ async fn queue_stack_context_keeps_off_section_parent_out_of_search_and_cursor_r
     assert_eq!(second["requests"][0]["request"]["stack_parent"], *parent);
     assert!(second["next_cursor"].is_null());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn queue_shows_a_waiting_request_with_a_stack_member_that_needs_you() {
+    let fixture = PrivateStackFixture::create("stack-queue-groups").await;
+    let page = navigation_get(&fixture, "queue?section=active").await;
+    let rows = page["requests"].as_array().unwrap();
+    let row = |id: &str| {
+        rows.iter()
+            .find(|row| row["request"]["id"] == id)
+            .unwrap_or_else(|| panic!("{id} missing from the active queue"))["attention"]
+            .clone()
+    };
+    let (parent, child) = (row(&fixture.parent_id), row(&fixture.child_id));
+    assert_eq!(
+        (&parent["group"], &parent["stack_group"]),
+        (&"needs_you".into(), &"needs_you".into())
+    );
+    assert_eq!(
+        (&child["group"], &child["stack_group"]),
+        (&"waiting".into(), &"needs_you".into())
+    );
+}

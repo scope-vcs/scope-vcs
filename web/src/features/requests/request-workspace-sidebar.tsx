@@ -4,9 +4,9 @@ import type {
   RequestQueuePageResponse,
   RequestQueueSection,
 } from '@/api/types.generated'
-import { NavigationSearch } from '@/components/navigation-search'
 import { Button } from '@/components/ui/button'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { ChevronRight, CircleCheck, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import {
@@ -30,17 +30,21 @@ import {
 import {
   REQUEST_ATTENTION_GROUP_LABELS,
   REQUEST_ATTENTION_GROUP_ORDER,
-  REQUEST_MERGE_STEP_LABELS,
   requestAgeLabel,
-  requestAttentionLabel,
+  requestStatusLabel,
   type RequestAttentionGroup,
 } from './request-workspace-model'
 import { RequestRailHint, type RailHint, type RailHintRequest } from './request-workspace-rail-hint'
-import { foldStackedRequestRows, requestStackMembers, stackRequestRows } from './request-workspace-stack'
+import {
+  foldStackedRequestRows,
+  requestRailRows,
+  requestStackMembers,
+  stackRequestRows,
+} from './request-workspace-stack'
 import { useRequestKeyboard } from './use-request-keyboard'
 import './request-workspace-sidebar.css'
+import './request-workspace-rail.css'
 
-const RAIL_AVATARS = 6
 const RAIL_HINT_GRACE_MS = 250
 
 const FOLDED_LABELS = {
@@ -62,8 +66,6 @@ export function RequestWorkspaceSidebar({
   pages,
   collapsed,
   onCollapsedChange,
-  query,
-  onSearch,
   loading,
   skeleton,
   error,
@@ -88,8 +90,6 @@ export function RequestWorkspaceSidebar({
   pages: RequestQueuePages | undefined
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
-  query: string
-  onSearch: (query: string) => void
   actionError: string | null
   maintainer: boolean | null
   onLoadMore: (section: RequestQueueSection) => void
@@ -120,10 +120,9 @@ export function RequestWorkspaceSidebar({
   }, [onFocusToggle])
   const close = useCallback(() => {
     setClosing(true)
-    if (query) onSearch('')
     if (document.activeElement instanceof HTMLElement && aside.current?.contains(document.activeElement))
       document.activeElement.blur()
-  }, [onSearch, query])
+  }, [])
   const toggle = state === 'open' ? close : togglePinned
   useEffect(() => {
     if (!closing) return
@@ -194,9 +193,9 @@ export function RequestWorkspaceSidebar({
       'stack' in hinted &&
       hinted.stack &&
       target?.dataset.requestId !== undefined &&
-      !over.closest('.request-workspace-row-avatar')
+      !over.closest('.request-workspace-row-mark')
     if (travelingToStack) return
-    const anchor = target?.dataset.railHint ? target : target?.querySelector('.request-workspace-row-avatar')
+    const anchor = target?.dataset.railHint ? target : target?.querySelector('.request-workspace-row-mark')
     const key = target?.dataset.railHint ?? target?.dataset.requestId
     if (state !== 'closed' || !key || !anchor) return setHint(null)
     const { top, height } = anchor.getBoundingClientRect()
@@ -208,7 +207,6 @@ export function RequestWorkspaceSidebar({
     })
   }
 
-  const searching = query.trim().length > 0
   const common = {
     loading,
     skeleton,
@@ -219,6 +217,7 @@ export function RequestWorkspaceSidebar({
     params,
     pendingId,
     selectedId,
+    statusHints: state !== 'closed',
     foldedStacks,
     onFoldStack: (requestId: string, folded: boolean) =>
       setFoldedStacks((current) => {
@@ -240,14 +239,14 @@ export function RequestWorkspaceSidebar({
     rows: new Map(allRows.map((row) => [row.item.request.id, row])),
     selectedId,
   })
-  const nextSection = REQUEST_QUEUE_SECTION_ORDER.find((section) => pages?.[section].next_cursor)
   const activeHasMore = Boolean(pages?.active.next_cursor)
   const activeCount = (value: number) => pages ? `${value}${activeHasMore ? '+' : ''}` : null
   const needsYou = grouped.needs_you
+  const needsYouCount = needsYou.filter(({ item }) => item.attention.group === 'needs_you').length
   const caughtUp = Boolean(pages) && !skeleton && needsYou.length === 0 && !activeHasMore
-  const current = searching
-    ? undefined
-    : allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
+  const current = state === 'closed' || closing
+    ? allRows.find((row) => row.item.request.id === selectedId && !needsYou.includes(row))
+    : undefined
   const moved = (items: QueueRow[]) => Number(current !== undefined && items.includes(current))
   const waiting = grouped.waiting.filter((row) => row !== current)
   const waitingCount = activeCount(grouped.waiting.length - moved(grouped.waiting))
@@ -274,12 +273,9 @@ export function RequestWorkspaceSidebar({
     ),
   ]
   const stackedNeedsYou = stackRequestRows(needsYou)
-  const railed = foldStackedRequestRows(stackedNeedsYou, foldedStacks)
-    .filter(
-      ({ row, folded }, index) =>
-        index < RAIL_AVATARS || [row, ...folded].some(({ item }) => item.request.id === selectedId),
-    )
-    .map(({ row }) => row)
+  const visibleNeedsYou = foldStackedRequestRows(stackedNeedsYou, foldedStacks)
+  const railRows = requestRailRows(visibleNeedsYou, selectedId)
+  const railed = visibleNeedsYou.filter((_, index) => railRows[index].shown).map(({ row }) => row)
   const foldedGroups = (Object.keys(FOLDED_LABELS) as (keyof typeof FOLDED_LABELS)[])
     .map((group) => ({
       group,
@@ -290,7 +286,7 @@ export function RequestWorkspaceSidebar({
   const hinted = hint && state === 'closed' ? railHint(hint.key, hint.now) : undefined
   function railHint(key: string, now: number): RailHint | undefined {
     if (key === 'needs-you') {
-      const count = activeCount(needsYou.length)
+      const count = activeCount(needsYouCount)
       return {
         title: count === null ? REQUEST_ATTENTION_GROUP_LABELS.needs_you : `${REQUEST_ATTENTION_GROUP_LABELS.needs_you} · ${count}`,
         details: caughtUp ? [EMPTY_LABELS.needs_you] : [],
@@ -307,7 +303,7 @@ export function RequestWorkspaceSidebar({
       id: item.request.id,
       title: item.request.title,
       nextStep: item.next_step,
-      status: railHintStatus(item),
+      status: requestStatusLabel(item, true),
       age: item.request.id === key ? requestAgeLabel(item.attention_at_unix, now, true) : undefined,
       depth,
       hovered: item.request.id === key,
@@ -336,15 +332,6 @@ export function RequestWorkspaceSidebar({
       )}
       <div className="request-workspace-sidebar-inner">
         <div className="request-workspace-sidebar-tools">
-          <NavigationSearch
-            clearLabel="Clear request search"
-            label="Search requests"
-            onChange={onSearch}
-            onOpen={openRail}
-            placeholder="Search requests"
-            status={loading && searching ? 'Searching requests' : undefined}
-            value={query}
-          />
           <Button
             aria-label={state === 'closed' ? 'Expand requests sidebar' : 'Collapse requests sidebar'}
             className="request-workspace-sidebar-toggle text-muted-foreground"
@@ -357,126 +344,114 @@ export function RequestWorkspaceSidebar({
             {state === 'closed' ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
           </Button>
         </div>
-        {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
         {actionError && (
-          <p className="py-2 pr-4 pl-(--request-workspace-row-inset) text-xs text-danger-strong" role="alert">
+          <p className="py-2 pr-12 pl-(--request-workspace-row-inset) text-xs text-danger-strong" role="alert">
             {actionError}
           </p>
         )}
-        <div aria-busy={loading} className="request-workspace-scroll">
-          {searching ? (
-            <RequestWorkspaceList
-              {...common}
-              emptyLabel="No matching requests."
-              hasMore={Boolean(nextSection)}
-              items={allRows}
-              onLoadMore={() => {
-                if (nextSection) onLoadMore(nextSection)
-              }}
-            />
-          ) : maintainer === null ? (
-            <section className="request-workspace-needs-you">
-              <h2 aria-hidden="true" className="request-workspace-group-label">
-                <span>
-                  <TextSkeleton length="short" size="meta" />
-                </span>
-                <GroupCount count={null} />
-              </h2>
-              <RequestWorkspaceListSkeleton rail />
-            </section>
-          ) : (
-            <>
-              {(maintainer || needsYou.length > 0) && (
-                <section className="request-workspace-needs-you">
-                  <h2 className="request-workspace-group-label text-foreground" data-rail-hint="needs-you">
-                    <span>{REQUEST_ATTENTION_GROUP_LABELS.needs_you}</span>
-                    {caughtUp && (
-                      <CircleCheck aria-hidden="true" className="request-workspace-rail-caught-up" />
-                    )}
-                    <GroupCount count={activeCount(needsYou.length)} />
-                  </h2>
-                  <RequestWorkspaceList
-                    {...common}
-                    emptyLabel={EMPTY_LABELS.needs_you}
-                    hasMore={activeHasMore && grouped.waiting.length === 0}
-                    items={needsYou}
-                    onLoadMore={() => onLoadMore('active')}
-                    rail
-                  />
-                </section>
-              )}
-              {current && (
-                <section aria-label="Open request" className="request-workspace-current">
-                  <hr className="request-workspace-rail-rule" />
-                  <RequestWorkspaceList
-                    {...common}
-                    emptyLabel=""
-                    hasMore={false}
-                    items={[current]}
-                    onLoadMore={() => {}}
-                    rail
-                  />
-                </section>
-              )}
-              {state === 'closed' && folded > 0 && (
-                <>
-                  <hr className="request-workspace-rail-rule" />
-                  <button
-                    aria-label={`Show ${folded} more requests`}
-                    className="request-workspace-rail-more"
-                    data-rail-hint="folded"
-                    onClick={openRail}
-                    type="button"
-                  >
-                    {folded > 99 ? '99+' : `+${folded}`}
-                  </button>
-                </>
-              )}
-              {!maintainer && (waiting.length > 0 || needsYou.length === 0) && (
-                <section className="request-workspace-open">
-                  <h2 className="request-workspace-group-label text-muted-foreground">
-                    <span>Open</span>
-                    <GroupCount count={waitingCount} />
-                  </h2>
-                  <RequestWorkspaceList
-                    {...common}
-                    emptyLabel={EMPTY_LABELS.needs_you}
-                    hasMore={activeHasMore}
-                    items={waiting}
-                    onLoadMore={() => onLoadMore('active')}
-                  />
-                </section>
-              )}
-              <div className="request-workspace-disclosures">
-                {disclosures.map(({ group, section, label, count, emptyLabel }) => (
-                  <RequestWorkspaceDisclosure count={count} key={group} label={label}>
+        <TooltipProvider disableHoverableContent>
+          <div aria-busy={loading} className="request-workspace-scroll">
+            {maintainer === null ? (
+              <section className="request-workspace-needs-you">
+                <h2 aria-hidden="true" className="request-workspace-group-label">
+                  <span>
+                    <TextSkeleton length="short" size="meta" />
+                  </span>
+                  <GroupCount count={null} />
+                </h2>
+                <RequestWorkspaceListSkeleton />
+              </section>
+            ) : (
+              <>
+                {(maintainer || needsYou.length > 0) && (
+                  <section className="request-workspace-needs-you">
+                    <h2 className="request-workspace-group-label text-foreground" data-rail-hint="needs-you">
+                      <span>{REQUEST_ATTENTION_GROUP_LABELS.needs_you}</span>
+                      {caughtUp && (
+                        <CircleCheck aria-hidden="true" className="request-workspace-rail-caught-up" />
+                      )}
+                      <GroupCount count={activeCount(needsYouCount)} />
+                    </h2>
                     <RequestWorkspaceList
                       {...common}
-                      emptyLabel={emptyLabel}
-                      hasMore={Boolean(pages?.[section].next_cursor)}
-                      items={grouped[group].filter((row) => row !== current)}
-                      onLoadMore={() => onLoadMore(section)}
+                      emptyLabel={EMPTY_LABELS.needs_you}
+                      hasMore={activeHasMore && grouped.waiting.length === 0}
+                      items={needsYou}
+                      onLoadMore={() => onLoadMore('active')}
+                      rail
                     />
-                  </RequestWorkspaceDisclosure>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+                  </section>
+                )}
+                {current && (
+                  <section aria-label="Open request" className="request-workspace-current">
+                    <hr className="request-workspace-rail-rule" />
+                    <RequestWorkspaceList
+                      {...common}
+                      emptyLabel=""
+                      hasMore={false}
+                      items={[current]}
+                      onLoadMore={() => {}}
+                      rail
+                    />
+                  </section>
+                )}
+                {state === 'closed' && folded > 0 && (
+                  <>
+                    <hr className="request-workspace-rail-rule" />
+                    <button
+                      aria-label={`Show ${folded} more requests`}
+                      className="request-workspace-rail-more"
+                      data-rail-hint="folded"
+                      onClick={openRail}
+                      type="button"
+                    >
+                      {folded > 99 ? '99+' : `+${folded}`}
+                    </button>
+                  </>
+                )}
+                {!maintainer && (waiting.length > 0 || needsYou.length === 0) && (
+                  <section className="request-workspace-open">
+                    <h2 className="request-workspace-group-label text-muted-foreground">
+                      <span>Open</span>
+                      <GroupCount count={waitingCount} />
+                    </h2>
+                    <RequestWorkspaceList
+                      {...common}
+                      emptyLabel={EMPTY_LABELS.needs_you}
+                      hasMore={activeHasMore}
+                      items={waiting}
+                      onLoadMore={() => onLoadMore('active')}
+                    />
+                  </section>
+                )}
+                <div className="request-workspace-disclosures">
+                  {disclosures.filter(({ count }) => count !== '0').map(({ group, section, label, count, emptyLabel }) => (
+                    <RequestWorkspaceDisclosure count={count} key={group} label={label}>
+                      <RequestWorkspaceList
+                        {...common}
+                        emptyLabel={emptyLabel}
+                        hasMore={Boolean(pages?.[section].next_cursor)}
+                        items={grouped[group].filter((row) => row !== current)}
+                        onLoadMore={() => onLoadMore(section)}
+                      />
+                    </RequestWorkspaceDisclosure>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </TooltipProvider>
+        {viewingAs && <div className="request-workspace-viewing-as">{viewingAs}</div>}
       </div>
     </aside>
   )
-}
-
-function railHintStatus(item: RequestQueueItemResponse) {
-  return REQUEST_MERGE_STEP_LABELS[item.next_step] ?? requestAttentionLabel(item, true)
 }
 
 function groupRows(rows: QueueRow[]) {
   return Object.fromEntries(
     REQUEST_ATTENTION_GROUP_ORDER.map((group) => [
       group,
-      stackRequestRows(rows.filter((row) => row.item.attention.group === group)).map(({ row }) => row),
+      stackRequestRows(rows.filter((row) => row.item.attention.stack_group === group)).map(({ row }) => row),
     ]),
   ) as Record<RequestAttentionGroup, QueueRow[]>
 }

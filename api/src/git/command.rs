@@ -1,4 +1,5 @@
 use crate::{error::ApiError, runtime_budgets::RuntimeBudgets};
+use scope_git::DEFAULT_GIT_BRANCH;
 use scope_git_process::{
     ProcessLimits, STDERR_DIAGNOSTIC_BYTES, run as run_process, truncated_stderr,
 };
@@ -270,6 +271,21 @@ pub(crate) fn git_stdout_text(
     String::from_utf8(output.stdout).map_err(ApiError::bad_request)
 }
 
+pub(crate) fn git_main_oid(repo: &FsPath, action: &str) -> Result<String, ApiError> {
+    Ok(git_stdout_text(
+        repo,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{DEFAULT_GIT_BRANCH}^{{commit}}"),
+        ],
+        action,
+    )?
+    .trim()
+    .to_string())
+}
+
 pub(crate) fn git_is_ancestor(
     repo: &FsPath,
     ancestor: &str,
@@ -481,6 +497,29 @@ mod tests {
         let all = git_ref_listing(&repo, &[], "listing refs").unwrap();
         assert_eq!(all.len(), 2);
         assert_eq!(all[1].0, "refs/tags/v1");
+        let _ = fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn main_oid_reads_main_even_when_head_names_an_unborn_branch() {
+        let repo = temp_repo("main-oid");
+        let main = commit(&repo, "first");
+        run_git(
+            Some(&repo),
+            &["symbolic-ref", "HEAD", "refs/heads/master"],
+            "point head at an unborn branch",
+        )
+        .unwrap();
+
+        assert_eq!(git_main_oid(&repo, "reading main").unwrap(), main);
+        run_git(
+            Some(&repo),
+            &["update-ref", "-d", "refs/heads/main"],
+            "delete main",
+        )
+        .unwrap();
+        let error = git_main_oid(&repo, "reading main").unwrap_err();
+        assert!(error.operator_diagnostic().starts_with("reading main"));
         let _ = fs::remove_dir_all(repo);
     }
 

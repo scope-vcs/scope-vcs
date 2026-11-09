@@ -1,6 +1,7 @@
 import type { ViewId } from '@/api/types.generated'
 import { displayRouteFilePath } from '../../lib/route-file'
 import { createCachedResource } from '../../lib/cached-resource'
+import { repositoryVersionKey, type RepositoryVersion } from './repository-version'
 import type { RepoFileContentResponse } from '@/api/types.generated'
 
 const MAX_CACHE_ENTRIES = 32
@@ -18,14 +19,16 @@ export function repoFileCacheKey({
   contentVersion,
   path,
   repoId,
+  version,
 }: {
   scope: string
   view: ViewId
   contentVersion: number
   path: string
   repoId: string
+  version: RepositoryVersion
 }) {
-  return [scope, repoId, contentVersion, view, displayRouteFilePath(path)].join('\0')
+  return [scope, repoId, contentVersion, view, repositoryVersionKey(version), displayRouteFilePath(path)].join('\0')
 }
 
 function approximateFileBytes(file: RepoFileContentResponse) {

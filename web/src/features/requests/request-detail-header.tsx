@@ -38,44 +38,51 @@ export function RequestDetailHeader({
         {request.title}
       </h1>
       <div className="request-detail-header-secondary mt-4">
-        <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[13px] leading-5 text-muted-foreground">
-          <Badge variant={requestMergeabilityTone(request)}>
-            {requestMergeabilityLabel(request)}
-          </Badge>
-          <span className="flex min-w-0 items-center gap-1">
-            <span className="truncate font-mono text-xs">{request.name}</span>
-            <CopyBranchButton branch={request.name} />
-          </span>
-          <span className="min-w-0 truncate">{viewName} view</span>
-          {changes && (
-            <Link
-              className="rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-              params={params}
-              search={{}}
-              to="/$owner/$repo/requests/$requestId/changes"
-            >
-              <DiffStatSummary detail="exact" stat={changes} />
-            </Link>
-          )}
-          {queueItem ? (
-            <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-              <span className="font-medium text-foreground">{actorHandle(queueItem.author)}</span>
-              <span>opened</span>
-              <RelativeTimestamp
-                value={request.submitted_at_unix ?? request.created_at_unix}
-              />
-              {queueItem.claimer ? (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>reviewing:</span>
-                  <span className="text-foreground">{queueItem.claimer.handle}</span>
-                </>
-              ) : null}
+        <div className="request-detail-header-meta min-w-0 text-xs leading-5 text-muted-foreground">
+          <div className="request-detail-header-summary">
+            <Badge className="h-7 border-0 bg-transparent p-0 text-[13px]" variant={requestMergeabilityTone(request)}>
+              {requestMergeabilityLabel(request)}
+            </Badge>
+            <span className="request-detail-header-branch flex min-w-0 items-center gap-1">
+              <span className="truncate font-mono text-xs" title={request.name}>{request.name}</span>
+              <CopyBranchButton branch={request.name} />
             </span>
-          ) : null}
+            {changes && (
+              <Link
+                className="request-detail-header-stat rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                params={params}
+                search={{}}
+                to="/$owner/$repo/requests/$requestId/changes"
+              >
+                <DiffStatSummary detail="exact" stat={changes} />
+              </Link>
+            )}
+          </div>
+          <div className="request-detail-header-author flex flex-wrap items-baseline gap-x-1.5">
+            {queueItem ? (
+              <span className="flex flex-wrap items-baseline gap-x-1.5">
+                <span className="font-medium text-foreground">{actorHandle(queueItem.author)}</span>
+                <span>opened</span>
+                <RelativeTimestamp
+                  value={request.submitted_at_unix ?? request.created_at_unix}
+                />
+                {queueItem.claimer ? (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span>reviewing:</span>
+                    <span className="text-foreground">{queueItem.claimer.handle}</span>
+                  </>
+                ) : null}
+              </span>
+            ) : null}
+            <span className="inline-flex min-w-0 max-w-full items-baseline gap-1.5">
+              {queueItem ? <span aria-hidden="true">·</span> : null}
+              <span className="truncate" title={`${viewName} view`}>{viewName} view</span>
+            </span>
+          </div>
         </div>
         {actions ? (
-          <div className="request-detail-header-actions flex min-w-0 items-center justify-end gap-2">
+          <div className="request-detail-header-actions">
             {actions}
           </div>
         ) : null}

@@ -80,8 +80,6 @@ async fn reparenting_main_request_commits_revision_and_ends_evidence_and_intent(
             .unwrap()
             .unwrap();
         assert_eq!(saved, original);
-        assert_eq!(reference_count(&store, &original.id).await, 1);
-        assert_eq!(reference_count(&store, &accepted.revision.id).await, 1);
         let row = entities::request::Entity::find_by_id(&child.id)
             .one(store.db.as_ref())
             .await
@@ -208,7 +206,6 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
         let accepted = if same_head {
             let context =
                 context_for(&store, &child, base.clone(), facts.as_ref(), "recover").await;
-            publication.git_snapshot = original.git_snapshot.clone();
             store
                 .requests()
                 .record_request_revision_context(publication, context, facts, child_facts)
@@ -253,11 +250,6 @@ async fn reparenting_recovers_from_closed_or_rewritten_parent_to_main_or_other_p
                 .unwrap()
                 .unwrap(),
             original
-        );
-        assert_eq!(reference_count(&store, &original.id).await, 1);
-        assert_eq!(
-            reference_count(&store, &format!("revision_{}", old.id)).await,
-            1
         );
     }
 }
@@ -484,7 +476,6 @@ async fn deeper_reparenting_rolls_back_revision_receipt_and_descendant_depth_ove
         store.requests().request_events_for_tests().await.unwrap(),
         events
     );
-    assert_eq!(reference_count(&store, "too_deep_event").await, 0);
     assert!(
         store
             .requests()

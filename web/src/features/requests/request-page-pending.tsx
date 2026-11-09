@@ -33,18 +33,20 @@ export function RequestDetailPagePending() {
           <TextSkeleton className="mb-3 py-1 min-[701px]:hidden" length="short" size="meta" />
           <TextSkeleton length="xlong" size="heading" />
           <div className="request-detail-header-secondary mt-4">
-            <div className="request-detail-header-meta flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs leading-5">
-              <BlockSkeleton className="h-5 w-40 rounded-md" />
-              <TextSkeleton className="h-6 py-1.5" length="long" size="meta" />
-              <TextSkeleton className="h-5 py-1" length="medium" size="meta" />
+            <div className="request-detail-header-meta min-w-0 text-xs leading-5">
+              <div className="request-detail-header-summary">
+                <BlockSkeleton className="h-5 w-40 rounded-md" />
+                <TextSkeleton className="h-6 py-1.5" length="long" size="meta" />
+              </div>
+              <TextSkeleton length="medium" size="meta" />
             </div>
-            <div className="request-detail-header-actions flex min-w-0 items-center justify-end gap-2">
-              <BlockSkeleton className="h-8 w-[6.5rem]" />
-              <BlockSkeleton className="request-details-trigger h-8 w-24" />
+            <div className="request-detail-header-actions">
+              <BlockSkeleton className="h-7 w-[6.5rem]" />
+              <BlockSkeleton className="request-details-trigger h-7 w-24" />
               {isSignedIn ? (
                 <>
-                  <BlockSkeleton className="hidden h-8 w-20 min-[701px]:block" />
-                  <BlockSkeleton className="size-8" />
+                  <BlockSkeleton className="hidden h-7 w-20 min-[701px]:block" />
+                  <BlockSkeleton className="size-7" />
                 </>
               ) : null}
             </div>
@@ -69,7 +71,7 @@ export function RequestDetailPagePending() {
         </div>
         {isSignedIn ? (
           <div className="fixed inset-x-0 bottom-0 z-30 flex justify-end gap-2 border-t border-border bg-background px-(--app-inset) py-3 min-[701px]:hidden">
-            <BlockSkeleton className="h-8 w-20" />
+            <BlockSkeleton className="h-7 w-20" />
           </div>
         ) : null}
       </div>

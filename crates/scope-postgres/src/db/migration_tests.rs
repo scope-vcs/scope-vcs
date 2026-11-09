@@ -199,10 +199,10 @@ async fn exact_state_check_is_read_only_and_rejects_behind_and_ahead() {
 async fn migration_plan_declares_metadata_restore_safety_for_pending_changes() {
     let (_target, db, _lease) = isolated_database().await;
     let plan = migrations::plan(db.as_ref()).await.unwrap();
-    assert!(plan.metadata_restore_safe);
+    assert!(!plan.metadata_restore_safe);
     assert_eq!(
         serde_json::to_value(&plan).unwrap()["metadataRestoreSafe"],
-        true
+        false
     );
     migrations::apply_in_maintenance(db.as_ref(), Default::default())
         .await

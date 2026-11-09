@@ -1,10 +1,11 @@
+import { previewEnvironmentName } from './preview-environment-identity.mjs';
 import assert from 'node:assert/strict';
 import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { serviceIds } from './deployment-components.mjs';
 import {
-  KEPT_STAGING_SETTINGS, RUNTIME_ROLES, changedVariables, databaseBootstrap, generatePreviewSecrets, previewEnvironmentName,
+  KEPT_STAGING_SETTINGS, RUNTIME_ROLES, changedVariables, databaseBootstrap, generatePreviewSecrets,
   previewVariables, rolePassword, unreviewedStagingVariables,
 } from './preview-environment-plan.mjs';
 import { bootstrapPreviewDatabase, deletePreviewEnvironment, ensurePreviewEnvironment } from './preview-environment.mjs';

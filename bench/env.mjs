@@ -14,6 +14,12 @@ export function positiveInteger(name, fallback, env = process.env) {
   return value;
 }
 
+export function nonNegativeInteger(name, fallback, env = process.env) {
+  const value = Number(env[name] || String(fallback));
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`);
+  return value;
+}
+
 export function positiveNumber(name, fallback, env = process.env) {
   const value = Number(env[name] || String(fallback));
   if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be positive`);

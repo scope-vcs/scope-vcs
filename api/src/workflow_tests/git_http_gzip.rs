@@ -110,6 +110,7 @@ async fn upload_pack_accepts_gzip_encoded_request_body() {
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &scope_domain::views::ViewId::public(),
+        &scope_domain::requests::GitFetchAsk::listing(),
     )
     .await
     .unwrap();

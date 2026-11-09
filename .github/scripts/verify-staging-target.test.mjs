@@ -83,7 +83,7 @@ test('staging deploys and records the candidate checkout when the workflow revis
   const input = fixture()
   writeFileSync(join(root, '.github/deployment-services.json'), JSON.stringify(input.manifest))
   copyFileSync(new URL('./verify-staging-target.mjs', import.meta.url), join(scripts, 'verify-staging-target.mjs'))
-  for (const name of ['deploy-staging-railway.sh', 'railway-service-health.sh']) copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
+  for (const name of ['deploy-staging-railway.sh', 'railway-service-health.sh', 'railway-private-command.sh', 'staging-deletion-window.sh']) copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   copyFileSync(new URL('./railway-predecessor-teardown.mjs', import.meta.url), join(scripts, 'railway-predecessor-teardown.mjs'))
   writeFileSync(join(scripts, 'railway-read.mjs'), `
     if (process.argv[1]?.endsWith('railway-read.mjs')) {
@@ -212,7 +212,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
   }
   writeFileSync(join(root, 'provider.json'), JSON.stringify({ ...input, activations: [], maintenance: [] }))
   writeFileSync(join(root, '.github/deployment-services.json'), JSON.stringify(input.manifest))
-  for (const name of ['deploy-staging-railway.sh', 'railway-service-health.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-client.mjs', 'railway-retry.mjs', 'railway-predecessor-teardown.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh']) {
+  for (const name of ['deploy-staging-railway.sh', 'railway-service-health.sh', 'verify-staging-target.mjs', 'railway-artifact.mjs', 'railway-client.mjs', 'railway-retry.mjs', 'railway-predecessor-teardown.mjs', 'railway-private-command.sh', 'railway-private-maintenance.sh', 'staging-deletion-window.sh']) {
     copyFileSync(new URL(`./${name}`, import.meta.url), join(scripts, name))
   }
   mkdirSync(join(root, 'deploy/postgres'), { recursive: true })
@@ -263,10 +263,20 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       state.maintenance.push(args[0]);
       save();
       if (args[0] === 'plan') console.log(JSON.stringify({ exact: true, applied: ['m0001_initial'], pending: [] }));
-    } else if (action === 'grants') {
+    } else if (action === 'psql') {
       assert.equal(process.env.DATABASE_URL, 'postgres://scope_migrator@scope-postgres.railway.internal/railway');
       assert.ok(state.maintenance.includes('apply'));
       const sql = readFileSync(0, 'utf8');
+      if (/^UPDATE public\.scope_orphan_object_jobs /m.test(sql)) {
+        assert.equal(state.grantsApplied, true);
+        assert.deepEqual(state.activations, []);
+        assert.ok(args.includes('--single-transaction'));
+        for (const table of ['scope_orphan_object_jobs', 'scope_repo_storage_cleanup_jobs', 'scope_request_media_cleanup_jobs'])
+          assert.match(sql, new RegExp('UPDATE public\\.' + table + ' '));
+        state.deletionsDeferred = true;
+        save();
+        process.exit(0);
+      }
       assert.match(sql, /GRANT CONNECT ON DATABASE/);
       assert.match(sql, /scope_api/);
       state.grantsApplied = true;
@@ -279,7 +289,11 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       assert.equal(process.env.SCOPE_DEPLOYMENT_SOURCE_SHA, prepared.sourceSha);
       assert.equal(process.env.SCOPE_RAILWAY_ENVIRONMENT_ID, state.manifest.environments.staging.environmentId);
       if (process.env.SCOPE_STAGING_RESUME === '1') assert.deepEqual(state.maintenance, ['plan', 'verify']);
-      else { assert.ok(state.maintenance.includes('apply')); assert.equal(state.grantsApplied, true); }
+      else {
+        assert.ok(state.maintenance.includes('apply'));
+        assert.equal(state.grantsApplied, true);
+        assert.equal(state.deletionsDeferred, true, 'Staging must defer migration deletions before writers reopen');
+      }
       assert.ok(!state.activations.includes(component), 'A participant was activated twice');
       if (component === 'git-router') {
         const api = state.services.find(s => s.id === 'api');
@@ -304,7 +318,7 @@ test(`full staging ${resume ? 'resume' : 'migration'} restores API readiness bef
       process.stdout.write(execFileSync(process.execPath, ['provider.mjs', 'read', ...process.argv.slice(2)]));
   `)
   writeFileSync(join(bin, 'railway'), '#!/bin/sh\nexec node provider.mjs railway "$@"\n', { mode: 0o755 })
-  writeFileSync(join(bin, 'psql'), '#!/bin/sh\nexec node provider.mjs grants "$@"\n', { mode: 0o755 })
+  writeFileSync(join(bin, 'psql'), '#!/bin/sh\nexec node provider.mjs psql "$@"\n', { mode: 0o755 })
   const binary = join(bin, 'maintenance')
   writeFileSync(binary, '#!/bin/sh\nexec node provider.mjs maintenance "$@"\n', { mode: 0o755 })
   writeFileSync(join(scripts, 'deploy-railway.sh'), '#!/bin/sh\nexec flock -x provider.lock node provider.mjs activate "$@"\n')

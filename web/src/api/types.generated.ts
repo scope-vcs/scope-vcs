@@ -188,9 +188,25 @@ export type GitPushTokenResponse = { created_at_unix: number, secret: string | n
 
 export type RepoFileResponse = { path: string, oid: string, tracked: boolean, label: ViewId, };
 
-export type RepoFileContentRequest = { path: string, view: ViewId | null, };
+export type RepoFileContentRequest = { path: string, view: ViewId | null,
+/**
+ * Reads the request's latest push instead of main. Excludes `update`.
+ */
+request: string | null,
+/**
+ * Reads main as of this history entry's `source_id`. Excludes `request`.
+ */
+update: string | null, };
 
-export type RepoFilesRequest = { view: ViewId | null, };
+export type RepoFilesRequest = { view: ViewId | null,
+/**
+ * Reads the request's latest push instead of main. Excludes `update`.
+ */
+request: string | null,
+/**
+ * Reads main as of this history entry's `source_id`. Excludes `request`.
+ */
+update: string | null, };
 
 export type RepoFileContentResponse = { path: string, oid: string, label: ViewId, size_bytes: number, content: ReviewFileContentResponse, };
 
@@ -455,7 +471,11 @@ export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string,
  */
 truncated: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
 
-export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, };
+export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null,
+/**
+ * Matches entry messages, source IDs and visibility-change paths.
+ */
+search: string | null, };
 
 export type HistoryEntryRequest = { view: ViewId | null, };
 
@@ -515,7 +535,7 @@ export type RequestQueueSection = "active" | "unclaimed" | "set_aside" | "done";
 
 export type RequestQueueGroup = "needs_you" | "waiting" | "unclaimed" | "set_aside" | "done";
 
-export type RequestQueueNextStep = "review" | "reply" | "revisit" | "merge" | "fix_checks" | "update" | "wait" | "done";
+export type RequestQueueNextStep = "review" | "reply" | "revisit" | "merge" | "fix_checks" | "approve_checks" | "update" | "submit" | "wait" | "done";
 
 export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled";
 
@@ -523,9 +543,16 @@ export type RequestAttentionReason = "authored" | "invited" | "claimed" | "uncla
 
 export type RequestAttentionResponse = {
 /**
- * The group this row shows in for its viewer.
+ * The viewer's group for this request on its own. Group counts and flat
+ * lists use it.
  */
-group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null,
+group: RequestQueueGroup,
+/**
+ * The group a view that draws stacks together shows this row in. A
+ * waiting request moves to Needs you when another request in its stack
+ * on the same queue page needs the viewer; otherwise this equals `group`.
+ */
+stack_group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null,
 /**
  * Counts the writes to the viewer's attention record; zero without one.
  */

@@ -123,11 +123,13 @@ export function WorkbenchBar({
   className,
   summary,
   title,
+  titleHidden = false,
 }: {
   actions?: ReactNode
   className?: string
   summary?: ReactNode
   title: ReactNode
+  titleHidden?: boolean
 }) {
   return (
     <div
@@ -136,14 +138,8 @@ export function WorkbenchBar({
         className,
       )}
     >
-      {summary ? (
-        <>
-          <h1 className="sr-only">{title}</h1>
-          <div className="min-w-0 flex-[1_1_20rem] text-sm text-muted-foreground">{summary}</div>
-        </>
-      ) : (
-        <h1 className="text-sm font-semibold">{title}</h1>
-      )}
+      <h1 className={summary || titleHidden ? 'sr-only' : 'text-sm font-semibold'}>{title}</h1>
+      {summary && <div className="min-w-0 flex-[1_1_20rem] text-sm text-muted-foreground">{summary}</div>}
       {actions && (
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
           {actions}

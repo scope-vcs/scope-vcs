@@ -17,12 +17,14 @@
     "check:resource-boundary": "node --test scripts/resource-boundary.test.mjs scripts/callback-assertions.test.mjs && node scripts/check-resource-boundary.mjs",
     "generate:api-contract": "node scripts/generate-api-contract.mjs",
     "test": "node scripts/prepare-test-output.mjs && tsc -p tsconfig.test.json && TZ=UTC node --test \".test-output/**/*.test.js\" scripts/dev-runner-connections.test.mjs",
-    "test:smoke": "node --test \"smoke/components/*.spec.mjs\"; components=$?; node --test \"smoke/*.spec.mjs\" && exit $components",
+    "test:smoke": "pnpm check:brand && node --test \"smoke/components/*.spec.mjs\"; components=$?; node --test \"smoke/*.spec.mjs\" && exit $components",
     "test:journey": "node --test \"journeys/**/*.spec.mjs\"",
     "typecheck": "tsc --noEmit",
     "check:hooks": "node --test scripts/check-hooks.test.mjs && oxlint -c .oxlintrc.json src",
     "check:advisories": "pnpm audit --audit-level high",
-    "check:conventions": "node --test scripts/conventions.test.mjs && node scripts/check-conventions.mjs"
+    "check:conventions": "node --test scripts/conventions.test.mjs && node scripts/check-conventions.mjs",
+    "generate:brand": "node scripts/generate-brand-assets.mjs",
+    "check:brand": "node scripts/generate-brand-assets.mjs --check"
   },
   "dependencies": {
     "@clerk/tanstack-react-start": "^1.7.1",
@@ -79,7 +81,9 @@
     "ajv": "8.20.0",
     "nitro": "^3.0.260903-beta",
     "oxlint": "1.87.0",
+    "pixelmatch": "^8.0.0",
     "playwright": "1.64.0",
+    "pngjs": "^7.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.3"

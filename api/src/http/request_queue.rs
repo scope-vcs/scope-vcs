@@ -24,7 +24,8 @@ use scope_api_contract::{
 };
 use scope_domain::requests::{
     REQUEST_LIST_DEFAULT_PAGE_SIZE, REQUEST_LIST_MAX_PAGE_SIZE, RequestQueueClassification,
-    RequestQueueSection, RequestViewer, request_queue_group, request_queue_next_step,
+    RequestQueueGroup, RequestQueueSection, RequestQueueStackMember, RequestStackParent,
+    RequestViewer, request_queue_group, request_queue_next_step, request_queue_stack_groups,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -170,6 +171,10 @@ pub(crate) async fn request_queue(
                 .copied()
                 .unwrap_or(scope_domain::requests::RequestReviewsOutcome::Clear);
             let viewer = RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false);
+            let parent_request_id = match parents.get(&request_id) {
+                Some(RequestStackParent::Available { request }) => Some(request.id.clone()),
+                _ => None,
+            };
             let next_step = request_queue_next_step(
                 request_list_row_subject(&row.request),
                 &viewer,
@@ -179,7 +184,13 @@ pub(crate) async fn request_queue(
                 repo.record.lifecycle_state,
                 row.attention.reason,
             );
-            Ok(RequestQueueItemResponse {
+            let group = request_queue_group(
+                row.attention.section,
+                row.attention.reason,
+                next_step,
+                access.is_maintainer(),
+            );
+            let item = RequestQueueItemResponse {
                 attention_at_unix: row.cursor.updated_at_unix,
                 request: request_list_item_response(
                     row.request,
@@ -194,16 +205,31 @@ pub(crate) async fn request_queue(
                     },
                 )?,
                 author,
-                attention: attention_response(
-                    row.attention,
-                    activity_version,
-                    access.is_maintainer(),
-                ),
+                attention: attention_response(row.attention, activity_version, group),
                 claimer,
                 next_step: next_step.into(),
-            })
+            };
+            Ok((item, group, parent_request_id))
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
+    let stack_groups = request_queue_stack_groups(
+        &requests
+            .iter()
+            .map(|(item, group, parent_request_id)| RequestQueueStackMember {
+                request_id: &item.request.id,
+                parent_request_id: parent_request_id.as_deref(),
+                group: *group,
+            })
+            .collect::<Vec<_>>(),
+    );
+    let requests = requests
+        .into_iter()
+        .zip(stack_groups)
+        .map(|((mut item, _, _), stack_group)| {
+            item.attention.stack_group = stack_group.into();
+            item
+        })
+        .collect();
     Ok(Json(RequestQueuePageResponse {
         requests,
         next_cursor,
@@ -312,12 +338,14 @@ pub(crate) async fn apply_attention(
         snapshot.repository.record.lifecycle_state,
         result.attention.reason,
     );
+    let group = request_queue_group(
+        result.attention.section,
+        result.attention.reason,
+        next_step,
+        access.is_maintainer(),
+    );
     Ok(Json(RequestAttentionMutationResponse {
-        attention: attention_response(
-            result.attention,
-            result.activity_version,
-            access.is_maintainer(),
-        ),
+        attention: attention_response(result.attention, result.activity_version, group),
         claimer,
         next_step: next_step.into(),
     }))
@@ -326,10 +354,11 @@ pub(crate) async fn apply_attention(
 pub(crate) fn attention_response(
     value: RequestQueueClassification,
     activity_version: u64,
-    viewer_is_maintainer: bool,
+    group: RequestQueueGroup,
 ) -> RequestAttentionResponse {
     RequestAttentionResponse {
-        group: request_queue_group(value.section, value.reason, viewer_is_maintainer).into(),
+        group: group.into(),
+        stack_group: group.into(),
         state: value.state.into(),
         reason: value.reason.into(),
         activity_version,

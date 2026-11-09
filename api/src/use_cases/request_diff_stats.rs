@@ -82,8 +82,9 @@ pub(crate) async fn record_published_revision_diff_stat(
     incarnation: &RepositoryIncarnation,
     request: &Request,
     revision: &RequestRevision,
+    staging_repo: Option<&Path>,
 ) {
-    match record_revision_diff_stat(state, incarnation, request, revision).await {
+    match record_revision_diff_stat(state, incarnation, request, revision, staging_repo).await {
         Ok(true) => publish_recorded(state, incarnation, request).await,
         Ok(false) => {}
         Err(error) => tracing::warn!(
@@ -100,21 +101,22 @@ async fn record_revision_diff_stat(
     incarnation: &RepositoryIncarnation,
     request: &Request,
     revision: &RequestRevision,
+    staging_repo: Option<&Path>,
 ) -> Result<bool, ApiError> {
     let view = request.view.clone();
-    let stat = with_request_revision_store_repo(
-        state,
-        incarnation,
-        request,
-        revision,
-        move |raw_repo, revision| {
-            let comparison = RequestComparison::request(revision, view);
-            let base_oid = request_comparison_base_oid(raw_repo, &comparison)?
-                .ok_or_else(|| ApiError::internal_message("request comparison has no base"))?;
-            revision_diff_stat(raw_repo, &base_oid, &comparison.identity().head_oid)
-        },
-    )
-    .await?;
+    let inspect = move |raw_repo: &Path, revision: &RequestRevision| {
+        let comparison = RequestComparison::request(revision, view);
+        let base_oid = request_comparison_base_oid(raw_repo, &comparison)?
+            .ok_or_else(|| ApiError::internal_message("request comparison has no base"))?;
+        revision_diff_stat(raw_repo, &base_oid, &comparison.identity().head_oid)
+    };
+    let stat = if let Some(path) = staging_repo {
+        let path = path.to_path_buf();
+        let revision = revision.clone();
+        crate::git::blocking::run(move || inspect(&path, &revision)).await?
+    } else {
+        with_request_revision_store_repo(state, incarnation, request, revision, inspect).await?
+    };
     Ok(state
         .metadata
         .requests()
@@ -268,7 +270,7 @@ async fn record_current_revision_diff_stat(
         return Ok(false);
     };
     let incarnation = repo.incarnation();
-    let recorded = record_revision_diff_stat(state, &incarnation, request, &revision).await?;
+    let recorded = record_revision_diff_stat(state, &incarnation, request, &revision, None).await?;
     if recorded {
         publish_recorded(state, &incarnation, request).await;
     }

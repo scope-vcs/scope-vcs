@@ -11,8 +11,6 @@ export type MarkdownLinkClick = {
 }
 
 const NATIVE_DOCUMENT_PATHS = new Set([
-  '/favicon.png',
-  '/favicon.svg',
   '/robots.txt',
   '/sitemap.xml',
 ])

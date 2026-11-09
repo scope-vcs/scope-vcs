@@ -166,6 +166,8 @@ pub(crate) struct HistoryPageRequest {
     pub(crate) feed: Option<HistoryFeed>,
     pub(crate) view: Option<ViewId>,
     pub(crate) before: Option<String>,
+    /// Matches entry messages, source IDs and visibility-change paths.
+    pub(crate) search: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,12 +196,20 @@ pub(crate) struct RequestFileDiffRequest {
 pub(crate) struct RepoFileContentRequest {
     pub(crate) path: String,
     pub(crate) view: Option<ViewId>,
+    /// Reads the request's latest push instead of main. Excludes `update`.
+    pub(crate) request: Option<String>,
+    /// Reads main as of this history entry's `source_id`. Excludes `request`.
+    pub(crate) update: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct RepoFilesRequest {
     pub(crate) view: Option<ViewId>,
+    /// Reads the request's latest push instead of main. Excludes `update`.
+    pub(crate) request: Option<String>,
+    /// Reads main as of this history entry's `source_id`. Excludes `request`.
+    pub(crate) update: Option<String>,
 }
 
 pub(crate) use scope_api_contract::{ReviewFileContentResponse, ReviewFileDiffResponse};

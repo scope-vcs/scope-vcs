@@ -1,7 +1,7 @@
 use super::merge_gate::{evaluate_request_merge, evaluate_request_readiness};
 use super::{
-    Request, RequestChecksOutcome, RequestMergeSubject, RequestMergeabilityStatus,
-    RequestReviewsOutcome, RequestState, RequestViewer,
+    Request, RequestCheckReviewer, RequestChecksOutcome, RequestMergeSubject,
+    RequestMergeabilityStatus, RequestReviewsOutcome, RequestState, RequestViewer,
 };
 use crate::error::DomainError;
 use crate::repository::RepoLifecycleState;
@@ -9,10 +9,12 @@ use crate::views::Views;
 use serde::{Deserialize, Serialize};
 
 mod placement;
+mod stacks;
 pub use placement::{
     REQUEST_QUEUE_RULES, RequestQueuePredicate, RequestQueuePredicateAtom, RequestQueueRule,
     request_queue_visibility_predicate,
 };
+pub use stacks::{RequestQueueStackMember, request_queue_stack_groups};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -36,6 +38,7 @@ pub enum RequestQueueGroup {
 pub fn request_queue_group(
     section: RequestQueueSection,
     reason: RequestAttentionReason,
+    next_step: RequestQueueNextStep,
     viewer_is_maintainer: bool,
 ) -> RequestQueueGroup {
     use RequestAttentionReason as Reason;
@@ -44,7 +47,9 @@ pub fn request_queue_group(
         RequestQueueSection::SetAside => RequestQueueGroup::SetAside,
         RequestQueueSection::Done => RequestQueueGroup::Done,
         RequestQueueSection::Active => match reason {
-            Reason::Authored if viewer_is_maintainer => RequestQueueGroup::NeedsYou,
+            Reason::Authored if viewer_is_maintainer && next_step != RequestQueueNextStep::Wait => {
+                RequestQueueGroup::NeedsYou
+            }
             Reason::Invited
             | Reason::Claimed
             | Reason::NewActivity
@@ -63,7 +68,9 @@ pub enum RequestQueueNextStep {
     Revisit,
     Merge,
     FixChecks,
+    ApproveChecks,
     Update,
+    Submit,
     Wait,
     Done,
 }
@@ -94,8 +101,18 @@ pub fn request_queue_next_step(
         viewer.user_id,
         reason,
         readiness,
-        viewer_can_merge,
+        ViewerAbilities {
+            merge: viewer_can_merge,
+            approve_pending_checks: checks == RequestChecksOutcome::AwaitingApproval
+                && RequestCheckReviewer::may_review(&viewer.access, views),
+        },
     )
+}
+
+#[derive(Clone, Copy)]
+struct ViewerAbilities {
+    merge: bool,
+    approve_pending_checks: bool,
 }
 
 fn next_step_for(
@@ -103,26 +120,31 @@ fn next_step_for(
     viewer_user_id: Option<&str>,
     reason: RequestAttentionReason,
     readiness: RequestMergeabilityStatus,
-    viewer_can_merge: bool,
+    viewer: ViewerAbilities,
 ) -> RequestQueueNextStep {
     use RequestAttentionReason as Reason;
     use RequestMergeabilityStatus as Status;
     if viewer_user_id.is_some() && author_user_id == viewer_user_id {
         return match readiness {
-            Status::Ready if viewer_can_merge => RequestQueueNextStep::Merge,
+            Status::Ready if viewer.merge => RequestQueueNextStep::Merge,
             Status::Ready => RequestQueueNextStep::Wait,
+            Status::ChecksAwaitingApproval | Status::WaitingForParent | Status::AncestorBlocked
+                if viewer.approve_pending_checks =>
+            {
+                RequestQueueNextStep::ApproveChecks
+            }
             Status::ChecksFailed
             | Status::ChecksConfigurationError
             | Status::ReviewFindingsOpen => RequestQueueNextStep::FixChecks,
             Status::IntegrationConflict
             | Status::NeedsMainUpdate
             | Status::ParentRewritten
-            | Status::ParentClosed => RequestQueueNextStep::Update,
+            | Status::ParentClosed
+            | Status::MissingRequestBranch => RequestQueueNextStep::Update,
+            Status::Draft => RequestQueueNextStep::Submit,
             Status::Closed | Status::Merged => RequestQueueNextStep::Done,
             Status::RepositoryNotReady
-            | Status::Draft
             | Status::NotMaintainer
-            | Status::MissingRequestBranch
             | Status::ChecksNotEvaluated
             | Status::ChecksAwaitingApproval
             | Status::ChecksPending

@@ -101,6 +101,59 @@ pub(crate) async fn materialize_run_source_bundle(
     materialize_accepted_git_head_bundle(state, &incarnation, source, max_bytes).await
 }
 
+pub(crate) async fn materialize_request_revision_bundle(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    request: &scope_domain::requests::Request,
+    revision: &scope_domain::requests::RequestRevision,
+    max_bytes: usize,
+) -> Result<MaterializedRunSource, ApiError> {
+    let key = source_cache_key(&(incarnation, &request.id, &revision.new_head_oid))?;
+    let build_state = state.clone();
+    let build_incarnation = incarnation.clone();
+    let request = request.clone();
+    let revision = revision.clone();
+    cached_run_source_bundle(state, incarnation, key, max_bytes, move |path| async move {
+        operation::supervise(async move {
+            let owner = operation::RunSourceOperation::new(&build_state)?;
+            let timeout = build_state.runtime_budgets.git_command_timeout();
+            let bytes = super::request_refs::with_request_revision_store_repo(
+                &build_state,
+                &build_incarnation,
+                &request,
+                &revision,
+                move |repo, revision| {
+                    run_git(
+                        Some(repo),
+                        &["update-ref", "refs/heads/main", &revision.new_head_oid],
+                        "setting request run source head",
+                    )?;
+                    let output = git_process_output(
+                        Command::new("git").arg("--git-dir").arg(repo).args([
+                            "bundle",
+                            "create",
+                            "-",
+                            "refs/heads/main",
+                        ]),
+                        None,
+                        ProcessLimits::new(timeout).with_max_stdout_bytes(max_bytes),
+                    )?;
+                    if !output.status.success() {
+                        return Err(ApiError::infrastructure_unavailable(
+                            "creating request run source bundle failed",
+                        ));
+                    }
+                    Ok(output.stdout)
+                },
+            )
+            .await?;
+            publish_source_bundle(&build_state, &owner, bytes, path).await
+        })
+        .await
+    })
+    .await
+}
+
 fn run_source_cache_key(
     incarnation: &RepositoryIncarnation,
     source: &RunSource,

@@ -6,7 +6,7 @@ use crate::{
     repository::access::{RepositoryActor, repository_access_for_user_id},
     requests::{
         RequestEventKind, RequestState, RequestViewer,
-        fixtures::{access, agent, source_blob, views_with_agent},
+        fixtures::{access, agent, views_with_agent},
         request_policy,
     },
     views::ViewId,
@@ -26,7 +26,6 @@ fn input() -> StartMainPushRequestInput {
         name: "main-push-222222222222".into(),
         main_ancestor_oid: BASE.into(),
         head_oid: HEAD.into(),
-        git_snapshot: source_blob(HEAD),
         git_facts: RequestRevisionGitFacts {
             contains_old_head: true,
             contained_main_oid: Some(BASE.into()),

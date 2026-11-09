@@ -1,0 +1,31 @@
+.request-status-glyph {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--foreground);
+  fill: var(--row-surface, none);
+  stroke-width: 1.75;
+}
+
+.request-status-glyph:not([data-round]) {
+  scale: 0.875;
+  stroke-width: 2;
+}
+
+.request-status-glyph:is([data-step="wait"], [data-step="done"]) {
+  color: var(--muted-foreground);
+}
+
+.request-status-glyph[data-step="approve_checks"] {
+  color: var(--warning);
+}
+
+.request-status-glyph[data-step="fix_checks"] {
+  color: var(--danger);
+}
+
+.request-status-glyph[data-step="merge"] {
+  color: var(--row-surface, var(--background));
+  fill: var(--success);
+}

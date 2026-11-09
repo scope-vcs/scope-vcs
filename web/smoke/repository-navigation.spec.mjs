@@ -14,6 +14,7 @@ import {
   within,
   withPage,
 } from './browser-smoke.mjs'
+import { serverFunctionName } from './server-functions-smoke.mjs'
 import { assertUpdateFileSelectionKeepsDocument } from './update-navigation-smoke.mjs'
 import { assertRepositoryMarkdownUsesClientNavigation } from './repository-markdown-navigation-smoke.mjs'
 
@@ -21,23 +22,49 @@ const primaryLink = (page, name) => page
   .getByRole('navigation', { name: 'Primary' })
   .getByRole('link', { name, exact: true })
 
-test('public repository history opens from the latest change and lists its seeded push', async () => {
+test('central search finds repository history and opens its update page', async () => {
   await withPage(repoPath, async (page) => {
-    await assertCurrentRepoSection(page, 'Code')
-    const trigger = page
-      .getByLabel('Latest repository change')
-      .getByRole('button', { name: 'History', exact: true })
+    await assertCurrentRepoSection(page, 'Home')
+    const trigger = page.getByRole('combobox', { name: 'Search requests, history and files' })
     await waitForClientHydration(trigger)
     const documentSentinel = 'scope-history-menu-navigation'
     await markDocument(page, documentSentinel)
-    await trigger.click()
-    const menu = page.getByRole('dialog', { name: 'Repository history' })
-    const update = menu.getByRole('link', { name: /Projected public update/ })
+    const initialHistory = page.waitForResponse((response) =>
+      serverFunctionName(response.request()) === 'loadHistoryPage_createServerFn_handler'
+      && decodeURIComponent(response.url()).includes('Projected'))
+    await trigger.fill('Projected')
+    await initialHistory
+    const update = page.getByRole('option', { name: /Projected public update/ })
     await update.waitFor()
-    await update.getByText('2 files', { exact: true }).waitFor()
+    let releaseHistory
+    let historyStarted
+    const heldHistory = new Promise((resolve) => { releaseHistory = resolve })
+    const filteredHistory = new Promise((resolve) => { historyStarted = resolve })
+    await page.route('**/_serverFn/**', async (route) => {
+      if (serverFunctionName(route.request()) === 'loadHistoryPage_createServerFn_handler') {
+        historyStarted()
+        await heldHistory
+      }
+      await route.continue()
+    })
+    await page.clock.install()
+    await page.clock.pauseAt(new Date())
+    try {
+      await trigger.fill('Projected public')
+      assert.equal(await update.count(), 0, 'Previous-query options must not be offered during debounce')
+      await page.clock.runFor(200)
+      await within(filteredHistory, 10_000, 'filtered history search did not start')
+      assert.equal(await update.count(), 0, 'Previous-query options must not be offered while search is pending')
+    } finally {
+      releaseHistory()
+      await page.clock.resume()
+    }
+    await update.waitFor()
     await update.click()
+    await page.waitForURL((url) => url.pathname === `${repoPath}/code` && url.searchParams.get('update') === 'dev-public-1')
+    await page.getByRole('link', { name: 'View changes', exact: true }).click()
     await page.waitForURL((url) => url.pathname === `${repoPath}/updates/dev-public-1`)
-    await assertCurrentRepoSection(page, 'Code')
+    await assertCurrentRepoSection(page, 'Home')
     await page.getByRole('heading', { name: 'Projected public update', exact: true }).waitFor()
     await assertDocumentPreserved(page, documentSentinel)
     await assertUpdateFileSelectionKeepsDocument(page)
@@ -49,12 +76,12 @@ test('public repository history opens from the latest change and lists its seede
 })
 
 test('repository Markdown routes relative file links without replacing the document', async () => {
-  await withPage(requestRepoPath, assertRepositoryMarkdownUsesClientNavigation)
+  await withPage(`${requestRepoPath}/code`, assertRepositoryMarkdownUsesClientNavigation)
 })
 
 test('repository chrome persists across navigation and request revalidation', async () => {
   await withPage(requestRepoPath, async (page) => {
-    await assertCurrentRepoSection(page, 'Code')
+    await assertCurrentRepoSection(page, 'Home')
     await waitForClientHydration(primaryLink(page, 'Requests'))
     const chrome = await captureRepositoryChrome(page)
 
@@ -115,18 +142,18 @@ test('repository chrome persists across navigation and request revalidation', as
     await assertCurrentRepoSection(page, 'Requests')
 
     await primaryNavigation
-      .getByRole('link', { name: 'Code', exact: true })
+      .getByRole('link', { name: 'Home', exact: true })
       .click()
-    await assertCurrentRepoSection(page, 'Code')
+    await assertCurrentRepoSection(page, 'Home')
     await assertNodesPreserved(page, chrome)
-    await assertCurrentRepoSection(page, 'Code')
+    await assertCurrentRepoSection(page, 'Home')
   })
 })
 
 test('requests navigation shows a destination skeleton inside the repository shell', async () => {
-  await withPage(repoPath, async (page) => {
+  await withPage(`${repoPath}/code`, async (page) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await assertCurrentRepoSection(page, 'Code')
+    await assertCurrentRepoSection(page, 'Home')
     await assertPageHeading(page, 'Code')
     await page.getByLabel('Repository file navigator').waitFor()
     await waitForClientHydration(primaryLink(page, 'Requests'))

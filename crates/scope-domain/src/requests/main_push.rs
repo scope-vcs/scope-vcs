@@ -6,7 +6,6 @@ use super::{
     submit_request,
 };
 use crate::{
-    content::SourceBlob,
     error::DomainError,
     repository::{
         RepoLifecycleState,
@@ -26,7 +25,6 @@ pub struct StartMainPushRequestInput {
     pub name: String,
     pub main_ancestor_oid: String,
     pub head_oid: String,
-    pub git_snapshot: SourceBlob,
     pub git_facts: RequestRevisionGitFacts,
     pub started_event_id: String,
     pub revision_event_id: String,
@@ -232,7 +230,6 @@ pub fn start_main_push_request(
             actor_can_edit: true,
             expected_old_head_oid: None,
             new_head_oid: input.head_oid.clone(),
-            git_snapshot: input.git_snapshot,
             git_facts: input.git_facts,
             event_id: input.revision_event_id,
             body: None,

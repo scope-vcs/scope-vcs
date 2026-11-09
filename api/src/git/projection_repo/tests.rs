@@ -328,6 +328,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
         let error = crate::git::upload::git_upload_pack_response(
             engine.lease_derived(repo.clone()).unwrap(),
             &request(hidden_oid),
+            crate::git::upload::GitProtocol::V0,
             RuntimeBudgets::default_git_command_timeout(),
             budgets.admit_upload_pack().await.unwrap(),
         )
@@ -347,6 +348,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let error = crate::git::upload::git_upload_pack_response(
         engine.lease_derived(repo.clone()).unwrap(),
         shallow_request.as_bytes(),
+        crate::git::upload::GitProtocol::V0,
         RuntimeBudgets::default_git_command_timeout(),
         budgets.admit_upload_pack().await.unwrap(),
     )
@@ -368,6 +370,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let hidden_have_response = crate::git::upload::git_upload_pack_response(
         engine.lease_derived(repo.clone()).unwrap(),
         &have_request(&private_oid),
+        crate::git::upload::GitProtocol::V0,
         RuntimeBudgets::default_git_command_timeout(),
         budgets.admit_upload_pack().await.unwrap(),
     )
@@ -381,6 +384,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let response = crate::git::upload::git_upload_pack_response(
         engine.lease_derived(repo.clone()).unwrap(),
         &unknown_have,
+        crate::git::upload::GitProtocol::V0,
         RuntimeBudgets::default_git_command_timeout(),
         budgets.admit_upload_pack().await.unwrap(),
     )
@@ -395,6 +399,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     let response = crate::git::upload::git_upload_pack_response(
         engine.lease_derived(repo.clone()).unwrap(),
         &request(&native_oid),
+        crate::git::upload::GitProtocol::V0,
         RuntimeBudgets::default_git_command_timeout(),
         budgets.admit_upload_pack().await.unwrap(),
     )

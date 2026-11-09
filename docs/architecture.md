@@ -79,7 +79,7 @@ revision's comparison. Push inspection retains its existing old-head boundary
 for extensions and saved review-base boundary for rewrites. Commit patches
 retain their first-parent meaning.
 
-`requests/merge_gate.rs` composes lifecycle, access, snapshot, and checks for
+`requests/merge_gate.rs` composes lifecycle, access, pushed-head state, and checks for
 list, detail, manual merge, and auto-merge. Authorized full-view main publication
 uses a separate authority outcome in that evaluator; it does not report request
 checks as passed. Narrow-view main pushes still become ordinary requests.
@@ -293,6 +293,28 @@ explicitly enqueue or perform compensating cleanup when persistence fails.
 A successful Postgres transaction remains the authority for metadata state;
 filesystem and object operations do not invent domain transitions.
 
+Request pushes register pool packs in the revision transaction. Packs follow the
+request's view even when pushed through the full-view address. Restricted packs
+stay on isolated view shelves under the repository's object generation.
+Restricted staging repositories copy only authorized request heads from those
+shelves. Each shelf borrows a self-contained projection owner that fetches new
+view heads incrementally. Changing view configuration abandons the old shelf.
+
+Full-view push shelves retain their shared and per-author ownership. Revision
+reads borrow the shared shelf and install authored packs into a request-specific
+shelf. Restricted revision reads borrow a request-specific shelf backed only by
+the isolated view projection. Other authors' drafts remain unreachable by ID.
+Concurrent reads share missing-object installation. Pool chains provide both
+comparison heads, including rewritten old heads. Temporary inspection jobs are
+removed on success and failure. Cache pruning removes obsolete revision repos.
+
+Request checks build a standalone run-owned bundle from the pool when starting
+runs, so pending and retried runs survive draft deletion. Historical run-owned
+snapshot and ephemeral bundle references remain intact. The request-bundle
+deletion migration excludes every `run_source` reference from its cleanup queue.
+Fetch advertisements retain only request IDs and views; current authorization
+and pool lineage supply historical heads without retaining private draft text.
+
 `scope-domain::repository::git::GitHead` owns the current Git coordinates and
 its opaque `GitFrontier` digest. Push and merge transactions compare that typed
 frontier to reject stale preparation. A frontier is metadata, not a separate
@@ -378,3 +400,28 @@ their own timeouts. The policy gate runs the check.
 
 Executable help is authoritative for command surfaces: `./dev/scope-dev --help`,
 `./dev/check --help`, and `scope-maintenance --help`.
+
+Git reads create a temporary bare fetch folder with main and the visible active
+requests `GitFetchAsk` in `scope-domain/src/requests/git_fetch.rs` selects. A
+listing shows the reader's own requests and those they are invited to, plus any
+other visible request whose exact ref the client names in a protocol v2
+`ls-refs` prefix. A transfer attaches the same default set plus visible requests
+whose heads it wants. A transfer that reports shallow boundaries attaches every
+visible request, because a boundary may sit anywhere in another request's
+history. Protocol v2 discovery returns capabilities from an empty folder, so a
+plain `git fetch` no longer grows with other authors' requests. Protocol v0
+clients see only the default set. Full-view readers borrow canonical, shared and
+authored shelves; restricted readers borrow only isolated projections and reader
+shelves. Pool installation retains full-view request objects on shelves.
+Restricted-view request packs and their prerequisites install together in
+authorized full-view staging, including packs written through a full-view push.
+They never enter shared or authored shelves. Unreadable requests are omitted
+with their request identity in the server log. Dropping the last folder handle
+removes the folder, including on streaming errors and disconnects. Pruning also
+removes retired read-view caches.
+
+Postgres retains the heads offered to each reader and view for five minutes, scoped
+to the current object generation. Upload-pack can restore an advertised revision
+when a push replaced its head between the two HTTP legs, including on a different
+replica. Saved request heads still require current request visibility. These heads
+become temporary refs for that RPC; arbitrary SHA wants remain disabled.

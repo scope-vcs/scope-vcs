@@ -1,13 +1,10 @@
 use super::{
-    MAX_IMPORTED_REQUEST_REVISIONS, MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES,
-    RequestRevisionListWorkBudget, request_revision_commits,
+    MAX_IMPORTED_REQUEST_REVISIONS, RequestRevisionListWorkBudget, request_revision_commits,
 };
 use crate::git::test_repo::pinned_identity_git as git;
 use scope_domain::views::ViewId;
 use scope_domain::{
     account::UserAccount,
-    content::{DEFAULT_GIT_FILE_MODE, SourceBlob},
-    content_ref::ContentRef,
     history::FileChangeKind,
     policy::{LabelRule, Policy, ScopePath},
     repository::{
@@ -31,29 +28,21 @@ pub(super) fn read_policy(repo: &Repository) -> RepositoryReadPolicy {
 }
 
 #[test]
-fn revision_listing_budget_caps_snapshot_count_bytes_and_commit_work() {
+fn revision_listing_budget_caps_revision_count_and_commit_work() {
     let mut count_budget = RequestRevisionListWorkBudget::new();
     for _ in 0..MAX_IMPORTED_REQUEST_REVISIONS {
-        assert!(count_budget.claim_revision(1).is_some());
+        assert!(count_budget.claim_revision().is_some());
         count_budget.record_inspected(1, 0);
     }
-    assert_eq!(count_budget.claim_revision(1), None);
-
-    let mut byte_budget = RequestRevisionListWorkBudget::new();
-    assert!(
-        byte_budget
-            .claim_revision(MAX_IMPORTED_REQUEST_SNAPSHOT_BYTES)
-            .is_some()
-    );
-    assert_eq!(byte_budget.claim_revision(1), None);
+    assert_eq!(count_budget.claim_revision(), None);
 
     let mut commit_budget = RequestRevisionListWorkBudget::new();
     commit_budget.record_inspected(usize::MAX, 0);
-    assert_eq!(commit_budget.claim_revision(1), None);
+    assert_eq!(commit_budget.claim_revision(), None);
 
     let mut file_budget = RequestRevisionListWorkBudget::new();
     file_budget.record_inspected(0, usize::MAX);
-    assert!(file_budget.claim_revision(1).is_some());
+    assert!(file_budget.claim_revision().is_some());
 }
 
 #[test]
@@ -108,13 +97,6 @@ fn revision_response_keeps_oversized_commit_identity_and_prioritizes_selection()
         },
         main_ancestor_oid: base,
         rewrote_history: false,
-        git_snapshot: SourceBlob {
-            content_ref: ContentRef::blob_sha256("snapshot"),
-            sha256: "snapshot".to_string(),
-            git_oid: "snapshot".to_string(),
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            size_bytes: 1,
-        },
         created_at_unix: 1,
     };
     let owner = UserAccount {
@@ -209,13 +191,6 @@ fn revision_response_keeps_changed_and_empty_identities_without_a_file_budget() 
         },
         main_ancestor_oid: base,
         rewrote_history: false,
-        git_snapshot: SourceBlob {
-            content_ref: ContentRef::blob_sha256("snapshot"),
-            sha256: "snapshot".to_string(),
-            git_oid: "snapshot".to_string(),
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            size_bytes: 1,
-        },
         created_at_unix: 1,
     };
     let owner = UserAccount {
@@ -317,13 +292,6 @@ fn unrelated_root_revision_is_reviewable_and_anchor_visibility_agrees() {
         },
         main_ancestor_oid: base,
         rewrote_history: false,
-        git_snapshot: SourceBlob {
-            content_ref: ContentRef::blob_sha256("snapshot"),
-            sha256: "snapshot".to_string(),
-            git_oid: "snapshot".to_string(),
-            git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-            size_bytes: 1,
-        },
         created_at_unix: 1,
     };
     let owner = UserAccount {

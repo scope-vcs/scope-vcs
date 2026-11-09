@@ -1,27 +1,21 @@
-use super::{download_snapshot, fetch_bundle_into, request_ref_head, request_ref_oid_is_commit};
+use super::pool::{
+    PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs, request_object_repos,
+};
 use crate::{
+    config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
-        cache::{GitDerivedCacheNamespace, GitRepoHandle},
-        command::run_git,
+        cache::GitRepoHandle, command::run_git, pool_install::present_commits,
+        staging::add_receive_pack_alternate,
     },
     state::AppState,
 };
-use scope_domain::views::ViewId;
 use scope_domain::{
     repository::RepositoryIncarnation,
     requests::{Request, RequestRevision, canonical_request_ref},
 };
-use sha2::{Digest, Sha256};
-use std::future::Future;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
-
-static REVISION_BUILD_ATTEMPT: AtomicU64 = AtomicU64::new(1);
-const READY_FILE: &str = "scope-request-revision-ready";
+use sha2::Digest as _;
+use std::{fs, path::Path};
 
 pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     state: &AppState,
@@ -30,440 +24,244 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     revision: &RequestRevision,
     action: impl FnOnce(&Path, &RequestRevision) -> Result<T, ApiError> + Send + 'static,
 ) -> Result<T, ApiError> {
-    let base_repo = request_base_repo(state.clone(), incarnation.clone(), request.view.clone());
-    with_revision_repo(state, incarnation, request, revision, base_repo, action).await
-}
-
-async fn request_base_repo(
-    state: AppState,
-    incarnation: RepositoryIncarnation,
-    view: ViewId,
-) -> Result<Option<GitRepoHandle>, ApiError> {
-    if !view.is_private() {
-        return Ok(None);
-    }
-    let Some(head) = state
-        .metadata
-        .repositories()
-        .repository_content_source(&incarnation)
-        .await?
-    else {
-        return Ok(None);
-    };
-    state
-        .repository_engine
-        .materialize_repository(&state, &incarnation, &head)
-        .await
-        .map(Some)
-}
-
-async fn with_revision_repo<T, Base>(
-    state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    request: &Request,
-    revision: &RequestRevision,
-    base_repo: impl Future<Output = Result<Option<Base>, ApiError>> + Send + 'static,
-    action: impl FnOnce(&Path, &RequestRevision) -> Result<T, ApiError> + Send + 'static,
-) -> Result<T, ApiError>
-where
-    T: Send + 'static,
-    Base: AsRef<Path> + Send + 'static,
-{
     if revision.request_id != request.id || request.repo_id != incarnation.repository_id() {
         return Err(ApiError::not_found("request revision not found"));
     }
-    let key = revision_cache_key(incarnation, request, revision)?;
-    let path = state
-        .repository_engine
-        .cache_root()
-        .join(format!("revision-{key}.git"));
-    let ready_path = path.join(READY_FILE);
-    let state_for_build = state.clone();
-    let revision_for_build = revision.clone();
-    let request_ref = canonical_request_ref(&request.name);
-    let build_path = path.clone();
-    let repo = state
-        .repository_engine
-        .materialize_derived(
-            incarnation,
-            GitDerivedCacheNamespace::RequestRevision,
-            key,
-            &path,
-            move || ready_path.is_file(),
-            move || async move {
-                let base_repo = base_repo.await?;
-                let permit = state_for_build.runtime_budgets.try_git_materialization()?;
-                let parent_span = tracing::Span::current();
-                tokio::task::spawn_blocking(move || {
-                    let _entered = parent_span.enter();
-                    let _permit = permit;
-                    build_revision(
-                        &build_path,
-                        &request_ref,
-                        &revision_for_build,
-                        base_repo.as_ref().map(AsRef::as_ref),
-                        |bundle| {
-                            download_snapshot(
-                                state_for_build.object_store.as_ref(),
-                                &revision_for_build.git_snapshot,
-                                bundle,
-                            )?
-                            .map_err(ApiError::from)
-                        },
-                    )
-                })
-                .await
-                .map_err(|error| {
-                    ApiError::internal_message(format!(
-                        "request revision materialization task failed: {error}"
-                    ))
-                })?
-            },
-        )
+    let config = state
+        .metadata
+        .repositories()
+        .repository_object_config(incarnation)
         .await?;
-    let permit = state.runtime_budgets.wait_git_materialization().await?;
-    let revision = revision.clone();
-    let parent_span = tracing::Span::current();
-    tokio::task::spawn_blocking(move || {
-        let _entered = parent_span.enter();
-        let _permit = permit;
-        action(&repo, &revision)
-    })
-    .await
-    .map_err(|error| {
-        ApiError::internal_message(format!("request revision inspection task failed: {error}"))
-    })?
+    let full = &request.view == config.views.full();
+    let main = full
+        .then(|| state.repository_engine.lease_repository(incarnation))
+        .transpose()?;
+    let shelf = if full {
+        let repos = ensure_full_object_repos(state, incarnation, &config, request).await?;
+        let key = hex::encode(sha2::Sha256::digest(request.id.as_bytes()));
+        let target = state.repository_engine.cache_root().join(format!(
+            "request-{}-{}-{key}.git",
+            crate::git::storage::repository_storage_key(incarnation),
+            config.object_generation()
+        ));
+        let handle = state.repository_engine.lease_derived(target.clone())?;
+        crate::git::blocking::run(move || {
+            super::ensure_local_bare_repo(target.clone())?;
+            add_receive_pack_alternate(&target, &repos.shared.join("objects"))
+        })
+        .await?;
+        handle
+    } else {
+        super::view_pool::view_object_repo(
+            state,
+            incarnation,
+            &config,
+            &request.view,
+            Some(&request.id),
+        )
+        .await?
+    };
+    let main_for_install = main.as_ref().map(GitRepoHandle::share).transpose()?;
+    let shelf_for_install = shelf.share()?;
+    let state_for_install = state.clone();
+    let incarnation = incarnation.clone();
+    let request_for_install = request.clone();
+    let revision_for_install = revision.clone();
+    let target = shelf.as_ref().to_path_buf();
+    let heads = revision_heads(revision);
+    let (leases_sender, mut leases_receiver) = tokio::sync::oneshot::channel();
+    state
+        .repository_engine
+        .install_request_objects(&shelf, heads, move || async move {
+            let _main_lease = main_for_install;
+            let _shelf_lease = shelf_for_install;
+            let (_canonical, full) = if full {
+                let canonical = lease_canonical(&state_for_install, &incarnation).await?;
+                let mut repos = ensure_full_object_repos(
+                    &state_for_install,
+                    &incarnation,
+                    &config,
+                    &request_for_install,
+                )
+                .await?;
+                repos.authored = target.clone();
+                (canonical, Some(repos))
+            } else {
+                (None, None)
+            };
+            let install = PoolInstall {
+                incarnation: &incarnation,
+                config: &config,
+                repos: match &full {
+                    Some(repos) => {
+                        PoolRepos::Full(repos, request_for_install.object_author_id(), &target)
+                    }
+                    None => PoolRepos::View(&request_for_install.view, &target),
+                },
+            };
+            let leases = install_revision_objects(
+                &state_for_install,
+                &target,
+                &request_for_install,
+                &revision_for_install,
+                &install,
+            )
+            .await?;
+            let _ = leases_sender.send(leases);
+            Ok(())
+        })
+        .await?;
+    let mut leases = leases_receiver.try_recv().unwrap_or_default();
+    leases.extend(main);
+    let path = shelf.as_ref().to_path_buf();
+    leases.push(shelf);
+    inspect_revision(state, &path, request, revision, leases, action).await
 }
 
-fn revision_cache_key(
-    incarnation: &RepositoryIncarnation,
+fn revision_heads(revision: &RequestRevision) -> Vec<String> {
+    [
+        &revision.new_head_oid,
+        &revision.old_head_oid,
+        revision.base.review_base_oid(),
+        &revision.main_ancestor_oid,
+    ]
+    .into_iter()
+    .filter(|oid| *oid != EMPTY_GIT_OID)
+    .map(|oid| oid.to_string())
+    .collect()
+}
+
+async fn install_revision_objects(
+    state: &AppState,
+    shelf: &Path,
     request: &Request,
     revision: &RequestRevision,
-) -> Result<String, ApiError> {
-    let identity = serde_json::to_vec(&(
-        incarnation,
-        &request.id,
-        &request.name,
-        &revision.id,
-        &revision.old_head_oid,
-        &revision.new_head_oid,
-        &revision.git_snapshot,
-    ))
-    .map_err(ApiError::internal)?;
-    Ok(hex::encode(Sha256::digest(identity)))
+    install: &PoolInstall<'_>,
+) -> Result<Vec<GitRepoHandle>, ApiError> {
+    let leases = install_revision_packs(state, install, request, revision).await?;
+    install
+        .copy_full_scope_packs(
+            state,
+            std::slice::from_ref(request),
+            &revision_heads(revision),
+        )
+        .await?;
+    let target = shelf.to_path_buf();
+    let heads = revision_heads(revision);
+    crate::git::blocking::run(move || {
+        let present = present_commits(&target, heads.iter().map(String::as_str))?;
+        if heads.iter().all(|head| present.contains(head)) {
+            Ok(())
+        } else {
+            Err(ApiError::infrastructure_unavailable(
+                "request revision shelf is missing comparison commits",
+            ))
+        }
+    })
+    .await?;
+    Ok(leases)
 }
 
-struct RevisionBuildDirectory(PathBuf);
-
-impl Drop for RevisionBuildDirectory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
-
-fn build_revision(
-    path: &Path,
-    request_ref: &str,
+async fn install_revision_packs(
+    state: &AppState,
+    install: &PoolInstall<'_>,
+    request: &Request,
     revision: &RequestRevision,
-    base_repo: Option<&Path>,
-    download: impl FnOnce(&Path) -> Result<(), ApiError>,
-) -> Result<(), ApiError> {
-    let attempt = REVISION_BUILD_ATTEMPT.fetch_add(1, Ordering::Relaxed);
-    let temporary = path.with_extension(format!("{}.{}.tmp", std::process::id(), attempt));
-    let _cleanup = RevisionBuildDirectory(temporary.clone());
-    fs::create_dir(&temporary).map_err(ApiError::internal)?;
-    run_git(
-        None,
-        &["init", "--bare", temporary.to_string_lossy().as_ref()],
-        "initializing request revision",
-    )?;
-    let bundle = temporary.join("revision.bundle");
-    download(&bundle)?;
-    fetch_bundle_into(
-        &temporary,
-        request_ref,
-        &bundle,
-        base_repo,
-        "importing request revision",
-    )?;
-    fs::remove_file(bundle).map_err(ApiError::internal)?;
-    if request_ref_head(&temporary, request_ref)?.as_deref() != Some(&revision.new_head_oid)
-        || !request_ref_oid_is_commit(&temporary, &revision.new_head_oid)?
+) -> Result<Vec<GitRepoHandle>, ApiError> {
+    let _permit = state.runtime_budgets.try_git_materialization()?;
+    let (_, leases) = install_missing_request_packs(
+        state,
+        install,
+        std::slice::from_ref(request),
+        &revision_heads(revision),
+    )
+    .await?;
+    Ok(leases)
+}
+
+async fn ensure_full_object_repos(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    config: &scope_domain::repo_config::RepoConfig,
+    request: &Request,
+) -> Result<RequestObjectRepos, ApiError> {
+    let state = state.clone();
+    let incarnation = incarnation.clone();
+    let generation = config.object_generation();
+    let author = request.object_author_id().to_string();
+    crate::git::blocking::run(move || {
+        request_object_repos(&state, &incarnation, &generation, &author)
+    })
+    .await
+}
+
+async fn lease_canonical(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+) -> Result<Option<GitRepoHandle>, ApiError> {
+    match state
+        .metadata
+        .repositories()
+        .repository_content_source(incarnation)
+        .await?
     {
-        return Err(ApiError::infrastructure_unavailable(
-            "request revision snapshot does not contain its expected head",
-        ));
+        Some(head) => state
+            .repository_engine
+            .materialize_repository(state, incarnation, &head)
+            .await
+            .map(Some),
+        None => Ok(None),
     }
-    fs::write(temporary.join(READY_FILE), []).map_err(ApiError::internal)?;
-    fs::rename(&temporary, path).map_err(ApiError::internal)
+}
+
+pub(crate) fn sweep_revision_jobs(data_dir: &Path) -> std::io::Result<()> {
+    match fs::remove_dir_all(data_dir.join("git-jobs")) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+async fn inspect_revision<T: Send + 'static>(
+    state: &AppState,
+    shelf: &Path,
+    request: &Request,
+    revision: &RequestRevision,
+    leases: Vec<GitRepoHandle>,
+    action: impl FnOnce(&Path, &RequestRevision) -> Result<T, ApiError> + Send + 'static,
+) -> Result<T, ApiError> {
+    let permit = state.runtime_budgets.wait_git_materialization().await?;
+    let root = state.data_dir.join("git-jobs");
+    let shelf = shelf.to_path_buf();
+    let request_ref = canonical_request_ref(&request.name);
+    let revision = revision.clone();
+    crate::git::blocking::run(move || {
+        let _permit = permit;
+        let _leases = leases;
+        crate::persistence::ensure_private_dir(&root)?;
+        let job = tempfile::Builder::new()
+            .prefix("revision-")
+            .tempdir_in(root)
+            .map_err(ApiError::internal)?;
+        fs::create_dir_all(job.path().join("objects/info")).map_err(ApiError::internal)?;
+        fs::create_dir_all(job.path().join("refs/heads")).map_err(ApiError::internal)?;
+        fs::write(job.path().join("HEAD"), format!("ref: {request_ref}\n"))
+            .map_err(ApiError::internal)?;
+        fs::write(
+            job.path().join("config"),
+            "[core]\nrepositoryformatversion = 0\nbare = true\n",
+        )
+        .map_err(ApiError::internal)?;
+        add_receive_pack_alternate(job.path(), &shelf.join("objects"))?;
+        run_git(
+            Some(job.path()),
+            &["update-ref", &request_ref, &revision.new_head_oid],
+            "setting revision job head",
+        )?;
+        action(job.path(), &revision)
+    })
+    .await
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::git::{command::run_git_output, import::git_snapshot_from_ref};
-    use scope_domain::requests::RequestActorRole;
-    use std::sync::{Arc, atomic::AtomicUsize};
-
-    fn fixture(root: &Path) -> (RequestRevision, Vec<u8>) {
-        let source = root.join("source");
-        run_git(
-            None,
-            &["init", "-b", "topic", source.to_str().unwrap()],
-            "create revision fixture",
-        )
-        .unwrap();
-        fs::write(source.join("file.txt"), "base\n").unwrap();
-        run_git(Some(&source), &["add", "."], "add fixture").unwrap();
-        let commit = || {
-            run_git(
-                Some(&source),
-                &[
-                    "-c",
-                    "user.name=Scope",
-                    "-c",
-                    "user.email=scope@example.invalid",
-                    "commit",
-                    "-am",
-                    "fixture",
-                ],
-                "commit fixture",
-            )
-            .unwrap()
-        };
-        commit();
-        let old_head_oid = request_ref_head(&source, "refs/heads/topic")
-            .unwrap()
-            .unwrap();
-        fs::write(source.join("file.txt"), "changed\n").unwrap();
-        commit();
-        let new_head_oid = request_ref_head(&source, "refs/heads/topic")
-            .unwrap()
-            .unwrap();
-        let (git_snapshot, bytes) =
-            git_snapshot_from_ref(&source, "refs/heads/topic", Some(&old_head_oid)).unwrap();
-        (
-            RequestRevision {
-                base_version: 1,
-                id: "revision".into(),
-                request_id: "request".into(),
-                position: 1,
-                actor_user_id: Some("owner".into()),
-                base: scope_domain::requests::RequestBase::Main {
-                    review_base_oid: old_head_oid.clone(),
-                },
-                main_ancestor_oid: old_head_oid.clone(),
-                rewrote_history: false,
-                old_head_oid,
-                new_head_oid,
-                git_snapshot,
-                created_at_unix: 1,
-            },
-            bytes,
-        )
-    }
-
-    fn request_fixture() -> Request {
-        Request {
-            stack_status: scope_domain::requests::RequestStackStatus::Main,
-            stack_depth: 1,
-            id: "request".into(),
-            repo_id: "owner/repo".into(),
-            name: "topic".into(),
-            author_user_id: Some("owner".into()),
-            author_role: RequestActorRole::Owner,
-            view: ViewId::private(),
-            base: scope_domain::requests::RequestBase::Main {
-                review_base_oid: "a".repeat(40),
-            },
-            base_version: 1,
-            main_ancestor_oid: "a".repeat(40),
-            head_oid: "b".repeat(40),
-            git_snapshot: None,
-            title: "request".into(),
-            description_markdown: String::new(),
-            activity_version: 1,
-            submitted_at_unix: None,
-            closed_at_unix: None,
-            closed_by_user_id: None,
-            merged_at_unix: None,
-            merged_by_user_id: None,
-            merged_head_oid: None,
-            merged_main_oid: None,
-            created_at_unix: 1,
-            updated_at_unix: 1,
-        }
-    }
-
-    struct CountingStore {
-        inner: Arc<dyn scope_storage::ObjectStore>,
-        loads: Arc<AtomicUsize>,
-    }
-    #[async_trait::async_trait]
-    impl scope_storage::ObjectStore for CountingStore {
-        async fn put(
-            &self,
-            key: &str,
-            bytes: Vec<u8>,
-        ) -> Result<(), scope_storage::ObjectStoreError> {
-            self.inner.put(key, bytes).await
-        }
-        async fn read_to(
-            &self,
-            key: &str,
-            max_bytes: u64,
-            output: &mut (dyn tokio::io::AsyncWrite + Send + Unpin),
-        ) -> Result<u64, scope_storage::ObjectStoreError> {
-            self.loads.fetch_add(1, Ordering::SeqCst);
-            self.inner.read_to(key, max_bytes, output).await
-        }
-        async fn delete(&self, key: &str) -> Result<(), scope_storage::ObjectStoreError> {
-            self.inner.delete(key).await
-        }
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn concurrent_revision_inspections_share_one_verified_import_and_warm_reads_skip_it() {
-        let root = tempfile::tempdir().unwrap();
-        let (revision, bytes) = fixture(root.path());
-        let mut state = AppState::test_state();
-        state
-            .object_store
-            .put(&scope_storage::object_key(&revision.git_snapshot), bytes)
-            .await
-            .unwrap();
-        let incarnation = RepositoryIncarnation::new("owner/repo", "repoi_first").unwrap();
-        let loads = Arc::new(AtomicUsize::new(0));
-        let active = Arc::new(AtomicUsize::new(0));
-        let peak = Arc::new(AtomicUsize::new(0));
-        state.object_store = Arc::new(CountingStore {
-            inner: state.object_store.clone(),
-            loads: loads.clone(),
-        });
-        for _round in 0..2 {
-            let mut readers = Vec::new();
-            for _ in 0..10 {
-                let state = state.clone();
-                let incarnation = incarnation.clone();
-                let revision = revision.clone();
-                let active = active.clone();
-                let peak = peak.clone();
-                let base_repo = root.path().join("source");
-                readers.push(tokio::spawn(async move {
-                    with_revision_repo(
-                        &state,
-                        &incarnation,
-                        &request_fixture(),
-                        &revision,
-                        async move { Ok(Some(base_repo)) },
-                        move |repo, _| {
-                            let current = active.fetch_add(1, Ordering::SeqCst) + 1;
-                            peak.fetch_max(current, Ordering::SeqCst);
-                            let output = run_git_output(
-                                Some(repo),
-                                &["show", "refs/heads/topic:file.txt"],
-                                "inspect revision",
-                            )?;
-                            assert!(output.status.success());
-                            assert_eq!(output.stdout, b"changed\n");
-                            active.fetch_sub(1, Ordering::SeqCst);
-                            Ok(())
-                        },
-                    )
-                    .await
-                    .unwrap();
-                }));
-            }
-            for reader in readers {
-                reader.await.unwrap();
-            }
-            assert_eq!(loads.load(Ordering::SeqCst), 1);
-        }
-        assert!(peak.load(Ordering::SeqCst) <= 2);
-        eprintln!(
-            "revision proof: 10 concurrent cold + 10 warm inspections, {} bundle loads/imports, peak {} active inspections",
-            loads.load(Ordering::SeqCst),
-            peak.load(Ordering::SeqCst)
-        );
-        fs::remove_dir_all(state.data_dir.as_ref()).unwrap();
-    }
-
-    #[test]
-    fn failed_revision_import_is_not_published_and_retry_succeeds() {
-        let root = tempfile::tempdir().unwrap();
-        let (revision, bytes) = fixture(root.path());
-        let path = root.path().join("revision.git");
-        let source = root.path().join("source");
-        let mut wrong_head = revision.clone();
-        wrong_head.new_head_oid = wrong_head.old_head_oid.clone();
-        assert!(
-            build_revision(
-                &path,
-                "refs/heads/topic",
-                &wrong_head,
-                Some(&source),
-                |bundle| fs::write(bundle, &bytes).map_err(ApiError::internal)
-            )
-            .is_err()
-        );
-        assert!(!path.exists());
-        assert!(
-            !fs::read_dir(root.path()).unwrap().any(|e| e
-                .unwrap()
-                .file_name()
-                .to_string_lossy()
-                .ends_with(".tmp"))
-        );
-        build_revision(
-            &path,
-            "refs/heads/topic",
-            &revision,
-            Some(&source),
-            |bundle| fs::write(bundle, &bytes).map_err(ApiError::internal),
-        )
-        .unwrap();
-        assert!(path.join(READY_FILE).is_file());
-    }
-
-    #[test]
-    fn revision_cache_identity_separates_incarnations_requests_and_snapshot_claims() {
-        let request = request_fixture();
-        let mut revision = RequestRevision {
-            base_version: 1,
-            id: "revision".into(),
-            request_id: request.id.clone(),
-            position: 1,
-            actor_user_id: Some("owner".into()),
-            old_head_oid: request.main_ancestor_oid.clone(),
-            new_head_oid: request.head_oid.clone(),
-            base: scope_domain::requests::RequestBase::Main {
-                review_base_oid: request.main_ancestor_oid.clone(),
-            },
-            main_ancestor_oid: request.main_ancestor_oid.clone(),
-            rewrote_history: false,
-            git_snapshot: scope_storage::content_object_for_bytes(
-                scope_storage::ContentObjectKind::GitBundle,
-                b"bundle",
-            ),
-            created_at_unix: 1,
-        };
-        let first = RepositoryIncarnation::new("owner/repo", "repoi_first").unwrap();
-        let second = RepositoryIncarnation::new("owner/repo", "repoi_second").unwrap();
-        let original = revision_cache_key(&first, &request, &revision).unwrap();
-        assert_ne!(
-            original,
-            revision_cache_key(&second, &request, &revision).unwrap()
-        );
-        let mut other_request = request.clone();
-        other_request.id = "another-request".into();
-        assert_ne!(
-            original,
-            revision_cache_key(&first, &other_request, &revision).unwrap()
-        );
-        revision.git_snapshot.sha256 = "different-content".into();
-        assert_ne!(
-            original,
-            revision_cache_key(&first, &request, &revision).unwrap()
-        );
-    }
-}
+mod tests;

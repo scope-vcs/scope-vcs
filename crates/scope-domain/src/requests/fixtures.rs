@@ -2,19 +2,8 @@ use super::{
     Request, RequestActorRole, StartRequestFacts, StartRequestInput, SubmitRequestInput,
     start_request, submit_request,
 };
-use crate::content::{DEFAULT_GIT_FILE_MODE, SourceBlob};
 use crate::repository::access::{RepositoryAccess, RepositoryActor};
 use crate::views::{ViewDefinition, ViewId, ViewIncludes, ViewReaders, Views};
-
-pub(crate) fn source_blob(git_oid: &str) -> SourceBlob {
-    SourceBlob {
-        content_ref: crate::content_ref::ContentRef::blob_sha256(git_oid),
-        sha256: format!("sha256-{git_oid}"),
-        git_oid: git_oid.to_string(),
-        git_file_mode: DEFAULT_GIT_FILE_MODE.to_string(),
-        size_bytes: 1,
-    }
-}
 
 pub(crate) fn access(actor: RepositoryActor, view: ViewId, can_push: bool) -> RepositoryAccess {
     RepositoryAccess {
@@ -91,7 +80,7 @@ pub(crate) fn pushed_draft(author_role: RequestActorRole) -> Request {
     .unwrap()
     .request;
     request.head_oid = "head".to_string();
-    request.git_snapshot = Some(source_blob("head"));
+    request.pushed_at_unix = Some(1);
     request.updated_at_unix = 11;
     request
 }

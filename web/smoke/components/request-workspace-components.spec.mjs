@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fixtureClerk, openFixture } from '../support/fixture-server.mjs'
+import { fixtureClerk, fixtureRepositorySearch, openFixture } from '../support/fixture-server.mjs'
+
+const mergeability = (status) => ({ status, current_main_oid: null, request_head_oid: 'head', reason: null })
 
 async function workspacePage(t) {
-  const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk], tailwind: true })
-  const railClosed = () => page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
+  const { base, errors, page } = await openFixture(t, 'request-workspace', { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true })
+  const railClosed = async () => {
+    await page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
+    await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar')
+      .getAnimations({ subtree: true }).every((animation) => !(animation instanceof CSSTransition)))
+  }
   return { page, base, errors, railClosed }
 }
 
@@ -43,13 +49,10 @@ test('request rows exchange age and actions and restore the selected view across
   const diffStats = () => page.locator('.request-workspace-row').evaluateAll((rows) => rows.map((node) => {
     const stat = node.querySelector('.request-workspace-row-diff-stat')
     if (!stat || getComputedStyle(stat).display === 'none') return null
-    const statBox = stat.getBoundingClientRect()
-    const label = node.querySelector('.request-workspace-row-meta > span:first-child')
     return {
       text: stat.querySelector('[aria-hidden="true"]').textContent,
       title: stat.title,
-      clear: label.getBoundingClientRect().right <= statBox.left
-        && statBox.right <= node.querySelector('time').getBoundingClientRect().left,
+      clear: stat.getBoundingClientRect().right <= node.getBoundingClientRect().right,
     }
   }))
   assert.deepEqual(await diffStats(), [
@@ -67,13 +70,13 @@ test('request rows exchange age and actions and restore the selected view across
   await page.keyboard.press('End')
   await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 360)
   await page.mouse.move(700, 400)
-  await page.getByRole('searchbox').focus()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).focus()
   await waitOpacity(diffStat, '1')
   const rowBounds = await row.boundingBox()
   await row.hover()
   await waitOpacity(age, '0')
-  await waitOpacity(diffStat, '0')
   await waitOpacity(actions, '1')
+  assert.equal(await diffStat.evaluate((node) => getComputedStyle(node).opacity), '1')
   assert.deepEqual(await row.boundingBox(), rowBounds)
   assert.equal(await age.evaluate((node) => getComputedStyle(node).transitionDuration), '0.15s')
   assert.deepEqual(await actions.locator('button[title]').evaluateAll((buttons) => buttons.map((button) => button.title)), ['Snooze', 'Settle'])
@@ -83,7 +86,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.mouse.move(700, 400)
   await waitOpacity(age, '1')
   await waitOpacity(actions, '0')
-  await page.getByRole('button', { name: 'Viewing as Private' }).focus()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).focus()
   await page.keyboard.press('Tab')
   assert.equal(await row.getByRole('link').evaluate((node) => node === document.activeElement), true)
   await waitOpacity(age, '0')
@@ -93,12 +96,17 @@ test('request rows exchange age and actions and restore the selected view across
   await page.getByRole('menu').waitFor()
   await waitOpacity(age, '0')
   await page.keyboard.press('Escape')
-  await page.getByRole('searchbox').focus()
+  await page.getByRole('button', { name: 'Collapse requests sidebar' }).focus()
   await waitOpacity(age, '1')
   await page.locator('[data-request-id="request-2"]').hover()
   assert.equal(await page.locator('[data-request-id="request-2"] time').evaluate((node) =>
     getComputedStyle(node).opacity), '1')
   await page.mouse.move(700, 400)
+  const collapse = await page.getByRole('button', { name: 'Collapse requests sidebar' }).boundingBox()
+  const needsYouHeading = await page.locator('.request-workspace-needs-you > h2 > span:first-child').boundingBox()
+  const headingCount = await page.locator('.request-workspace-needs-you > h2 > span:last-child').boundingBox()
+  assert(Math.abs(collapse.y + collapse.height / 2 - (needsYouHeading.y + needsYouHeading.height / 2)) <= 1, 'the collapse button shares the first heading line')
+  assert(headingCount.x + headingCount.width < collapse.x, 'the heading count stays clear of the collapse button')
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.idle.png` })
   }
@@ -152,7 +160,7 @@ test('request rows exchange age and actions and restore the selected view across
   const sidebar = page.locator('.request-workspace-sidebar')
   const sidebarWidth = (width) => page.waitForFunction((value) =>
     document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === value, width)
-  const avatars = () => page.locator('.request-workspace-needs-you .request-workspace-row-avatar').evaluateAll((nodes) =>
+  const avatars = () => page.locator('.request-workspace-needs-you .request-workspace-row-mark').evaluateAll((nodes) =>
     nodes.map((node) => node.getBoundingClientRect()).map(({ x, y, width }) => ({ x, y, width })))
   const openRail = async () => {
     const bounds = await sidebar.boundingBox()
@@ -160,6 +168,7 @@ test('request rows exchange age and actions and restore the selected view across
     await sidebarWidth(360)
     assert.equal(await sidebar.getAttribute('data-state'), 'open')
   }
+  const pinnedAvatars = await avatars()
   await page.getByRole('button', { name: 'Collapse requests sidebar' }).click()
   await sidebarWidth(88)
   await railClosed()
@@ -172,10 +181,10 @@ test('request rows exchange age and actions and restore the selected view across
   assert.equal(await page.getByRole('button', { name: 'Viewing as Private' }).isVisible(), false)
   await page.locator('.request-workspace-needs-you > h2').hover()
   assert.equal(await page.locator('.request-workspace-rail-hint').textContent(), 'Needs you · 3')
-  await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
+  await page.locator('[data-request-id="request-2"] .request-workspace-row-mark').hover()
   const hint = page.locator('.request-workspace-rail-hint')
   assert.match(await hint.textContent(), /^Request without available actions/)
-  assert.match(await page.locator('[data-request-id="request-2"]').getByRole('link').textContent(), /Your request, Ready to merge/)
+  assert.match(await page.locator('[data-request-id="request-2"]').getByRole('link').textContent(), /, Ready to merge$/)
   const hintBox = await hint.boundingBox()
   assert(hintBox.x > railX + 88)
   assert(Math.abs(hintBox.y + hintBox.height / 2 - (closedAvatars[2].y + closedAvatars[2].width / 2)) < 1)
@@ -185,12 +194,16 @@ test('request rows exchange age and actions and restore the selected view across
   await page.mouse.move(700, 400)
   await hint.waitFor({ state: 'detached' })
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.request-workspace-resize-handle')).backgroundColor === 'rgba(0, 0, 0, 0)')
-  await page.locator('[data-request-id="request-1"] .request-workspace-row-avatar').click()
+  await page.locator('[data-request-id="request-1"] .request-workspace-row-mark').click()
   await page.waitForURL(/\/request-1$/)
   assert.equal(await sidebar.getAttribute('data-state'), 'closed')
   await openRail()
-  assert.deepEqual(await avatars(), closedAvatars)
-  assert.equal((await page.getByRole('searchbox').boundingBox()).x, logo.x)
+  await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar')
+    .getAnimations({ subtree: true }).every((animation) => !(animation instanceof CSSTransition)))
+  assert.deepEqual(await avatars(), pinnedAvatars, 'the opened rail lays rows out like the pinned sidebar')
+  const openToggle = await page.getByRole('button', { name: 'Collapse requests sidebar' }).boundingBox()
+  const openHeading = await page.locator('.request-workspace-needs-you > h2 > span:first-child').boundingBox()
+  assert(Math.abs(openToggle.y + openToggle.height / 2 - (openHeading.y + openHeading.height / 2)) <= 1, 'the opened rail keeps the collapse button on the first heading line')
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-open.png` })
   }
@@ -200,7 +213,6 @@ test('request rows exchange age and actions and restore the selected view across
   await page.keyboard.press('Escape')
   assert.equal(await sidebar.getAttribute('data-state'), 'open')
   assert.equal(await sidebar.getAttribute('data-closing'), 'true')
-  assert.equal(await page.getByRole('searchbox').isVisible(), true)
   await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 })
   await sidebarWidth(88)
   await railClosed()
@@ -221,12 +233,6 @@ test('request rows exchange age and actions and restore the selected view across
   await page.waitForURL(/\/request-0$/)
   await sidebarWidth(88)
   await railClosed()
-  await page.keyboard.press('/')
-  await sidebarWidth(360)
-  assert.equal(await page.getByRole('searchbox').evaluate((node) => node === document.activeElement), true)
-  await page.keyboard.press('Escape')
-  await sidebarWidth(88)
-  await railClosed()
   await page.getByRole('button', { name: 'Expand requests sidebar' }).click()
   await page.getByRole('button', { name: 'Collapse requests sidebar' }).waitFor()
   assert.equal(await sidebar.getAttribute('data-state'), 'pinned')
@@ -242,15 +248,12 @@ test('request rows exchange age and actions and restore the selected view across
   await page.emulateMedia({ reducedMotion: 'reduce' })
   assert(await age.evaluate((node) => parseFloat(getComputedStyle(node).transitionDuration) <= 0.00001))
   await page.setViewportSize({ width: 390, height: 844 })
-  await waitOpacity(age, '0')
-  await waitOpacity(diffStat, '0')
+  await waitOpacity(age, '1')
   await waitOpacity(actions, '1')
+  assert.equal(await diffStat.evaluate((node) => getComputedStyle(node).display), 'none')
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   assert.equal(await page.locator('[data-request-id="request-2"] time').evaluate((node) =>
     getComputedStyle(node).opacity), '1')
-  const label = await row.locator('.request-workspace-row-meta > span:first-child').boundingBox()
-  const buttons = await actions.boundingBox()
-  assert(label.x + label.width < buttons.x)
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.mobile.png` })
   }
@@ -258,7 +261,7 @@ test('request rows exchange age and actions and restore the selected view across
   await page.keyboard.press('[')
   await railClosed()
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.locator('[data-request-id="request-2"] .request-workspace-row-avatar').hover()
+  await page.locator('[data-request-id="request-2"] .request-workspace-row-mark').hover()
   await hint.waitFor({ state: 'attached' })
   assert.equal(await hint.isVisible(), false, 'phone layouts have no rail, so rail hints stay hidden')
   assert.deepEqual(errors, [])
@@ -311,7 +314,12 @@ test('pressing a woke row acknowledges it once and custom snooze confirms a chos
     const woke = { ...second, attention: { ...second.attention, reason: 'snooze_expired' } }
     window.setQueue({ pages: { active: { ...empty, requests: [first, woke, third] }, unclaimed: empty, set_aside: empty, done: empty }, maintainer: true, loading: false })
   })
-  await row.getByText('Woke').waitFor()
+  await row.getByRole('link', { name: /, Woke, Checks need attention$/ }).waitFor()
+  assert.equal(await row.locator('.request-workspace-row-meta').getByText('Woke').count(), 0, 'the status is not written on the row')
+  await row.locator('.request-workspace-row-mark').hover()
+  assert.equal(await page.getByRole('tooltip').textContent(), 'Woke · Checks need attention')
+  await page.mouse.move(700, 400)
+  await page.getByRole('tooltip').waitFor({ state: 'detached' })
   await page.locator('[data-request-id="request-0"]').getByRole('link').click()
   assert.deepEqual(await page.evaluate(() => window.attentionCommands), [])
   await row.getByRole('link').click()
@@ -409,7 +417,7 @@ test('collapsed request loading keeps its header stable without guessing avatar 
   const done = [0, 1, 2].map((index) => ({
     request: { id: `request-${index}`, title: `Closed request ${index}` },
     author: { handle: 'adam' },
-    attention: { group: 'done', reason: 'closed' },
+    attention: { group: 'done', stack_group: 'done', reason: 'closed' },
     attention_at_unix: 1_790_000_000,
     next_step: 'done',
   }))
@@ -457,7 +465,7 @@ test('collapsed request loading keeps its header stable without guessing avatar 
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) {
     await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.rail-loaded.png` })
   }
-  const waiting = [3, 4].map((index) => ({ ...done[0], request: { id: `request-${index}`, title: `Waiting request ${index}` }, attention: { group: 'waiting', reason: 'waiting' }, next_step: 'wait' }))
+  const waiting = [3, 4].map((index) => ({ ...done[0], request: { id: `request-${index}`, title: `Waiting request ${index}` }, attention: { group: 'waiting', stack_group: 'waiting', reason: 'waiting' }, next_step: 'wait' }))
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { ...pages, active: { ...empty, requests: waiting } })
   const more = sidebar.getByRole('button', { name: 'Show 2 more requests' })
   assert.equal(await more.textContent(), '+2')
@@ -482,11 +490,11 @@ test('collapsed request loading keeps its header stable without guessing avatar 
 })
 
 
-test('stack context preserves actionable children and row order when parents are outside the visible section or search', async (t) => {
+test('stack context preserves actionable children and row order when parents are outside the visible section', async (t) => {
   const { page, base, errors } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests', base).href)
   const node = { id: 'parent', name: 'parent', title: 'Safe parent', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
-  const row = (id, parent, group = 'needs_you') => ({ request: { id, title: `Actionable ${id}`, stack_parent: parent, stack_depth: 2 }, author: { handle: 'adam' }, attention: { group, reason: 'authored', can_set_aside: true }, attention_at_unix: 1790000000, next_step: 'review' })
+  const row = (id, parent, group = 'needs_you', stack_group = group) => ({ request: { id, title: `Actionable ${id}`, stack_parent: parent, stack_depth: 2, mergeability: mergeability('ChecksPending') }, author: { handle: 'adam' }, attention: { group, stack_group, reason: 'authored', can_set_aside: true }, attention_at_unix: 1790000000, next_step: 'review' })
   const parent = { kind: 'available', request: node }
   const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
   const requests = [row('child', parent), row('sibling', parent), row('opaque', { kind: 'unavailable' })]
@@ -515,8 +523,14 @@ test('stack context preserves actionable children and row order when parents are
   assert.deepEqual(await lines('parent'), ['down'])
   assert.deepEqual(await lines('child'), ['pass', 'parent'])
   assert.deepEqual(await lines('sibling'), ['parent'])
-  const avatarLeft = (id) => page.locator(`[data-request-id="${id}"] .request-workspace-row-avatar`).evaluate((node) => node.getBoundingClientRect().left)
-  assert.equal(await avatarLeft('child') - await avatarLeft('parent'), 25)
+  const avatarLeft = (id) => page.locator(`[data-request-id="${id}"] .request-workspace-row-mark`).evaluate((node) => node.getBoundingClientRect().left)
+  assert.equal(await avatarLeft('child') - await avatarLeft('parent'), 18)
+  const waitingParent = { ...together, active: { ...empty, requests: [...requests, row('parent', null, 'waiting', 'needs_you')] } }
+  await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), waitingParent)
+  await page.waitForFunction(() => document.querySelector('.request-workspace-needs-you > h2').textContent === 'Needs you3')
+  assert.deepEqual(await rows.evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId)), ['parent', 'child', 'sibling', 'opaque'])
+  assert.equal(await page.getByRole('button', { name: /^Waiting on others/ }).count(), 0)
+  assert.equal(await page.locator('[data-request-id="parent"] .request-workspace-row-link').evaluate((node) => node.classList.contains('text-muted-foreground')), true)
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack.png` })
   const deep = ['d0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6'].map((id, index, ids) => row(id, index ? { kind: 'available', request: { ...node, id: ids[index - 1], title: `Actionable ${ids[index - 1]}` } } : null))
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { ...pages, active: { ...empty, requests: deep }, set_aside: empty })
@@ -525,13 +539,6 @@ test('stack context preserves actionable children and row order when parents are
   assert.deepEqual(await lines('d6'), ['chain'])
   assert.equal(await page.locator('[data-request-id="d6"] .request-workspace-row-link').evaluate((node) => node.scrollWidth <= node.clientWidth && node.closest('.request-workspace-sidebar').getBoundingClientRect().right >= node.getBoundingClientRect().right), true)
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), pages)
-  const searched = { ...pages, active: { ...empty, requests: [requests[0]] }, set_aside: empty }
-  await page.evaluate((pages) => { window.setQuery('child'); window.setQueue({ pages, maintainer: true, loading: false }) }, searched)
-  await page.locator('[data-request-id="sibling"]').waitFor({ state: 'detached' })
-  assert.equal(await child.isVisible(), true)
-  assert.deepEqual(await lines('child'), ['elsewhere'])
-  assert.equal(await page.locator('[data-request-id="parent"]').count(), 0)
-  assert.deepEqual(await page.locator('.request-workspace-rows [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId)), ['child'])
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await child.isVisible(), true)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
@@ -553,9 +560,9 @@ test('the collapsed rail shows a request\'s whole stack on hover while the stack
   await page.goto(new URL('/adam/demo/requests', base).href)
   const node = { id: 'base', name: 'base', title: 'Stacked base', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
   const row = (id, parent, extra = {}) => ({
-    request: { id, title: `Stacked ${id}`, stack_parent: parent && { kind: 'available', request: { ...node, id: parent, title: `Stacked ${parent}` } }, stack_depth: 1 },
+    request: { id, title: `Stacked ${id}`, stack_parent: parent && { kind: 'available', request: { ...node, id: parent, title: `Stacked ${parent}` } }, stack_depth: 1, mergeability: mergeability(extra.next_step === 'merge' ? 'Ready' : 'ChecksPending') },
     author: { handle: 'adam' },
-    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention: { group: 'needs_you', stack_group: 'needs_you', reason: 'authored', can_set_aside: true },
     attention_at_unix: 1790000000,
     next_step: 'review',
     ...extra,
@@ -567,12 +574,19 @@ test('the collapsed rail shows a request\'s whole stack on hover while the stack
   await page.keyboard.press('[')
   await railClosed()
   await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 88)
-  const avatar = page.locator('[data-request-id="ready"] .request-workspace-row-avatar')
+  assert.deepEqual(await page.locator('.request-workspace-needs-you [data-request-id]').evaluateAll((rows) =>
+    rows.map((row) => [row.dataset.requestId, row.dataset.stackEdge ?? null, getComputedStyle(row, '::before').borderTopWidth])), [
+    ['base', 'start', '1px'],
+    ['first', 'middle', '0px'],
+    ['ready', 'end', '0px'],
+    ['plain', null, '0px'],
+  ])
+  const avatar = page.locator('[data-request-id="ready"] .request-workspace-row-mark')
   await avatar.hover()
   const hint = page.locator('.request-workspace-rail-hint')
   assert.deepEqual(await stackHintItems(hint), [
-    ['Stacked base', 'review', 'Your request', null, 0, false],
-    ['Stacked first', 'review', 'Your request', null, 1, false],
+    ['Stacked base', 'review', 'Waiting for CI', null, 0, false],
+    ['Stacked first', 'review', 'Waiting for CI', null, 1, false],
     ['Stacked ready', 'merge', 'Ready to merge', 'Sep 21', 2, true],
   ])
   const title = await hint.locator('li[data-hovered] .request-workspace-rail-hint-title').boundingBox()
@@ -610,8 +624,8 @@ test('the collapsed rail shows a request\'s whole stack on hover while the stack
   await avatar.hover()
   await page.mouse.move(700, 400, { steps: 8 })
   await hint.waitFor({ state: 'detached' })
-  await page.locator('[data-request-id="plain"] .request-workspace-row-avatar').hover()
-  assert.deepEqual(await stackHintItems(hint), [['Stacked plain', 'review', 'Your request', 'Sep 21', 0, true]])
+  await page.locator('[data-request-id="plain"] .request-workspace-row-mark').hover()
+  assert.deepEqual(await stackHintItems(hint), [['Stacked plain', 'review', 'Waiting for CI', 'Sep 21', 0, true]])
   assert.equal(await hint.locator('a').count(), 0)
   assert.equal(await hint.evaluate((node) => getComputedStyle(node).pointerEvents), 'none')
   assert.deepEqual(errors, [])
@@ -624,9 +638,9 @@ test('a stack taller than the window stays inside it and scrolls to every reques
   const node = { name: 'node', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
   const ids = Array.from({ length: 16 }, (_, index) => `layer-${index}`)
   const requests = ids.map((id, index) => ({
-    request: { id, title: `Layer ${index}`, stack_parent: index > 0 && { kind: 'available', request: { ...node, id: ids[index - 1], title: `Layer ${index - 1}` } }, stack_depth: 1 },
+    request: { id, title: `Layer ${index}`, stack_parent: index > 0 && { kind: 'available', request: { ...node, id: ids[index - 1], title: `Layer ${index - 1}` } }, stack_depth: 1, mergeability: mergeability('ChecksPending') },
     author: { handle: 'adam' },
-    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention: { group: 'needs_you', stack_group: 'needs_you', reason: 'authored', can_set_aside: true },
     attention_at_unix: 1790000000,
     next_step: 'review',
   }))
@@ -636,7 +650,7 @@ test('a stack taller than the window stays inside it and scrolls to every reques
   await page.keyboard.press('[')
   await railClosed()
   await page.waitForFunction(() => document.querySelector('.request-workspace-sidebar').getBoundingClientRect().width === 88)
-  const avatar = page.locator('[data-request-id="layer-0"] .request-workspace-row-avatar')
+  const avatar = page.locator('[data-request-id="layer-0"] .request-workspace-row-mark')
   await avatar.hover()
   const hint = page.locator('.request-workspace-rail-hint')
   assert.equal(await hint.locator('li').count(), 16)
@@ -657,57 +671,51 @@ test('a stack taller than the window stays inside it and scrolls to every reques
   assert.deepEqual(errors, [])
 })
 
-test('stacks fold behind their base request and show their details only on hover', async (t) => {
+test('a stack\'s pill folds it behind its base and summarizes what it hides', async (t) => {
   const { page, base, errors } = await workspacePage(t)
   await page.goto(new URL('/adam/demo/requests', base).href)
   const node = { id: 'base', name: 'base', title: 'Stacked base', state: 'Open', stack_status: 'main', stack_depth: 1, head_oid: 'head', current_revision_id: 'revision' }
   const row = (id, parent, extra = {}) => ({
-    request: { id, title: `Stacked ${id}`, stack_parent: parent && { kind: 'available', request: { ...node, id: parent, title: `Stacked ${parent}` } }, stack_depth: 1 },
+    request: { id, title: `Stacked ${id}`, stack_parent: parent && { kind: 'available', request: { ...node, id: parent, title: `Stacked ${parent}` } }, stack_depth: 1, mergeability: mergeability(extra.next_step === 'merge' ? 'Ready' : 'ChecksPending') },
     author: { handle: 'adam' },
-    attention: { group: 'needs_you', reason: 'authored', can_set_aside: true },
+    attention: { group: 'needs_you', stack_group: 'needs_you', reason: 'authored', can_set_aside: true },
     attention_at_unix: 1790000000,
     next_step: 'review',
     ...extra,
   })
   const empty = { requests: [], next_cursor: null, next_attention_at_unix: null }
-  const invited = { group: 'needs_you', reason: 'invited', can_set_aside: true }
+  const invited = { group: 'needs_you', stack_group: 'needs_you', reason: 'invited', can_set_aside: true }
   const requests = [row('base', null), row('first', 'base'), row('ready', 'first', { next_step: 'merge' }), row('plain', null, { attention: invited })]
   await page.evaluate((pages) => window.setQueue({ pages, maintainer: true, loading: false }), { active: { ...empty, requests }, unclaimed: empty, set_aside: empty, done: empty })
   const ids = () => page.locator('.request-workspace-needs-you [data-request-id]').evaluateAll((nodes) => nodes.map((node) => node.dataset.requestId))
-  const opacity = async (locator, value) => page.waitForFunction(([node, value]) =>
-    getComputedStyle(node).opacity === value, [await locator.elementHandle(), value])
   const baseRow = page.locator('[data-request-id="base"]')
-  const toggle = baseRow.locator('.request-workspace-stack-toggle')
+  const toggle = baseRow.locator('.request-workspace-stack-pill')
   await page.locator('[data-request-id="first"] .request-workspace-row-link').click()
   await page.mouse.move(1200, 800)
   assert.deepEqual(await ids(), ['base', 'first', 'ready', 'plain'])
-  await opacity(toggle, '0')
-  await opacity(baseRow.locator('.request-workspace-row-hover-detail'), '0')
-  assert.equal(await page.locator('[data-request-id="plain"] .request-workspace-row-hover-detail').count(), 0)
+  assert.equal(await toggle.isVisible(), true)
+  assert.equal((await toggle.textContent()).trim(), '2')
+  await toggle.hover()
+  assert.equal(await page.getByRole('tooltip').textContent(), '2 stacked requests')
+  await page.mouse.move(1200, 800)
+  await page.getByRole('tooltip').waitFor({ state: 'detached' })
+  assert.deepEqual(await toggle.locator('i').evaluateAll((dots) => dots.map((dot) => dot.dataset.step)), ['review', 'merge'])
+  assert.equal(await page.locator('[data-request-id="plain"] .request-workspace-stack-pill').count(), 0)
 
-  await baseRow.hover()
-  await opacity(toggle, '1')
-  await opacity(baseRow.locator('.request-workspace-row-hover-detail'), '1')
   await baseRow.getByRole('button', { name: 'Collapse 2 stacked requests' }).click()
   await page.locator('[data-request-id="first"]').waitFor({ state: 'detached' })
   assert.deepEqual(await ids(), ['base', 'plain'])
   assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
   assert.equal(await baseRow.getAttribute('data-holds-selection'), 'true')
-  const summary = baseRow.locator('.request-workspace-row-hover-detail').last()
-  assert.equal((await summary.textContent()).trim(), '· 2 stacked, 1 ready')
-  await opacity(summary, '1')
-  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-folded-hover.png` })
-  await page.mouse.move(1200, 800)
-  await opacity(summary, '0')
-  await opacity(toggle, '0')
+  assert.equal(await baseRow.getAttribute('data-stack-folded'), 'true')
+  assert.deepEqual(await toggle.locator('i').evaluateAll((dots) => dots.map((dot) => dot.dataset.step)), ['review', 'merge'])
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-folded.png` })
 
-  await baseRow.hover()
   await baseRow.getByRole('button', { name: 'Expand 2 stacked requests' }).click()
   await page.locator('[data-request-id="ready"]').waitFor()
   assert.deepEqual(await ids(), ['base', 'first', 'ready', 'plain'])
   assert.equal(await baseRow.getAttribute('data-holds-selection'), null)
-  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-expanded-hover.png` })
+  if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.locator('.request-workspace-needs-you').screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-expanded.png` })
 
   await baseRow.getByRole('button', { name: 'Collapse 2 stacked requests' }).click()
   await baseRow.getByRole('button', { name: 'Expand 2 stacked requests' }).click()
@@ -724,13 +732,15 @@ test('stacks fold behind their base request and show their details only on hover
   await page.keyboard.press('[')
   await page.locator('.request-workspace-sidebar[data-state="closed"]:not([data-closing])').waitFor()
   assert.equal(await baseRow.isVisible(), true)
-  assert.equal(await baseRow.locator('.request-workspace-row-avatar').evaluate((node) => getComputedStyle(node).outlineStyle), 'solid')
+  assert.equal(await baseRow.locator('.request-workspace-row-mark').evaluate((node) => getComputedStyle(node).outlineStyle), 'solid')
   assert.equal(await page.locator('.request-workspace-rail-more').textContent(), '+2')
-  await baseRow.locator('.request-workspace-row-avatar').hover()
+  assert.equal(await baseRow.getAttribute('data-stack-edge'), 'single')
+  assert.equal(await baseRow.locator('.request-workspace-row-mark').evaluate((node) => getComputedStyle(node, '::after').content), '"+2"')
+  await baseRow.locator('.request-workspace-row-mark').hover()
   const stackHint = page.locator('.request-workspace-rail-hint')
   assert.deepEqual(await stackHintItems(stackHint), [
-    ['Stacked base', 'review', 'Your request', 'Sep 21', 0, true],
-    ['Stacked first', 'review', 'Your request', null, 1, false],
+    ['Stacked base', 'review', 'Waiting for CI', 'Sep 21', 0, true],
+    ['Stacked first', 'review', 'Waiting for CI', null, 1, false],
     ['Stacked ready', 'merge', 'Ready to merge', null, 2, false],
   ])
   if (process.env.SCOPE_COMPONENT_SCREENSHOT) await page.screenshot({ path: `${process.env.SCOPE_COMPONENT_SCREENSHOT}.stack-rail-hint.png` })
@@ -742,7 +752,7 @@ test('stacks fold behind their base request and show their details only on hover
   await baseRow.getByRole('button', { name: 'Expand 2 stacked requests' }).click()
   await page.clock.install({ time: new Date('2026-10-20T12:00:00Z') })
   await page.clock.pauseAt(new Date('2026-10-20T12:00:00Z'))
-  const nestedToggle = page.locator('[data-request-id="first"] .request-workspace-stack-toggle')
+  const nestedToggle = page.locator('[data-request-id="first"] .request-workspace-stack-pill')
   await toggle.evaluate((button) => button.click())
   await nestedToggle.evaluate((button) => button.click())
   await toggle.evaluate((button) => button.click())

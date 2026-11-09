@@ -25,7 +25,7 @@ pub struct CatalogFixture {
     pub repository_landing_files: BTreeMap<String, RepositoryLandingFile>,
     pub repository_workflow_catalogs: BTreeMap<String, RepositoryWorkflowCatalog>,
     pub git_segment_uploads: Vec<GitSegmentUpload>,
-    pub main_pool_packs: BTreeMap<String, Vec<GitPoolPack>>,
+    pub git_pool_packs: BTreeMap<String, Vec<GitPoolPack>>,
     pub requests: BTreeMap<String, Request>,
     pub request_revisions: BTreeMap<String, RequestRevision>,
     pub request_discussions: BTreeMap<String, RequestDiscussion>,

@@ -73,9 +73,9 @@ pub fn run(explicit_remote: Option<&str>) -> anyhow::Result<()> {
                 "{branch} is up to date with {remote}/{tracked_name}."
             ));
         } else if let Some(upstream) = upstream {
-            lines.push(format!("Fetched every visible Scope ref; upstream {remote}/{upstream} for local branch {branch} is unavailable."));
+            lines.push(format!("Fetched main and your requests; upstream {remote}/{upstream} for local branch {branch} is unavailable."));
         } else {
-            lines.push(format!("Fetched every visible Scope ref; local branch {branch} does not track a branch on {remote}, so it was not moved."));
+            lines.push(format!("Fetched main and your requests; local branch {branch} does not track a branch on {remote}, so it was not moved."));
         }
 
         emit(

@@ -109,10 +109,11 @@ test('a CLI contribution is discussed and merged in the browser', async () => {
   const { maintainer, contributor } = web
 
   await maintainer.page.goto(`${baseUrl}${repoPath}/requests`)
-  const search = maintainer.page.getByRole('searchbox', { name: 'Search requests' })
+  const search = maintainer.page.getByRole('combobox', { name: 'Search requests, history and files' })
   await waitForClientHydration(search)
   await search.fill(name)
-  await clickAfterHydration(maintainer.page.getByRole('link', { name: new RegExp(`^${name} `) }))
+  await maintainer.page.getByRole('option', { name: new RegExp(name) }).click()
+  await clickAfterHydration(maintainer.page.getByRole('link', { name: 'Open request', exact: true }))
   await maintainer.page.waitForURL(`**${repoPath}/requests/${id}`)
 
   const question = `Why this file? (${runId})`
@@ -251,10 +252,12 @@ test('signed-in private stack navigation preserves the pin across parent extensi
       assert.equal(await contributor.getByRole('region', { name: 'Request dependency' }).count(), 0)
     }
     await contributor.goto(`${baseUrl}${repoPath}/requests`)
-    const search = contributor.getByRole('searchbox', { name: 'Search requests' })
+    const search = contributor.getByRole('combobox', { name: 'Search requests, history and files' })
     await waitForClientHydration(search)
+    await search.click()
+    await contributor.getByRole('radio', { name: 'Requests', exact: true }).click()
     await search.fill(`journey-stack`)
-    await contributor.getByText('No matching requests.', { exact: true }).waitFor()
+    await contributor.getByText('No matches.', { exact: true }).waitFor()
     assert.equal(await contributor.getByText(parentTitle, { exact: true }).count(), 0)
     assert.equal(await contributor.getByText(childTitle, { exact: true }).count(), 0)
   } finally {

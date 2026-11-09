@@ -129,7 +129,7 @@ pub struct RequestMergeSubject<'a> {
     pub author_user_id: Option<&'a str>,
     pub view: &'a ViewId,
     pub state: RequestState,
-    pub has_git_snapshot: bool,
+    pub has_pushed_head: bool,
     pub stack_status: super::RequestStackStatus,
 }
 
@@ -139,7 +139,7 @@ impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
             author_user_id: request.author_user_id.as_deref(),
             view: &request.view,
             state: request.state(),
-            has_git_snapshot: request.git_snapshot.is_some(),
+            has_pushed_head: request.pushed_at_unix.is_some(),
             stack_status: request.stack_status,
         }
     }
@@ -193,7 +193,7 @@ pub(super) fn evaluate_request_readiness(
             RequestMergeabilityStatus::Draft,
             Some("request is not submitted"),
         ),
-        RequestState::Open if !subject.has_git_snapshot => (
+        RequestState::Open if !subject.has_pushed_head => (
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
         ),

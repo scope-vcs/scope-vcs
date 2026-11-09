@@ -13,6 +13,7 @@ const webPath = (path) => fileURLToPath(new URL(`../../${path}`, import.meta.url
 
 export const fixturePath = (fixture, path = '.') => webPath(`smoke/fixtures/${fixture}/${path}`)
 export const fixtureClerk = { find: '@clerk/tanstack-react-start', replacement: fixturePath('shared', 'clerk.tsx') }
+export const fixtureRepositorySearch = { find: '@/features/repo-search/repository-search', replacement: fixturePath('shared', 'repository-search.tsx') }
 
 const sharedPage = {
   name: 'scope-shared-fixture-page',
@@ -36,6 +37,7 @@ function fixtureConfig(fixture, { aliases = [], plugins = [], ssr = false, tailw
   return {
     configFile: false,
     root: fixturePath(fixture),
+    publicDir: webPath('public'),
     plugins: [
       ...(tailwind ? [tailwindcss()] : []),
       ...(ownPage ? [] : [sharedPage]),
@@ -73,7 +75,7 @@ async function settleFirstNavigation(client, fixture) {
 }
 
 export async function launchBrowser(t) {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ headless: true, args: ['--disable-lcd-text'] })
   t.after(() => browser.close())
   return browser
 }

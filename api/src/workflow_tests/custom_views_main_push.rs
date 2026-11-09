@@ -77,7 +77,6 @@ fn concurrent_push(
         name: name.to_string(),
         main_ancestor_oid: main_ancestor_oid.to_string(),
         head_oid: landed.head_oid.clone(),
-        git_snapshot: landed.git_snapshot.clone().unwrap(),
         git_facts: RequestRevisionGitFacts {
             contains_old_head: true,
             contained_main_oid: Some(main_ancestor_oid.to_string()),
@@ -143,6 +142,30 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
         .await
         .unwrap()
         .unwrap();
+    let packs = state
+        .metadata
+        .repositories()
+        .git_pool_packs_for_requests(TEST_REPO_ID, std::slice::from_ref(&request.id))
+        .await
+        .unwrap();
+    assert_eq!(packs.len(), 1);
+    assert_eq!(
+        packs[0].scope,
+        scope_domain::repository::git::RequestPackScope::View(view("agent"))
+    );
+    assert_eq!(packs[0].head_oid, head);
+    let repo = super::custom_views::stored_repo(&state).await;
+    let shelf = crate::git::request_refs::view_object_repos(
+        &state,
+        &repo.incarnation(),
+        &repo.repo_config,
+        &view("agent"),
+    )
+    .await
+    .unwrap()
+    .objects;
+    assert!(contains_commit(&shelf, &head, &head));
+    let projection_objects = fs::read_to_string(shelf.join("objects/info/alternates")).unwrap();
     assert_eq!(request.view, view("agent"));
     assert_eq!(request.title, "Main push from agent-member");
     assert_eq!(request.state(), RequestState::Open);
@@ -172,11 +195,30 @@ async fn a_main_push_through_the_agent_view_lands_as_an_auto_merged_request() {
         live_file_content(&state, "/src/main.rs").await.as_deref(),
         Some("fn main() { run() }\n")
     );
+    let projected_main = checkout.fetch_main();
+    assert!(contains_commit(&checkout.path, &head, &projected_main));
+    let repo = super::custom_views::stored_repo(&state).await;
+    let updated_shelf = crate::git::request_refs::view_object_repos(
+        &state,
+        &repo.incarnation(),
+        &repo.repo_config,
+        &view("agent"),
+    )
+    .await
+    .unwrap()
+    .objects;
+    assert_eq!(
+        fs::read_to_string(updated_shelf.join("objects/info/alternates")).unwrap(),
+        projection_objects
+    );
+    let projection_base = FsPath::new(projection_objects.trim()).parent().unwrap();
     assert!(contains_commit(
-        &checkout.path,
-        &head,
-        &checkout.fetch_main()
+        projection_base,
+        &projected_main,
+        &projected_main
     ));
+    let canonical = &repo.git_head.as_ref().unwrap().head_oid;
+    assert!(!contains_commit(projection_base, canonical, canonical));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -244,10 +286,30 @@ async fn the_request_transaction_refuses_a_stale_main_push() {
     let stale = state
         .metadata
         .requests()
-        .start_main_push_request(StartMainPushRequestInput {
-            repository_incarnation_id: incarnation_id,
-            ..concurrent_push(&landed, "req_stale", &next_name, &agent_main_before)
-        })
+        .start_main_push_request(
+            StartMainPushRequestInput {
+                repository_incarnation_id: incarnation_id,
+                ..concurrent_push(&landed, "req_stale", &next_name, &agent_main_before)
+            },
+            scope_postgres::db::PushedRevisionObjects {
+                object_generation: super::custom_views::stored_repo(&state)
+                    .await
+                    .repo_config
+                    .object_generation(),
+                pool_pack: scope_domain::repository::git::GitPoolPack {
+                    id: "stale-pack".to_string(),
+                    owner: scope_domain::repository::git::GitPoolPackOwner::Request {
+                        request_id: "req_stale".to_string(),
+                        scope: scope_domain::repository::git::RequestPackScope::View(view("agent")),
+                    },
+                    head_oid: head,
+                    prerequisites: vec![agent_main_before.clone()],
+                    storage: scope_domain::repository::git::GitPoolPackStorage::Inline {
+                        sealed: vec![],
+                    },
+                },
+            },
+        )
         .await
         .unwrap_err();
     assert_eq!(

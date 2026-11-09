@@ -8,15 +8,15 @@ use std::{
     process::{Command, Stdio},
 };
 
-pub(super) struct SeedMainPack {
+pub(super) struct SeedPoolPack {
     pack: GitPoolPack,
     upload: GitSegmentUpload,
 }
 
-impl SeedMainPack {
+impl SeedPoolPack {
     pub(super) fn add_to(self, catalog: &mut scope_postgres::db::CatalogFixture) {
         catalog
-            .main_pool_packs
+            .git_pool_packs
             .entry(self.upload.repository_id.clone())
             .or_default()
             .push(self.pack);
@@ -28,8 +28,45 @@ pub(super) fn store_seed_git_pack(
     git_segment_store: &scope_storage::GitSegmentStore,
     repository_id: &str,
     repo_path: &Path,
-) -> Result<(GitHead, SeedMainPack), ApiError> {
-    let head_oid = super::seed_git_head(repo_path)?;
+) -> Result<(GitHead, SeedPoolPack), ApiError> {
+    store_seed_head_pack(
+        git_segment_store,
+        repository_id,
+        repo_path,
+        super::seed_git_head(repo_path)?,
+    )
+}
+
+pub(super) fn store_seed_request_pack(
+    git_segment_store: &scope_storage::GitSegmentStore,
+    repository_id: &str,
+    repo_path: &Path,
+    request_id: &str,
+    head_oid: &str,
+    view: &scope_domain::views::ViewId,
+) -> Result<SeedPoolPack, ApiError> {
+    let (_, mut stored) = store_seed_head_pack(
+        git_segment_store,
+        repository_id,
+        repo_path,
+        head_oid.to_string(),
+    )?;
+    stored.pack.owner = scope_domain::repository::git::GitPoolPackOwner::Request {
+        request_id: request_id.to_string(),
+        scope: scope_domain::repository::git::RequestPackScope::for_view(
+            view,
+            &scope_domain::views::Views::builtin(),
+        ),
+    };
+    Ok(stored)
+}
+
+fn store_seed_head_pack(
+    git_segment_store: &scope_storage::GitSegmentStore,
+    repository_id: &str,
+    repo_path: &Path,
+    head_oid: String,
+) -> Result<(GitHead, SeedPoolPack), ApiError> {
     let mut child = Command::new("git")
         .arg("-C")
         .arg(repo_path)
@@ -91,5 +128,5 @@ pub(super) fn store_seed_git_pack(
         prerequisites: prepared.prerequisites,
         storage: GitPoolPackStorage::Segment(staged.segment),
     };
-    Ok((prepared.head, SeedMainPack { pack, upload }))
+    Ok((prepared.head, SeedPoolPack { pack, upload }))
 }

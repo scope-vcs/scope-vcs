@@ -7,7 +7,6 @@ import {
   waitForClientHydration,
   withPage,
 } from './browser-smoke.mjs'
-import { serverFunctionName } from './server-functions-smoke.mjs'
 
 test('public repository requests route is anonymously readable', async () => {
   await withPage(`${repoPath}/requests`, async (page) => {
@@ -17,12 +16,11 @@ test('public repository requests route is anonymously readable', async () => {
     await page.getByText('You’re caught up.', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: /Set aside/ }).count(), 0)
     assert.equal(await page.getByRole('button', { name: /Unclaimed/ }).count(), 0)
-    await page.getByRole('button', { name: /Done/ }).click()
-    await page.getByText('No closed or merged requests.', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: /Done/ }).count(), 0)
   })
 })
 
-test('request queue search is keyboard accessible and mobile rows do not overflow', async () => {
+test('request queue rows are keyboard reachable and mobile rows do not overflow', async () => {
   await withPage(
     `${requestRepoPath}/requests`,
     async (page) => {
@@ -36,25 +34,6 @@ test('request queue search is keyboard accessible and mobile rows do not overflo
         await readyRow.evaluate(
           (element) => element === document.activeElement,
         ),
-        true,
-      )
-      const search = page.getByRole('searchbox', {
-        name: 'Search requests',
-      })
-      const queueRequests = []
-      page.on('request', (request) => {
-        if (serverFunctionName(request) === 'loadRequestQueuePage_createServerFn_handler') {
-          queueRequests.push(request.url())
-        }
-      })
-      await waitForClientHydration(search)
-      await search.fill('missing request title')
-      await page.getByText('No matching requests.', { exact: true }).waitFor()
-      assert.equal(queueRequests.length, 4)
-      const clear = page.getByRole('button', { name: 'Clear request search' })
-      await clear.focus()
-      assert.equal(
-        await clear.evaluate((element) => element === document.activeElement),
         true,
       )
       assert.equal(

@@ -150,7 +150,7 @@ async fn assert_private_history_push_rejected(history: PrivacyHistory, source_la
     .unwrap();
     let request_before = stored_request(&state, REQUEST_ID).await;
     assert_eq!(request_before.head_oid, git_head_oid(&source));
-    assert!(request_before.git_snapshot.is_some());
+    assert!(request_before.pushed_at_unix.is_some());
     let event_count_before = request_event_count(&state).await;
 
     let private_source = TempGitRepo(unique_test_path(&format!("{source_label}-private-source")));
@@ -364,10 +364,7 @@ async fn a_full_view_push_reaches_every_advertised_request_head() {
         .view_repo(&state, context.repo_config.views(), &ViewId::private())
         .await
         .unwrap();
-    let full_head = git_stdout_text(&full_repo, &["rev-parse", "refs/heads/main"], "full head")
-        .unwrap()
-        .trim()
-        .to_string();
+    let full_head = ref_head(&full_repo, "refs/heads/main");
     let public_head = stored_request(&state, REQUEST_ID).await.head_oid;
     assert_ne!(full_head, public_head);
     state

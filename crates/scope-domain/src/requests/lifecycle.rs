@@ -4,8 +4,8 @@ use super::{
     RequestState, advance_request_activity, ensure_event_id_available, ensure_request_matches,
     request_identity_audit_fact, validate_body_size, validate_required,
 };
+use crate::error::DomainError;
 use crate::views::{ViewId, Views};
-use crate::{content::SourceBlob, error::DomainError};
 
 #[derive(Clone, Copy, Debug)]
 pub struct StartRequestFacts {
@@ -55,14 +55,12 @@ pub struct RecordWorkingRequestUploadInput {
     pub actor_can_edit: bool,
     pub expected_old_head_oid: Option<String>,
     pub new_head_oid: String,
-    pub git_snapshot: SourceBlob,
     pub now_unix: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkingRequestUploadMutation {
     pub request: Request,
-    pub orphan_objects: Vec<SourceBlob>,
 }
 
 #[derive(Clone, Debug)]
@@ -74,7 +72,6 @@ pub struct RecordRequestRevisionInput {
     pub actor_can_edit: bool,
     pub expected_old_head_oid: Option<String>,
     pub new_head_oid: String,
-    pub git_snapshot: SourceBlob,
     pub git_facts: RequestRevisionGitFacts,
     pub event_id: String,
     pub body: Option<String>,
@@ -93,7 +90,6 @@ pub struct RequestRevisionMutation {
     pub request: Request,
     pub event: RequestEvent,
     pub revision: RequestRevision,
-    pub orphan_objects: Vec<SourceBlob>,
 }
 
 #[derive(Clone, Debug)]
@@ -111,7 +107,6 @@ pub enum CloseRequestMutation {
         request: Request,
         events: Vec<RequestEvent>,
         revisions: Vec<RequestRevision>,
-        orphan_objects: Vec<SourceBlob>,
     },
     Closed {
         request: Request,
@@ -165,7 +160,7 @@ pub(super) fn open_request(
         base: input.base,
         base_version: 1,
         main_ancestor_oid: input.main_ancestor_oid.clone(),
-        git_snapshot: None,
+        pushed_at_unix: None,
         title,
         description_markdown: String::new(),
         activity_version: 1,
@@ -211,20 +206,16 @@ pub fn record_working_request_upload(
         return Err(DomainError::conflict("request is closed"));
     }
     validate_expected_head(&request, input.expected_old_head_oid.as_deref())?;
-    validate_snapshot_head(&input.git_snapshot, &input.new_head_oid)?;
     if matches!(request.base, super::RequestBase::Request { .. }) {
         return Err(DomainError::conflict(
             "parent-based uploads require stack publication evidence",
         ));
     }
-    let old_git_snapshot = request.git_snapshot.replace(input.git_snapshot);
+    request.pushed_at_unix = Some(input.now_unix);
     request.head_oid = input.new_head_oid;
     request.updated_at_unix = input.now_unix;
     request.validate_facts()?;
-    Ok(WorkingRequestUploadMutation {
-        request,
-        orphan_objects: old_git_snapshot.into_iter().collect(),
-    })
+    Ok(WorkingRequestUploadMutation { request })
 }
 
 pub fn record_request_revision(
@@ -249,7 +240,6 @@ pub fn record_request_revision(
         ));
     }
     validate_expected_head(&request, input.expected_old_head_oid.as_deref())?;
-    validate_snapshot_head(&input.git_snapshot, &input.new_head_oid)?;
     if input.new_base.as_ref() == Some(&request.base) && input.new_head_oid == request.head_oid {
         return Err(DomainError::conflict(
             "revision context requires a changed review base",
@@ -308,7 +298,7 @@ pub fn record_request_revision(
     request.stack_depth = stack_depth;
     request.main_ancestor_oid = main_ancestor_oid;
     request.head_oid = input.new_head_oid.clone();
-    let old_git_snapshot = request.git_snapshot.replace(input.git_snapshot.clone());
+    request.pushed_at_unix = Some(input.now_unix);
     request.updated_at_unix = input.now_unix;
     let position = advance_request_activity(&mut request)?;
     request.validate_facts()?;
@@ -331,12 +321,11 @@ pub fn record_request_revision(
         old_head_oid,
         input.new_head_oid,
         !input.git_facts.contains_old_head,
-    )?;
+    );
     Ok(RequestRevisionMutation {
         request,
         event,
         revision,
-        orphan_objects: old_git_snapshot.into_iter().collect(),
     })
 }
 
@@ -372,23 +361,10 @@ pub fn close_request(
             .filter(|revision| revision.request_id == request.id)
             .collect::<Vec<_>>();
         removed_revisions.sort_by(|left, right| left.id.cmp(&right.id));
-        let mut orphan_objects = request
-            .git_snapshot
-            .clone()
-            .into_iter()
-            .chain(
-                removed_revisions
-                    .iter()
-                    .map(|revision| revision.git_snapshot.clone()),
-            )
-            .collect::<Vec<_>>();
-        orphan_objects.sort_by(|left, right| left.content_ref.cmp(&right.content_ref));
-        orphan_objects.dedup_by(|left, right| left.content_ref == right.content_ref);
         return Ok(CloseRequestMutation::DeletedDraft {
             request,
             events: removed_events,
             revisions: removed_revisions,
-            orphan_objects,
         });
     }
     ensure_event_id_available(events.iter().any(|event| event.id == input.event_id))?;
@@ -496,20 +472,10 @@ fn validate_expected_head(request: &Request, expected: Option<&str>) -> Result<(
         Some(expected) if request.head_oid != expected => Err(DomainError::conflict(
             "request branch changed since push started; fetch and retry",
         )),
-        None if request.git_snapshot.is_some() => Err(DomainError::conflict(
+        None if request.pushed_at_unix.is_some() => Err(DomainError::conflict(
             "request branch changed since push started; fetch and retry",
         )),
         _ => Ok(()),
-    }
-}
-
-fn validate_snapshot_head(snapshot: &SourceBlob, head_oid: &str) -> Result<(), DomainError> {
-    if snapshot.git_oid == head_oid {
-        Ok(())
-    } else {
-        Err(DomainError::conflict(
-            "request revision snapshot does not match the new head",
-        ))
     }
 }
 

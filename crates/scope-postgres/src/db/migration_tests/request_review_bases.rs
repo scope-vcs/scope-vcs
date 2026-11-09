@@ -56,7 +56,9 @@ async fn review_context_backfill_preserves_saved_revision_bases_and_only_links_c
     .await
     .unwrap();
 
-    migrations::Migrator::up(db.as_ref(), None).await.unwrap();
+    migrations::Migrator::up(db.as_ref(), Some(2))
+        .await
+        .unwrap();
 
     let revisions = db
         .query_all_raw(Statement::from_string(
@@ -185,5 +187,4 @@ async fn review_context_backfill_preserves_saved_revision_bases_and_only_links_c
         "SELECT count(*) AS count FROM scope_request_check_evaluations WHERE request_id = 'current'",
     )).await.unwrap().unwrap();
     assert_eq!(remaining.try_get::<i64>("", "count").unwrap(), 0);
-    migrations::assert_exact_state(db.as_ref()).await.unwrap();
 }
