@@ -6,7 +6,7 @@ mod execute;
 mod settings;
 
 use anyhow::Context as _;
-use execute::{ExecutionSink as _, HEARTBEAT_INTERVAL, Heartbeat};
+use execute::{ExecutionSink as _, HEARTBEAT_FAILURE_TOLERANCE, HEARTBEAT_INTERVAL, Heartbeat};
 use settings::RuntimeSettings;
 use std::sync::Arc;
 
@@ -18,7 +18,11 @@ fn main() -> anyhow::Result<()> {
     let claim = client.claim(&settings.bootstrap_token)?;
     let job_definition =
         scope_domain::runs::workflow::definition::WorkflowJob::try_from(&claim.job.definition)?;
-    let setup_heartbeat = Heartbeat::start(Arc::new(client.clone()), HEARTBEAT_INTERVAL)?;
+    let setup_heartbeat = Heartbeat::start(
+        Arc::new(client.clone()),
+        HEARTBEAT_INTERVAL,
+        HEARTBEAT_FAILURE_TOLERANCE,
+    )?;
     let setup_result = setup(&client, &claim, &job_definition);
     if setup_heartbeat.finish()? {
         client.complete_canceled(false)?;
@@ -38,7 +42,11 @@ fn main() -> anyhow::Result<()> {
         execute::ExecutionOutcome::Succeeded { logs_truncated } => logs_truncated,
         execute::ExecutionOutcome::Terminal => return Ok(()),
     };
-    let finalization_heartbeat = Heartbeat::start(Arc::new(client.clone()), HEARTBEAT_INTERVAL)?;
+    let finalization_heartbeat = Heartbeat::start(
+        Arc::new(client.clone()),
+        HEARTBEAT_INTERVAL,
+        HEARTBEAT_FAILURE_TOLERANCE,
+    )?;
     cache::finalize::save_caches(&client, &caches);
     let cancellation_requested = finalization_heartbeat.finish()? || client.heartbeat()?;
     if cancellation_requested {
