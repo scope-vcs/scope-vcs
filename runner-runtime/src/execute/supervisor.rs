@@ -1,6 +1,6 @@
 use super::{
     ExecutionSink,
-    heartbeat::{HEARTBEAT_INTERVAL, Heartbeat},
+    heartbeat::{HEARTBEAT_FAILURE_TOLERANCE, HEARTBEAT_INTERVAL, Heartbeat},
     output::{OutputCapture, OutputNotice, UploadPolicy},
     process::StepProcess,
 };
@@ -22,6 +22,7 @@ pub(crate) enum ExecutionOutcome {
 #[derive(Clone, Copy)]
 pub(crate) struct SupervisorOptions {
     heartbeat_interval: Duration,
+    heartbeat_failure_tolerance: Duration,
     poll_interval: Duration,
     termination_grace: Duration,
     upload_policy: UploadPolicy,
@@ -32,6 +33,7 @@ impl Default for SupervisorOptions {
     fn default() -> Self {
         Self {
             heartbeat_interval: HEARTBEAT_INTERVAL,
+            heartbeat_failure_tolerance: HEARTBEAT_FAILURE_TOLERANCE,
             poll_interval: SUPERVISOR_POLL_INTERVAL,
             termination_grace: TERMINATION_GRACE,
             upload_policy: UploadPolicy::default(),
@@ -55,7 +57,11 @@ pub(crate) fn run_steps_with_options<S: ExecutionSink>(
     options: SupervisorOptions,
 ) -> anyhow::Result<ExecutionOutcome> {
     let sink = Arc::new(sink);
-    let heartbeat = Heartbeat::start(Arc::clone(&sink), options.heartbeat_interval)?;
+    let heartbeat = Heartbeat::start(
+        Arc::clone(&sink),
+        options.heartbeat_interval,
+        options.heartbeat_failure_tolerance,
+    )?;
     let timeout = options
         .timeout
         .unwrap_or_else(|| Duration::from_secs(job.timeout_seconds()));
@@ -338,6 +344,7 @@ impl SupervisorOptions {
     pub(crate) fn for_test(timeout: Duration) -> Self {
         Self {
             heartbeat_interval: Duration::from_millis(25),
+            heartbeat_failure_tolerance: Duration::from_secs(5),
             poll_interval: Duration::from_millis(5),
             termination_grace: Duration::from_millis(25),
             upload_policy: UploadPolicy {
@@ -346,5 +353,10 @@ impl SupervisorOptions {
             },
             timeout: Some(timeout),
         }
+    }
+
+    pub(crate) fn ending_on_the_first_heartbeat_failure(mut self) -> Self {
+        self.heartbeat_failure_tolerance = Duration::ZERO;
+        self
     }
 }
