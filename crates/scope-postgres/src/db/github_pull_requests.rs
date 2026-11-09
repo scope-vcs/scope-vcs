@@ -303,10 +303,18 @@ pub(super) async fn queue_carrier_for_pushed_head<C: ConnectionTrait>(
         return Ok(());
     };
     let (parent, parent_carrier) = match request.base.parent_request_id() {
-        Some(parent_id) => (
-            request_by_id(conn, parent_id).await?,
-            github_pull_request(conn, parent_id).await?,
-        ),
+        Some(parent_id) => {
+            acquire_github_push_lock(
+                conn,
+                &request.repo_id,
+                &GitHubBranch::Request(parent_id.to_string()),
+            )
+            .await?;
+            (
+                request_by_id(conn, parent_id).await?,
+                github_pull_request(conn, parent_id).await?,
+            )
+        }
         None => (None, None),
     };
     let views = repository_views(conn, &request.repo_id).await?;
@@ -386,7 +394,7 @@ pub(super) async fn queue_carriers_for_repository<C: ConnectionTrait>(
             DatabaseBackend::Postgres,
             "SELECT latest.request_id, latest.target_oid FROM (
                 SELECT DISTINCT ON (push.request_id) push.request_id, push.target_oid,
-                       push.kind, push.state
+                       push.kind, push.state, request.stack_depth
                   FROM scope_github_pushes push
                   JOIN scope_requests request ON request.id = push.request_id
                  WHERE push.repo_id = $1 AND request.submitted_at_unix IS NOT NULL
@@ -394,7 +402,7 @@ pub(super) async fn queue_carriers_for_repository<C: ConnectionTrait>(
                  ORDER BY push.request_id, push.sequence DESC
              ) latest
              WHERE latest.kind = 'push' AND latest.state = 'succeeded'
-             ORDER BY latest.request_id",
+             ORDER BY latest.stack_depth DESC, latest.request_id",
             [repo_id.into()],
         ))
         .await?;

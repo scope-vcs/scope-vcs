@@ -112,7 +112,7 @@ pub fn carrier_pull_request_intent(
         && GitHubCheckTarget::for_request(request, views) == GitHubCheckTarget::Head
         && may_carry_on_github(connection, request);
     wanted.then(|| GitHubPullRequestIntent::Open {
-        base: carrier_pull_request_base(request, parent, parent_carrier),
+        base: carrier_pull_request_base(connection, request, parent, parent_carrier),
         head_oid: pushed_head_oid.to_string(),
     })
 }
@@ -126,11 +126,14 @@ pub fn carries_private_request(request: &Request) -> bool {
 }
 
 fn carrier_pull_request_base(
+    connection: &GitHubConnection,
     request: &Request,
     parent: Option<&Request>,
     parent_carrier: Option<&GitHubPullRequest>,
 ) -> String {
-    let parent_ended_on_github = parent_carrier.is_some_and(GitHubPullRequest::has_ended_on_github);
+    let parent_ended_on_github = parent_carrier.is_some_and(|carrier| {
+        carrier.destination.is_connected_through(connection) && carrier.has_ended_on_github()
+    });
     request
         .base
         .parent_request_id()

@@ -184,3 +184,48 @@ async fn closing_a_parent_moves_its_childs_carrier_onto_main_and_keeps_its_branc
     .await;
     assert_eq!(parent_branch_target().await, None);
 }
+
+#[tokio::test]
+async fn a_childs_new_intent_waits_for_a_writer_of_its_parents_branch() {
+    let store = crate::db::requests::tests::postgres_store();
+    opt_in(&store).await;
+    let parent = start(
+        &store,
+        "parent",
+        RequestBase::Main {
+            review_base_oid: "base".into(),
+        },
+        2,
+    )
+    .await;
+    let child = start(&store, "child", pin(&store, &parent).await, 8).await;
+    let parent_writer = store.db.begin().await.unwrap();
+    acquire_github_push_lock(
+        &parent_writer,
+        &parent.repo_id,
+        &GitHubBranch::Request(parent.id.clone()),
+    )
+    .await
+    .unwrap();
+
+    let child_push = store.db.begin().await.unwrap();
+    {
+        let queueing = queue_carrier_for_pushed_head(&child_push, &child.id, &child.head_oid, 12);
+        tokio::pin!(queueing);
+        tokio::select! {
+            biased;
+            _ = &mut queueing => panic!("the child read its parent beside a writer of its branch"),
+            () = blocked_by(&parent_writer) => {}
+        }
+        parent_writer.commit().await.unwrap();
+        queueing.await.unwrap();
+    }
+    child_push.commit().await.unwrap();
+    assert_eq!(
+        intent(&store, &child.id).await,
+        GitHubPullRequestIntent::Open {
+            base: "scope/requests/parent".into(),
+            head_oid: child.head_oid.clone(),
+        }
+    );
+}

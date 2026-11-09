@@ -136,6 +136,10 @@ fn a_stacked_request_targets_its_parent_branch_until_the_parent_or_its_pull_requ
         );
     }
 
+    let mut ended_elsewhere = opened_carrier(GitHubPullRequestState::ClosedOnGitHub);
+    ended_elsewhere.destination.github_repository_id += 1;
+    assert_eq!(base(&parent, Some(&ended_elsewhere)), parent_branch);
+
     let mut merged_parent = parent.clone();
     merged_parent.merged_at_unix = Some(40);
     assert_eq!(base(&merged_parent, None), Some(open_intent("main")));
