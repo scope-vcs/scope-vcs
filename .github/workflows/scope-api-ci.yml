@@ -22,14 +22,18 @@ jobs:
     uses: ./.github/workflows/rust-workspace-checks.yml
 
   deployment-binaries:
-    name: Build ${{ matrix.component }} deployment binaries
+    name: Build ${{ matrix.group }} deployment binaries
     if: ${{ !inputs.warm_cache }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        component: [run-worker, git-router, media-api, api]
+        include:
+          - group: api
+            components: api
+          - group: services
+            components: run-worker git-router media-api
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,19 +57,20 @@ jobs:
 
       - name: Build deployment binaries
         env:
-          COMPONENT: ${{ matrix.component }}
-        run: node .github/scripts/deployment-components.mjs build "$COMPONENT" artifacts/bin
-
-      - name: Check deployment binary sizes
-        env:
-          COMPONENT: ${{ matrix.component }}
-        run: node .github/scripts/check-backend-binary-sizes.mjs artifacts/bin --component "$COMPONENT"
+          COMPONENTS: ${{ matrix.components }}
+        run: |
+          for component in $COMPONENTS; do
+            node .github/scripts/deployment-components.mjs build "$component" "artifacts/$component"
+            node .github/scripts/check-backend-binary-sizes.mjs "artifacts/$component" --component "$component"
+            mkdir -p artifacts/bin
+            mv "artifacts/$component"/* artifacts/bin/
+          done
 
       - name: Upload deployment binaries
         if: inputs.build_release_artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: backend-binaries-${{ matrix.component }}-${{ github.sha }}
+          name: backend-binaries-${{ matrix.group }}-${{ github.sha }}
           path: artifacts/bin
           if-no-files-found: error
           retention-days: 1

@@ -55,10 +55,10 @@ test('the daily main advisory job runs both PR advisory commands with only JSON 
   }
 });
 
-test('GitHub builds every prebuilt backend component in its own deployment job', () => {
+test('GitHub builds every prebuilt backend component exactly once across the deployment jobs', () => {
   const workflow = read('.github/workflows/scope-api-ci.yml');
-  const matrix = workflow.match(/\n        component: \[([^\]]+)\]\n/)[1].split(', ');
-  assert.deepEqual([...matrix].sort(), [...backendPrebuiltComponents()].sort());
+  const built = [...workflow.matchAll(/\n            components: (.+)\n/g)].flatMap(([, components]) => components.split(' '));
+  assert.deepEqual([...built].sort(), [...backendPrebuiltComponents()].sort());
 });
 
 test('GitHub runs every backend gate lane exactly once', () => {
