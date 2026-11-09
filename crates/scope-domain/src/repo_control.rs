@@ -2,7 +2,10 @@ mod image;
 
 pub use image::{ImageContextPath, ImageContextPathError};
 
-use crate::{policy::ScopePath, runs::workflow::identity::WorkflowPath};
+use crate::{
+    policy::{ScopePath, without_hfs_ignored_characters},
+    runs::workflow::identity::WorkflowPath,
+};
 
 pub const REPO_CONTROL_ROOT: &str = "/.scope";
 pub const REPO_CONTROL_PREFIX: &str = "/.scope/";
@@ -41,34 +44,55 @@ pub fn is_repo_rules_path(path: &ScopePath) -> bool {
 }
 
 pub fn is_request_protected_path(path: &ScopePath) -> bool {
-    is_case_folded_repo_control_path(path) || is_agent_context_path(path)
+    is_filesystem_alias_of_repo_control_path(path) || is_agent_context_path(path)
 }
 
-fn is_case_folded_repo_control_path(path: &ScopePath) -> bool {
+fn is_filesystem_alias_of_repo_control_path(path: &ScopePath) -> bool {
     path.as_str()
         .trim_start_matches('/')
         .split('/')
         .next()
-        .is_some_and(|root| root.eq_ignore_ascii_case(".scope"))
+        .is_some_and(|root| without_hfs_ignored_characters(root).eq_ignore_ascii_case(".scope"))
 }
 
+const AGENT_CONTEXT_SEGMENTS: [&str; 16] = [
+    ".codex",
+    ".claude",
+    ".agents",
+    ".cursor",
+    ".gemini",
+    ".windsurf",
+    ".clinerules",
+    ".cursorrules",
+    ".windsurfrules",
+    ".mcp.json",
+    "AGENTS.md",
+    "AGENTS.override.md",
+    "CLAUDE.md",
+    "CLAUDE.local.md",
+    "GEMINI.md",
+    "copilot-instructions.md",
+];
+
+const AGENT_CONTEXT_SEGMENT_PAIRS: [(&str, &str); 2] =
+    [(".github", "instructions"), (".vscode", "mcp.json")];
+
 fn is_agent_context_path(path: &ScopePath) -> bool {
-    let relative = path.as_str().trim_start_matches('/');
-    let root = relative.split('/').next().unwrap_or(relative);
-    [".codex", ".claude", ".agents"]
-        .iter()
-        .any(|directory| root.eq_ignore_ascii_case(directory))
-        || relative.eq_ignore_ascii_case(".mcp.json")
-        || relative.rsplit('/').next().is_some_and(|name| {
-            [
-                "AGENTS.md",
-                "AGENTS.override.md",
-                "CLAUDE.md",
-                "CLAUDE.local.md",
-            ]
+    let segments: Vec<String> = path
+        .as_str()
+        .trim_start_matches('/')
+        .split('/')
+        .map(without_hfs_ignored_characters)
+        .collect();
+    segments.iter().any(|segment| {
+        AGENT_CONTEXT_SEGMENTS
             .iter()
-            .any(|protected| name.eq_ignore_ascii_case(protected))
+            .any(|protected| segment.eq_ignore_ascii_case(protected))
+    }) || segments.windows(2).any(|pair| {
+        AGENT_CONTEXT_SEGMENT_PAIRS.iter().any(|(parent, child)| {
+            pair[0].eq_ignore_ascii_case(parent) && pair[1].eq_ignore_ascii_case(child)
         })
+    })
 }
 
 pub fn is_private_control_path(path: &ScopePath) -> bool {
@@ -149,10 +173,48 @@ mod tests {
             "/.CLAUDE/settings.json",
             "/.AGENTS/skills/review/SKILL.md",
             "/.MCP.JSON",
+            "/packages/app/.claude/settings.json",
+            "/packages/app/.agents/skills/review/SKILL.md",
+            "/services/api/.codex/config.toml",
+            "/packages/app/.mcp.json",
+            "/.cursor/rules/review.mdc",
+            "/.cursor/mcp.json",
+            "/.cursorrules",
+            "/apps/web/.cursorrules",
+            "/GEMINI.md",
+            "/docs/gemini.md",
+            "/.gemini/settings.json",
+            "/.windsurfrules",
+            "/.windsurf/rules/review.md",
+            "/.clinerules",
+            "/.clinerules/review.md",
+            "/.github/copilot-instructions.md",
+            "/.github/instructions/rust.instructions.md",
+            "/.GitHub/Instructions/rust.instructions.md",
+            "/.vscode/mcp.json",
+            "/packages/app/.github/instructions/review.instructions.md",
+            "/packages/app/.vscode/mcp.json",
+            "/.cur\u{200c}sor/rules/review.mdc",
+            "/src/AGENTS\u{feff}.md",
+            "/.github/instruc\u{200d}tions/review.instructions.md",
+            "/.sco\u{202e}pe/RULES.md",
         ] {
             assert!(is_request_protected_path(&path(protected)), "{protected}");
         }
-        for ordinary in ["/README.md", "/src/agent-notes.md", "/notes/CLAUDE.txt"] {
+        for ordinary in [
+            "/README.md",
+            "/src/agent-notes.md",
+            "/notes/CLAUDE.txt",
+            "/.github/workflows/ci.yml",
+            "/.github/ISSUE_TEMPLATE/bug.md",
+            "/.vscode/settings.json",
+            "/docs/cursor.md",
+            "/src/gemini.rs",
+            "/src/mcp.json",
+            "/docs/instructions/setup.md",
+            "/.github/docs/instructions/guide.md",
+            "/docs/fam\u{200d}ily.md",
+        ] {
             assert!(!is_request_protected_path(&path(ordinary)), "{ordinary}");
         }
     }
