@@ -175,7 +175,7 @@ jobs:
         with:
           cache-bin: ${{ matrix.builder == 'cross' }}
           shared-key: cli-build-${{ matrix.profile }}-${{ matrix.target }}
-          save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && matrix.profile != 'release' }}
+          save-if: ${{ matrix.profile != 'release' }}
           workspaces: |
             cli -> target
             . -> target
