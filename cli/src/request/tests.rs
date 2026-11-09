@@ -114,16 +114,18 @@ fn a_new_request_takes_the_current_branch_only_when_it_holds_scope_main() {
         root: dir.path().to_path_buf(),
     };
     let refusal = |base: &str| {
-        let error = super::local::adoptable_current_branch(&repo, base).unwrap_err();
+        let error = super::local::adoptable_current_branch(&repo, base, "scope/main").unwrap_err();
         assert_eq!(crate::error::exit_code(&error), 2);
         error.to_string()
     };
 
     assert!(refusal(&new_main).contains("main cannot become a request branch"));
     dir.run_git(["switch", "docs/rules"]);
-    assert!(refusal(&new_main).contains("does not contain the selected base"));
+    let stale = refusal(&new_main);
+    assert!(stale.contains("does not contain the selected base"));
+    assert!(stale.contains("`git rebase scope/main`, then retry"));
     assert_eq!(
-        super::local::adoptable_current_branch(&repo, &old_main).unwrap(),
+        super::local::adoptable_current_branch(&repo, &old_main, "scope/main").unwrap(),
         "docs/rules"
     );
     dir.run_git(["config", "branch.docs/rules.scopeRequestId", "req_taken"]);

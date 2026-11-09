@@ -366,6 +366,7 @@ pub(super) fn store_request_metadata(
 pub(super) fn adoptable_current_branch(
     git_repo: &GitRepo,
     base_oid: &str,
+    rebase_onto: &str,
 ) -> anyhow::Result<String> {
     let branch = current_branch(git_repo)?;
     if branch == DEFAULT_SCOPE_BRANCH {
@@ -382,7 +383,7 @@ pub(super) fn adoptable_current_branch(
     }
     if !try_run_git_in_repo(git_repo, &["merge-base", "--is-ancestor", base_oid, "HEAD"])? {
         return Err(crate::error::CliError::usage(format!(
-            "branch '{branch}' does not contain the selected base at {}; merge or rebase onto it, then retry",
+            "branch '{branch}' does not contain the selected base at {}; run `git rebase {rebase_onto}`, then retry",
             short_oid(base_oid)
         ))
         .into());
