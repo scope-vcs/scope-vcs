@@ -53,9 +53,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install media codecs
-        uses: ./.github/actions/install-media-codecs
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
         with:
@@ -118,7 +115,7 @@ jobs:
         id: stack
         env:
           SCOPE_DEV_HEADLESS_E2E: '0'
-        run: ./dev/scope-dev up
+        run: ./dev/scope-dev up --no-media
 
       - name: Wait for seeded projections
         id: projections
