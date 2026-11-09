@@ -2,7 +2,10 @@ mod image;
 
 pub use image::{ImageContextPath, ImageContextPathError};
 
-use crate::{policy::ScopePath, runs::workflow::identity::WorkflowPath};
+use crate::{
+    policy::{ScopePath, without_hfs_ignored_characters},
+    runs::workflow::identity::WorkflowPath,
+};
 
 pub const REPO_CONTROL_ROOT: &str = "/.scope";
 pub const REPO_CONTROL_PREFIX: &str = "/.scope/";
@@ -41,15 +44,15 @@ pub fn is_repo_rules_path(path: &ScopePath) -> bool {
 }
 
 pub fn is_request_protected_path(path: &ScopePath) -> bool {
-    is_case_folded_repo_control_path(path) || is_agent_context_path(path)
+    is_filesystem_alias_of_repo_control_path(path) || is_agent_context_path(path)
 }
 
-fn is_case_folded_repo_control_path(path: &ScopePath) -> bool {
+fn is_filesystem_alias_of_repo_control_path(path: &ScopePath) -> bool {
     path.as_str()
         .trim_start_matches('/')
         .split('/')
         .next()
-        .is_some_and(|root| root.eq_ignore_ascii_case(".scope"))
+        .is_some_and(|root| without_hfs_ignored_characters(root).eq_ignore_ascii_case(".scope"))
 }
 
 const AGENT_CONTEXT_SEGMENTS: [&str; 16] = [
@@ -75,7 +78,12 @@ const AGENT_CONTEXT_SEGMENT_PAIRS: [(&str, &str); 2] =
     [(".github", "instructions"), (".vscode", "mcp.json")];
 
 fn is_agent_context_path(path: &ScopePath) -> bool {
-    let segments: Vec<&str> = path.as_str().trim_start_matches('/').split('/').collect();
+    let segments: Vec<String> = path
+        .as_str()
+        .trim_start_matches('/')
+        .split('/')
+        .map(without_hfs_ignored_characters)
+        .collect();
     segments.iter().any(|segment| {
         AGENT_CONTEXT_SEGMENTS
             .iter()
@@ -184,6 +192,12 @@ mod tests {
             "/.github/instructions/rust.instructions.md",
             "/.GitHub/Instructions/rust.instructions.md",
             "/.vscode/mcp.json",
+            "/packages/app/.github/instructions/review.instructions.md",
+            "/packages/app/.vscode/mcp.json",
+            "/.cur\u{200c}sor/rules/review.mdc",
+            "/src/AGENTS\u{feff}.md",
+            "/.github/instruc\u{200d}tions/review.instructions.md",
+            "/.sco\u{202e}pe/RULES.md",
         ] {
             assert!(is_request_protected_path(&path(protected)), "{protected}");
         }
@@ -198,6 +212,8 @@ mod tests {
             "/src/gemini.rs",
             "/src/mcp.json",
             "/docs/instructions/setup.md",
+            "/.github/docs/instructions/guide.md",
+            "/docs/fam\u{200d}ily.md",
         ] {
             assert!(!is_request_protected_path(&path(ordinary)), "{ordinary}");
         }

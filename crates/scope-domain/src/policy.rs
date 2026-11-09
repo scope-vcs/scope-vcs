@@ -24,6 +24,21 @@ pub enum PolicyError {
     PublicIsland { child: ScopePath, parent: ScopePath },
 }
 
+pub fn without_hfs_ignored_characters(component: &str) -> String {
+    component
+        .chars()
+        .filter(|character| {
+            !matches!(
+                character,
+                '\u{200c}'..='\u{200f}'
+                    | '\u{202a}'..='\u{202e}'
+                    | '\u{206a}'..='\u{206f}'
+                    | '\u{feff}'
+            )
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ScopePath(String);
 

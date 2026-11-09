@@ -1,4 +1,4 @@
-use scope_domain::policy::ScopePath;
+use scope_domain::policy::{ScopePath, without_hfs_ignored_characters};
 use std::fmt;
 use thiserror::Error;
 
@@ -67,33 +67,7 @@ fn is_ntfs_dot_git(component: &str) -> bool {
 }
 
 fn is_hfs_dot_git(component: &str) -> bool {
-    component
-        .chars()
-        .filter(|character| !is_hfs_ignored(*character))
-        .collect::<String>()
-        .eq_ignore_ascii_case(".git")
-}
-
-fn is_hfs_ignored(character: char) -> bool {
-    matches!(
-        character,
-        '\u{200c}'
-            | '\u{200d}'
-            | '\u{200e}'
-            | '\u{200f}'
-            | '\u{202a}'
-            | '\u{202b}'
-            | '\u{202c}'
-            | '\u{202d}'
-            | '\u{202e}'
-            | '\u{206a}'
-            | '\u{206b}'
-            | '\u{206c}'
-            | '\u{206d}'
-            | '\u{206e}'
-            | '\u{206f}'
-            | '\u{feff}'
-    )
+    without_hfs_ignored_characters(component).eq_ignore_ascii_case(".git")
 }
 
 fn is_windows_reserved_device_name(component: &str) -> bool {
