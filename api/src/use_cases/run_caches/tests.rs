@@ -13,9 +13,9 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use scope_api_contract::{
-    AttemptCacheKey, CommitAttemptCacheUploadRequest, PrepareAttemptCacheUploadRequest,
-    PrepareAttemptCacheUploadResponse, RestoreAttemptCacheRequest, RestoreAttemptCacheResponse,
-    routes,
+    AttemptCacheKey, CacheRestoreSource, CommitAttemptCacheUploadRequest,
+    PrepareAttemptCacheUploadRequest, PrepareAttemptCacheUploadResponse,
+    RestoreAttemptCacheRequest, RestoreAttemptCacheResponse, routes,
 };
 use scope_domain::{
     account::UserAccount,
@@ -42,6 +42,8 @@ use tower::ServiceExt as _;
 
 const ATTEMPT_ID: &str = "attempt-run-cache";
 const ATTEMPT_TOKEN: &str = "scope_attempt_run_cache";
+const REQUEST_ATTEMPT_ID: &str = "attempt-request-run-cache";
+const REQUEST_ATTEMPT_TOKEN: &str = "scope_attempt_request_run_cache";
 
 struct StoredObject {
     bytes: Vec<u8>,
@@ -228,7 +230,7 @@ fn seed_repository(state: &AppState) -> String {
     repository_id
 }
 
-async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger) {
+async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger, attempt_id: &str, token: &str) {
     let image = format!("alpine@sha256:{}", "a".repeat(64));
     let cache = "{ name: cargo, path: /scope/cache/cargo, format: tar-zstd-v1, compatibility: { source: false }, exact: { source: false } }";
     let yaml = format!(
@@ -247,11 +249,12 @@ async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger) {
         size_bytes: 1,
     })
     .unwrap();
+    let run_id = format!("run-{attempt_id}");
     let runs = fixture.state.metadata.runs();
     runs.enqueue_run(
         Run::new(
-            "run-cache-run",
-            "run-cache-test",
+            run_id.clone(),
+            run_id.clone(),
             revision.workflow().clone(),
             revision.digest(),
             trigger,
@@ -265,10 +268,10 @@ async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger) {
     .await
     .unwrap();
     runs.dispatch_job(
-        "run-cache-run",
+        &run_id,
         "checks",
-        ATTEMPT_ID,
-        &machine_token_hash(ATTEMPT_TOKEN),
+        attempt_id,
+        &machine_token_hash(token),
         "test-runtime",
         fixture.now,
         fixture.now + 3_600,
@@ -282,11 +285,20 @@ async fn post_json(
     path: &str,
     body: &impl serde::Serialize,
 ) -> (StatusCode, Vec<u8>) {
+    post_json_as(app, ATTEMPT_TOKEN, path, body).await
+}
+
+async fn post_json_as(
+    app: &axum::Router,
+    token: &str,
+    path: &str,
+    body: &impl serde::Serialize,
+) -> (StatusCode, Vec<u8>) {
     let response = app
         .clone()
         .oneshot(
             Request::post(path)
-                .header(AUTHORIZATION, format!("Bearer {ATTEMPT_TOKEN}"))
+                .header(AUTHORIZATION, format!("Bearer {token}"))
                 .header(reqwest::header::CONTENT_TYPE, "application/json")
                 .body(Body::from(serde_json::to_vec(body).unwrap()))
                 .unwrap(),
@@ -301,7 +313,7 @@ async fn post_json(
 #[tokio::test]
 async fn attempt_cache_round_trip_is_cold_then_warm_then_unchanged_and_ends_with_the_attempt() {
     let fixture = Fixture::new().await;
-    dispatch_attempt(&fixture, RunTrigger::Manual).await;
+    dispatch_attempt(&fixture, RunTrigger::Manual, ATTEMPT_ID, ATTEMPT_TOKEN).await;
     let app = router(fixture.state.clone());
     let cache = AttemptCacheKey {
         cache_name: "cargo".to_string(),
@@ -427,47 +439,53 @@ async fn attempt_cache_round_trip_is_cold_then_warm_then_unchanged_and_ends_with
 }
 
 #[tokio::test]
-async fn request_runs_restore_caches_but_cannot_save_them() {
+async fn request_runs_restore_saved_caches_but_cannot_save_them() {
     let fixture = Fixture::new().await;
-    dispatch_attempt(&fixture, RunTrigger::Request).await;
+    dispatch_attempt(&fixture, RunTrigger::Manual, ATTEMPT_ID, ATTEMPT_TOKEN).await;
+    dispatch_attempt(
+        &fixture,
+        RunTrigger::Request,
+        REQUEST_ATTEMPT_ID,
+        REQUEST_ATTEMPT_TOKEN,
+    )
+    .await;
     let app = router(fixture.state.clone());
     let cache = AttemptCacheKey {
         cache_name: "cargo".to_string(),
         compatibility_inputs_digest: "1".repeat(64),
         exact_inputs_digest: "2".repeat(64),
     };
-    let restore = RestoreAttemptCacheRequest {
-        cache: cache.clone(),
-    };
-    let (status, cold) =
-        post_json(&app, &routes::attempt_cache_restore(ATTEMPT_ID), &restore).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        serde_json::from_slice::<RestoreAttemptCacheResponse>(&cold).unwrap(),
-        RestoreAttemptCacheResponse::Miss
-    );
-
-    let object_digest = "4".repeat(64);
+    let object_bytes = b"cache saved by a manual run".to_vec();
     let prepare = PrepareAttemptCacheUploadRequest {
         cache: cache.clone(),
-        object_digest: object_digest.clone(),
-        size_bytes: 1,
+        object_digest: hex::encode(Sha256::digest(&object_bytes)),
+        size_bytes: object_bytes.len() as u64,
     };
-    assert_eq!(
-        post_json(
-            &app,
-            &routes::attempt_cache_upload_prepare(ATTEMPT_ID),
-            &prepare
-        )
-        .await
-        .0,
-        StatusCode::FORBIDDEN
-    );
+    let (_, prepared) = post_json(
+        &app,
+        &routes::attempt_cache_upload_prepare(ATTEMPT_ID),
+        &prepare,
+    )
+    .await;
+    let PrepareAttemptCacheUploadResponse::Upload {
+        lease_id,
+        upload_url,
+        upload_headers,
+        ..
+    } = serde_json::from_slice(&prepared).unwrap()
+    else {
+        panic!("first prepare must upload");
+    };
+    let mut put = reqwest::Client::new().put(upload_url).body(object_bytes);
+    for (name, value) in upload_headers {
+        put = put.header(name, value);
+    }
+    assert!(put.send().await.unwrap().status().is_success());
     let commit = CommitAttemptCacheUploadRequest {
-        cache,
-        lease_id: "none".to_string(),
-        object_digest,
-        size_bytes: 1,
+        cache: cache.clone(),
+        lease_id,
+        object_digest: prepare.object_digest.clone(),
+        size_bytes: prepare.size_bytes,
     };
     assert_eq!(
         post_json(
@@ -477,9 +495,70 @@ async fn request_runs_restore_caches_but_cannot_save_them() {
         )
         .await
         .0,
+        StatusCode::NO_CONTENT
+    );
+
+    let (status, restored) = post_json_as(
+        &app,
+        REQUEST_ATTEMPT_TOKEN,
+        &routes::attempt_cache_restore(REQUEST_ATTEMPT_ID),
+        &RestoreAttemptCacheRequest {
+            cache: cache.clone(),
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(matches!(
+        serde_json::from_slice(&restored).unwrap(),
+        RestoreAttemptCacheResponse::Hit {
+            source: CacheRestoreSource::Exact,
+            ..
+        }
+    ));
+
+    let other_exact = AttemptCacheKey {
+        exact_inputs_digest: "3".repeat(64),
+        ..cache
+    };
+    let stored_object_under_other_exact = PrepareAttemptCacheUploadRequest {
+        cache: other_exact.clone(),
+        ..prepare
+    };
+    assert_eq!(
+        post_json_as(
+            &app,
+            REQUEST_ATTEMPT_TOKEN,
+            &routes::attempt_cache_upload_prepare(REQUEST_ATTEMPT_ID),
+            &stored_object_under_other_exact,
+        )
+        .await
+        .0,
         StatusCode::FORBIDDEN
     );
-    assert!(fixture.objects.objects.lock().unwrap().is_empty());
+    assert_eq!(
+        post_json_as(
+            &app,
+            REQUEST_ATTEMPT_TOKEN,
+            &routes::attempt_cache_upload_commit(REQUEST_ATTEMPT_ID),
+            &commit,
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (_, fallback) = post_json(
+        &app,
+        &routes::attempt_cache_restore(ATTEMPT_ID),
+        &RestoreAttemptCacheRequest { cache: other_exact },
+    )
+    .await;
+    assert!(matches!(
+        serde_json::from_slice(&fallback).unwrap(),
+        RestoreAttemptCacheResponse::Hit {
+            source: CacheRestoreSource::Compatible,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]
