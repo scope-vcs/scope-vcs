@@ -1,10 +1,57 @@
 use super::*;
+use crate::api::{
+    RequestDiscussionPageResponse, RequestDiscussionStatus, RequestDiscussionSummaryResponse,
+    list_request_discussions,
+};
 use scope_api_contract::attachments::{RequestAttachmentTargetInput, RequestAttachmentTargetKind};
 
 pub(super) enum DiscussionMutation {
     Start(Option<RequestDiscussionAnchorInput>),
     Reply(String),
     Reopen(String),
+}
+
+pub(super) fn list_request_discussions_command(
+    git_repo: Option<&GitRepo>,
+    api: ApiSession<'_>,
+    args: args::RequestDiscussionListArgs,
+) -> anyhow::Result<RequestCommandOutcome> {
+    let (context, request_id) =
+        load_context_and_request_id(git_repo, api, args.target.remote, args.target.request)?;
+    let target = api_target(&context, &request_id);
+    let discussions = collect_discussions(args.open, |cursor| {
+        list_request_discussions(api, target, cursor)
+    })?;
+    let human_lines = render::discussion_list_lines(&discussions);
+    Ok(RequestCommandOutcome::new(
+        "request.discussion.list",
+        RequestCommandResult::DiscussionList(DiscussionListResult {
+            repo: context.repo,
+            request_id,
+            discussions,
+        }),
+        human_lines,
+    ))
+}
+
+pub(super) fn collect_discussions(
+    open_only: bool,
+    mut fetch_page: impl FnMut(Option<&str>) -> anyhow::Result<RequestDiscussionPageResponse>,
+) -> anyhow::Result<Vec<RequestDiscussionSummaryResponse>> {
+    let mut discussions = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let page = fetch_page(cursor.as_deref())?;
+        discussions.extend(
+            page.discussions.into_iter().filter(|discussion| {
+                !open_only || discussion.status == RequestDiscussionStatus::Open
+            }),
+        );
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => return Ok(discussions),
+        }
+    }
 }
 
 pub(super) fn discussion_mutation(

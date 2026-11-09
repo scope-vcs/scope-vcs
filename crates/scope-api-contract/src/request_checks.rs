@@ -159,6 +159,8 @@ pub struct RequestChecksResponse {
     pub request_id: String,
     pub head_oid: GitOid,
     /// `None` while the head has no evaluation: nothing is known about its checks yet.
+    /// Otherwise the approval step of the evaluation, which does not change when
+    /// the checks finish; `outcome` carries the result.
     pub state: Option<RequestCheckEvaluationState>,
     /// What the head's required checks add up to, the answer mergeability
     /// gates on: `clear` once every one passed or none is required,
@@ -181,8 +183,8 @@ pub struct RequestChecksResponse {
     /// repository opens pull requests for review bots, since a bot can only
     /// review a request through that pull request.
     pub review_bots_enforced: bool,
-    /// Whether approving would run workflow files this request changes. Only
-    /// worked out for a viewer who can approve GitHub checks.
+    /// Whether the request changes workflow files that its GitHub checks run, at
+    /// any check state. Only worked out for a viewer who may review the checks.
     pub changes_github_workflows: bool,
     /// Whether this private request's checks run in a public GitHub
     /// repository, where everything Scope pushes is public.

@@ -28,6 +28,32 @@ fn list_requests_sends_the_opaque_cursor_as_a_query_parameter() {
 }
 
 #[test]
+fn list_request_discussions_sends_the_page_size_and_opaque_cursor() {
+    let (api_url, server) = serve_once(
+        StatusCode::OK,
+        r#"{"discussions":[],"next_cursor":null,"snapshot_version":4}"#,
+    );
+
+    let page = list_request_discussions(
+        ApiSession::new(&http_client_builder().build().unwrap(), &api_url, "token"),
+        target(),
+        Some("next page/+"),
+    )
+    .unwrap();
+
+    assert!(page.discussions.is_empty());
+    let request = server.join().unwrap();
+    assert!(
+        request
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with("/v1/repos/owner/repo/requests/req_one/timeline?limit=100&cursor=next+page%2F%2B HTTP/1.1"),
+        "{request}"
+    );
+}
+
+#[test]
 fn request_named_filters_by_the_exact_name_in_one_request() {
     let (api_url, server) = serve_once(StatusCode::OK, r#"{"requests":[],"next_cursor":null}"#);
 
