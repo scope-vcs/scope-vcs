@@ -1,6 +1,8 @@
 use super::{
-    AuthStore, acquire_aggregate_lock, auth::load_user_by_id,
-    clerk_user_deletions::clerk_user_deletion_recorded, entities,
+    AuthStore, acquire_aggregate_lock,
+    clerk_user_deletions::clerk_user_deletion_recorded,
+    entities,
+    joined_rows::{joined, prefixed_columns},
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -8,8 +10,8 @@ use scope_domain::{
     account::{ExternalIdentity, deletion::CLERK_PROVIDER, handles::is_reserved_handle},
 };
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend, EntityTrait, FromQueryResult,
+    IntoActiveModel, QueryFilter, Statement, TransactionTrait,
 };
 use sha2::{Digest, Sha256};
 
@@ -54,18 +56,35 @@ async fn existing_identity_user<C>(
 where
     C: sea_orm::ConnectionTrait,
 {
-    let Some(auth_identity) = entities::auth_identity::Entity::find()
-        .filter(entities::auth_identity::Column::Provider.eq(identity.provider.as_str()))
-        .filter(entities::auth_identity::Column::Subject.eq(identity.subject.clone()))
-        .one(conn)
+    let Some(row) = conn
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "SELECT {}, email_owner.id AS email_owner_id
+             FROM scope_auth_identities identity
+             LEFT JOIN scope_users account ON account.id = identity.user_id
+             LEFT JOIN scope_users email_owner ON email_owner.email = $3
+             WHERE identity.provider = $1 AND identity.subject = $2",
+                prefixed_columns::<entities::user::Column>("account", "u_"),
+            ),
+            [
+                identity.provider.as_str().into(),
+                identity.subject.as_str().into(),
+                verified_email.into(),
+            ],
+        ))
         .await?
     else {
         return Ok(None);
     };
-
-    let mut user = load_user_by_id(conn, &auth_identity.user_id).await?;
-    if let Some(email_owner) = load_user_by_email(conn, verified_email).await?
-        && email_owner.id != user.id
+    if !joined(&row, "u_id")? {
+        return Err(PostgresError::internal_message(
+            "signed-in user was not persisted",
+        ));
+    }
+    let mut user = entities::user::Model::from_query_result(&row, "u_")?.try_into_domain()?;
+    if let Some(email_owner_id) = row.try_get::<Option<String>>("", "email_owner_id")?
+        && email_owner_id != user.id
     {
         return Err(PostgresError::conflict(
             "verified email belongs to another Scope user",
@@ -334,6 +353,92 @@ mod tests {
             resolutions.push(result.unwrap().unwrap());
         }
         resolutions
+    }
+
+    #[tokio::test]
+    async fn existing_identity_reads_preserve_email_resolution_and_errors() {
+        use crate::db::test_support::read_budget::assert_round_trips;
+        use crate::error::PostgresErrorKind;
+        let store =
+            MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap())
+                .unwrap();
+        let auth = store.auth();
+        let mut identity = ExternalIdentity {
+            provider: "clerk".into(),
+            subject: "existing".into(),
+            email: Some("Existing@Example.com".into()),
+            email_verified: true,
+        };
+        assert!(
+            assert_round_trips(1, auth.resolve_existing_clerk_user(&identity))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let persisted = auth.resolve_clerk_user(&identity, 1).await.unwrap().user;
+        assert_eq!(
+            assert_round_trips(1, auth.resolve_existing_clerk_user(&identity))
+                .await
+                .unwrap(),
+            Some(persisted.clone())
+        );
+        identity.email = Some(" Changed@Example.com ".into());
+        let changed = assert_round_trips(1, auth.resolve_existing_clerk_user(&identity))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(changed.id, persisted.id);
+        assert_eq!(changed.email, "changed@example.com");
+        assert_eq!(
+            super::super::auth::load_user_by_id(store.db.as_ref(), &persisted.id)
+                .await
+                .unwrap(),
+            persisted
+        );
+        auth.resolve_clerk_user(
+            &ExternalIdentity {
+                subject: "other".into(),
+                ..identity.clone()
+            },
+            2,
+        )
+        .await
+        .unwrap();
+        let conflict = assert_round_trips(1, auth.resolve_existing_clerk_user(&identity))
+            .await
+            .unwrap_err();
+        assert_eq!(conflict.kind, PostgresErrorKind::Conflict);
+        assert_eq!(
+            conflict.message,
+            "verified email belongs to another Scope user"
+        );
+        identity.subject = "unlinked".into();
+        assert!(
+            assert_round_trips(1, auth.resolve_existing_clerk_user(&identity))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        for email in [None, Some(" ".into()), Some("valid@example.com".into())] {
+            identity.email = email;
+            identity.email_verified = identity.email.as_deref() != Some("valid@example.com");
+            let error = assert_round_trips(0, auth.resolve_existing_clerk_user(&identity))
+                .await
+                .unwrap_err();
+            assert_eq!(error.kind, PostgresErrorKind::Unauthenticated);
+            assert_eq!(error.message, "verified email required");
+        }
+        let db = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([[std::collections::BTreeMap::from([(
+                "u_id",
+                sea_orm::Value::String(None),
+            )])]])
+            .into_connection();
+        let error = existing_identity_user(&db, &identity, "valid@example.com")
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind, PostgresErrorKind::Internal);
+        assert_eq!(error.message, "signed-in user was not persisted");
     }
 
     #[tokio::test]

@@ -1,5 +1,6 @@
 mod attention;
 mod discussion_commands;
+mod state_reads;
 pub(crate) mod terminal_effects;
 
 use terminal_effects::{assert_terminal_effects, seed_terminal_effects};
