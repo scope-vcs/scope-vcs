@@ -341,3 +341,18 @@ test('coalesced invalidations finish the active read and require one retained fo
   assert.equal(store.peek('request')?.text, 'after')
   assert.equal(store.getSnapshot('request').stale, false)
 })
+
+test('a value is weighed once while it stays cached', async () => {
+  const weightOf = mock.fn((cached: Value) => cached.text.length)
+  const store = createCachedResource<Value>({ maxEntries: 4, maxWeight: 1024, weightOf })
+  const first = value('first')
+  await store.ensure('repo', '1', async () => first)
+  store.invalidate('repo')
+  await store.ensure('repo', '1', () => Promise.reject(new Error('offline')))
+  assert.equal(store.getSnapshot('repo').value, first)
+  assert.equal(weightOf.mock.callCount(), 1)
+
+  store.invalidate('repo')
+  await store.ensure('repo', '1', async () => value('second'))
+  assert.equal(weightOf.mock.callCount(), 2)
+})
