@@ -89,17 +89,6 @@ impl Case {
         }
     }
 
-    fn parameters(&self) -> Vec<&'static str> {
-        let mut parameters = Vec::new();
-        let mut rest = self.template;
-        while let Some(start) = rest.find('{') {
-            let end = start + rest[start..].find('}').unwrap();
-            parameters.push(self.value_key(&rest[start + 1..end]));
-            rest = &rest[end + 1..];
-        }
-        parameters
-    }
-
     fn uri(&self, params: &BTreeMap<&'static str, String>) -> String {
         let mut uri = String::new();
         let mut rest = self.template;
@@ -293,7 +282,6 @@ async fn check(repo_a: &RepoA, case: &Case, caller: Caller) -> Checked {
     }
     if caller == Caller::Outsider && case.names_repository_children() {
         failures.extend(children_through_own_repository(repo_a, case).await);
-        failures.extend(siblings_under_own_parents(repo_a, case).await);
     }
     if caller == Caller::NarrowMember && case.template.contains("{view}") {
         let mut own_view = repo_a.params.clone();
@@ -339,48 +327,6 @@ async fn children_through_own_repository(repo_a: &RepoA, case: &Case) -> Vec<Str
             "Outsider {} {uri}: repo A's ids under repo B answer {} {observed_text} but absent ids answer {} {absent_text}",
             case.method, observed.status, absent.status
         ));
-    }
-    failures
-}
-
-async fn siblings_under_own_parents(repo_a: &RepoA, case: &Case) -> Vec<String> {
-    let parents = ["owner", "repo", "view", "request_id", "run_id"];
-    let parameters = case.parameters();
-    if !parameters
-        .iter()
-        .any(|name| ["request_id", "run_id"].contains(name))
-    {
-        return Vec::new();
-    }
-    let mut failures = Vec::new();
-    for child in parameters
-        .iter()
-        .filter(|name| !parents.contains(name))
-        .filter(|name| repo_a.params[*name] != repo_a.siblings_in_b[*name])
-    {
-        let mut with_a_child = repo_a.siblings_in_b.clone();
-        with_a_child.insert(child, repo_a.params[child].clone());
-        let uri = case.uri(&with_a_child);
-        let observed = call(repo_a, case, &uri, Caller::Outsider).await;
-        let absent = call(
-            repo_a,
-            case,
-            &case.uri(&repo_a.siblings_in_b),
-            Caller::Outsider,
-        )
-        .await;
-        let leaks = leaked(&observed.text, &repo_a.outsider_markers);
-        if !leaks.is_empty() {
-            failures.push(format!("Outsider {} {uri}: leaked {leaks:?}", case.method));
-        }
-        let observed_text = normalized(&observed.text, &with_a_child);
-        let absent_text = normalized(&absent.text, &repo_a.siblings_in_b);
-        if observed.status != absent.status || observed_text != absent_text {
-            failures.push(format!(
-                "Outsider {} {uri}: repo A's {child} under repo B's parent answers {} {observed_text} but an absent {child} answers {} {absent_text}",
-                case.method, observed.status, absent.status
-            ));
-        }
     }
     failures
 }

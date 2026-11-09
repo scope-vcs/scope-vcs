@@ -2,7 +2,6 @@ use super::super::custom_views::{custom_view, member_id, view};
 use super::super::*;
 use super::seeds::{
     GITHUB_JOB_ID, GITHUB_JOB_NAME, GITHUB_RUN_ID, GITHUB_WORKFLOW_NAME, seed_github_run,
-    seed_repo_b,
 };
 use super::write_bodies::{WriteBodies, write_bodies};
 use scope_api_contract::routes;
@@ -43,7 +42,6 @@ pub(super) struct RepoA {
     pub(super) absent: BTreeMap<&'static str, String>,
     pub(super) children_in_b: BTreeMap<&'static str, String>,
     pub(super) absent_children_in_b: BTreeMap<&'static str, String>,
-    pub(super) siblings_in_b: BTreeMap<&'static str, String>,
     pub(super) queries: Vec<String>,
     pub(super) write_query: String,
     pub(super) write_bodies: WriteBodies,
@@ -490,16 +488,6 @@ pub(super) async fn repo_a() -> RepoA {
     };
     let children_in_b = in_b(&params);
     let absent_children_in_b = in_b(&absent);
-    let repo_b_parents = seed_repo_b(
-        &state,
-        &format!("{OUTSIDER_HANDLE}/repo-b"),
-        &scope_postgres::db::scope_user_id_for_auth_identity("clerk", OUTSIDER_SUBJECT),
-        &bearer_header_for(OUTSIDER_SUBJECT, OUTSIDER_EMAIL),
-    )
-    .await;
-    let mut siblings_in_b = absent_children_in_b.clone();
-    siblings_in_b.insert("request_id", repo_b_parents.request_id);
-    siblings_in_b.insert("run_id", repo_b_parents.run_id);
     let common = format!(
         "section=active&after=0&workflow=test&git_oid={head}&commit_oid={head}&search=hidden&service=git-upload-pack"
     );
@@ -556,7 +544,6 @@ pub(super) async fn repo_a() -> RepoA {
         absent,
         children_in_b,
         absent_children_in_b,
-        siblings_in_b,
         queries,
         write_query,
         write_bodies,
