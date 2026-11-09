@@ -3546,7 +3546,6 @@ Source: https://registry.npmjs.org/lucide-react/-/lucide-react-1.56.0.tgz
 Published author metadata: "Eric Fennis"
 Repository: {"type": "git", "url": "https://github.com/lucide-icons/lucide.git", "directory": "packages/lucide-react"}
 LICENSE: text ee35498e6684b30c9efaae009415884772f4450b3f6a3ae49103cd550a2c8ceb
-dist/esm/icons/copyright.mjs: text 7d148e988aeec195bb0c63342bb7b3ca665a7d0c60683ba6678e28500c8aacb4
 
 ==============================================================================
 magic-string 0.30.21
@@ -4969,17 +4968,7 @@ The ISC License
 
 Copyright (c) Isaac Z. Schlueter and Contributors
 
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
-IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 0e763b76f9a9b83e64736b6ce66e242ad485618552e96e1e2e10b56ed77ce859 ---
 Copyright (c) 2015 Luigi Pinca
@@ -5052,17 +5041,7 @@ ISC License
 
 Copyright (c) 2021, Andrea Giammarchi, @WebReflection
 
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
-OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 277d2a8e459713d6c596bab89ef857cb8b2433223fa9edb49ccc403a6ceb08ee ---
 MIT License
@@ -5132,17 +5111,7 @@ ISC License
 
 Copyright (c) 2026, Mapbox
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 2cf2d507c76caa8f03a7cba7a796417707ed01850cc7c7f98a99a4bc5d7f2175 ---
 (The MIT License)
@@ -5221,30 +5190,7 @@ Copyright (c) Pooya Parsa <pooya@pi0.io>
 Copyright 2015, Mike Bostock
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-* Neither the name of the author nor the names of contributors may be used to
-  endorse or promote products derived from this software without specific prior
-  written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 8f3332355c69aa0a203cbaf26a33602e255dbe10204886d0b9d0eae54615de82]
 
 --- text 3a2bf91a2d9811efcf96c0bc7faa2849371a5ae4472565f122b87c24c1aed556 ---
 MIT License
@@ -5279,30 +5225,7 @@ Copyright (c) 2024 Madeline Gurriarán
 Copyright 2015-2016 Mike Bostock
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-* Neither the name of the author nor the names of contributors may be used to
-  endorse or promote products derived from this software without specific prior
-  written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 8f3332355c69aa0a203cbaf26a33602e255dbe10204886d0b9d0eae54615de82]
 
 --- text 4b47df8ec8583084069175f41b780674a7e2c66b3b3805a1ba9d39411cadc948 ---
 MIT License
@@ -5344,62 +5267,19 @@ Copyright (c) 2021-PRESENT Nuxt Contrib
 --- text 4f4f9997e3d96636b08171484bf3e2b5a8a46745e2b0dd4d4f86b0e5cfa632e8 ---
 Copyright 2010-2022 Mike Bostock
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 4f8e381e74d41111b8220c5b93c5c8fd1e5abc9d1a4d963ee6dd679c4631b63c ---
 Copyright 2018-2021 Observable, Inc.
 Copyright 2021 Mapbox
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 50366760ca8535f84b7aee30309f9ec70f78677843b1fc73491e6d1803edea69 ---
 Copyright 2010-2015 Mike Bostock
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-* Neither the name of the author nor the names of contributors may be used to
-  endorse or promote products derived from this software without specific prior
-  written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 8f3332355c69aa0a203cbaf26a33602e255dbe10204886d0b9d0eae54615de82]
 
 --- text 54fb5c6069dd9958d4434f91b677ac92b0213d4c2f368cd05ffea3c3a9c7411c ---
 MIT License
@@ -5430,45 +5310,12 @@ Copyright © Jorge Bucaran <https://jorgebucaran.com>
 Copyright 2010-2020 Mike Bostock
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-* Neither the name of the author nor the names of contributors may be used to
-  endorse or promote products derived from this software without specific prior
-  written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 8f3332355c69aa0a203cbaf26a33602e255dbe10204886d0b9d0eae54615de82]
 
 --- text 58f959e2911ca1fdd6812a2cebe42193c6137922ecbcce86d8233873706181ab ---
 Copyright 2015-2022 Mike Bostock
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 5937a76954e9322bac4f3ada3634b2d01cdf22bd05c630f7ec672c5487a8182f ---
 Copyright (C) 2012-2014 by various contributors (see AUTHORS)
@@ -5913,17 +5760,7 @@ Copyright (c) 2017 Ilya Kantor
 --- text 6019bf3451952141c4561a8a814c965b71166df316a8c7f3f435f090b3c329c1 ---
 Copyright 2010-2021 Mike Bostock
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 65c34e71fd16373196cb23cd421a7717ca9fba1dc94ee28bd4ff2365e7511731 ---
 MIT License
@@ -6378,30 +6215,7 @@ Copyright 2010-2021 Mike Bostock
 Copyright 2001 Robert Penner
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-* Neither the name of the author nor the names of contributors may be used to
-  endorse or promote products derived from this software without specific prior
-  written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 8f3332355c69aa0a203cbaf26a33602e255dbe10204886d0b9d0eae54615de82]
 
 --- text 6a972b33787e14304b4cfca68387f8644d11788a5d551731196b8e64dd9f0431 ---
 Copyright (c) 2017-2018 Fredrik Nicol
@@ -6880,17 +6694,7 @@ The ISC License
 
 Copyright (c) 2011-2022 Isaac Z. Schlueter, Ben Noordhuis, and Contributors
 
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
-IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 74144f6a3a6cb5150f30b4c09011121201349ea0b2d2a0ec3f0bad1399c0e559 ---
 MIT License
@@ -6980,115 +6784,7 @@ https://openfontlicense.org
 
 
 -----------------------------------------------------------
-SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
------------------------------------------------------------
-
-PREAMBLE
-The goals of the Open Font License (OFL) are to stimulate worldwide
-development of collaborative font projects, to support the font creation
-efforts of academic and linguistic communities, and to provide a free and
-open framework in which fonts may be shared and improved in partnership
-with others.
-
-The OFL allows the licensed fonts to be used, studied, modified and
-redistributed freely as long as they are not sold by themselves. The
-fonts, including any derivative works, can be bundled, embedded,
-redistributed and/or sold with any software provided that any reserved
-names are not used by derivative works. The fonts and derivatives,
-however, cannot be released under any other type of license. The
-requirement for fonts to remain under this license does not apply
-to any document created using the fonts or their derivatives.
-
-DEFINITIONS
-"Font Software" refers to the set of files released by the Copyright
-Holder(s) under this license and clearly marked as such. This may
-include source files, build scripts and documentation.
-
-"Reserved Font Name" refers to any names specified as such after the
-copyright statement(s).
-
-"Original Version" refers to the collection of Font Software components as
-distributed by the Copyright Holder(s).
-
-"Modified Version" refers to any derivative made by adding to, deleting,
-or substituting -- in part or in whole -- any of the components of the
-Original Version, by changing formats or by porting the Font Software to a
-new environment.
-
-"Author" refers to any designer, engineer, programmer, technical
-writer or other person who contributed to the Font Software.
-
-PERMISSION & CONDITIONS
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of the Font Software, to use, study, copy, merge, embed, modify,
-redistribute, and sell modified and unmodified copies of the Font
-Software, subject to the following conditions:
-
-1) Neither the Font Software nor any of its individual components,
-in Original or Modified Versions, may be sold by itself.
-
-2) Original or Modified Versions of the Font Software may be bundled,
-redistributed and/or sold with any software, provided that each copy
-contains the above copyright notice and this license. These can be
-included either as stand-alone text files, human-readable headers or
-in the appropriate machine-readable metadata fields within text or
-binary files as long as those fields can be easily viewed by the user.
-
-3) No Modified Version of the Font Software may use the Reserved Font
-Name(s) unless explicit written permission is granted by the corresponding
-Copyright Holder. This restriction only applies to the primary font name as
-presented to the users.
-
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
-Software shall not be used to promote, endorse or advertise any
-Modified Version, except to acknowledge the contribution(s) of the
-Copyright Holder(s) and the Author(s) or with their explicit written
-permission.
-
-5) The Font Software, modified or unmodified, in part or in whole,
-must be distributed entirely under this license, and must not be
-distributed under any other license. The requirement for fonts to
-remain under this license does not apply to any document created
-using the Font Software.
-
-TERMINATION
-This license becomes null and void if any of the above conditions are
-not met.
-
-DISCLAIMER
-THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
-DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
-OTHER DEALINGS IN THE FONT SOFTWARE.
-
---- text 7d148e988aeec195bb0c63342bb7b3ca665a7d0c60683ba6678e28500c8aacb4 ---
-/**
- * @license lucide-react v1.56.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-
-import createLucideIcon from '../createLucideIcon.mjs';
-
-const __iconData = {
-  name: "copyright",
-  size: 24,
-  node: [
-    ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-    ["path", { d: "M14.83 14.83a4 4 0 1 1 0-5.66", key: "1i56pz" }]
-  ]
-};
-__iconData.node;
-const Copyright = createLucideIcon(__iconData);
-
-export { __iconData, Copyright as default };
-//# sourceMappingURL=copyright.mjs.map
+[Shared terms 0339f4642e8741dea4841c236d258f360ffbe6e2cd3d032fbd0c10d1de8f58d1]
 
 --- text 7e02e9c37c8849280e70bf5fd67d65e93d902c700104a997b11fb7175fdbf37e ---
 The MIT License (MIT)
@@ -7110,91 +6806,7 @@ This license is copied below, and is also available with a FAQ at:
 http://scripts.sil.org/OFL
 
 -----------------------------------------------------------
-SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
------------------------------------------------------------
-
-PREAMBLE
-The goals of the Open Font License (OFL) are to stimulate worldwide
-development of collaborative font projects, to support the font creation
-efforts of academic and linguistic communities, and to provide a free and
-open framework in which fonts may be shared and improved in partnership
-with others.
-
-The OFL allows the licensed fonts to be used, studied, modified and
-redistributed freely as long as they are not sold by themselves. The
-fonts, including any derivative works, can be bundled, embedded,
-redistributed and/or sold with any software provided that any reserved
-names are not used by derivative works. The fonts and derivatives,
-however, cannot be released under any other type of license. The
-requirement for fonts to remain under this license does not apply
-to any document created using the fonts or their derivatives.
-
-DEFINITIONS
-"Font Software" refers to the set of files released by the Copyright
-Holder(s) under this license and clearly marked as such. This may
-include source files, build scripts and documentation.
-
-"Reserved Font Name" refers to any names specified as such after the
-copyright statement(s).
-
-"Original Version" refers to the collection of Font Software components as
-distributed by the Copyright Holder(s).
-
-"Modified Version" refers to any derivative made by adding to, deleting,
-or substituting -- in part or in whole -- any of the components of the
-Original Version, by changing formats or by porting the Font Software to a
-new environment.
-
-"Author" refers to any designer, engineer, programmer, technical
-writer or other person who contributed to the Font Software.
-
-PERMISSION & CONDITIONS
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of the Font Software, to use, study, copy, merge, embed, modify,
-redistribute, and sell modified and unmodified copies of the Font
-Software, subject to the following conditions:
-
-1) Neither the Font Software nor any of its individual components,
-in Original or Modified Versions, may be sold by itself.
-
-2) Original or Modified Versions of the Font Software may be bundled,
-redistributed and/or sold with any software, provided that each copy
-contains the above copyright notice and this license. These can be
-included either as stand-alone text files, human-readable headers or
-in the appropriate machine-readable metadata fields within text or
-binary files as long as those fields can be easily viewed by the user.
-
-3) No Modified Version of the Font Software may use the Reserved Font
-Name(s) unless explicit written permission is granted by the corresponding
-Copyright Holder. This restriction only applies to the primary font name as
-presented to the users.
-
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
-Software shall not be used to promote, endorse or advertise any
-Modified Version, except to acknowledge the contribution(s) of the
-Copyright Holder(s) and the Author(s) or with their explicit written
-permission.
-
-5) The Font Software, modified or unmodified, in part or in whole,
-must be distributed entirely under this license, and must not be
-distributed under any other license. The requirement for fonts to
-remain under this license does not apply to any document created
-using the Font Software.
-
-TERMINATION
-This license becomes null and void if any of the above conditions are
-not met.
-
-DISCLAIMER
-THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
-DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
-OTHER DEALINGS IN THE FONT SOFTWARE.
+[Shared terms 0339f4642e8741dea4841c236d258f360ffbe6e2cd3d032fbd0c10d1de8f58d1]
 
 --- text 84a6a26e0f609d20e8b078c60a786b9ed18113336ff338303d86461675041309 ---
 MIT License
@@ -7516,9 +7128,7 @@ The licenses of externally maintained libraries from which parts of the Software
 --- text 94e2d6f90264f1e3efc695ab64d36f17c7616a7bae97ab0c51e7f895b842db4d ---
 Copyright 2018 Kilian Valkhof
 
-Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text 980a9657026db6567616515b6a9eb52ee6d360924359df43c1e56cacf0058a7d ---
 MIT License
@@ -7546,17 +7156,7 @@ Copyright (c) 2025+, require-in-the-middle contributors
 --- text 9fe3e95ca3e8ef778fc93263946e9c4e8a10ff3afe9c3333f54402bb99079bc1 ---
 Copyright 2010-2026 Mike Bostock
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text a05c505267a8736ef8af08d800132d98d47b18cb374891438d1fcb104f494949 ---
 MIT License
@@ -7749,17 +7349,7 @@ ISC License
 
 Copyright (c) 2025, Mapbox
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text b8778b155bfde5a28b023a558753c0fa058a52bb9de35c343c250be1bbcdedab ---
 Copyright 2019 Justin Ridgewell <jridgewell@google.com>
@@ -7806,26 +7396,7 @@ Copyright (c) 2013, Nick Fitzgerald
 
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice, this
-  list of conditions and the following disclaimer in the documentation and/or
-  other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 2d2bc4fe9ba8ff979db2317c050a77769295781ad555134d4f619567d778209c]
 
 --- text bdda7d25f6d103335a1ac20b84eaffecf31ab0e1d2e7773237091dce7c48e214 ---
 The MIT License (MIT)
@@ -7843,91 +7414,7 @@ http://scripts.sil.org/OFL
 
 
 -----------------------------------------------------------
-SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
------------------------------------------------------------
-
-PREAMBLE
-The goals of the Open Font License (OFL) are to stimulate worldwide
-development of collaborative font projects, to support the font creation
-efforts of academic and linguistic communities, and to provide a free and
-open framework in which fonts may be shared and improved in partnership
-with others.
-
-The OFL allows the licensed fonts to be used, studied, modified and
-redistributed freely as long as they are not sold by themselves. The
-fonts, including any derivative works, can be bundled, embedded,
-redistributed and/or sold with any software provided that any reserved
-names are not used by derivative works. The fonts and derivatives,
-however, cannot be released under any other type of license. The
-requirement for fonts to remain under this license does not apply
-to any document created using the fonts or their derivatives.
-
-DEFINITIONS
-"Font Software" refers to the set of files released by the Copyright
-Holder(s) under this license and clearly marked as such. This may
-include source files, build scripts and documentation.
-
-"Reserved Font Name" refers to any names specified as such after the
-copyright statement(s).
-
-"Original Version" refers to the collection of Font Software components as
-distributed by the Copyright Holder(s).
-
-"Modified Version" refers to any derivative made by adding to, deleting,
-or substituting -- in part or in whole -- any of the components of the
-Original Version, by changing formats or by porting the Font Software to a
-new environment.
-
-"Author" refers to any designer, engineer, programmer, technical
-writer or other person who contributed to the Font Software.
-
-PERMISSION & CONDITIONS
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of the Font Software, to use, study, copy, merge, embed, modify,
-redistribute, and sell modified and unmodified copies of the Font
-Software, subject to the following conditions:
-
-1) Neither the Font Software nor any of its individual components,
-in Original or Modified Versions, may be sold by itself.
-
-2) Original or Modified Versions of the Font Software may be bundled,
-redistributed and/or sold with any software, provided that each copy
-contains the above copyright notice and this license. These can be
-included either as stand-alone text files, human-readable headers or
-in the appropriate machine-readable metadata fields within text or
-binary files as long as those fields can be easily viewed by the user.
-
-3) No Modified Version of the Font Software may use the Reserved Font
-Name(s) unless explicit written permission is granted by the corresponding
-Copyright Holder. This restriction only applies to the primary font name as
-presented to the users.
-
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
-Software shall not be used to promote, endorse or advertise any
-Modified Version, except to acknowledge the contribution(s) of the
-Copyright Holder(s) and the Author(s) or with their explicit written
-permission.
-
-5) The Font Software, modified or unmodified, in part or in whole,
-must be distributed entirely under this license, and must not be
-distributed under any other license. The requirement for fonts to
-remain under this license does not apply to any document created
-using the Font Software.
-
-TERMINATION
-This license becomes null and void if any of the above conditions are
-not met.
-
-DISCLAIMER
-THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
-DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
-OTHER DEALINGS IN THE FONT SOFTWARE.
+[Shared terms 0339f4642e8741dea4841c236d258f360ffbe6e2cd3d032fbd0c10d1de8f58d1]
 
 --- text c0d34da9c20d897fc6469534e6b90a5730fa8e7a8b821aaf0814b6a201b9c610 ---
 The MIT License (MIT)
@@ -7966,9 +7453,7 @@ Copyright (c) 2018 Copyright 2018 Klaus Hartl, Fagner Brack, GitHub Contributors
 --- text c52012f8f02eac31b78d5278be30cdb8ccf8602f97e25ff365baf6156c375695 ---
 Copyright (c) 2015, Dan Flettre <fletd01@yahoo.com>
 
-Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text c5217b0544ea9c91d010863582d6f6b35ec50e4146c34dee085ddcec5dd92def ---
 Apache License
@@ -8412,17 +7897,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 --- text c8ea45f591c25c2a96e7a59f87ecc5adf64010c10cfd7938f4c1c5c9ff4c1885 ---
 Copyright 2012-2023 Mike Bostock
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text cb209ca197e3637d1ad7566b08dfa7374aff454a7290b9d6489e344f8968837c ---
 # Bundled theme licenses
@@ -8571,17 +8046,7 @@ Copyright (c) 2025 Anton Korzunov <thekashey@gmail.com>
 --- text cf12d35c36bad4b21582e8549d43283d304574764c28fe0b93f25f475c5e832c ---
 Copyright Eemeli Aro <eemeli@gmail.com>
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173 ---
 MIT License
@@ -9629,9 +9094,7 @@ Repository: https://github.com/css-modules/icss-utils
 > ISC License (ISC)
 > Copyright 2018 Glen Maddern
 >
-> Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
->
-> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+> [Shared terms a150927e6b49d1e56e602f85aa7f7817f022bab48ba5da099f52f9a5fa537981]
 
 ---------------------------------------
 
@@ -10191,9 +9654,7 @@ Repository: https://github.com/css-modules/postcss-modules-extract-imports
 
 > Copyright 2015 Glen Maddern
 >
-> Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
->
-> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+> [Shared terms a150927e6b49d1e56e602f85aa7f7817f022bab48ba5da099f52f9a5fa537981]
 
 ---------------------------------------
 
@@ -10219,9 +9680,7 @@ Repository: https://github.com/css-modules/postcss-modules-scope
 >
 > Copyright (c) 2015, Glen Maddern
 >
-> Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
->
-> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+> [Shared terms a150927e6b49d1e56e602f85aa7f7817f022bab48ba5da099f52f9a5fa537981]
 
 ---------------------------------------
 
@@ -10234,9 +9693,7 @@ Repository: https://github.com/css-modules/postcss-modules-values
 >
 > Copyright (c) 2015, Glen Maddern
 >
-> Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
->
-> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+> [Shared terms a150927e6b49d1e56e602f85aa7f7817f022bab48ba5da099f52f9a5fa537981]
 
 ---------------------------------------
 
@@ -10626,17 +10083,7 @@ ISC License
 
 Copyright (c) 2026, webdiscus
 
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text d9c32f07344cb9c8160725e998daa6a4bf5760ff6508ee645e0f192a06e929cb ---
 (The MIT License)
@@ -10702,17 +10149,7 @@ Copyright Mathias Bynens <https://mathiasbynens.be/>
 --- text e87ae4ac338d47ce509af51623763b9a197e6ca26f958be54f67c1a64cd0062c ---
 Copyright 2010-2024 Mike Bostock
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 This license applies to GeographicLib, versions 1.12 and later.
 
@@ -10739,17 +10176,7 @@ ISC License
 
 Copyright (c) 2026 Lucide Icons and Contributors
 
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 ---
 
@@ -10813,26 +10240,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 Copyright (c) 2015, Scott Motte
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 2d2bc4fe9ba8ff979db2317c050a77769295781ad555134d4f619567d778209c]
 
 --- text f17b33b61e50718ae266dcfb940deee45476f334f1ce143284f9392d9f05e7d5 ---
 The MIT License (MIT)
@@ -10845,30 +10253,7 @@ Copyright (c) 2014-2026 Giampaolo Bellavite <io@gpbl.dev> and contributors
 Copyright Mike Bostock, 2012-2016
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-* Neither the name of the author nor the names of contributors may be used to
-  endorse or promote products derived from this software without specific prior
-  written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
-ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 8f3332355c69aa0a203cbaf26a33602e255dbe10204886d0b9d0eae54615de82]
 
 --- text f20e2ee5da6ce4bf0b2120bf13865c93afd22b9c61e4b05cc7c933b21c3cd5e3 ---
 MIT License
@@ -10895,17 +10280,7 @@ Copyright (c) 2015-2021 Evgeny Poberezkin
 --- text f4bb8f655fdb4d119878a0eea6dfcb871da509d83baa7426794f7c70b9bb9d46 ---
 Copyright 2021 Mike Bostock
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text f526adb7b81e5d0b296715f70db2b3ac5fa9e40c651e1658a30dc65157ea93e8 ---
 MIT License
@@ -10917,17 +10292,7 @@ Copyright (c) 2025 Steven Levithan
 --- text f57e3a2cabf2b43ab2fc942a8e9f4b38366ab0d1f859c6439b1fb69e80d9af73 ---
 Copyright 2010-2023 Mike Bostock
 
-Permission to use, copy, modify, and/or distribute this software for any purpose
-with or without fee is hereby granted, provided that the above copyright notice
-and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
-FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
-OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
-TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
-THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text f61cacc2acb8b71aa79a128b3e732bf25e02aab40747bbbd5bf00c97c9cda28d ---
 MIT License
@@ -10990,17 +10355,7 @@ ISC License
 
 Copyright (c) 2021-2024 Oleksii Raspopov, Kostiantyn Denysov, Anton Verinov
 
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+[Shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427]
 
 --- text fbedac96e6b9243c1b789886b1be7280b93ac92b883212a6fe5f5aa50482329e ---
 BSD 2-Clause License
@@ -11008,26 +10363,7 @@ BSD 2-Clause License
 Copyright (c) 2013-2019, Forrest L Norvell
 All rights reserved.
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this
-  list of conditions and the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice,
-  this list of conditions and the following disclaimer in the documentation
-  and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+[Shared terms 2d2bc4fe9ba8ff979db2317c050a77769295781ad555134d4f619567d778209c]
 
 --- text fc4b4b7053f3e1304b6fc1a265065dacc2bfac5cce0627814d4a299138e23145 ---
 MIT License
@@ -11083,6 +10419,93 @@ MIT License
 ==============================================================================
 Shared license terms
 
+--- shared terms 0339f4642e8741dea4841c236d258f360ffbe6e2cd3d032fbd0c10d1de8f58d1 ---
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
 --- shared terms 2c934b5043407a9daeb0f23be4c78d48f91c89d053842c7dbdd1872db8d3415a ---
 Permission is hereby granted, free of charge, to any person obtaining
 > a copy of this software and associated documentation files (the
@@ -11103,6 +10526,28 @@ Permission is hereby granted, free of charge, to any person obtaining
 > OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 > WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+--- shared terms 2d2bc4fe9ba8ff979db2317c050a77769295781ad555134d4f619567d778209c ---
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 --- shared terms 4283415550260b258686dc1a37bcf8876ab1a0b34e221d40f6add1cd80de1694 ---
 Permission is hereby granted, free of charge, to any person obtaining
 > a copy of this software and associated documentation files (the
@@ -11122,6 +10567,19 @@ Permission is hereby granted, free of charge, to any person obtaining
 > CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 > TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 > SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--- shared terms 4829cc8e654be69dd1edcebedbda21758a239c230e38f532d6bf4b0adc1a0427 ---
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
 
 --- shared terms 59d8f0ba87ad9a2f1a431123c8d16646e5b89ba53653e818f16d136d77263c99 ---
 Apache License
@@ -11323,12 +10781,43 @@ Permission is hereby granted, free of charge, to any person
 > FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 > OTHER DEALINGS IN THE SOFTWARE.
 
+--- shared terms 8f3332355c69aa0a203cbaf26a33602e255dbe10204886d0b9d0eae54615de82 ---
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the author nor the names of contributors may be used to
+  endorse or promote products derived from this software without specific prior
+  written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 --- shared terms 9e06052eb3811de1061464918ac71cc4a6d392febf8bd5e15366f131be8dd1cf ---
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--- shared terms a150927e6b49d1e56e602f85aa7f7817f022bab48ba5da099f52f9a5fa537981 ---
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 --- shared terms cde2e49ad5ddcda284af6dfc512965bb2e9e4f94726f6bd6493b85ff8460b7a9 ---
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:

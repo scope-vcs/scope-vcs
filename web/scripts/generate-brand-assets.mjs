@@ -12,7 +12,7 @@ const browser = await chromium.launch({ headless: true, args: ['--disable-lcd-te
 try {
   const page = await browser.newPage({ deviceScaleFactor: 1 })
   const artwork = await page.evaluate((source) => {
-    const document = new DOMParser().parseFromString(source, 'image/svg+xml')
+    const document = new DOMParser().parseFromString(source.replace(/>\s+</g, '><'), 'image/svg+xml')
     if (document.querySelector('parsererror')) throw new Error('Invalid brand master SVG')
     const root = document.documentElement
     const mark = document.getElementById('scope-mark')
