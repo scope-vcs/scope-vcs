@@ -1,5 +1,6 @@
 use super::{
-    Request, RequestEvent, RequestEventKind, RequestEventPayload, RequestState, validate_required,
+    GitHubPullRequest, Request, RequestEvent, RequestEventKind, RequestEventPayload, RequestState,
+    validate_required,
 };
 use crate::error::DomainError;
 
@@ -20,17 +21,35 @@ pub struct SubmitRequestInput {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MergeRequestLanding {
+pub enum MergeRequestLanding<'a> {
     NativeMerge,
     ContainingMain { contains_request_head: bool },
+    GitHubMerge(GitHubMergeLanding<'a>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GitHubMergeLanding<'a> {
+    pub pull_request: Option<&'a GitHubPullRequest>,
+    pub commit_in_main: &'a str,
+    pub has_stacked_children: bool,
+}
+
+impl GitHubMergeLanding<'_> {
+    pub fn lands(self, request: &Request) -> bool {
+        !self.has_stacked_children
+            && self
+                .pull_request
+                .and_then(|pull_request| pull_request.merge_of(request))
+                .is_some_and(|merge| merge.merge_commit_oid == self.commit_in_main)
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct MergeRequestInput {
+pub struct MergeRequestInput<'a> {
     pub request_id: String,
     pub actor_user_id: String,
     pub actor_is_maintainer: bool,
-    pub landing: MergeRequestLanding,
+    pub landing: MergeRequestLanding<'a>,
     pub merged_head_oid: String,
     pub merged_main_oid: String,
     pub merged_event_id: String,
@@ -82,7 +101,7 @@ pub fn submit_request(
 
 pub fn merge_request(
     request: &Request,
-    input: MergeRequestInput,
+    input: MergeRequestInput<'_>,
 ) -> Result<RequestLifecycleMutation, DomainError> {
     validate_command(request, &input.request_id, &input.actor_user_id)?;
     validate_required("merged event id", &input.merged_event_id)?;

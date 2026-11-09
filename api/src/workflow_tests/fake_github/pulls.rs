@@ -44,11 +44,26 @@ impl FakePulls {
             "title": "",
             "body": "",
             "draft": false,
-            "head": { "ref": head },
+            "head": { "ref": head, "sha": "" },
             "base": { "ref": base },
             "closed_by": null,
         }));
         number
+    }
+
+    pub(in crate::workflow_tests) fn merge_as(
+        &self,
+        number: u64,
+        login: &str,
+        head_oid: &str,
+        merge_commit_oid: &str,
+    ) {
+        self.close_as(number, login);
+        let mut pulls = self.pulls.lock().unwrap();
+        let pull = &mut pulls[number as usize - 1];
+        pull["merged"] = true.into();
+        pull["merge_commit_sha"] = merge_commit_oid.into();
+        pull["head"]["sha"] = head_oid.into();
     }
 
     pub(in crate::workflow_tests) fn close_as(&self, number: u64, login: &str) {

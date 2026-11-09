@@ -233,7 +233,7 @@ pub use request_media::{
     ValidateRequestAttachmentSourceCommand,
 };
 pub use request_merge::{
-    LandedRequestCandidate, LandedRequestCompletion, MergeRequestContentMutation,
+    LandedRequestCandidate, LandedRequestCompletion, MainContains, MergeRequestContentMutation,
     MergeRequestContentsOutcome,
 };
 pub use request_queue::{

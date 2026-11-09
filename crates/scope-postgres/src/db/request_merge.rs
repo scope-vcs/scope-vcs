@@ -14,18 +14,18 @@ use super::{
     request_rows::request_by_id,
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect,
-    TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
+    QuerySelect, Statement, TransactionTrait,
 };
 use {
     crate::error::PostgresError,
     scope_domain::{
         repository::git::GitHead,
         requests::{
-            MergeGateAuthority, MergeGateInput, MergeRequestInput, MergeRequestLanding,
-            RequestAutoMergeReadiness, RequestAutoMergeStopReason, RequestLifecycleMutation,
-            RequestMainPushCompletion, RequestViewer, evaluate_merge_gate,
-            fulfill_request_auto_merge, lands_with_main, merge_request,
+            GitHubMergeLanding, MergeGateAuthority, MergeGateInput, MergeRequestInput,
+            MergeRequestLanding, RequestAutoMergeReadiness, RequestAutoMergeStopReason,
+            RequestLifecycleMutation, RequestMainPushCompletion, RequestViewer,
+            evaluate_merge_gate, fulfill_request_auto_merge, lands_with_main, merge_request,
             request_auto_merge_readiness, request_checks_outcome, request_main_push_completion,
             stop_request_auto_merge,
         },
@@ -436,12 +436,87 @@ pub struct LandedRequestCandidate {
     pub stack_children: Vec<super::RequestStackChildFacts>,
     pub request_id: String,
     pub head_oid: String,
+    pub main_contains: MainContains,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MainContains {
+    RequestHead,
+    GitHubMergeCommit(String),
 }
 
 #[derive(Clone, Debug)]
 pub struct LandedRequestCompletion {
     pub actor_user_id: String,
     pub candidates: Vec<LandedRequestCandidate>,
+}
+
+pub(super) async fn complete_main_push(
+    tx: &DatabaseTransaction,
+    repo_id: &str,
+    main_oid: &str,
+    completion: LandedRequestCompletion,
+    now_unix: u64,
+) -> Result<usize, PostgresError> {
+    tx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_git_heads SET main_pushed_by_user_id = $2 WHERE repo_id = $1",
+        [repo_id.into(), completion.actor_user_id.clone().into()],
+    ))
+    .await?;
+    let completed = complete_landed_requests(tx, repo_id, main_oid, completion, now_unix).await?;
+    super::github_pull_requests::requeue_merged_carriers_of_open_requests(tx, repo_id, now_unix)
+        .await?;
+    Ok(completed)
+}
+
+impl RequestStore {
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "land_request_merged_on_github"))]
+    pub async fn land_request_merged_on_github(
+        &self,
+        request_id: &str,
+        main_oid: &str,
+        merge_commit_oid: &str,
+        now_unix: u64,
+    ) -> Result<bool, PostgresError> {
+        let tx = self.db.begin().await?;
+        let Some(request) = request_by_id(&tx, request_id).await? else {
+            return Ok(false);
+        };
+        acquire_aggregate_lock(&tx, "repository", &request.repo_id).await?;
+        let Some(main_pushed_by_user_id) = tx
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "SELECT main_pushed_by_user_id FROM scope_git_heads
+                  WHERE repo_id = $1 AND head_oid = $2",
+                [request.repo_id.clone().into(), main_oid.into()],
+            ))
+            .await?
+            .map(|row| row.try_get::<Option<String>>("", "main_pushed_by_user_id"))
+            .transpose()?
+            .flatten()
+        else {
+            return Ok(false);
+        };
+        let completed = complete_landed_requests(
+            &tx,
+            &request.repo_id,
+            main_oid,
+            LandedRequestCompletion {
+                actor_user_id: main_pushed_by_user_id,
+                candidates: vec![LandedRequestCandidate {
+                    stack_children: Vec::new(),
+                    request_id: request.id,
+                    head_oid: request.head_oid,
+                    main_contains: MainContains::GitHubMergeCommit(merge_commit_oid.to_string()),
+                }],
+            },
+            now_unix,
+        )
+        .await?;
+        tx.commit().await?;
+        Ok(completed == 1)
+    }
 }
 
 pub(super) async fn complete_landed_requests(
@@ -489,7 +564,28 @@ pub(super) async fn complete_landed_requests(
             continue;
         };
         super::request_stack::lock_graph(tx, &request, None).await?;
-        if request_main_push_completion(&request, true)?
+        let pull_request;
+        let landing = match &candidate.main_contains {
+            MainContains::RequestHead => MergeRequestLanding::ContainingMain {
+                contains_request_head: true,
+            },
+            MainContains::GitHubMergeCommit(commit_in_main) => {
+                pull_request =
+                    super::github_pull_requests::github_pull_request(tx, &request.id).await?;
+                let merge = GitHubMergeLanding {
+                    pull_request: pull_request.as_ref(),
+                    commit_in_main,
+                    has_stacked_children: !super::request_stack::children(tx, &request.id)
+                        .await?
+                        .is_empty(),
+                };
+                if !merge.lands(&request) {
+                    continue;
+                }
+                MergeRequestLanding::GitHubMerge(merge)
+            }
+        };
+        if request_main_push_completion(&request, landing)?
             == RequestMainPushCompletion::DeferUntilParentLands
         {
             continue;
@@ -501,9 +597,7 @@ pub(super) async fn complete_landed_requests(
                 request_id: candidate.request_id,
                 actor_user_id: completion.actor_user_id.clone(),
                 actor_is_maintainer: repo.access.is_maintainer(),
-                landing: MergeRequestLanding::ContainingMain {
-                    contains_request_head: true,
-                },
+                landing,
                 merged_head_oid: candidate.head_oid,
                 merged_main_oid: main_oid.to_string(),
                 merged_event_id: generate_id(GeneratedIdKind::RequestMergedEvent)?,

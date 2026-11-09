@@ -9,6 +9,7 @@ fn candidate(id: &str) -> LandedRequestCandidate {
         stack_children: Vec::new(),
         request_id: id.into(),
         head_oid: REQUEST_HEAD.into(),
+        main_contains: crate::db::MainContains::RequestHead,
     }
 }
 

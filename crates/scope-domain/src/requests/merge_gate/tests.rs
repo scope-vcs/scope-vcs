@@ -233,14 +233,20 @@ fn containing_main_completion_requires_head_proof_and_defers_every_unlanded_pare
     ] {
         child.stack_status = status;
         assert_eq!(
-            request_main_push_completion(&child, false)
+            request_main_push_completion(&child, containing_main(false))
                 .unwrap_err()
                 .message,
             "containing main must contain the request head"
         );
         assert_eq!(
-            request_main_push_completion(&child, true).unwrap(),
+            request_main_push_completion(&child, containing_main(true)).unwrap(),
             RequestMainPushCompletion::DeferUntilParentLands
         );
+    }
+}
+
+fn containing_main(contains_request_head: bool) -> crate::requests::MergeRequestLanding<'static> {
+    crate::requests::MergeRequestLanding::ContainingMain {
+        contains_request_head,
     }
 }
