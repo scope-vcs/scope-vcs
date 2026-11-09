@@ -52,23 +52,39 @@ fn is_case_folded_repo_control_path(path: &ScopePath) -> bool {
         .is_some_and(|root| root.eq_ignore_ascii_case(".scope"))
 }
 
+const AGENT_CONTEXT_SEGMENTS: [&str; 16] = [
+    ".codex",
+    ".claude",
+    ".agents",
+    ".cursor",
+    ".gemini",
+    ".windsurf",
+    ".clinerules",
+    ".cursorrules",
+    ".windsurfrules",
+    ".mcp.json",
+    "AGENTS.md",
+    "AGENTS.override.md",
+    "CLAUDE.md",
+    "CLAUDE.local.md",
+    "GEMINI.md",
+    "copilot-instructions.md",
+];
+
+const AGENT_CONTEXT_SEGMENT_PAIRS: [(&str, &str); 2] =
+    [(".github", "instructions"), (".vscode", "mcp.json")];
+
 fn is_agent_context_path(path: &ScopePath) -> bool {
-    let relative = path.as_str().trim_start_matches('/');
-    let root = relative.split('/').next().unwrap_or(relative);
-    [".codex", ".claude", ".agents"]
-        .iter()
-        .any(|directory| root.eq_ignore_ascii_case(directory))
-        || relative.eq_ignore_ascii_case(".mcp.json")
-        || relative.rsplit('/').next().is_some_and(|name| {
-            [
-                "AGENTS.md",
-                "AGENTS.override.md",
-                "CLAUDE.md",
-                "CLAUDE.local.md",
-            ]
+    let segments: Vec<&str> = path.as_str().trim_start_matches('/').split('/').collect();
+    segments.iter().any(|segment| {
+        AGENT_CONTEXT_SEGMENTS
             .iter()
-            .any(|protected| name.eq_ignore_ascii_case(protected))
+            .any(|protected| segment.eq_ignore_ascii_case(protected))
+    }) || segments.windows(2).any(|pair| {
+        AGENT_CONTEXT_SEGMENT_PAIRS.iter().any(|(parent, child)| {
+            pair[0].eq_ignore_ascii_case(parent) && pair[1].eq_ignore_ascii_case(child)
         })
+    })
 }
 
 pub fn is_private_control_path(path: &ScopePath) -> bool {
@@ -149,10 +165,40 @@ mod tests {
             "/.CLAUDE/settings.json",
             "/.AGENTS/skills/review/SKILL.md",
             "/.MCP.JSON",
+            "/packages/app/.claude/settings.json",
+            "/packages/app/.agents/skills/review/SKILL.md",
+            "/services/api/.codex/config.toml",
+            "/packages/app/.mcp.json",
+            "/.cursor/rules/review.mdc",
+            "/.cursor/mcp.json",
+            "/.cursorrules",
+            "/apps/web/.cursorrules",
+            "/GEMINI.md",
+            "/docs/gemini.md",
+            "/.gemini/settings.json",
+            "/.windsurfrules",
+            "/.windsurf/rules/review.md",
+            "/.clinerules",
+            "/.clinerules/review.md",
+            "/.github/copilot-instructions.md",
+            "/.github/instructions/rust.instructions.md",
+            "/.GitHub/Instructions/rust.instructions.md",
+            "/.vscode/mcp.json",
         ] {
             assert!(is_request_protected_path(&path(protected)), "{protected}");
         }
-        for ordinary in ["/README.md", "/src/agent-notes.md", "/notes/CLAUDE.txt"] {
+        for ordinary in [
+            "/README.md",
+            "/src/agent-notes.md",
+            "/notes/CLAUDE.txt",
+            "/.github/workflows/ci.yml",
+            "/.github/ISSUE_TEMPLATE/bug.md",
+            "/.vscode/settings.json",
+            "/docs/cursor.md",
+            "/src/gemini.rs",
+            "/src/mcp.json",
+            "/docs/instructions/setup.md",
+        ] {
             assert!(!is_request_protected_path(&path(ordinary)), "{ordinary}");
         }
     }
