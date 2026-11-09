@@ -179,6 +179,10 @@ impl Run {
         self.workflow.repository_id() == repository_id
     }
 
+    pub fn may_save_caches(&self) -> bool {
+        self.trigger != RunTrigger::Request
+    }
+
     pub fn can_request_cancellation(&self) -> bool {
         !self.state.is_terminal() && !self.cancellation_requested
     }
