@@ -11,8 +11,10 @@ export function trustExclusions(workspaceYaml) {
   if (start === -1) return []
   const exclusions = []
   for (const line of lines.slice(start + 1)) {
+    if (line.trim() === '' || line.trimStart().startsWith('#')) continue
+    if (/^\S/.test(line)) break
     const entry = /^\s+-\s+["']?([^"'\s]+)["']?\s*$/.exec(line)
-    if (!entry) break
+    if (!entry) throw new Error(`trustPolicyExclude has an entry the check cannot read: ${line.trim()}`)
     exclusions.push(entry[1])
   }
   if (exclusions.length === 0) throw new Error('trustPolicyExclude is not a block list of package@version entries')

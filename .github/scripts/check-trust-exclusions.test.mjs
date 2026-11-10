@@ -30,6 +30,15 @@ test('a new version of an expiring package keeps the same expiry', () => {
     [{ exclusion: '@pierre/theme@2.0.1', expiry: '2027-01-28' }])
 })
 
+test('blank lines inside the list do not hide later entries', () => {
+  const spaced = workspaceYaml.replace('  - semver@6.3.1\n', '  - semver@6.3.1\n\n')
+  assert.deepEqual(trustExclusions(spaced), ['semver@6.3.1', '@pierre/theme@2.0.0'])
+  assert.deepEqual(expiredTrustExclusions(spaced, '2027-01-28', expiries),
+    [{ exclusion: '@pierre/theme@2.0.0', expiry: '2027-01-28' }])
+})
+
 test('an exclusion list the check cannot read fails instead of passing', () => {
   assert.throws(() => trustExclusions('trustPolicyExclude: ["@pierre/theme@2.0.0"]\n'), /block list/)
+  assert.throws(() => trustExclusions('trustPolicyExclude:\n  - semver@6.3.1\n  - name: "@pierre/theme@2.0.0"\n'),
+    /cannot read/)
 })
