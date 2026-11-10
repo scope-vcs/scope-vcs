@@ -75,6 +75,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" | jq 'add | map({number, state, labels})' > "$RUNNER_TEMP/open-pull-requests.json"
+        run: gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" | jq 'add | map({number, state, labels, base:{ref:.base.ref}, head:{repo:{full_name:.head.repo.full_name}}})' > "$RUNNER_TEMP/open-pull-requests.json"
       - name: Audit experiment owners and expiry
         run: node .github/scripts/audit-railway-experiments.mjs "$RUNNER_TEMP/railway-environments.json" "$RUNNER_TEMP/open-pull-requests.json"

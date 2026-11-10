@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 import { previewEnvironmentPullRequest } from "./preview-environment-identity.mjs";
-import { previewRequested } from "./preview-pull-request.mjs";
+import { qualifiesForPreview } from "./preview-pull-request.mjs";
 import { railwayEnvironmentInventory } from "./railway-environment-inventory.mjs";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -15,7 +15,7 @@ function utcTimestamp(value) {
     ? milliseconds : null;
 }
 
-export function auditRailwayExperiments({ manifest, registry, project, pullRequests = [], now = Date.now() }) {
+export function auditRailwayExperiments({ manifest, registry, project, repository, pullRequests = [], now = Date.now() }) {
   const issues = [];
   if (!Number.isFinite(now)) throw new Error("Audit time must be valid");
   const { environments, protectedIds, liveIds } = railwayEnvironmentInventory(manifest, project);
@@ -33,7 +33,7 @@ export function auditRailwayExperiments({ manifest, registry, project, pullReque
   const experiments = environments.filter(environment => {
     if (protectedIds.includes(environment.id)) return false;
     const number = previewEnvironmentPullRequest(manifest, environment);
-    return !(number !== null && pullRequests.some(pr => pr.number === number && previewRequested(pr)));
+    return !(number !== null && pullRequests.some(pr => pr.number === number && qualifiesForPreview(pr, repository)));
   });
   for (const environment of experiments) {
     const match = /^test-[a-z0-9]+(?:-[a-z0-9]+)*-(\d{4})(\d{2})(\d{2})$/.exec(environment.name ?? "");
@@ -50,7 +50,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const json = path => JSON.parse(readFileSync(path, "utf8"));
     const result = auditRailwayExperiments({ manifest: json(".github/deployment-services.json"),
       registry: json(".github/railway-experiments.json"), project: json(process.argv[2]).data?.project,
-      pullRequests: json(process.argv[3]) });
+      repository: process.env.GITHUB_REPOSITORY, pullRequests: json(process.argv[3]) });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     if (!result.ok) process.exitCode = 1;
   } catch (error) {
