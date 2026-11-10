@@ -27,7 +27,6 @@ pub const FIRST_PUSH_TOKEN_PREFIX: &str = "scope_fp_";
 pub const GIT_PUSH_TOKEN_PREFIX: &str = "scope_git_";
 pub const CLI_SESSION_TOKEN_PREFIX: &str = "scope_cli_";
 pub const RECEIVE_PACK_STAGING_BYTES: usize = 16;
-pub const EMPTY_GIT_OID: &str = "0000000000000000000000000000000000000000";
 pub const GIT_UPLOAD_PACK: &str = "git-upload-pack";
 pub const GIT_RECEIVE_PACK: &str = "git-receive-pack";
 pub const DEFAULT_GIT_CACHE_MAX_BYTES: usize = 10 * 1024 * 1024 * 1024;

@@ -344,8 +344,8 @@ pub(crate) fn git_ref_listing(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::EMPTY_GIT_OID;
     use axum::http::StatusCode;
+    use scope_domain::repository::git::EMPTY_GIT_OID;
     use std::{
         fs,
         path::PathBuf,

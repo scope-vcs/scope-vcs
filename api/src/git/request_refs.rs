@@ -1,5 +1,4 @@
 use crate::{
-    config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
         command::{git_ref_listing, run_git, run_git_output},
@@ -12,6 +11,7 @@ use crate::{
     },
     state::AppState,
 };
+use scope_domain::repository::git::EMPTY_GIT_OID;
 use scope_domain::{
     repo_config::RepoConfig,
     repository::{

@@ -26,7 +26,7 @@ impl RequestRevision {
             &self.main_ancestor_oid,
         ]
         .into_iter()
-        .filter(|oid| *oid != "0000000000000000000000000000000000000000")
+        .filter(|oid| *oid != crate::repository::git::EMPTY_GIT_OID)
         .map(str::to_string)
         .collect()
     }
