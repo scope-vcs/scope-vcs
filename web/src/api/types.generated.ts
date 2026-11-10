@@ -692,7 +692,7 @@ export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch:
  */
 error: string | null, };
 
-export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "failed";
+export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "merged" | "failed";
 
 export type RequestGitHubPullRequestResponse = { state: RequestGitHubPullRequestState,
 /**

@@ -75,6 +75,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
                         request_id: child.id.clone(),
                         head_oid: child.head_oid.clone(),
                         stack_children: vec![fact(&child.head_oid, &grandchild, true)],
+                        main_contains: crate::db::MainContains::RequestHead,
                     }],
                 },
             );
@@ -136,6 +137,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
                         &child,
                         contains_pin,
                     )],
+                    main_contains: crate::db::MainContains::RequestHead,
                 }],
             },
             16,
@@ -168,6 +170,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
                         contained_main_descends_from_ancestor: true,
                         ..fact(&child.head_oid, &grandchild, true)
                     }],
+                    main_contains: crate::db::MainContains::RequestHead,
                 },
                 super::super::super::request_merge::LandedRequestCandidate {
                     request_id: parent.id.clone(),
@@ -178,6 +181,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
                         contained_main_descends_from_ancestor: true,
                         ..fact(&parent.head_oid, &child, true)
                     }],
+                    main_contains: crate::db::MainContains::RequestHead,
                 },
             ],
         },
@@ -246,6 +250,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
                 request_id: child.id.clone(),
                 head_oid: child.head_oid.clone(),
                 stack_children: Vec::new(),
+                main_contains: crate::db::MainContains::RequestHead,
             }],
         },
         17,

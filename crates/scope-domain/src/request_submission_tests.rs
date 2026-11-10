@@ -45,7 +45,7 @@ fn merge_is_maintainer_only_and_terminal() {
     assert!(merge_request(&merged.request, merge_input()).is_err());
 }
 
-fn merge_input() -> MergeRequestInput {
+fn merge_input() -> MergeRequestInput<'static> {
     MergeRequestInput {
         request_id: "request_1".to_string(),
         actor_user_id: "maintainer".to_string(),

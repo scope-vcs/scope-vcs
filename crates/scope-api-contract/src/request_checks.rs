@@ -108,10 +108,14 @@ pub enum RequestGitHubPullRequestState {
     Open,
     /// Scope closed it because the request ended.
     Closed,
-    /// Someone closed it on GitHub while the request was open. Scope leaves it closed.
+    /// Someone closed it on GitHub without merging it while the request was open. Scope
+    /// leaves it closed.
     #[serde(rename = "closed_on_github")]
     #[cfg_attr(feature = "ts", ts(rename = "closed_on_github"))]
     ClosedOnGitHub,
+    /// It was merged on GitHub. The request becomes merged once Scope's main contains the
+    /// pull request's merge commit, provided the pull request merged at the request's head.
+    Merged,
     /// Scope gave up; `error` says why.
     Failed,
 }

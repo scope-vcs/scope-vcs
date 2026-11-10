@@ -3,6 +3,7 @@ use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness}
 use crate::{
     auth::tokens::random_token,
     error::ApiError,
+    git::command::git_contains_commit,
     github::{
         GitHubApp,
         pull_requests::{
@@ -11,6 +12,7 @@ use crate::{
     },
     http::origins::public_app_origin,
     persistence::unix_now,
+    repo_events::RepoChangeReason,
     state::AppState,
 };
 use scope_domain::{
@@ -19,11 +21,12 @@ use scope_domain::{
     },
     requests::{
         GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestObservation,
-        GitHubPullRequestStep, carrier_may_change, carrier_text_digest, carries_private_request,
-        github_retry_at, may_carry_on_github, review_request_comment_body, review_request_marker,
+        GitHubPullRequestObservedState, GitHubPullRequestStep, carrier_may_change,
+        carrier_text_digest, carries_private_request, github_retry_at, lands_with_main,
+        may_carry_on_github, review_request_comment_body, review_request_marker,
     },
 };
-use scope_postgres::db::GitHubJobOutcome;
+use scope_postgres::db::{GitHubJobOutcome, GitHubMergeLandingAttempt};
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -79,13 +82,33 @@ async fn run_claimed(
             "keeping a GitHub pull request in step with its request failed"
         );
     }
+    let job_is_done = matches!(outcome, GitHubJobOutcome::Succeeded(()));
     match state
         .metadata
         .requests()
         .finish_github_pull_request(&carrier, claim_token, outcome, now_unix)
         .await
     {
-        Ok(true) => publish_pull_request_change(state, &carrier.repo_id, &carrier.request_id).await,
+        Ok(true) => {
+            match land_request_merged_on_github(state, &carrier).await {
+                Ok(GitHubMergeLandingAttempt::MainMoved) if job_is_done => {
+                    retry_landing_later(state, &carrier, now_unix).await;
+                }
+                Ok(GitHubMergeLandingAttempt::MainMoved) => {}
+                Ok(GitHubMergeLandingAttempt::Landed | GitHubMergeLandingAttempt::NotLanded) => {}
+                Err(error) => {
+                    tracing::warn!(
+                        request_id = carrier.request_id,
+                        error = %error.operator_diagnostic(),
+                        "could not land a request whose pull request merged on GitHub"
+                    );
+                    if job_is_done {
+                        retry_landing_later(state, &carrier, now_unix).await;
+                    }
+                }
+            }
+            publish_pull_request_change(state, &carrier.repo_id, &carrier.request_id).await
+        }
         Ok(false) => {}
         Err(error) => tracing::warn!(
             request_id = carrier.request_id,
@@ -93,6 +116,87 @@ async fn run_claimed(
             "could not record a GitHub pull request; its claim will lapse"
         ),
     }
+}
+
+async fn retry_landing_later(state: &AppState, carrier: &GitHubPullRequest, now_unix: u64) {
+    let Some(retry_at_unix) = github_retry_at(1, now_unix) else {
+        return;
+    };
+    if let Err(error) = state
+        .metadata
+        .requests()
+        .requeue_github_pull_request(
+            carrier.destination.github_repository_id,
+            &carrier.request_id,
+            retry_at_unix,
+        )
+        .await
+    {
+        tracing::warn!(
+            request_id = carrier.request_id,
+            %error,
+            "could not requeue a pull request whose merged request did not land"
+        );
+    }
+}
+
+async fn land_request_merged_on_github(
+    state: &AppState,
+    carrier: &GitHubPullRequest,
+) -> Result<GitHubMergeLandingAttempt, ApiError> {
+    let requests = state.metadata.requests();
+    let Some(request) = requests.request_by_id(&carrier.request_id).await? else {
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
+    };
+    let Some(merge) = carrier
+        .merge_of(&request)
+        .filter(|_| lands_with_main(&request))
+    else {
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
+    };
+    let Some(incarnation) = state.repository_incarnation(&carrier.repo_id).await? else {
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
+    };
+    let Some(main) = state
+        .metadata
+        .repositories()
+        .repository_content_source(&incarnation)
+        .await?
+    else {
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
+    };
+    let repo = state
+        .repository_engine
+        .materialize_repository(state, &incarnation, &main)
+        .await?;
+    let (main_oid, merge_commit_oid) = (main.head_oid.clone(), merge.merge_commit_oid.clone());
+    let main_contains_merge = crate::git::blocking::run(move || {
+        git_contains_commit(
+            repo.as_ref(),
+            &merge_commit_oid,
+            &main_oid,
+            "checking whether main carries a merged pull request",
+        )
+    })
+    .await?;
+    if !main_contains_merge {
+        return Ok(GitHubMergeLandingAttempt::NotLanded);
+    }
+    let attempt = requests
+        .land_request_merged_on_github(
+            &request.id,
+            &main.head_oid,
+            &merge.merge_commit_oid,
+            unix_now()?,
+        )
+        .await?;
+    if attempt == GitHubMergeLandingAttempt::Landed {
+        state.wakeups.auto_merge.notify_one();
+        state
+            .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
+            .await;
+    }
+    Ok(attempt)
 }
 
 async fn advance(
@@ -203,8 +307,13 @@ async fn refresh_from_github(
         number,
         url: snapshot.url,
         base: snapshot.base,
-        open: snapshot.open,
-        closed_by_scope: snapshot.closed_by.as_deref() == Some(app.bot_login().as_str()),
+        state: match snapshot.merge {
+            Some(merge) => GitHubPullRequestObservedState::Merged(merge),
+            None if snapshot.open => GitHubPullRequestObservedState::Open,
+            None => GitHubPullRequestObservedState::Closed {
+                by_scope: snapshot.closed_by.as_deref() == Some(app.bot_login().as_str()),
+            },
+        },
     });
     Ok(())
 }

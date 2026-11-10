@@ -493,6 +493,9 @@ fn github_pull_request_line(pull_request: &RequestGitHubPullRequestResponse) -> 
         (RequestGitHubPullRequestState::ClosedOnGitHub, _) => {
             format!("GitHub: {named} was closed on GitHub")
         }
+        (RequestGitHubPullRequestState::Merged, _) => {
+            format!("GitHub: {named} was merged on GitHub")
+        }
         (RequestGitHubPullRequestState::Failed, None) => {
             format!("GitHub: keeping the {named} in step failed")
         }
