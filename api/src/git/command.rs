@@ -307,6 +307,22 @@ pub(crate) fn git_is_ancestor(
     }
 }
 
+pub(crate) fn git_contains_commit(
+    repo: &FsPath,
+    commit: &str,
+    tip: &str,
+    action: &str,
+) -> Result<bool, ApiError> {
+    let present = run_git_output(
+        Some(repo),
+        &["cat-file", "-e", &format!("{commit}^{{commit}}")],
+        action,
+    )?
+    .status
+    .success();
+    Ok(present && git_is_ancestor(repo, commit, tip, action)?)
+}
+
 pub(crate) fn git_ref_listing(
     repo: &FsPath,
     prefixes: &[&str],

@@ -5,7 +5,7 @@ use crate::requests::{
 };
 use crate::views::ViewId;
 
-fn merge_input(request: &Request) -> MergeRequestInput {
+fn merge_input(request: &Request) -> MergeRequestInput<'static> {
     MergeRequestInput {
         request_id: request.id.clone(),
         actor_user_id: "maintainer".into(),

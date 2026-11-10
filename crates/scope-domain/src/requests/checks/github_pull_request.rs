@@ -9,13 +9,18 @@ use sha2::{Digest, Sha256};
 
 const MAIN_BRANCH: &str = "main";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubPullRequestMerge {
+    pub merge_commit_oid: String,
+    pub head_oid: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubPullRequestState {
     Open,
     Closed,
-    #[serde(rename = "closed_on_github")]
     ClosedOnGitHub,
+    Merged(GitHubPullRequestMerge),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,8 +82,14 @@ pub struct GitHubPullRequestObservation {
     pub number: u64,
     pub url: String,
     pub base: String,
-    pub open: bool,
-    pub closed_by_scope: bool,
+    pub state: GitHubPullRequestObservedState,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubPullRequestObservedState {
+    Open,
+    Merged(GitHubPullRequestMerge),
+    Closed { by_scope: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +98,7 @@ pub enum GitHubPullRequestStatusState {
     Open,
     Closed,
     ClosedOnGitHub,
+    Merged,
     Failed,
 }
 
@@ -200,6 +212,15 @@ impl GitHubPullRequest {
             .is_some_and(|opened| opened.state == GitHubPullRequestState::Open)
     }
 
+    pub fn merge_of(&self, request: &Request) -> Option<&GitHubPullRequestMerge> {
+        match &self.pull_request.as_ref()?.state {
+            GitHubPullRequestState::Merged(merge) if merge.head_oid == request.head_oid => {
+                Some(merge)
+            }
+            _ => None,
+        }
+    }
+
     pub fn next_step(
         &self,
         review_bots: &GitHubReviewBotSettings,
@@ -209,7 +230,14 @@ impl GitHubPullRequest {
         match &self.intent {
             GitHubPullRequestIntent::Open { .. } if !review_bots.open_pull_requests => None,
             GitHubPullRequestIntent::Open { base, head_oid } => match opened {
-                Some(opened) if opened.state == GitHubPullRequestState::ClosedOnGitHub => None,
+                Some(opened)
+                    if matches!(
+                        opened.state,
+                        GitHubPullRequestState::ClosedOnGitHub | GitHubPullRequestState::Merged(_)
+                    ) =>
+                {
+                    None
+                }
                 Some(opened) if opened.state == GitHubPullRequestState::Open => {
                     let stale_text = text.filter(|text| {
                         opened
@@ -309,12 +337,13 @@ impl GitHubPullRequest {
         };
         opened.url = observation.url;
         opened.base = observation.base;
-        opened.state = if observation.open {
-            GitHubPullRequestState::Open
-        } else if observation.closed_by_scope || moving_base {
-            GitHubPullRequestState::Closed
-        } else {
-            GitHubPullRequestState::ClosedOnGitHub
+        opened.state = match observation.state {
+            GitHubPullRequestObservedState::Open => GitHubPullRequestState::Open,
+            GitHubPullRequestObservedState::Merged(merge) => GitHubPullRequestState::Merged(merge),
+            GitHubPullRequestObservedState::Closed { by_scope } if by_scope || moving_base => {
+                GitHubPullRequestState::Closed
+            }
+            GitHubPullRequestObservedState::Closed { .. } => GitHubPullRequestState::ClosedOnGitHub,
         };
     }
 
@@ -328,6 +357,7 @@ impl GitHubPullRequest {
                 GitHubPullRequestState::ClosedOnGitHub => {
                     GitHubPullRequestStatusState::ClosedOnGitHub
                 }
+                GitHubPullRequestState::Merged(_) => GitHubPullRequestStatusState::Merged,
             },
             (GitHubPullRequestJobState::Done, None) => return None,
             (_, None) if self.intent == GitHubPullRequestIntent::Close => return None,

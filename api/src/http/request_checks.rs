@@ -197,6 +197,7 @@ fn github_pull_request_response(
             GitHubPullRequestStatusState::ClosedOnGitHub => {
                 RequestGitHubPullRequestState::ClosedOnGitHub
             }
+            GitHubPullRequestStatusState::Merged => RequestGitHubPullRequestState::Merged,
             GitHubPullRequestStatusState::Failed => RequestGitHubPullRequestState::Failed,
         },
         number: status.number,

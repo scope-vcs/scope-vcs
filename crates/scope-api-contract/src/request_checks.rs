@@ -97,6 +97,7 @@ pub enum RequestGitHubPullRequestState {
     #[serde(rename = "closed_on_github")]
     #[cfg_attr(feature = "ts", ts(rename = "closed_on_github"))]
     ClosedOnGitHub,
+    Merged,
     Failed,
 }
 

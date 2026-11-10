@@ -112,6 +112,7 @@ async fn land(store: &MetadataStore, request: &Request, child: &Request, main: &
                         contained_main_descends_from_ancestor: true,
                         ..fact(&request.head_oid, child, true)
                     }],
+                    main_contains: crate::db::MainContains::RequestHead,
                 }],
             });
             Ok(mutation)

@@ -275,39 +275,41 @@ pub enum RequestMainPushCompletion {
 
 pub fn request_main_push_completion(
     request: &Request,
-    contains_request_head: bool,
+    landing: super::MergeRequestLanding<'_>,
 ) -> Result<RequestMainPushCompletion, DomainError> {
-    validate_containing_main_head(contains_request_head)?;
+    validate_main_landing(request, landing)?;
     if matches!(request.base, super::RequestBase::Request { .. }) {
         return Ok(RequestMainPushCompletion::DeferUntilParentLands);
     }
-    validate_request_merge_execution(
-        request,
-        super::MergeRequestLanding::ContainingMain {
-            contains_request_head,
-        },
-    )?;
+    validate_request_merge_execution(request, landing)?;
     Ok(RequestMainPushCompletion::Complete)
 }
 
-fn validate_containing_main_head(contains_request_head: bool) -> Result<(), DomainError> {
-    if !contains_request_head {
-        return Err(DomainError::conflict(
+fn validate_main_landing(
+    request: &Request,
+    landing: super::MergeRequestLanding<'_>,
+) -> Result<(), DomainError> {
+    match landing {
+        super::MergeRequestLanding::ContainingMain {
+            contains_request_head: false,
+        } => Err(DomainError::conflict(
             "containing main must contain the request head",
-        ));
+        )),
+        super::MergeRequestLanding::GitHubMerge(merge) if !merge.lands(request) => {
+            Err(DomainError::conflict(
+                "main must contain the merge commit of the request's pull request",
+            ))
+        }
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 pub(super) fn validate_request_merge_execution(
     request: &Request,
-    landing: super::MergeRequestLanding,
+    landing: super::MergeRequestLanding<'_>,
 ) -> Result<(), DomainError> {
-    if let super::MergeRequestLanding::ContainingMain {
-        contains_request_head,
-    } = landing
-    {
-        validate_containing_main_head(contains_request_head)?;
+    if landing != super::MergeRequestLanding::NativeMerge {
+        validate_main_landing(request, landing)?;
         if !matches!(request.base, super::RequestBase::Main { .. }) {
             return Err(DomainError::conflict("parent request must land first"));
         }

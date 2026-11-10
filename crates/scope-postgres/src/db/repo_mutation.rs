@@ -9,7 +9,7 @@ use super::{
     push_triggers::enqueue_push_main_trigger_evaluation,
     repository_from_model,
     repository_rows::save_repository_delta,
-    request_merge::{LandedRequestCompletion, complete_landed_requests},
+    request_merge::{LandedRequestCompletion, complete_main_push},
     request_rows::open_request_counts_by_view,
     workflow_catalogs::apply_repository_workflow_catalog,
 };
@@ -206,7 +206,7 @@ where
         let head = repo.git_head.as_ref().ok_or_else(|| {
             PostgresError::internal_message("landed requests require an accepted Git head")
         })?;
-        complete_landed_requests(&tx, &repo.record.id, &head.head_oid, completion, now_unix).await?
+        complete_main_push(&tx, &repo.record.id, &head.head_oid, completion, now_unix).await?
     } else {
         0
     };

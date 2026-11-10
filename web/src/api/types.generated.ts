@@ -414,7 +414,7 @@ export type RequestGitHubPushState = "awaiting_approval" | "sending" | "sent" | 
 
 export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch: string, error: string | null, };
 
-export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "failed";
+export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "merged" | "failed";
 
 export type RequestGitHubPullRequestResponse = { state: RequestGitHubPullRequestState, number: number | null, url: string | null, error: string | null, };
 
