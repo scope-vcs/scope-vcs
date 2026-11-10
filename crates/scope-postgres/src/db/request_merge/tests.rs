@@ -97,6 +97,65 @@ async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
 }
 
 #[tokio::test]
+async fn a_native_merge_lets_a_waiting_request_squash_merged_on_github_land_as_the_merger() {
+    use crate::db::github_pull_requests::tests::{
+        claim,
+        merge_landing::{finish_merged, squash_merged_on_github},
+        oid, push_succeeds, submitted_full_view_request,
+    };
+    let store = merge_store_with_github(true).await;
+    apply_github_result(&store, true).await;
+    store
+        .repositories()
+        .set_github_review_bot_pull_requests("owner/repo", "user_owner", true, 1)
+        .await
+        .unwrap();
+    let mut waiting = submitted_full_view_request(&store, "req_waiting").await;
+    waiting.head_oid = oid('e');
+    crate::db::request_rows::save_request_row(store.db.as_ref(), &waiting)
+        .await
+        .unwrap();
+    push_succeeds(&store, "req_waiting", 'e', 4).await;
+    let merged = squash_merged_on_github(claim(&store, "claim_1", 4).await.remove(0), &oid('e'));
+    store
+        .requests()
+        .finish_github_pull_request(
+            &merged,
+            "claim_1",
+            crate::db::GitHubJobOutcome::Succeeded(()),
+            None,
+            4,
+        )
+        .await
+        .unwrap();
+    assert!(claim(&store, "claim_2", 5).await.is_empty());
+    let prepared = merge_preparation(&store).await;
+
+    store
+        .requests()
+        .merge_request_content(merge_command(&store, "user_owner", prepared).await)
+        .await
+        .unwrap();
+
+    let requeued = claim(&store, "claim_3", 5).await.remove(0);
+    assert_eq!(requeued.request_id, "req_waiting");
+    assert_eq!(
+        finish_merged(&store, &requeued, "claim_3", 'c')
+            .await
+            .unwrap(),
+        crate::db::GitHubPullRequestFinish::RecordedAndLanded
+    );
+    let landed = store
+        .requests()
+        .request_for_tests("req_waiting")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(landed.state(), RequestState::Merged);
+    assert_eq!(landed.merged_by_user_id.as_deref(), Some("user_owner"));
+}
+
+#[tokio::test]
 async fn cancellation_after_preparation_fences_the_final_content_commit() {
     let store = merge_store().await;
     store

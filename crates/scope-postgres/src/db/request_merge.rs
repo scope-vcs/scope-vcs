@@ -352,7 +352,7 @@ async fn merge_one_request(
         &request,
         MergeRequestInput {
             request_id,
-            actor_user_id,
+            actor_user_id: actor_user_id.clone(),
             actor_is_maintainer: context.access.is_maintainer(),
             landing: MergeRequestLanding::NativeMerge,
             merged_head_oid: expected_request_head_oid,
@@ -377,6 +377,7 @@ async fn merge_one_request(
     let git_head = persisted.git_head;
 
     persist_lifecycle_mutation(tx, &request_mutation.request, &request_mutation.events).await?;
+    record_main_advance(tx, repo_id, &actor_user_id, now_unix).await?;
     let request_mutation = if let Some(locked) = locked_auto_merge {
         let fulfilled_event_id = expected_auto_merge
             .as_ref()
@@ -451,21 +452,31 @@ pub(super) async fn complete_main_push(
     completion: LandedRequestCompletion,
     now_unix: u64,
 ) -> Result<usize, PostgresError> {
+    let advanced_by_user_id = completion.actor_user_id.clone();
+    let completed = complete_landed_requests(tx, repo_id, main_oid, completion, now_unix).await?;
+    record_main_advance(tx, repo_id, &advanced_by_user_id, now_unix).await?;
+    Ok(completed)
+}
+
+async fn record_main_advance(
+    tx: &DatabaseTransaction,
+    repo_id: &str,
+    advanced_by_user_id: &str,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
     tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "UPDATE scope_git_heads SET main_pushed_by_user_id = $2 WHERE repo_id = $1",
-        [repo_id.into(), completion.actor_user_id.clone().into()],
+        "UPDATE scope_git_heads SET main_advanced_by_user_id = $2 WHERE repo_id = $1",
+        [repo_id.into(), advanced_by_user_id.into()],
     ))
     .await?;
-    let completed = complete_landed_requests(tx, repo_id, main_oid, completion, now_unix).await?;
     super::github_pull_requests::requeue_merged_carriers_of_open_requests(tx, repo_id, now_unix)
-        .await?;
-    Ok(completed)
+        .await
 }
 
 pub(super) struct MainAdvance {
     pub main_oid: String,
-    pub pushed_by_user_id: Option<String>,
+    pub advanced_by_user_id: Option<String>,
 }
 
 pub(super) async fn latest_main_advance(
@@ -474,14 +485,14 @@ pub(super) async fn latest_main_advance(
 ) -> Result<Option<MainAdvance>, PostgresError> {
     tx.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT head_oid, main_pushed_by_user_id FROM scope_git_heads WHERE repo_id = $1",
+        "SELECT head_oid, main_advanced_by_user_id FROM scope_git_heads WHERE repo_id = $1",
         [repo_id.into()],
     ))
     .await?
     .map(|head| {
         Ok(MainAdvance {
             main_oid: head.try_get("", "head_oid")?,
-            pushed_by_user_id: head.try_get("", "main_pushed_by_user_id")?,
+            advanced_by_user_id: head.try_get("", "main_advanced_by_user_id")?,
         })
     })
     .transpose()
@@ -494,9 +505,10 @@ pub(super) async fn land_request_merged_on_github(
     merge_commit_oid: &str,
     now_unix: u64,
 ) -> Result<bool, PostgresError> {
-    let (Some(request), Some(actor_user_id)) =
-        (request_by_id(tx, request_id).await?, main.pushed_by_user_id)
-    else {
+    let (Some(request), Some(actor_user_id)) = (
+        request_by_id(tx, request_id).await?,
+        main.advanced_by_user_id,
+    ) else {
         return Ok(false);
     };
     let completed = complete_landed_requests(

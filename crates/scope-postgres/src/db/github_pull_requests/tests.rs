@@ -13,7 +13,7 @@ use scope_domain::{
     views::ViewId,
 };
 
-mod merge_landing;
+pub(crate) mod merge_landing;
 
 pub(crate) const REPO: &str = "owner/repo";
 pub(crate) const OWNER: &str = "user_owner";
