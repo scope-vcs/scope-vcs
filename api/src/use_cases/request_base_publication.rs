@@ -268,6 +268,7 @@ pub(crate) async fn request_stack_child_publication_facts(
             head_oid: child.head_oid,
             base_version: child.base_version,
             parent_contains_pin,
+            main_contains_pin: false,
             contained_main_oid: None,
             accepted_view_main_oid: None,
             contained_main_descends_from_ancestor: false,
@@ -276,7 +277,7 @@ pub(crate) async fn request_stack_child_publication_facts(
     Ok(facts)
 }
 
-async fn restore_request_objects(
+pub(crate) async fn restore_request_objects(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
     request: &Request,

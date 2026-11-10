@@ -1,15 +1,21 @@
 use super::*;
-use crate::db::GitHubPullRequestFinish;
+use crate::db::{GitHubMergeCheckedAgainstMain, GitHubPullRequestFinish, RequestStackChildFacts};
 use scope_domain::requests::{GitHubMergeMainCheck, RequestState};
 
-const MAIN: char = 'c';
-const SQUASH: char = 'd';
+pub(crate) const MAIN: char = 'c';
+pub(crate) const SQUASH: char = 'd';
 
-fn squash_seen_in(main: char) -> GitHubMergeMainCheck {
-    GitHubMergeMainCheck {
-        main_oid: oid(main),
-        merge_commit_oid: oid(SQUASH),
-        main_contains_merge: true,
+pub(crate) fn squash_seen_in(
+    main: char,
+    stack_children: Vec<RequestStackChildFacts>,
+) -> GitHubMergeCheckedAgainstMain {
+    GitHubMergeCheckedAgainstMain {
+        main: GitHubMergeMainCheck {
+            main_oid: oid(main),
+            merge_commit_oid: oid(SQUASH),
+            main_contains_merge: true,
+        },
+        stack_children,
     }
 }
 
@@ -25,7 +31,7 @@ pub(crate) async fn finish_merged(
             merged,
             claim_token,
             GitHubJobOutcome::Succeeded(()),
-            Some(&squash_seen_in(seen_in)),
+            Some(squash_seen_in(seen_in, Vec::new())),
             12,
         )
         .await

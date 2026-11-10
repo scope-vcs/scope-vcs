@@ -694,13 +694,12 @@ fn a_request_lands_only_when_main_holds_the_merge_commit_of_a_pull_request_merge
     request.head_oid = HEAD.into();
     let merged = opened_carrier(GitHubPullRequestState::Merged(merge(HEAD)));
     let connected = connection();
-    let landing = |pull_request, commit_in_main, has_stacked_children| GitHubMergeLanding {
+    let landing = |pull_request, commit_in_main| GitHubMergeLanding {
         connection: Some(&connected),
         pull_request,
         commit_in_main,
-        has_stacked_children,
     };
-    let lands = landing(Some(&merged), "squash", false);
+    let lands = landing(Some(&merged), "squash");
     assert!(lands.lands(&request));
 
     let merged_at_an_older_head =
@@ -709,16 +708,15 @@ fn a_request_lands_only_when_main_holds_the_merge_commit_of_a_pull_request_merge
     let mut merged_elsewhere = merged.clone();
     merged_elsewhere.destination.github_repository_id += 1;
     for stays_open in [
-        landing(Some(&merged_elsewhere), "squash", false),
+        landing(Some(&merged_elsewhere), "squash"),
         GitHubMergeLanding {
             connection: None,
             ..lands
         },
-        landing(Some(&merged_at_an_older_head), "squash", false),
-        landing(Some(&merged), "another-commit", false),
-        landing(Some(&closed), "squash", false),
-        landing(None, "squash", false),
-        landing(Some(&merged), "squash", true),
+        landing(Some(&merged_at_an_older_head), "squash"),
+        landing(Some(&merged), "another-commit"),
+        landing(Some(&closed), "squash"),
+        landing(None, "squash"),
     ] {
         assert!(!stays_open.lands(&request), "{stays_open:?}");
         assert_eq!(

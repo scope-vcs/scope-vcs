@@ -303,6 +303,7 @@ pub struct RetargetRequestAfterParentMergeInput {
     pub event_id: String,
     pub now_unix: u64,
     pub parent_contains_pin: bool,
+    pub main_contains_pin: bool,
     pub contained_main_oid: Option<String>,
     pub accepted_view_main_oid: Option<String>,
     pub contained_main_descends_from_ancestor: bool,
@@ -348,7 +349,7 @@ pub fn retarget_request_after_parent_merge(
     }
     super::validate_required("retarget event id", &input.event_id)?;
     let needs_main_update = if child.view.is_private() {
-        false
+        !input.main_contains_pin
     } else {
         let accepted_view_main_oid = input.accepted_view_main_oid.as_deref().ok_or_else(|| {
             DomainError::conflict("restricted child retarget requires accepted view main")

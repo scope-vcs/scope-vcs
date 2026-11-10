@@ -26,7 +26,9 @@ use scope_domain::{
         lands_with_main, may_carry_on_github, review_request_comment_body, review_request_marker,
     },
 };
-use scope_postgres::db::{GitHubJobOutcome, GitHubPullRequestFinish};
+use scope_postgres::db::{
+    GitHubJobOutcome, GitHubMergeCheckedAgainstMain, GitHubPullRequestFinish,
+};
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -89,17 +91,18 @@ async fn run_claimed(
         );
     }
     let requests = state.metadata.requests();
+    let lands_with_the_finish = merge_checked_against_main.is_some();
     let finish = match requests
         .finish_github_pull_request(
             &carrier,
             claim_token,
             outcome,
-            merge_checked_against_main.as_ref(),
+            merge_checked_against_main,
             now_unix,
         )
         .await
     {
-        Err(error) if merge_checked_against_main.is_some() => {
+        Err(error) if lands_with_the_finish => {
             let error = ApiError::from(error);
             tracing::warn!(
                 request_id = carrier.request_id,
@@ -143,7 +146,7 @@ async fn run_claimed(
 async fn check_merge_against_main(
     state: &AppState,
     carrier: &GitHubPullRequest,
-) -> Result<Option<GitHubMergeMainCheck>, ApiError> {
+) -> Result<Option<GitHubMergeCheckedAgainstMain>, ApiError> {
     let Some(request) = state
         .metadata
         .requests()
@@ -183,10 +186,23 @@ async fn check_merge_against_main(
         )
     })
     .await?;
-    Ok(Some(GitHubMergeMainCheck {
-        main_oid: main.head_oid,
-        merge_commit_oid: merge.merge_commit_oid.clone(),
-        main_contains_merge,
+    let stack_children = if main_contains_merge {
+        super::request_stack_landing::prepare_github_merge_stack_landing(
+            state,
+            &incarnation,
+            &request,
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
+    Ok(Some(GitHubMergeCheckedAgainstMain {
+        main: GitHubMergeMainCheck {
+            main_oid: main.head_oid,
+            merge_commit_oid: merge.merge_commit_oid.clone(),
+            main_contains_merge,
+        },
+        stack_children,
     }))
 }
 
