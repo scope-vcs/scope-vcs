@@ -45,7 +45,7 @@ impl Drop for ProjectionBuildArtifacts {
     }
 }
 
-fn projection_bare_repo_with_loader(
+pub(crate) fn projection_bare_repo_with_loader(
     cache_root: &FsPath,
     incarnation: &RepositoryIncarnation,
     labels: &[ViewId],
@@ -575,7 +575,7 @@ pub(crate) fn projection_cache_key_for_head(
     hex::encode(hasher.finalize())
 }
 
-struct ProjectionPrefix {
+pub(crate) struct ProjectionPrefix {
     repo: PathBuf,
     _lease: Option<GitRepoHandle>,
     commits: usize,

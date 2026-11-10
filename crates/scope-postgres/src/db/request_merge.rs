@@ -24,10 +24,10 @@ use {
         requests::{
             GitHubMergeLanding, MergeGateAuthority, MergeGateInput, MergeRequestInput,
             MergeRequestLanding, RequestAutoMergeReadiness, RequestAutoMergeStopReason,
-            RequestLifecycleMutation, RequestMainPushCompletion, RequestViewer,
-            evaluate_merge_gate, fulfill_request_auto_merge, lands_with_main, merge_request,
-            request_auto_merge_readiness, request_checks_outcome, request_main_push_completion,
-            stop_request_auto_merge,
+            RequestLifecycleMutation, RequestMainPushCompletion, RequestMergeSubject,
+            RequestViewer, evaluate_merge_gate, fulfill_request_auto_merge, lands_with_main,
+            merge_request, request_auto_merge_readiness, request_checks_outcome,
+            request_main_push_completion, stop_request_auto_merge,
         },
     },
 };
@@ -268,7 +268,15 @@ async fn merge_one_request(
     let viewer = RequestViewer::new(context.access.clone(), Some(&actor_user_id), false);
     let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {
         repository_lifecycle: context.record.lifecycle_state,
-        subject: (&request).into(),
+        subject: RequestMergeSubject::new(
+            &request,
+            &super::projection_read_models::request_view_mains(
+                tx,
+                &request.repo_id,
+                context.record.content_version,
+            )
+            .await?,
+        ),
         viewer: &viewer,
         views: &context.views,
         checks: request_checks_outcome(
@@ -340,7 +348,7 @@ async fn merge_one_request(
         .into());
     }
     if gate.authority() != Some(MergeGateAuthority::RequestMerge) {
-        let message = gate.reason().unwrap_or("request cannot be merged");
+        let message = gate.refusal().unwrap_or("request cannot be merged");
         return Err(if !context.access.is_maintainer() {
             PostgresError::permission_denied(message)
         } else {

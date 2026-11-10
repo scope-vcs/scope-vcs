@@ -222,6 +222,7 @@ pub fn request_list_mergeability(
 
 pub fn request_mergeability(
     request: &Request,
+    view_mains: &super::RequestViewMains,
     viewer: &RequestViewer<'_>,
     views: &Views,
     checks: RequestChecksOutcome,
@@ -229,7 +230,7 @@ pub fn request_mergeability(
     repository_lifecycle: crate::repository::RepoLifecycleState,
 ) -> RequestMergeability {
     request_list_mergeability(
-        request.into(),
+        RequestMergeSubject::new(request, view_mains),
         viewer,
         views,
         checks,

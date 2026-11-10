@@ -254,13 +254,24 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         .await
         .unwrap();
     start_public_request(&store).await;
+    let public_main = super::super::projection_read_models::live_projection_read_model(
+        store.db.as_ref(),
+        "owner/repo",
+        2,
+        &scope_domain::views::ViewId::public(),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .head_oid
+    .unwrap();
     store
         .requests()
         .mutate_request_for_tests("req_1", |request| {
             request.base = scope_domain::requests::RequestBase::Main {
-                review_base_oid: BASE_HEAD.into(),
+                review_base_oid: public_main.clone(),
             };
-            request.main_ancestor_oid = BASE_HEAD.into();
+            request.main_ancestor_oid = public_main;
             request.submitted_at_unix = Some(4);
             request.updated_at_unix = 4;
         })
