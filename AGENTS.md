@@ -59,6 +59,7 @@ unrepresentable state.
 | Preserve generated contracts and digest-locked migrations. | `dev/checks/contract` and `check-migration-immutability.mjs`. |
 | Write no comments. | `dev/checks/policy` runs `check-comments.mjs` and its regression tests. Doc comments and `SAFETY` notes fail like any other comment. |
 | Write no documentation files. | `dev/checks/policy` runs `check-docs.mjs` and its regression tests: Markdown and other prose files, READMEs below the root, and anything under `docs/` fail. |
+| Let a dependency trust exclusion lapse on its expiry date. | `dev/checks/policy` runs `check-trust-exclusions.mjs` and its regression tests: an entry in `trustPolicyExclude` fails from the expiry date recorded for its package. Recording an expiry for a new exclusion still requires review. |
 | Avoid compatibility layers in pre-alpha; maintainer means owner or member. | Domain authorization tests cover access. Compatibility and terminology choices still require review. |
 | Do not edit root README without explicit authorization; involve the operator in new behavior. | Operator context and review; no source-only check can establish authorization. |
 | Record failed checks before retrying without a repair. | Release-flake issue workflow; no local retry interceptor. |

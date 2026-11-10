@@ -13,6 +13,8 @@ node --test .github/scripts/check-comments.test.mjs
 node .github/scripts/check-comments.mjs
 node --test .github/scripts/check-docs.test.mjs
 node .github/scripts/check-docs.mjs
+node --test .github/scripts/check-trust-exclusions.test.mjs
+node .github/scripts/check-trust-exclusions.mjs
 node --test .github/scripts/check-test-waits.test.mjs
 node .github/scripts/check-test-waits.mjs
 node --test .github/scripts/check-rust-boundaries.test.mjs
