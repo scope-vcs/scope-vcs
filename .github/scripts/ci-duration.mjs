@@ -35,7 +35,7 @@ export function durationIssueBody(jobs, { runUrl, budgetSeconds = BUDGET_SECONDS
     '| --- | --- | --- |',
     ...jobs.map(job => {
       const slowest = job.runs.reduce((left, right) => (right.seconds > left.seconds ? right : left));
-      return `| ${job.name} | ${minutes(job.medianSeconds)} | [${minutes(slowest.seconds)} min](${slowest.url}) |`;
+      return `| \`${job.name.replace(/[`\r\n|]/g, '')}\` | ${minutes(job.medianSeconds)} | [${minutes(slowest.seconds)} min](${slowest.url}) |`;
     }),
     '',
     `[Duration check](${runUrl})`,
@@ -47,7 +47,8 @@ export async function recentPullRequestRuns({ github, owner, repo, count = 50 })
     owner, repo, workflow_id: 'ci.yml', event: 'pull_request', status: 'success', per_page: count,
   });
   const runs = [];
-  for (const run of data.workflow_runs.filter(run => run.run_attempt === 1)) {
+  const sameRepository = run => run.head_repository?.full_name === `${owner}/${repo}`;
+  for (const run of data.workflow_runs.filter(run => run.run_attempt === 1 && sameRepository(run))) {
     const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
       owner, repo, run_id: run.id, per_page: 100,
     });

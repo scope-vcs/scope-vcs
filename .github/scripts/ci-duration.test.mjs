@@ -25,7 +25,7 @@ test('a job is slow only when the median of its last ten successful runs is over
 
 const pullRequestRun = (id, seconds) => ({
   id, run_attempt: 1, html_url: `https://github.com/r/${id}`, run_started_at: new Date(start).toISOString(),
-  seconds,
+  head_repository: { full_name: 'o/r' }, seconds,
 });
 
 function fakeGitHub(openIssues, seconds) {
@@ -35,13 +35,16 @@ function fakeGitHub(openIssues, seconds) {
   const github = {
     rest: {
       actions: {
-        listWorkflowRuns: async () => ({ data: { workflow_runs: [...runs, { ...runs[0], id: 99, run_attempt: 2 }] } }),
+        listWorkflowRuns: async () => ({ data: { workflow_runs: [
+          ...runs, { ...runs[0], id: 99, run_attempt: 2 },
+          ...runs.map(run => ({ ...run, id: run.id + 100, head_repository: { full_name: 'fork/r' } })),
+        ] } }),
         listJobsForWorkflowRun: 'jobs',
       },
       issues: { listForRepo: 'issues', create, createComment },
     },
     paginate: async (method, { run_id: runId }) => (method === 'issues' ? openIssues : [{
-      name: 'Browser smoke', conclusion: 'success',
+      name: runId >= 100 ? '@everyone | [x](y)' : 'Browser smoke', conclusion: 'success',
       completed_at: new Date(start + runs.find(item => item.id === runId).seconds * 1000).toISOString(),
     }]),
   };
@@ -54,7 +57,8 @@ test('a slow job comments on the open budget issue instead of opening another, a
   await reportCiDuration({ github: fresh.github, owner: 'o', repo: 'r', runUrl });
   assert.equal(fresh.create.mock.callCount(), 1);
   assert.equal(fresh.create.mock.calls[0].arguments[0].title, ISSUE_TITLE);
-  assert.match(fresh.create.mock.calls[0].arguments[0].body, /\| Browser smoke \| 8\.3 \|/);
+  assert.match(fresh.create.mock.calls[0].arguments[0].body, /\| `Browser smoke` \| 8\.3 \|/);
+  assert.doesNotMatch(fresh.create.mock.calls[0].arguments[0].body, /@everyone/);
 
   const recurring = fakeGitHub([{ number: 7, title: ISSUE_TITLE }], 500);
   await reportCiDuration({ github: recurring.github, owner: 'o', repo: 'r', runUrl });
