@@ -168,17 +168,18 @@ impl RequestStore {
             merge.map(|merge| merge.head_oid.clone()).into(),
         ]);
         let tx = self.db.begin().await?;
+        if progress.has_ended_on_github() {
+            acquire_aggregate_lock(&tx, "repository", &progress.repo_id).await?;
+        } else {
+            acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
+        }
         let (main, landing_step) = match merge_checked_against_main {
             Some(check) => {
-                acquire_aggregate_lock(&tx, "repository", &progress.repo_id).await?;
                 let main = latest_main_advance(&tx, &progress.repo_id).await?;
                 let step = check.landing_step(main.as_ref().map(|main| main.main_oid.as_str()));
                 (main, step)
             }
-            None => {
-                acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
-                (None, GitHubMergeLandingStep::AwaitMain)
-            }
+            None => (None, GitHubMergeLandingStep::AwaitMain),
         };
         values.push(landing_step.requeues_job(retry_at.is_some()).into());
         acquire_github_push_lock(&tx, &progress.repo_id, &progress.branch()).await?;
