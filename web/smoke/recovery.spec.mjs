@@ -20,7 +20,7 @@ test(`sign-in keeps Scope navigation when authentication is ${authEnabled ? 'ena
     if (authEnabled) {
       await page.getByRole('textbox', { name: 'Email address', exact: true }).waitFor()
       await page.getByLabel('Password', { exact: true }).waitFor()
-      await page.getByRole('link', { name: 'Scope home', exact: true }).click()
+      await page.getByRole('banner').getByRole('link', { name: 'Scope home', exact: true }).click()
     } else {
       await page.getByText('Sign in is disabled in this preview.', { exact: false }).waitFor()
       await page.getByRole('link', { name: 'Back to Scope', exact: true }).click()
