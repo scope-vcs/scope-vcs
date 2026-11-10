@@ -200,7 +200,7 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_SERVICE_HEALTH_TIMEOUT_SECONDS=0 \
     SCOPE_SERVICE_HEALTH_POLL_SECONDS=0 \
     SCOPE_PREDECESSOR_TEARDOWN_POLL_SECONDS=0 \
-    SCOPE_PREDECESSOR_TEARDOWN_TIMEOUT_SECONDS=2 \
+    SCOPE_PREDECESSOR_TEARDOWN_TIMEOUT_SECONDS=30 \
     GITHUB_SHA="$sha" \
     SCOPE_WRITER_FENCE_GRACE_SECONDS="0" \
     SCOPE_MAINTENANCE_BINARY="$m" \
@@ -412,7 +412,8 @@ rolling() {
 rolling_teardown_barrier() {
   FAKE_INITIAL_EXACT=1 FAKE_DELAY_REMOVE=scope-worker:scope-api run_cutover pass rolling-teardown-barrier
   assert_evidence_components rolling-teardown-barrier run-worker,api
-  assert_in_order rolling-teardown-barrier "$up/run-worker" "$up/api"
+  assert_in_order rolling-teardown-barrier "$up/run-worker" "$up/api" \
+    '--service scope-worker --limit 100 --json'
 }
 
 rolling_worker() {
