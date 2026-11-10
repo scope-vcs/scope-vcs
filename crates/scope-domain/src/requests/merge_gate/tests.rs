@@ -327,6 +327,12 @@ fn main_request_needs_a_main_update_once_its_view_main_moves_past_the_contained_
             needs_main_update.then_some("request must contain the latest view main")
         );
         assert_eq!(
+            gate.refusal(),
+            needs_main_update.then_some(
+                "Request view main moved. Run scope request restack, then scope request push."
+            )
+        );
+        assert_eq!(
             request_auto_merge_readiness(gate),
             if needs_main_update {
                 RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::NeedsMainUpdate)

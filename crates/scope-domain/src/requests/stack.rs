@@ -70,6 +70,15 @@ impl RequestStackStatus {
             Self::NeedsMainUpdate => Some("request must contain the latest view main"),
         }
     }
+
+    pub const fn merge_refusal(self) -> Option<&'static str> {
+        match self {
+            Self::NeedsMainUpdate => {
+                Some("Request view main moved. Run scope request restack, then scope request push.")
+            }
+            _ => self.blocking_reason(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

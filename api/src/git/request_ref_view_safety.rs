@@ -288,9 +288,9 @@ fn ensure_request_contains_view_main(
 ) -> Result<(), ApiError> {
     match RequestStackStatus::Main
         .containing_view_main(view, contains_view_main)
-        .blocking_reason()
+        .merge_refusal()
     {
-        Some(reason) => Err(ApiError::conflict(reason)),
+        Some(refusal) => Err(ApiError::conflict(refusal)),
         None => Ok(()),
     }
 }

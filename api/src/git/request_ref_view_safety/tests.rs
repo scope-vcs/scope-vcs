@@ -132,7 +132,7 @@ fn merge_validation_rejects_request_without_current_view_head() {
         ensure_view_head_is_request_ancestor(&ViewId::public(), &repo, &request_head)
             .unwrap_err()
             .public_message(),
-        "request must contain the latest view main"
+        "Request view main moved. Run scope request restack, then scope request push."
     );
 }
 

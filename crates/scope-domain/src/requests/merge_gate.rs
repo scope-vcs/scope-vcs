@@ -80,8 +80,13 @@ impl MergeGateDecision {
         }
     }
 
-    pub fn reason(self) -> Option<&'static str> {
+    pub fn refusal(self) -> Option<&'static str> {
         match self {
+            Self::RequestMerge(decision)
+                if decision.status == RequestMergeabilityStatus::NeedsMainUpdate =>
+            {
+                super::RequestStackStatus::NeedsMainUpdate.merge_refusal()
+            }
             Self::RequestMerge(decision) => decision.reason,
             Self::AuthorizedMainPush => None,
             Self::MainPushDenied => Some("full-view main push access required"),
@@ -321,8 +326,8 @@ pub(super) fn validate_request_merge_execution(
             return Ok(());
         }
     }
-    if let Some(decision) = request_stack_mergeability(request.stack_status) {
-        return Err(DomainError::conflict(decision.reason.unwrap()));
+    if let Some(refusal) = request.stack_status.merge_refusal() {
+        return Err(DomainError::conflict(refusal));
     }
     Ok(())
 }

@@ -348,7 +348,7 @@ async fn merge_one_request(
         .into());
     }
     if gate.authority() != Some(MergeGateAuthority::RequestMerge) {
-        let message = gate.reason().unwrap_or("request cannot be merged");
+        let message = gate.refusal().unwrap_or("request cannot be merged");
         return Err(if !context.access.is_maintainer() {
             PostgresError::permission_denied(message)
         } else {

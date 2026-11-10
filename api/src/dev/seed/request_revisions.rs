@@ -58,7 +58,6 @@ pub(super) fn seed_bounded_retry_revisions(
     repository_id: &str,
     repo_path: &Path,
     initial_head_oid: &str,
-    main_oid: &str,
 ) -> Result<Vec<SeedRequestRevision>, ApiError> {
     let specs = [
         RevisionSpec {
@@ -97,7 +96,7 @@ pub(super) fn seed_bounded_retry_revisions(
     let mut previous_head_oid = initial_head_oid.to_string();
     let mut revisions = Vec::with_capacity(specs.len());
     for spec in specs {
-        let head_oid = seed_revision(repo_path, spec.commit, &previous_head_oid, main_oid)?;
+        let head_oid = seed_revision(repo_path, spec.commit, &previous_head_oid)?;
         let pack = store_seed_request_pack(
             git_segment_store,
             repository_id,
@@ -120,7 +119,6 @@ fn seed_revision(
     repo_path: &Path,
     commit: SeedGitCommit<'_>,
     previous_head_oid: &str,
-    main_oid: &str,
 ) -> Result<String, ApiError> {
     seed_git(
         Some(repo_path),
@@ -134,11 +132,6 @@ fn seed_revision(
         Some(repo_path),
         &["update-ref", &request_ref, &head_oid],
         "advancing seeded request ref",
-    )?;
-    seed_git(
-        Some(repo_path),
-        &["reset", "--hard", main_oid],
-        "restoring seeded main branch",
     )?;
     Ok(head_oid)
 }

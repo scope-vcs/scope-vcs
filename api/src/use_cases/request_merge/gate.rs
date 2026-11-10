@@ -103,7 +103,7 @@ pub(super) async fn ensure_checks_cleared(
     });
     if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
         return Err(
-            ApiError::conflict(decision.reason().unwrap_or("request CI has not cleared")).into(),
+            ApiError::conflict(decision.refusal().unwrap_or("request CI has not cleared")).into(),
         );
     }
     Ok(())

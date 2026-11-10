@@ -1,6 +1,8 @@
 use super::*;
 
 const PUBLIC_MAIN_MOVED: &str = "request must contain the latest view main";
+const PUBLIC_MAIN_MOVED_REFUSAL: &str =
+    "Request view main moved. Run scope request restack, then scope request push.";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
@@ -61,7 +63,10 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     )
     .await;
     assert_eq!(blocked.status(), StatusCode::CONFLICT);
-    assert_eq!(response_json(blocked).await["message"], PUBLIC_MAIN_MOVED);
+    assert_eq!(
+        response_json(blocked).await["message"],
+        PUBLIC_MAIN_MOVED_REFUSAL
+    );
 
     let public_remote = remote.clone();
     run_git(

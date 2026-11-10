@@ -71,7 +71,11 @@ pub(super) fn exercise(contributor: &Actor, maintainer: &Actor, suffix: &str) {
         assert_eq!(shown["result"]["request"]["head_oid"], child_head);
         assert_eq!(
             shown["result"]["request"]["mergeability"]["status"],
-            "NotMaintainer"
+            if extended {
+                "NeedsMainUpdate"
+            } else {
+                "NotMaintainer"
+            }
         );
         let maintainer_checks = maintainer.json(["request", "ci", "--request", &child_id]);
         assert_eq!(shown["result"]["request"]["base"]["kind"], "main");
