@@ -566,6 +566,7 @@ pub(super) async fn complete_landed_requests(
         ordered.push((depth, candidate.request_id.clone(), candidate));
     }
     ordered.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
+    let connection = super::github_connections::repository_github_connection(tx, repo_id).await?;
     let mut completed = 0;
     for (_, _, candidate) in ordered {
         let Some(request) = request_by_id(tx, &candidate.request_id)
@@ -588,6 +589,7 @@ pub(super) async fn complete_landed_requests(
                 pull_request =
                     super::github_pull_requests::github_pull_request(tx, &request.id).await?;
                 let merge = GitHubMergeLanding {
+                    connection: connection.as_ref(),
                     pull_request: pull_request.as_ref(),
                     commit_in_main,
                     has_stacked_children: !super::request_stack::children(tx, &request.id)

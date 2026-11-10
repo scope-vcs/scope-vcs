@@ -2,7 +2,7 @@ use super::{
     GitHubPullRequest, Request, RequestEvent, RequestEventKind, RequestEventPayload, RequestState,
     validate_required,
 };
-use crate::error::DomainError;
+use crate::{error::DomainError, github_connection::GitHubConnection};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestLifecycleMutation {
@@ -29,6 +29,7 @@ pub enum MergeRequestLanding<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GitHubMergeLanding<'a> {
+    pub connection: Option<&'a GitHubConnection>,
     pub pull_request: Option<&'a GitHubPullRequest>,
     pub commit_in_main: &'a str,
     pub has_stacked_children: bool,
@@ -39,6 +40,11 @@ impl GitHubMergeLanding<'_> {
         !self.has_stacked_children
             && self
                 .pull_request
+                .filter(|pull_request| {
+                    self.connection.is_some_and(|connection| {
+                        pull_request.destination.is_connected_through(connection)
+                    })
+                })
                 .and_then(|pull_request| pull_request.merge_of(request))
                 .is_some_and(|merge| merge.merge_commit_oid == self.commit_in_main)
     }

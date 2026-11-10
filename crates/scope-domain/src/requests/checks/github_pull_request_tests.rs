@@ -541,7 +541,9 @@ fn a_request_lands_only_when_main_holds_the_merge_commit_of_a_pull_request_merge
     let mut request = full_view_request();
     request.head_oid = HEAD.into();
     let merged = opened_carrier(GitHubPullRequestState::Merged(merge(HEAD)));
+    let connected = connection();
     let landing = |pull_request, commit_in_main, has_stacked_children| GitHubMergeLanding {
+        connection: Some(&connected),
         pull_request,
         commit_in_main,
         has_stacked_children,
@@ -552,7 +554,14 @@ fn a_request_lands_only_when_main_holds_the_merge_commit_of_a_pull_request_merge
     let merged_at_an_older_head =
         opened_carrier(GitHubPullRequestState::Merged(merge("older-head")));
     let closed = opened_carrier(GitHubPullRequestState::ClosedOnGitHub);
+    let mut merged_elsewhere = merged.clone();
+    merged_elsewhere.destination.github_repository_id += 1;
     for stays_open in [
+        landing(Some(&merged_elsewhere), "squash", false),
+        GitHubMergeLanding {
+            connection: None,
+            ..lands
+        },
         landing(Some(&merged_at_an_older_head), "squash", false),
         landing(Some(&merged), "another-commit", false),
         landing(Some(&closed), "squash", false),

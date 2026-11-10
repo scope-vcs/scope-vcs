@@ -82,6 +82,7 @@ async fn run_claimed(
             "keeping a GitHub pull request in step with its request failed"
         );
     }
+    let job_is_done = matches!(outcome, GitHubJobOutcome::Succeeded(()));
     match state
         .metadata
         .requests()
@@ -90,17 +91,20 @@ async fn run_claimed(
     {
         Ok(true) => {
             match land_request_merged_on_github(state, &carrier).await {
-                Ok(GitHubMergeLandingAttempt::MainMoved) => {
+                Ok(GitHubMergeLandingAttempt::MainMoved) if job_is_done => {
                     retry_landing_later(state, &carrier, now_unix).await;
                 }
+                Ok(GitHubMergeLandingAttempt::MainMoved) => {}
                 Ok(GitHubMergeLandingAttempt::Landed | GitHubMergeLandingAttempt::NotLanded) => {}
                 Err(error) => {
                     tracing::warn!(
                         request_id = carrier.request_id,
                         error = %error.operator_diagnostic(),
-                        "could not land a request whose pull request merged on GitHub; retrying"
+                        "could not land a request whose pull request merged on GitHub"
                     );
-                    retry_landing_later(state, &carrier, now_unix).await;
+                    if job_is_done {
+                        retry_landing_later(state, &carrier, now_unix).await;
+                    }
                 }
             }
             publish_pull_request_change(state, &carrier.repo_id, &carrier.request_id).await
