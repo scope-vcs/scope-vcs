@@ -77,6 +77,17 @@ fn open_onto(base: &str, head_oid: &str) -> GitHubPullRequestIntent {
     }
 }
 
+fn lock_carrier(request_id: &str, skip_locked: &str) -> Statement {
+    Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "SELECT 1 FROM scope_github_pull_requests WHERE request_id = $1 \
+             FOR UPDATE {skip_locked}"
+        ),
+        [request_id.into()],
+    )
+}
+
 async fn once_blocked_by<T>(
     held: DatabaseTransaction,
     waiting: impl Future<Output = T>,
@@ -176,16 +187,6 @@ async fn a_base_recompute_keeps_the_head_pushed_while_it_waited() {
 async fn base_recomputes_take_requests_in_id_order_whatever_order_they_were_listed_in() {
     let store = crate::db::requests::tests::postgres_store();
     let (_, [first, second]) = carried_stack(&store, ["child-a", "child-b"]).await;
-    let lock_carrier = |request_id: &str, skip_locked: &str| {
-        Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            format!(
-                "SELECT 1 FROM scope_github_pull_requests WHERE request_id = $1 \
-                 FOR UPDATE {skip_locked}"
-            ),
-            [request_id.into()],
-        )
-    };
     let held = store.db.begin().await.unwrap();
     held.execute_raw(lock_carrier(&first.id, "")).await.unwrap();
 
@@ -206,6 +207,75 @@ async fn base_recomputes_take_requests_in_id_order_whatever_order_they_were_list
             "a recompute waiting for the first request must not hold a later one"
         );
     })
+    .await
+    .unwrap();
+}
+
+async fn waiting_for_its_childs_carrier_without_holding_its_own<T>(
+    store: &MetadataStore,
+    parent_id: &str,
+    child_id: &str,
+    ending: impl Future<Output = T>,
+) -> T {
+    let held = store.db.begin().await.unwrap();
+    held.execute_raw(lock_carrier(child_id, "")).await.unwrap();
+    once_blocked_by(held, ending, async |held| {
+        let parent_is_free = held
+            .query_one_raw(lock_carrier(parent_id, "SKIP LOCKED"))
+            .await
+            .unwrap()
+            .is_some();
+        assert!(
+            parent_is_free,
+            "a parent waiting for its child's carrier must not hold its own"
+        );
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_ending_parent_takes_its_childs_carrier_before_its_own() {
+    let store = crate::db::requests::tests::postgres_store();
+    let (mut parent, [child]) = carried_stack(&store, ["child"]).await;
+    assert!(child.id < parent.id);
+    let requests = store.requests();
+    let claimed = requests
+        .claim_due_github_pull_requests("claim", 12, 112, 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|carrier| carrier.request_id == parent.id)
+        .unwrap();
+    let merged = crate::db::github_pull_requests::tests::merge_landing::squash_merged_on_github(
+        claimed,
+        &parent.head_oid,
+    );
+
+    parent.closed_at_unix = Some(15);
+    parent.updated_at_unix = 15;
+    let closing = store.db.begin().await.unwrap();
+    waiting_for_its_childs_carrier_without_holding_its_own(
+        &store,
+        &parent.id,
+        &child.id,
+        persist_lifecycle_mutation(&closing, &parent, &[]),
+    )
+    .await
+    .unwrap();
+    closing.rollback().await.unwrap();
+
+    waiting_for_its_childs_carrier_without_holding_its_own(
+        &store,
+        &parent.id,
+        &child.id,
+        requests.finish_github_pull_request(
+            &merged,
+            "claim",
+            crate::db::GitHubJobOutcome::Succeeded(()),
+            None,
+            13,
+        ),
+    )
     .await
     .unwrap();
 }

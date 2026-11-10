@@ -13,7 +13,6 @@ use scope_domain::{
     views::Views,
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement, TransactionTrait};
-use std::collections::BTreeSet;
 
 impl RequestStore {
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "recompute_github_pull_request_intents"))]
@@ -25,7 +24,10 @@ impl RequestStore {
     ) -> Result<(), PostgresError> {
         let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, repo_id).await?;
-        recompute_carrier_bases(&tx, repo_id, request_ids, now_unix).await?;
+        lock_carriers(&tx, repo_id, request_ids)
+            .await?
+            .recompute_bases(&tx, now_unix)
+            .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -186,61 +188,71 @@ pub(in crate::db) async fn queue_carriers_for_repository<C: ConnectionTrait>(
     Ok(())
 }
 
-pub(in crate::db) async fn recompute_child_carrier_intents<C: ConnectionTrait>(
+pub(in crate::db) struct LockedCarriers {
+    open: Vec<String>,
+}
+
+impl LockedCarriers {
+    pub(in crate::db) async fn recompute_bases<C: ConnectionTrait>(
+        &self,
+        conn: &C,
+        now_unix: u64,
+    ) -> Result<(), PostgresError> {
+        for request_id in &self.open {
+            let Some(context) = CarrierContext::of(conn, request_id).await? else {
+                continue;
+            };
+            if let Some(base) = context.base(conn).await? {
+                move_carrier_base(conn, request_id, &base, now_unix).await?;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub(in crate::db) async fn lock_carrier_and_child_carriers<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
     parent_id: &str,
-    now_unix: u64,
-) -> Result<(), PostgresError> {
+) -> Result<LockedCarriers, PostgresError> {
     let children = request_stack::children(conn, parent_id).await?;
-    recompute_carrier_bases(
+    let mut locked = lock_carriers(
         conn,
         repo_id,
-        children.into_iter().map(|child| child.id),
-        now_unix,
+        children
+            .into_iter()
+            .map(|child| child.id)
+            .chain([parent_id.to_string()]),
     )
-    .await
+    .await?;
+    locked.open.retain(|request_id| request_id != parent_id);
+    Ok(locked)
 }
 
-async fn recompute_carrier_bases<C: ConnectionTrait>(
+async fn lock_carriers<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
     request_ids: impl IntoIterator<Item = String>,
-    now_unix: u64,
-) -> Result<(), PostgresError> {
-    for request_id in request_ids.into_iter().collect::<BTreeSet<_>>() {
-        recompute_carrier_base(conn, repo_id, &request_id, now_unix).await?;
-    }
-    Ok(())
-}
-
-async fn recompute_carrier_base<C: ConnectionTrait>(
-    conn: &C,
-    repo_id: &str,
-    request_id: &str,
-    now_unix: u64,
-) -> Result<(), PostgresError> {
-    let Some(locked) = conn
-        .query_one_raw(Statement::from_sql_and_values(
+) -> Result<LockedCarriers, PostgresError> {
+    let mut open = Vec::new();
+    for locked in conn
+        .query_all_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            "SELECT intent FROM scope_github_pull_requests
-              WHERE request_id = $1 AND repo_id = $2 FOR NO KEY UPDATE",
-            [request_id.into(), repo_id.into()],
+            "SELECT request_id, intent FROM scope_github_pull_requests
+              WHERE repo_id = $1 AND request_id = ANY($2)
+              ORDER BY request_id COLLATE \"C\" FOR NO KEY UPDATE",
+            [
+                repo_id.into(),
+                request_ids.into_iter().collect::<Vec<_>>().into(),
+            ],
         ))
         .await?
-    else {
-        return Ok(());
-    };
-    if locked.try_get::<String>("", "intent")? != "open" {
-        return Ok(());
+    {
+        if locked.try_get::<String>("", "intent")? == "open" {
+            open.push(locked.try_get("", "request_id")?);
+        }
     }
-    let Some(context) = CarrierContext::of(conn, request_id).await? else {
-        return Ok(());
-    };
-    match context.base(conn).await? {
-        Some(base) => move_carrier_base(conn, request_id, &base, now_unix).await,
-        None => Ok(()),
-    }
+    Ok(LockedCarriers { open })
 }
 
 async fn move_carrier_base<C: ConnectionTrait>(

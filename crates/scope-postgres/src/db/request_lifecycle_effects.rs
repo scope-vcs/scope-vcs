@@ -16,6 +16,12 @@ pub(super) async fn persist_lifecycle_mutation(
     save_request_row(tx, request).await?;
     if request.is_terminal() {
         super::request_invitees::delete_request_invitees(tx, &request.id).await?;
+        let child_carriers = super::github_pull_requests::lock_carrier_and_child_carriers(
+            tx,
+            &request.repo_id,
+            &request.id,
+        )
+        .await?;
         let connection =
             super::github_connections::repository_github_connection(tx, &request.repo_id).await?;
         let carrier = super::github_pull_requests::github_pull_request(tx, &request.id).await?;
@@ -29,13 +35,9 @@ pub(super) async fn persist_lifecycle_mutation(
             .await?;
         }
         super::github_pull_requests::queue_carrier_close(tx, request, connection.as_ref()).await?;
-        super::github_pull_requests::recompute_child_carrier_intents(
-            tx,
-            &request.repo_id,
-            &request.id,
-            request.updated_at_unix,
-        )
-        .await?;
+        child_carriers
+            .recompute_bases(tx, request.updated_at_unix)
+            .await?;
     }
     for event in events {
         insert_request_event_row(tx, event).await?;
