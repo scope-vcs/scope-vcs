@@ -112,6 +112,7 @@ async fn a_parent_merged_on_github_lands_with_every_child_moved_to_main_or_not_a
         &tx,
         &parent.repo_id,
         &oid(MAIN),
+        scope_domain::requests::MainAdvanceKind::Push,
         LandedRequestCompletion {
             actor_user_id: "user_owner".into(),
             candidates: vec![LandedRequestCandidate {
