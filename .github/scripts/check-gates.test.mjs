@@ -102,7 +102,7 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   assert.ok(cliCommands.includes('cargo test -p scope-cli-downloads --locked'));
   assert.ok(!cliCommands.some((command) => command.includes('--release')), cliCommands.join('\n'));
   const bundleCommands = commands('cli-bundle');
-  assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope'));
+  assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --profile release-check --locked --bin scope'));
   assert.ok(bundleCommands.includes('cargo build -p scope-cli-downloads --release --locked'));
   assert.ok(bundleCommands.includes('bash cli/distribution/package-bundle.sh'));
   assert.ok(bundleCommands.includes('node --test cli/distribution/install-smoke.test.mjs'));

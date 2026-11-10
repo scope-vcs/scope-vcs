@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import functools
 import itertools
 import json
 import math
@@ -220,8 +221,18 @@ def condition(value, context):
     return truthy(evaluate(value, context))
 
 
+@functools.cache
+def parse_yaml(text):
+    return yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
+
+
+@functools.cache
+def parse_toml(text):
+    return tomllib.loads(text)
+
+
 def load(name):
-    return yaml.safe_load((WORKFLOWS / name).read_text())
+    return parse_yaml((WORKFLOWS / name).read_text())
 
 
 def needs_of(job):
@@ -263,19 +274,24 @@ def matrix_entries(matrix):
     return [dict(zip(axes, values)) for values in itertools.product(*(matrix[axis] for axis in axes))]
 
 
-def job_outputs(job_id, inputs):
+@functools.cache
+def distribution_matrix(mode):
+    selected = subprocess.run(
+        ["node", ".github/scripts/select-cli-distribution-targets.mjs", "--mode", mode],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+    return selected.stdout.strip()
+
+
+def job_outputs(job_id, inputs, selection):
     if job_id == "ci.yml:plan":
-        return {name: "true" for name in load("ci.yml")["jobs"]["plan"]["outputs"]}
+        return selection
     if job_id == "scope-cli-build.yml:prepare":
-        selected = subprocess.run(
-            ["node", ".github/scripts/select-cli-distribution-targets.mjs", "--mode", inputs["distribution_mode"]],
-            cwd=ROOT, check=True, capture_output=True, text=True,
-        )
-        return {"matrix": selected.stdout.strip()}
+        return {"matrix": distribution_matrix(inputs["distribution_mode"])}
     return {}
 
 
-def simulate(workflow, github, supplied=None, caller=None, waits_for=frozenset(), instance=""):
+def simulate(workflow, github, selection, supplied=None, caller=None, waits_for=frozenset(), instance=""):
     document = load(workflow)
     inputs = workflow_inputs(document, supplied or {}, caller or {})
     jobs, results, nodes = document["jobs"], {}, []
@@ -294,7 +310,7 @@ def simulate(workflow, github, supplied=None, caller=None, waits_for=frozenset()
         for entry in matrix_entries(matrix):
             label = text_of(entry.get("label") or entry.get("group")) or ", ".join(map(text_of, entry.values()))
             if "uses" in job:
-                child = simulate(job["uses"].rsplit("/", 1)[1], github, job.get("with") or {},
+                child = simulate(job["uses"].rsplit("/", 1)[1], github, selection, job.get("with") or {},
                                  {**context, "matrix": entry}, frozenset(before),
                                  f"{instance} [{label}]" if label else instance)
                 nodes.extend(child)
@@ -305,13 +321,18 @@ def simulate(workflow, github, supplied=None, caller=None, waits_for=frozenset()
                           "workflow_env": document.get("env") or {},
                           "context": {**context, "matrix": entry}})
             created.add(node_id)
-        outputs = {} if "uses" in job else job_outputs(job_id, inputs)
+        outputs = {} if "uses" in job else job_outputs(job_id, inputs, selection)
         results[name] = {"result": "success", "outputs": outputs, "nodes": created}
     return nodes
 
 
-def full_pull_request_run():
-    nodes = simulate("ci.yml", PULL_REQUEST)
+def pull_request_runs():
+    full = {name: "true" for name in load("ci.yml")["jobs"]["plan"]["outputs"]}
+    selections = [full, *({**full, name: "false"} for name in full)]
+    return [ordered_run(simulate("ci.yml", PULL_REQUEST, selection)) for selection in selections]
+
+
+def ordered_run(nodes):
     by_id = {node["id"]: node for node in nodes}
     for node in nodes:
         pending, closure = list(node["waits_for"]), set()
@@ -341,8 +362,8 @@ def peak_concurrency(nodes):
     return len(ids) - sum(augment(node_id, set()) for node_id in ids)
 
 
-def runner_cap_violations(nodes):
-    peak = peak_concurrency(nodes)
+def runner_cap_violations(runs):
+    peak = max(peak_concurrency(nodes) for nodes in runs)
     if peak <= RUNNER_CAP:
         return []
     return [f"a full pull request run can have {peak} jobs running at once; GitHub's free plan runs {RUNNER_CAP}"]
@@ -362,7 +383,7 @@ def serial_wait_violations(nodes):
 def workspace_profiles(manifest):
     directory = (ROOT / manifest).resolve().parent
     while True:
-        document = tomllib.loads((directory / "Cargo.toml").read_text())
+        document = parse_toml((directory / "Cargo.toml").read_text())
         if "workspace" in document or directory == ROOT:
             return directory.relative_to(ROOT), document.get("profile", {})
         directory = directory.parent
@@ -372,7 +393,7 @@ def configured_profiles(workspace, env):
     profiles = {}
     for config in (ROOT / ".cargo/config.toml", ROOT / workspace / ".cargo/config.toml"):
         if config.is_file():
-            for name, table in tomllib.loads(config.read_text()).get("profile", {}).items():
+            for name, table in parse_toml(config.read_text()).get("profile", {}).items():
                 profiles.setdefault(name, {}).update(table)
     for key, value in env.items():
         override = re.fullmatch(r"CARGO_PROFILE_([A-Z0-9_]+)_(LTO|CODEGEN_UNITS)", key)
@@ -472,7 +493,7 @@ def api_build_violations(nodes):
 
 def workflow_steps():
     for path in sorted([*WORKFLOWS.glob("*.yml"), *(ROOT / ".github/actions").glob("*/action.yml")]):
-        document = yaml.safe_load(path.read_text()) or {}
+        document = parse_yaml(path.read_text())
         jobs = [(f"{path.name}:{name}", job) for name, job in (document.get("jobs") or {}).items()]
         if "runs" in document:
             jobs.append((None, document["runs"]))
@@ -521,16 +542,22 @@ def downloaded_key_violations(files):
             for name, text in files if DOWNLOADED_KEY.search(text)]
 
 
-def main():
-    nodes = full_pull_request_run()
+def run_violations(runs):
     violations = [
-        *runner_cap_violations(nodes),
-        *serial_wait_violations(nodes),
-        *lto_violations(nodes),
-        *api_build_violations(nodes),
-        *cache_violations(nodes),
-        *downloaded_key_violations(tracked_text_files()),
+        violation
+        for nodes in runs
+        for check in (serial_wait_violations, lto_violations, api_build_violations)
+        for violation in check(nodes)
     ]
+    violations += runner_cap_violations(runs)
+    violations += cache_violations([node for nodes in runs for node in nodes])
+    return list(dict.fromkeys(violations))
+
+
+def main():
+    runs = pull_request_runs()
+    nodes = runs[0]
+    violations = [*run_violations(runs), *downloaded_key_violations(tracked_text_files())]
     if violations:
         print("CI critical path regressions:", file=sys.stderr)
         for violation in violations:

@@ -31,14 +31,7 @@ class CriticalPathTest(unittest.TestCase):
         path.write_text(text.replace(old, new, 1))
 
     def run_violations(self):
-        nodes = MODULE.full_pull_request_run()
-        return [
-            *MODULE.runner_cap_violations(nodes),
-            *MODULE.serial_wait_violations(nodes),
-            *MODULE.lto_violations(nodes),
-            *MODULE.api_build_violations(nodes),
-            *MODULE.cache_violations(nodes),
-        ]
+        return MODULE.run_violations(MODULE.pull_request_runs())
 
     def test_the_current_workflows_pass(self):
         self.assertEqual(self.run_violations(), [])
@@ -94,6 +87,15 @@ class CriticalPathTest(unittest.TestCase):
         flagged = {v.split(" step ")[0] for v in self.run_violations()}
         self.assertEqual(flagged, {f"rust-workspace-checks.yml:tests ({lane})"
                                    for lane in ("workspace", "api-git-refs", "api", "features")})
+
+    def test_fat_lto_on_a_selection_path_the_full_run_skips_fails(self):
+        self.edit("scope-cli-build.yml", "run: ./dev/checks/cli-bundle",
+                  "run: cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope")
+        self.assertEqual(
+            self.run_violations(),
+            ["scope-cli-build.yml:bundle step 'Check host bundle and installer' builds cli/Cargo.toml with profile release "
+             "(lto=fat, codegen-units=1)"],
+        )
 
     def test_api_sharing_its_build_job_fails(self):
         self.edit("scope-api-ci.yml", "components: api\n", "components: api git-router\n")
