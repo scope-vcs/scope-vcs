@@ -1,26 +1,16 @@
 import { PublicFooter, PublicHeader, publicColumn } from '@/components/public-page'
 import { cn } from '@/lib/utils'
-import { Link } from '@tanstack/react-router'
-import { LockKeyhole } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { AuthAction } from './auth-failure-state'
 
 const AUTH_PAGES = {
   'sign-in': {
-    form: 'sign in',
-    headline: 'Sign in to yours.',
-    lede: 'Pick up your repositories, requests, and CLI sessions where you left them.',
-    switchPrompt: 'New here?',
-    switchLabel: 'Create an account',
-    switchTo: '/sign-up/$',
+    title: 'Sign in to Scope',
+    lede: 'Pick up your repositories, requests, and CLI sessions.',
   },
   'sign-up': {
-    form: 'create account',
-    headline: 'Start with yours.',
+    title: 'Create your Scope account',
     lede: 'Share part of a repository and keep the rest private.',
-    switchPrompt: 'Have an account?',
-    switchLabel: 'Sign in',
-    switchTo: '/sign-in/$',
   },
 } as const
 
@@ -29,27 +19,15 @@ export function AuthLayout({ action, children }: { action: AuthAction; children:
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
       <div className={publicColumn}>
-        <PublicHeader>
-          <Link className="text-sm hover:text-success-strong" params={{ _splat: '' }} search to={page.switchTo}>
-            <span className="text-muted-foreground max-[421px]:hidden">{page.switchPrompt} </span>
-            {page.switchLabel}
-          </Link>
-        </PublicHeader>
+        <PublicHeader />
       </div>
-      <main className={cn(publicColumn, 'grid flex-1 content-center items-center gap-10 py-10 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-24 lg:pb-16')}>
-        <div className="min-w-0">
-          <h1 className="text-[clamp(40px,5.6vw,72px)] leading-[.98] font-medium tracking-[-.058em]">
-            <span className="block">One repository.</span>
-            <span className="block text-muted-foreground">{page.headline}</span>
+      <main className={cn(publicColumn, 'flex-1 pt-12 pb-16 sm:pt-[120px]')}>
+        <section aria-labelledby="auth-title" className="mx-auto w-full max-w-[400px]">
+          <h1 className="text-[30px] leading-[1.05] font-medium tracking-[-.045em] sm:text-4xl" id="auth-title">
+            {page.title}
           </h1>
-          <p className="mt-6 max-w-[36ch] text-[17px] leading-[1.6] text-muted-foreground max-lg:hidden">{page.lede}</p>
-        </div>
-        <section aria-label={page.form} className="w-full min-w-0 max-w-[400px] lg:justify-self-end">
-          <div className="flex h-11 items-center gap-2.5 border-b border-foreground font-mono text-[13px]">
-            <LockKeyhole aria-hidden className="size-4 stroke-[1.6] text-muted-foreground" />
-            {page.form}
-          </div>
-          <div className="pt-6">{children}</div>
+          <p className="mt-2.5 mb-8 text-[15px] leading-normal text-muted-foreground">{page.lede}</p>
+          {children}
         </section>
       </main>
       <div className={publicColumn}>

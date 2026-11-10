@@ -6,7 +6,7 @@ import type { ReactElement, ReactNode } from 'react'
 
 export const publicColumn = 'mx-auto w-[calc(100%-64px)] max-w-[1120px] max-[521px]:w-[calc(100%-40px)]'
 
-export function PublicHeader({ children, logoClassName }: { children: ReactNode; logoClassName?: string }): ReactElement {
+export function PublicHeader({ children, logoClassName }: { children?: ReactNode; logoClassName?: string }): ReactElement {
   return (
     <header className="relative flex h-[76px] items-center justify-between">
       <Link aria-label="Scope home" to="/">

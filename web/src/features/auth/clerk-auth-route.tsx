@@ -16,6 +16,7 @@ const authFormAppearance = {
     rootBox: 'w-full [&_.cl-signIn-start_.cl-header]:hidden [&_.cl-signUp-start_.cl-header]:hidden',
     cardBox: 'w-full',
     socialButtonsBlockButton: 'h-11',
+    lastAuthenticationStrategyBadge: 'end-2.5 [transform:translateY(calc(-50%_-_2px))]',
     formFieldInput: 'h-11 max-h-none',
     formButtonPrimary: 'h-11',
   },
