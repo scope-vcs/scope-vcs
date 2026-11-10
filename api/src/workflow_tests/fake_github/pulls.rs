@@ -1,4 +1,4 @@
-use super::{FakeGitHub, GITHUB_FULL_NAME};
+use super::{FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID};
 use axum::{
     Json, Router,
     extract::{Path as AxumPath, Query as AxumQuery, State as AxumState},
@@ -44,7 +44,7 @@ impl FakePulls {
             "title": "",
             "body": "",
             "draft": false,
-            "head": { "ref": head },
+            "head": { "ref": head, "repo": { "id": GITHUB_REPOSITORY_ID } },
             "base": { "ref": base },
             "closed_by": null,
         }));

@@ -32,6 +32,7 @@ pub(super) enum JobFailure {
     Retry(String),
     RetryAt { error: String, at_unix: u64 },
     GiveUp(String),
+    Deferred,
     Stale,
 }
 
@@ -65,7 +66,7 @@ pub(super) fn job_outcome<T>(
             error,
             retry_at_unix: None,
         }),
-        Err(JobFailure::Stale) => None,
+        Err(JobFailure::Deferred | JobFailure::Stale) => None,
     }
 }
 
@@ -102,7 +103,7 @@ pub(crate) async fn run_claimed_push(
     claim_token: &str,
     now_unix: u64,
 ) {
-    let sent = send(state, push, claim_token).await;
+    let sent = send(state, push, claim_token, now_unix).await;
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
     let Some(outcome) = job_outcome(sent, github_push_retry_at(push, now_unix)) else {
         return;
@@ -225,7 +226,12 @@ pub(crate) async fn refresh_github_visibility(
     Ok(Some(refreshed))
 }
 
-async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<(), JobFailure> {
+async fn send(
+    state: &AppState,
+    push: &GitHubPush,
+    claim_token: &str,
+    now_unix: u64,
+) -> Result<(), JobFailure> {
     let app = state.github.clone().ok_or_else(|| {
         JobFailure::GiveUp("GitHub is not configured on this server.".to_string())
     })?;
@@ -233,7 +239,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     let Some(target_oid) = push.target_oid.clone() else {
         ensure_current(state, push, claim_token, None).await?;
         let token = installation_token(&app, destination.installation_id).await?;
-        wait_for_pull_requests_based_on(state, &app, push).await?;
+        wait_for_pull_requests_based_on(state, &app, push, claim_token, now_unix).await?;
         let remote = app.push_remote(&destination.github_full_name, &token);
         let git_ref = push.branch.git_ref();
         return crate::git::blocking::run(move || Ok(remote.delete(&git_ref)))
@@ -395,6 +401,8 @@ async fn wait_for_pull_requests_based_on(
     state: &AppState,
     app: &GitHubApp,
     push: &GitHubPush,
+    claim_token: &str,
+    now_unix: u64,
 ) -> Result<(), JobFailure> {
     let destination = &push.destination;
     let based_on_branch = match app
@@ -405,22 +413,28 @@ async fn wait_for_pull_requests_based_on(
         )
         .await
     {
-        Ok(head_branches) => GitHubPullRequestsBasedOnBranch::Open { head_branches },
+        Ok(heads) => GitHubPullRequestsBasedOnBranch::Open(heads),
         Err(PullRequestCallError::PermissionMissing) => GitHubPullRequestsBasedOnBranch::Unreadable,
         Err(error) => return Err(call_failure(error)),
     };
-    match based_on_branch.branch_deletion() {
+    match based_on_branch.branch_deletion(destination) {
         GitHubBranchDeletion::Delete => Ok(()),
-        GitHubBranchDeletion::WaitForPullRequests { of_requests } => {
-            state
-                .metadata
-                .requests()
-                .recompute_github_pull_request_intents(&push.repo_id, &of_requests, unix_now()?)
+        GitHubBranchDeletion::WaitForRequests(requests) => {
+            let now_unix = unix_now()?.max(now_unix);
+            let store = state.metadata.requests();
+            store
+                .recompute_github_pull_request_intents(&push.repo_id, &requests, now_unix)
+                .await?;
+            store
+                .defer_github_branch_deletion(
+                    &push.id,
+                    claim_token,
+                    BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE,
+                    now_unix,
+                )
                 .await?;
             state.wakeups.github_pull_requests.notify_one();
-            Err(JobFailure::Retry(
-                BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE.to_string(),
-            ))
+            Err(JobFailure::Deferred)
         }
     }
 }

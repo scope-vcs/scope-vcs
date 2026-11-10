@@ -220,52 +220,39 @@ async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed_and_only
 }
 
 #[tokio::test]
-async fn only_a_deletion_that_is_waiting_or_gave_up_is_due_again_when_retried() {
+async fn a_deferred_deletion_waits_for_its_recheck_without_spending_an_attempt() {
     let store = postgres_store();
     let requests = store.requests();
     let db = store.db.as_ref();
     let t = now();
-    let branch = GitHubBranch::Request("req_1".into());
-    let retry = async || {
-        retry_waiting_branch_deletion(db, REPO, &branch, t)
-            .await
-            .unwrap()
-    };
-    let claim = async || {
-        requests
-            .claim_due_github_pushes("claim", t, t + 100, 10)
-            .await
-            .unwrap()
-    };
-    let finish = async |push: &GitHubPush, outcome| {
-        requests
-            .finish_github_push(&push.id, "claim", outcome, t)
-            .await
-            .unwrap()
-            .unwrap()
-    };
-    queue(db, "req_1", Some('a'), t).await;
-    let pushed = claim().await.remove(0);
-    let gave_up = |retry_at_unix| GitHubJobOutcome::Failed {
-        error: "still a base".into(),
-        retry_at_unix,
-    };
-    finish(&pushed, gave_up(None)).await;
-    retry().await;
-    assert!(claim().await.is_empty());
-
     queue(db, "req_1", None, t).await;
-    for retry_at_unix in [Some(t + 1_800), None] {
-        finish(&claim().await.remove(0), gave_up(retry_at_unix)).await;
-        assert!(claim().await.is_empty(), "{retry_at_unix:?}");
-        retry().await;
-    }
-    let retried = claim().await.remove(0);
-    assert_eq!((retried.target_oid.as_deref(), retried.attempts), (None, 1));
+    let claim = async |token: &str, at: u64| {
+        requests
+            .claim_due_github_pushes(token, at, at + 100, 10)
+            .await
+            .unwrap()
+    };
 
-    finish(&retried, GitHubJobOutcome::Succeeded(())).await;
-    retry().await;
-    assert!(claim().await.is_empty());
+    for (round, at) in [t, t + 30, t + 60, t + 120, t + 240, t + 480]
+        .into_iter()
+        .enumerate()
+    {
+        let token = format!("claim_{round}");
+        let deletion = claim(&token, at).await.remove(0);
+        assert_eq!(
+            (deletion.target_oid.as_deref(), deletion.attempts),
+            (None, 1)
+        );
+        requests
+            .defer_github_branch_deletion(&deletion.id, &token, "still a base", at)
+            .await
+            .unwrap();
+        let recheck_in = (at - t).max(30);
+        assert!(
+            claim("early", at + recheck_in - 1).await.is_empty(),
+            "{round}"
+        );
+    }
 }
 
 #[tokio::test]

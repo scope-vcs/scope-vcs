@@ -1,6 +1,7 @@
 use super::{GitHubApp, client::unavailable};
 use crate::{error::ApiError, persistence::unix_now};
 use reqwest::{Method, StatusCode, header::HeaderMap};
+use scope_domain::requests::GitHubPullRequestHead;
 use serde::{Deserialize, de::DeserializeOwned};
 
 const PAGE_SIZE: usize = 100;
@@ -56,7 +57,19 @@ struct BranchBody {
 
 #[derive(Deserialize)]
 struct PullRequestHeadBody {
-    head: BranchBody,
+    head: HeadBody,
+}
+
+#[derive(Deserialize)]
+struct HeadBody {
+    #[serde(rename = "ref")]
+    name: String,
+    repo: Option<RepositoryIdBody>,
+}
+
+#[derive(Deserialize)]
+struct RepositoryIdBody {
+    id: u64,
 }
 
 #[derive(Deserialize)]
@@ -142,7 +155,7 @@ impl GitHubApp {
         installation_id: u64,
         full_name: &str,
         base_branch: &str,
-    ) -> Result<Vec<String>, PullRequestCallError> {
+    ) -> Result<Vec<GitHubPullRequestHead>, PullRequestCallError> {
         let query = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("state", "open")
             .append_pair("base", base_branch)
@@ -159,7 +172,10 @@ impl GitHubApp {
             .await?;
         Ok(open
             .into_iter()
-            .map(|pull_request| pull_request.head.name)
+            .map(|pull_request| GitHubPullRequestHead {
+                github_repository_id: pull_request.head.repo.map(|repository| repository.id),
+                branch: pull_request.head.name,
+            })
             .collect())
     }
 

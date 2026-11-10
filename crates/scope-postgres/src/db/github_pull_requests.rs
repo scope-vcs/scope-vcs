@@ -145,7 +145,9 @@ impl RequestStore {
         let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
         acquire_github_push_lock(&tx, &progress.repo_id, &progress.branch()).await?;
-        let recorded = github_pull_request(&tx, &progress.request_id).await?;
+        let had_ended_on_github = github_pull_request(&tx, &progress.request_id)
+            .await?
+            .is_some_and(|recorded| recorded.has_ended_on_github());
         let finished = tx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -169,8 +171,8 @@ impl RequestStore {
             > 0;
         if finished {
             release_request_branch_after_carrier_change(&tx, progress, now_unix).await?;
-            if let Some(recorded) = recorded {
-                follow_recorded_change(&tx, &recorded, progress, now_unix).await?;
+            if progress.has_ended_on_github() != had_ended_on_github {
+                recompute_child_carrier_intents(&tx, &progress.request_id, now_unix).await?;
             }
         }
         tx.commit().await?;
@@ -477,27 +479,6 @@ pub(super) async fn fence_running_carriers<C: ConnectionTrait>(
         [repo_id.into()],
     ))
     .await?;
-    Ok(())
-}
-
-async fn follow_recorded_change<C: ConnectionTrait>(
-    conn: &C,
-    recorded: &GitHubPullRequest,
-    progress: &GitHubPullRequest,
-    now_unix: u64,
-) -> Result<(), PostgresError> {
-    if progress.has_ended_on_github() != recorded.has_ended_on_github() {
-        recompute_child_carrier_intents(conn, &progress.request_id, now_unix).await?;
-    }
-    if let Some(left) = progress.request_branch_left_since(recorded) {
-        super::github_pushes::retry_waiting_branch_deletion(
-            conn,
-            &progress.repo_id,
-            &left,
-            now_unix,
-        )
-        .await?;
-    }
     Ok(())
 }
 

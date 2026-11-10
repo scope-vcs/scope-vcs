@@ -189,36 +189,44 @@ pub fn retains_request_branch_for_carrier(
             && carrier.is_some_and(GitHubPullRequest::is_open_on_github))
 }
 
-pub const BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE: &str = "An open pull request on GitHub is still \
-    based on this branch. Scope deletes the branch once no open pull request uses it as its base.";
+pub const BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE: &str = "An open pull request from a Scope request \
+    is still based on this branch. Scope deletes the branch once that pull request moves or closes.";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubPullRequestHead {
+    pub github_repository_id: Option<u64>,
+    pub branch: String,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubPullRequestsBasedOnBranch {
     Unreadable,
-    Open { head_branches: Vec<String> },
+    Open(Vec<GitHubPullRequestHead>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubBranchDeletion {
     Delete,
-    WaitForPullRequests { of_requests: Vec<String> },
+    WaitForRequests(Vec<String>),
 }
 
 impl GitHubPullRequestsBasedOnBranch {
-    pub fn branch_deletion(&self) -> GitHubBranchDeletion {
-        match self {
-            Self::Open { head_branches } if !head_branches.is_empty() => {
-                GitHubBranchDeletion::WaitForPullRequests {
-                    of_requests: head_branches
-                        .iter()
-                        .filter_map(|head| match GitHubBranch::parse(head) {
-                            Some(GitHubBranch::Request(request_id)) => Some(request_id),
-                            _ => None,
-                        })
-                        .collect(),
-                }
-            }
-            Self::Unreadable | Self::Open { .. } => GitHubBranchDeletion::Delete,
+    pub fn branch_deletion(&self, destination: &GitHubPushDestination) -> GitHubBranchDeletion {
+        let Self::Open(heads) = self else {
+            return GitHubBranchDeletion::Delete;
+        };
+        let requests = heads
+            .iter()
+            .filter(|head| head.github_repository_id == Some(destination.github_repository_id))
+            .filter_map(|head| match GitHubBranch::parse(&head.branch) {
+                Some(GitHubBranch::Request(request_id)) => Some(request_id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if requests.is_empty() {
+            GitHubBranchDeletion::Delete
+        } else {
+            GitHubBranchDeletion::WaitForRequests(requests)
         }
     }
 }
@@ -249,18 +257,6 @@ impl GitHubPullRequest {
         self.pull_request
             .as_ref()
             .is_some_and(|opened| opened.state == GitHubPullRequestState::Open)
-    }
-
-    pub fn request_branch_left_since(&self, recorded: &Self) -> Option<GitHubBranch> {
-        let open_base = |carrier: &Self| {
-            carrier
-                .pull_request
-                .as_ref()
-                .filter(|opened| opened.state == GitHubPullRequestState::Open)
-                .map(|opened| opened.base.clone())
-        };
-        let left = open_base(recorded).filter(|base| open_base(self).as_ref() != Some(base))?;
-        GitHubBranch::parse(&left).filter(|branch| matches!(branch, GitHubBranch::Request(_)))
     }
 
     pub fn next_step(

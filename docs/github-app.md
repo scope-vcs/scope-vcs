@@ -296,8 +296,8 @@ connected repository with `git push --force`, so a new revision replaces the
 branch. The installation token reaches git as an `http.extraHeader` through
 git's environment, never in its arguments or the URL. Merging, closing or
 deleting the request deletes the branch from the GitHub repository it was
-pushed to, once no open pull request there is based on it. Deleting the
-Scope repository queues the same deletions, except
+pushed to, once no open pull request from another request's branch is based
+on it. Deleting the Scope repository queues the same deletions, except
 for `main`, which Scope never deletes; they
 name the GitHub repository and installation themselves, so they run after
 the Scope repository is gone, while the installation exists.
@@ -366,19 +366,20 @@ has ended. If that pull request is reopened, the children move back onto the
 parent's branch.
 
 Before Scope deletes a branch, the push job asks GitHub for the open pull
-requests based on it, in the repository the deletion targets. While there
-are any, it leaves the branch alone, recomputes the base of each one that a
-Scope request owns so that its job moves it to `main`, and tries the deletion
-again on the push job's retry schedule. A stacked child therefore keeps its
-pull request when its parent ends. A carrier that moves off a request branch
-or closes queues that branch's waiting deletion again at once. After the last
-retry the deletion has failed. It is queued again when a carrier leaves the
-branch, when the request's own carrier is observed again, or, for a merged
-request, at the next main publication that contains the merge. A pull request
-Scope does not manage holds the branch the same way, and nothing but those
-events retries after it leaves. An installation that has not accepted the
-Pull requests permission cannot be asked, so Scope deletes the branch as it
-did before this check existed.
+requests based on it, in the repository the deletion targets. A pull request
+holds the branch when its head is a `scope/requests/<id>` branch in that same
+repository, which is where Scope's carriers and the pull requests it adopts
+come from. While one does, the job leaves the branch alone, recomputes that
+request's intended base so that its job moves the pull request to `main`, and
+checks again after 30 seconds, then after as long as the deletion has already
+waited, up to 30 minutes apart. A wait is not a failed attempt and uses up
+none of the push job's retries, so the branch goes at the first check after
+the last such pull request moves or closes, and a stacked child keeps its
+pull request when its parent ends. Pull requests from forks and
+from other branches do not hold the branch; GitHub closes them when it is
+deleted, as before. An installation that has not accepted the Pull requests
+permission cannot be asked, so Scope deletes the branch as it did before this
+check existed.
 
 GitHub can still close a child's pull request when its base branch disappears
 some other way: a pull request takes the branch as its base between the check

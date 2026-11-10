@@ -140,7 +140,7 @@ async fn a_merged_parents_branch_stays_until_the_childs_pull_request_has_moved_t
     assert_eq!(moved["base"]["ref"], "main");
     assert_eq!(moved["state"], "open");
     assert_eq!(moved["number"], opened["number"]);
-    stack.settle_pushes().await;
+    assert_eq!(push_pass(state, FAR_FUTURE_UNIX).await, 1);
     assert_eq!(stack.parent_branch_on_github(), None);
 }
 
@@ -187,6 +187,10 @@ async fn a_disconnected_repository_keeps_a_closed_parents_branch_under_an_open_p
     close_request(parent).await;
     stack.settle_pushes().await;
     stack.settle_pull_requests().await;
+    for hour in 1..=5 {
+        let rechecked = push_pass(state, FAR_FUTURE_UNIX + hour * 3_600).await;
+        assert_eq!(rechecked, 1, "{hour}");
+    }
     assert_eq!(
         stack.parent_branch_on_github(),
         Some(stack.parent_head.clone())

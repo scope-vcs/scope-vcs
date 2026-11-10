@@ -250,57 +250,34 @@ fn a_merged_requests_branch_waits_only_for_a_carrier_github_still_has_open() {
 }
 
 #[test]
-fn a_branch_is_deleted_only_when_no_open_pull_request_is_based_on_it() {
-    let based_on_branch = |heads: &[&str]| GitHubPullRequestsBasedOnBranch::Open {
-        head_branches: heads.iter().map(|head| head.to_string()).collect(),
+fn a_branch_waits_for_open_pull_requests_from_request_branches_in_its_repository() {
+    let destination = GitHubPushDestination::of(&connection());
+    let head = |github_repository_id: Option<u64>, branch: &str| GitHubPullRequestHead {
+        github_repository_id,
+        branch: branch.into(),
     };
+    let deletion = |heads: Vec<GitHubPullRequestHead>| {
+        GitHubPullRequestsBasedOnBranch::Open(heads).branch_deletion(&destination)
+    };
+
     assert_eq!(
-        based_on_branch(&[]).branch_deletion(),
+        deletion(vec![
+            head(Some(42), "scope/requests/req_child"),
+            head(Some(42), "someones-branch"),
+        ]),
+        GitHubBranchDeletion::WaitForRequests(vec!["req_child".into()])
+    );
+    assert_eq!(
+        deletion(vec![
+            head(Some(42), "someones-branch"),
+            head(Some(43), "scope/requests/req_in_a_fork"),
+            head(None, "scope/requests/req_in_a_deleted_fork"),
+        ]),
         GitHubBranchDeletion::Delete
     );
     assert_eq!(
-        GitHubPullRequestsBasedOnBranch::Unreadable.branch_deletion(),
+        GitHubPullRequestsBasedOnBranch::Unreadable.branch_deletion(&destination),
         GitHubBranchDeletion::Delete
-    );
-    assert_eq!(
-        based_on_branch(&["scope/requests/req_child", "someones-branch", "main"]).branch_deletion(),
-        GitHubBranchDeletion::WaitForPullRequests {
-            of_requests: vec!["req_child".into()]
-        }
-    );
-    assert_eq!(
-        based_on_branch(&["someones-branch"]).branch_deletion(),
-        GitHubBranchDeletion::WaitForPullRequests {
-            of_requests: Vec::new()
-        }
-    );
-}
-
-#[test]
-fn a_pull_request_leaves_a_request_branch_when_it_stops_being_open_on_it() {
-    let on = |base: &str, state: GitHubPullRequestState| {
-        let mut child = opened_carrier(state);
-        child.record_retargeted(base.into());
-        child
-    };
-    let parent_branch = "scope/requests/request_parent";
-    let recorded = on(parent_branch, GitHubPullRequestState::Open);
-    let left = Some(GitHubBranch::Request("request_parent".into()));
-
-    assert_eq!(
-        on("main", GitHubPullRequestState::Open).request_branch_left_since(&recorded),
-        left
-    );
-    assert_eq!(
-        on(parent_branch, GitHubPullRequestState::ClosedOnGitHub)
-            .request_branch_left_since(&recorded),
-        left
-    );
-    assert_eq!(recorded.request_branch_left_since(&recorded), None);
-    assert_eq!(
-        on("main", GitHubPullRequestState::Open)
-            .request_branch_left_since(&on(parent_branch, GitHubPullRequestState::Closed)),
-        None
     );
 }
 

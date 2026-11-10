@@ -137,6 +137,12 @@ pub fn github_retry_at(attempts: u32, now_unix: u64) -> Option<u64> {
         .map(|delay| now_unix.saturating_add(*delay))
 }
 
+pub fn github_branch_deletion_recheck_at(queued_at_unix: u64, now_unix: u64) -> u64 {
+    let (shortest, longest) = (RETRY_DELAYS_SECS[0], RETRY_DELAYS_SECS[3]);
+    let waited = now_unix.saturating_sub(queued_at_unix);
+    now_unix.saturating_add(waited.clamp(shortest, longest))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubPushStatus {
     AwaitingApproval,

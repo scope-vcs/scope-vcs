@@ -543,7 +543,7 @@ async fn a_merge_leaves_carrier_and_branch_to_github_only_when_main_is_published
 }
 
 #[tokio::test]
-async fn ended_requests_whose_branches_github_may_still_have_are_listed_and_released_by_id() {
+async fn ended_requests_whose_branches_github_still_has_are_listed_and_released_by_id() {
     let store = postgres_store();
     merged_with_open_carrier(&store, true).await;
     submitted_full_view_request(&store, "req_open").await;
@@ -629,33 +629,6 @@ async fn ended_requests_whose_branches_github_may_still_have_are_listed_and_rele
     assert_eq!(
         branch_push_of(&store, "req_open").await.unwrap().target_oid,
         Some(oid('b'))
-    );
-
-    let deleting = requests
-        .claim_due_github_pushes("deleting", 41, 141, 10)
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|push| push.branch == GitHubBranch::Request("req_1".into()))
-        .unwrap();
-    let gave_up = GitHubJobOutcome::Failed {
-        error: "still a base".into(),
-        retry_at_unix: None,
-    };
-    requests
-        .finish_github_push(&deleting.id, "deleting", gave_up, 42)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        requests
-            .terminal_requests_with_pushed_branches(REPO, 42)
-            .await
-            .unwrap()
-            .iter()
-            .map(|request| request.id.as_str())
-            .collect::<Vec<_>>(),
-        ["req_1"]
     );
 }
 
