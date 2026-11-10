@@ -22,11 +22,11 @@ use {
     scope_domain::{
         repository::git::GitHead,
         requests::{
-            GitHubMergeLanding, MergeGateAuthority, MergeGateInput, MergeRequestInput,
-            MergeRequestLanding, RequestAutoMergeReadiness, RequestAutoMergeStopReason,
-            RequestLifecycleMutation, RequestMainPushCompletion, RequestMergeSubject,
-            RequestViewer, evaluate_merge_gate, fulfill_request_auto_merge, lands_with_main,
-            merge_request, request_auto_merge_readiness, request_checks_outcome,
+            GitHubMergeLanding, MainAdvanceKind, MergeGateAuthority, MergeGateInput,
+            MergeRequestInput, MergeRequestLanding, RequestAutoMergeReadiness,
+            RequestAutoMergeStopReason, RequestLifecycleMutation, RequestMainPushCompletion,
+            RequestMergeSubject, RequestViewer, evaluate_merge_gate, fulfill_request_auto_merge,
+            lands_with_main, merge_request, request_auto_merge_readiness, request_checks_outcome,
             request_main_push_completion, stop_request_auto_merge,
         },
     },
@@ -385,7 +385,14 @@ async fn merge_one_request(
     let git_head = persisted.git_head;
 
     persist_lifecycle_mutation(tx, &request_mutation.request, &request_mutation.events).await?;
-    record_main_advance(tx, repo_id, &actor_user_id, now_unix).await?;
+    record_main_advance(
+        tx,
+        repo_id,
+        &actor_user_id,
+        MainAdvanceKind::NativeMerge,
+        now_unix,
+    )
+    .await?;
     let request_mutation = if let Some(locked) = locked_auto_merge {
         let fulfilled_event_id = expected_auto_merge
             .as_ref()
@@ -461,8 +468,23 @@ pub(super) async fn complete_main_push(
     now_unix: u64,
 ) -> Result<usize, PostgresError> {
     let advanced_by_user_id = completion.actor_user_id.clone();
-    let completed = complete_landed_requests(tx, repo_id, main_oid, completion, now_unix).await?;
-    record_main_advance(tx, repo_id, &advanced_by_user_id, now_unix).await?;
+    let completed = complete_landed_requests(
+        tx,
+        repo_id,
+        main_oid,
+        MainAdvanceKind::Push,
+        completion,
+        now_unix,
+    )
+    .await?;
+    record_main_advance(
+        tx,
+        repo_id,
+        &advanced_by_user_id,
+        MainAdvanceKind::Push,
+        now_unix,
+    )
+    .await?;
     Ok(completed)
 }
 
@@ -470,12 +492,13 @@ async fn record_main_advance(
     tx: &DatabaseTransaction,
     repo_id: &str,
     advanced_by_user_id: &str,
+    kind: MainAdvanceKind,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
     tx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "UPDATE scope_git_heads SET main_advanced_by_user_id = $2 WHERE repo_id = $1",
-        [repo_id.into(), advanced_by_user_id.into()],
+        "UPDATE scope_git_heads SET main_advanced_by_user_id = $2, main_advance_kind = $3 WHERE repo_id = $1",
+        [repo_id.into(), advanced_by_user_id.into(), entities::encode_enum(kind)?.into()],
     ))
     .await?;
     super::github_pull_requests::requeue_merged_carriers_of_open_requests(tx, repo_id, now_unix)
@@ -485,6 +508,7 @@ async fn record_main_advance(
 pub(super) struct MainAdvance {
     pub main_oid: String,
     pub advanced_by_user_id: Option<String>,
+    pub kind: MainAdvanceKind,
 }
 
 pub(super) async fn latest_main_advance(
@@ -493,7 +517,7 @@ pub(super) async fn latest_main_advance(
 ) -> Result<Option<MainAdvance>, PostgresError> {
     tx.query_one_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        "SELECT head_oid, main_advanced_by_user_id FROM scope_git_heads WHERE repo_id = $1",
+        "SELECT head_oid, main_advanced_by_user_id, main_advance_kind FROM scope_git_heads WHERE repo_id = $1",
         [repo_id.into()],
     ))
     .await?
@@ -501,6 +525,7 @@ pub(super) async fn latest_main_advance(
         Ok(MainAdvance {
             main_oid: head.try_get("", "head_oid")?,
             advanced_by_user_id: head.try_get("", "main_advanced_by_user_id")?,
+            kind: entities::decode_enum(head.try_get("", "main_advance_kind")?)?,
         })
     })
     .transpose()
@@ -523,6 +548,7 @@ pub(super) async fn land_request_merged_on_github(
         tx,
         &request.repo_id,
         &main.main_oid,
+        main.kind,
         LandedRequestCompletion {
             actor_user_id,
             candidates: vec![LandedRequestCandidate {
@@ -542,6 +568,7 @@ pub(super) async fn complete_landed_requests(
     tx: &DatabaseTransaction,
     repo_id: &str,
     main_oid: &str,
+    advance_kind: MainAdvanceKind,
     completion: LandedRequestCompletion,
     now_unix: u64,
 ) -> Result<usize, PostgresError> {
@@ -551,16 +578,7 @@ pub(super) async fn complete_landed_requests(
     let repo = repository_access(tx, repo_id, Some(&completion.actor_user_id))
         .await?
         .ok_or_else(|| PostgresError::not_found("repo not found"))?;
-    if evaluate_merge_gate(MergeGateInput::AuthorizedMainPush {
-        repository_lifecycle: repo.record.lifecycle_state,
-        access: &repo.access,
-        views: &repo.views,
-    })
-    .authority()
-        != Some(MergeGateAuthority::AuthorizedMainPush)
-    {
-        return Ok(0);
-    }
+    let viewer = RequestViewer::new(repo.access.clone(), Some(&completion.actor_user_id), false);
     let mut ordered = Vec::with_capacity(completion.candidates.len());
     for candidate in completion.candidates {
         let depth = request_by_id(tx, &candidate.request_id)
@@ -583,6 +601,13 @@ pub(super) async fn complete_landed_requests(
         else {
             continue;
         };
+        if advance_kind
+            .landing_gate(repo.record.lifecycle_state, &request, &viewer, &repo.views)
+            .authority()
+            .is_none()
+        {
+            continue;
+        }
         super::request_stack::lock_graph(tx, &request, None).await?;
         let pull_request;
         let landing = match &candidate.main_contains {

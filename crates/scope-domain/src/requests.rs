@@ -30,9 +30,9 @@ pub use bot_reviews::{
 };
 pub mod merge_gate;
 pub use merge_gate::{
-    GITHUB_CHECK_MERGE_FRESHNESS_SECS, MergeGateAuthority, MergeGateDecision, MergeGateInput,
-    RequestMainPushCompletion, RequestMergeSubject, RequestMergeability, RequestMergeabilityStatus,
-    evaluate_merge_gate, request_main_push_completion,
+    GITHUB_CHECK_MERGE_FRESHNESS_SECS, MainAdvanceKind, MergeGateAuthority, MergeGateDecision,
+    MergeGateInput, RequestMainPushCompletion, RequestMergeSubject, RequestMergeability,
+    RequestMergeabilityStatus, evaluate_merge_gate, request_main_push_completion,
 };
 mod access;
 pub use access::{

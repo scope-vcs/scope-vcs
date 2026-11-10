@@ -31,10 +31,19 @@ fn direct_main_authority_preserves_push_permission_without_clearing_request_chec
         Some(MergeGateAuthority::AuthorizedMainPush)
     );
     assert_eq!(direct_main.request_mergeability(), None);
-    for denied in [
-        access(RepositoryActor::Member, ViewId::private(), false),
-        access(RepositoryActor::Member, ViewId::public(), true),
-        access(RepositoryActor::Public, ViewId::public(), true),
+    for (denied, native_authority) in [
+        (
+            access(RepositoryActor::Member, ViewId::private(), false),
+            Some(MergeGateAuthority::RequestMerge),
+        ),
+        (
+            access(RepositoryActor::Member, ViewId::public(), true),
+            None,
+        ),
+        (
+            access(RepositoryActor::Public, ViewId::public(), true),
+            None,
+        ),
     ] {
         assert_eq!(
             evaluate_merge_gate(MergeGateInput::AuthorizedMainPush {
@@ -45,6 +54,17 @@ fn direct_main_authority_preserves_push_permission_without_clearing_request_chec
             .authority(),
             None
         );
+        let viewer = RequestViewer::new(denied, Some("other"), false);
+        for kind in [MainAdvanceKind::Push, MainAdvanceKind::NativeMerge] {
+            assert_eq!(
+                kind.landing_gate(RepoLifecycleState::Ready, &request, &viewer, &views)
+                    .authority(),
+                match kind {
+                    MainAdvanceKind::NativeMerge => native_authority,
+                    MainAdvanceKind::Push => None,
+                }
+            );
+        }
     }
 }
 

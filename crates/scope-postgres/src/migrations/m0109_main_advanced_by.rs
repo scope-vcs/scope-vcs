@@ -19,7 +19,10 @@ impl MigrationTrait for Migration {
                     RENAME COLUMN main_pushed_by_user_id TO main_advanced_by_user_id;
                  ALTER TABLE scope_git_heads
                     RENAME CONSTRAINT scope_git_heads_main_pushed_by_user_id_fkey
-                    TO scope_git_heads_main_advanced_by_user_id_fkey",
+                    TO scope_git_heads_main_advanced_by_user_id_fkey;
+                 ALTER TABLE scope_git_heads
+                    ADD COLUMN main_advance_kind character varying NOT NULL DEFAULT 'Push'
+                        CHECK (main_advance_kind IN ('Push', 'NativeMerge'))",
             )
             .await?;
         Ok(())
