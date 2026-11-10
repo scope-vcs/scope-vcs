@@ -38,7 +38,8 @@ PULL_REQUEST = {
 }
 SCRIPT_REFERENCE = re.compile(r"(?:^|[\s;&|(])(?:\.\./|\./)*(dev/[\w./-]+)")
 DOWNLOADED_KEY = re.compile(
-    r"(?:curl|wget)\b[^\n]*https?://\S+\.(?:asc|gpg|key|pub|pem|crt)\b|--recv-keys|\bkeyserver\b"
+    r"(?:curl|wget)\b[^\n]*(?:https?://\S+[/.](?:asc|gpg|key|pub|pem|crt)\b|/keyrings?/|gpg\s+--dearmor|apt-key)"
+    r"|--recv-keys|\bkeyserver\b"
 )
 
 TOKEN = re.compile(
@@ -301,6 +302,7 @@ def simulate(workflow, github, supplied=None, caller=None, waits_for=frozenset()
                 continue
             node_id = f"{job_id} ({label}){instance}" if label else f"{job_id}{instance}"
             nodes.append({"id": node_id, "job": job_id, "definition": job, "waits_for": before,
+                          "workflow_env": document.get("env") or {},
                           "context": {**context, "matrix": entry}})
             created.add(node_id)
         outputs = {} if "uses" in job else job_outputs(job_id, inputs)
@@ -358,12 +360,31 @@ def serial_wait_violations(nodes):
 
 
 def workspace_profiles(manifest):
-    directory = (ROOT / manifest).parent
+    directory = (ROOT / manifest).resolve().parent
     while True:
         document = tomllib.loads((directory / "Cargo.toml").read_text())
         if "workspace" in document or directory == ROOT:
             return directory.relative_to(ROOT), document.get("profile", {})
         directory = directory.parent
+
+
+def configured_profiles(workspace, env):
+    profiles = {}
+    for config in (ROOT / ".cargo/config.toml", ROOT / workspace / ".cargo/config.toml"):
+        if config.is_file():
+            for name, table in tomllib.loads(config.read_text()).get("profile", {}).items():
+                profiles.setdefault(name, {}).update(table)
+    for key, value in env.items():
+        override = re.fullmatch(r"CARGO_PROFILE_([A-Z0-9_]+)_(LTO|CODEGEN_UNITS)", key)
+        if not override:
+            continue
+        text = text_of(value).strip().lower()
+        name = override.group(1).lower().replace("_", "-")
+        if override.group(2) == "LTO":
+            profiles.setdefault(name, {})["lto"] = text == "true" if text in ("true", "false") else text
+        else:
+            profiles.setdefault(name, {})["codegen-units"] = int(text) if text.isdigit() else text
+    return profiles
 
 
 def profile_settings(profiles, name):
@@ -420,8 +441,13 @@ def lto_violations(nodes):
                 continue
             text = evaluate(step["run"], node["context"])
             directory = evaluate(step.get("working-directory", default_directory), node["context"])
+            env = {name: evaluate(value, node["context"])
+                   for name, value in {**node["workflow_env"], **(job.get("env") or {}), **(step.get("env") or {})}.items()}
             for manifest, profile, through in step_cargo_commands(text, directory):
-                workspace, profiles = workspace_profiles(manifest)
+                workspace, declared = workspace_profiles(manifest)
+                overrides = configured_profiles(workspace, env)
+                profiles = {name: {**declared.get(name, {}), **overrides.get(name, {})}
+                            for name in {*declared, *overrides}}
                 settings = profile_settings(profiles, profile)
                 if settings.get("lto") in (True, "fat") or settings.get("codegen-units") == 1:
                     violations.append(

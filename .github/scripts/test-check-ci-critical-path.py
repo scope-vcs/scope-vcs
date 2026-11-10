@@ -88,6 +88,13 @@ class CriticalPathTest(unittest.TestCase):
         self.assertLessEqual({f"rust-workspace-checks.yml:tests ({lane})"
                               for lane in ("workspace", "api-git-refs", "api", "features")}, flagged)
 
+    def test_fat_lto_from_cargo_environment_overrides_fails(self):
+        self.edit("rust-workspace-checks.yml", "        env:\n          SCOPE_TEST_POSTGRES_BIN:",
+                  "        env:\n          CARGO_PROFILE_TEST_LTO: fat\n          SCOPE_TEST_POSTGRES_BIN:")
+        flagged = {v.split(" step ")[0] for v in self.run_violations()}
+        self.assertEqual(flagged, {f"rust-workspace-checks.yml:tests ({lane})"
+                                   for lane in ("workspace", "api-git-refs", "api", "features")})
+
     def test_api_sharing_its_build_job_fails(self):
         self.edit("scope-api-ci.yml", "components: api\n", "components: api git-router\n")
         self.assertEqual(self.run_violations(), ["scope-api-ci.yml:deployment-binaries (api) builds api together with git-router"])
@@ -112,6 +119,7 @@ class DownloadedKeyTest(unittest.TestCase):
         files = [
             ("key.sh", "curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o key.asc\n"),
             ("keyserver.sh", "gpg --recv-keys 0123456789ABCDEF\n"),
+            ("docker.sh", "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc\n"),
             ("tool.sh", "curl -fsSL https://example.com/tool-1.0.tar.gz -o tool.tgz\nsha256sum --check tool.sha256\n"),
         ]
         self.assertEqual(
@@ -119,6 +127,7 @@ class DownloadedKeyTest(unittest.TestCase):
             [
                 "key.sh downloads a signing key; commit it next to the script that pins it",
                 "keyserver.sh downloads a signing key; commit it next to the script that pins it",
+                "docker.sh downloads a signing key; commit it next to the script that pins it",
             ],
         )
 
