@@ -6,13 +6,12 @@ export type LogMatch = { line: number; start: number; end: number }
 export type LogPiece = { text: string; style: LogStyle | null; match: 'current' | 'other' | null }
 
 export function findLogMatches(lines: readonly LogLine[], query: string): LogMatch[] {
-  const needle = query.toLowerCase()
-  if (!needle) return []
+  if (!query) return []
+  const pattern = new RegExp(query.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&'), 'giu')
   const matches: LogMatch[] = []
   for (const line of lines) {
-    const haystack = line.text.toLowerCase()
-    for (let start = haystack.indexOf(needle); start !== -1; start = haystack.indexOf(needle, start + needle.length)) {
-      matches.push({ line: line.number, start, end: start + needle.length })
+    for (const found of line.text.matchAll(pattern)) {
+      matches.push({ line: line.number, start: found.index, end: found.index + found[0].length })
     }
   }
   return matches

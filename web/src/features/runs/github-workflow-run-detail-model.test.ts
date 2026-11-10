@@ -82,7 +82,7 @@ test('a failed job names the step it stopped at', () => {
   assert.equal(githubOpeningStep(job(1, { steps })), 2, 'a passed job opens its longest step')
 })
 
-test('job log lines start a step at its first group line in its start second, or else at its first line from that second on', () => {
+test('job log lines start each step at the next unclaimed group line in its start second, leaving earlier steps of that second the lines before it', () => {
   const at = (time: string) => Date.parse(`2026-10-05T12:00:${time}Z`) / 1000
   const steps = [
     { number: 1, started_at_unix: at('01') },
@@ -121,6 +121,20 @@ test('job log lines start a step at its first group line in its start second, or
   ])
   assert.equal(log.lines[0]!.time, '2026-10-05T12:00:00.5000000Z')
   assert.equal(log.lines[2]!.time, null)
+
+  const sameSecond = githubJobLog([
+    '2026-10-05T12:00:01.1000000Z Current runner version: 2.320.0',
+    '2026-10-05T12:00:01.2000000Z ##[group]Run actions/checkout@v4',
+    '2026-10-05T12:00:01.3000000Z Syncing repository',
+    '2026-10-05T12:00:01.4000000Z ##[group]Run pnpm install',
+    '2026-10-05T12:00:01.5000000Z Done in 0.4s',
+    '',
+  ].join('\n'), [1, 2, 3].map((number) => ({ number, started_at_unix: at('01') })))
+  assert.deepEqual([...sameSecond.stepLines].map(([step, lines]) => [step, lines.map((line) => line.text)]), [
+    [1, ['Current runner version: 2.320.0']],
+    [2, ['Run actions/checkout@v4', 'Syncing repository']],
+    [3, ['Run pnpm install', 'Done in 0.4s']],
+  ])
 })
 
 test('a job without a log says why instead of offering a retry', () => {

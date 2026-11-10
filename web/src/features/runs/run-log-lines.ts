@@ -1,4 +1,4 @@
-import { dropLeading, readAnsi, type LogSpan } from './run-log-ansi'
+import { dropLeading, readAnsi, type LogSpan, type LogStyle } from './run-log-ansi'
 
 export type LogLineKind = 'output' | 'command' | 'error' | 'warning' | 'group'
 
@@ -38,10 +38,12 @@ export function readLogLines(text: string, { anchors, stepsOf }: LogLineOptions 
     : null
   const lines: LogLine[] = []
   let header: LogLine | null = null
+  let style: LogStyle | undefined
   sources.forEach(({ content, time }, index) => {
     const step = steps?.[index] ?? 0
     if (header && header.step !== step) header = null
-    const ansi = readAnsi(content)
+    const ansi = readAnsi(content, style)
+    style = ansi.style
     const marker = ansi.text.startsWith('##[') ? MARKER.exec(ansi.text) : null
     const kind = (marker?.[1] ?? 'output') as LogLineKind | 'endgroup'
     if (kind === 'endgroup') {
@@ -81,19 +83,24 @@ export function readStepLogLines(logs: readonly { position: number; text: string
   const anchors: string[] = []
   let lineStarts = true
   for (const { position, text } of logs) {
-    let offset = 0
+    let newlines = 0
     for (let start = 0; start < text.length;) {
-      if (lineStarts) anchors.push(`${position}.${offset++}`)
+      if (lineStarts) anchors.push(`${position}.${newlines}`)
       const end = text.indexOf('\n', start)
       if (end === -1) {
         lineStarts = false
         break
       }
       lineStarts = true
+      newlines++
       start = end + 1
     }
   }
   return readLogLines(logs.map((log) => log.text).join(''), { anchors })
+}
+
+export function stepLogAnchorPosition(anchor: string) {
+  return Number.parseInt(anchor, 10)
 }
 
 export function lineByNumber(lines: readonly LogLine[], number: number) {

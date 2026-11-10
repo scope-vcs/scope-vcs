@@ -317,14 +317,16 @@ test('a GitHub run groups its jobs, opens the failed step at its error, and sear
   await output('Deploy the preview').getByText('The log appears when this job finishes.').waitFor()
   assert.equal(await step('Set up job').getAttribute('aria-expanded'), 'false')
   await picker.click()
-  await job('lint').click()
+  await job('lint').press('Enter')
   await output('Lint').getByText('Found 0 warnings and 0 errors.').waitFor()
   assert.equal(await job('lint').isVisible(), false)
+  assert.equal(await picker.evaluate((button) => button === document.activeElement), true, 'a job chosen by keyboard on a phone leaves focus on the picker')
   if (shots) await screenshot(page, { fullPage: true, path: `${shots}.run-linked-queued-phone.png` })
   await page.setViewportSize({ width: 1280, height: 900 })
 
-  await job('revoke preview token').click()
+  await job('revoke preview token').press('Enter')
   await page.getByText('No steps ran.').waitFor()
+  assert.equal(await job('revoke preview token').evaluate((button) => button === document.activeElement), true, 'a job chosen by keyboard on a desktop keeps focus')
   const log = page.getByRole('region', { name: 'Log' })
   await log.getByText('This job was skipped, so it has no log.').waitFor()
   assert.equal(await log.getByRole('button', { name: 'Retry' }).count(), 0)
@@ -383,6 +385,8 @@ test('hovering a run starts its read, and its long included log lays out only th
   const opened = await blocksOnScreen()
   assert.ok(opened.length > 0 && opened.length <= 3, `blocks laid out on open: ${opened}`)
   assert.equal(opened[0], 0)
+  const renderedLines = await log.locator('[data-line]').count()
+  assert.ok(renderedLines > 0 && renderedLines <= 600, `log lines in the page on open: ${renderedLines}`)
 
   await page.evaluate(() => [...document.querySelectorAll('[data-log-block]')].at(-1).scrollIntoView({ block: 'end' }))
   await page.waitForFunction(() => [...document.querySelectorAll('[data-log-block]')].at(-1).firstElementChild

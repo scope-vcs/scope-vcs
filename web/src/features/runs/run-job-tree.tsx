@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { ChevronDown, Search } from 'lucide-react'
-import { useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { RunDuration } from './run-duration'
 import { runJobPanelId } from './run-job-ids'
 import {
@@ -29,6 +29,7 @@ export function RunJobTree({
   selectedKey,
 }: TreeProps & { footer?: ReactNode; jobs: readonly RunJobSummary[] }) {
   const listId = useId()
+  const pickerRef = useRef<HTMLButtonElement>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [filter, setFilter] = useState('')
   const [groupOpen, setGroupOpen] = useState<Readonly<Record<string, boolean>>>({})
@@ -38,6 +39,7 @@ export function RunJobTree({
   const filtering = filter.trim() !== ''
 
   function select(key: string) {
+    if (pickerOpen) pickerRef.current?.focus()
     setPickerOpen(false)
     onSelect(key)
   }
@@ -52,6 +54,7 @@ export function RunJobTree({
         aria-expanded={pickerOpen}
         className="m-2 flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-card px-3 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
         onClick={() => setPickerOpen((open) => !open)}
+        ref={pickerRef}
         type="button"
       >
         {selected ? <RunStatusIcon state={selected.state} /> : null}

@@ -23,6 +23,7 @@ import {
 } from './repository-run-detail-model'
 import { useRunJobHash } from './run-job-hash'
 import { runJobLinkForHash, type RunJobLink } from './run-job-ids'
+import { stepLogAnchorPosition } from './run-log-lines'
 import { useRunLiveRefresh, type RunRefresh } from './run-live-refresh'
 import { useRunLogStream } from './use-run-log-stream'
 import {
@@ -205,6 +206,22 @@ export function useRepositoryRunDetailController({
     view.selection,
   ])
 
+  const selectedLogs = view.selection ? logsSnapshot.value?.[stepKey(view.selection)] : undefined
+  const linkPageRequested = useRef<RunJobLink | null>(null)
+  useEffect(() => {
+    const { link, selection } = view
+    if (!link || !selection || link === linkPageRequested.current || link.line === null ||
+      link.key !== selection.jobKey || link.attempt !== selection.attemptId || link.step !== selection.stepIndex) {
+      return
+    }
+    const loaded = runLogsResource.peek(key)?.[stepKey(selection)]
+    if (!loaded?.initialized || loaded.loading) return
+    linkPageRequested.current = link
+    const through = stepLogAnchorPosition(link.line)
+    const firstLoaded = loaded.logs[0]?.position
+    if (loaded.hasEarlier && firstLoaded !== undefined && through < firstLoaded) void refreshLogs(selection, { through })
+  }, [key, refreshLogs, selectedLogs, view])
+
   const performAction = useCallback(async (
     kind: 'cancel' | 'retry',
     action: () => Promise<void>,
@@ -256,9 +273,7 @@ export function useRepositoryRunDetailController({
     earlier: () => { if (selection) void refreshLogs(selection, 'earlier') },
     latest: () => { if (selection) void refreshLogs(selection, 'latest') },
     retry: () => { if (selection) void refreshLogs(selection, 'retry') },
-    state: selection
-      ? logsSnapshot.value?.[stepKey(selection)] ?? EMPTY_LOG_STATE
-      : EMPTY_LOG_STATE,
+    state: selectedLogs ?? EMPTY_LOG_STATE,
   }
 
   return {

@@ -150,7 +150,7 @@ onViewerChange(() => {
   for (const controller of activeStreams) controller.abort()
   activeStreams.clear()
 })
-export type RunLogMode = 'refresh' | 'earlier' | 'latest' | 'retry'
+export type RunLogMode = 'refresh' | 'earlier' | 'latest' | 'retry' | { through: number }
 
 export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = 'refresh' }: {
   key: string
@@ -167,7 +167,8 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
   const current = runLogsResource.peek(key)?.[step] ?? EMPTY_LOG_STATE
   if (mode === 'refresh' && current.viewingEarlier) return Promise.resolve(true)
   const before = mode === 'retry' ? current.failedPage?.before
-    : mode === 'earlier' ? current.logs[0]?.position : undefined
+    : mode === 'earlier' ? current.logs[0]?.position
+      : typeof mode === 'object' ? mode.through + 1 : undefined
   const after = mode === 'retry' ? current.failedPage?.after
     : mode === 'refresh' && current.initialized ? current.nextAfter : undefined
   writeRunLogCache(key, target, {
@@ -180,7 +181,7 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
   }, AbortSignal.timeout(15_000))).then((page) => {
     if (inFlight.get(requestKey) !== request) return false
     const previous = runLogsResource.peek(key)?.[step] ?? current
-    const retained = mode === 'earlier' || previous.viewingEarlier
+    const retained = mode === 'earlier' || typeof mode === 'object' || previous.viewingEarlier
       ? mergeStepLogPage(previous, page, after)
       : mergeFetchedRunLogs(previous, page, after)
     writeRunLogCache(key, target, fetchedLogState(retained, page, before !== undefined, completedVersion))

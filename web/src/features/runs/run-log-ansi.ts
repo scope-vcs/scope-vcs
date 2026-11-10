@@ -9,7 +9,7 @@ export type LogStyle = {
 
 export type LogSpan = { text: string; style: LogStyle }
 
-export type AnsiText = { text: string; spans: LogSpan[] | null }
+export type AnsiText = { text: string; spans: LogSpan[] | null; style: LogStyle }
 
 const ESC = '\u001b'
 const PLAIN: LogStyle = { tone: null, bright: false, bold: false, dim: false }
@@ -20,10 +20,10 @@ const PALETTE: readonly (readonly [number, number, number])[] = [
 ]
 const CUBE_LEVELS = [0, 95, 135, 175, 215, 255]
 
-export function readAnsi(raw: string): AnsiText {
-  if (!raw.includes(ESC)) return { text: raw, spans: null }
+export function readAnsi(raw: string, carried: LogStyle = PLAIN): AnsiText {
+  if (!raw.includes(ESC) && sameStyle(carried, PLAIN)) return { text: raw, spans: null, style: carried }
   const spans: LogSpan[] = []
-  let style = PLAIN
+  let style = carried
   let pending = ''
   let index = 0
   const flush = () => {
@@ -59,7 +59,7 @@ export function readAnsi(raw: string): AnsiText {
   }
   flush()
   const text = spans.map((span) => span.text).join('')
-  return { text, spans: spans.some((span) => !sameStyle(span.style, PLAIN)) ? spans : null }
+  return { text, spans: spans.some((span) => !sameStyle(span.style, PLAIN)) ? spans : null, style }
 }
 
 export function dropLeading(spans: readonly LogSpan[], count: number): LogSpan[] {

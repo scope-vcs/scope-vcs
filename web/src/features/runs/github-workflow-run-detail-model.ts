@@ -47,8 +47,11 @@ function githubLineSteps(
   const started = steps.filter((step) => step.started_at_unix !== null)
   const owners = new Array<number>(stamps.length).fill((started[0] ?? steps[0])?.number ?? 0)
   let previous = -1
-  for (const step of started) {
-    const boundary = stepBoundary(stamps, step.started_at_unix!, previous)
+  for (const [order, step] of started.entries()) {
+    const second = step.started_at_unix!
+    const stepsInSecond = started.slice(order).filter((later) => later.started_at_unix === second).length
+    const groups = unclaimedGroups(stamps, second, previous)
+    const boundary = groups.length >= stepsInSecond ? groups[0]! : firstLineFrom(stamps, second, previous)
     if (boundary === -1) break
     owners.fill(step.number, boundary)
     previous = boundary
@@ -56,16 +59,22 @@ function githubLineSteps(
   return owners
 }
 
-function stepBoundary(stamps: readonly LogStamp[], second: number, previous: number) {
-  let reached = -1
-  for (let index = Math.max(previous, 0); index < stamps.length; index++) {
+function unclaimedGroups(stamps: readonly LogStamp[], second: number, previous: number) {
+  const groups: number[] = []
+  for (let index = previous + 1; index < stamps.length; index++) {
     const stamp = stamps[index]!
-    if (stamp.second === null || stamp.second < second) continue
-    if (stamp.second > second) return reached === -1 ? index : reached
-    if (stamp.group && index > previous) return index
-    if (reached === -1) reached = index
+    if (stamp.second !== null && stamp.second > second) break
+    if (stamp.group && stamp.second === second) groups.push(index)
   }
-  return reached
+  return groups
+}
+
+function firstLineFrom(stamps: readonly LogStamp[], second: number, previous: number) {
+  for (let index = Math.max(previous, 0); index < stamps.length; index++) {
+    const stamp = stamps[index]!.second
+    if (stamp !== null && stamp >= second) return index
+  }
+  return -1
 }
 
 export function githubOpeningStep(job: GitHubWorkflowJobResponse): number | null {

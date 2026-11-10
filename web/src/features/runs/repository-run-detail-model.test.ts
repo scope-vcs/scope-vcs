@@ -231,9 +231,17 @@ describe('run detail navigation', () => {
     const log = (position: number, text: string) => ({ position, sequence: position, text, byte_length: text.length, created_at_unix: 1 })
     const firstPage = readStepLogLines([log(4, 'compiling\n'), log(5, 'test a ok\nAssertionError: '), log(6, 'expected 3\nfailed\n')])
     const latestPage = readStepLogLines([log(5, 'test a ok\nAssertionError: '), log(6, 'expected 3\nfailed\n')])
+    const midLinePage = readStepLogLines([log(6, 'expected 3\nfailed\n')])
     const failure = firstPage.find((line) => line.text === 'AssertionError: expected 3')!
-    assert.deepEqual(firstPage.map((line) => line.anchor), ['4.0', '5.0', '5.1', '6.0'])
+    assert.deepEqual(firstPage.map((line) => line.anchor), ['4.0', '5.0', '5.1', '6.1'])
+    for (const page of [latestPage, midLinePage]) {
+      for (const line of page) {
+        const named = firstPage.find((first) => first.anchor === line.anchor)
+        if (named) assert.equal(line.text, named.text, line.anchor)
+      }
+    }
     assert.equal(latestPage.find((line) => line.anchor === failure.anchor)?.text, failure.text)
+    assert.equal(midLinePage.find((line) => line.anchor === '6.1')?.text, 'failed')
 
     const attempt = (id: string, number: number): RepositoryRunAttemptResponse => ({
       id, number, external_run_id: null, runtime_version: '1', state: 'failed', created_at_unix: 1, started_at_unix: 1,
