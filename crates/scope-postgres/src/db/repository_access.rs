@@ -14,7 +14,7 @@ use scope_domain::{
 };
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait,
-    FromQueryResult, IdenStatic, QueryFilter, QuerySelect, Statement,
+    FromQueryResult, IdenStatic, QueryFilter, QueryResult, QuerySelect, Statement,
 };
 
 #[derive(FromQueryResult)]
@@ -257,9 +257,11 @@ pub(super) async fn repository_access<C: ConnectionTrait>(
     repo_id: &str,
     viewer_user_id: Option<&str>,
 ) -> Result<Option<RepositoryAccessContext>, PostgresError> {
-    Ok(load_access(conn, repo_id, viewer_user_id)
+    query_access(conn, AccessQuery::Membership, repo_id, viewer_user_id)
         .await?
-        .map(|read| read.context))
+        .first()
+        .map(|row| access_context(row, viewer_user_id))
+        .transpose()
 }
 
 pub(super) struct RepositoryAccessRead {
@@ -296,16 +298,59 @@ pub(super) async fn load_access<C: ConnectionTrait>(
     repo_id: &str,
     viewer_user_id: Option<&str>,
 ) -> Result<Option<RepositoryAccessRead>, PostgresError> {
-    let rows = conn
-        .query_all_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            access_sql(),
-            [repo_id.into(), viewer_user_id.into()],
-        ))
-        .await?;
+    let rows = query_access(
+        conn,
+        AccessQuery::MembershipAndProjections,
+        repo_id,
+        viewer_user_id,
+    )
+    .await?;
     let Some(row) = rows.first() else {
         return Ok(None);
     };
+    let context = access_context(row, viewer_user_id)?;
+    let projections = rows
+        .iter()
+        .filter_map(|row| match joined(row, "p_repo_id") {
+            Ok(true) => Some(
+                entities::projection_read_model::Model::from_query_result(row, "p_")
+                    .map_err(PostgresError::from),
+            ),
+            Ok(false) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(RepositoryAccessRead {
+        context,
+        projections,
+    }))
+}
+
+#[derive(Clone, Copy)]
+enum AccessQuery {
+    Membership,
+    MembershipAndProjections,
+}
+
+async fn query_access<C: ConnectionTrait>(
+    conn: &C,
+    query: AccessQuery,
+    repo_id: &str,
+    viewer_user_id: Option<&str>,
+) -> Result<Vec<QueryResult>, PostgresError> {
+    Ok(conn
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            access_sql(query),
+            [repo_id.into(), viewer_user_id.into()],
+        ))
+        .await?)
+}
+
+fn access_context(
+    row: &QueryResult,
+    viewer_user_id: Option<&str>,
+) -> Result<RepositoryAccessContext, PostgresError> {
     let record = AccessRow::from_query_result(row, "r_")?.try_into_domain()?;
     let permissions = if joined(row, "m_repo_id")? {
         Some(
@@ -326,25 +371,11 @@ pub(super) async fn load_access<C: ConnectionTrait>(
     });
     let config: scope_domain::repo_config::RepoConfig =
         super::decode_json(row.try_get("", "repo_config")?)?;
-    let projections = rows
-        .iter()
-        .filter_map(|row| match joined(row, "p_repo_id") {
-            Ok(true) => Some(
-                entities::projection_read_model::Model::from_query_result(row, "p_")
-                    .map_err(PostgresError::from),
-            ),
-            Ok(false) => None,
-            Err(error) => Some(Err(error)),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(Some(RepositoryAccessRead {
-        context: RepositoryAccessContext {
-            record,
-            access,
-            views: config.views,
-        },
-        projections,
-    }))
+    Ok(RepositoryAccessContext {
+        record,
+        access,
+        views: config.views,
+    })
 }
 
 fn access_columns() -> [entities::repository::Column; 10] {
@@ -363,19 +394,45 @@ fn access_columns() -> [entities::repository::Column; 10] {
     ]
 }
 
-fn access_sql() -> &'static str {
-    static SQL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    SQL.get_or_init(|| format!(
-        "SELECT {}, repo.repo_config, {}, {}
-         FROM scope_repositories repo
-         LEFT JOIN scope_repository_members member
-           ON member.repo_id = repo.id AND member.user_id = $2 AND member.user_id <> repo.owner_user_id
-         LEFT JOIN scope_projection_read_models projection ON projection.repo_id = repo.id
-         WHERE repo.id = $1",
-        access_columns().iter().map(|column| format!("repo.\"{0}\" AS \"r_{0}\"", column.as_str())).collect::<Vec<_>>().join(", "),
-        prefixed_columns::<entities::repository_member::Column>("member", "m_"),
-        prefixed_columns::<entities::projection_read_model::Column>("projection", "p_"),
-    ))
+fn access_sql(query: AccessQuery) -> &'static str {
+    static MEMBERSHIP: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    static MEMBERSHIP_AND_PROJECTIONS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let render = |projections: bool| {
+        let membership = format!(
+            "SELECT {}, repo.repo_config, {}",
+            access_columns()
+                .iter()
+                .map(|column| format!("repo.\"{0}\" AS \"r_{0}\"", column.as_str()))
+                .collect::<Vec<_>>()
+                .join(", "),
+            prefixed_columns::<entities::repository_member::Column>("member", "m_"),
+        );
+        let (projection_columns, projection_join) = if projections {
+            (
+                format!(
+                    ", {}",
+                    prefixed_columns::<entities::projection_read_model::Column>("projection", "p_")
+                ),
+                "LEFT JOIN scope_projection_read_models projection ON projection.repo_id = repo.id",
+            )
+        } else {
+            (String::new(), "")
+        };
+        format!(
+            "{membership}{projection_columns}
+             FROM scope_repositories repo
+             LEFT JOIN scope_repository_members member
+               ON member.repo_id = repo.id AND member.user_id = $2 AND member.user_id <> repo.owner_user_id
+             {projection_join}
+             WHERE repo.id = $1"
+        )
+    };
+    match query {
+        AccessQuery::Membership => MEMBERSHIP.get_or_init(|| render(false)),
+        AccessQuery::MembershipAndProjections => {
+            MEMBERSHIP_AND_PROJECTIONS.get_or_init(|| render(true))
+        }
+    }
 }
 
 async fn load_policy_config<C: ConnectionTrait>(
