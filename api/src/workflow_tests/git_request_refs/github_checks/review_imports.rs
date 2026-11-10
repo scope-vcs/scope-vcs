@@ -215,7 +215,19 @@ async fn a_bot_review_on_the_carrier_pull_request_becomes_anchored_discussions()
     );
 
     let threads = threads(&owner).await;
-    assert_eq!(threads.len(), 4);
+    let mut client_ids = threads
+        .iter()
+        .map(|thread| thread["client_discussion_id"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    client_ids.sort_unstable();
+    assert_eq!(
+        client_ids,
+        [
+            "github:review-comment:201",
+            "github:review-comment:202",
+            "github:review-comment:203",
+        ]
+    );
     let line = by_client_id(&threads, "github:review-comment:201");
     assert_eq!(line["author"]["kind"], "github");
     assert_eq!(line["author"]["account"]["login"], "greptile-apps[bot]");
@@ -239,10 +251,6 @@ async fn a_bot_review_on_the_carrier_pull_request_becomes_anchored_discussions()
         unchanged_path["anchor"]["revision_id"],
         line["anchor"]["revision_id"]
     );
-    let body = by_client_id(&threads, "github:review:101");
-    assert_eq!(body["body_markdown"], "Two things to look at.");
-    assert_eq!(body["anchor"]["revision_id"], line["anchor"]["revision_id"]);
-    assert!(body["anchor"]["path"].is_null());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

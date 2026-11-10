@@ -1,7 +1,7 @@
 use crate::{
     error::ApiError,
     git::{
-        command::{git_is_ancestor, run_git_output},
+        command::git_contains_commit,
         import::{ReceivePackUpdate, apply_receive_pack_update},
         projection_repo::VerifiedProjections,
     },
@@ -11,7 +11,7 @@ use scope_domain::{
     projection::project_graph,
     requests::{Request, lands_with_main},
 };
-use scope_postgres::db::LandedRequestCandidate;
+use scope_postgres::db::{LandedRequestCandidate, MainContains};
 use std::{collections::BTreeMap, path::Path};
 
 #[tracing::instrument(skip_all, name = "use_case.git_receive.find_landed_requests", fields(scope.landed_request.count = tracing::field::Empty))]
@@ -34,6 +34,22 @@ pub(super) async fn landed_request_candidates(
     if candidates.is_empty() {
         return Ok(Vec::new());
     }
+    let merged_pull_requests = state
+        .metadata
+        .requests()
+        .merged_github_pull_requests(&repository_id)
+        .await?;
+    let candidates = candidates
+        .into_iter()
+        .map(|request| {
+            let merge_commit_oid = merged_pull_requests
+                .iter()
+                .filter(|pull_request| pull_request.request_id == request.id)
+                .find_map(|pull_request| pull_request.merge_of(&request))
+                .map(|merge| merge.merge_commit_oid.clone());
+            (request, merge_commit_oid)
+        })
+        .collect();
     let path = staging_repo.to_path_buf();
     let main_oid_for_scan = update.head_oid.clone();
     let mut landed = crate::git::blocking::run(move || {
@@ -68,6 +84,9 @@ pub(super) async fn landed_request_candidates(
                 "landed request changed during preparation",
             ));
         }
+        if candidate.main_contains != MainContains::RequestHead {
+            continue;
+        }
         if &parent.view != proposed_repo.repo_config.views().full()
             && !view_heads.contains_key(&parent.view)
         {
@@ -99,32 +118,36 @@ pub(super) async fn landed_request_candidates(
 fn requests_carried_by(
     repo: &Path,
     main_oid: &str,
-    candidates: Vec<Request>,
+    candidates: Vec<(Request, Option<String>)>,
 ) -> Result<Vec<LandedRequestCandidate>, ApiError> {
     let mut landed = Vec::new();
-    for request in candidates {
-        let head_commit = format!("{}^{{commit}}", request.head_oid);
-        let present = run_git_output(
-            Some(repo),
-            &["cat-file", "-e", &head_commit],
-            "checking request head presence",
-        )?
-        .status
-        .success();
-        if present
-            && git_is_ancestor(
-                repo,
-                &request.head_oid,
-                main_oid,
-                "checking whether main carries a request head",
-            )?
-        {
-            landed.push(LandedRequestCandidate {
-                request_id: request.id,
-                head_oid: request.head_oid,
-                stack_children: Vec::new(),
-            });
-        }
+    for (request, merge_commit_oid) in candidates {
+        let carries =
+            |commit: &str, action: &str| git_contains_commit(repo, commit, main_oid, action);
+        let main_contains = if carries(
+            &request.head_oid,
+            "checking whether main carries a request head",
+        )? {
+            MainContains::RequestHead
+        } else {
+            match merge_commit_oid {
+                Some(commit)
+                    if carries(
+                        &commit,
+                        "checking whether main carries a merged pull request",
+                    )? =>
+                {
+                    MainContains::GitHubMergeCommit(commit)
+                }
+                _ => continue,
+            }
+        };
+        landed.push(LandedRequestCandidate {
+            request_id: request.id,
+            head_oid: request.head_oid,
+            stack_children: Vec::new(),
+            main_contains,
+        });
     }
     Ok(landed)
 }

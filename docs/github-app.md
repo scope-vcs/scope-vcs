@@ -415,10 +415,26 @@ pull request Scope cannot reach is an error that retries. A request that ends
 before Scope recorded its carrier's number, for example because GitHub's
 answer to the create was lost, gets its open pull request looked up by
 branch, adopted and closed. When someone other
-than the app closes a carrier while its request is open, Scope records it as
-closed on GitHub and leaves it closed until someone reopens it there. A
-carrier GitHub closed because the app deleted its base branch is replaced by
-the next push.
+than the app closes a carrier without merging it while its request is open,
+Scope records it as closed on GitHub and leaves it closed until someone
+reopens it there. A carrier GitHub closed because the app deleted its base
+branch is replaced by the next push.
+
+A carrier merged on GitHub is recorded as merged, with the pull request's
+merge commit and the head it merged at, and is never reopened or replaced.
+Its request becomes merged once two facts hold, in either order: the pull
+request merged at the request's current head, and Scope's main contains the
+merge commit. That covers squash and rebase merges, whose main never contains
+the request's head. A main push that carries the merge commit lands the
+request in its own transaction. When the main push arrives first, the run
+that records the merge lands the request, and each main push requeues the
+merged carriers of open requests so a run that raced the push looks again.
+Either way the merger is whoever last pushed main, and the request's branch
+is released as after any other landing. A request stays open when the pull
+request merged at an older head, when it still has open stacked children, or
+when main was last pushed before Scope recorded who pushes main; in that last
+case the next main push lands it. The rule is `GitHubMergeLanding` in
+`scope-domain`.
 
 A `pull_request` delivery is only a hint, because GitHub can deliver events
 late and out of order. It requeues the carrier's job, even one still running
@@ -486,7 +502,9 @@ one after 30 seconds, 2, 10, and 30 minutes, then gives up.
   `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{id}/comments`, then
   creates the review's discussions in one transaction with one attention
   change for the request author. A non-empty review body becomes a discussion
-  on the reviewed revision. Each comment becomes a discussion anchored to the
+  on the reviewed revision, unless a listed review bot wrote the review and it
+  has inline comments: GitHub cannot resolve a review body, so the bot's
+  comments carry its findings. Each comment becomes a discussion anchored to the
   newest revision whose head is the comment's commit: `RIGHT` is the new
   side, `LEFT` the old, `start_line` to `line` the range, and a file comment
   anchors to the file. An outdated comment (no `line`) uses its original

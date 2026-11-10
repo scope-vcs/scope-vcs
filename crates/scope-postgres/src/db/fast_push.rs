@@ -2,7 +2,7 @@ use super::{
     RepositoryMutationResult, RepositoryStore, acquire_aggregate_lock,
     content_push_transactions::{RepositoryContentSnapshots, accept_and_persist_content_push},
     entities,
-    request_merge::{LandedRequestCandidate, LandedRequestCompletion, complete_landed_requests},
+    request_merge::{LandedRequestCandidate, LandedRequestCompletion, complete_main_push},
 };
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 use {
@@ -133,7 +133,7 @@ impl RepositoryStore {
             now_unix,
         )
         .await?;
-        let completed_landed_requests = complete_landed_requests(
+        let completed_landed_requests = complete_main_push(
             &tx,
             &repo_id,
             &persisted.git_head.head_oid,

@@ -44,7 +44,7 @@ impl FakePulls {
             "title": "",
             "body": "",
             "draft": false,
-            "head": { "ref": head, "repo": { "id": GITHUB_REPOSITORY_ID } },
+            "head": { "ref": head, "sha": "", "repo": { "id": GITHUB_REPOSITORY_ID } },
             "base": { "ref": base },
             "closed_by": null,
         }));
@@ -55,6 +55,21 @@ impl FakePulls {
         let number = self.open(head, base);
         self.pulls.lock().unwrap()[number as usize - 1]["head"]["repo"]["id"] =
             (GITHUB_REPOSITORY_ID + 1).into();
+    }
+
+    pub(in crate::workflow_tests) fn merge_as(
+        &self,
+        number: u64,
+        login: &str,
+        head_oid: &str,
+        merge_commit_oid: &str,
+    ) {
+        self.close_as(number, login);
+        let mut pulls = self.pulls.lock().unwrap();
+        let pull = &mut pulls[number as usize - 1];
+        pull["merged"] = true.into();
+        pull["merge_commit_sha"] = merge_commit_oid.into();
+        pull["head"]["sha"] = head_oid.into();
     }
 
     pub(in crate::workflow_tests) fn close_as(&self, number: u64, login: &str) {

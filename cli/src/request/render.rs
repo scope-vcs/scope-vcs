@@ -16,12 +16,14 @@ use scope_api_contract::{
 use scope_domain::views::Views;
 
 mod auto_merge;
+mod discussions;
 mod navigation;
 mod review_bots;
 use auto_merge::activity_line as auto_merge_activity_line;
 pub(super) use auto_merge::{
     receipt_lines as auto_merge_receipt_lines, status_lines as auto_merge_status_lines,
 };
+pub(super) use discussions::list_lines as discussion_list_lines;
 pub(super) use navigation::parent_label;
 pub(super) use review_bots::detail_lines as review_bots_detail_lines;
 
@@ -490,6 +492,9 @@ fn github_pull_request_line(pull_request: &RequestGitHubPullRequestResponse) -> 
         (RequestGitHubPullRequestState::Closed, _) => format!("GitHub: {named} closed"),
         (RequestGitHubPullRequestState::ClosedOnGitHub, _) => {
             format!("GitHub: {named} was closed on GitHub")
+        }
+        (RequestGitHubPullRequestState::Merged, _) => {
+            format!("GitHub: {named} was merged on GitHub")
         }
         (RequestGitHubPullRequestState::Failed, None) => {
             format!("GitHub: keeping the {named} in step failed")

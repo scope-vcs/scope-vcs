@@ -55,9 +55,13 @@ async fn reconcile(request: &OwnerRequest, at_unix: u64) -> usize {
 }
 
 fn codex_state(head: &str, code: &str, security: &str, findings: &str) -> String {
-    let part = |status: &str| {
+    codex_state_on((head, code), (head, security), findings)
+}
+
+fn codex_state_on(code: (&str, &str), security: (&str, &str), findings: &str) -> String {
+    let part = |(commit, status): (&str, &str)| {
         format!(
-            "{{\"commit_sha\":\"{head}\",\"has_any_findings\":{findings},\"has_unresolved_findings\":{findings},\"status\":\"{status}\"}}"
+            "{{\"commit_sha\":\"{commit}\",\"has_any_findings\":{findings},\"has_unresolved_findings\":{findings},\"status\":\"{status}\"}}"
         )
     };
     format!(
@@ -214,6 +218,32 @@ async fn a_required_bot_holds_the_merge_until_it_finishes_the_latest_head() {
     assert_eq!(
         bot_states(&request).await,
         (states("clear", "working"), "Ready".into())
+    );
+
+    push_change(
+        &request.source,
+        &request.remote,
+        "refs/heads/checks",
+        "request.txt",
+        "revised work\n",
+        "revise request",
+    )
+    .unwrap();
+    push_pass(&request.state, unix_now()).await;
+    codex_comments(
+        &request,
+        "edited",
+        &codex_state_on(
+            (&request.head(), "completed"),
+            (&head, "completed"),
+            "false",
+        ),
+    )
+    .await;
+    reconcile_now(&request).await;
+    assert_eq!(
+        bot_states(&request).await,
+        (states("clear", "not_started"), "Ready".into())
     );
 }
 

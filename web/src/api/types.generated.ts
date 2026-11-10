@@ -692,7 +692,7 @@ export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch:
  */
 error: string | null, };
 
-export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "failed";
+export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "merged" | "failed";
 
 export type RequestGitHubPullRequestResponse = { state: RequestGitHubPullRequestState,
 /**
@@ -724,6 +724,8 @@ export type RequestCheckRunResponse = { run_id: string, workflow_name: string, j
 export type RequestChecksResponse = { request_id: string, head_oid: GitOid,
 /**
  * `None` while the head has no evaluation: nothing is known about its checks yet.
+ * Otherwise the approval step of the evaluation, which does not change when
+ * the checks finish; `outcome` carries the result.
  */
 state: RequestCheckEvaluationState | null,
 /**
@@ -758,8 +760,8 @@ review_bots: Array<RequestReviewBotResponse>,
  */
 review_bots_enforced: boolean,
 /**
- * Whether approving would run workflow files this request changes. Only
- * worked out for a viewer who can approve GitHub checks.
+ * Whether the request changes workflow files that its GitHub checks run, at
+ * any check state. Only worked out for a viewer who may review the checks.
  */
 changes_github_workflows: boolean,
 /**

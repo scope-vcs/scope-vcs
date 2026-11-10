@@ -38,7 +38,7 @@ impl<'a> ImportAuthors<'a> {
         if let Some(admitted) = self.admitted.get(&author.id) {
             return Ok(*admitted);
         }
-        let standing = github_author_standing(&self.review_bots, author);
+        let standing = self.standing(author);
         let permission = match standing {
             GitHubAuthorStanding::NeedsPermission => {
                 match self
@@ -75,6 +75,10 @@ impl<'a> ImportAuthors<'a> {
         let admitted = may_import_github_author(&standing, permission);
         self.admitted.insert(author.id, admitted);
         Ok(admitted)
+    }
+
+    pub(super) fn standing(&self, author: &GitHubAccount) -> GitHubAuthorStanding {
+        github_author_standing(&self.review_bots, author)
     }
 
     pub(super) fn refusals(self) -> Option<String> {

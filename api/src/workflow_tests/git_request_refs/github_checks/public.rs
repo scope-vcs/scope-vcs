@@ -724,6 +724,8 @@ async fn a_contributors_push_reaches_github_only_after_a_maintainer_approves() {
     .await;
     assert_eq!(approved["state"], "started");
     assert_eq!(approved["github_push"]["state"], "sending");
+    assert_eq!(approved["can_approve"], false);
+    assert_eq!(approved["changes_github_workflows"], true);
     assert_eq!(push_pass(&state, unix_now()).await, 1);
     let tested = tested_oid(&state, &head).await;
     assert_ne!(tested, head);

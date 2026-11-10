@@ -108,10 +108,14 @@ pub enum RequestGitHubPullRequestState {
     Open,
     /// Scope closed it because the request ended.
     Closed,
-    /// Someone closed it on GitHub while the request was open. Scope leaves it closed.
+    /// Someone closed it on GitHub without merging it while the request was open. Scope
+    /// leaves it closed.
     #[serde(rename = "closed_on_github")]
     #[cfg_attr(feature = "ts", ts(rename = "closed_on_github"))]
     ClosedOnGitHub,
+    /// It was merged on GitHub. The request becomes merged once Scope's main contains the
+    /// pull request's merge commit, provided the pull request merged at the request's head.
+    Merged,
     /// Scope gave up; `error` says why.
     Failed,
 }
@@ -155,6 +159,8 @@ pub struct RequestChecksResponse {
     pub request_id: String,
     pub head_oid: GitOid,
     /// `None` while the head has no evaluation: nothing is known about its checks yet.
+    /// Otherwise the approval step of the evaluation, which does not change when
+    /// the checks finish; `outcome` carries the result.
     pub state: Option<RequestCheckEvaluationState>,
     /// What the head's required checks add up to, the answer mergeability
     /// gates on: `clear` once every one passed or none is required,
@@ -177,8 +183,8 @@ pub struct RequestChecksResponse {
     /// repository opens pull requests for review bots, since a bot can only
     /// review a request through that pull request.
     pub review_bots_enforced: bool,
-    /// Whether approving would run workflow files this request changes. Only
-    /// worked out for a viewer who can approve GitHub checks.
+    /// Whether the request changes workflow files that its GitHub checks run, at
+    /// any check state. Only worked out for a viewer who may review the checks.
     pub changes_github_workflows: bool,
     /// Whether this private request's checks run in a public GitHub
     /// repository, where everything Scope pushes is public.

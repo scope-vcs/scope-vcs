@@ -153,7 +153,7 @@ pub(crate) fn snapshot_response(
     let latest_push = &snapshot.github_push;
     let github_push = GitHubPushStatus::for_evaluation(evaluation, latest_push.as_ref())
         .map(|status| github_push_response(&request.id, status, access.clone()));
-    let changes_github_workflows = can_approve
+    let changes_github_workflows = RequestCheckReviewer::may_review(&access, views)
         && evaluation.asks_github()
         && evaluation.changes_github_workflows.unwrap_or(true);
     let check_runs = if github_connection.as_ref().is_some_and(|connection| {
@@ -216,6 +216,7 @@ fn github_pull_request_response(
             GitHubPullRequestStatusState::ClosedOnGitHub => {
                 RequestGitHubPullRequestState::ClosedOnGitHub
             }
+            GitHubPullRequestStatusState::Merged => RequestGitHubPullRequestState::Merged,
             GitHubPullRequestStatusState::Failed => RequestGitHubPullRequestState::Failed,
         },
         number: status.number,

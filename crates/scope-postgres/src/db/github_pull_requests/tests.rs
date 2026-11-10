@@ -6,8 +6,9 @@ use crate::db::{
 use scope_domain::{
     github_connection::ConnectGitHubRepository,
     requests::{
-        GitHubBranch, GitHubPullRequestJobState, GitHubPullRequestObservation,
-        GitHubPullRequestState, GitHubPush, RequestActorRole, RequestBase, StartRequestInput,
+        GitHubBranch, GitHubPullRequestJobState, GitHubPullRequestMerge,
+        GitHubPullRequestObservation, GitHubPullRequestObservedState, GitHubPullRequestState,
+        GitHubPush, RequestActorRole, RequestBase, StartRequestInput,
     },
     views::ViewId,
 };
@@ -515,13 +516,16 @@ async fn a_merge_leaves_carrier_and_branch_to_github_only_when_main_is_published
                     .await
                     .unwrap()
             );
+            let merge = GitHubPullRequestMerge {
+                merge_commit_oid: oid('c'),
+                head_oid: oid('a'),
+            };
             let mut merged_on_github = claim(&store, "claim_3", 30).await.remove(0);
             merged_on_github.observe(GitHubPullRequestObservation {
                 number: 5,
                 url: "https://github.com/octo/checks-42/pull/5".into(),
                 base: "main".into(),
-                open: false,
-                closed_by_scope: false,
+                state: GitHubPullRequestObservedState::Merged(merge.clone()),
             });
             assert!(
                 requests
@@ -535,6 +539,16 @@ async fn a_merge_leaves_carrier_and_branch_to_github_only_when_main_is_published
                     .unwrap()
             );
             assert_eq!(request_branch_push(&store).await.target_oid, None);
+            assert_eq!(
+                github_pull_request(store.db.as_ref(), "req_1")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .pull_request
+                    .unwrap()
+                    .state,
+                GitHubPullRequestState::Merged(merge)
+            );
         } else {
             assert_eq!(carrier.intent, GitHubPullRequestIntent::Close);
             assert_eq!(request_branch_push(&store).await.target_oid, None);

@@ -3,6 +3,9 @@ use crate::error::GitRetrySafety;
 use crate::progress::{CancellationToken, run_cancellable};
 use std::time::Duration;
 
+mod retry;
+use retry::with_git_retries;
+
 const GIT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const MAX_GIT_STDOUT_BYTES: usize = 16 * 1024 * 1024;
 const GIT_STALE_LEASE_STATUS: &str = "(stale info)";
@@ -23,13 +26,15 @@ pub fn push_head_with_bearer(
         push_intent_token,
         inherited_git_config_count(),
     );
-    run_git_plan_output(
-        plan,
-        None,
-        "run authenticated Scope git push",
-        "git push to Scope failed",
-        retry_safety,
-    )
+    with_git_retries(retry_safety, || {
+        run_git_plan_output(
+            plan.clone(),
+            None,
+            "run authenticated Scope git push",
+            "git push to Scope failed",
+            retry_safety,
+        )
+    })
 }
 
 #[derive(Debug)]
@@ -60,19 +65,21 @@ pub fn push_head_to_ref_with_bearer(
         extra_headers,
         inherited_git_config_count(),
     );
-    let output = git_command(plan, None)
-        .output()
-        .context("run authenticated Scope request branch push")?;
-    if !output.status.success()
-        && String::from_utf8_lossy(&output.stderr).contains(GIT_STALE_LEASE_STATUS)
-    {
-        return Err(StaleRefLease.into());
-    }
-    finish_git_plan_output(
-        output,
-        "git push to Scope request ref failed",
-        GitRetrySafety::Idempotent,
-    )
+    with_git_retries(GitRetrySafety::Idempotent, || {
+        let output = git_command(plan.clone(), None)
+            .output()
+            .context("run authenticated Scope request branch push")?;
+        if !output.status.success()
+            && String::from_utf8_lossy(&output.stderr).contains(GIT_STALE_LEASE_STATUS)
+        {
+            return Err(StaleRefLease.into());
+        }
+        finish_git_plan_output(
+            output,
+            "git push to Scope request ref failed",
+            GitRetrySafety::Idempotent,
+        )
+    })
 }
 
 pub fn clone_with_bearer(
@@ -107,13 +114,15 @@ pub fn fetch_scope_remote_refs_with_bearer(
         bearer_token,
         inherited_git_config_count(),
     );
-    run_git_plan_output(
-        plan,
-        Some(&repo.root),
-        "fetch Scope refs",
-        "git fetch from Scope failed",
-        GitRetrySafety::Idempotent,
-    )
+    with_git_retries(GitRetrySafety::Idempotent, || {
+        run_git_plan_output(
+            plan.clone(),
+            Some(&repo.root),
+            "fetch Scope refs",
+            "git fetch from Scope failed",
+            GitRetrySafety::Idempotent,
+        )
+    })
 }
 
 pub fn fetch_scope_parent_with_bearer(
@@ -137,13 +146,15 @@ pub fn fetch_scope_parent_with_bearer(
         &[format!("Authorization: Bearer {bearer_token}")],
         inherited_git_config_count(),
     );
-    run_git_plan_output(
-        plan,
-        Some(&repo.root),
-        "fetch pinned Scope parent",
-        "fetch Scope parent failed",
-        GitRetrySafety::Idempotent,
-    )?;
+    with_git_retries(GitRetrySafety::Idempotent, || {
+        run_git_plan_output(
+            plan.clone(),
+            Some(&repo.root),
+            "fetch pinned Scope parent",
+            "fetch Scope parent failed",
+            GitRetrySafety::Idempotent,
+        )
+    })?;
     let output = git_output_in_repo(repo, &["rev-parse", "--verify", &parent_ref])?;
     if !output.status.success() {
         anyhow::bail!("parent fetch did not produce its ref");
@@ -167,19 +178,21 @@ pub fn fetch_scope_remote_with_bearer(
         bearer_token,
         inherited_git_config_count(),
     );
-    let mut command = git_command(plan, Some(&repo.root));
-    let output = match cancellation {
-        Some(cancellation) => run_cancellable(
-            &mut command,
-            None,
-            cancellation,
-            GIT_OPERATION_TIMEOUT,
-            MAX_GIT_STDOUT_BYTES,
-        ),
-        None => command.output().map_err(Into::into),
-    }
-    .context("refresh Scope Git remote before push review")?;
-    finish_git_plan_output(output, failure, GitRetrySafety::Idempotent)
+    with_git_retries(GitRetrySafety::Idempotent, || {
+        let mut command = git_command(plan.clone(), Some(&repo.root));
+        let output = match cancellation {
+            Some(cancellation) => run_cancellable(
+                &mut command,
+                None,
+                cancellation,
+                GIT_OPERATION_TIMEOUT,
+                MAX_GIT_STDOUT_BYTES,
+            ),
+            None => command.output().map_err(Into::into),
+        }
+        .context("refresh Scope Git remote before push review")?;
+        finish_git_plan_output(output, failure, GitRetrySafety::Idempotent)
+    })
 }
 
 pub fn git_push_ref_auth_plan(

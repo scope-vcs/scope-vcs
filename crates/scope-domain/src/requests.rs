@@ -56,19 +56,20 @@ pub use checks::{
     GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubBranch, GitHubBranchDeletion, GitHubCheckConclusion,
     GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, GitHubCheckTarget, GitHubPullRequest,
     GitHubPullRequestHead, GitHubPullRequestIntent, GitHubPullRequestJobState,
-    GitHubPullRequestObservation, GitHubPullRequestState, GitHubPullRequestStatus,
-    GitHubPullRequestStatusState, GitHubPullRequestStep, GitHubPullRequestsBasedOnBranch,
-    GitHubPush, GitHubPushDestination, GitHubPushState, GitHubPushStatus, GitHubRequestChecks,
-    GitHubReviewRequest, GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck,
-    OpenedGitHubPullRequest, PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext,
-    RequestCheckEvaluation, RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider,
-    RequestCheckResults, RequestCheckReviewer, RequestChecksOutcome, carrier_may_change,
-    carrier_pull_request_intent, carrier_text_digest, carries_private_request,
-    changes_github_workflows, check_commit_message, closes_carrier_pull_request,
-    ensure_approving_reviewed_head, github_branch_deletion_recheck_at, github_push_retry_at,
-    github_retry_at, main_publication_contains_merge, may_carry_on_github, request_checks_message,
-    request_checks_outcome, request_head_awaits_evaluation, retains_request_branch_for_carrier,
-    review_delivery_belongs_to_request, review_request_comment_body, review_request_marker,
+    GitHubPullRequestMerge, GitHubPullRequestObservation, GitHubPullRequestObservedState,
+    GitHubPullRequestState, GitHubPullRequestStatus, GitHubPullRequestStatusState,
+    GitHubPullRequestStep, GitHubPullRequestsBasedOnBranch, GitHubPush, GitHubPushDestination,
+    GitHubPushState, GitHubPushStatus, GitHubRequestChecks, GitHubReviewRequest,
+    GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, OpenedGitHubPullRequest,
+    PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,
+    RequestCheckEvaluationState, RequestCheckPlan, RequestCheckProvider, RequestCheckResults,
+    RequestCheckReviewer, RequestChecksOutcome, carrier_may_change, carrier_pull_request_intent,
+    carrier_text_digest, carries_private_request, changes_github_workflows, check_commit_message,
+    closes_carrier_pull_request, ensure_approving_reviewed_head, github_branch_deletion_recheck_at,
+    github_push_retry_at, github_retry_at, main_publication_contains_merge, may_carry_on_github,
+    request_checks_message, request_checks_outcome, request_head_awaits_evaluation,
+    retains_request_branch_for_carrier, review_delivery_belongs_to_request,
+    review_request_comment_body, review_request_marker,
 };
 mod diff_stat;
 pub use diff_stat::{
@@ -89,10 +90,10 @@ mod github_review_import;
 pub use github_review_import::{
     GitHubCommentPosition, GitHubCommentSubject, GitHubReviewImportSubject,
     ImportGitHubDiscussionInput, ImportGitHubReplyInput, accepts_github_reviews,
-    github_comment_anchors, github_comment_body, github_review_anchor, github_review_client_id,
-    github_review_comment_client_id, github_review_id_from_client_id, github_thread_status,
-    import_github_discussion, import_github_reply, reactivate_author_attention_for_github_review,
-    transition_github_discussion,
+    github_comment_anchors, github_comment_body, github_review_anchor, github_review_body,
+    github_review_client_id, github_review_comment_client_id, github_review_id_from_client_id,
+    github_thread_status, import_github_discussion, import_github_reply,
+    reactivate_author_attention_for_github_review, transition_github_discussion,
 };
 mod discussions;
 pub use discussions::{
@@ -158,8 +159,8 @@ pub use ratings::{
 };
 mod submission;
 pub use submission::{
-    MergeRequestInput, MergeRequestLanding, RequestLifecycleMutation, SubmitRequestInput,
-    lands_with_main, merge_request, submit_request,
+    GitHubMergeLanding, MergeRequestInput, MergeRequestLanding, RequestLifecycleMutation,
+    SubmitRequestInput, lands_with_main, merge_request, submit_request,
 };
 
 pub const REQUEST_REF_PREFIX: &str = "refs/heads/";

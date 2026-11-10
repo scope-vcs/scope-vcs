@@ -155,6 +155,7 @@ fn every_request_command_accepts_the_global_json_mode_and_returns_json_failures(
             "Answer",
             "--json",
         ],
+        vec!["request", "discussion", "list", "--open", "--json"],
         vec!["request", "discussion", "resolve", "dsc_one", "--json"],
         vec![
             "request",

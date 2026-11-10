@@ -128,9 +128,10 @@ fn a_stacked_request_targets_its_parent_branch_until_the_parent_or_its_pull_requ
     for ended in [
         GitHubPullRequestState::ClosedOnGitHub,
         GitHubPullRequestState::Closed,
+        GitHubPullRequestState::Merged(merge(HEAD)),
     ] {
         assert_eq!(
-            base(&parent, Some(&opened_carrier(ended))),
+            base(&parent, Some(&opened_carrier(ended.clone()))),
             Some(open_intent("main")),
             "{ended:?}"
         );
@@ -417,13 +418,25 @@ fn a_review_request_comment_carries_the_head_it_was_posted_for() {
     assert!(!body.contains(&review_request_marker("other")));
 }
 
-fn observation(number: u64, open: bool, closed_by_scope: bool) -> GitHubPullRequestObservation {
+fn observation(number: u64, state: GitHubPullRequestObservedState) -> GitHubPullRequestObservation {
     GitHubPullRequestObservation {
         number,
         url: format!("https://github.com/octo/repo/pull/{number}"),
         base: "main".into(),
-        open,
-        closed_by_scope,
+        state,
+    }
+}
+
+const OPEN: GitHubPullRequestObservedState = GitHubPullRequestObservedState::Open;
+const CLOSED_BY_SOMEONE: GitHubPullRequestObservedState =
+    GitHubPullRequestObservedState::Closed { by_scope: false };
+const CLOSED_BY_SCOPE: GitHubPullRequestObservedState =
+    GitHubPullRequestObservedState::Closed { by_scope: true };
+
+fn merge(head_oid: &str) -> GitHubPullRequestMerge {
+    GitHubPullRequestMerge {
+        merge_commit_oid: "squash".into(),
+        head_oid: head_oid.into(),
     }
 }
 
@@ -433,7 +446,7 @@ fn a_carrier_someone_closes_on_github_stays_closed_until_reopened_there() {
     let mut carrier = carrier(open_intent("main"));
     carrier.record_opened(5, "url".into(), "main".into(), None);
 
-    carrier.observe(observation(5, false, false));
+    carrier.observe(observation(5, CLOSED_BY_SOMEONE));
     assert_eq!(
         carrier.pull_request.as_ref().unwrap().state,
         GitHubPullRequestState::ClosedOnGitHub
@@ -444,13 +457,13 @@ fn a_carrier_someone_closes_on_github_stays_closed_until_reopened_there() {
         GitHubPullRequestStatusState::ClosedOnGitHub
     );
 
-    carrier.observe(observation(5, true, false));
+    carrier.observe(observation(5, OPEN));
     assert_eq!(
         carrier.status().unwrap().state,
         GitHubPullRequestStatusState::Open
     );
     let before = carrier.clone();
-    carrier.observe(observation(9, false, false));
+    carrier.observe(observation(9, CLOSED_BY_SOMEONE));
     assert_eq!(carrier, before);
 }
 
@@ -463,7 +476,7 @@ fn a_carrier_scope_closes_is_replaced_by_the_next_open_intent() {
         "scope/requests/request_parent".into(),
         None,
     );
-    carrier.observe(observation(5, false, true));
+    carrier.observe(observation(5, CLOSED_BY_SCOPE));
     assert_eq!(
         carrier.next_step(&settings(true, None), None),
         Some(GitHubPullRequestStep::OpenOrAdopt {
@@ -535,8 +548,7 @@ fn a_close_while_scope_is_moving_the_base_is_scopes_and_the_carrier_is_recreated
         number: 5,
         url: "url".into(),
         base: "scope/requests/request_parent".into(),
-        open: false,
-        closed_by_scope: false,
+        state: CLOSED_BY_SOMEONE,
     });
     assert_eq!(
         child.pull_request.as_ref().unwrap().state,
@@ -548,4 +560,103 @@ fn a_close_while_scope_is_moving_the_base_is_scopes_and_the_carrier_is_recreated
             base: "main".into()
         })
     );
+}
+
+#[test]
+fn a_pull_request_merged_on_github_keeps_its_merge_and_is_never_replaced() {
+    let mut moving = carrier(open_intent("main"));
+    moving.record_opened(
+        5,
+        "url".into(),
+        "scope/requests/request_parent".into(),
+        None,
+    );
+    moving.observe(GitHubPullRequestObservation {
+        number: 5,
+        url: "url".into(),
+        base: "scope/requests/request_parent".into(),
+        state: GitHubPullRequestObservedState::Merged(merge(HEAD)),
+    });
+    assert_eq!(
+        moving.pull_request.as_ref().unwrap().state,
+        GitHubPullRequestState::Merged(merge(HEAD))
+    );
+    assert_eq!(
+        moving.status().unwrap().state,
+        GitHubPullRequestStatusState::Merged
+    );
+    assert_eq!(
+        moving.next_step(&settings(true, Some("review")), None),
+        None
+    );
+    assert!(!moving.is_open_on_github());
+}
+
+#[test]
+fn a_request_lands_only_when_main_holds_the_merge_commit_of_a_pull_request_merged_at_its_head() {
+    use crate::requests::{
+        GitHubMergeLanding, MergeRequestInput, MergeRequestLanding, RequestMainPushCompletion,
+        RequestState, merge_request, request_main_push_completion,
+    };
+    let mut request = full_view_request();
+    request.head_oid = HEAD.into();
+    let merged = opened_carrier(GitHubPullRequestState::Merged(merge(HEAD)));
+    let connected = connection();
+    let landing = |pull_request, commit_in_main, has_stacked_children| GitHubMergeLanding {
+        connection: Some(&connected),
+        pull_request,
+        commit_in_main,
+        has_stacked_children,
+    };
+    let lands = landing(Some(&merged), "squash", false);
+    assert!(lands.lands(&request));
+
+    let merged_at_an_older_head =
+        opened_carrier(GitHubPullRequestState::Merged(merge("older-head")));
+    let closed = opened_carrier(GitHubPullRequestState::ClosedOnGitHub);
+    let mut merged_elsewhere = merged.clone();
+    merged_elsewhere.destination.github_repository_id += 1;
+    for stays_open in [
+        landing(Some(&merged_elsewhere), "squash", false),
+        GitHubMergeLanding {
+            connection: None,
+            ..lands
+        },
+        landing(Some(&merged_at_an_older_head), "squash", false),
+        landing(Some(&merged), "another-commit", false),
+        landing(Some(&closed), "squash", false),
+        landing(None, "squash", false),
+        landing(Some(&merged), "squash", true),
+    ] {
+        assert!(!stays_open.lands(&request), "{stays_open:?}");
+        assert_eq!(
+            request_main_push_completion(&request, MergeRequestLanding::GitHubMerge(stays_open))
+                .unwrap_err()
+                .message,
+            "main must contain the merge commit of the request's pull request"
+        );
+    }
+
+    assert_eq!(
+        request_main_push_completion(&request, MergeRequestLanding::GitHubMerge(lands)).unwrap(),
+        RequestMainPushCompletion::Complete
+    );
+    let landed = merge_request(
+        &request,
+        MergeRequestInput {
+            request_id: request.id.clone(),
+            actor_user_id: "maintainer".into(),
+            actor_is_maintainer: true,
+            landing: MergeRequestLanding::GitHubMerge(lands),
+            merged_head_oid: request.head_oid.clone(),
+            merged_main_oid: "main-with-squash".into(),
+            merged_event_id: "merged".into(),
+            now_unix: request.updated_at_unix + 1,
+        },
+    )
+    .unwrap()
+    .request;
+    assert_eq!(landed.state(), RequestState::Merged);
+    assert_eq!(landed.merged_head_oid.as_deref(), Some(HEAD));
+    assert_eq!(landed.merged_main_oid.as_deref(), Some("main-with-squash"));
 }

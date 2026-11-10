@@ -35,7 +35,7 @@ mod discussion;
 mod publication;
 mod restack;
 mod stack;
-use discussion::{DiscussionMutation, discussion_mutation};
+use discussion::{DiscussionMutation, discussion_mutation, list_request_discussions_command};
 mod inspect;
 mod line_counts;
 mod local;
@@ -228,6 +228,9 @@ fn run_request_discussion_command(
     args: RequestDiscussionArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
     match args.command {
+        RequestDiscussionCommand::List(args) => {
+            list_request_discussions_command(git_repo, api, args)
+        }
         RequestDiscussionCommand::Start(args) => start_request_discussion(git_repo, api, args),
         RequestDiscussionCommand::Reply(args) => reply_to_request_discussion(git_repo, api, args),
         RequestDiscussionCommand::Resolve(args) => {

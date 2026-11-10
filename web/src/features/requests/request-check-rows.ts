@@ -125,6 +125,8 @@ export function requestPullRequestView(
       return { text: `${named ?? 'Pull request on GitHub'} · closed`, url, note: null }
     case 'closed_on_github':
       return { text: `${named ?? 'Pull request on GitHub'} · closed on GitHub`, url, note: null }
+    case 'merged':
+      return { text: `${named ?? 'Pull request on GitHub'} · merged`, url, note: null }
     case 'failed':
       return {
         text: named ? `${named} is out of step` : 'Scope couldn’t open a pull request on GitHub',

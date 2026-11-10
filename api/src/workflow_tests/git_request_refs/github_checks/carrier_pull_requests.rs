@@ -454,3 +454,148 @@ async fn turning_the_setting_off_fences_a_run_already_in_flight() {
         serde_json::Value::Null
     );
 }
+
+fn squash_onto_main(request: &OwnerRequest) -> String {
+    let source = &request.source;
+    let work = git_stdout_text(source, &["rev-parse", "HEAD^{tree}"], "read request work")
+        .unwrap()
+        .trim()
+        .to_string();
+    let main = git_stdout_text(
+        source,
+        &["rev-list", "--max-parents=0", "HEAD"],
+        "read main",
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    let squash = git_stdout_text(
+        source,
+        &[
+            "-c",
+            "user.name=Scope Test",
+            "-c",
+            "user.email=scope-test@example.test",
+            "commit-tree",
+            &work,
+            "-p",
+            &main,
+            "-m",
+            "Squashed request",
+        ],
+        "squash the request",
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    run_git(
+        Some(source),
+        &["checkout", "--detach", &squash],
+        "check out the squash",
+    )
+    .unwrap();
+    squash
+}
+
+async fn push_main(request: &OwnerRequest) {
+    configure_push_intent_header(
+        &request.state,
+        &request.source,
+        &request.remote,
+        &test_owner_id(),
+    )
+    .await;
+    run_git(
+        Some(&request.source),
+        &[
+            "push",
+            &request.remote,
+            &format!("HEAD:refs/heads/{DEFAULT_GIT_BRANCH}"),
+        ],
+        "mirror GitHub main",
+    )
+    .unwrap();
+}
+
+async fn observe_merge(request: &OwnerRequest, pull_request_head: &str, merge_commit: &str) {
+    request
+        .fake
+        .pulls
+        .merge_as(1, "octocat", pull_request_head, merge_commit);
+    let delivered = webhook(
+        &request.state,
+        "pull_request",
+        pull_request_delivery(request, "closed", "closed"),
+        WEBHOOK_SECRET,
+    )
+    .await;
+    assert_eq!(delivered.status(), StatusCode::NO_CONTENT);
+    pull_request_pass(&request.state).await;
+    assert_eq!(
+        request.checks().await["github_pull_request"]["state"],
+        "merged"
+    );
+}
+
+async fn assert_landed(request: &OwnerRequest, head: &str, main: &str) {
+    let landed = stored_request(&request.state, &request.request_id).await;
+    assert_eq!(landed.state(), RequestState::Merged);
+    assert_eq!(landed.merged_head_oid.as_deref(), Some(head));
+    assert_eq!(landed.merged_main_oid.as_deref(), Some(main));
+    assert_eq!(landed.merged_by_user_id, Some(test_owner_id()));
+    assert!(request.fake.branch_head(&request.branch()).is_some());
+    push_pass(&request.state, unix_now()).await;
+    assert_eq!(request.fake.branch_head(&request.branch()), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_main_push_lands_a_request_squash_merged_on_github_at_its_head() {
+    for merged_at_request_head in [true, false] {
+        let request = opted_in_request("carrier-squash-then-main").await;
+        let state = &request.state;
+        push_pass(state, unix_now()).await;
+        pull_request_pass(state).await;
+        let pull_request_head = request.head();
+        if !merged_at_request_head {
+            revise(&request, "work GitHub never merged\n").await;
+        }
+        let head = request.head();
+        let squash = squash_onto_main(&request);
+
+        observe_merge(&request, &pull_request_head, &squash).await;
+        assert_eq!(
+            stored_request(state, &request.request_id).await.state(),
+            RequestState::Open
+        );
+        push_main(&request).await;
+
+        if merged_at_request_head {
+            assert_landed(&request, &head, &squash).await;
+        } else {
+            assert_eq!(pull_request_pass(state).await, 1);
+            assert_eq!(
+                stored_request(state, &request.request_id).await.state(),
+                RequestState::Open
+            );
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_merge_seen_after_main_already_holds_it_lands_the_request_as_the_main_pusher() {
+    let request = opted_in_request("carrier-main-then-squash").await;
+    let state = &request.state;
+    push_pass(state, unix_now()).await;
+    pull_request_pass(state).await;
+    let head = request.head();
+    let squash = squash_onto_main(&request);
+
+    push_main(&request).await;
+    assert_eq!(
+        stored_request(state, &request.request_id).await.state(),
+        RequestState::Open
+    );
+    observe_merge(&request, &head, &squash).await;
+
+    assert_landed(&request, &head, &squash).await;
+}

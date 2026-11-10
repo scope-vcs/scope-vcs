@@ -207,6 +207,7 @@ async fn landed_request_is_complete_when_main_push_persistence_returns() {
                 stack_children: Vec::new(),
                 request_id: REQUEST_ID.into(),
                 head_oid: main_oid.clone(),
+                main_contains: scope_postgres::db::MainContains::RequestHead,
             }],
         )
         .await

@@ -1,7 +1,7 @@
 use super::{GitHubApp, client::unavailable};
 use crate::{error::ApiError, persistence::unix_now};
 use reqwest::{Method, StatusCode, header::HeaderMap};
-use scope_domain::requests::GitHubPullRequestHead;
+use scope_domain::requests::{GitHubPullRequestHead, GitHubPullRequestMerge};
 use serde::{Deserialize, de::DeserializeOwned};
 
 const PAGE_SIZE: usize = 100;
@@ -24,6 +24,7 @@ pub(crate) struct GitHubPullRequestSnapshot {
     pub(crate) url: String,
     pub(crate) base: String,
     pub(crate) open: bool,
+    pub(crate) merge: Option<GitHubPullRequestMerge>,
     pub(crate) closed_by: Option<String>,
 }
 
@@ -57,11 +58,11 @@ struct BranchBody {
 
 #[derive(Deserialize)]
 struct PullRequestHeadBody {
-    head: HeadBody,
+    head: HeadBranchBody,
 }
 
 #[derive(Deserialize)]
-struct HeadBody {
+struct HeadBranchBody {
     #[serde(rename = "ref")]
     name: String,
     repo: Option<RepositoryIdBody>,
@@ -92,6 +93,15 @@ struct PullRequestStateBody {
     html_url: String,
     state: String,
     base: BranchBody,
+    head: HeadBody,
+    #[serde(default)]
+    merged: bool,
+    merge_commit_sha: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct HeadBody {
+    sha: String,
 }
 
 #[derive(Deserialize)]
@@ -266,7 +276,20 @@ impl GitHubApp {
             )
             .await?;
         let open = pull_request.state == "open";
-        let closed_by = if open {
+        let merge = match (pull_request.merged, pull_request.merge_commit_sha) {
+            (false, _) => None,
+            (true, Some(merge_commit_oid)) => Some(GitHubPullRequestMerge {
+                merge_commit_oid,
+                head_oid: pull_request.head.sha,
+            }),
+            (true, None) => {
+                return Err(unavailable(format!(
+                    "GitHub reported pull request {number} merged without a merge commit"
+                ))
+                .into());
+            }
+        };
+        let closed_by = if open || merge.is_some() {
             None
         } else {
             self.pull_request_call::<IssueBody>(
@@ -284,6 +307,7 @@ impl GitHubApp {
             url: pull_request.html_url,
             base: pull_request.base.name,
             open,
+            merge,
             closed_by,
         })
     }

@@ -1,6 +1,6 @@
 use super::{
     RequestStore,
-    entities::{decode_enum, encode_enum},
+    entities::decode_enum,
     github_connections::repository_github_connection,
     github_pushes::acquire_github_push_lock,
     github_read_queue::{GitHubJobOutcome, prefixed_columns},
@@ -13,8 +13,9 @@ use crate::error::PostgresError;
 use scope_domain::{
     github_connection::GitHubConnection,
     requests::{
-        GitHubPullRequest, GitHubPullRequestIntent, GitHubPushDestination, GitHubReviewRequest,
-        OpenedGitHubPullRequest, Request, carrier_pull_request_intent, closes_carrier_pull_request,
+        GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestMerge, GitHubPullRequestState,
+        GitHubPushDestination, GitHubReviewRequest, OpenedGitHubPullRequest, Request,
+        carrier_pull_request_intent, closes_carrier_pull_request,
         retains_request_branch_for_carrier,
     },
 };
@@ -23,7 +24,7 @@ use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, Tran
 const SELECT_PULL_REQUEST: &str = "request_id, repo_id, installation_id, github_repository_id, \
     github_full_name, intent, intent_base, intent_head_oid, intent_sequence, number, url, base, \
     state, commented_head_oid, commented_at_unix, job_state, attempts, last_error, \
-    written_text_sha256";
+    written_text_sha256, merge_commit_oid, merged_head_oid";
 
 const REQUEUE: &str = "intent_sequence = pull_request.intent_sequence + 1,
     job_state = CASE WHEN pull_request.job_state = 'running' THEN 'running' ELSE 'queued' END,
@@ -52,6 +53,8 @@ struct PullRequestRow {
     attempts: i32,
     last_error: Option<String>,
     written_text_sha256: Option<String>,
+    merge_commit_oid: Option<String>,
+    merged_head_oid: Option<String>,
 }
 
 impl RequestStore {
@@ -118,6 +121,13 @@ impl RequestStore {
                 retry_at_unix: None,
             } => ("failed", None, Some(error)),
         };
+        let merge = progress
+            .pull_request
+            .as_ref()
+            .and_then(|opened| match &opened.state {
+                GitHubPullRequestState::Merged(merge) => Some(merge),
+                _ => None,
+            });
         let mut values = recorded_values(progress)?;
         values.extend([
             claim_token.into(),
@@ -141,6 +151,8 @@ impl RequestStore {
                 .as_ref()
                 .and_then(|opened| opened.written_text.clone())
                 .into(),
+            merge.map(|merge| merge.merge_commit_oid.clone()).into(),
+            merge.map(|merge| merge.head_oid.clone()).into(),
         ]);
         let tx = self.db.begin().await?;
         acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
@@ -153,7 +165,8 @@ impl RequestStore {
                 DatabaseBackend::Postgres,
                 format!(
                     "UPDATE scope_github_pull_requests pull_request SET {RECORDED},
-                        written_text_sha256 = $16,
+                        written_text_sha256 = $16, merge_commit_oid = $17,
+                        merged_head_oid = $18,
                         job_state = CASE WHEN intent_sequence <> $9 THEN 'queued' ELSE $10 END,
                         attempts = CASE WHEN intent_sequence <> $9 THEN 0 ELSE attempts END,
                         next_attempt_at_unix = CASE WHEN intent_sequence <> $9 THEN $13
@@ -203,6 +216,26 @@ impl RequestStore {
             .await?
             .ok_or_else(|| PostgresError::internal_message("claim check returned no row"))?;
         Ok(row.try_get::<bool>("", "holds")?)
+    }
+
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "merged_github_pull_requests"))]
+    pub async fn merged_github_pull_requests(
+        &self,
+        repo_id: &str,
+    ) -> Result<Vec<GitHubPullRequest>, PostgresError> {
+        PullRequestRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                "SELECT {SELECT_PULL_REQUEST} FROM scope_github_pull_requests
+                  WHERE repo_id = $1 AND state = 'merged'"
+            ),
+            [repo_id.into()],
+        ))
+        .all(self.db.as_ref())
+        .await?
+        .into_iter()
+        .map(PullRequestRow::into_domain)
+        .collect()
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "requeue_github_pull_request"))]
@@ -264,10 +297,7 @@ fn recorded_values(carrier: &GitHubPullRequest) -> Result<Vec<sea_orm::Value>, P
             .into(),
         opened.map(|opened| opened.url.clone()).into(),
         opened.map(|opened| opened.base.clone()).into(),
-        opened
-            .map(|opened| encode_enum(opened.state))
-            .transpose()?
-            .into(),
+        opened.map(|opened| state_name(&opened.state)).into(),
         carrier
             .review_request
             .as_ref()
@@ -280,6 +310,15 @@ fn recorded_values(carrier: &GitHubPullRequest) -> Result<Vec<sea_orm::Value>, P
             .transpose()?
             .into(),
     ])
+}
+
+fn state_name(state: &GitHubPullRequestState) -> &'static str {
+    match state {
+        GitHubPullRequestState::Open => "open",
+        GitHubPullRequestState::Closed => "closed",
+        GitHubPullRequestState::ClosedOnGitHub => "closed_on_github",
+        GitHubPullRequestState::Merged(_) => "merged",
+    }
 }
 
 pub(super) async fn github_pull_request<C: ConnectionTrait>(
@@ -347,6 +386,10 @@ pub(super) async fn queue_carrier_for_pushed_head<C: ConnectionTrait>(
                 url = CASE WHEN {SAME_REPOSITORY} THEN pull_request.url END,
                 base = CASE WHEN {SAME_REPOSITORY} THEN pull_request.base END,
                 state = CASE WHEN {SAME_REPOSITORY} THEN pull_request.state END,
+                merge_commit_oid = CASE WHEN {SAME_REPOSITORY}
+                    THEN pull_request.merge_commit_oid END,
+                merged_head_oid = CASE WHEN {SAME_REPOSITORY}
+                    THEN pull_request.merged_head_oid END,
                 commented_head_oid = CASE WHEN {SAME_REPOSITORY}
                     THEN pull_request.commented_head_oid END,
                 commented_at_unix = CASE WHEN {SAME_REPOSITORY}
@@ -468,6 +511,34 @@ pub(super) async fn requeue_carrier<C: ConnectionTrait>(
     Ok(())
 }
 
+pub(super) async fn requeue_merged_carriers_of_open_requests<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "UPDATE scope_github_pull_requests pull_request SET
+                next_attempt_at_unix = CASE WHEN pull_request.job_state = 'running'
+                    THEN pull_request.next_attempt_at_unix ELSE $2 END,
+                updated_at_unix = greatest($2, pull_request.updated_at_unix),
+                {REQUEUE}
+               FROM scope_requests request
+              WHERE pull_request.repo_id = $1 AND pull_request.state = 'merged'
+                AND request.id = pull_request.request_id
+                AND request.submitted_at_unix IS NOT NULL
+                AND request.merged_at_unix IS NULL AND request.closed_at_unix IS NULL"
+        ),
+        [
+            repo_id.into(),
+            u64_to_i64(now_unix, "GitHub pull request time")?.into(),
+        ],
+    ))
+    .await?;
+    Ok(())
+}
+
 pub(super) async fn fence_running_carriers<C: ConnectionTrait>(
     conn: &C,
     repo_id: &str,
@@ -553,7 +624,22 @@ impl PullRequestRow {
                 number,
                 url,
                 base,
-                state: decode_enum(state)?,
+                state: match (state.as_str(), self.merge_commit_oid, self.merged_head_oid) {
+                    ("open", None, None) => GitHubPullRequestState::Open,
+                    ("closed", None, None) => GitHubPullRequestState::Closed,
+                    ("closed_on_github", None, None) => GitHubPullRequestState::ClosedOnGitHub,
+                    ("merged", Some(merge_commit_oid), Some(head_oid)) => {
+                        GitHubPullRequestState::Merged(GitHubPullRequestMerge {
+                            merge_commit_oid,
+                            head_oid,
+                        })
+                    }
+                    _ => {
+                        return Err(PostgresError::internal_message(
+                            "GitHub pull request state is inconsistent",
+                        ));
+                    }
+                },
                 written_text: self.written_text_sha256,
             }),
             (None, None, None, None) => None,
