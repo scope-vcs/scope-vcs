@@ -46,6 +46,37 @@ pub enum MergeGateAuthority {
     AuthorizedMainPush,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MainAdvanceKind {
+    Push,
+    NativeMerge,
+}
+
+impl MainAdvanceKind {
+    pub fn landing_gate(
+        self,
+        repository_lifecycle: RepoLifecycleState,
+        request: &Request,
+        viewer: &RequestViewer<'_>,
+        views: &Views,
+    ) -> MergeGateDecision {
+        match self {
+            Self::Push => evaluate_merge_gate(MergeGateInput::AuthorizedMainPush {
+                repository_lifecycle,
+                access: &viewer.access,
+                views,
+            }),
+            Self::NativeMerge => MergeGateDecision::RequestMerge(request_merge_authorization(
+                repository_lifecycle,
+                request.author_user_id.as_deref(),
+                &request.view,
+                viewer,
+                views,
+            )),
+        }
+    }
+}
+
 pub enum MergeGateInput<'a> {
     RequestMerge {
         repository_lifecycle: RepoLifecycleState,
@@ -168,19 +199,52 @@ pub(super) fn evaluate_request_merge(
     {
         return readiness;
     }
+    let authorization = request_merge_authorization(
+        repository_lifecycle,
+        subject.author_user_id,
+        subject.view,
+        viewer,
+        views,
+    );
+    if authorization.status != RequestMergeabilityStatus::Ready {
+        return authorization;
+    }
+    readiness
+}
+
+fn request_merge_authorization(
+    repository_lifecycle: RepoLifecycleState,
+    author_user_id: Option<&str>,
+    request_view: &ViewId,
+    viewer: &RequestViewer<'_>,
+    views: &Views,
+) -> RequestMergeability {
+    if repository_lifecycle != RepoLifecycleState::Ready {
+        return repository_not_ready();
+    }
     if !viewer.access.is_maintainer() {
         return RequestMergeability {
             status: RequestMergeabilityStatus::NotMaintainer,
             reason: Some("repo maintainer required"),
         };
     }
-    if !request_merger(viewer, subject.author_user_id, subject.view, views) {
+    if !request_merger(viewer, author_user_id, request_view, views) {
         return RequestMergeability {
             status: RequestMergeabilityStatus::NotMaintainer,
             reason: Some("merging needs a maintainer who reads the full view"),
         };
     }
-    readiness
+    RequestMergeability {
+        status: RequestMergeabilityStatus::Ready,
+        reason: None,
+    }
+}
+
+fn repository_not_ready() -> RequestMergeability {
+    RequestMergeability {
+        status: RequestMergeabilityStatus::RepositoryNotReady,
+        reason: Some("repo must be ready before merge"),
+    }
 }
 
 pub(super) fn evaluate_request_readiness(
@@ -190,10 +254,7 @@ pub(super) fn evaluate_request_readiness(
     reviews: RequestReviewsOutcome,
 ) -> RequestMergeability {
     if repository_lifecycle != RepoLifecycleState::Ready {
-        return RequestMergeability {
-            status: RequestMergeabilityStatus::RepositoryNotReady,
-            reason: Some("repo must be ready before merge"),
-        };
+        return repository_not_ready();
     }
     let (status, reason) = match subject.state {
         RequestState::Closed => (RequestMergeabilityStatus::Closed, Some("request is closed")),
@@ -322,7 +383,11 @@ pub(super) fn validate_request_merge_execution(
         if !matches!(request.base, super::RequestBase::Main { .. }) {
             return Err(DomainError::conflict("parent request must land first"));
         }
-        if request.stack_status == super::RequestStackStatus::IntegrationConflict {
+        if matches!(
+            request.stack_status,
+            super::RequestStackStatus::IntegrationConflict
+                | super::RequestStackStatus::NeedsMainUpdate
+        ) {
             return Ok(());
         }
     }

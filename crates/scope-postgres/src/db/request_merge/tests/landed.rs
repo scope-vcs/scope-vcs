@@ -288,35 +288,44 @@ async fn main_push_skips_candidates_that_moved_closed_or_disappeared() {
 }
 
 #[tokio::test]
-async fn landed_completion_skips_a_non_maintainer_without_failing_the_transaction() {
+async fn main_push_landing_requires_push_authority_even_for_a_member() {
     use sea_orm::TransactionTrait;
     let store = merge_store().await;
-    let tx = store.db.begin().await.unwrap();
-    crate::db::acquire_aggregate_lock(&tx, "repository", "owner/repo")
+    member_without_push_access(&store).await;
+    for actor in ["user_public", "user_guest"] {
+        let tx = store.db.begin().await.unwrap();
+        crate::db::acquire_aggregate_lock(&tx, "repository", "owner/repo")
+            .await
+            .unwrap();
+        let completed = super::super::complete_main_push(
+            &tx,
+            "owner/repo",
+            MERGED_HEAD,
+            LandedRequestCompletion {
+                actor_user_id: actor.into(),
+                candidates: vec![candidate("req_1")],
+            },
+            8,
+        )
         .await
         .unwrap();
-    let completed = super::super::complete_landed_requests(
-        &tx,
-        "owner/repo",
-        MERGED_HEAD,
-        LandedRequestCompletion {
-            actor_user_id: "user_public".into(),
-            candidates: vec![candidate("req_1")],
-        },
-        8,
-    )
-    .await
-    .unwrap();
-    tx.commit().await.unwrap();
-    assert_eq!(completed, 0);
-    assert_eq!(
-        store
-            .requests()
-            .request_for_tests("req_1")
+        let advance = super::super::latest_main_advance(&tx, "owner/repo")
             .await
             .unwrap()
-            .unwrap()
-            .state(),
-        RequestState::Open
-    );
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(completed, 0);
+        assert_eq!(advance.advanced_by_user_id.as_deref(), Some(actor));
+        assert_eq!(advance.kind, scope_domain::requests::MainAdvanceKind::Push);
+        assert_eq!(
+            store
+                .requests()
+                .request_for_tests("req_1")
+                .await
+                .unwrap()
+                .unwrap()
+                .state(),
+            RequestState::Open
+        );
+    }
 }

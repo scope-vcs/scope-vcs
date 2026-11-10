@@ -2,7 +2,9 @@ use crate::{
     error::ApiError,
     git::{
         command::{git_is_ancestor, run_git, run_git_output},
-        request_refs::with_request_revision_store_repo,
+        request_refs::{
+            create_request_receive_pack_staging_repo, with_request_revision_store_repo,
+        },
     },
     state::AppState,
 };
@@ -12,6 +14,50 @@ use scope_domain::{
 };
 use scope_postgres::db::RequestStackChildFacts;
 use std::path::Path;
+
+pub(crate) async fn prepare_github_merge_stack_landing(
+    state: &AppState,
+    incarnation: &RepositoryIncarnation,
+    parent: &Request,
+) -> Result<Vec<RequestStackChildFacts>, ApiError> {
+    let requests = state.metadata.requests();
+    if requests
+        .request_stack_children(&parent.id)
+        .await?
+        .is_empty()
+    {
+        return Ok(Vec::new());
+    }
+    let revision = requests
+        .latest_request_revision(&parent.id)
+        .await?
+        .ok_or_else(|| ApiError::conflict("merged request has no saved revision"))?;
+    let (staging_state, staging_incarnation) = (state.clone(), incarnation.clone());
+    let staging = with_request_revision_store_repo(
+        state,
+        incarnation,
+        parent,
+        &revision,
+        move |raw_repo, _| {
+            create_request_receive_pack_staging_repo(&staging_state, &staging_incarnation, raw_repo)
+        },
+    )
+    .await?;
+    let facts = async {
+        let main = super::request_base_publication::restore_request_main(
+            state,
+            incarnation,
+            &parent.view,
+            &staging,
+        )
+        .await?;
+        let view_main = (!parent.view.is_private()).then_some(main.as_str());
+        prepare_stack_landing(state, incarnation, parent, &staging, &main, view_main).await
+    }
+    .await;
+    let _ = std::fs::remove_dir_all(staging);
+    facts
+}
 
 pub(crate) async fn prepare_stack_landing(
     state: &AppState,
@@ -86,6 +132,12 @@ pub(crate) async fn prepare_stack_landing(
                     &parent_head,
                     "checking landed parent contains child pin",
                 )?;
+                let main_contains_pin = git_is_ancestor(
+                    &staging,
+                    &review_base,
+                    &main,
+                    "checking main contains child pin",
+                )?;
                 let output = run_git_output(
                     Some(&staging),
                     &["merge-base", &main, &child_head],
@@ -120,6 +172,7 @@ pub(crate) async fn prepare_stack_landing(
                     head_oid: child_head,
                     base_version,
                     parent_contains_pin,
+                    main_contains_pin,
                     contained_main_oid,
                     accepted_view_main_oid,
                     contained_main_descends_from_ancestor,

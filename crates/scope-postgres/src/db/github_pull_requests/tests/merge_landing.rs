@@ -1,19 +1,25 @@
 use super::*;
-use crate::db::GitHubPullRequestFinish;
+use crate::db::{GitHubMergeCheckedAgainstMain, GitHubPullRequestFinish, RequestStackChildFacts};
 use scope_domain::requests::{GitHubMergeMainCheck, RequestState};
 
-const MAIN: char = 'c';
-const SQUASH: char = 'd';
+pub(crate) const MAIN: char = 'c';
+pub(crate) const SQUASH: char = 'd';
 
-fn squash_seen_in(main: char) -> GitHubMergeMainCheck {
-    GitHubMergeMainCheck {
-        main_oid: oid(main),
-        merge_commit_oid: oid(SQUASH),
-        main_contains_merge: true,
+pub(crate) fn squash_seen_in(
+    main: char,
+    stack_children: Vec<RequestStackChildFacts>,
+) -> GitHubMergeCheckedAgainstMain {
+    GitHubMergeCheckedAgainstMain {
+        main: GitHubMergeMainCheck {
+            main_oid: oid(main),
+            merge_commit_oid: oid(SQUASH),
+            main_contains_merge: true,
+        },
+        stack_children,
     }
 }
 
-async fn finish_merged(
+pub(crate) async fn finish_merged(
     store: &MetadataStore,
     merged: &GitHubPullRequest,
     claim_token: &str,
@@ -25,20 +31,38 @@ async fn finish_merged(
             merged,
             claim_token,
             GitHubJobOutcome::Succeeded(()),
-            Some(&squash_seen_in(seen_in)),
+            Some(squash_seen_in(seen_in, Vec::new())),
             12,
         )
         .await
 }
 
-async fn main_pushed_by(store: &MetadataStore, user_id_sql: &str) {
+async fn main_advanced_by(store: &MetadataStore, user_id_sql: &str) {
     store
         .db
         .execute_unprepared(&format!(
-            "UPDATE scope_git_heads SET main_pushed_by_user_id = {user_id_sql}"
+            "UPDATE scope_git_heads SET main_advanced_by_user_id = {user_id_sql}"
         ))
         .await
         .unwrap();
+}
+
+pub(crate) fn squash_merged_on_github(
+    mut claimed: GitHubPullRequest,
+    head_oid: &str,
+) -> GitHubPullRequest {
+    let url = "https://github.com/octo/checks-42/pull/5".to_string();
+    claimed.record_opened(5, url.clone(), "main".into(), None);
+    claimed.observe(GitHubPullRequestObservation {
+        number: 5,
+        url,
+        base: "main".into(),
+        state: GitHubPullRequestObservedState::Merged(GitHubPullRequestMerge {
+            merge_commit_oid: oid(SQUASH),
+            head_oid: head_oid.to_string(),
+        }),
+    });
+    claimed
 }
 
 async fn request_state(store: &MetadataStore) -> RequestState {
@@ -65,7 +89,7 @@ async fn a_merge_is_recorded_only_with_its_landing_asks_again_when_main_moved_an
         .db
         .execute_unprepared(&format!(
             "INSERT INTO scope_git_heads (repo_id, head_oid, push_sequence, change_version,
-                frontier_digest, main_pushed_by_user_id)
+                frontier_digest, main_advanced_by_user_id)
              VALUES ('{REPO}', '{}', 1, 1, 'frontier', '{OWNER}');
              CREATE FUNCTION reject_landing() RETURNS trigger LANGUAGE plpgsql AS $$
              BEGIN
@@ -81,18 +105,10 @@ async fn a_merge_is_recorded_only_with_its_landing_asks_again_when_main_moved_an
         .await
         .unwrap();
     push_succeeds(&store, "req_1", 'a', 10).await;
-    let mut merged = claim(&store, "claim_1", 10).await.remove(0);
-    let url = "https://github.com/octo/checks-42/pull/5".to_string();
-    merged.record_opened(5, url.clone(), "main".into(), None);
-    merged.observe(GitHubPullRequestObservation {
-        number: 5,
-        url,
-        base: "main".into(),
-        state: GitHubPullRequestObservedState::Merged(GitHubPullRequestMerge {
-            merge_commit_oid: oid(SQUASH),
-            head_oid: request.head_oid.clone(),
-        }),
-    });
+    let merged = squash_merged_on_github(
+        claim(&store, "claim_1", 10).await.remove(0),
+        &request.head_oid,
+    );
 
     let error = finish_merged(&store, &merged, "claim_1", MAIN)
         .await
@@ -118,7 +134,7 @@ async fn a_merge_is_recorded_only_with_its_landing_asks_again_when_main_moved_an
     assert_eq!(asking_again.pull_request, merged.pull_request);
     assert_eq!(asking_again.attempts, 1);
 
-    main_pushed_by(&store, "NULL").await;
+    main_advanced_by(&store, "NULL").await;
     assert_eq!(
         finish_merged(&store, &asking_again, "claim_2", MAIN)
             .await
@@ -128,7 +144,7 @@ async fn a_merge_is_recorded_only_with_its_landing_asks_again_when_main_moved_an
     assert_eq!(request_state(&store).await, RequestState::Open);
     assert!(claim(&store, "claim_3", 12).await.is_empty());
 
-    main_pushed_by(&store, &format!("'{OWNER}'")).await;
+    main_advanced_by(&store, &format!("'{OWNER}'")).await;
     store
         .requests()
         .requeue_github_pull_request(42, "req_1", 12)

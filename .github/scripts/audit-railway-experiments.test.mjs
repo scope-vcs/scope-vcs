@@ -7,7 +7,7 @@ const manifest = JSON.parse(readFileSync(new URL("../deployment-services.json", 
 const id = "00000000-0000-0000-0000-000000000001";
 const now = Date.parse("2026-09-09T18:00:00Z");
 function fixture() {
-  return { manifest, now, registry: {}, project: { id: manifest.railway.projectId, environments: {
+  return { manifest, now, repository: "scope-vcs/scope-vcs", registry: {}, project: { id: manifest.railway.projectId, environments: {
     pageInfo: {hasNextPage: false},
     edges: ["production", "staging"].map(name => ({node: {id: manifest.environments[name].environmentId, name, createdAt: "2026-08-01T00:00:00Z"}})),
   } } };
@@ -71,8 +71,10 @@ test("incomplete or unconfirmed inventory fails instead of hiding experiments", 
   assert.throws(() => auditRailwayExperiments(f), /inventory is incomplete/);
 });
 
-test("only ephemeral staging previews for open pull requests bypass experiment policy", () => {
-  const preview = (overrides = {}, pullRequests = [{number: 42, state: "open"}]) => {
+test("only ephemeral staging previews for open labeled pull requests bypass experiment policy", () => {
+  const open = (overrides = {}) => ({number: 42, state: "open", labels: [{name: "preview"}],
+    base: {ref: "main"}, head: {repo: {full_name: "scope-vcs/scope-vcs"}}, ...overrides});
+  const preview = (overrides = {}, pullRequests = [open()]) => {
     const f = fixture();
     f.pullRequests = pullRequests;
     f.project.environments.edges.push({node: {id, name: "pr-42", isEphemeral: true,
@@ -84,6 +86,9 @@ test("only ephemeral staging previews for open pull requests bypass experiment p
   });
   for (const f of [
     preview({}, [{number: 42, state: "closed"}]),
+    preview({}, [open({labels: []})]),
+    preview({}, [open({base: {ref: "release"}})]),
+    preview({}, [open({head: {repo: {full_name: "someone/fork"}}})]),
     preview({}, []),
     preview({isEphemeral: false}),
     preview({sourceEnvironment: {id: manifest.environments.production.environmentId}}),

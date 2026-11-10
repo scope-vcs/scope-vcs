@@ -97,6 +97,79 @@ async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
 }
 
 #[tokio::test]
+async fn a_native_merge_by_a_member_without_push_access_lands_a_waiting_github_merge() {
+    use crate::db::github_pull_requests::tests::{
+        claim,
+        merge_landing::{finish_merged, squash_merged_on_github},
+        oid, push_succeeds, submitted_full_view_request,
+    };
+    let store = merge_store_with_github(true).await;
+    apply_github_result(&store, true).await;
+    store
+        .repositories()
+        .set_github_review_bot_pull_requests("owner/repo", "user_owner", true, 1)
+        .await
+        .unwrap();
+    let mut waiting = submitted_full_view_request(&store, "req_waiting").await;
+    waiting.head_oid = oid('e');
+    crate::db::request_rows::save_request_row(store.db.as_ref(), &waiting)
+        .await
+        .unwrap();
+    push_succeeds(&store, "req_waiting", 'e', 4).await;
+    let merged = squash_merged_on_github(claim(&store, "claim_1", 4).await.remove(0), &oid('e'));
+    store
+        .requests()
+        .finish_github_pull_request(
+            &merged,
+            "claim_1",
+            crate::db::GitHubJobOutcome::Succeeded(()),
+            None,
+            4,
+        )
+        .await
+        .unwrap();
+    assert!(claim(&store, "claim_2", 5).await.is_empty());
+    member_without_push_access(&store).await;
+    let prepared = merge_preparation(&store).await;
+
+    store
+        .requests()
+        .merge_request_content(merge_command(&store, "user_guest", prepared).await)
+        .await
+        .unwrap();
+    let tx = sea_orm::TransactionTrait::begin(store.db.as_ref())
+        .await
+        .unwrap();
+    let advance = super::latest_main_advance(&tx, "owner/repo")
+        .await
+        .unwrap()
+        .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(advance.advanced_by_user_id.as_deref(), Some("user_guest"));
+    assert_eq!(
+        advance.kind,
+        scope_domain::requests::MainAdvanceKind::NativeMerge
+    );
+
+    let requeued = claim(&store, "claim_3", 5).await.remove(0);
+    assert_eq!(requeued.request_id, "req_waiting");
+    assert_eq!(
+        finish_merged(&store, &requeued, "claim_3", 'c')
+            .await
+            .unwrap(),
+        crate::db::GitHubPullRequestFinish::RecordedAndLanded
+    );
+    let landed = store
+        .requests()
+        .request_for_tests("req_waiting")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(landed.state(), RequestState::Merged);
+    assert_eq!(landed.merged_by_user_id.as_deref(), Some("user_guest"));
+}
+
+#[tokio::test]
 async fn cancellation_after_preparation_fences_the_final_content_commit() {
     let store = merge_store().await;
     store
@@ -225,6 +298,32 @@ struct MergePreparation {
     expected_repo_change_version: u64,
     update: ReviewedUpdateInput,
     workflow_catalog: RepositoryWorkflowCatalog,
+}
+
+async fn member_without_push_access(store: &super::super::MetadataStore) {
+    use scope_domain::repository::collaboration::{RepositoryMember, RepositoryMemberPermissions};
+    let mut repo = store
+        .repositories()
+        .repository_for_tests("owner/repo")
+        .await
+        .unwrap()
+        .unwrap();
+    repo.collaboration.members.push(RepositoryMember {
+        repo_id: repo.record.id.clone(),
+        user_id: "user_guest".into(),
+        permissions: RepositoryMemberPermissions {
+            can_push: false,
+            can_change_file_visibility: false,
+            view: scope_domain::views::ViewId::private(),
+        },
+        created_at_unix: 1,
+        updated_at_unix: 1,
+    });
+    store
+        .repositories()
+        .replace_repository_for_tests(repo)
+        .await
+        .unwrap();
 }
 
 async fn merge_store() -> super::super::MetadataStore {

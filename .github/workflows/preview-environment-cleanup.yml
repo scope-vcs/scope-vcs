@@ -1,0 +1,74 @@
+name: Delete preview environment
+
+on:
+  workflow_call:
+    inputs:
+      pull_request:
+        type: number
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  delete:
+    name: Delete preview environment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: preview
+    concurrency:
+      group: scope-preview-environment-${{ inputs.pull_request }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PULL_REQUEST: ${{ inputs.pull_request }}
+    steps:
+      - name: Checkout trusted orchestration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 26
+
+      - uses: ./.github/actions/install-railway-cli
+
+      - name: Confirm the pull request still does not qualify
+        id: recheck
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/preview-pull-request.mjs cleanup "$PULL_REQUEST"
+
+      - name: Delete the pull request environment
+        id: delete
+        if: steps.recheck.outputs.action == 'delete'
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          unset RAILWAY_TOKEN
+          result="$(node .github/scripts/preview-environment.mjs delete "$PULL_REQUEST")"
+          echo "$result"
+          deleted="$(jq -er '.deleted | tostring' <<< "$result")"
+          name="$(jq -er '.name' <<< "$result")"
+          echo "deleted=$deleted" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          if [[ "$deleted" == true ]]; then
+            environment_id="$(jq -er '.environmentId' <<< "$result")"
+            printf 'Deleted preview environment `%s` (`%s`) for PR #%s.\n' "$name" "$environment_id" "$PULL_REQUEST" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Report deletion on the pull request
+        if: steps.delete.outputs.deleted == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          ENVIRONMENT: ${{ steps.delete.outputs.name }}
+        run: |
+          body="$(printf '**Preview environment** `%s`\n\nDeleted.' "$ENVIRONMENT")"
+          bash .github/scripts/preview-comment.sh "$body"

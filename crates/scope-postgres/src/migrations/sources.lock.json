@@ -24,5 +24,6 @@
   "m0105_view_pool_packs.rs": "69aa06177a329aa92b52b481f8f3b3176f3352bc97a56e09fb623256b731c6e7",
   "m0106_git_fetch_advertisements.rs": "6bbfa7dc95eb539f541d6fdd9d1478142934e5d534f942385db633a1c4bd5553",
   "m0107_delete_request_bundles.rs": "abbd16c1c4ab6e306cf8eeed3db6a81f407684b34ac7984a8c24345542302fb3",
-  "m0108_github_pull_request_merges.rs": "d0b80e588e832abc6c6b05dfed3c5950ec1f8cf99eac9aed33116d8e284a8695"
+  "m0108_github_pull_request_merges.rs": "d0b80e588e832abc6c6b05dfed3c5950ec1f8cf99eac9aed33116d8e284a8695",
+  "m0109_main_advanced_by.rs": "1f4c0ebac8956a80cf129026db6badb2feafc4e904882efcb2c2197945e74423"
 }

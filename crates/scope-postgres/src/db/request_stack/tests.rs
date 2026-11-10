@@ -176,6 +176,7 @@ fn fact(parent_head_oid: &str, child: &Request, contains: bool) -> RequestStackC
         head_oid: child.head_oid.clone(),
         base_version: child.base_version,
         parent_contains_pin: contains,
+        main_contains_pin: true,
         contained_main_oid: None,
         accepted_view_main_oid: None,
         contained_main_descends_from_ancestor: false,
@@ -536,6 +537,7 @@ async fn containing_merge_retargets_atomically_without_replacing_child_revision(
 }
 
 mod carrier_pull_requests;
+mod github_merge_landing;
 mod github_pushes;
 mod integration_conflict;
 

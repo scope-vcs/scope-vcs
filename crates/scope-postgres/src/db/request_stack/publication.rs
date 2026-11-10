@@ -72,9 +72,7 @@ pub(in crate::db) async fn validate_publication(
             "repository changed during request publication",
         ));
     }
-    if !request.view.is_private()
-        && request.stack_status == scope_domain::requests::RequestStackStatus::NeedsMainUpdate
-    {
+    if request.stack_status == scope_domain::requests::RequestStackStatus::NeedsMainUpdate {
         let main = accepted_main_oid(tx, repo, &request.view).await?;
         if git_facts.contained_main_oid.as_ref() != Some(&main)
             || !git_facts.contained_main_descends_from_base

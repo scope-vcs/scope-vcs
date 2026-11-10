@@ -159,7 +159,7 @@ pub use git_segments::{ListedMainPoolPack, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
-pub use github_pull_requests::GitHubPullRequestFinish;
+pub use github_pull_requests::{GitHubMergeCheckedAgainstMain, GitHubPullRequestFinish};
 pub use github_pushes::GitHubPushStanding;
 pub use github_read_queue::GitHubJobOutcome;
 pub use github_review_bot_statuses::GitHubReviewBotReconcile;

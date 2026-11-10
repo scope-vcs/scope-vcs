@@ -2,10 +2,13 @@ use super::*;
 use crate::workflow_tests::{
     git_request_refs::github_main_publication::set_publication, requests::start_private_request,
 };
+use scope_domain::requests::{RequestBase, RequestStackStatus};
 
 struct Stack {
     parent: OwnerRequest,
     parent_head: String,
+    child_id: String,
+    child_head: String,
     child_branch: String,
 }
 
@@ -43,9 +46,11 @@ impl Stack {
         .unwrap();
         submit_request(router(state.clone()), &child_id, &bearer_header()).await;
         Self {
+            child_head: git_head_oid(&parent.source),
             parent,
             parent_head,
             child_branch: format!("scope/requests/{child_id}"),
+            child_id,
         }
     }
 
@@ -67,6 +72,54 @@ impl Stack {
             .pulls
             .close_as(self.parent_pull_request_number(), "octocat");
         self.deliver_change_of(&self.parent.branch()).await;
+    }
+
+    async fn github_squash_merges_parent(&self) -> String {
+        let source = &self.parent.source;
+        run_git(
+            Some(source),
+            &["checkout", "--detach", &self.parent_head],
+            "check out the parent",
+        )
+        .unwrap();
+        let squash = squash_onto_main(&self.parent);
+        self.parent.fake.pulls.merge_as(
+            self.parent_pull_request_number(),
+            "octocat",
+            &self.parent_head,
+            &squash,
+        );
+        squash
+    }
+
+    async fn child(&self) -> Request {
+        stored_request(&self.parent.state, &self.child_id).await
+    }
+
+    fn push_child(&self, headers: &[String]) -> Result<(), String> {
+        let remote = &self.parent.remote;
+        let mut args = Vec::new();
+        for header in headers {
+            args.extend([
+                "-c".to_string(),
+                format!("http.{remote}.extraHeader={header}"),
+            ]);
+        }
+        args.extend([
+            "push".to_string(),
+            format!(
+                "--force-with-lease=refs/heads/stacked-child:{}",
+                self.child_head
+            ),
+            remote.clone(),
+            "HEAD:refs/heads/stacked-child".to_string(),
+        ]);
+        run_git(
+            Some(&self.parent.source),
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+            "push the child",
+        )
+        .map_err(|error| error.operator_diagnostic().to_string())
     }
 
     async fn deliver_change_of(&self, branch: &str) {
@@ -331,4 +384,97 @@ async fn a_branch_stays_while_github_refuses_the_listing_for_anything_but_a_miss
     fake.pulls.forbidden.store(true, Ordering::SeqCst);
     assert_eq!(push_pass(state, FAR_FUTURE_UNIX + 6 * 3_600).await, 1);
     assert_eq!(fake.branch_head(&request.branch()), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_squash_merged_parent_lands_and_its_child_waits_on_main_for_a_restack() {
+    for main_arrives_before_the_merge_is_seen in [false, true] {
+        let stack = Stack::create("carrier-stacked-squash").await;
+        let (parent, state) = (&stack.parent, &stack.parent.state);
+        stack.settle_pushes().await;
+        stack.settle_pull_requests().await;
+        let squash = stack.github_squash_merges_parent().await;
+        if main_arrives_before_the_merge_is_seen {
+            push_main(parent).await;
+        }
+        stack.deliver_change_of(&parent.branch()).await;
+        stack.settle_pull_requests().await;
+        if !main_arrives_before_the_merge_is_seen {
+            assert_eq!(
+                stored_request(state, &parent.request_id).await.state(),
+                RequestState::Open
+            );
+            push_main(parent).await;
+            stack.settle_pull_requests().await;
+        }
+
+        let landed = stored_request(state, &parent.request_id).await;
+        assert_eq!(landed.state(), RequestState::Merged);
+        assert_eq!(landed.merged_main_oid.as_deref(), Some(squash.as_str()));
+        let waiting = stack.child().await;
+        assert_eq!(waiting.state(), RequestState::Open);
+        assert_eq!(waiting.head_oid, stack.child_head);
+        assert_eq!(
+            waiting.base,
+            RequestBase::Main {
+                review_base_oid: stack.parent_head.clone()
+            }
+        );
+        assert_eq!(waiting.stack_status, RequestStackStatus::NeedsMainUpdate);
+        assert_eq!(stack.pull(&stack.child_branch)["base"]["ref"], "main");
+
+        let source = &parent.source;
+        let child_onto = |base: &str| {
+            run_git(
+                Some(source),
+                &[
+                    "-c",
+                    "user.name=Scope Test",
+                    "-c",
+                    "user.email=scope-test@example.test",
+                    "rebase",
+                    "--onto",
+                    base,
+                    &stack.parent_head,
+                    &stack.child_head,
+                ],
+                "replay the child",
+            )
+            .unwrap();
+        };
+        child_onto(&stack.parent_head);
+        commit_file(source, "child.txt", "more child work\n");
+        let still_on_the_parents_commits = stack.push_child(&[]).unwrap_err();
+        assert!(
+            still_on_the_parents_commits
+                .contains("request must contain current view main before recovering"),
+            "{still_on_the_parents_commits}"
+        );
+        assert_eq!(stack.child().await, waiting);
+
+        child_onto(&squash);
+        stack
+            .push_child(&[
+                format!("Scope-Request-Base: main:{squash}"),
+                format!("Scope-Request-Base-Version: {}", waiting.base_version),
+            ])
+            .unwrap();
+        let restacked = stack.child().await;
+        assert_eq!(restacked.stack_status, RequestStackStatus::Main);
+        assert_eq!(
+            restacked.base,
+            RequestBase::Main {
+                review_base_oid: squash.clone()
+            }
+        );
+        assert_eq!(
+            git_stdout_text(
+                source,
+                &["diff", "--name-only", &squash, &restacked.head_oid],
+                "read the child's change"
+            )
+            .unwrap(),
+            "child.txt\n"
+        );
+    }
 }
