@@ -35,7 +35,10 @@ struct Fixture {
 
 fn fixture() -> Fixture {
     let target = TestDatabaseTarget::required().unwrap();
-    let store = MetadataStore::connect_fresh_for_tests(&target).unwrap();
+    seeded_fixture(MetadataStore::connect_fresh_for_tests(&target).unwrap())
+}
+
+fn seeded_fixture(store: MetadataStore) -> Fixture {
     let owner = UserAccount {
         id: OWNER_ID.to_string(),
         handle: "media-owner".to_string(),
@@ -829,6 +832,7 @@ async fn expired_upload_operations_report_expiry_before_and_after_cleanup_discov
 
 mod access;
 mod cleanup;
+mod media_api_role;
 mod processing_queue;
 mod queued_traces;
 mod upload_parts;

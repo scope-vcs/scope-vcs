@@ -135,17 +135,24 @@ test('runtime roles enforce service boundaries on PostgreSQL', { skip: localClus
     query('DELETE FROM scope_request_auto_merge_intents;', 'scope_run_worker', false);
     query('DELETE FROM scope_requests;', 'scope_run_worker', false);
     query('UPDATE scope_request_events SET id = id;', 'scope_run_worker', false);
-    const workerRoleTest = spawnSync('cargo', ['test', '-p', 'scope-postgres', '--lib',
-      'worker_role_rebuilds_repository_history', '--', '--nocapture'], {
-      cwd: repositoryRoot,
-      env: {
-        ...process.env,
-        SCOPE_WORKER_ROLE_TEST_ADMIN_URL: `postgres://postgres@localhost/postgres?host=${encodeURIComponent(dir)}`,
-        SCOPE_WORKER_ROLE_TEST_WORKER_URL: `postgres://scope_run_worker@localhost/postgres?host=${encodeURIComponent(dir)}`,
-      },
-      encoding: 'utf8', timeout: 600_000, maxBuffer: 10 * 1024 * 1024,
+    const roleUrl = (role) => `postgres://${role}@localhost/postgres?host=${encodeURIComponent(dir)}`;
+    function runRoleTest(name, env) {
+      const result = spawnSync('cargo', ['test', '-p', 'scope-postgres', '--lib', name, '--', '--exact', '--nocapture'], {
+        cwd: repositoryRoot,
+        env: { ...process.env, ...env },
+        encoding: 'utf8', timeout: 600_000, maxBuffer: 10 * 1024 * 1024,
+      });
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, new RegExp(`test ${name} \\.\\.\\. ok`));
+    }
+    runRoleTest('db::outbox::tests::worker_role_rebuilds_repository_history', {
+      SCOPE_WORKER_ROLE_TEST_ADMIN_URL: roleUrl('postgres'),
+      SCOPE_WORKER_ROLE_TEST_WORKER_URL: roleUrl('scope_run_worker'),
     });
-    assert.equal(workerRoleTest.status, 0, `${workerRoleTest.stdout}\n${workerRoleTest.stderr}`);
+    runRoleTest('db::request_media::tests::media_api_role::media_api_role_authorizes_stores_and_serves_an_upload', {
+      SCOPE_MEDIA_ROLE_TEST_ADMIN_URL: roleUrl('postgres'),
+      SCOPE_MEDIA_ROLE_TEST_MEDIA_API_URL: roleUrl('scope_media_api'),
+    });
     query('DELETE FROM scope_repository_history_entries;', 'scope_run_worker', false);
     query("SELECT 1 AS present FROM scope_request_discussions WHERE id = 'missing' AND request_id = 'missing';", 'scope_media_api');
     query('SELECT * FROM scope_cache_objects;', 'scope_run_worker', false);
