@@ -30,6 +30,7 @@ jobs:
       - name: Report jobs over the time budget
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         with:
+          retries: 3
           script: |
             const { reportCiDuration } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/ci-duration.mjs`);
             await reportCiDuration({

@@ -3,6 +3,7 @@
 import itertools
 import json
 import math
+import os
 import pathlib
 import re
 import shlex
@@ -36,6 +37,7 @@ PULL_REQUEST = {
     "actor": "maintainer",
     "event": {"pull_request": {"head": {"repo": {"full_name": "scope-vcs/scope-vcs"}}}},
 }
+SCRIPT_REFERENCE = re.compile(r"(?:^|[\s;&|(])(?:\.\./|\./)*(dev/[\w./-]+)")
 DOWNLOADED_KEY = re.compile(
     r"(?:curl|wget)\b[^\n]*https?://\S+\.(?:asc|gpg|key|pub|pem|crt)\b|--recv-keys|\bkeyserver\b"
 )
@@ -270,7 +272,7 @@ def job_outputs(job_id, inputs):
     return {}
 
 
-def simulate(workflow, github, supplied=None, caller=None, waits_for=frozenset()):
+def simulate(workflow, github, supplied=None, caller=None, waits_for=frozenset(), instance=""):
     document = load(workflow)
     inputs = workflow_inputs(document, supplied or {}, caller or {})
     jobs, results, nodes = document["jobs"], {}, []
@@ -284,20 +286,23 @@ def simulate(workflow, github, supplied=None, caller=None, waits_for=frozenset()
             results[name] = {"result": "skipped", "outputs": {}, "nodes": set()}
             continue
         before = set(waits_for).union(*(results[need]["nodes"] for need in needs))
-        if "uses" in job:
-            child = simulate(job["uses"].rsplit("/", 1)[1], github, job.get("with") or {}, context, frozenset(before))
-            nodes.extend(child)
-            results[name] = {"result": "success", "outputs": {}, "nodes": {node["id"] for node in child}}
-            continue
         matrix = evaluate((job.get("strategy") or {}).get("matrix"), context)
         created = set()
         for entry in matrix_entries(matrix):
             label = text_of(entry.get("label") or entry.get("group")) or ", ".join(map(text_of, entry.values()))
-            node_id = f"{job_id} ({label})" if label else job_id
+            if "uses" in job:
+                child = simulate(job["uses"].rsplit("/", 1)[1], github, job.get("with") or {},
+                                 {**context, "matrix": entry}, frozenset(before),
+                                 f"{instance} [{label}]" if label else instance)
+                nodes.extend(child)
+                created.update(node["id"] for node in child)
+                continue
+            node_id = f"{job_id} ({label}){instance}" if label else f"{job_id}{instance}"
             nodes.append({"id": node_id, "job": job_id, "definition": job, "waits_for": before,
                           "context": {**context, "matrix": entry}})
             created.add(node_id)
-        results[name] = {"result": "success", "outputs": job_outputs(job_id, inputs), "nodes": created}
+        outputs = {} if "uses" in job else job_outputs(job_id, inputs)
+        results[name] = {"result": "success", "outputs": outputs, "nodes": created}
     return nodes
 
 
@@ -340,11 +345,12 @@ def runner_cap_violations(nodes):
 
 
 def serial_wait_violations(nodes):
+    job_of = {node["id"]: node["job"] for node in nodes}
     violations = []
     for node in nodes:
         if node["job"] in GATE_JOBS:
             continue
-        jobs = {node_id.split(" (", 1)[0] for node_id in node["after"]}
+        jobs = {job_of[node_id] for node_id in node["after"]}
         violations.extend(f"{node['id']} waits for {job}" for job in sorted(jobs - SETUP_JOBS))
     return violations
 
@@ -391,6 +397,15 @@ def cargo_commands(text):
                 break
 
 
+def step_cargo_commands(text, directory, through=None, seen=frozenset()):
+    for manifest, profile in cargo_commands(text):
+        yield manifest or str(pathlib.Path(directory) / "Cargo.toml"), profile, through
+    for match in SCRIPT_REFERENCE.finditer(text):
+        script = ROOT / match.group(1)
+        if script.suffix in ("", ".sh") and script.is_file() and os.access(script, os.X_OK) and script not in seen:
+            yield from step_cargo_commands(script.read_text(), ".", through or match.group(1), seen | {script})
+
+
 def lto_violations(nodes):
     violations = []
     for node in nodes:
@@ -401,13 +416,13 @@ def lto_violations(nodes):
                 continue
             text = evaluate(step["run"], node["context"])
             directory = evaluate(step.get("working-directory", default_directory), node["context"])
-            for manifest, profile in cargo_commands(text):
-                manifest = manifest or str(pathlib.Path(directory) / "Cargo.toml")
+            for manifest, profile, through in step_cargo_commands(text, directory):
                 workspace, profiles = workspace_profiles(manifest)
                 settings = profile_settings(profiles, profile)
                 if settings.get("lto") in (True, "fat") or settings.get("codegen-units") == 1:
                     violations.append(
-                        f"{node['id']} step '{step.get('name', step['run'][:40])}' builds {workspace}/Cargo.toml "
+                        f"{node['id']} step '{step.get('name', step['run'][:40])}' builds {workspace}/Cargo.toml"
+                        f"{f' through {through}' if through else ''} "
                         f"with profile {profile} (lto={settings.get('lto')}, "
                         f"codegen-units={settings.get('codegen-units')})"
                     )
@@ -428,22 +443,28 @@ def api_build_violations(nodes):
 def workflow_steps():
     for path in sorted([*WORKFLOWS.glob("*.yml"), *(ROOT / ".github/actions").glob("*/action.yml")]):
         document = yaml.safe_load(path.read_text()) or {}
-        jobs = list((document.get("jobs") or {}).values())
+        jobs = [(f"{path.name}:{name}", job) for name, job in (document.get("jobs") or {}).items()]
         if "runs" in document:
-            jobs.append(document["runs"])
-        for job in jobs:
+            jobs.append((None, document["runs"]))
+        for name, job in jobs:
             for step in job.get("steps") or []:
-                yield path.name if path.parent == WORKFLOWS else f"{path.parent.name}/action.yml", step
+                yield path.name if path.parent == WORKFLOWS else f"{path.parent.name}/action.yml", name, job, step
 
 
-def cache_violations():
+def cache_violations(nodes):
+    simulated = {}
+    for node in nodes:
+        simulated.setdefault(node["job"], []).append(node["context"]["matrix"])
     violations = []
-    for path, step in workflow_steps():
+    for path, job_id, job, step in workflow_steps():
         if not str(step.get("uses", "")).startswith("Swatinem/rust-cache@"):
             continue
         save_if = (step.get("with") or {}).get("save-if", True)
+        matrix = (job.get("strategy") or {}).get("matrix")
+        entries = simulated.get(job_id) or (matrix_entries(matrix) if isinstance(matrix, dict) else [{}])
         for github in NON_MAIN_EVENTS:
-            if truthy(evaluate(save_if, {"github": github, "inputs": {}, "matrix": {}, "needs": {}})):
+            contexts = ({"github": github, "inputs": {}, "matrix": entry, "needs": {}} for entry in entries)
+            if any(truthy(evaluate(save_if, context)) for context in contexts):
                 violations.append(
                     f"{path} step '{step.get('name', 'rust-cache')}' saves its cache on {github['event_name']} "
                     f"to {github['ref']}"
@@ -477,7 +498,7 @@ def main():
         *serial_wait_violations(nodes),
         *lto_violations(nodes),
         *api_build_violations(nodes),
-        *cache_violations(),
+        *cache_violations(nodes),
         *downloaded_key_violations(tracked_text_files()),
     ]
     if violations:

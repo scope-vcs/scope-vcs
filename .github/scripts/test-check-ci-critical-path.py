@@ -37,7 +37,7 @@ class CriticalPathTest(unittest.TestCase):
             *MODULE.serial_wait_violations(nodes),
             *MODULE.lto_violations(nodes),
             *MODULE.api_build_violations(nodes),
-            *MODULE.cache_violations(),
+            *MODULE.cache_violations(nodes),
         ]
 
     def test_the_current_workflows_pass(self):
@@ -48,6 +48,14 @@ class CriticalPathTest(unittest.TestCase):
         self.assertEqual(
             self.run_violations(),
             ["a full pull request run can have 21 jobs running at once; GitHub's free plan runs 20"],
+        )
+
+    def test_a_matrix_on_a_reusable_workflow_call_counts_every_instance(self):
+        self.edit("scope-api-ci.yml", "    if: inputs.run_checks\n    uses:",
+                  "    if: inputs.run_checks\n    strategy:\n      matrix:\n        shard: [one, two]\n    uses:")
+        self.assertEqual(
+            self.run_violations(),
+            ["a full pull request run can have 24 jobs running at once; GitHub's free plan runs 20"],
         )
 
     def test_a_heavy_job_waiting_on_another_heavy_job_fails(self):
@@ -67,6 +75,19 @@ class CriticalPathTest(unittest.TestCase):
         self.assertEqual(len(violations), 2)
         self.assertTrue(all("cli/Cargo.toml with profile release (lto=fat, codegen-units=1)" in v for v in violations))
 
+    def test_fat_lto_reached_through_a_gate_script_fails(self):
+        read = MODULE.workspace_profiles
+
+        def fat_root_test_profile(manifest):
+            workspace, profiles = read(manifest)
+            return workspace, {**profiles, "test": {"lto": "fat"}} if str(workspace) == "." else profiles
+
+        with unittest.mock.patch.object(MODULE, "workspace_profiles", fat_root_test_profile):
+            violations = self.run_violations()
+        flagged = {v.split(" step ")[0] for v in violations if "through dev/checks/backend" in v}
+        self.assertLessEqual({f"rust-workspace-checks.yml:tests ({lane})"
+                              for lane in ("workspace", "api-git-refs", "api", "features")}, flagged)
+
     def test_api_sharing_its_build_job_fails(self):
         self.edit("scope-api-ci.yml", "components: api\n", "components: api git-router\n")
         self.assertEqual(self.run_violations(), ["scope-api-ci.yml:deployment-binaries (api) builds api together with git-router"])
@@ -78,6 +99,12 @@ class CriticalPathTest(unittest.TestCase):
         self.assertEqual(len(violations), 2)
         self.assertIn("saves its cache on pull_request to refs/pull/1/merge", violations[0])
         self.assertIn("saves its cache on push to refs/heads/scope/requests/req_1", violations[1])
+
+    def test_rust_caches_saved_off_main_for_some_matrix_entries_fail(self):
+        self.edit("rust-workspace-checks.yml",
+                  "save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (matrix.lane == 'workspace' || matrix.lane == 'api') }}",
+                  "save-if: ${{ matrix.lane == 'workspace' || matrix.lane == 'api' }}")
+        self.assertEqual(len(self.run_violations()), 3)
 
 
 class DownloadedKeyTest(unittest.TestCase):
