@@ -30,7 +30,7 @@ pub enum GitHubPullRequestFinish {
 
 mod intents;
 pub(super) use intents::{
-    queue_carrier_for_pushed_head, queue_carriers_for_repository, recompute_child_carrier_intents,
+    lock_carrier_and_child_carriers, queue_carrier_for_pushed_head, queue_carriers_for_repository,
 };
 
 const SELECT_PULL_REQUEST: &str = "request_id, repo_id, installation_id, github_repository_id, \
@@ -168,20 +168,23 @@ impl RequestStore {
             merge.map(|merge| merge.head_oid.clone()).into(),
         ]);
         let tx = self.db.begin().await?;
+        if progress.has_ended_on_github() {
+            acquire_aggregate_lock(&tx, "repository", &progress.repo_id).await?;
+        } else {
+            acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
+        }
         let (main, landing_step) = match merge_checked_against_main {
             Some(check) => {
-                acquire_aggregate_lock(&tx, "repository", &progress.repo_id).await?;
                 let main = latest_main_advance(&tx, &progress.repo_id).await?;
                 let step = check.landing_step(main.as_ref().map(|main| main.main_oid.as_str()));
                 (main, step)
             }
-            None => {
-                acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
-                (None, GitHubMergeLandingStep::AwaitMain)
-            }
+            None => (None, GitHubMergeLandingStep::AwaitMain),
         };
         values.push(landing_step.requeues_job(retry_at.is_some()).into());
         acquire_github_push_lock(&tx, &progress.repo_id, &progress.branch()).await?;
+        let child_carriers =
+            lock_carrier_and_child_carriers(&tx, &progress.repo_id, &progress.request_id).await?;
         let had_ended_on_github = github_pull_request(&tx, &progress.request_id)
             .await?
             .is_some_and(|recorded| recorded.has_ended_on_github());
@@ -216,8 +219,7 @@ impl RequestStore {
         }
         release_request_branch_after_carrier_change(&tx, progress, now_unix).await?;
         if progress.has_ended_on_github() != had_ended_on_github {
-            recompute_child_carrier_intents(&tx, &progress.repo_id, &progress.request_id, now_unix)
-                .await?;
+            child_carriers.recompute_bases(&tx, now_unix).await?;
         }
         let landed = match (landing_step, main, merge_checked_against_main) {
             (GitHubMergeLandingStep::Land, Some(main), Some(check)) => {
