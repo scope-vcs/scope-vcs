@@ -137,6 +137,19 @@ async fn a_native_merge_by_a_member_without_push_access_lands_a_waiting_github_m
         .merge_request_content(merge_command(&store, "user_guest", prepared).await)
         .await
         .unwrap();
+    let tx = sea_orm::TransactionTrait::begin(store.db.as_ref())
+        .await
+        .unwrap();
+    let advance = super::latest_main_advance(&tx, "owner/repo")
+        .await
+        .unwrap()
+        .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(advance.advanced_by_user_id.as_deref(), Some("user_guest"));
+    assert_eq!(
+        advance.kind,
+        scope_domain::requests::MainAdvanceKind::NativeMerge
+    );
 
     let requeued = claim(&store, "claim_3", 5).await.remove(0);
     assert_eq!(requeued.request_id, "req_waiting");

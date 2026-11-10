@@ -468,23 +468,10 @@ pub(super) async fn complete_main_push(
     now_unix: u64,
 ) -> Result<usize, PostgresError> {
     let advanced_by_user_id = completion.actor_user_id.clone();
-    let completed = complete_landed_requests(
-        tx,
-        repo_id,
-        main_oid,
-        MainAdvanceKind::Push,
-        completion,
-        now_unix,
-    )
-    .await?;
-    record_main_advance(
-        tx,
-        repo_id,
-        &advanced_by_user_id,
-        MainAdvanceKind::Push,
-        now_unix,
-    )
-    .await?;
+    let kind = MainAdvanceKind::Push;
+    let completed =
+        complete_landed_requests(tx, repo_id, main_oid, kind, completion, now_unix).await?;
+    record_main_advance(tx, repo_id, &advanced_by_user_id, kind, now_unix).await?;
     Ok(completed)
 }
 

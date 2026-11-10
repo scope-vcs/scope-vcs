@@ -297,11 +297,10 @@ async fn main_push_landing_requires_push_authority_even_for_a_member() {
         crate::db::acquire_aggregate_lock(&tx, "repository", "owner/repo")
             .await
             .unwrap();
-        let completed = super::super::complete_landed_requests(
+        let completed = super::super::complete_main_push(
             &tx,
             "owner/repo",
             MERGED_HEAD,
-            scope_domain::requests::MainAdvanceKind::Push,
             LandedRequestCompletion {
                 actor_user_id: actor.into(),
                 candidates: vec![candidate("req_1")],
@@ -310,8 +309,14 @@ async fn main_push_landing_requires_push_authority_even_for_a_member() {
         )
         .await
         .unwrap();
+        let advance = super::super::latest_main_advance(&tx, "owner/repo")
+            .await
+            .unwrap()
+            .unwrap();
         tx.commit().await.unwrap();
         assert_eq!(completed, 0);
+        assert_eq!(advance.advanced_by_user_id.as_deref(), Some(actor));
+        assert_eq!(advance.kind, scope_domain::requests::MainAdvanceKind::Push);
         assert_eq!(
             store
                 .requests()
