@@ -175,9 +175,11 @@ struct SweepReport {
 }
 
 async fn sweep(state: &AppState, repo_id: Option<&str>) -> Result<SweepReport, ApiError> {
-    if let Some(id) = repo_id {
-        repository(state, id).await?;
-    }
+    let repo_id = match repo_id {
+        Some(id) => Some(repository(state, id).await?.record.id),
+        None => None,
+    };
+    let repo_id = repo_id.as_deref();
     let mut report = SweepReport::default();
     let mut after = None;
     loop {
@@ -230,6 +232,7 @@ async fn restore(
     write: bool,
 ) -> Result<Vec<RestoreOutcome>, ApiError> {
     let repo = repository(state, repo_id).await?;
+    let repo_id = repo.record.id.as_str();
     let mut selected = Vec::new();
     let mut outcomes = Vec::new();
     for id in revision_ids {

@@ -130,11 +130,8 @@ impl AppState {
 
     pub(crate) async fn for_pool_pack_recovery(data_dir: PathBuf) -> anyhow::Result<Self> {
         let storage = StorageRuntime::from_env_at(StorageSource::S3, data_dir).await?;
-        let metadata = MetadataStore::connect_with_max_connections(
-            database_url_from_env()?,
-            database_max_connections_from_env()?,
-        )
-        .await?;
+        let metadata =
+            MetadataStore::connect_with_max_connections(database_url_from_env()?, 2).await?;
         Ok(Self::assemble(
             AppServices {
                 storage,
