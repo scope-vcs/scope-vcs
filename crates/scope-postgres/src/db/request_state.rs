@@ -41,6 +41,7 @@ pub struct RequestStateSnapshot {
     pub bot_reviews: scope_domain::requests::RequestBotReviews,
     pub github_runs: HashMap<u64, GitHubWorkflowRunReference>,
     pub current_main_oid: Option<String>,
+    pub view_mains: scope_domain::requests::RequestViewMains,
 }
 
 impl RequestStateSnapshot {
@@ -99,6 +100,7 @@ impl RequestStore {
                     .await?
                     .ok_or_else(|| PostgresError::not_found("repo not found"))?;
             let projection = read.projection(&read.context.access.view).cloned();
+            let view_mains = read.request_view_mains();
             let repository = read.context;
             if projection.is_none()
                 && repository.record.lifecycle_state == RepoLifecycleState::Ready
@@ -116,7 +118,7 @@ impl RequestStore {
             return read_request_state(
                 tx,
                 repository,
-                projection,
+                (projection, view_mains),
                 request_id,
                 viewer_user_id,
                 children_after_id,
@@ -133,7 +135,10 @@ impl RequestStore {
 async fn read_request_state(
     tx: DatabaseTransaction,
     repository: RepositoryAccessContext,
-    projection: Option<entities::projection_read_model::Model>,
+    (projection, view_mains): (
+        Option<entities::projection_read_model::Model>,
+        scope_domain::requests::RequestViewMains,
+    ),
     request_id: &str,
     viewer_user_id: Option<&str>,
     children_after_id: Option<&str>,
@@ -244,5 +249,6 @@ async fn read_request_state(
         bot_reviews,
         github_runs,
         current_main_oid,
+        view_mains,
     })
 }

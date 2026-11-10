@@ -11,9 +11,10 @@ use crate::error::PostgresError;
 use scope_domain::requests::{
     AuthorizeRequestAutoMergeInput, CancelRequestAutoMergeInput, MergeGateInput,
     RequestAutoMergeIntent, RequestAutoMergeMutation, RequestAutoMergeStopReason,
-    RequestCheckEvaluation, RequestViewer, authorize_request_auto_merge, cancel_request_auto_merge,
-    evaluate_merge_gate, request_auto_merge_readiness, request_checks_outcome, request_policy,
-    stop_request_auto_merge, stop_request_auto_merge_for_check_run,
+    RequestCheckEvaluation, RequestMergeSubject, RequestViewer, authorize_request_auto_merge,
+    cancel_request_auto_merge, evaluate_merge_gate, request_auto_merge_readiness,
+    request_checks_outcome, request_policy, stop_request_auto_merge,
+    stop_request_auto_merge_for_check_run,
 };
 use sea_orm::{
     ActiveModelTrait,
@@ -107,7 +108,15 @@ impl RequestStore {
         let results = request_check_results(&tx, &request.repo_id, evaluation.as_ref()).await?;
         let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {
             repository_lifecycle: repo.record.lifecycle_state,
-            subject: (&request).into(),
+            subject: RequestMergeSubject::new(
+                &request,
+                &super::projection_read_models::request_view_mains(
+                    &tx,
+                    &request.repo_id,
+                    repo.record.content_version,
+                )
+                .await?,
+            ),
             viewer: &viewer,
             views: &repo.views,
             checks: request_checks_outcome(

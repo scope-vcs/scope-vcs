@@ -86,6 +86,7 @@ pub(crate) fn snapshot_response(
     let outcome = snapshot.checks_outcome();
     let decision = request_mergeability(
         request,
+        &snapshot.view_mains,
         &viewer,
         views,
         outcome,
