@@ -523,6 +523,7 @@ pub(super) async fn land_request_merged_on_github(
     request_id: &str,
     main: MainAdvance,
     merge_commit_oid: &str,
+    stack_children: Vec<super::RequestStackChildFacts>,
     now_unix: u64,
 ) -> Result<bool, PostgresError> {
     let (Some(request), Some(actor_user_id)) = (
@@ -539,7 +540,7 @@ pub(super) async fn land_request_merged_on_github(
         LandedRequestCompletion {
             actor_user_id,
             candidates: vec![LandedRequestCandidate {
-                stack_children: Vec::new(),
+                stack_children,
                 request_id: request.id,
                 head_oid: request.head_oid,
                 main_contains: MainContains::GitHubMergeCommit(merge_commit_oid.to_string()),
@@ -608,9 +609,6 @@ pub(super) async fn complete_landed_requests(
                     connection: connection.as_ref(),
                     pull_request: pull_request.as_ref(),
                     commit_in_main,
-                    has_stacked_children: !super::request_stack::children(tx, &request.id)
-                        .await?
-                        .is_empty(),
                 };
                 if !merge.lands(&request) {
                     continue;

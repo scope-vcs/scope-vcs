@@ -242,6 +242,7 @@ fn containing_landing_preserves_child_evidence_and_separate_main_ancestor() {
         event_id: "retarget".into(),
         now_unix: child.updated_at_unix + 1,
         parent_contains_pin: true,
+        main_contains_pin: true,
         accepted_view_main_oid: None,
         contained_main_oid: Some("unproven-main".into()),
         contained_main_descends_from_ancestor: false,
@@ -249,7 +250,8 @@ fn containing_landing_preserves_child_evidence_and_separate_main_ancestor() {
     let mut mismatched = input.clone();
     mismatched.parent_head_oid = "other-parent-head".into();
     assert!(retarget_request_after_parent_merge(child.clone(), &parent, mismatched).is_err());
-    let result = retarget_request_after_parent_merge(child.clone(), &parent, input).unwrap();
+    let result =
+        retarget_request_after_parent_merge(child.clone(), &parent, input.clone()).unwrap();
     assert_eq!(
         result.request.base.review_base_oid(),
         child.base.review_base_oid()
@@ -258,11 +260,34 @@ fn containing_landing_preserves_child_evidence_and_separate_main_ancestor() {
     assert_eq!(result.request.main_ancestor_oid, child.main_ancestor_oid);
     assert_eq!(result.request.pushed_at_unix, child.pushed_at_unix);
     assert_eq!(result.request.base_version, child.base_version + 1);
+    assert_eq!(result.request.stack_status, RequestStackStatus::Main);
     let rebound = RequestCheckContext::for_revision(&result.request, &saved).unwrap();
     assert_eq!(rebound.revision_id, original_context.revision_id);
     assert_eq!(rebound.review_base_oid, original_context.review_base_oid);
     assert!(!original_context.matches_request(&result.request));
     assert!(result.effects.preserve_auto_merge_intent);
+
+    let squashed = retarget_request_after_parent_merge(
+        child.clone(),
+        &parent,
+        RetargetRequestAfterParentMergeInput {
+            main_contains_pin: false,
+            ..input
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        squashed.request.stack_status,
+        RequestStackStatus::NeedsMainUpdate
+    );
+    assert_eq!(
+        squashed.request.base,
+        RequestBase::Main {
+            review_base_oid: child.base.review_base_oid().to_string()
+        }
+    );
+    assert_eq!(squashed.request.stack_depth, 1);
+    assert!(!squashed.effects.preserve_auto_merge_intent);
 }
 
 #[test]
@@ -545,6 +570,7 @@ fn restricted_parent_landing_requires_current_view_main_and_preserves_saved_laye
                     event_id: "retarget-restricted".into(),
                     now_unix: child.updated_at_unix + 1,
                     parent_contains_pin: true,
+                    main_contains_pin: true,
                     accepted_view_main_oid: Some("accepted-view-main".into()),
                     contained_main_oid: contained_main.map(str::to_string),
                     contained_main_descends_from_ancestor: monotonic,

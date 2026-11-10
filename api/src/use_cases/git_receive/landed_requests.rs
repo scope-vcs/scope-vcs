@@ -85,7 +85,7 @@ pub(super) async fn landed_request_candidates(
             ));
         }
         if candidate.main_contains != MainContains::RequestHead {
-            continue;
+            restore_squashed_parent_head(state, &incarnation, &parent, staging_repo).await?;
         }
         if &parent.view != proposed_repo.repo_config.views().full()
             && !view_heads.contains_key(&parent.view)
@@ -113,6 +113,34 @@ pub(super) async fn landed_request_candidates(
     }
     tracing::Span::current().record("scope.landed_request.count", landed.len());
     Ok(landed)
+}
+
+async fn restore_squashed_parent_head(
+    state: &AppState,
+    incarnation: &scope_domain::repository::RepositoryIncarnation,
+    parent: &Request,
+    staging_repo: &Path,
+) -> Result<(), ApiError> {
+    let requests = state.metadata.requests();
+    if requests
+        .request_stack_children(&parent.id)
+        .await?
+        .is_empty()
+    {
+        return Ok(());
+    }
+    let revision = requests
+        .latest_request_revision(&parent.id)
+        .await?
+        .ok_or_else(|| ApiError::conflict("landed request changed during preparation"))?;
+    crate::use_cases::request_base_publication::restore_request_objects(
+        state,
+        incarnation,
+        parent,
+        &revision,
+        staging_repo,
+    )
+    .await
 }
 
 fn requests_carried_by(

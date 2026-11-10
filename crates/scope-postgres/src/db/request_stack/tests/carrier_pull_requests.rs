@@ -33,7 +33,7 @@ async fn opt_in(store: &MetadataStore) {
         .unwrap();
 }
 
-async fn intent(store: &MetadataStore, id: &str) -> GitHubPullRequestIntent {
+pub(super) async fn intent(store: &MetadataStore, id: &str) -> GitHubPullRequestIntent {
     github_pull_request(store.db.as_ref(), id)
         .await
         .unwrap()
@@ -41,7 +41,7 @@ async fn intent(store: &MetadataStore, id: &str) -> GitHubPullRequestIntent {
         .intent
 }
 
-async fn carried_stack<const N: usize>(
+pub(super) async fn carried_stack<const N: usize>(
     store: &MetadataStore,
     child_ids: [&str; N],
 ) -> (Request, [Request; N]) {
@@ -70,7 +70,7 @@ async fn carried_stack<const N: usize>(
     (parent, children.try_into().unwrap())
 }
 
-fn open_onto(base: &str, head_oid: &str) -> GitHubPullRequestIntent {
+pub(super) fn open_onto(base: &str, head_oid: &str) -> GitHubPullRequestIntent {
     GitHubPullRequestIntent::Open {
         base: base.into(),
         head_oid: head_oid.into(),

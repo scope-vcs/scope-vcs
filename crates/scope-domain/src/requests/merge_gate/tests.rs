@@ -263,6 +263,20 @@ fn containing_main_completion_requires_head_proof_and_defers_every_unlanded_pare
             RequestMainPushCompletion::DeferUntilParentLands
         );
     }
+    child.base = RequestBase::Main {
+        review_base_oid: "main".into(),
+    };
+    for status in [
+        RequestStackStatus::Main,
+        RequestStackStatus::IntegrationConflict,
+        RequestStackStatus::NeedsMainUpdate,
+    ] {
+        child.stack_status = status;
+        assert_eq!(
+            request_main_push_completion(&child, containing_main(true)).unwrap(),
+            RequestMainPushCompletion::Complete
+        );
+    }
 }
 
 fn containing_main(contains_request_head: bool) -> crate::requests::MergeRequestLanding<'static> {

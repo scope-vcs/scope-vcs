@@ -8,6 +8,7 @@ use super::{
     locks::{acquire_aggregate_lock, acquire_shared_repository_lock},
     request_merge::{land_request_merged_on_github, latest_main_advance},
     request_rows::request_by_id,
+    request_stack::RequestStackChildFacts,
 };
 use crate::error::PostgresError;
 use scope_domain::{
@@ -26,6 +27,12 @@ pub enum GitHubPullRequestFinish {
     ClaimLost,
     Recorded,
     RecordedAndLanded,
+}
+
+#[derive(Clone, Debug)]
+pub struct GitHubMergeCheckedAgainstMain {
+    pub main: GitHubMergeMainCheck,
+    pub stack_children: Vec<RequestStackChildFacts>,
 }
 
 mod intents;
@@ -115,7 +122,7 @@ impl RequestStore {
         progress: &GitHubPullRequest,
         claim_token: &str,
         outcome: GitHubJobOutcome,
-        merge_checked_against_main: Option<&GitHubMergeMainCheck>,
+        merge_checked_against_main: Option<GitHubMergeCheckedAgainstMain>,
         now_unix: u64,
     ) -> Result<GitHubPullRequestFinish, PostgresError> {
         let now = u64_to_i64(now_unix, "GitHub pull request time")?;
@@ -173,10 +180,12 @@ impl RequestStore {
         } else {
             acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
         }
-        let (main, landing_step) = match merge_checked_against_main {
-            Some(check) => {
+        let (main, landing_step) = match &merge_checked_against_main {
+            Some(checked) => {
                 let main = latest_main_advance(&tx, &progress.repo_id).await?;
-                let step = check.landing_step(main.as_ref().map(|main| main.main_oid.as_str()));
+                let step = checked
+                    .main
+                    .landing_step(main.as_ref().map(|main| main.main_oid.as_str()));
                 (main, step)
             }
             None => (None, GitHubMergeLandingStep::AwaitMain),
@@ -222,12 +231,13 @@ impl RequestStore {
             child_carriers.recompute_bases(&tx, now_unix).await?;
         }
         let landed = match (landing_step, main, merge_checked_against_main) {
-            (GitHubMergeLandingStep::Land, Some(main), Some(check)) => {
+            (GitHubMergeLandingStep::Land, Some(main), Some(checked)) => {
                 land_request_merged_on_github(
                     &tx,
                     &progress.request_id,
                     main,
-                    &check.merge_commit_oid,
+                    &checked.main.merge_commit_oid,
+                    checked.stack_children,
                     now_unix,
                 )
                 .await?

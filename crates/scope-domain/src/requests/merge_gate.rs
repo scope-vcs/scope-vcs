@@ -383,7 +383,11 @@ pub(super) fn validate_request_merge_execution(
         if !matches!(request.base, super::RequestBase::Main { .. }) {
             return Err(DomainError::conflict("parent request must land first"));
         }
-        if request.stack_status == super::RequestStackStatus::IntegrationConflict {
+        if matches!(
+            request.stack_status,
+            super::RequestStackStatus::IntegrationConflict
+                | super::RequestStackStatus::NeedsMainUpdate
+        ) {
             return Ok(());
         }
     }
