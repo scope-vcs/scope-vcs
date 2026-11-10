@@ -1,7 +1,7 @@
 use super::{
     requests::{current_main_oid_for_context, repo_metadata_and_access},
     responses::{
-        RequestGateOutcomes, RequestListItemFacts, recorded_actor_response,
+        RequestGateOutcomes, RequestListItemFacts, RequestMains, recorded_actor_response,
         request_actor_summary_response, request_list_item_response, request_list_row_subject,
     },
 };
@@ -124,6 +124,11 @@ pub(crate) async fn request_queue(
     } else {
         current_main_oid_for_context(&state, &repo).await?
     };
+    let view_mains = state
+        .metadata
+        .requests()
+        .request_view_mains(&repo.record.id)
+        .await?;
     let rows = page
         .rows
         .iter()
@@ -176,7 +181,7 @@ pub(crate) async fn request_queue(
                 _ => None,
             };
             let next_step = request_queue_next_step(
-                request_list_row_subject(&row.request),
+                request_list_row_subject(&row.request, &view_mains),
                 &viewer,
                 &repo.views,
                 checks,
@@ -196,7 +201,10 @@ pub(crate) async fn request_queue(
                     row.request,
                     &viewer,
                     &repo.views,
-                    current_main_oid.clone(),
+                    RequestMains {
+                        viewer_main_oid: current_main_oid.as_deref(),
+                        view_mains: &view_mains,
+                    },
                     repo.record.lifecycle_state,
                     RequestListItemFacts {
                         outcomes: RequestGateOutcomes { checks, reviews },
@@ -325,7 +333,7 @@ pub(crate) async fn apply_attention(
         super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
     let checks = snapshot.checks_outcome();
     let next_step = request_queue_next_step(
-        (&snapshot.request).into(),
+        scope_domain::requests::RequestMergeSubject::new(&snapshot.request, &snapshot.view_mains),
         &super::request_state::viewer(&snapshot),
         &snapshot.repository.views,
         checks,

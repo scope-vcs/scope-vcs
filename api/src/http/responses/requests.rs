@@ -7,8 +7,9 @@ use scope_api_contract::{
 };
 use scope_domain::{
     requests::{
-        DiffStat, Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject, RequestViewer,
-        request_list_mergeability, request_mergeability, request_policy,
+        DiffStat, Request, RequestChecksOutcome, RequestEvent, RequestMergeSubject,
+        RequestViewMains, RequestViewer, request_list_mergeability, request_mergeability,
+        request_policy,
     },
     views::Views,
 };
@@ -60,13 +61,34 @@ fn request_summary_response(
     })
 }
 
-pub(crate) fn request_list_row_subject(request: &RequestListRow) -> RequestMergeSubject<'_> {
+pub(crate) fn request_list_row_subject<'a>(
+    request: &'a RequestListRow,
+    view_mains: &RequestViewMains,
+) -> RequestMergeSubject<'a> {
     RequestMergeSubject {
         author_user_id: request.author_user_id.as_deref(),
         view: &request.view,
         state: request.state,
         has_pushed_head: request.has_pushed_head,
-        stack_status: request.stack_status,
+        stack_status: view_mains.stack_status(
+            &request.view,
+            &request.main_ancestor_oid,
+            request.stack_status,
+        ),
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct RequestMains<'a> {
+    pub(crate) viewer_main_oid: Option<&'a str>,
+    pub(crate) view_mains: &'a RequestViewMains,
+}
+
+impl RequestMains<'_> {
+    fn viewer_main_oid_response(self) -> Result<Option<scope_api_contract::GitOid>, ApiError> {
+        self.viewer_main_oid
+            .map(|oid| git_oid_response(oid.to_string()))
+            .transpose()
     }
 }
 
@@ -86,12 +108,12 @@ pub(crate) fn request_list_item_response(
     request: RequestListRow,
     viewer: &RequestViewer<'_>,
     views: &Views,
-    current_main_oid: Option<String>,
+    mains: RequestMains<'_>,
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
     facts: RequestListItemFacts,
 ) -> Result<RequestListItemResponse, crate::error::ApiError> {
     let decision = request_list_mergeability(
-        request_list_row_subject(&request),
+        request_list_row_subject(&request, mains.view_mains),
         viewer,
         views,
         facts.outcomes.checks,
@@ -121,7 +143,7 @@ pub(crate) fn request_list_item_response(
         updated_at_unix: request.updated_at_unix,
         mergeability: RequestMergeabilityResponse {
             status: decision.status.into(),
-            current_main_oid: current_main_oid.map(super::git_oid_response).transpose()?,
+            current_main_oid: mains.viewer_main_oid_response()?,
             request_head_oid,
             reason: decision.reason.map(str::to_string),
         },
@@ -168,7 +190,7 @@ pub(crate) fn request_response(
     request: Request,
     viewer: RequestViewer<'_>,
     views: &Views,
-    current_main_oid: Option<String>,
+    mains: RequestMains<'_>,
     invitees: Vec<RequestInviteeResponse>,
     outcomes: RequestGateOutcomes,
     repository_lifecycle: scope_domain::repository::RepoLifecycleState,
@@ -192,6 +214,7 @@ pub(crate) fn request_response(
     };
     let decision = request_mergeability(
         &request,
+        mains.view_mains,
         &viewer,
         views,
         outcomes.checks,
@@ -200,7 +223,7 @@ pub(crate) fn request_response(
     );
     let mergeability = RequestMergeabilityResponse {
         status: decision.status.into(),
-        current_main_oid: current_main_oid.map(git_oid_response).transpose()?,
+        current_main_oid: mains.viewer_main_oid_response()?,
         request_head_oid: git_oid_response(request.head_oid.clone())?,
         reason: decision.reason.map(str::to_string),
     };

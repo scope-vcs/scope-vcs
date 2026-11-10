@@ -203,6 +203,7 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
             .can_merge;
         let mergeability = request_mergeability(
             &request,
+            &Default::default(),
             &viewer,
             &views,
             RequestChecksOutcome::Clear,
@@ -216,7 +217,7 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
         );
         assert_eq!(
             request_list_mergeability(
-                (&request).into(),
+                crate::requests::RequestMergeSubject::new(&request, &Default::default()),
                 &viewer,
                 &views,
                 RequestChecksOutcome::Clear,
@@ -234,6 +235,7 @@ fn mergeability_reports_ready_only_to_viewers_who_may_merge() {
     assert_eq!(
         request_mergeability(
             &request,
+            &Default::default(),
             &narrower,
             &views,
             RequestChecksOutcome::Clear,

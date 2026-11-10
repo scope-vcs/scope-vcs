@@ -13,15 +13,13 @@ use scope_domain::{
     policy::ScopePath,
     projection::NativeRequestCommit,
     repo_config::RepoConfig,
-    requests::{PathHistory, RequestViewPathError, RequestViewPaths},
+    requests::{PathHistory, RequestStackStatus, RequestViewPathError, RequestViewPaths},
     views::{ViewId, Views},
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::{collections::BTreeSet, path::Path as FsPath};
 
 const VIEW_REQUEST_BASE_REF: &str = "refs/scope/internal/view-request-base";
-const VIEW_MAIN_MOVED_ERROR: &str =
-    "Request view main moved. Rebase onto it or merge it, then run scope request push.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ValidatedViewRequestRange {
@@ -77,7 +75,7 @@ pub(crate) async fn validate_view_request_merge_range(
 ) -> Result<ValidatedViewRequestRange, ApiError> {
     let (base_oid, visible_paths) =
         fetch_current_view_projection(request_view, state, staging_repo).await?;
-    ensure_view_head_is_request_ancestor(staging_repo, request_head_oid)?;
+    ensure_view_head_is_request_ancestor(request_view.view, staging_repo, request_head_oid)?;
     let commit_oids = commits_after(staging_repo, request_head_oid)?;
     let view_name = request_view.name();
     if commit_oids.is_empty() {
@@ -86,9 +84,7 @@ pub(crate) async fn validate_view_request_merge_range(
         )));
     }
     let parent_oids = validated_view_parent_oids(view_name, staging_repo, &commit_oids)?;
-    if !parent_oids.contains(&base_oid) {
-        return Err(ApiError::conflict(VIEW_MAIN_MOVED_ERROR));
-    }
+    ensure_request_contains_view_main(request_view.view, parent_oids.contains(&base_oid))?;
 
     let changed = validated_changed_paths_by_commit(staging_repo, &base_oid, commit_oids)?;
     let history = changed_path_history(request_view.git, state, &changed).await?;
@@ -271,18 +267,32 @@ fn commits_after(staging_repo: &FsPath, new_head_oid: &str) -> Result<Vec<String
 }
 
 fn ensure_view_head_is_request_ancestor(
+    view: &ViewId,
     staging_repo: &FsPath,
     request_head_oid: &str,
 ) -> Result<(), ApiError> {
-    if git_is_ancestor(
-        staging_repo,
-        VIEW_REQUEST_BASE_REF,
-        request_head_oid,
-        "checking current request view main ancestry",
-    )? {
-        return Ok(());
+    ensure_request_contains_view_main(
+        view,
+        git_is_ancestor(
+            staging_repo,
+            VIEW_REQUEST_BASE_REF,
+            request_head_oid,
+            "checking current request view main ancestry",
+        )?,
+    )
+}
+
+fn ensure_request_contains_view_main(
+    view: &ViewId,
+    contains_view_main: bool,
+) -> Result<(), ApiError> {
+    match RequestStackStatus::Main
+        .containing_view_main(view, contains_view_main)
+        .blocking_reason()
+    {
+        Some(reason) => Err(ApiError::conflict(reason)),
+        None => Ok(()),
     }
-    Err(ApiError::conflict(VIEW_MAIN_MOVED_ERROR))
 }
 
 fn native_request_commit(

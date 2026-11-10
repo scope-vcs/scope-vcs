@@ -133,14 +133,14 @@ pub struct RequestMergeSubject<'a> {
     pub stack_status: super::RequestStackStatus,
 }
 
-impl<'a> From<&'a Request> for RequestMergeSubject<'a> {
-    fn from(request: &'a Request) -> Self {
+impl<'a> RequestMergeSubject<'a> {
+    pub fn new(request: &'a Request, view_mains: &super::RequestViewMains) -> Self {
         Self {
             author_user_id: request.author_user_id.as_deref(),
             view: &request.view,
             state: request.state(),
             has_pushed_head: request.pushed_at_unix.is_some(),
-            stack_status: request.stack_status,
+            stack_status: request.stack_status_at(view_mains),
         }
     }
 }
@@ -155,7 +155,11 @@ pub(super) fn evaluate_request_merge(
 ) -> RequestMergeability {
     let readiness = evaluate_request_readiness(repository_lifecycle, subject, checks, reviews);
     if subject.state != RequestState::Open
-        || readiness.status == RequestMergeabilityStatus::RepositoryNotReady
+        || matches!(
+            readiness.status,
+            RequestMergeabilityStatus::RepositoryNotReady
+                | RequestMergeabilityStatus::NeedsMainUpdate
+        )
     {
         return readiness;
     }

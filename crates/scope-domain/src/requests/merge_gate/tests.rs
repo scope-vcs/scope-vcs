@@ -10,7 +10,7 @@ fn direct_main_authority_preserves_push_permission_without_clearing_request_chec
     let request = open_request();
     let request_merge = evaluate_merge_gate(MergeGateInput::RequestMerge {
         repository_lifecycle: RepoLifecycleState::Ready,
-        subject: (&request).into(),
+        subject: RequestMergeSubject::new(&request, &Default::default()),
         viewer: &viewer,
         views: &views,
         checks: RequestChecksOutcome::Failed,
@@ -65,7 +65,7 @@ fn narrow_view_merge_authority_requires_the_current_author_and_push_grant() {
         assert_eq!(
             evaluate_merge_gate(MergeGateInput::RequestMerge {
                 repository_lifecycle: RepoLifecycleState::Ready,
-                subject: (&request).into(),
+                subject: RequestMergeSubject::new(&request, &Default::default()),
                 viewer: &viewer,
                 views: &views,
                 checks: RequestChecksOutcome::Clear,
@@ -94,7 +94,7 @@ fn review_bots_wait_behind_ci_and_open_findings_yield_only_to_failed_ci() {
     let status = |request: &Request, checks, reviews| {
         evaluate_merge_gate(MergeGateInput::RequestMerge {
             repository_lifecycle: RepoLifecycleState::Ready,
-            subject: request.into(),
+            subject: RequestMergeSubject::new(request, &Default::default()),
             viewer: &viewer,
             views: &views,
             checks,
@@ -198,7 +198,7 @@ fn clear_checks_cannot_authorize_a_child_before_containing_parent_landing() {
         request.stack_status = stack_status;
         let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {
             repository_lifecycle: RepoLifecycleState::Ready,
-            subject: (&request).into(),
+            subject: RequestMergeSubject::new(&request, &Default::default()),
             viewer: &viewer,
             views: &views,
             checks: RequestChecksOutcome::Clear,
@@ -248,5 +248,91 @@ fn containing_main_completion_requires_head_proof_and_defers_every_unlanded_pare
 fn containing_main(contains_request_head: bool) -> crate::requests::MergeRequestLanding<'static> {
     crate::requests::MergeRequestLanding::ContainingMain {
         contains_request_head,
+    }
+}
+
+#[test]
+fn main_request_needs_a_main_update_once_its_view_main_moves_past_the_contained_main() {
+    use crate::requests::{
+        RequestAutoMergeReadiness, RequestAutoMergeStopReason, RequestViewMains,
+        request_auto_merge_readiness,
+    };
+    let views = Views::builtin();
+    let viewer = RequestViewer::new(
+        access(RepositoryActor::Owner, ViewId::private(), true),
+        Some("owner"),
+        false,
+    );
+    let moved = |view: ViewId| RequestViewMains::new([(view, "moved".to_string())]);
+    for (view, view_mains, expected) in [
+        (
+            ViewId::public(),
+            moved(ViewId::public()),
+            RequestMergeabilityStatus::NeedsMainUpdate,
+        ),
+        (
+            ViewId::public(),
+            RequestViewMains::new([(ViewId::public(), "base".to_string())]),
+            RequestMergeabilityStatus::Ready,
+        ),
+        (
+            ViewId::public(),
+            moved(ViewId::private()),
+            RequestMergeabilityStatus::Ready,
+        ),
+        (
+            ViewId::private(),
+            moved(ViewId::private()),
+            RequestMergeabilityStatus::Ready,
+        ),
+    ] {
+        let mut request = open_request();
+        request.view = view;
+        let gate = evaluate_merge_gate(MergeGateInput::RequestMerge {
+            repository_lifecycle: RepoLifecycleState::Ready,
+            subject: RequestMergeSubject::new(&request, &view_mains),
+            viewer: &viewer,
+            views: &views,
+            checks: RequestChecksOutcome::Clear,
+            reviews: RequestReviewsOutcome::Clear,
+        });
+        let mergeability = gate.request_mergeability().unwrap();
+        assert_eq!(mergeability.status, expected, "{view_mains:?}");
+        let needs_main_update = expected == RequestMergeabilityStatus::NeedsMainUpdate;
+        let contributor = RequestViewer::new(
+            access(RepositoryActor::Public, ViewId::public(), false),
+            Some("author"),
+            false,
+        );
+        assert_eq!(
+            crate::requests::request_mergeability(
+                &request,
+                &view_mains,
+                &contributor,
+                &views,
+                RequestChecksOutcome::Clear,
+                RequestReviewsOutcome::Clear,
+                RepoLifecycleState::Ready,
+            )
+            .status,
+            if needs_main_update {
+                RequestMergeabilityStatus::NeedsMainUpdate
+            } else {
+                RequestMergeabilityStatus::NotMaintainer
+            },
+            "{view_mains:?}"
+        );
+        assert_eq!(
+            mergeability.reason,
+            needs_main_update.then_some("request must contain the latest view main")
+        );
+        assert_eq!(
+            request_auto_merge_readiness(gate),
+            if needs_main_update {
+                RequestAutoMergeReadiness::Stop(RequestAutoMergeStopReason::NeedsMainUpdate)
+            } else {
+                RequestAutoMergeReadiness::Ready
+            }
+        );
     }
 }
