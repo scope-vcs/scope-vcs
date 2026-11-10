@@ -19,7 +19,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    environment: production
+    environment: preview
     outputs:
       pull_requests: ${{ steps.plan.outputs.pull_requests }}
     steps:

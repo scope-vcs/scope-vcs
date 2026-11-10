@@ -9,12 +9,9 @@ export const PREVIEW_LABEL = 'preview';
 const SHA = /^[0-9a-f]{40}$/;
 const PULL_REQUEST = /^[1-9][0-9]{0,8}$/;
 
-export function previewRequested(pull) {
-  return pull.state === 'open' && pull.labels?.some(({ name }) => name === PREVIEW_LABEL) === true;
-}
-
 export function qualifiesForPreview(pull, repository) {
-  return previewRequested(pull) && pull.base?.ref === 'main' && pull.head?.repo?.full_name === repository;
+  return pull.state === 'open' && pull.base?.ref === 'main' && pull.head?.repo?.full_name === repository &&
+    pull.labels?.some(({ name }) => name === PREVIEW_LABEL) === true;
 }
 
 export async function buildAction({ run, repository, sourceSha, request }) {
@@ -66,7 +63,7 @@ export async function reconcileAction({ manifest, project, repository, request }
     const result = await cleanupAction({ pullRequest, repository, request });
     if (result.action === 'delete') pullRequests.push(pullRequest);
   }
-  return { action: pullRequests.length ? 'delete' : 'skip', pullRequests };
+  return { pullRequests };
 }
 
 async function githubRequest(path) {
@@ -96,8 +93,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       throw new Error('usage: preview-pull-request.mjs build [prepared-release.json] | cleanup <pull-request-number> | reconcile <railway-environments.json>');
     }
     console.log(JSON.stringify(result));
-    appendFileSync(process.env.GITHUB_OUTPUT,
-      `action=${result.action}\npull_request=${result.pullRequest ?? ''}\nsource_sha=${result.sourceSha ?? ''}\npull_requests=${JSON.stringify(result.pullRequests ?? [])}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, command === 'reconcile'
+      ? `pull_requests=${JSON.stringify(result.pullRequests)}\n`
+      : `action=${result.action}\npull_request=${result.pullRequest ?? ''}\nsource_sha=${result.sourceSha ?? ''}\n`);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

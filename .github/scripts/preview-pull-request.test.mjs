@@ -108,7 +108,7 @@ test('reconcile finds missed closes and label removals without touching active p
   };
   const request = mock.fn(async path => pulls[path.split('/').at(-1)]);
   assert.deepEqual(await reconcileAction({ manifest, project, repository, request }), {
-    action: 'delete', pullRequests: [7, 8, 10],
+    pullRequests: [7, 8, 10],
   });
   assert.equal(request.mock.callCount(), 4);
   pulls[7] = openPull();
@@ -118,7 +118,7 @@ test('reconcile finds missed closes and label removals without touching active p
     action: 'skip', reason: 'pull request #7 qualifies for a preview again',
   });
   assert.deepEqual(await reconcileAction({ manifest, project, repository, request }), {
-    action: 'skip', pullRequests: [],
+    pullRequests: [],
   });
 });
 

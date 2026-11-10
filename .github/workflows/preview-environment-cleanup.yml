@@ -54,11 +54,13 @@ jobs:
           unset RAILWAY_TOKEN
           result="$(node .github/scripts/preview-environment.mjs delete "$PULL_REQUEST")"
           echo "$result"
-          echo "deleted=$(jq -r '.deleted' <<< "$result")" >> "$GITHUB_OUTPUT"
-          echo "name=$(jq -er '.name' <<< "$result")" >> "$GITHUB_OUTPUT"
-          if [[ "$(jq -r '.deleted' <<< "$result")" == true ]]; then
-            printf 'Deleted preview environment `%s` (`%s`) for PR #%s.\n' \
-              "$(jq -er '.name' <<< "$result")" "$(jq -er '.environmentId' <<< "$result")" "$PULL_REQUEST" >> "$GITHUB_STEP_SUMMARY"
+          deleted="$(jq -er '.deleted | tostring' <<< "$result")"
+          name="$(jq -er '.name' <<< "$result")"
+          echo "deleted=$deleted" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          if [[ "$deleted" == true ]]; then
+            environment_id="$(jq -er '.environmentId' <<< "$result")"
+            printf 'Deleted preview environment `%s` (`%s`) for PR #%s.\n' "$name" "$environment_id" "$PULL_REQUEST" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Report deletion on the pull request
