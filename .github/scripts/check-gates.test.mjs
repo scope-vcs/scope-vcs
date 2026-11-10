@@ -102,7 +102,7 @@ test('web gate includes resource, Hooks, convention and advisory checks; backend
   assert.ok(cliCommands.includes('cargo test -p scope-cli-downloads --locked'));
   assert.ok(!cliCommands.some((command) => command.includes('--release')), cliCommands.join('\n'));
   const bundleCommands = commands('cli-bundle');
-  assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope'));
+  assert.ok(bundleCommands.includes('cargo build --manifest-path cli/Cargo.toml --profile release-check --locked --bin scope'));
   assert.ok(bundleCommands.includes('cargo build -p scope-cli-downloads --release --locked'));
   assert.ok(bundleCommands.includes('bash cli/distribution/package-bundle.sh'));
   assert.ok(bundleCommands.includes('node --test cli/distribution/install-smoke.test.mjs'));
@@ -162,7 +162,7 @@ const alwaysOnGateInputs = [
   /^bench\//, /^deploy\/(aws|postgres)\//, /^dev\/analytics\//, /^dev\/legal\//, /^dev\/licensing\//,
   /^dev\/checks\/(ops|policy)$/, /^dev\/(check|test_local_(process|stack|identity)\.py|install-test-postgres\.(sh|asc))$/,
   /^\.github\/(source-size-audit|railway-experiments)\.json$/,
-  /^\.github\/workflows\/(audit-railway-experiments|main-advisories|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment|provision-staging-baseline)\.yml$/,
+  /^\.github\/workflows\/(audit-railway-experiments|ci-duration|main-advisories|scope-aws-infrastructure(?:-execute)?|backup-monitor(?:-execute)?|recovery(?:-execute)?|deployment-watcher-heartbeat|deployment-supervision-event|maintenance-runtime|preview-build|preview-environment|provision-staging-baseline)\.yml$/,
   /^\.github\/scripts\/fixtures\//, /\.test\.mjs$/, /\.md$/,
 ];
 

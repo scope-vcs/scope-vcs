@@ -1,0 +1,39 @@
+name: Pull request CI duration
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: ci-duration
+  cancel-in-progress: false
+
+jobs:
+  duration:
+    name: Check pull request CI duration
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Report jobs over the time budget
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          retries: 3
+          script: |
+            const { reportCiDuration } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/ci-duration.mjs`);
+            await reportCiDuration({
+              github, ...context.repo,
+              runUrl: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });

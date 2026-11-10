@@ -2,13 +2,13 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-cargo build --manifest-path cli/Cargo.toml --release --locked --bin scope
+cargo build --manifest-path cli/Cargo.toml --profile release-check --locked --bin scope
 cargo build -p scope-cli-downloads --release --locked
 
 host="$(rustc -vV | sed -n 's/^host: //p')"
 target="$(jq -c --arg host "$host" '.targets[] | select(.triple == $host)' cli/distribution/targets.json)"
 test -n "$target"
-scope_binary="$(./dev/cargo-target-dir cli/Cargo.toml)/release/scope"
+scope_binary="$(./dev/cargo-target-dir cli/Cargo.toml)/release-check/scope"
 [[ "$host" == *windows* ]] && scope_binary+=.exe
 artifact="cli/dist/$(jq -r '.artifact' <<<"$target")"
 SCOPE_BINARY="$scope_binary" \

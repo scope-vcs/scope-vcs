@@ -57,7 +57,7 @@ jobs:
     needs: pull-request
     if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     outputs:
       runner_image: ${{ steps.plan.outputs.runner_image }}
       backend_selected: ${{ steps.plan.outputs.backend_selected }}
@@ -104,7 +104,7 @@ jobs:
     needs: pull-request
     if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -121,7 +121,7 @@ jobs:
     needs: pull-request
     if: ${{ !cancelled() && needs.pull-request.outputs.number == '' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

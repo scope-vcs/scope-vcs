@@ -19,7 +19,7 @@ jobs:
     name: Validate runner base image
     if: ${{ !inputs.publish }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
