@@ -3,10 +3,11 @@ use anyhow::Context as _;
 use std::{
     sync::{Arc, mpsc},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 pub(crate) const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
+pub(crate) const HEARTBEAT_FAILURE_TOLERANCE: Duration = Duration::from_secs(60);
 
 pub(crate) struct Heartbeat {
     stop: mpsc::Sender<()>,
@@ -18,20 +19,29 @@ impl Heartbeat {
     pub(crate) fn start<S: ExecutionSink>(
         sink: Arc<S>,
         interval: Duration,
+        failure_tolerance: Duration,
     ) -> anyhow::Result<Self> {
         let (stop, receive) = mpsc::channel();
         let (send, results) = mpsc::channel();
         let thread = thread::Builder::new()
             .name("runtime-heartbeat".into())
             .spawn(move || {
+                let mut last_success = Instant::now();
                 while matches!(
                     receive.recv_timeout(interval),
                     Err(mpsc::RecvTimeoutError::Timeout)
                 ) {
                     match sink.heartbeat() {
-                        Ok(false) => {}
-                        terminal => {
-                            let _ = send.send(terminal);
+                        Ok(false) => last_success = Instant::now(),
+                        Ok(true) => {
+                            let _ = send.send(Ok(true));
+                            break;
+                        }
+                        Err(error) if last_success.elapsed() < failure_tolerance => {
+                            eprintln!("runtime heartbeat failed; retrying: {error:#}");
+                        }
+                        Err(error) => {
+                            let _ = send.send(Err(error));
                             break;
                         }
                     }

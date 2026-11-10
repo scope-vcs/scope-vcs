@@ -19,7 +19,7 @@ impl std::ops::Deref for GitRepo {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GitCommandPlan {
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,

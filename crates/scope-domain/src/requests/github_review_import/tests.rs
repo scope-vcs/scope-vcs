@@ -178,6 +178,22 @@ fn comment_bodies_are_trimmed_and_capped_on_a_character_boundary() {
 }
 
 #[test]
+fn a_listed_bots_review_body_is_imported_only_without_inline_comments() {
+    use GitHubAuthorStanding::{ListedReviewBot, NeedsPermission};
+    for (author, has_inline_comments, imported) in [
+        (ListedReviewBot, true, false),
+        (ListedReviewBot, false, true),
+        (NeedsPermission, true, true),
+    ] {
+        assert_eq!(
+            github_review_body(&author, " Summary ", has_inline_comments).as_deref(),
+            imported.then_some("Summary"),
+            "{author:?} {has_inline_comments}"
+        );
+    }
+}
+
+#[test]
 fn a_thread_delivery_applies_only_when_github_still_agrees_with_it() {
     assert_eq!(
         github_thread_status(true, true),

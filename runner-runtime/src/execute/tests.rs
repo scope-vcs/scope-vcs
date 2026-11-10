@@ -10,7 +10,7 @@ use std::{
     collections::VecDeque,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     },
     thread,
@@ -66,6 +66,7 @@ struct FakeState {
     append_actions: Mutex<VecDeque<AppendAction>>,
     cancel_on_start: bool,
     cancel_on_heartbeat: AtomicBool,
+    heartbeat_failures: AtomicUsize,
     heartbeat_observed: Mutex<Option<mpsc::Sender<()>>>,
     heartbeat_gate: Mutex<Option<(mpsc::Sender<()>, mpsc::Receiver<()>)>>,
 }
@@ -78,6 +79,7 @@ impl FakeSink {
                 append_actions: Mutex::new(append_actions.into_iter().collect()),
                 cancel_on_start: false,
                 cancel_on_heartbeat: AtomicBool::new(false),
+                heartbeat_failures: AtomicUsize::new(0),
                 heartbeat_observed: Mutex::new(None),
                 heartbeat_gate: Mutex::new(None),
             }),
@@ -86,6 +88,13 @@ impl FakeSink {
 
     fn observe_cancellation_heartbeat(self, observed: mpsc::Sender<()>) -> Self {
         *self.state.heartbeat_observed.lock().unwrap() = Some(observed);
+        self
+    }
+
+    fn fail_heartbeats(self, count: usize) -> Self {
+        self.state
+            .heartbeat_failures
+            .store(count, Ordering::Release);
         self
     }
 
@@ -188,6 +197,16 @@ impl ExecutionSink for FakeSink {
 
     fn heartbeat(&self) -> anyhow::Result<bool> {
         self.record(Call::Heartbeat);
+        if self
+            .state
+            .heartbeat_failures
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |left| {
+                left.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Err(anyhow!("heartbeat unavailable"));
+        }
         let gate = self.state.heartbeat_gate.lock().unwrap().take();
         if let Some((entered, release)) = gate {
             entered.send(()).unwrap();
@@ -455,6 +474,48 @@ fn a_stalled_heartbeat_cannot_delay_process_timeout() {
     assert!(
         !child_still_exists,
         "child must be reaped before heartbeat returns"
+    );
+}
+
+#[test]
+fn transient_heartbeat_failures_do_not_stop_the_step() {
+    let sink = FakeSink::new([]).fail_heartbeats(2);
+    let workspace = tempfile::tempdir().unwrap();
+    let job = job(&[("wait", "while [ ! -e go ]; do sleep 0.01; done")]);
+    let run = sink.spawn(job, workspace.path(), Duration::from_secs(10));
+    let heartbeats = || {
+        sink.calls()
+            .iter()
+            .filter(|call| **call == Call::Heartbeat)
+            .count()
+    };
+    let deadline = Instant::now() + TEST_SYNC_TIMEOUT;
+    while heartbeats() < 3 && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    let heartbeats_before_release = heartbeats();
+    std::fs::write(workspace.path().join("go"), "").unwrap();
+
+    assert_eq!(run.join().unwrap().unwrap(), SUCCEEDED);
+    assert!(heartbeats_before_release >= 3);
+    assert!(!sink.calls().contains(&Call::Abandon));
+}
+
+#[test]
+fn heartbeat_failure_past_the_tolerance_stops_the_step_and_abandons() {
+    let sink = FakeSink::new([]).fail_heartbeats(usize::MAX);
+    let workspace = tempfile::tempdir().unwrap();
+    let job = job(&[("slow", "sleep 30")]);
+    let options = SupervisorOptions::for_test(Duration::from_secs(10))
+        .ending_on_the_first_heartbeat_failure();
+
+    assert!(run_steps_with_options(sink.clone(), &job, workspace.path(), options).is_err());
+    let calls = sink.calls();
+    assert!(calls.contains(&Call::Abandon));
+    assert!(
+        !calls
+            .iter()
+            .any(|call| matches!(call, Call::CompleteStep { .. }))
     );
 }
 

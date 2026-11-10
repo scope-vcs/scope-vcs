@@ -7,7 +7,9 @@ use super::{
     RequestDiscussion, RequestDiscussionReply, RequestDiscussionStatus, RequestRevision,
     advance_request_activity, reactivate_request_attention, validate_body_size, validate_required,
 };
-use crate::{error::DomainError, policy::ScopePath, views::Views};
+use crate::{
+    error::DomainError, github_review_bots::GitHubAuthorStanding, policy::ScopePath, views::Views,
+};
 
 #[cfg(test)]
 mod tests;
@@ -170,6 +172,17 @@ pub fn github_comment_body(body: &str) -> Option<String> {
         end -= 1;
     }
     Some(body[..end].to_string())
+}
+
+pub fn github_review_body(
+    author: &GitHubAuthorStanding,
+    body: &str,
+    has_inline_comments: bool,
+) -> Option<String> {
+    if *author == GitHubAuthorStanding::ListedReviewBot && has_inline_comments {
+        return None;
+    }
+    github_comment_body(body)
 }
 
 #[derive(Clone, Debug)]

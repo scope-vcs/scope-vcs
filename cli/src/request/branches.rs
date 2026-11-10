@@ -8,21 +8,26 @@ pub(super) fn start_request_branch(
 ) -> anyhow::Result<RequestCommandOutcome> {
     let context = load_context(Some(git_repo), api, args.remote.as_deref())?;
     local::require_git_remote(&context)?;
-    let (view, base, base_oid) = if let Some(selector) = args.base {
+    let (view, base, base_oid, rebase_onto) = if let Some(selector) = args.base {
         let (parent, pin) =
             stack::current_parent(git_repo, api, &context, selector, args.view.as_ref(), None)?;
         let oid = parent.head_oid.as_str().to_string();
-        (parent.view, Some(pin.base), oid)
+        (parent.view, Some(pin.base), oid.clone(), oid)
     } else {
         let view = start_view(&context.repo.access, &context.views, args.view)?;
         let oid = refresh_main_projection(git_repo, &context.target, &view, api.token)?;
-        (view, None, oid)
+        let rebase_onto = format!(
+            "{}/{}",
+            context.target.remote,
+            crate::push::DEFAULT_SCOPE_BRANCH
+        );
+        (view, None, oid, rebase_onto)
     };
     let name = args.name.trim().to_string();
     scope_domain::requests::validate_chosen_request_name(&name)
         .map_err(|error| crate::error::CliError::usage(error.message))?;
     let branch = if args.current_branch {
-        local::adoptable_current_branch(git_repo, &base_oid)?
+        local::adoptable_current_branch(git_repo, &base_oid, &rebase_onto)?
     } else {
         let local_ref = format!("refs/heads/{name}");
         if try_run_git_in_repo(git_repo, &["show-ref", "--verify", "--quiet", &local_ref])? {

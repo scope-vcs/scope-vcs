@@ -8,6 +8,7 @@ pub struct CacheAttemptAccess {
     pub workflow: WorkflowIdentity,
     pub job: WorkflowJob,
     pub lease_expires_at_unix: u64,
+    pub may_save: bool,
 }
 
 impl RunStore {
@@ -48,6 +49,7 @@ impl RunStore {
                 PostgresError::internal_message("claimed run job definition is missing")
             })?;
         Ok(CacheAttemptAccess {
+            may_save: run.may_save_caches(),
             workflow: run.workflow,
             job: definition,
             lease_expires_at_unix: attempt.lease_expires_at_unix,

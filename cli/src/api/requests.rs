@@ -476,6 +476,29 @@ pub fn get_request_activity(
     )
 }
 
+pub fn list_request_discussions(
+    api: ApiSession<'_>,
+    target: RequestTarget<'_>,
+    cursor: Option<&str>,
+) -> anyhow::Result<RequestDiscussionPageResponse> {
+    let mut request = api
+        .request(
+            reqwest::Method::GET,
+            request_action_path(target, "timeline"),
+        )
+        .query(&[("limit", 100)]);
+    if let Some(cursor) = cursor {
+        request = request.query(&[("cursor", cursor)]);
+    }
+    execute(
+        request,
+        format!(
+            "list request discussions {} for {}/{}",
+            target.request_id, target.owner, target.repo
+        ),
+    )
+}
+
 pub fn create_request_discussion(
     api: ApiSession<'_>,
     params: CreateRequestDiscussionParams<'_>,

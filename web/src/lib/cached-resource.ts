@@ -26,9 +26,17 @@ export function createCachedResource<T extends object>({ retainAcrossViewers = f
   retainAcrossViewers?: boolean
   coalesceInvalidations?: boolean
 }) {
+  const weights = new WeakMap<T, number>()
+  const weightOfValue = (value: T) => {
+    const known = weights.get(value)
+    if (known !== undefined) return known
+    const weight = options.weightOf?.(value) ?? 0
+    weights.set(value, weight)
+    return weight
+  }
   const entries = createBoundedCache<string, ResourceSnapshot<T>>({
     ...options,
-    weightOf: (snapshot) => snapshot.value === null ? 0 : options.weightOf?.(snapshot.value) ?? 0,
+    weightOf: (snapshot) => snapshot.value === null ? 0 : weightOfValue(snapshot.value),
   })
   const attempts = new Map<string, ResourceAttempt<T>>()
   const listeners = new Map<string, Set<() => void>>()
