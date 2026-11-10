@@ -86,15 +86,6 @@ async fn wait_for_log(
     job: &GitHubWorkflowJob,
 ) -> Result<Option<GitHubJobLogState>, ApiError> {
     loop {
-        match changes.recv().await {
-            Ok(RepoChangeEvent {
-                kind: RepoChangeKind::GitHubWorkflowRunChanged { github_run_id },
-                ..
-            }) if github_run_id == job.github_run_id => {}
-            Ok(_) => continue,
-            Err(broadcast::error::RecvError::Lagged(_)) => {}
-            Err(broadcast::error::RecvError::Closed) => return Ok(None),
-        }
         if let Some(log) = state
             .metadata
             .repositories()
@@ -102,6 +93,17 @@ async fn wait_for_log(
             .await?
         {
             return Ok(Some(log));
+        }
+        loop {
+            match changes.recv().await {
+                Ok(RepoChangeEvent {
+                    kind: RepoChangeKind::GitHubWorkflowRunChanged { github_run_id },
+                    ..
+                }) if github_run_id == job.github_run_id => break,
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => break,
+                Err(broadcast::error::RecvError::Closed) => return Ok(None),
+            }
         }
     }
 }

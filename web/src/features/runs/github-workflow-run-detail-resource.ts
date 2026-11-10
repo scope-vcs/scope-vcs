@@ -54,7 +54,22 @@ export function invalidateGitHubWorkflowRunDetails(scope: string, runId?: number
   githubWorkflowJobLogResource.invalidateMatching((identity) => {
     if (!identity.startsWith(logs)) return false
     const log = githubWorkflowJobLogResource.getSnapshot(identity)
-    return log.pending || log.value?.state === 'pending'
+    if (log.pending) recheckIfStillPending(identity)
+    return !log.pending && log.value?.state === 'pending'
+  })
+}
+
+const logsAwaitingAnswer = new Set<string>()
+
+function recheckIfStillPending(identity: string) {
+  if (logsAwaitingAnswer.has(identity)) return
+  logsAwaitingAnswer.add(identity)
+  const unsubscribe = githubWorkflowJobLogResource.subscribe(identity, () => {
+    const snapshot = githubWorkflowJobLogResource.getSnapshot(identity)
+    if (snapshot.pending) return
+    unsubscribe()
+    logsAwaitingAnswer.delete(identity)
+    if (snapshot.value?.state === 'pending') githubWorkflowJobLogResource.invalidate(identity)
   })
 }
 
