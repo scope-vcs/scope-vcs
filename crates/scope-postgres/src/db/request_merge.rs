@@ -463,68 +463,59 @@ pub(super) async fn complete_main_push(
     Ok(completed)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum GitHubMergeLandingAttempt {
-    Landed,
-    NotLanded,
-    MainMoved,
+pub(super) struct MainAdvance {
+    pub main_oid: String,
+    pub pushed_by_user_id: Option<String>,
 }
 
-impl RequestStore {
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "land_request_merged_on_github"))]
-    pub async fn land_request_merged_on_github(
-        &self,
-        request_id: &str,
-        main_oid: &str,
-        merge_commit_oid: &str,
-        now_unix: u64,
-    ) -> Result<GitHubMergeLandingAttempt, PostgresError> {
-        let tx = self.db.begin().await?;
-        let Some(request) = request_by_id(&tx, request_id).await? else {
-            return Ok(GitHubMergeLandingAttempt::NotLanded);
-        };
-        acquire_aggregate_lock(&tx, "repository", &request.repo_id).await?;
-        let Some(head) = tx
-            .query_one_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "SELECT head_oid, main_pushed_by_user_id FROM scope_git_heads WHERE repo_id = $1",
-                [request.repo_id.clone().into()],
-            ))
-            .await?
-        else {
-            return Ok(GitHubMergeLandingAttempt::NotLanded);
-        };
-        if head.try_get::<String>("", "head_oid")? != main_oid {
-            return Ok(GitHubMergeLandingAttempt::MainMoved);
-        }
-        let Some(main_pushed_by_user_id) =
-            head.try_get::<Option<String>>("", "main_pushed_by_user_id")?
-        else {
-            return Ok(GitHubMergeLandingAttempt::NotLanded);
-        };
-        let completed = complete_landed_requests(
-            &tx,
-            &request.repo_id,
-            main_oid,
-            LandedRequestCompletion {
-                actor_user_id: main_pushed_by_user_id,
-                candidates: vec![LandedRequestCandidate {
-                    stack_children: Vec::new(),
-                    request_id: request.id,
-                    head_oid: request.head_oid,
-                    main_contains: MainContains::GitHubMergeCommit(merge_commit_oid.to_string()),
-                }],
-            },
-            now_unix,
-        )
-        .await?;
-        tx.commit().await?;
-        Ok(if completed == 1 {
-            GitHubMergeLandingAttempt::Landed
-        } else {
-            GitHubMergeLandingAttempt::NotLanded
+pub(super) async fn latest_main_advance(
+    tx: &DatabaseTransaction,
+    repo_id: &str,
+) -> Result<Option<MainAdvance>, PostgresError> {
+    tx.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "SELECT head_oid, main_pushed_by_user_id FROM scope_git_heads WHERE repo_id = $1",
+        [repo_id.into()],
+    ))
+    .await?
+    .map(|head| {
+        Ok(MainAdvance {
+            main_oid: head.try_get("", "head_oid")?,
+            pushed_by_user_id: head.try_get("", "main_pushed_by_user_id")?,
         })
-    }
+    })
+    .transpose()
+}
+
+pub(super) async fn land_request_merged_on_github(
+    tx: &DatabaseTransaction,
+    request_id: &str,
+    main: MainAdvance,
+    merge_commit_oid: &str,
+    now_unix: u64,
+) -> Result<bool, PostgresError> {
+    let (Some(request), Some(actor_user_id)) =
+        (request_by_id(tx, request_id).await?, main.pushed_by_user_id)
+    else {
+        return Ok(false);
+    };
+    let completed = complete_landed_requests(
+        tx,
+        &request.repo_id,
+        &main.main_oid,
+        LandedRequestCompletion {
+            actor_user_id,
+            candidates: vec![LandedRequestCandidate {
+                stack_children: Vec::new(),
+                request_id: request.id,
+                head_oid: request.head_oid,
+                main_contains: MainContains::GitHubMergeCommit(merge_commit_oid.to_string()),
+            }],
+        },
+        now_unix,
+    )
+    .await?;
+    Ok(completed == 1)
 }
 
 pub(super) async fn complete_landed_requests(

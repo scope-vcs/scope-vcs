@@ -457,6 +457,7 @@ async fn review_deliveries_are_queued_only_from_the_recorded_carrier() {
             &opened,
             "claim_1",
             crate::db::GitHubJobOutcome::Succeeded(()),
+            None,
             11,
         )
         .await

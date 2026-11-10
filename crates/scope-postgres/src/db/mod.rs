@@ -158,6 +158,7 @@ pub use git_segments::{ListedMainPoolPack, PooledRequestPack};
 pub use git_transport_reads::{GitReadSource, RepositoryGitState};
 pub use github_check_runs::{GitHubCheckCommit, GitHubCheckRefreshCandidate};
 pub use github_connections::GitHubConnectionRead;
+pub use github_pull_requests::GitHubPullRequestFinish;
 pub use github_pushes::GitHubPushStanding;
 pub use github_read_queue::GitHubJobOutcome;
 pub use github_review_bot_statuses::GitHubReviewBotReconcile;
@@ -233,8 +234,8 @@ pub use request_media::{
     ValidateRequestAttachmentSourceCommand,
 };
 pub use request_merge::{
-    GitHubMergeLandingAttempt, LandedRequestCandidate, LandedRequestCompletion, MainContains,
-    MergeRequestContentMutation, MergeRequestContentsOutcome,
+    LandedRequestCandidate, LandedRequestCompletion, MainContains, MergeRequestContentMutation,
+    MergeRequestContentsOutcome,
 };
 pub use request_queue::{
     RequestQueueCursor, RequestQueuePage, RequestQueuePageQuery, RequestQueueRow,

@@ -42,17 +42,19 @@ async fn open_carrier(store: &MetadataStore, request_id: &str, number: u64) {
         None,
     );
     carrier.record_commented(oid('a'), 11);
-    assert!(
+    assert_eq!(
         store
             .requests()
             .finish_github_pull_request(
                 &carrier,
                 "carrier_claim",
                 GitHubJobOutcome::Succeeded(()),
+                None,
                 11
             )
             .await
-            .unwrap()
+            .unwrap(),
+        crate::db::GitHubPullRequestFinish::Recorded
     );
 }
 
