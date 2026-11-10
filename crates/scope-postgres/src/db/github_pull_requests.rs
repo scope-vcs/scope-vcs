@@ -5,19 +5,28 @@ use super::{
     github_pushes::acquire_github_push_lock,
     github_read_queue::{GitHubJobOutcome, prefixed_columns},
     integer_columns::{i32_to_u32, i64_to_u64, optional_i64_to_u64, u64_to_i64},
-    locks::acquire_shared_repository_lock,
+    locks::{acquire_aggregate_lock, acquire_shared_repository_lock},
+    request_merge::{land_request_merged_on_github, latest_main_advance},
     request_rows::request_by_id,
 };
 use crate::error::PostgresError;
 use scope_domain::{
     github_connection::GitHubConnection,
     requests::{
-        GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestMerge, GitHubPullRequestState,
-        GitHubPushDestination, GitHubReviewRequest, OpenedGitHubPullRequest, Request,
-        closes_carrier_pull_request, retains_request_branch_for_carrier,
+        GitHubMergeLandingStep, GitHubMergeMainCheck, GitHubPullRequest, GitHubPullRequestIntent,
+        GitHubPullRequestMerge, GitHubPullRequestState, GitHubPushDestination, GitHubReviewRequest,
+        OpenedGitHubPullRequest, Request, closes_carrier_pull_request,
+        retains_request_branch_for_carrier,
     },
 };
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement, TransactionTrait};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GitHubPullRequestFinish {
+    ClaimLost,
+    Recorded,
+    RecordedAndLanded,
+}
 
 mod intents;
 pub(super) use intents::{
@@ -106,8 +115,9 @@ impl RequestStore {
         progress: &GitHubPullRequest,
         claim_token: &str,
         outcome: GitHubJobOutcome,
+        merge_checked_against_main: Option<&GitHubMergeMainCheck>,
         now_unix: u64,
-    ) -> Result<bool, PostgresError> {
+    ) -> Result<GitHubPullRequestFinish, PostgresError> {
         let now = u64_to_i64(now_unix, "GitHub pull request time")?;
         let (job_state, retry_at, error) = match outcome {
             GitHubJobOutcome::Succeeded(()) => ("done", None, None),
@@ -158,7 +168,19 @@ impl RequestStore {
             merge.map(|merge| merge.head_oid.clone()).into(),
         ]);
         let tx = self.db.begin().await?;
-        acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
+        let (main, landing_step) = match merge_checked_against_main {
+            Some(check) => {
+                acquire_aggregate_lock(&tx, "repository", &progress.repo_id).await?;
+                let main = latest_main_advance(&tx, &progress.repo_id).await?;
+                let step = check.landing_step(main.as_ref().map(|main| main.main_oid.as_str()));
+                (main, step)
+            }
+            None => {
+                acquire_shared_repository_lock(&tx, &progress.repo_id).await?;
+                (None, GitHubMergeLandingStep::AwaitMain)
+            }
+        };
+        values.push(landing_step.requeues_job(retry_at.is_some()).into());
         acquire_github_push_lock(&tx, &progress.repo_id, &progress.branch()).await?;
         let had_ended_on_github = github_pull_request(&tx, &progress.request_id)
             .await?
@@ -170,11 +192,14 @@ impl RequestStore {
                     "UPDATE scope_github_pull_requests pull_request SET {RECORDED},
                         written_text_sha256 = $16, merge_commit_oid = $17,
                         merged_head_oid = $18,
-                        job_state = CASE WHEN intent_sequence <> $9 THEN 'queued' ELSE $10 END,
-                        attempts = CASE WHEN intent_sequence <> $9 THEN 0 ELSE attempts END,
-                        next_attempt_at_unix = CASE WHEN intent_sequence <> $9 THEN $13
+                        job_state = CASE WHEN intent_sequence <> $9 OR $19 THEN 'queued'
+                            ELSE $10 END,
+                        attempts = CASE WHEN intent_sequence <> $9 OR $19 THEN 0
+                            ELSE attempts END,
+                        next_attempt_at_unix = CASE WHEN intent_sequence <> $9 OR $19 THEN $13
                             ELSE coalesce($11, next_attempt_at_unix) END,
-                        last_error = CASE WHEN intent_sequence <> $9 THEN NULL ELSE $12 END,
+                        last_error = CASE WHEN intent_sequence <> $9 OR $19 THEN NULL
+                            ELSE $12 END,
                         lease_until_unix = NULL, claim_token = NULL,
                         updated_at_unix = greatest($13, updated_at_unix)
                       WHERE request_id = $1 AND claim_token = $8 AND job_state = 'running'
@@ -185,20 +210,34 @@ impl RequestStore {
             .await?
             .rows_affected()
             > 0;
-        if finished {
-            release_request_branch_after_carrier_change(&tx, progress, now_unix).await?;
-            if progress.has_ended_on_github() != had_ended_on_github {
-                recompute_child_carrier_intents(
+        if !finished {
+            tx.commit().await?;
+            return Ok(GitHubPullRequestFinish::ClaimLost);
+        }
+        release_request_branch_after_carrier_change(&tx, progress, now_unix).await?;
+        if progress.has_ended_on_github() != had_ended_on_github {
+            recompute_child_carrier_intents(&tx, &progress.repo_id, &progress.request_id, now_unix)
+                .await?;
+        }
+        let landed = match (landing_step, main, merge_checked_against_main) {
+            (GitHubMergeLandingStep::Land, Some(main), Some(check)) => {
+                land_request_merged_on_github(
                     &tx,
-                    &progress.repo_id,
                     &progress.request_id,
+                    main,
+                    &check.merge_commit_oid,
                     now_unix,
                 )
-                .await?;
+                .await?
             }
-        }
+            _ => false,
+        };
         tx.commit().await?;
-        Ok(finished)
+        Ok(if landed {
+            GitHubPullRequestFinish::RecordedAndLanded
+        } else {
+            GitHubPullRequestFinish::Recorded
+        })
     }
 
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "github_pull_request_claim_holds"))]

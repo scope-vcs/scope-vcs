@@ -13,6 +13,8 @@ use scope_domain::{
     views::ViewId,
 };
 
+mod merge_landing;
+
 pub(crate) const REPO: &str = "owner/repo";
 pub(crate) const OWNER: &str = "user_owner";
 
@@ -194,19 +196,33 @@ async fn a_pushed_head_queues_one_carrier_and_the_newest_intent_wins_over_a_runn
         "main".into(),
         None,
     );
-    assert!(
+    assert_eq!(
         store
             .requests()
-            .finish_github_pull_request(&running, "claim_1", GitHubJobOutcome::Succeeded(()), 12)
+            .finish_github_pull_request(
+                &running,
+                "claim_1",
+                GitHubJobOutcome::Succeeded(()),
+                None,
+                12
+            )
             .await
-            .unwrap()
+            .unwrap(),
+        GitHubPullRequestFinish::Recorded
     );
-    assert!(
-        !store
+    assert_eq!(
+        store
             .requests()
-            .finish_github_pull_request(&running, "claim_1", GitHubJobOutcome::Succeeded(()), 12)
+            .finish_github_pull_request(
+                &running,
+                "claim_1",
+                GitHubJobOutcome::Succeeded(()),
+                None,
+                12
+            )
             .await
-            .unwrap()
+            .unwrap(),
+        GitHubPullRequestFinish::ClaimLost
     );
 
     let next = claim(&store, "claim_3", 12).await.remove(0);
@@ -235,6 +251,7 @@ async fn a_failed_attempt_waits_for_its_retry_and_a_final_failure_keeps_the_erro
                 error: "GitHub was down".into(),
                 retry_at_unix: Some(40),
             },
+            None,
             10,
         )
         .await
@@ -251,6 +268,7 @@ async fn a_failed_attempt_waits_for_its_retry_and_a_final_failure_keeps_the_erro
                 error: "The Scope GitHub App cannot open pull requests here.".into(),
                 retry_at_unix: None,
             },
+            None,
             41,
         )
         .await
@@ -293,7 +311,13 @@ async fn ending_a_request_turns_its_carrier_intent_into_a_close() {
     );
     store
         .requests()
-        .finish_github_pull_request(&opened, "claim_1", GitHubJobOutcome::Succeeded(()), 11)
+        .finish_github_pull_request(
+            &opened,
+            "claim_1",
+            GitHubJobOutcome::Succeeded(()),
+            None,
+            11,
+        )
         .await
         .unwrap();
 
@@ -333,12 +357,19 @@ async fn a_claim_for_the_old_repository_cannot_record_its_pull_request_after_a_r
         "main".into(),
         None,
     );
-    assert!(
-        !store
+    assert_eq!(
+        store
             .requests()
-            .finish_github_pull_request(&running, "claim_1", GitHubJobOutcome::Succeeded(()), 12)
+            .finish_github_pull_request(
+                &running,
+                "claim_1",
+                GitHubJobOutcome::Succeeded(()),
+                None,
+                12
+            )
             .await
-            .unwrap()
+            .unwrap(),
+        GitHubPullRequestFinish::ClaimLost
     );
     let reconnected = claim(&store, "claim_2", 12).await.remove(0);
     assert_eq!(reconnected.destination.github_repository_id, 43);
@@ -360,7 +391,13 @@ async fn opened_carrier(store: &MetadataStore) {
     opened.record_commented(oid('a'), 11);
     store
         .requests()
-        .finish_github_pull_request(&opened, "claim_1", GitHubJobOutcome::Succeeded(()), 11)
+        .finish_github_pull_request(
+            &opened,
+            "claim_1",
+            GitHubJobOutcome::Succeeded(()),
+            None,
+            11,
+        )
         .await
         .unwrap();
 }
@@ -405,11 +442,18 @@ async fn a_delivery_during_a_running_claim_runs_the_job_again_after_it() {
             .await
             .unwrap()
     );
-    assert!(
+    assert_eq!(
         requests
-            .finish_github_pull_request(&commenting, "claim_2", GitHubJobOutcome::Succeeded(()), 22)
+            .finish_github_pull_request(
+                &commenting,
+                "claim_2",
+                GitHubJobOutcome::Succeeded(()),
+                None,
+                22
+            )
             .await
-            .unwrap()
+            .unwrap(),
+        GitHubPullRequestFinish::Recorded
     );
     let rereading = claim(&store, "claim_3", 22).await.remove(0);
     assert_eq!(
@@ -465,6 +509,7 @@ async fn open_carrier_and_merge(store: &MetadataStore, id: &str, number: u64, at
             &opened,
             &format!("claim_{id}"),
             GitHubJobOutcome::Succeeded(()),
+            None,
             at + 1,
         )
         .await
@@ -527,16 +572,18 @@ async fn a_merge_leaves_carrier_and_branch_to_github_only_when_main_is_published
                 base: "main".into(),
                 state: GitHubPullRequestObservedState::Merged(merge.clone()),
             });
-            assert!(
+            assert_eq!(
                 requests
                     .finish_github_pull_request(
                         &merged_on_github,
                         "claim_3",
                         GitHubJobOutcome::Succeeded(()),
+                        None,
                         31,
                     )
                     .await
-                    .unwrap()
+                    .unwrap(),
+                GitHubPullRequestFinish::Recorded
             );
             assert_eq!(request_branch_push(&store).await.target_oid, None);
             assert_eq!(

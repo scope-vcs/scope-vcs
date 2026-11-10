@@ -16,6 +16,36 @@ pub struct GitHubPullRequestMerge {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubMergeMainCheck {
+    pub main_oid: String,
+    pub merge_commit_oid: String,
+    pub main_contains_merge: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GitHubMergeLandingStep {
+    Land,
+    AwaitMain,
+    CheckAgain,
+}
+
+impl GitHubMergeMainCheck {
+    pub fn landing_step(&self, main_oid: Option<&str>) -> GitHubMergeLandingStep {
+        match main_oid {
+            Some(main_oid) if main_oid != self.main_oid => GitHubMergeLandingStep::CheckAgain,
+            Some(_) if self.main_contains_merge => GitHubMergeLandingStep::Land,
+            _ => GitHubMergeLandingStep::AwaitMain,
+        }
+    }
+}
+
+impl GitHubMergeLandingStep {
+    pub fn requeues_job(self, job_retries: bool) -> bool {
+        self == Self::CheckAgain && !job_retries
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubPullRequestState {
     Open,
     Closed,

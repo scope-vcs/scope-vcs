@@ -20,13 +20,13 @@ use scope_domain::{
         GitHubConnection, GitHubReviewBotSettings, PRIVATE_REQUESTS_WITHHELD_MESSAGE,
     },
     requests::{
-        GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestObservation,
-        GitHubPullRequestObservedState, GitHubPullRequestStep, carrier_may_change,
-        carrier_text_digest, carries_private_request, github_retry_at, lands_with_main,
-        may_carry_on_github, review_request_comment_body, review_request_marker,
+        GitHubMergeMainCheck, GitHubPullRequest, GitHubPullRequestIntent,
+        GitHubPullRequestObservation, GitHubPullRequestObservedState, GitHubPullRequestStep,
+        carrier_may_change, carrier_text_digest, carries_private_request, github_retry_at,
+        lands_with_main, may_carry_on_github, review_request_comment_body, review_request_marker,
     },
 };
-use scope_postgres::db::{GitHubJobOutcome, GitHubMergeLandingAttempt};
+use scope_postgres::db::{GitHubJobOutcome, GitHubPullRequestFinish};
 use std::time::Duration;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -69,9 +69,15 @@ async fn run_claimed(
     claim_token: &str,
     now_unix: u64,
 ) {
-    let result = advance(state, &mut carrier, claim_token).await;
+    let advanced = advance(state, &mut carrier, claim_token).await;
+    let (result, merge_checked_against_main) = match check_merge_against_main(state, &carrier).await
+    {
+        Ok(check) => (advanced, check),
+        Err(error) => (advanced.and(Err(error.into())), None),
+    };
     let now_unix = unix_now().map_or(now_unix, |finished| finished.max(now_unix));
-    let Some(outcome) = job_outcome(result, github_retry_at(carrier.attempts, now_unix)) else {
+    let retry_at_unix = github_retry_at(carrier.attempts, now_unix);
+    let Some(outcome) = job_outcome(result, retry_at_unix) else {
         return;
     };
     if let GitHubJobOutcome::Failed { error, .. } = &outcome {
@@ -82,34 +88,48 @@ async fn run_claimed(
             "keeping a GitHub pull request in step with its request failed"
         );
     }
-    let job_is_done = matches!(outcome, GitHubJobOutcome::Succeeded(()));
-    match state
-        .metadata
-        .requests()
-        .finish_github_pull_request(&carrier, claim_token, outcome, now_unix)
+    let requests = state.metadata.requests();
+    let finish = match requests
+        .finish_github_pull_request(
+            &carrier,
+            claim_token,
+            outcome.clone(),
+            merge_checked_against_main.as_ref(),
+            now_unix,
+        )
         .await
     {
-        Ok(true) => {
-            match land_request_merged_on_github(state, &carrier).await {
-                Ok(GitHubMergeLandingAttempt::MainMoved) if job_is_done => {
-                    retry_landing_later(state, &carrier, now_unix).await;
-                }
-                Ok(GitHubMergeLandingAttempt::MainMoved) => {}
-                Ok(GitHubMergeLandingAttempt::Landed | GitHubMergeLandingAttempt::NotLanded) => {}
-                Err(error) => {
-                    tracing::warn!(
-                        request_id = carrier.request_id,
-                        error = %error.operator_diagnostic(),
-                        "could not land a request whose pull request merged on GitHub"
-                    );
-                    if job_is_done {
-                        retry_landing_later(state, &carrier, now_unix).await;
-                    }
-                }
-            }
-            publish_pull_request_change(state, &carrier.repo_id, &carrier.request_id).await
+        Err(error) if merge_checked_against_main.is_some() => {
+            let error = ApiError::from(error);
+            tracing::warn!(
+                request_id = carrier.request_id,
+                attempts = carrier.attempts,
+                error = %error.operator_diagnostic(),
+                "could not land a request whose pull request merged on GitHub"
+            );
+            let outcome = match outcome {
+                GitHubJobOutcome::Failed { .. } => outcome,
+                GitHubJobOutcome::Succeeded(()) => GitHubJobOutcome::Failed {
+                    error: error.into_public_message(),
+                    retry_at_unix,
+                },
+            };
+            requests
+                .finish_github_pull_request(&carrier, claim_token, outcome, None, now_unix)
+                .await
         }
-        Ok(false) => {}
+        finish => finish,
+    };
+    match finish {
+        Ok(GitHubPullRequestFinish::ClaimLost) => {}
+        Ok(finish) => {
+            publish_pull_request_change(
+                state,
+                &carrier,
+                finish == GitHubPullRequestFinish::RecordedAndLanded,
+            )
+            .await;
+        }
         Err(error) => tracing::warn!(
             request_id = carrier.request_id,
             error = %error,
@@ -118,44 +138,26 @@ async fn run_claimed(
     }
 }
 
-async fn retry_landing_later(state: &AppState, carrier: &GitHubPullRequest, now_unix: u64) {
-    let Some(retry_at_unix) = github_retry_at(1, now_unix) else {
-        return;
-    };
-    if let Err(error) = state
-        .metadata
-        .requests()
-        .requeue_github_pull_request(
-            carrier.destination.github_repository_id,
-            &carrier.request_id,
-            retry_at_unix,
-        )
-        .await
-    {
-        tracing::warn!(
-            request_id = carrier.request_id,
-            %error,
-            "could not requeue a pull request whose merged request did not land"
-        );
-    }
-}
-
-async fn land_request_merged_on_github(
+async fn check_merge_against_main(
     state: &AppState,
     carrier: &GitHubPullRequest,
-) -> Result<GitHubMergeLandingAttempt, ApiError> {
-    let requests = state.metadata.requests();
-    let Some(request) = requests.request_by_id(&carrier.request_id).await? else {
-        return Ok(GitHubMergeLandingAttempt::NotLanded);
+) -> Result<Option<GitHubMergeMainCheck>, ApiError> {
+    let Some(request) = state
+        .metadata
+        .requests()
+        .request_by_id(&carrier.request_id)
+        .await?
+    else {
+        return Ok(None);
     };
     let Some(merge) = carrier
         .merge_of(&request)
         .filter(|_| lands_with_main(&request))
     else {
-        return Ok(GitHubMergeLandingAttempt::NotLanded);
+        return Ok(None);
     };
     let Some(incarnation) = state.repository_incarnation(&carrier.repo_id).await? else {
-        return Ok(GitHubMergeLandingAttempt::NotLanded);
+        return Ok(None);
     };
     let Some(main) = state
         .metadata
@@ -163,7 +165,7 @@ async fn land_request_merged_on_github(
         .repository_content_source(&incarnation)
         .await?
     else {
-        return Ok(GitHubMergeLandingAttempt::NotLanded);
+        return Ok(None);
     };
     let repo = state
         .repository_engine
@@ -179,24 +181,11 @@ async fn land_request_merged_on_github(
         )
     })
     .await?;
-    if !main_contains_merge {
-        return Ok(GitHubMergeLandingAttempt::NotLanded);
-    }
-    let attempt = requests
-        .land_request_merged_on_github(
-            &request.id,
-            &main.head_oid,
-            &merge.merge_commit_oid,
-            unix_now()?,
-        )
-        .await?;
-    if attempt == GitHubMergeLandingAttempt::Landed {
-        state.wakeups.auto_merge.notify_one();
-        state
-            .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
-            .await;
-    }
-    Ok(attempt)
+    Ok(Some(GitHubMergeMainCheck {
+        main_oid: main.head_oid,
+        merge_commit_oid: merge.merge_commit_oid.clone(),
+        main_contains_merge,
+    }))
 }
 
 async fn advance(
@@ -561,16 +550,24 @@ pub(super) fn call_failure(error: PullRequestCallError) -> JobFailure {
     }
 }
 
-async fn publish_pull_request_change(state: &AppState, repo_id: &str, request_id: &str) {
-    match state.repository_incarnation(repo_id).await {
+async fn publish_pull_request_change(state: &AppState, carrier: &GitHubPullRequest, landed: bool) {
+    if landed {
+        state.wakeups.auto_merge.notify_one();
+    }
+    match state.repository_incarnation(&carrier.repo_id).await {
         Ok(Some(incarnation)) => {
+            if landed {
+                state
+                    .publish_request_summary_refresh(&incarnation, RepoChangeReason::RequestMerged)
+                    .await;
+            }
             state
-                .publish_request_state_refresh(&incarnation, request_id)
+                .publish_request_state_refresh(&incarnation, &carrier.request_id)
                 .await;
         }
         Ok(None) => {}
         Err(error) => tracing::warn!(
-            repo_id,
+            repo_id = carrier.repo_id,
             error = %error.operator_diagnostic(),
             "could not announce a GitHub pull request change"
         ),

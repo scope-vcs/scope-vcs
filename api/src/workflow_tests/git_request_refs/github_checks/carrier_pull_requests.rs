@@ -1,6 +1,8 @@
 use super::*;
 use crate::use_cases::github_pull_requests::run_due_github_pull_requests;
-use scope_domain::requests::review_request_comment_body;
+use scope_domain::requests::{
+    GitHubPullRequest, GitHubPullRequestJobState, review_request_comment_body,
+};
 
 mod stacked;
 
@@ -378,16 +380,18 @@ async fn a_close_delivered_before_the_first_run_saved_the_pull_request_still_win
     )
     .await;
     assert_eq!(delivered.status(), StatusCode::NO_CONTENT);
-    assert!(
+    assert_eq!(
         requests
             .finish_github_pull_request(
                 &opening,
                 "first_run",
                 scope_postgres::db::GitHubJobOutcome::Succeeded(()),
+                None,
                 now
             )
             .await
-            .unwrap()
+            .unwrap(),
+        scope_postgres::db::GitHubPullRequestFinish::Recorded
     );
 
     assert_eq!(pull_request_pass(state).await, 1);
@@ -597,5 +601,92 @@ async fn a_merge_seen_after_main_already_holds_it_lands_the_request_as_the_main_
     );
     observe_merge(&request, &head, &squash).await;
 
+    assert_landed(&request, &head, &squash).await;
+}
+
+async fn merged_carrier(state: &AppState) -> GitHubPullRequest {
+    state
+        .metadata
+        .requests()
+        .merged_github_pull_requests(TEST_REPO_ID)
+        .await
+        .unwrap()
+        .remove(0)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_landing_that_fails_keeps_the_merge_and_retries_on_the_jobs_attempts_and_backoff() {
+    let request = opted_in_request("carrier-landing-fails").await;
+    let state = &request.state;
+    push_pass(state, unix_now()).await;
+    pull_request_pass(state).await;
+    let head = request.head();
+    let squash = squash_onto_main(&request);
+    push_main(&request).await;
+    let admin = state.metadata.admin();
+    admin
+        .execute_for_tests(
+            "CREATE FUNCTION reject_landing() RETURNS trigger LANGUAGE plpgsql AS $$
+             BEGIN
+                 IF NEW.merged_at_unix IS NOT NULL THEN
+                     RAISE EXCEPTION 'landing failed';
+                 END IF;
+                 RETURN NEW;
+             END $$;
+             CREATE TRIGGER reject_landing BEFORE UPDATE ON scope_requests
+                 FOR EACH ROW EXECUTE FUNCTION reject_landing()",
+        )
+        .await
+        .unwrap();
+
+    observe_merge(&request, &head, &squash).await;
+    let retrying = merged_carrier(state).await;
+    assert_eq!(retrying.job_state, GitHubPullRequestJobState::Queued);
+    assert_eq!(retrying.attempts, 1);
+    assert!(retrying.last_error.is_some());
+    assert_eq!(pull_request_pass(state).await, 0);
+
+    assert_eq!(
+        run_due_github_pull_requests(state, FAR_FUTURE_UNIX)
+            .await
+            .unwrap(),
+        1
+    );
+    let retried = merged_carrier(state).await;
+    assert_eq!(retried.job_state, GitHubPullRequestJobState::Queued);
+    assert_eq!(retried.attempts, 2);
+    assert_eq!(
+        stored_request(state, &request.request_id).await.state(),
+        RequestState::Open
+    );
+
+    admin
+        .execute_for_tests(
+            "UPDATE scope_github_pull_requests SET attempts = 4, next_attempt_at_unix = 0",
+        )
+        .await
+        .unwrap();
+    request
+        .fake
+        .pulls
+        .rate_limited_once
+        .store(true, Ordering::SeqCst);
+    assert_eq!(pull_request_pass(state).await, 1);
+    let rate_limited = merged_carrier(state).await;
+    assert_eq!(rate_limited.job_state, GitHubPullRequestJobState::Queued);
+    assert_eq!(rate_limited.attempts, 5);
+    assert!(rate_limited.last_error.unwrap().contains("rate limit"));
+    assert_eq!(
+        run_due_github_pull_requests(state, FAR_FUTURE_UNIX - 1)
+            .await
+            .unwrap(),
+        0
+    );
+
+    admin
+        .execute_for_tests("DROP TRIGGER reject_landing ON scope_requests")
+        .await
+        .unwrap();
+    observe_merge(&request, &head, &squash).await;
     assert_landed(&request, &head, &squash).await;
 }
