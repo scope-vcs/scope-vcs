@@ -5,6 +5,7 @@ import { isDocument } from './check-docs.mjs'
 test('reports documentation files anywhere in the repository', () => {
   for (const file of [
     'docs/architecture.md',
+    'docs/fixtures/architecture.md',
     'docs/verification/stack.png',
     'deploy/aws/OPERATIONS.md',
     'bench/README.md',

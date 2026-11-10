@@ -15,10 +15,10 @@ export function isDocument(file) {
   if (publishedNotices.has(normalized)) return false
   if (permittedPrefixes.some((prefix) => normalized.startsWith(prefix))) return false
   const segments = normalized.split('/')
+  if (segments[0] === 'docs') return true
   if (segments.includes('fixtures')) return false
   const basename = segments.at(-1)
-  return segments[0] === 'docs'
-    || documentExtensions.has(path.posix.extname(basename).toLowerCase())
+  return documentExtensions.has(path.posix.extname(basename).toLowerCase())
     || /^readme(\.|$)/i.test(basename)
 }
 
