@@ -9,7 +9,7 @@ const AUTH_PAGES = {
     lede: 'Pick up your repositories, requests, and CLI sessions.',
   },
   'sign-up': {
-    title: 'Create your Scope account',
+    title: 'Create your account',
     lede: 'Share part of a repository and keep the rest private.',
   },
 } as const
