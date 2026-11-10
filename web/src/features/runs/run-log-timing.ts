@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type MouseEvent } from 'react'
+import { useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { captureRunLogTiming, type RunLogTiming } from '../../analytics/diagnostics'
 
 type RunLogIntent = {
@@ -6,6 +6,7 @@ type RunLogIntent = {
   trigger: RunLogTiming['trigger']
   startedAt: number
   fetched: boolean
+  view?: object
 }
 
 type AfterPaint = (paint: (paintedAt: number) => void) => () => void
@@ -39,6 +40,13 @@ export function createRunLogTimer({
     enterRunPage(runId: string) {
       intentFor(runId)
     },
+    claim(runId: string, view: object) {
+      const current = intentFor(runId)
+      if (current && !current.view) current.view = view
+    },
+    release(view: object) {
+      if (intent?.view === view) intent = null
+    },
     leaveRunPage(runId: string) {
       if (intent?.runId === runId) intent = null
     },
@@ -71,17 +79,19 @@ export function createRunLogTimer({
   }
 }
 
+export function afterNextPaint(paint: (paintedAt: number) => void) {
+  let task: ReturnType<typeof setTimeout> | undefined
+  const frame = requestAnimationFrame(() => {
+    task = setTimeout(() => paint(performance.now()))
+  })
+  return () => {
+    cancelAnimationFrame(frame)
+    clearTimeout(task)
+  }
+}
+
 const runLogTimer = createRunLogTimer({
-  afterPaint: (paint) => {
-    let task: ReturnType<typeof setTimeout> | undefined
-    const frame = requestAnimationFrame(() => {
-      task = setTimeout(() => paint(performance.now()))
-    })
-    return () => {
-      cancelAnimationFrame(frame)
-      clearTimeout(task)
-    }
-  },
+  afterPaint: afterNextPaint,
   isDocumentRoute: () => {
     const [navigation] = performance.getEntriesByType('navigation')
     return navigation !== undefined && new URL(navigation.name).pathname === window.location.pathname
@@ -125,7 +135,14 @@ export function useRunLogPaintTiming({
   text: string
 }) {
   const closeView = useRef<(() => void) | null>(null)
-  useLayoutEffect(() => () => closeView.current?.(), [])
+  const [view] = useState(() => ({}))
+  useLayoutEffect(() => {
+    runLogTimer.claim(runId, view)
+    return () => {
+      closeView.current?.()
+      runLogTimer.release(view)
+    }
+  }, [runId, view])
   useLayoutEffect(() => {
     if (fetching) runLogTimer.observeFetching(runId)
     if (closeView.current) return

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { RunLogTiming } from '@/analytics/diagnostics'
-import { createRunLogTimer } from './run-log-timing'
+import { afterNextPaint, createRunLogTimer } from './run-log-timing'
 
 function timer(documentRoute = false) {
   const reports: RunLogTiming[] = []
@@ -85,4 +85,43 @@ test('the document run route measures from navigation start once and counts pend
     { durationMs: 640, source: 'fetched', trigger: 'page_load' },
     { durationMs: 50, source: 'stored', trigger: 'job_click' },
   ])
+})
+
+test('a log view that closes before its text drops the open it was showing, but not a newer click', () => {
+  const { paint, reports, runLog } = timer()
+  const firstView = {}
+  runLog.start('list_click', 'run-1', 0)
+  runLog.claim('run-1', firstView)
+  runLog.release(firstView)
+  assert.equal(runLog.commitText('run-1', 'github', 'log of a job opened from the URL hash'), null)
+
+  const secondView = {}
+  runLog.start('job_click', 'run-1', 10)
+  runLog.claim('run-1', secondView)
+  runLog.start('job_click', 'run-1', 20)
+  runLog.release(secondView)
+  runLog.claim('run-1', {})
+  runLog.commitText('run-1', 'github', 'log of the clicked job')
+  paint(70)
+
+  assert.deepEqual(reports.map(({ durationMs, trigger }) => ({ durationMs, trigger })), [{ durationMs: 50, trigger: 'job_click' }])
+})
+
+test('the page reports after the next frame has painted, not when the text is committed', async () => {
+  const frames: Array<() => void> = []
+  const browser = globalThis as { requestAnimationFrame?: unknown, cancelAnimationFrame?: unknown }
+  browser.requestAnimationFrame = (frame: () => void) => frames.push(frame)
+  browser.cancelAnimationFrame = () => {}
+  try {
+    let paintedAt: number | null = null
+    afterNextPaint((at) => { paintedAt = at })
+    assert.equal(paintedAt, null, 'nothing runs before the frame')
+    frames.splice(0).forEach((frame) => frame())
+    assert.equal(paintedAt, null, 'the frame callback runs before paint, so the report waits one more task')
+    await new Promise((resolve) => setTimeout(resolve))
+    assert.equal(typeof paintedAt, 'number')
+  } finally {
+    delete browser.requestAnimationFrame
+    delete browser.cancelAnimationFrame
+  }
 })
