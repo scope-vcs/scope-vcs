@@ -4,18 +4,19 @@ use crate::{
     auth::tokens::random_token,
     error::ApiError,
     git::request_refs::with_request_revision_store_repo,
-    github::{GitHubApp, GitHubPublishFailure},
+    github::{GitHubApp, GitHubPublishFailure, pull_requests::PullRequestCallError},
     persistence::unix_now,
     repo_events::RepoChangeReason,
     state::AppState,
-    use_cases::view_check_commits::with_check_commit,
+    use_cases::{github_pull_requests::call_failure, view_check_commits::with_check_commit},
 };
 use scope_domain::requests::main_publication_contains_merge;
 use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
     requests::{
-        GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, GitHubPushState,
+        BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE, GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch,
+        GitHubBranchDeletion, GitHubPullRequestsBasedOnBranch, GitHubPush, GitHubPushState,
         github_push_retry_at,
     },
 };
@@ -232,6 +233,7 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
     let Some(target_oid) = push.target_oid.clone() else {
         ensure_current(state, push, claim_token, None).await?;
         let token = installation_token(&app, destination.installation_id).await?;
+        wait_for_pull_requests_based_on(state, &app, push).await?;
         let remote = app.push_remote(&destination.github_full_name, &token);
         let git_ref = push.branch.git_ref();
         return crate::git::blocking::run(move || Ok(remote.delete(&git_ref)))
@@ -385,6 +387,40 @@ async fn send(state: &AppState, push: &GitHubPush, claim_token: &str) -> Result<
                 move |repo, _| Ok(push_when_current(repo)),
             )
             .await?
+        }
+    }
+}
+
+async fn wait_for_pull_requests_based_on(
+    state: &AppState,
+    app: &GitHubApp,
+    push: &GitHubPush,
+) -> Result<(), JobFailure> {
+    let destination = &push.destination;
+    let based_on_branch = match app
+        .open_pull_request_heads_based_on(
+            destination.installation_id,
+            &destination.github_full_name,
+            &push.branch.name(),
+        )
+        .await
+    {
+        Ok(head_branches) => GitHubPullRequestsBasedOnBranch::Open { head_branches },
+        Err(PullRequestCallError::PermissionMissing) => GitHubPullRequestsBasedOnBranch::Unreadable,
+        Err(error) => return Err(call_failure(error)),
+    };
+    match based_on_branch.branch_deletion() {
+        GitHubBranchDeletion::Delete => Ok(()),
+        GitHubBranchDeletion::WaitForPullRequests { of_requests } => {
+            state
+                .metadata
+                .requests()
+                .recompute_github_pull_request_intents(&push.repo_id, &of_requests, unix_now()?)
+                .await?;
+            state.wakeups.github_pull_requests.notify_one();
+            Err(JobFailure::Retry(
+                BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE.to_string(),
+            ))
         }
     }
 }

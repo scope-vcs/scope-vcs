@@ -52,11 +52,12 @@ pub use auto_merge::{
 pub mod attachments;
 mod checks;
 pub use checks::{
-    CheckCommitBase, GITHUB_MAIN_DIVERGED_MESSAGE, GITHUB_WORKFLOWS_START_WITHIN_SECS,
-    GitHubBranch, GitHubCheckConclusion, GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus,
-    GitHubCheckTarget, GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestJobState,
-    GitHubPullRequestObservation, GitHubPullRequestState, GitHubPullRequestStatus,
-    GitHubPullRequestStatusState, GitHubPullRequestStep, GitHubPush, GitHubPushDestination,
+    BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE, CheckCommitBase, GITHUB_MAIN_DIVERGED_MESSAGE,
+    GITHUB_WORKFLOWS_START_WITHIN_SECS, GitHubBranch, GitHubBranchDeletion, GitHubCheckConclusion,
+    GitHubCheckResults, GitHubCheckRun, GitHubCheckStatus, GitHubCheckTarget, GitHubPullRequest,
+    GitHubPullRequestIntent, GitHubPullRequestJobState, GitHubPullRequestObservation,
+    GitHubPullRequestState, GitHubPullRequestStatus, GitHubPullRequestStatusState,
+    GitHubPullRequestStep, GitHubPullRequestsBasedOnBranch, GitHubPush, GitHubPushDestination,
     GitHubPushState, GitHubPushStatus, GitHubRequestChecks, GitHubReviewRequest,
     GitHubTestedCommit, NO_GITHUB_WORKFLOWS_STARTED, NativeRequestCheck, OpenedGitHubPullRequest,
     PRIVATE_CODE_CONFLICT_MESSAGE, RequestCheck, RequestCheckContext, RequestCheckEvaluation,

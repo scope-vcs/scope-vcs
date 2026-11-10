@@ -296,7 +296,8 @@ connected repository with `git push --force`, so a new revision replaces the
 branch. The installation token reaches git as an `http.extraHeader` through
 git's environment, never in its arguments or the URL. Merging, closing or
 deleting the request deletes the branch from the GitHub repository it was
-pushed to. Deleting the Scope repository queues the same deletions, except
+pushed to, once no open pull request there is based on it. Deleting the
+Scope repository queues the same deletions, except
 for `main`, which Scope never deletes; they
 name the GitHub repository and installation themselves, so they run after
 the Scope repository is gone, while the installation exists.
@@ -361,11 +362,27 @@ merges, the same transaction requeues each open child's carrier to move it
 onto `main`. The same happens when Scope records that the parent's pull
 request was merged or closed on GitHub while the parent request is still
 open, so Scope does not move a child back onto a branch whose pull request
-has ended. Scope keeps the parent's branch on GitHub while any open pull
-request is recorded with that branch as its base, and deletes it once the
-child's move is recorded or the child's pull request closes, so the child
-keeps its pull request. If GitHub closes a child's pull request anyway,
-because its base branch disappeared some other way, that close happened
+has ended. If that pull request is reopened, the children move back onto the
+parent's branch.
+
+Before Scope deletes a branch, the push job asks GitHub for the open pull
+requests based on it, in the repository the deletion targets. While there
+are any, it leaves the branch alone, recomputes the base of each one that a
+Scope request owns so that its job moves it to `main`, and tries the deletion
+again on the push job's retry schedule. A stacked child therefore keeps its
+pull request when its parent ends. A carrier that moves off a request branch
+or closes queues that branch's waiting deletion again at once. After the last
+retry the deletion has failed. It is queued again when a carrier leaves the
+branch, when the request's own carrier is observed again, or, for a merged
+request, at the next main publication that contains the merge. A pull request
+Scope does not manage holds the branch the same way, and nothing but those
+events retries after it leaves. An installation that has not accepted the
+Pull requests permission cannot be asked, so Scope deletes the branch as it
+did before this check existed.
+
+GitHub can still close a child's pull request when its base branch disappears
+some other way: a pull request takes the branch as its base between the check
+and the deletion, or someone else deletes the branch. That close happened
 while Scope was moving the base, so it counts as Scope's and the next run
 opens a new pull request against `main`. When the
 repository sets a **Review request comment**, up to 500 characters, Scope
@@ -385,13 +402,11 @@ GitHub close the pull request instead of marking it merged; the branch is
 deleted once GitHub reports the carrier closed or merged, or once a main
 publication whose commit contains the merge succeeds
 (`main_publication_contains_merge`, answered from the repository's git
-history), so a missed webhook cannot leave the branch behind. Either
-deletion waits while an open pull request is still based on the branch. The
-decisions live
+history), so a missed webhook cannot leave the branch behind. The decisions live
 in `closes_carrier_pull_request` and `retains_request_branch_for_carrier` in
-`scope-domain` and read the connection, the carrier record and the pull
-requests based on the branch when the request ends and whenever a carrier is
-observed again. Once a request has
+`scope-domain` and read the connection and the carrier record when the
+request ends and whenever the carrier is observed again. The check before a
+deletion is `GitHubPullRequestsBasedOnBranch::branch_deletion`. Once a request has
 ended, Scope no longer opens, retargets, rewrites or comments on its carrier.
 A close counts only when
 GitHub confirms it or reports the pull request already closed or merged; a

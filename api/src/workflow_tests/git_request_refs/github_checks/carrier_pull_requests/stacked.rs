@@ -57,13 +57,20 @@ impl Stack {
         pull
     }
 
+    fn parent_pull_request_number(&self) -> u64 {
+        self.pull(&self.parent.branch())["number"].as_u64().unwrap()
+    }
+
     async fn github_ends_parent_pull_request(&self) {
-        let number = self.pull(&self.parent.branch())["number"].as_u64().unwrap();
-        self.parent.fake.pulls.close_as(number, "octocat");
+        self.parent
+            .fake
+            .pulls
+            .close_as(self.parent_pull_request_number(), "octocat");
         self.deliver_change_of(&self.parent.branch()).await;
     }
 
     async fn deliver_change_of(&self, branch: &str) {
+        let pull = self.pull(branch);
         let delivered = webhook(
             &self.parent.state,
             "pull_request",
@@ -72,9 +79,9 @@ impl Stack {
                 "repository": { "id": GITHUB_REPOSITORY_ID },
                 "sender": { "login": "octocat" },
                 "pull_request": {
-                    "number": self.pull(branch)["number"],
-                    "html_url": self.pull(branch)["html_url"],
-                    "state": self.pull(branch)["state"],
+                    "number": pull["number"],
+                    "html_url": pull["html_url"],
+                    "state": pull["state"],
                     "head": { "ref": branch, "repo": { "id": GITHUB_REPOSITORY_ID } },
                     "base": { "ref": "main", "repo": { "id": GITHUB_REPOSITORY_ID } },
                 },
@@ -83,6 +90,22 @@ impl Stack {
         )
         .await;
         assert_eq!(delivered.status(), StatusCode::NO_CONTENT);
+    }
+
+    async fn merge_parent(&self) {
+        let merged = api_request(
+            router(self.parent.state.clone()),
+            "POST",
+            &repo_request_merge(TEST_REPO_OWNER, TEST_REPO_NAME, &self.parent.request_id),
+            Some(&bearer_header()),
+            None,
+        )
+        .await;
+        expect_json(merged, StatusCode::OK).await;
+    }
+
+    fn parent_branch_on_github(&self) -> Option<String> {
+        self.parent.fake.branch_head(&self.parent.branch())
     }
 
     async fn settle_pull_requests(&self) {
@@ -104,36 +127,80 @@ async fn a_merged_parents_branch_stays_until_the_childs_pull_request_has_moved_t
     let opened = stack.pull(&stack.child_branch);
     assert_eq!(opened["base"]["ref"], parent.branch());
 
-    let merged = api_request(
-        router(state.clone()),
-        "POST",
-        &repo_request_merge(TEST_REPO_OWNER, TEST_REPO_NAME, &parent.request_id),
-        Some(&bearer_header()),
-        None,
-    )
-    .await;
-    expect_json(merged, StatusCode::OK).await;
+    stack.merge_parent().await;
     stack.settle_pushes().await;
     assert!(fake.branch_head("main").is_some());
     assert_eq!(
-        fake.branch_head(&parent.branch()),
+        stack.parent_branch_on_github(),
         Some(stack.parent_head.clone())
     );
 
-    stack.github_ends_parent_pull_request().await;
     stack.settle_pull_requests().await;
     let moved = stack.pull(&stack.child_branch);
     assert_eq!(moved["base"]["ref"], "main");
     assert_eq!(moved["state"], "open");
     assert_eq!(moved["number"], opened["number"]);
     stack.settle_pushes().await;
-    assert_eq!(fake.branch_head(&parent.branch()), None);
+    assert_eq!(stack.parent_branch_on_github(), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pull_request_scope_has_not_recorded_keeps_its_base_until_scope_moves_it() {
+    let stack = Stack::create("carrier-stacked-unrecorded").await;
+    let (parent, state, fake) = (&stack.parent, &stack.parent.state, &stack.parent.fake);
+    expect_json(set_publication(state, true).await, StatusCode::OK).await;
+    stack.settle_pushes().await;
+    let landed = fake.pulls.open(&stack.child_branch, &parent.branch());
+
+    stack.merge_parent().await;
+    fake.pulls.forbidden.store(true, Ordering::SeqCst);
+    stack.settle_pull_requests().await;
+    fake.pulls.forbidden.store(false, Ordering::SeqCst);
+    stack.settle_pushes().await;
+    assert_eq!(
+        stack.parent_branch_on_github(),
+        Some(stack.parent_head.clone())
+    );
+
+    stack.settle_pull_requests().await;
+    let moved = stack.pull(&stack.child_branch);
+    assert_eq!(moved["number"], landed);
+    assert_eq!(moved["base"]["ref"], "main");
+    assert_eq!(moved["state"], "open");
+    assert_eq!(push_pass(state, FAR_FUTURE_UNIX).await, 1);
+    assert_eq!(stack.parent_branch_on_github(), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_disconnected_repository_keeps_a_closed_parents_branch_under_an_open_pull_request() {
+    let stack = Stack::create("carrier-stacked-disconnected").await;
+    let (parent, state) = (&stack.parent, &stack.parent.state);
+    stack.settle_pushes().await;
+    stack.settle_pull_requests().await;
+    state
+        .metadata
+        .repositories()
+        .disconnect_github_repository(TEST_REPO_ID, &test_owner_id())
+        .await
+        .unwrap();
+
+    close_request(parent).await;
+    stack.settle_pushes().await;
+    stack.settle_pull_requests().await;
+    assert_eq!(
+        stack.parent_branch_on_github(),
+        Some(stack.parent_head.clone())
+    );
+    let child = stack.pull(&stack.child_branch);
+    assert_eq!(child["state"], "open");
+    assert_eq!(child["base"]["ref"], parent.branch());
+    assert_eq!(stack.pull(&parent.branch())["state"], "closed");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_child_moves_to_main_when_the_parents_pull_request_ends_and_is_not_moved_back() {
     let stack = Stack::create("carrier-stacked-parent-ended").await;
-    let (parent, fake) = (&stack.parent, &stack.parent.fake);
+    let parent = &stack.parent;
     stack.settle_pushes().await;
     stack.settle_pull_requests().await;
     let opened = stack.pull(&stack.child_branch);
@@ -151,7 +218,35 @@ async fn a_child_moves_to_main_when_the_parents_pull_request_ends_and_is_not_mov
     assert_eq!(child["number"], opened["number"]);
     stack.settle_pushes().await;
     assert_eq!(
-        fake.branch_head(&parent.branch()),
+        stack.parent_branch_on_github(),
         Some(stack.parent_head.clone())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_child_stays_on_a_parent_whose_pull_request_reopened_before_the_child_moved() {
+    let stack = Stack::create("carrier-stacked-parent-reopened").await;
+    let (parent, state, fake) = (&stack.parent, &stack.parent.state, &stack.parent.fake);
+    stack.settle_pushes().await;
+    stack.settle_pull_requests().await;
+
+    fake.pulls.writes_unreachable.store(true, Ordering::SeqCst);
+    stack.github_ends_parent_pull_request().await;
+    stack.settle_pull_requests().await;
+    fake.pulls.writes_unreachable.store(false, Ordering::SeqCst);
+    assert_eq!(
+        stack.pull(&stack.child_branch)["base"]["ref"],
+        parent.branch()
+    );
+
+    fake.pulls.reopen(stack.parent_pull_request_number());
+    stack.deliver_change_of(&parent.branch()).await;
+    stack.settle_pull_requests().await;
+    run_due_github_pull_requests(state, FAR_FUTURE_UNIX)
+        .await
+        .unwrap();
+    assert_eq!(
+        stack.pull(&stack.child_branch)["base"]["ref"],
+        parent.branch()
     );
 }

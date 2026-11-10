@@ -433,7 +433,7 @@ async fn pull_request_text(
     })
 }
 
-fn call_failure(error: PullRequestCallError) -> JobFailure {
+pub(super) fn call_failure(error: PullRequestCallError) -> JobFailure {
     match error {
         PullRequestCallError::Unreachable => JobFailure::Retry(
             "The Scope GitHub App cannot reach this pull request on GitHub.".to_string(),

@@ -29,9 +29,10 @@ pub use github::{
     GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED,
 };
 pub use github_pull_request::{
-    GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestJobState,
-    GitHubPullRequestObservation, GitHubPullRequestState, GitHubPullRequestStatus,
-    GitHubPullRequestStatusState, GitHubPullRequestStep, GitHubReviewRequest,
+    BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE, GitHubBranchDeletion, GitHubPullRequest,
+    GitHubPullRequestIntent, GitHubPullRequestJobState, GitHubPullRequestObservation,
+    GitHubPullRequestState, GitHubPullRequestStatus, GitHubPullRequestStatusState,
+    GitHubPullRequestStep, GitHubPullRequestsBasedOnBranch, GitHubReviewRequest,
     OpenedGitHubPullRequest, carrier_may_change, carrier_pull_request_intent, carrier_text_digest,
     carries_private_request, closes_carrier_pull_request, may_carry_on_github,
     retains_request_branch_for_carrier, review_delivery_belongs_to_request,

@@ -55,6 +55,11 @@ struct BranchBody {
 }
 
 #[derive(Deserialize)]
+struct PullRequestHeadBody {
+    head: BranchBody,
+}
+
+#[derive(Deserialize)]
 struct ErrorBody {
     message: String,
     #[serde(default)]
@@ -130,6 +135,32 @@ impl GitHubApp {
             )
             .await?;
         Ok(open.into_iter().next().map(Into::into))
+    }
+
+    pub(crate) async fn open_pull_request_heads_based_on(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        base_branch: &str,
+    ) -> Result<Vec<String>, PullRequestCallError> {
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("state", "open")
+            .append_pair("base", base_branch)
+            .append_pair("per_page", &PAGE_SIZE.to_string())
+            .finish();
+        let open: Vec<PullRequestHeadBody> = self
+            .pull_request_call(
+                installation_id,
+                Method::GET,
+                &format!("/repos/{full_name}/pulls?{query}"),
+                "/repos/{owner}/{repo}/pulls",
+                None,
+            )
+            .await?;
+        Ok(open
+            .into_iter()
+            .map(|pull_request| pull_request.head.name)
+            .collect())
     }
 
     pub(crate) async fn create_pull_request(

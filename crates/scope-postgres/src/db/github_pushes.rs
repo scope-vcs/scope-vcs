@@ -297,7 +297,8 @@ impl RequestStore {
                 "SELECT request.id FROM scope_requests request
                   WHERE request.repo_id = $1
                     AND (request.merged_at_unix IS NOT NULL OR request.closed_at_unix IS NOT NULL)
-                    AND (SELECT latest.kind = 'push' AND latest.github_repository_id = $2
+                    AND (SELECT (latest.kind = 'push' OR latest.state = 'failed')
+                                AND latest.github_repository_id = $2
                            FROM scope_github_pushes latest
                           WHERE latest.request_id = request.id
                           ORDER BY latest.sequence DESC
@@ -330,15 +331,8 @@ impl RequestStore {
     ) -> Result<(), PostgresError> {
         let tx = self.db.begin().await?;
         super::locks::acquire_shared_repository_lock(&tx, repo_id).await?;
-        let connection =
-            super::github_connections::repository_github_connection(&tx, repo_id).await?;
         for request_id in request_ids {
-            let branch = GitHubBranch::Request(request_id.clone());
-            let based_on_branch =
-                super::github_pull_requests::pull_requests_based_on(&tx, repo_id, &branch).await?;
-            if !branch.is_base_of_open_pull_request(connection.as_ref(), &based_on_branch) {
-                queue_pushed_branch_deletion(&tx, repo_id, &branch, now_unix).await?;
-            }
+            queue_github_branch_deletion(&tx, repo_id, request_id, now_unix).await?;
         }
         tx.commit().await?;
         Ok(())
@@ -452,28 +446,35 @@ pub(super) async fn queue_pushed_branch_deletion<C: ConnectionTrait>(
     branch: &GitHubBranch,
     now_unix: u64,
 ) -> Result<(), PostgresError> {
-    let Some(latest) = PushRow::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        format!(
-            "SELECT {SELECT_PUSH} FROM scope_github_pushes
-              WHERE repo_id = $1 AND ref = $2
-              ORDER BY sequence DESC
-              LIMIT 1"
-        ),
-        [repo_id.into(), branch.git_ref().into()],
-    ))
-    .one(conn)
-    .await?
-    else {
+    let Some(latest) = latest_push_to(conn, repo_id, branch).await? else {
         return Ok(());
     };
-    let latest = latest.into_domain()?;
     let deletion_pending_or_done =
         latest.target_oid.is_none() && latest.state != GitHubPushState::Failed;
-    if deletion_pending_or_done {
-        return Ok(());
+    if !deletion_pending_or_done {
+        queue_github_push(conn, repo_id, branch, None, &latest.destination, now_unix).await?;
     }
-    queue_github_push(conn, repo_id, branch, None, &latest.destination, now_unix).await?;
+    Ok(())
+}
+
+pub(super) async fn retry_waiting_branch_deletion<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    branch: &GitHubBranch,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    let now = u64_to_i64(now_unix, "GitHub push time")?;
+    conn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "UPDATE scope_github_pushes push
+            SET state = 'queued', attempts = 0, next_attempt_at_unix = $3, last_error = NULL,
+                updated_at_unix = greatest($3, push.updated_at_unix)
+          WHERE push.id IN (SELECT id FROM scope_github_pushes
+                             WHERE repo_id = $1 AND ref = $2 AND kind = 'delete'
+                               AND state IN ('queued', 'failed') FOR UPDATE SKIP LOCKED)",
+        [repo_id.into(), branch.git_ref().into(), now.into()],
+    ))
+    .await?;
     Ok(())
 }
 
@@ -546,21 +547,29 @@ impl RepositoryStore {
         &self,
         repo_id: &str,
     ) -> Result<Option<GitHubPush>, PostgresError> {
-        PushRow::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            format!(
-                "SELECT {SELECT_PUSH} FROM scope_github_pushes
-                  WHERE repo_id = $1 AND ref = $2
-                  ORDER BY sequence DESC
-                  LIMIT 1"
-            ),
-            [repo_id.into(), GitHubBranch::Main.git_ref().into()],
-        ))
-        .one(self.db.as_ref())
-        .await?
-        .map(PushRow::into_domain)
-        .transpose()
+        latest_push_to(self.db.as_ref(), repo_id, &GitHubBranch::Main).await
     }
+}
+
+async fn latest_push_to<C: ConnectionTrait>(
+    conn: &C,
+    repo_id: &str,
+    branch: &GitHubBranch,
+) -> Result<Option<GitHubPush>, PostgresError> {
+    PushRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        format!(
+            "SELECT {SELECT_PUSH} FROM scope_github_pushes
+              WHERE repo_id = $1 AND ref = $2
+              ORDER BY sequence DESC
+              LIMIT 1"
+        ),
+        [repo_id.into(), branch.git_ref().into()],
+    ))
+    .one(conn)
+    .await?
+    .map(PushRow::into_domain)
+    .transpose()
 }
 
 impl PushRow {

@@ -58,6 +58,13 @@ impl FakePulls {
         pull["closed_by"] = serde_json::json!({ "login": login });
     }
 
+    pub(in crate::workflow_tests) fn reopen(&self, number: u64) {
+        let mut pulls = self.pulls.lock().unwrap();
+        let pull = &mut pulls[number as usize - 1];
+        pull["state"] = "open".into();
+        pull["closed_by"] = serde_json::Value::Null;
+    }
+
     pub(in crate::workflow_tests) fn comment_as_app(&self, number: u64, body: &str) {
         self.comments
             .lock()
@@ -229,9 +236,12 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                         .unwrap()
                         .iter()
                         .filter(|pull| {
+                            let head = format!("{owner}:{}", pull["head"]["ref"].as_str().unwrap());
                             pull["state"] == query["state"].as_str()
-                                && format!("{owner}:{}", pull["head"]["ref"].as_str().unwrap())
-                                    == query["head"]
+                                && query.get("head").is_none_or(|wanted| *wanted == head)
+                                && query
+                                    .get("base")
+                                    .is_none_or(|wanted| pull["base"]["ref"] == wanted.as_str())
                         })
                         .cloned()
                         .collect::<Vec<_>>();

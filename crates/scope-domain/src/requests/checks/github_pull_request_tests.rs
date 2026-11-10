@@ -206,42 +206,36 @@ fn a_merged_requests_branch_waits_only_for_a_carrier_github_still_has_open() {
     merged.merged_at_unix = Some(30);
     let open_carrier = opened_carrier(GitHubPullRequestState::Open);
 
-    assert!(retains_request_branch_for_carrier(&open, None, None, &[]));
+    assert!(retains_request_branch_for_carrier(&open, None, None));
     assert!(!retains_request_branch_for_carrier(
         &closed,
         Some(&publishing),
-        Some(&open_carrier),
-        &[]
+        Some(&open_carrier)
     ));
     assert!(!retains_request_branch_for_carrier(
         &merged,
         Some(&connection()),
-        Some(&open_carrier),
-        &[]
+        Some(&open_carrier)
     ));
     assert!(!retains_request_branch_for_carrier(
         &merged,
         None,
-        Some(&open_carrier),
-        &[]
+        Some(&open_carrier)
     ));
     assert!(!retains_request_branch_for_carrier(
         &merged,
         Some(&publishing),
-        None,
-        &[]
+        None
     ));
     assert!(!retains_request_branch_for_carrier(
         &merged,
         Some(&publishing),
-        Some(&carrier(open_intent("main"))),
-        &[]
+        Some(&carrier(open_intent("main")))
     ));
     assert!(retains_request_branch_for_carrier(
         &merged,
         Some(&publishing),
-        Some(&open_carrier),
-        &[]
+        Some(&open_carrier)
     ));
     for ended in [
         GitHubPullRequestState::ClosedOnGitHub,
@@ -250,39 +244,64 @@ fn a_merged_requests_branch_waits_only_for_a_carrier_github_still_has_open() {
         assert!(!retains_request_branch_for_carrier(
             &merged,
             Some(&publishing),
-            Some(&opened_carrier(ended)),
-            &[]
+            Some(&opened_carrier(ended))
         ));
     }
 }
 
 #[test]
-fn an_ended_requests_branch_waits_for_open_pull_requests_based_on_it() {
-    let mut closed = full_view_request();
-    closed.closed_at_unix = Some(30);
-    let based_on = |base: &str, state: GitHubPullRequestState| {
+fn a_branch_is_deleted_only_when_no_open_pull_request_is_based_on_it() {
+    let based_on_branch = |heads: &[&str]| GitHubPullRequestsBasedOnBranch::Open {
+        head_branches: heads.iter().map(|head| head.to_string()).collect(),
+    };
+    assert_eq!(
+        based_on_branch(&[]).branch_deletion(),
+        GitHubBranchDeletion::Delete
+    );
+    assert_eq!(
+        GitHubPullRequestsBasedOnBranch::Unreadable.branch_deletion(),
+        GitHubBranchDeletion::Delete
+    );
+    assert_eq!(
+        based_on_branch(&["scope/requests/req_child", "someones-branch", "main"]).branch_deletion(),
+        GitHubBranchDeletion::WaitForPullRequests {
+            of_requests: vec!["req_child".into()]
+        }
+    );
+    assert_eq!(
+        based_on_branch(&["someones-branch"]).branch_deletion(),
+        GitHubBranchDeletion::WaitForPullRequests {
+            of_requests: Vec::new()
+        }
+    );
+}
+
+#[test]
+fn a_pull_request_leaves_a_request_branch_when_it_stops_being_open_on_it() {
+    let on = |base: &str, state: GitHubPullRequestState| {
         let mut child = opened_carrier(state);
         child.record_retargeted(base.into());
         child
     };
-    let branch = format!("scope/requests/{}", closed.id);
-    let retains = |pull_requests: &[GitHubPullRequest]| {
-        retains_request_branch_for_carrier(&closed, Some(&connection()), None, pull_requests)
-    };
+    let parent_branch = "scope/requests/request_parent";
+    let recorded = on(parent_branch, GitHubPullRequestState::Open);
+    let left = Some(GitHubBranch::Request("request_parent".into()));
 
-    assert!(retains(&[
-        based_on("main", GitHubPullRequestState::Open),
-        based_on(&branch, GitHubPullRequestState::Open),
-    ]));
-    let mut open_elsewhere = based_on(&branch, GitHubPullRequestState::Open);
-    open_elsewhere.destination.github_repository_id += 1;
-    assert!(!retains(&[open_elsewhere]));
-    assert!(!retains(&[
-        based_on("main", GitHubPullRequestState::Open),
-        based_on(&branch, GitHubPullRequestState::ClosedOnGitHub),
-        based_on(&branch, GitHubPullRequestState::Closed),
-        carrier(open_intent(&branch)),
-    ]));
+    assert_eq!(
+        on("main", GitHubPullRequestState::Open).request_branch_left_since(&recorded),
+        left
+    );
+    assert_eq!(
+        on(parent_branch, GitHubPullRequestState::ClosedOnGitHub)
+            .request_branch_left_since(&recorded),
+        left
+    );
+    assert_eq!(recorded.request_branch_left_since(&recorded), None);
+    assert_eq!(
+        on("main", GitHubPullRequestState::Open)
+            .request_branch_left_since(&on(parent_branch, GitHubPullRequestState::Closed)),
+        None
+    );
 }
 
 #[test]
