@@ -52,7 +52,7 @@ export async function cleanupAction({ pullRequest, repository, request }) {
       !pull.labels.every(label => typeof label?.name === 'string')) {
     throw new Error(`GitHub did not confirm the state and labels of pull request #${pullRequest}.`);
   }
-  return previewRequested(pull)
+  return qualifiesForPreview(pull, repository)
     ? { action: 'skip', reason: `pull request #${pullRequest} qualifies for a preview again` }
     : { action: 'delete', pullRequest: Number(pullRequest) };
 }

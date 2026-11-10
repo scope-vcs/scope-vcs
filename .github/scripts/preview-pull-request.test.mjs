@@ -88,8 +88,7 @@ test('cleanup deletes only when the pull request still does not qualify', async 
   assert.deepEqual(await scenario({ pull: { state: 'closed' } }).cleanup(), { action: 'delete', pullRequest: 7 });
   assert.deepEqual(await scenario({ pull: { labels: [] } }).cleanup(), { action: 'delete', pullRequest: 7 });
   assert.equal((await scenario().cleanup()).action, 'skip');
-  assert.equal((await scenario({ pull: { base: { ref: 'release' } } }).cleanup()).action, 'skip');
-  assert.equal((await scenario({ pull: { head: { repo: { full_name: 'someone/fork' } } } }).cleanup()).action, 'skip');
+  assert.deepEqual(await scenario({ pull: { base: { ref: 'release' } } }).cleanup(), { action: 'delete', pullRequest: 7 });
   await assert.rejects(scenario().cleanup('7; rm -rf /'), /positive pull request/);
 });
 
@@ -109,11 +108,12 @@ test('reconcile finds missed closes and label removals without touching active p
   };
   const request = mock.fn(async path => pulls[path.split('/').at(-1)]);
   assert.deepEqual(await reconcileAction({ manifest, project, repository, request }), {
-    action: 'delete', pullRequests: [7, 8],
+    action: 'delete', pullRequests: [7, 8, 10],
   });
   assert.equal(request.mock.callCount(), 4);
   pulls[7] = openPull();
   pulls[8] = openPull();
+  pulls[10] = openPull();
   assert.deepEqual(await cleanupAction({ pullRequest: 7, repository, request }), {
     action: 'skip', reason: 'pull request #7 qualifies for a preview again',
   });
