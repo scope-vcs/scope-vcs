@@ -43,9 +43,9 @@ test('job names group on " / " two levels deep and a group of one job folds into
   assert.deepEqual(outline(filterRunJobTree(tree, ' check cli ')), [['Validate selected components', 1, [['Client validation', 1, ['Check CLI']]]]])
 })
 
-test('header tallies count jobs by outcome and leave out empty counts', () => {
+test('header tallies count failed, running and passed jobs and leave out empty counts', () => {
   assert.deepEqual(
     runJobTallies(jobs).map(({ count, label }) => `${count} ${label}`),
-    ['1 failed', '5 passed', '1 skipped'],
+    ['1 failed', '5 passed'],
   )
 })

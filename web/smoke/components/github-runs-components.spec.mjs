@@ -5,6 +5,7 @@ import { visualBaseline } from '../support/visual-baseline.mjs'
 
 async function screenshot(page, options) {
   await page.mouse.move(0, 0)
+  await page.evaluate(() => document.querySelector('main')?.scrollTo(0, 0))
   await page.evaluate(() => Promise.all(document.getAnimations()
     .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
     .map((animation) => animation.finished)))
@@ -173,7 +174,7 @@ test('a GitHub run groups its jobs, opens the failed step at its error, and sear
     'a run opened from the list stays within its request budget before log text shows')
 
   assert.deepEqual(await page.getByRole('list', { name: 'Jobs by status' }).getByRole('listitem').allTextContents(),
-    ['1 failed', '1 running', '1 waiting', '7 passed', '1 skipped'])
+    ['1 failed', '1 running', '7 passed'])
   const validate = jobs.getByRole('button', { name: /^Validate selected components/ })
   assert.equal(await validate.getAttribute('aria-expanded'), 'true')
   assert.match(await validate.textContent(), /1 failed · 7$/)

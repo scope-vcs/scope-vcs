@@ -70,9 +70,7 @@ export function failedJobCount(jobs: readonly RunJobSummary[]) {
 const TALLY_LABELS: [RunTone, string][] = [
   ['danger', 'failed'],
   ['running', 'running'],
-  ['waiting', 'waiting'],
   ['success', 'passed'],
-  ['inert', 'skipped'],
 ]
 
 export function runJobTallies(jobs: readonly Pick<RunJobSummary, 'state'>[]) {
