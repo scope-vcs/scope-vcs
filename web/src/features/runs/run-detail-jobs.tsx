@@ -45,7 +45,7 @@ export function RunDetailJobs({
   useRunLogAbsence(runId, graphShown)
   const jobListRef = useRef<HTMLDivElement>(null)
   function pickJob(job: RepositoryRunJobDetailResponse) {
-    startRunJobTiming(runId)
+    if (job.job.key !== selectedJobKey) startRunJobTiming(runId)
     onSelectJob(job)
     if (showGraph) onToggleGraph()
   }

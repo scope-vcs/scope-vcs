@@ -119,7 +119,7 @@ function GitHubWorkflowRunView({
 
   function pickJob(job: GitHubWorkflowJobResponse) {
     const key = githubJobKey(job)
-    startRunJobTiming(params.run_id)
+    if (job !== selectedJob) startRunJobTiming(params.run_id)
     setChosenKey(key)
     window.history.replaceState(window.history.state, '', `#${runJobPanelId(key)}`)
   }
