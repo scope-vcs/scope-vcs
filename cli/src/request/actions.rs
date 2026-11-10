@@ -248,18 +248,10 @@ fn update_request_auto_merge(
             "Auto-merge enabled",
         )
     } else {
-        if !current.can_cancel {
-            bail!("request {request_name} has no active auto-merge authorization to cancel");
-        }
         let intent_id = current
             .intent
-            .as_ref()
-            .map(|intent| intent.id.clone())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Scope did not identify the active auto-merge intent for request {request_name}"
-                )
-            })?;
+            .map(|intent| intent.id)
+            .ok_or_else(|| crate::error::CliError::conflict("auto-merge is not active"))?;
         require_confirmation(
             &format!("Cancel auto-merge for request {request_name}"),
             yes,
