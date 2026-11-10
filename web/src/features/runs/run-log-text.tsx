@@ -29,7 +29,7 @@ const KIND_ROW_CLASS: Record<LogLine['kind'], string> = {
   group: 'text-muted-foreground',
 }
 
-export type RunLogFocus = { line: number; match?: number }
+export type RunLogFocus = { line: number }
 
 type RunLogTextProps = {
   currentMatch: LogMatch | null
@@ -117,18 +117,10 @@ export function RunLogText({
   )
 }
 
-type LogBlockProps = {
-  currentMatch: LogMatch | null
+type LogBlockProps = Omit<RunLogTextProps, 'empty' | 'focus' | 'followTail'> & {
   eager: boolean
-  lineId: (line: LogLine) => string
-  lines: readonly LogLine[]
-  markedLine: number | null
-  matches: ReadonlyMap<number, readonly LogMatch[]>
-  onLinkLine: (line: LogLine) => void
   onToggleGroup: (group: number) => void
   openGroups: ReadonlySet<number>
-  times: boolean
-  wrap: boolean
 }
 
 function LogBlock({ eager, lines, wrap, ...rowProps }: LogBlockProps) {

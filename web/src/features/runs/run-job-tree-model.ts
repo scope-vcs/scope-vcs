@@ -29,7 +29,6 @@ export function buildRunJobTree(jobs: readonly RunJobSummary[]): RunJobNode[] {
     const segments = job.name.split(NAME_SEPARATOR)
     const depth = Math.min(GROUP_DEPTH, segments.length - 1)
     let parent = root
-    parent.jobs.push(job)
     for (const segment of segments.slice(0, depth)) {
       const path = parent.path ? `${parent.path}${NAME_SEPARATOR}${segment}` : segment
       let group = parent.children.find((node): node is RunJobGroup => node.kind === 'group' && node.path === path)

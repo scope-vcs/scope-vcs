@@ -27,8 +27,8 @@ export function useRunLogSearch(lines: readonly LogLine[]) {
   const current = position === -1 ? null : matches[position]!
   const currentLine = focused ? current?.line ?? null : null
   const focus = useMemo<RunLogFocus | null>(
-    () => (currentLine === null ? null : { line: currentLine, match: position }),
-    [currentLine, position],
+    () => (currentLine === null ? null : { line: currentLine }),
+    [currentLine],
   )
 
   return {
