@@ -1,26 +1,26 @@
-import { cn } from '@/lib/utils'
-import { ChevronRight } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import type {
   StepLogs,
   StepSelection,
 } from './repository-run-detail-controller'
 import { RunEnvironmentPanel, RunEnvironmentToggle } from './run-attempt-environment'
-import { RunDuration } from './run-duration'
 import { RunJobHeader } from './run-job-header'
-import { RunLogView } from './run-log-view'
+import { runLogLineId, type RunJobLink } from './run-job-ids'
+import { logLinesText, readLogLines } from './run-log-lines'
+import type { RunLogFocus } from './run-log-text'
 import { startRunJobTiming } from './run-log-timing'
-import { RunStatusIcon } from './run-status-icon'
-import { RUN_STEP_ROW_CLASS } from './run-layout'
+import { RunLogTools, useRunLogSearch } from './run-log-tools'
+import { RunLogView } from './run-log-view'
+import { RunStepRow } from './run-step-row'
 import type {
   RepositoryRunAttemptResponse,
   RepositoryRunJobDetailResponse,
-  RepositoryRunStepResponse,
 } from '@/api/types.generated'
 
 export function RunDetailSteps({
   attempt,
   jobDetail,
+  link,
   onSelectAttempt,
   onSelectStep,
   runId,
@@ -29,6 +29,7 @@ export function RunDetailSteps({
 }: {
   attempt: RepositoryRunAttemptResponse | null
   jobDetail: RepositoryRunJobDetailResponse
+  link: RunJobLink | null
   onSelectAttempt: (attemptId: string) => void
   onSelectStep: (attemptId: string, stepIndex: number) => void
   runId: string
@@ -43,6 +44,24 @@ export function RunDetailSteps({
     selection.attemptId === attempt.id
     ? selection.stepIndex
     : null
+  const text = openStep === null ? '' : stepLogs.state.logs.map((log) => log.text).join('')
+  const lines = useMemo(() => readLogLines(text), [text])
+  const search = useRunLogSearch(lines)
+  const copyText = useMemo(() => logLinesText(lines), [lines])
+  const [seenLink, setSeenLink] = useState(link)
+  const [marked, setMarked] = useState(() => linkedLine(link, job.key))
+  if (link !== seenLink) {
+    setSeenLink(link)
+    setMarked(linkedLine(link, job.key))
+  }
+  const markedLine = marked && marked.step === openStep ? marked.line : null
+  const linked = linkedLine(link, job.key)
+  const linkFocusLine = linked && linked.step === openStep ? linked.line : null
+  const linkReady = linkFocusLine !== null && lines.length > 0
+  const linkFocus = useMemo<RunLogFocus | null>(
+    () => (linkReady && linkFocusLine !== null ? { line: linkFocusLine } : null),
+    [linkFocusLine, linkReady],
+  )
 
   return (
     <>
@@ -57,10 +76,15 @@ export function RunDetailSteps({
           />
         ) : null}
         jobDetail={jobDetail}
-        logText={openStep === null ? null : stepLogs.state.logs.map((log) => log.text).join('')}
         onSelectAttempt={onSelectAttempt}
-        onToggleWrap={() => setWrap((value) => !value)}
-        wrap={wrap}
+        tools={openStep === null ? null : (
+          <RunLogTools
+            copyText={copyText}
+            onToggleWrap={() => setWrap((value) => !value)}
+            search={search}
+            wrap={wrap}
+          />
+        )}
       />
       {attempt && environmentOpen ? (
         <RunEnvironmentPanel
@@ -72,28 +96,47 @@ export function RunDetailSteps({
       ) : null}
       <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {attempt ? (
-          <>
-            {attempt.steps.map((step) => (
-              <StepRow
-                attemptId={attempt.id}
-                key={step.index}
-                onSelect={() => {
-                  if (openStep !== step.index) startRunJobTiming(runId)
-                  onSelectStep(attempt.id, step.index)
-                }}
-                runId={runId}
-                selected={openStep === step.index}
-                step={step}
-                stepLogs={stepLogs}
-                wrap={wrap}
-              />
-            ))}
-            {attempt.steps.length === 0 ? (
-              <p className="px-4 py-5 text-sm text-muted-foreground">
-                Steps are created when a runner claims this run.
-              </p>
-            ) : null}
-          </>
+          attempt.steps.length === 0 ? (
+            <p className="px-4 py-5 text-sm text-muted-foreground">
+              Steps are created when a runner claims this run.
+            </p>
+          ) : (
+            <ol aria-label="Steps">
+              {attempt.steps.map((step) => (
+                <RunStepRow
+                  completedAt={step.completed_at_unix}
+                  exitCode={step.exit_code}
+                  key={step.index}
+                  name={step.name}
+                  onToggle={() => {
+                    if (openStep !== step.index) startRunJobTiming(runId)
+                    onSelectStep(attempt.id, step.index)
+                  }}
+                  open={openStep === step.index}
+                  panelId={`run-step-${attempt.id}-${step.index}`}
+                  startedAt={step.started_at_unix}
+                  state={step.state}
+                >
+                  <RunLogView
+                    focus={search.focus ?? linkFocus}
+                    lineId={(line) => runLogLineId(job.key, step.index, line)}
+                    lines={lines}
+                    logs={stepLogs}
+                    markedLine={markedLine}
+                    onLinkLine={(line) => {
+                      window.history.replaceState(window.history.state, '', `#${runLogLineId(job.key, step.index, line)}`)
+                      setMarked({ step: step.index, line })
+                    }}
+                    runId={runId}
+                    search={search}
+                    step={step}
+                    text={text}
+                    wrap={wrap}
+                  />
+                </RunStepRow>
+              ))}
+            </ol>
+          )
         ) : (
           <p className="px-4 py-5 text-sm text-muted-foreground">
             {job.state === 'blocked'
@@ -108,58 +151,8 @@ export function RunDetailSteps({
   )
 }
 
-function StepRow({
-  attemptId,
-  onSelect,
-  runId,
-  selected,
-  step,
-  stepLogs,
-  wrap,
-}: {
-  attemptId: string
-  onSelect: () => void
-  runId: string
-  selected: boolean
-  step: RepositoryRunStepResponse
-  stepLogs: StepLogs
-  wrap: boolean
-}) {
-  const panelId = `run-step-${attemptId}-${step.index}`
-  return (
-    <div className="border-b border-border">
-      <button
-        aria-controls={panelId}
-        aria-expanded={selected}
-        className={`${RUN_STEP_ROW_CLASS} sticky top-0 z-10 bg-background text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`}
-        onClick={onSelect}
-        type="button"
-      >
-        <ChevronRight
-          aria-hidden="true"
-          className={cn('size-3.5 text-muted-foreground transition-transform', selected && 'rotate-90')}
-        />
-        <RunStatusIcon state={step.state} />
-        <span className="truncate text-sm font-medium">{step.name}</span>
-        <span className="flex items-center gap-2.5 text-xs text-muted-foreground">
-          {step.exit_code !== null && step.exit_code !== 0 ? (
-            <span className="font-mono text-danger-strong">exit {step.exit_code}</span>
-          ) : null}
-          {step.state === 'skipped'
-            ? 'Skipped'
-            : <RunDuration end={step.completed_at_unix} start={step.started_at_unix} />}
-        </span>
-      </button>
-      {selected ? (
-        <RunLogView
-          id={panelId}
-          key={panelId}
-          logs={stepLogs}
-          runId={runId}
-          step={step}
-          wrap={wrap}
-        />
-      ) : null}
-    </div>
-  )
+function linkedLine(link: RunJobLink | null, jobKey: string) {
+  return link && link.key === jobKey && link.step !== null && link.line !== null
+    ? { step: link.step, line: link.line }
+    : null
 }

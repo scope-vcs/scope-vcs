@@ -22,7 +22,7 @@ import {
   type StepSelection,
 } from './repository-run-detail-model'
 import { useRunJobHash } from './run-job-hash'
-import { jobKeyForHash } from './run-job-ids'
+import { runJobLinkForHash, type RunJobLink } from './run-job-ids'
 import { useRunLiveRefresh, type RunRefresh } from './run-live-refresh'
 import { useRunLogStream } from './use-run-log-stream'
 import {
@@ -57,7 +57,7 @@ export type StepLogs = {
 type DetailViewState = {
   actionError: string | null
   attemptOverrides: Record<string, string>
-  linkedJobKey: string | null
+  link: RunJobLink | null
   manualSelection: boolean
   pendingAction: 'cancel' | 'retry' | null
   reconciliationGeneration: number | null
@@ -71,7 +71,7 @@ function createDetailViewState(detail: RepositoryRunDetailResponse): DetailViewS
   return {
     actionError: null,
     attemptOverrides: {},
-    linkedJobKey: null,
+    link: null,
     manualSelection: false,
     pendingAction: null,
     reconciliationGeneration: null,
@@ -124,7 +124,7 @@ export function useRepositoryRunDetailController({
       const reconciledAction = current.reconciliationGeneration !== null &&
         (detailSnapshot.value?.generation ?? 0) >= current.reconciliationGeneration
       const selectionStillValid = current.selection !== null && selectionExists(current.selection, detail.jobs)
-      const initialView = current.manualSelection ? null : openingView(detail, current.linkedJobKey)
+      const initialView = current.manualSelection ? null : openingView(detail, current.link)
       const selection = selectionStillValid ? current.selection
         : current.manualSelection ? null : initialView?.selection ?? null
       return {
@@ -142,15 +142,15 @@ export function useRepositoryRunDetailController({
   }, [detail, detailSnapshot.value?.generation])
 
   useRunJobHash((hash) => {
-    const linkedJobKey = jobKeyForHash(detail.jobs.map(({ job }) => job.key), hash)
-    if (linkedJobKey === null) return false
+    const link = runJobLinkForHash(detail.jobs.map(({ job }) => job.key), hash)
+    if (link === null) return null
     updateView((current) => ({
       ...current,
-      ...openingView(detail, linkedJobKey),
-      linkedJobKey,
+      ...openingView(detail, link),
+      link,
       manualSelection: false,
     }))
-    return true
+    return link.key
   })
 
   const refreshDetail = useCallback((forceAfterInFlight = false) =>

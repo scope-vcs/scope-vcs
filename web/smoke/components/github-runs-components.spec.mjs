@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { fixtureClerk, fixtureRepositorySearch, openFixture } from '../support/fixture-server.mjs'
+import { visualBaseline } from '../support/visual-baseline.mjs'
 
 async function screenshot(page, options) {
   await page.mouse.move(0, 0)
@@ -12,6 +13,7 @@ async function screenshot(page, options) {
 
 const githubRunsFixture = { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true }
 const runPageRequestBudget = { listClick: 1, pageLoad: 1 }
+const compareScreenshot = visualBaseline('run-page')
 const requestsSoFar = (page) => page.evaluate(() => window.loads.length + window.runLoads.length + window.logLoads.length)
 
 test('GitHub workflow runs open on Scope, keep their list across navigation and refresh in place', async (t) => {
@@ -145,11 +147,15 @@ test('GitHub workflow runs open on Scope, keep their list across navigation and 
   assert.deepEqual(errors, [])
 })
 
-test('a GitHub run shows its jobs, steps and finished logs, follows job links and refreshes in place', async (t) => {
+test('a GitHub run groups its jobs, opens the failed step at its error, and searches, folds and links log lines', async (t) => {
   const { base, errors, page } = await openFixture(t, 'github-runs', githubRunsFixture)
   const shots = process.env.SCOPE_COMPONENT_SCREENSHOT
-  const job = (name) => page.getByRole('navigation', { name: 'Jobs' }).getByRole('button').filter({ hasText: name })
-  const log = page.getByRole('region', { name: 'Log' })
+  const jobs = page.getByRole('navigation', { name: 'Jobs' })
+  const job = (name) => jobs.locator('button[aria-pressed]').filter({ hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}`) })
+  const step = (name) => page.getByRole('list', { name: 'Steps' }).getByRole('button', { name, exact: false })
+  const output = (name) => page.getByRole('region', { name: `${name} output` })
+  const testStep = 'Run the unit and integration test suites'
+  const search = page.getByRole('searchbox', { name: 'Search log' })
 
   await page.goto(new URL('/octo/demo/runs', base).href, { timeout: 30_000 })
   await page.locator('main li').first().getByRole('link', { name: 'ci', exact: true }).click()
@@ -160,19 +166,78 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   await page.evaluate(() => window.finishRunLoad())
   const failed = job('test (ubuntu-latest, node 24)')
   assert.equal(await failed.getAttribute('aria-pressed'), 'true')
-  await page.getByText('at Run the unit and integration test suites').waitFor()
-  await log.getByText('Process completed with exit code 1.', { exact: false }).waitFor()
+  await page.getByText(`at ${testStep}`).waitFor()
+  const error = output(testStep).locator('[data-line]').filter({ hasText: 'Process completed with exit code 1.' })
+  await error.waitFor()
   assert.equal(await requestsSoFar(page), runPageRequestBudget.listClick,
     'a run opened from the list stays within its request budget before log text shows')
-  assert.equal((await log.locator('pre').textContent()).includes('2026-10-05T'), false)
+
+  assert.deepEqual(await page.getByRole('list', { name: 'Jobs by status' }).getByRole('listitem').allTextContents(),
+    ['1 failed', '1 running', '1 waiting', '7 passed', '1 skipped'])
+  const validate = jobs.getByRole('button', { name: /^Validate selected components/ })
+  assert.equal(await validate.getAttribute('aria-expanded'), 'true')
+  assert.match(await validate.textContent(), /1 failed · 7$/)
+  const client = jobs.getByRole('button', { name: /^Client validation/ })
+  assert.equal(await client.getAttribute('aria-expanded'), 'false')
+  assert.equal(await job('Check desktop').count(), 0)
+  await client.click()
+  await job('Check desktop').waitFor()
+  const filter = jobs.getByRole('searchbox', { name: 'Filter jobs' })
+  await filter.fill('signed-in')
+  const filtered = await jobs.locator('button[aria-pressed]').allTextContents()
+  assert.equal(filtered.length, 1)
+  assert.match(filtered[0], /^Signed-in contribution journey/)
+  await filter.fill('')
+
+  assert.equal(await step(testStep).getAttribute('aria-expanded'), 'true')
+  assert.equal(await step('Set up job').getAttribute('aria-expanded'), 'false')
+  await page.waitForFunction(() => {
+    const line = [...document.querySelectorAll('[data-line]')].find((row) => row.textContent.includes('exit code 1'))
+    const box = line?.getBoundingClientRect()
+    return box && box.top >= 0 && box.bottom <= window.innerHeight
+  })
+  assert.equal(await error.evaluate((row) => getComputedStyle(row).backgroundColor !== 'rgba(0, 0, 0, 0)'), true)
+  assert.equal(await output(testStep).getByText('##[').count(), 0)
+  assert.equal(await output(testStep).locator('.text-success-strong', { hasText: '✔' }).count(), 40)
+  const pnpmGroup = output(testStep).locator('[data-line]').filter({ hasText: 'Run pnpm test' })
+  assert.match(await pnpmGroup.textContent(), /2 lines$/)
+  assert.equal(await output(testStep).getByText('shell: /usr/bin/bash -e {0}').count(), 0)
+  await pnpmGroup.getByRole('button', { name: 'Expand Run pnpm test' }).click()
+  await output(testStep).getByText('shell: /usr/bin/bash -e {0}').waitFor()
+  await pnpmGroup.getByRole('button', { name: 'Collapse Run pnpm test' }).click()
+  assert.equal(await output(testStep).getByText(/\d{4}-\d{2}-\d{2}T\d{2}/).count(), 0)
+  await page.getByRole('button', { name: 'Times', exact: true }).click()
+  assert.match(await error.textContent(), /\d{2}:\d{2}:\d{2}Process completed/)
+  await page.getByRole('button', { name: 'Times', exact: true }).click()
   assert.equal(
-    await log.getByRole('link', { name: 'Full log' }).getAttribute('href'),
+    await page.getByRole('link', { name: 'Full log' }).getAttribute('href'),
     'https://github.com/octo/demo/actions/runs/1/job/102',
   )
   assert.equal(
     await page.getByRole('link', { name: 'scope/requests/req_1', exact: true }).getAttribute('href'),
     '/octo/demo/requests/req_1',
   )
+  assert.equal(await page.getByRole('link', { name: 'Open on GitHub' }).getAttribute('href'), 'https://github.com/octo/demo/actions/runs/1')
+
+  await search.fill('Bash -E')
+  await page.getByText('1 of 1', { exact: true }).waitFor()
+  await output(testStep).locator('mark[data-current-match]', { hasText: 'bash -e' }).waitFor()
+  await search.fill('octo/demo')
+  await page.getByText('1 of 2', { exact: true }).waitFor()
+  await output('Run actions/checkout@v4').locator('mark[data-current-match]', { hasText: 'octo/demo' }).waitFor()
+  await search.press('Enter')
+  await page.getByText('2 of 2', { exact: true }).waitFor()
+  await output('Run actions/checkout@v4').getByText('Syncing repository: ').waitFor()
+  await search.press('Shift+Enter')
+  await page.getByText('1 of 2', { exact: true }).waitFor()
+  await search.fill('')
+  assert.equal(await output('Run actions/checkout@v4').count(), 0)
+
+  const lineNumber = error.getByRole('link')
+  const lineHash = `#run-job-102:3:L${await lineNumber.textContent()}`
+  await lineNumber.click()
+  assert.equal(await page.evaluate(() => location.hash), lineHash)
+
   for (const theme of ['light', 'dark']) {
     await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), theme === 'dark')
     for (const [width, height, name] of [[1280, 900, 'desktop'], [390, 844, 'phone']]) {
@@ -189,7 +254,7 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   await page.setViewportSize({ width: 1280, height: 900 })
 
   await job('build').click()
-  await log.getByText('The log appears when this job finishes.').waitFor()
+  await output('Build the web bundle and the API image').getByText('The log appears when this job finishes.').waitFor()
   assert.equal(await page.evaluate(() => location.hash), '#run-job-103')
   if (shots) {
     await page.setViewportSize({ width: 390, height: 844 })
@@ -197,7 +262,7 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
     await page.setViewportSize({ width: 1280, height: 900 })
   }
   await failed.click()
-  await log.getByText('Process completed with exit code 1.', { exact: false }).waitFor()
+  await error.waitFor()
   assert.deepEqual(await page.evaluate(() => window.logLoads), [])
 
   await job('build').click()
@@ -207,34 +272,42 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   })
   await page.waitForFunction(() => window.runLoads.length === 2)
   assert.equal(await job('lint').count(), 1)
-  await log.getByText('The log appears when this job finishes.').waitFor()
+  await page.getByText('The log appears when this job finishes.').waitFor()
   await page.evaluate(() => window.finishRunLoad())
-  await log.getByText('Build finished.').waitFor()
+  await output('Build the web bundle and the API image').getByText('Build finished.').waitFor()
   assert.deepEqual(await page.evaluate(() => window.logLoads), ['103'])
 
   await page.goto(new URL('/octo/demo/runs', base).href)
   await page.goto(new URL('/octo/demo/runs/1#run-job-101', base).href)
-  await log.getByText('Found 0 warnings and 0 errors.').waitFor()
+  await output('Lint').getByText('Found 0 warnings and 0 errors.').waitFor()
   assert.equal(await requestsSoFar(page), runPageRequestBudget.pageLoad,
     'a run loaded directly stays within its request budget before log text shows')
   assert.equal(await job('lint').getAttribute('aria-pressed'), 'true')
+
+  await page.goto(new URL('/octo/demo/runs', base).href)
+  await page.goto(new URL(`/octo/demo/runs/1${lineHash}`, base).href)
+  const linked = output(testStep).locator(`[data-line="${lineHash.split('L')[1]}"]`)
+  await linked.waitFor()
+  assert.equal(await failed.getAttribute('aria-pressed'), 'true')
+  assert.match(await linked.getAttribute('class'), /outline-border-strong/)
+
   await page.setViewportSize({ width: 390, height: 844 })
+  const picker = jobs.locator('button[aria-expanded][aria-controls]:not([aria-pressed])').first()
   await page.evaluate(() => { location.hash = '#run-job-104' })
   await page.getByText('Steps appear once a runner picks up this job.').waitFor()
   assert.equal(await job('deploy preview environment to the staging cluster').getAttribute('aria-pressed'), 'true')
-  await page.waitForFunction(() => {
-    const button = document.querySelector('button[aria-controls="run-job-104"]')
-    const list = button?.closest('ul')
-    if (!button || !list) return false
-    const shown = list.getBoundingClientRect()
-    const row = button.getBoundingClientRect()
-    return row.left >= shown.left - 1 && row.right <= shown.right + 1
-  })
+  assert.match(await picker.textContent(), /deploy preview environment to the staging cluster/)
+  assert.equal(await job('lint').isVisible(), false)
+  await picker.click()
+  await job('lint').click()
+  await output('Lint').getByText('Found 0 warnings and 0 errors.').waitFor()
+  assert.equal(await job('lint').isVisible(), false)
   if (shots) await screenshot(page, { fullPage: true, path: `${shots}.run-linked-queued-phone.png` })
   await page.setViewportSize({ width: 1280, height: 900 })
 
   await job('revoke preview token').click()
   await page.getByText('No steps ran.').waitFor()
+  const log = page.getByRole('region', { name: 'Log' })
   await log.getByText('This job was skipped, so it has no log.').waitFor()
   assert.equal(await log.getByRole('button', { name: 'Retry' }).count(), 0)
   if (shots) await screenshot(page, { fullPage: true, path: `${shots}.run-skipped-job.png` })
@@ -245,6 +318,24 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
     for (const [width, height, name] of [[1280, 900, 'desktop'], [390, 844, 'phone']]) {
       await page.setViewportSize({ width, height })
       await screenshot(page, { fullPage: true, path: `${shots}.run-jobs-loading-${name}.png` })
+    }
+  }
+  assert.deepEqual(errors, [])
+})
+
+test('the run page keeps its reviewed look at desktop and phone widths in light and dark', async (t) => {
+  const { base, errors, page } = await openFixture(t, 'github-runs', githubRunsFixture)
+  await page.clock.setFixedTime(new Date('2026-11-06T12:00:00Z'))
+  await page.goto(new URL('/octo/demo/runs/1', base).href, { timeout: 30_000 })
+  await page.getByText('Process completed with exit code 1.').waitFor()
+  await page.evaluate(() => document.fonts.ready)
+  const pane = page.locator('.scope-content-enter')
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), theme === 'dark')
+    for (const [width, height, name] of [[1280, 900, 'desktop'], [390, 3400, 'phone']]) {
+      await page.setViewportSize({ width, height })
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await compareScreenshot(pane, `${name}-${theme}`)
     }
   }
   assert.deepEqual(errors, [])
@@ -264,7 +355,7 @@ test('hovering a run starts its read, and its long included log lays out only th
   await page.evaluate(() => window.finishRunLoad())
   await run.click()
   await page.waitForURL('**/octo/demo/runs/3')
-  const log = page.getByRole('region', { name: 'Log' })
+  const log = page.getByRole('region', { name: 'Package every artifact output' })
   await log.getByText('packaged artifact 0 into', { exact: false }).waitFor()
   assert.deepEqual(await page.evaluate(() => ({ runs: window.runLoads, logs: window.logLoads })), { runs: ['3'], logs: [] })
 

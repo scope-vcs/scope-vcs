@@ -2,8 +2,10 @@ import type {
   GitHubWorkflowJobLogResponse,
   GitHubWorkflowJobResponse,
   GitHubWorkflowRunDetailResponse,
+  GitHubWorkflowStepResponse,
 } from '@/api/types.generated'
 import { githubRunResult } from './github-run-status'
+import { readLogLines, type LogLine } from './run-log-lines'
 
 export function isGitHubRunId(runId: string) {
   return /^\d+$/.test(runId)
@@ -23,10 +25,51 @@ export function githubJobFailedStep(job: GitHubWorkflowJobResponse) {
     : null
 }
 
-const LOG_LINE_TIMESTAMP = /^﻿?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z ?/gm
+export type GitHubJobLog = {
+  lines: LogLine[]
+  stepLines: ReadonlyMap<number, LogLine[]>
+}
 
-export function stripLogTimestamps(text: string) {
-  return text.replace(LOG_LINE_TIMESTAMP, '')
+export function githubJobLog(
+  text: string,
+  steps: readonly Pick<GitHubWorkflowStepResponse, 'number' | 'started_at_unix'>[],
+): GitHubJobLog {
+  const started = steps.filter((step) => step.started_at_unix !== null)
+  const first = (started[0] ?? steps[0])?.number ?? 0
+  const lines = readLogLines(
+    text,
+    (second, previous) => second === null ? previous : stepStartedBy(started, second) ?? first,
+    first,
+  )
+  const stepLines = new Map<number, LogLine[]>(steps.map((step) => [step.number, []]))
+  for (const line of lines) stepLines.get(line.step)?.push(line)
+  return { lines, stepLines }
+}
+
+function stepStartedBy(
+  started: readonly Pick<GitHubWorkflowStepResponse, 'number' | 'started_at_unix'>[],
+  second: number,
+) {
+  for (let index = started.length - 1; index >= 0; index--) {
+    if (started[index]!.started_at_unix! <= second) return started[index]!.number
+  }
+  return null
+}
+
+export function githubOpeningStep(job: GitHubWorkflowJobResponse): number | null {
+  const failed = githubJobFailedStep(job)
+  if (failed) return failed.number
+  const running = job.steps.find((step) => step.status === 'in_progress')
+  if (running) return running.number
+  let longest: GitHubWorkflowStepResponse | null = null
+  for (const step of job.steps) {
+    if (stepSeconds(step) >= 0 && (!longest || stepSeconds(step) > stepSeconds(longest))) longest = step
+  }
+  return longest?.number ?? null
+}
+
+function stepSeconds({ completed_at_unix, started_at_unix }: GitHubWorkflowStepResponse) {
+  return started_at_unix === null || completed_at_unix === null ? -1 : completed_at_unix - started_at_unix
 }
 
 export function githubJobLogAbsence(

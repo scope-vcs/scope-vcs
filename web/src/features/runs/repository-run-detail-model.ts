@@ -42,12 +42,19 @@ export function runCanChange(state: RunState): boolean {
 
 export function openingView(
   detail: Pick<RepositoryRunDetailResponse, 'jobs' | 'opening'>,
-  linkedJobKey: string | null = null,
+  link: { key: string; step: number | null } | null = null,
 ): InitialRunView {
-  const linked = linkedJobKey === null
+  const linked = link === null
     ? undefined
-    : detail.jobs.find(({ job }) => job.key === linkedJobKey)
-  if (linked) return viewOf(linked.job.key, linked.opening_step)
+    : detail.jobs.find(({ job }) => job.key === link.key)
+  if (linked) {
+    const attempt = latestAttempt(linked.attempts)
+    const stepIndex = link?.step ?? null
+    if (attempt && stepIndex !== null && attempt.steps.some((step) => step.index === stepIndex)) {
+      return viewOf(linked.job.key, { attempt_id: attempt.id, step_index: stepIndex })
+    }
+    return viewOf(linked.job.key, linked.opening_step)
+  }
   return detail.opening
     ? viewOf(detail.opening.job_key, detail.opening.step)
     : { selectedJobKey: null, selection: null }

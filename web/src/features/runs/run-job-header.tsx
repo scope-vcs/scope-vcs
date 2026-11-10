@@ -1,89 +1,76 @@
-import { Button } from '@/components/ui/button'
 import { Popover } from '@/components/ui/popover'
-import { cn } from '@/lib/utils'
-import { Check, ChevronDown, Copy, WrapText } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { ChevronDown } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { RunDuration } from './run-duration'
+import { runJobShortName } from './run-job-tree-model'
 import { RunStatusIcon } from './run-status-icon'
 import { runStatus } from './run-status'
 import type {
   RepositoryRunAttemptResponse,
   RepositoryRunJobDetailResponse,
+  RepositoryRunTerminalReason,
 } from '@/api/types.generated'
-
-const COPY_CONFIRMATION_MS = 1_500
 
 export function RunJobHeader({
   attempt,
   environmentControl,
   jobDetail,
-  logText,
   onSelectAttempt,
-  onToggleWrap,
-  wrap,
+  tools,
 }: {
   attempt: RepositoryRunAttemptResponse | null
   environmentControl: ReactNode
   jobDetail: RepositoryRunJobDetailResponse
-  logText: string | null
   onSelectAttempt: (attemptId: string) => void
-  onToggleWrap: () => void
-  wrap: boolean
+  tools: ReactNode
 }) {
   const { attempts, job } = jobDetail
   const ending = attempt ? attemptEnding(attempt) : null
   return (
-    <div className="flex min-h-12 flex-none flex-wrap items-center gap-x-2.5 gap-y-1 border-b border-border py-2 pl-4 pr-3">
-      <RunStatusIcon
-        state={attempt?.state ?? job.state}
-        terminalReason={attempt?.terminal_reason}
-      />
-      <h2 className="min-w-0 max-w-full truncate text-[15px] font-semibold">{job.key}</h2>
-      {attempt && attempts.length > 1 ? (
-        <AttemptMenu
-          attempts={attempts}
-          onSelect={onSelectAttempt}
-          selected={attempt}
-        />
+    <RunJobHeading
+      badge={attempt && attempts.length > 1 ? (
+        <AttemptMenu attempts={attempts} onSelect={onSelectAttempt} selected={attempt} />
       ) : null}
-      {ending}
-      <span className="ml-auto flex items-center gap-1">
-        {attempt ? (
-          <span className="mr-1 text-xs text-muted-foreground">
-            <RunDuration end={attempt.completed_at_unix} start={attempt.started_at_unix} />
-          </span>
-        ) : null}
-        {environmentControl}
-        {logText !== null ? (
-          <RunLogControls onToggleWrap={onToggleWrap} text={logText} wrap={wrap} />
-        ) : null}
-      </span>
-    </div>
+      detail={attempt ? (
+        <>
+          {ending}
+          {ending ? ' · ' : null}
+          <RunDuration end={attempt.completed_at_unix} start={attempt.started_at_unix} />
+        </>
+      ) : null}
+      name={job.key}
+      state={attempt?.state ?? job.state}
+      terminalReason={attempt?.terminal_reason}
+      tools={<>{environmentControl}{tools}</>}
+    />
   )
 }
 
-export function RunLogControls({
-  onToggleWrap,
-  text,
-  wrap,
+export function RunJobHeading({
+  badge,
+  detail,
+  name,
+  state,
+  terminalReason,
+  tools,
 }: {
-  onToggleWrap: () => void
-  text: string
-  wrap: boolean
+  badge?: ReactNode
+  detail: ReactNode
+  name: string
+  state: string
+  terminalReason?: RepositoryRunTerminalReason | null
+  tools: ReactNode
 }) {
   return (
-    <>
-      <Button
-        aria-pressed={wrap}
-        onClick={onToggleWrap}
-        size="icon-xs"
-        title={wrap ? 'Disable line wrap' : 'Wrap long lines'}
-        variant="ghost"
-      >
-        <WrapText />
-      </Button>
-      <CopyButton text={text} />
-    </>
+    <div className="flex min-h-12 flex-none flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-border py-2 pl-4 pr-3">
+      <span className="flex min-w-0 items-center gap-2.5">
+        <RunStatusIcon state={state} terminalReason={terminalReason} />
+        <h2 className="min-w-0 break-words text-[15px] font-semibold leading-5" title={name}>{runJobShortName(name)}</h2>
+      </span>
+      {badge}
+      {detail ? <span className="min-w-0 text-xs text-muted-foreground">{detail}</span> : null}
+      {tools ? <div className="ml-auto flex min-w-0 items-center gap-1 max-sm:w-full">{tools}</div> : null}
+    </div>
   )
 }
 
@@ -92,7 +79,7 @@ function attemptEnding(attempt: RepositoryRunAttemptResponse) {
   const status = runStatus(attempt.state, reason)
   if (reason && status.label !== attempt.state) {
     return (
-      <span className="min-w-0 truncate text-xs text-danger-strong">
+      <span className="text-danger-strong">
         {status.label}
         {reason.kind === 'runtime-setup-failed' ? `: ${reason.message}` : null}
       </span>
@@ -103,9 +90,9 @@ function attemptEnding(attempt: RepositoryRunAttemptResponse) {
     : undefined
   if (!failedStep) return null
   return (
-    <span className="min-w-0 truncate text-xs text-muted-foreground">
-      <span className="text-danger-strong">failed</span> at {failedStep.name}
-    </span>
+    <>
+      <span className="font-medium text-danger-strong">failed</span> at {failedStep.name}
+    </>
   )
 }
 
@@ -159,35 +146,5 @@ function AttemptMenu({
         </button>
       )}
     />
-  )
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), COPY_CONFIRMATION_MS)
-    return () => clearTimeout(timer)
-  }, [copied])
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-    } catch {}
-  }
-
-  return (
-    <Button
-      className={cn(copied && 'text-success-strong')}
-      disabled={text.length === 0}
-      onClick={() => void handleCopy()}
-      size="icon-xs"
-      title="Copy output"
-      variant="ghost"
-    >
-      {copied ? <Check /> : <Copy />}
-    </Button>
   )
 }
