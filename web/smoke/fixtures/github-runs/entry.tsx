@@ -179,7 +179,7 @@ Object.assign(window, {
 async function loadRunDetail(runId: string) {
   runLoads.push(runId)
   await new Promise<void>((resolve) => detailResolvers.push(resolve))
-  return runId === '3' ? longLogDetail : runDetail
+  return structuredClone(runId === '3' ? longLogDetail : runDetail)
 }
 async function loadJobLog(jobId: string) {
   logLoads.push(jobId)

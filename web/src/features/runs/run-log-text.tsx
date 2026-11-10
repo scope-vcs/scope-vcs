@@ -73,11 +73,12 @@ export function RunLogText({
   const focusHere = focus !== null && lineByNumber(lines, focus.line) !== null
   const gutter = String(lines.at(-1)?.number ?? 1).length + 3
 
+  const focusLine = focus?.line ?? null
   useLayoutEffect(() => {
-    if (!focus) return
-    const line = containerRef.current?.querySelector<HTMLElement>(`[data-line="${focus.line}"]`)
+    if (focusLine === null) return
+    const line = containerRef.current?.querySelector<HTMLElement>(`[data-line="${focusLine}"]`)
     if (line) centerInScroller(line)
-  }, [focus])
+  }, [focusLine])
 
   function toggleGroup(group: number) {
     setOpenGroups((current) => {
