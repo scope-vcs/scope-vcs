@@ -17,6 +17,41 @@ pub struct RequestRevision {
     pub created_at_unix: u64,
 }
 
+impl RequestRevision {
+    pub fn comparison_oids(&self) -> Vec<String> {
+        [
+            &self.new_head_oid,
+            &self.old_head_oid,
+            self.base.review_base_oid(),
+            &self.main_ancestor_oid,
+        ]
+        .into_iter()
+        .filter(|oid| *oid != "0000000000000000000000000000000000000000")
+        .map(str::to_string)
+        .collect()
+    }
+
+    pub fn restoration_pack_owner(
+        &self,
+        request: &Request,
+        views: &crate::views::Views,
+    ) -> Result<crate::repository::git::GitPoolPackOwner, DomainError> {
+        if self.request_id != request.id
+            || request.state() != super::RequestState::Merged
+            || views.get(&request.view).is_none()
+            || !self.comparison_oids().contains(&self.new_head_oid)
+        {
+            return Err(DomainError::conflict(
+                "pool pack restoration requires an existing merged request revision and view",
+            ));
+        }
+        Ok(crate::repository::git::GitPoolPackOwner::Request {
+            request_id: request.id.clone(),
+            scope: crate::repository::git::RequestPackScope::for_view(&request.view, views),
+        })
+    }
+}
+
 pub fn select_request_review_revision<'a>(
     revisions: &'a [RequestRevision],
     pinned_revision_id: Option<&str>,

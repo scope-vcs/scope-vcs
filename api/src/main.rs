@@ -16,6 +16,14 @@ fn main() -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn run() -> anyhow::Result<()> {
+    let mut args = std::env::args().skip(1);
+    if let Some(command) = args.next() {
+        anyhow::ensure!(
+            command == "pool-pack-recovery",
+            "unknown API command: {command}"
+        );
+        return api::pool_pack_recovery::run(&args.collect::<Vec<_>>()).await;
+    }
     let port = scope_service_runtime::port_from_env(8080);
     let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
     let state = app_state_from_env().await?;
