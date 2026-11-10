@@ -682,13 +682,15 @@ test('validation gate allows unselected jobs and reused artifacts but fails sele
   }
 });
 
-test('preparation can overlap CLI work while staging joins every required lane', () => {
+test('staging overlaps CLI work while every production job joins validation', () => {
   const release = read('.github/workflows/release.yml');
   const section = (name) => release.split(`\n  ${name}:\n`)[1].split(/\n  [\w-]+:\n/)[0];
   const needs = (name) => section(name).match(/needs: \[(.+)\]/)[1].split(', ');
   assert.deepEqual(needs('release-preparation'), ['plan', 'server-validation']);
-  for (const required of ['plan', 'policy', 'ops', 'validation', 'release-preparation', 'readiness-preflight', 'production-preflight', 'smoke-tools']) {
-    assert(needs('staging').includes(required), `staging must join ${required}`);
+  assert.deepEqual(needs('staging'), ['plan', 'policy', 'ops', 'release-preparation', 'readiness-preflight', 'production-preflight', 'smoke-tools']);
+  for (const job of ['backend-deploy', 'web-deploy', 'cli-deploy', 'production-health-gate']) {
+    assert(needs(job).includes('validation'), `${job} must join validation`);
+    assert.match(section(job), /needs\.validation\.result == 'success'/, `${job} must require validation`);
   }
   assert.doesNotMatch(section('plan'), /dev\/checks\/(policy|ops)/);
   for (const job of ['policy', 'ops']) assert.doesNotMatch(section(job), /needs:/);

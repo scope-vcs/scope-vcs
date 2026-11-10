@@ -360,10 +360,10 @@ jobs:
 
   staging:
     name: Deploy staging
-    needs: [plan, policy, ops, validation, release-preparation, readiness-preflight, production-preflight, smoke-tools]
+    needs: [plan, policy, ops, release-preparation, readiness-preflight, production-preflight, smoke-tools]
     if: >-
       !cancelled() && needs.policy.result == 'success' && needs.ops.result == 'success' &&
-      needs.validation.result == 'success' && needs.readiness-preflight.result == 'success' &&
+      needs.readiness-preflight.result == 'success' &&
       needs.smoke-tools.result == 'success' &&
       (needs.plan.outputs.prepared_run_id == '' || needs.plan.outputs.resume_staging == 'true') &&
       needs.release-preparation.result == 'success' &&
@@ -404,6 +404,7 @@ jobs:
       deploy_router: ${{ needs.plan.outputs.router == 'true' }}
       deploy_media: ${{ needs.plan.outputs.media == 'true' }}
       deploy_api: ${{ needs.plan.outputs.api == 'true' }}
+      deploy_web: ${{ needs.plan.outputs.web == 'true' }}
       successful_deployments: ${{ needs.readiness-preflight.outputs.deployments || needs.plan.outputs.deployed_components || '{}' }}
       recover_cutover_id: ${{ needs.plan.outputs.recover_cutover_id || '' }}
     secrets: inherit

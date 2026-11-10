@@ -103,5 +103,9 @@ wait_until_stopped() {
 }
 
 writers=("$api_service" "$worker_service" "$media_service" "$media_worker_service")
-for service in "${writers[@]}"; do stop_service "$service"; done
+stops=()
+for service in "${writers[@]}"; do stop_service "$service" & stops+=("$!"); done
+stop_failed=0
+for stop in "${stops[@]}"; do wait "$stop" || stop_failed=1; done
+(( stop_failed == 0 )) || exit 1
 for service in "${writers[@]}"; do wait_until_stopped "$service"; done

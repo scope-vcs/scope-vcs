@@ -75,6 +75,13 @@ while [[ "$#" -gt 0 ]]; do
   fi
   shift
 done
+if [[ "\${SCOPE_TEST_SCENARIO:-}" == "concurrent-removal" ]]; then
+  for _ in $(seq 40); do
+    [[ "$(wc -l < "$SCOPE_TEST_REMOVALS")" -ge 4 ]] && break
+    /bin/sleep 0.05
+  done
+  [[ "$(wc -l < "$SCOPE_TEST_REMOVALS")" -ge 4 ]] || exit 28
+fi
 if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-false" ]]; then
   printf '%s\\n' '{"data":{"deploymentRemove":false}}'
   exit 0
@@ -109,12 +116,29 @@ test('stops only the reviewed staging metadata-writer deployments', async () => 
 
   assert.equal(result.status, 0, result.stderr)
   const requests = (await readFile(removals, 'utf8')).trim().split('\n').map(JSON.parse)
-  assert.deepEqual(requests.map(({ variables }) => variables.id), [
+  assert.deepEqual(requests.map(({ variables }) => variables.id).sort(), [
     'api-deployment',
-    'worker-deployment',
     'media-deployment',
     'media-worker-deployment',
+    'worker-deployment',
   ])
+})
+
+test('removes every writer deployment concurrently', async () => {
+  const { manifest, removals, root } = await fixture()
+  const result = spawnSync('bash', ['.github/scripts/stop-railway-writers.sh'], {
+    encoding: 'utf8', timeout: 60_000,
+    env: {
+      ...process.env, PATH: `${root}:${process.env.PATH}`,
+      RAILWAY_API_TOKEN: 'account-token', RAILWAY_TOKEN: '',
+      SCOPE_DEPLOYMENT_MANIFEST: manifest, SCOPE_TEST_REMOVALS: removals,
+      SCOPE_TEST_RAILWAY_READ_HELPER: join(root, 'railway'),
+      SCOPE_TEST_SCENARIO: 'concurrent-removal',
+    },
+  })
+  assert.equal(result.status, 0, result.stderr)
+  const requests = (await readFile(removals, 'utf8')).trim().split('\n')
+  assert.equal(requests.length, 4)
 })
 
 test('rejects mixed Railway token privileges before making requests', async () => {
