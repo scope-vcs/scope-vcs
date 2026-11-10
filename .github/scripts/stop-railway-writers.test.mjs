@@ -43,7 +43,8 @@ if [[ "$*" == *"deployment list"* ]]; then
     printf '%s\\n' '[{"id":"old-deployment","status":"REMOVED"}]'
     exit 0
   fi
-  if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && -f "$SCOPE_TEST_REMOVALS" && "$*" == *"--service api"* ]]; then
+  if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && "$*" == *"--service api"* ]] &&
+    grep -q api-deployment "$SCOPE_TEST_REMOVALS" 2>/dev/null; then
     printf '%s\\n' '[{"id":"api-deployment","status":"REMOVED"}]'
     exit 0
   fi
@@ -75,11 +76,26 @@ while [[ "$#" -gt 0 ]]; do
   fi
   shift
 done
+if [[ "\${SCOPE_TEST_SCENARIO:-}" == "concurrent-removal" ]]; then
+  node -e '
+    const fs = require("node:fs");
+    const path = process.env.SCOPE_TEST_REMOVALS;
+    const guard = setTimeout(() => { throw new Error("All four removals must be in flight"); }, 30_000);
+    const watcher = fs.watch(require("node:path").dirname(path), check);
+    function check() {
+      if (fs.readFileSync(path, "utf8").trim().split("\\n").length < 4) return;
+      watcher.close();
+      clearTimeout(guard);
+    }
+    check();
+  '
+fi
 if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-false" ]]; then
   printf '%s\\n' '{"data":{"deploymentRemove":false}}'
   exit 0
 fi
-if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && "$(wc -l < "$SCOPE_TEST_REMOVALS")" == 1 ]]; then
+if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && "$(grep -c api-deployment "$SCOPE_TEST_REMOVALS")" == 1 ]] &&
+  grep -q api-deployment <<< "$2"; then
   printf '%s\\n' '{"data":{"deploymentRemove":true}}'
   exit 22
 fi
@@ -91,11 +107,12 @@ printf '%s\\n' '{"data":{"deploymentRemove":true}}'
   return { manifest, removals, root }
 }
 
-test('stops only the reviewed staging metadata-writer deployments', async () => {
+test('stops every reviewed staging writer with all removals in flight', async () => {
   const { manifest, removals, root } = await fixture()
   const result = spawnSync('bash', ['.github/scripts/stop-railway-writers.sh'], {
     cwd: process.cwd(),
     encoding: 'utf8',
+    timeout: 60_000,
     env: {
       ...process.env,
       PATH: `${root}:${process.env.PATH}`,
@@ -104,16 +121,17 @@ test('stops only the reviewed staging metadata-writer deployments', async () => 
       SCOPE_DEPLOYMENT_MANIFEST: manifest,
       SCOPE_TEST_REMOVALS: removals,
       SCOPE_TEST_RAILWAY_READ_HELPER: join(root, 'railway'),
+      SCOPE_TEST_SCENARIO: 'concurrent-removal',
     },
   })
 
   assert.equal(result.status, 0, result.stderr)
   const requests = (await readFile(removals, 'utf8')).trim().split('\n').map(JSON.parse)
-  assert.deepEqual(requests.map(({ variables }) => variables.id), [
+  assert.deepEqual(requests.map(({ variables }) => variables.id).sort(), [
     'api-deployment',
-    'worker-deployment',
     'media-deployment',
     'media-worker-deployment',
+    'worker-deployment',
   ])
 })
 

@@ -321,6 +321,7 @@ deploy_selected_releases() {
     activate_release api "$api_service"
     promote_pending_evidence
   fi
+  node .github/scripts/railway-predecessor-teardown.mjs wait "$predecessor_teardown_dir"
 }
 
 deploy_and_reopen() {
@@ -468,6 +469,7 @@ case "$plan_status" in
         fi
       fi
     done
+    predecessor_teardown_dir="$(mktemp -d)"
     if [[ "$deploy_router_requested" == "1" ]]; then
       activate_release git-router "$router_service"
       assert_router_topology

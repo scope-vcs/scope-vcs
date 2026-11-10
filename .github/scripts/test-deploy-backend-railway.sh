@@ -200,6 +200,7 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_SERVICE_HEALTH_TIMEOUT_SECONDS=0 \
     SCOPE_SERVICE_HEALTH_POLL_SECONDS=0 \
     SCOPE_PREDECESSOR_TEARDOWN_POLL_SECONDS=0 \
+    SCOPE_PREDECESSOR_TEARDOWN_TIMEOUT_SECONDS=30 \
     GITHUB_SHA="$sha" \
     SCOPE_WRITER_FENCE_GRACE_SECONDS="0" \
     SCOPE_MAINTENANCE_BINARY="$m" \
@@ -308,7 +309,7 @@ parallel_activation() {
 }
 
 delayed_teardown() {
-  FAKE_DELAY_REMOVE_UNTIL_ROUTER=1 run_cutover pass delayed-teardown
+  FAKE_DELAY_REMOVE=scope-media:scope-repo-router run_cutover pass delayed-teardown
   assert_in_order delayed-teardown "$up/media-api" "$up/run-worker" "$up/api" "$up/git-router"
 }
 
@@ -406,6 +407,13 @@ rolling() {
   assert_in_order rolling "$m plan" "$m verify" "$up/run-worker" "$up/api"
   refute rolling "graphql (stop|restart) |maintenance (backfill-|cleanup-)" \
     "exact-schema deployment must stay on the rolling path without repeating migration data work"
+}
+
+rolling_teardown_barrier() {
+  FAKE_INITIAL_EXACT=1 FAKE_DELAY_REMOVE=scope-worker:scope-api run_cutover pass rolling-teardown-barrier
+  assert_evidence_components rolling-teardown-barrier run-worker,api
+  assert_in_order rolling-teardown-barrier "$up/run-worker" "$up/api" \
+    '--service scope-worker --limit 100 --json'
 }
 
 rolling_worker() {
@@ -548,7 +556,7 @@ scenarios=(
   success parallel_activation delayed_teardown migration_router_selected stale_stop_status
   draining_writer invalid_workflow_catalog degraded degraded_media wrong_api_region
   degraded_during_shutdown crashed_worker evidence_promotion rollback unknown
-  rolling rolling_worker carried_worker_drift rolling_worker_unhealthy
+  rolling rolling_teardown_barrier rolling_worker carried_worker_drift rolling_worker_unhealthy
   router_bootstrap router_instance_refused router_drift_refused router_domain_invalid
   maintenance_forces_all transient_plan interrupted intentionally_closed bootstrap
   partial_reopen lost_activation_response denied_api denied_worker denied_media_worker

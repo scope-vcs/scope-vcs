@@ -205,8 +205,8 @@ if [[ "$1 $2" == "deployment list" ]]; then
     image=""
     [[ ! -f "$FAKE_RAILWAY_STATE/image-$service" ]] || image="$(cat "$FAKE_RAILWAY_STATE/image-$service")"
     old_status=REMOVED
-    if [[ "${FAKE_DELAY_REMOVE_UNTIL_ROUTER:-0}" == "1" && "$service" == scope-media \
-      && ! -f "$FAKE_RAILWAY_STATE/up-scope-repo-router" ]]; then
+    if [[ -n "${FAKE_DELAY_REMOVE:-}" && "$service" == "${FAKE_DELAY_REMOVE%%:*}" \
+      && ! -f "$FAKE_RAILWAY_STATE/up-${FAKE_DELAY_REMOVE#*:}" ]]; then
       old_status=SUCCESS
     fi
     jq -cn --arg id "$id" --arg service "$service" --arg image "$image" \
