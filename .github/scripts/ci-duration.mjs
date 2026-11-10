@@ -1,25 +1,25 @@
-export const BUDGET_SECONDS = 450;
-export const SAMPLE_SIZE = 10;
-export const MAX_RUNS = 200;
+const BUDGET_SECONDS = 450;
+const SAMPLE_SIZE = 10;
+const MAX_RUNS = 200;
 export const ISSUE_TITLE = 'Pull request CI is over its time budget';
 const PAGE_SIZE = 50;
 
 const successfulJobs = run => run.jobs.filter(job => job.conclusion === 'success');
 
-export function slowJobs(runs, { budgetSeconds = BUDGET_SECONDS, sampleSize = SAMPLE_SIZE } = {}) {
+export function slowJobs(runs) {
   const samples = new Map();
   for (const run of runs) {
     const started = Date.parse(run.startedAt);
     for (const job of successfulJobs(run)) {
       const runs = samples.get(job.name) ?? [];
-      if (runs.length < sampleSize) runs.push({ seconds: (Date.parse(job.completedAt) - started) / 1000, url: run.url });
+      if (runs.length < SAMPLE_SIZE) runs.push({ seconds: (Date.parse(job.completedAt) - started) / 1000, url: run.url });
       samples.set(job.name, runs);
     }
   }
   return [...samples]
-    .filter(([, runs]) => runs.length === sampleSize)
+    .filter(([, runs]) => runs.length === SAMPLE_SIZE)
     .map(([name, runs]) => ({ name, medianSeconds: median(runs.map(run => run.seconds)), runs }))
-    .filter(job => job.medianSeconds > budgetSeconds)
+    .filter(job => job.medianSeconds > BUDGET_SECONDS)
     .sort((left, right) => right.medianSeconds - left.medianSeconds);
 }
 
@@ -29,10 +29,10 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-export function durationIssueBody(jobs, { runUrl, budgetSeconds = BUDGET_SECONDS, sampleSize = SAMPLE_SIZE }) {
+function durationIssueBody(jobs, runUrl) {
   const minutes = seconds => (seconds / 60).toFixed(1);
   return [
-    `Over its last ${sampleSize} successful pull request runs, each job below took longer than ${minutes(budgetSeconds)} minutes, measured from run start to job end. The median is shown.`,
+    `Over its last ${SAMPLE_SIZE} successful pull request runs, each job below took longer than ${minutes(BUDGET_SECONDS)} minutes, measured from run start to job end. The median is shown.`,
     '',
     '| Job | Median minutes | Slowest sampled run |',
     '| --- | --- | --- |',
@@ -45,17 +45,17 @@ export function durationIssueBody(jobs, { runUrl, budgetSeconds = BUDGET_SECONDS
   ].join('\n');
 }
 
-export async function recentPullRequestRuns({ github, owner, repo, since, sampleSize = SAMPLE_SIZE, maxRuns = MAX_RUNS }) {
+export async function recentPullRequestRuns({ github, owner, repo, since }) {
   const sameRepository = run => run.head_repository?.full_name === `${owner}/${repo}`;
   const samples = new Map();
   const runs = [];
-  for (let page = 1; runs.length < maxRuns; page += 1) {
+  for (let page = 1; runs.length < MAX_RUNS; page += 1) {
     const { data } = await github.rest.actions.listWorkflowRuns({
       owner, repo, workflow_id: 'ci.yml', event: 'pull_request', status: 'success', per_page: PAGE_SIZE, page,
     });
     const current = data.workflow_runs.filter(run => Date.parse(run.run_started_at) >= Date.parse(since));
     for (const run of current.filter(run => run.run_attempt === 1 && sameRepository(run))) {
-      if (runs.length === maxRuns) break;
+      if (runs.length === MAX_RUNS) break;
       const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
         owner, repo, run_id: run.id, per_page: 100,
       });
@@ -67,13 +67,13 @@ export async function recentPullRequestRuns({ github, owner, repo, since, sample
       for (const job of successfulJobs(recorded)) samples.set(job.name, (samples.get(job.name) ?? 0) + 1);
       runs.push(recorded);
     }
-    const enough = runs.length >= sampleSize && [...samples.values()].every(count => count >= sampleSize);
+    const enough = runs.length >= SAMPLE_SIZE && [...samples.values()].every(count => count >= SAMPLE_SIZE);
     if (current.length < PAGE_SIZE || enough) break;
   }
   return runs;
 }
 
-export async function latestWorkflowChange({ github, owner, repo }) {
+async function latestWorkflowChange({ github, owner, repo }) {
   const { data } = await github.rest.repos.listCommits({ owner, repo, sha: 'main', path: '.github/workflows', per_page: 1 });
   return data[0].commit.committer.date;
 }
@@ -82,7 +82,7 @@ export async function reportCiDuration({ github, owner, repo, runUrl }) {
   const since = await latestWorkflowChange({ github, owner, repo });
   const jobs = slowJobs(await recentPullRequestRuns({ github, owner, repo, since }));
   if (!jobs.length) return null;
-  const body = durationIssueBody(jobs, { runUrl });
+  const body = durationIssueBody(jobs, runUrl);
   const issues = await github.paginate(github.rest.issues.listForRepo, { owner, repo, state: 'open', per_page: 100 });
   const existing = issues.find(issue => !issue.pull_request && issue.title === ISSUE_TITLE);
   if (existing) return github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });

@@ -70,7 +70,7 @@ class CriticalPathTest(unittest.TestCase):
 
     def test_pull_request_cli_builds_with_the_shipped_lto_profile_fail(self):
         self.edit("scope-cli-build.yml", '--profile "${{ matrix.profile }}" --locked --target "${{ matrix.target }}" --bin scope\n          fi',
-                  '--release --locked --target "${{ matrix.target }}" --bin scope\n          fi')
+                  '--profile=release --locked --target "${{ matrix.target }}" --bin scope\n          fi')
         violations = self.run_violations()
         self.assertEqual(len(violations), 2)
         self.assertTrue(all("cli/Cargo.toml with profile release (lto=fat, codegen-units=1)" in v for v in violations))
@@ -121,6 +121,33 @@ class DownloadedKeyTest(unittest.TestCase):
                 "keyserver.sh downloads a signing key; commit it next to the script that pins it",
             ],
         )
+
+
+class ExpressionTest(unittest.TestCase):
+    def test_unsupported_object_filters_fail_instead_of_skipping_jobs(self):
+        with self.assertRaises(ValueError):
+            MODULE.condition("contains(needs.*.result, 'success')", {"needs": {"plan": {"result": "success"}}})
+
+    def test_numeric_coercion_uses_json_numbers(self):
+        self.assertTrue(MODULE.condition("'01' != 1", {}))
+
+
+class CargoCommandTest(unittest.TestCase):
+    def test_manifest_paths_are_relative_to_the_step_directory(self):
+        self.assertEqual(
+            list(MODULE.step_cargo_commands("cargo build --release --manifest-path Cargo.toml", "cli")),
+            [("cli/Cargo.toml", "release", None)],
+        )
+
+    def test_cargo_profiles_and_manifest_options(self):
+        for command, expected in (
+            ("cargo build --release --manifest-path cli/Cargo.toml", ("cli/Cargo.toml", "release")),
+            ("cargo build --profile=release --manifest-path=cli/Cargo.toml", ("cli/Cargo.toml", "release")),
+            ("cargo test", (None, "test")),
+            ("cargo bench", (None, "bench")),
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(list(MODULE.cargo_commands(command)), [expected])
 
 
 if __name__ == "__main__":

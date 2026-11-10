@@ -22,7 +22,6 @@ GATE_JOBS = {
     "validate.yml:production-validation-gate",
     "validate-server.yml:server-validation-gate",
 }
-SCRIPTED_CARGO = {"deployment-components.mjs build": ("Cargo.toml", "release")}
 BUILTIN_PROFILES = {"dev": {}, "release": {}, "test": {"inherits": "dev"}, "bench": {"inherits": "release"}}
 PROFILE_COMMANDS = {"build", "test", "run", "bench"}
 NON_MAIN_EVENTS = [
@@ -45,7 +44,7 @@ DOWNLOADED_KEY = re.compile(
 TOKEN = re.compile(
     r"\s*(?:(?P<string>'(?:[^']|'')*')|(?P<number>\d+(?:\.\d+)?)"
     r"|(?P<operator>==|!=|&&|\|\||[!(),])"
-    r"|(?P<name>[A-Za-z_][\w-]*(?:\.[\w*-]+)*))"
+    r"|(?P<name>[A-Za-z_][\w-]*(?:\.[\w-]+)*))"
 )
 
 
@@ -144,8 +143,11 @@ def number(value):
         return 0.0
     if isinstance(value, (bool, int, float)):
         return float(value)
+    if not isinstance(value, str):
+        return math.nan
     try:
-        return float(value) if value.strip() else 0.0
+        parsed = json.loads(value, parse_constant=lambda _: math.nan) if value.strip() else 0
+        return float(parsed) if type(parsed) in (int, float) else math.nan
     except ValueError:
         return math.nan
 
@@ -375,8 +377,8 @@ def profile_settings(profiles, name):
 
 def cargo_commands(text):
     for line in re.split(r"\n|&&|\|\||;", text):
-        if any(script in line for script in SCRIPTED_CARGO):
-            yield next(SCRIPTED_CARGO[script] for script in SCRIPTED_CARGO if script in line)
+        if "deployment-components.mjs build" in line:
+            yield "Cargo.toml", "release"
             continue
         try:
             words = shlex.split(line)
@@ -384,9 +386,11 @@ def cargo_commands(text):
             words = line.split()
         for index, word in enumerate(words):
             if word in ("cargo", "cross") and index + 1 < len(words) and words[index + 1] in PROFILE_COMMANDS:
-                arguments = words[index + 2:]
+                arguments = [part for word in words[index + 2:] for part in (
+                    word.split("=", 1) if word.startswith(("--profile=", "--manifest-path=")) else [word]
+                )]
                 profile = "release" if "--release" in arguments else (
-                    "test" if words[index + 1] in ("test", "bench") else "dev")
+                    words[index + 1] if words[index + 1] in ("test", "bench") else "dev")
                 manifest = None
                 for flag, value in zip(arguments, arguments[1:]):
                     if flag == "--profile":
@@ -399,7 +403,7 @@ def cargo_commands(text):
 
 def step_cargo_commands(text, directory, through=None, seen=frozenset()):
     for manifest, profile in cargo_commands(text):
-        yield manifest or str(pathlib.Path(directory) / "Cargo.toml"), profile, through
+        yield str(pathlib.Path(directory) / (manifest or "Cargo.toml")), profile, through
     for match in SCRIPT_REFERENCE.finditer(text):
         script = ROOT / match.group(1)
         if script.suffix in ("", ".sh") and script.is_file() and os.access(script, os.X_OK) and script not in seen:
