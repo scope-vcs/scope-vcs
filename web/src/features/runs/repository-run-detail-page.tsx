@@ -17,7 +17,7 @@ import { useRunResource } from './run-resource'
 import { RunDetailPagePending } from './run-detail-pending'
 import { useCallback, useMemo } from 'react'
 import { runLogCacheKey } from './run-log-cache'
-import { useRunLogTimingPage } from './run-log-timing'
+import { useRunLogAbsence, useRunLogTimingPage } from './run-log-timing'
 
 type RunDetailPageProps = {
   cancelRun: () => Promise<void>
@@ -89,6 +89,7 @@ function RunDetailView({
     loadLogs,
     params,
   })
+  useRunLogAbsence(params.run_id, selection === null)
 
   return (
     <WorkbenchPane className="flex flex-col lg:h-[calc(100dvh-var(--app-topbar))]">

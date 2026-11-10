@@ -87,6 +87,12 @@ export function useRunLogTimingPage(runId: string) {
   }, [runId])
 }
 
+export function useRunLogAbsence(runId: string, absent: boolean) {
+  useLayoutEffect(() => {
+    if (absent) runLogTimer.settleWithoutText(runId)
+  }, [absent, runId])
+}
+
 export function useRunLogPaintTiming({
   fetching = false,
   provider,
