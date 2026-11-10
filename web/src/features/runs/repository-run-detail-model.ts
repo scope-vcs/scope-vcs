@@ -1,21 +1,14 @@
 import type { RepositoryRunDetailResponse, RunState } from '@/api/types.generated'
 
-type StepLike = {
-  index: number
-  state: string
-}
-
 type AttemptLike = {
   id: string
   number: number
-  steps: readonly StepLike[]
 }
 
 type JobLike = {
   job: {
     key: string
     needs: readonly string[]
-    state: string
   }
   attempts: readonly AttemptLike[]
 }
