@@ -8,7 +8,7 @@ const SECRETS = ['POSTHOG_PERSONAL_API_KEY', 'POSTHOG_PROJECT_ID'];
 
 export const BUDGET_QUERY = `SELECT properties.trigger AS trigger, count() AS samples,
   quantile(0.75)(toFloat(properties.duration_ms)) AS p75_ms,
-  countIf(properties.source = 'stored') AS stored
+  countIf(properties.log_source = 'stored') AS stored
 FROM events
 WHERE event = 'run_log_timing' AND properties.environment = 'production'
   AND timestamp >= now() - INTERVAL 7 DAY

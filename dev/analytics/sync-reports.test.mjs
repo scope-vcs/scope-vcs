@@ -67,7 +67,7 @@ test('browser geography counts scoped pageviews and retains missing location cov
 
 test('run log timing reports percentiles and stored share per trigger and provider for the last week', () => {
   const timing = (trigger, provider, durationMs, source = 'stored', properties = {}) => ({
-    event: 'run_log_timing', trigger, provider, duration_ms: durationMs, source, ...properties,
+    event: 'run_log_timing', trigger, provider, duration_ms: durationMs, log_source: source, ...properties,
   })
   assert.deepEqual(queryReport('run-log-timing', [
     ...[100, 200, 300, 400].map((duration, index) => timing('job_click', 'github', duration, index === 0 ? 'fetched' : 'stored')),

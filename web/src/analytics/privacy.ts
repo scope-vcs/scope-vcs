@@ -209,16 +209,16 @@ function sanitizeRunLogTiming(capture: CaptureResult) {
   const {
     duration_ms: durationMs,
     log_bytes: logBytes,
+    log_source: logSource,
     provider,
     route_name: routeName,
-    source,
     trigger,
   } = capture.properties
   if (
     routeName !== 'repository_run'
     || !isMember(runLogTriggers, trigger)
     || !isMember(runLogProviders, provider)
-    || !isMember(runLogSources, source)
+    || !isMember(runLogSources, logSource)
     || !isCount(durationMs)
     || durationMs > 600_000
     || !isCount(logBytes)
@@ -230,9 +230,9 @@ function sanitizeRunLogTiming(capture: CaptureResult) {
     ...transportProperties(capture.properties),
     duration_ms: durationMs,
     log_bytes: logBytes,
+    log_source: logSource,
     provider,
     route_name: routeName,
-    source,
     trigger,
   })
 }

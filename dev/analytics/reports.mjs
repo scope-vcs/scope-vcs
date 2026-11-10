@@ -140,7 +140,7 @@ SELECT properties.trigger AS trigger, properties.provider AS provider, count() A
   round(quantile(0.5)(toFloat(properties.duration_ms))) AS p50_ms,
   round(quantile(0.75)(toFloat(properties.duration_ms))) AS p75_ms,
   round(quantile(0.95)(toFloat(properties.duration_ms))) AS p95_ms,
-  round(100.0 * avg(properties.source = 'stored'), 1) AS stored_percent
+  round(100.0 * avg(properties.log_source = 'stored'), 1) AS stored_percent
 FROM product_events
 WHERE event = 'run_log_timing' AND timestamp >= now() - INTERVAL 7 DAY
 GROUP BY trigger, provider

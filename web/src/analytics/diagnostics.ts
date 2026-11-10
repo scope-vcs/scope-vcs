@@ -152,7 +152,7 @@ export function captureRunLogTiming(timing: RunLogTiming) {
       log_bytes: timing.logBytes,
       provider: timing.provider,
       route_name: 'repository_run',
-      source: timing.source,
+      log_source: timing.source,
       trigger: timing.trigger,
     },
     occurredAt: new Date().toISOString(),
