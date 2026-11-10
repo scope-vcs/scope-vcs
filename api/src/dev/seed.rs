@@ -401,7 +401,7 @@ fn update_demo(
         message: "Document release flow",
     };
     let (head, gallery, main_pack) =
-        update_demo_git_packs(git_segment_store, &repo.record.id, initial, accepted)?;
+        update_demo_git_packs(object_store, git_segment_store, &repo, initial, accepted)?;
     repo.git_head = Some(head);
     Ok((repo, gallery, main_pack))
 }

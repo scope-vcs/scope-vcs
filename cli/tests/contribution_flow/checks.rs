@@ -74,23 +74,27 @@ jobs:
         "forbidden",
     );
 
-    let authorized = maintainer.json(["request", "merge", "--request", &id, "--auto", "--yes"]);
-    assert_eq!(
-        authorized["result"]["response"]["intent"]["status"],
-        "Active"
-    );
-    let canceled = maintainer.json([
+    let cancel_auto = [
         "request",
         "merge",
         "--request",
         &id,
         "--cancel-auto",
         "--yes",
-    ]);
+    ];
+    assert_error(maintainer, cancel_auto, "conflict");
+    let authorized = maintainer.json(["request", "merge", "--request", &id, "--auto", "--yes"]);
+    assert_eq!(
+        authorized["result"]["response"]["intent"]["status"],
+        "Active"
+    );
+    assert_error(contributor, cancel_auto, "forbidden");
+    let canceled = maintainer.json(cancel_auto);
     assert_eq!(
         canceled["result"]["response"]["intent"]["status"],
         "Cancelled"
     );
+    assert_error(maintainer, cancel_auto, "conflict");
     maintainer.json(["request", "merge", "--request", &id, "--auto", "--yes"]);
 
     fs::write(

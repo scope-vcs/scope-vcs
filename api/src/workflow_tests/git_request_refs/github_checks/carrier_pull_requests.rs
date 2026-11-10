@@ -661,6 +661,29 @@ async fn a_landing_that_fails_keeps_the_merge_and_retries_on_the_jobs_attempts_a
     );
 
     admin
+        .execute_for_tests(
+            "UPDATE scope_github_pull_requests SET attempts = 4, next_attempt_at_unix = 0",
+        )
+        .await
+        .unwrap();
+    request
+        .fake
+        .pulls
+        .rate_limited_once
+        .store(true, Ordering::SeqCst);
+    assert_eq!(pull_request_pass(state).await, 1);
+    let rate_limited = merged_carrier(state).await;
+    assert_eq!(rate_limited.job_state, GitHubPullRequestJobState::Queued);
+    assert_eq!(rate_limited.attempts, 5);
+    assert!(rate_limited.last_error.unwrap().contains("rate limit"));
+    assert_eq!(
+        run_due_github_pull_requests(state, FAR_FUTURE_UNIX - 1)
+            .await
+            .unwrap(),
+        0
+    );
+
+    admin
         .execute_for_tests("DROP TRIGGER reject_landing ON scope_requests")
         .await
         .unwrap();

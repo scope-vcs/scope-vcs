@@ -127,6 +127,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
             &tx,
             &parent.repo_id,
             &"d".repeat(40),
+            scope_domain::requests::MainAdvanceKind::Push,
             super::super::super::request_merge::LandedRequestCompletion {
                 actor_user_id: "user_owner".into(),
                 candidates: vec![super::super::super::request_merge::LandedRequestCandidate {
@@ -158,6 +159,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
         &tx,
         &parent.repo_id,
         &"d".repeat(40),
+        scope_domain::requests::MainAdvanceKind::Push,
         super::super::super::request_merge::LandedRequestCompletion {
             actor_user_id: "user_owner".into(),
             candidates: vec![
@@ -244,6 +246,7 @@ async fn carried_main_orders_parents_before_children_and_retargets_remaining_des
         &tx,
         &parent.repo_id,
         &"d".repeat(40),
+        scope_domain::requests::MainAdvanceKind::Push,
         super::super::super::request_merge::LandedRequestCompletion {
             actor_user_id: "user_owner".into(),
             candidates: vec![super::super::super::request_merge::LandedRequestCandidate {

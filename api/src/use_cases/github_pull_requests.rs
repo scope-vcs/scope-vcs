@@ -93,7 +93,7 @@ async fn run_claimed(
         .finish_github_pull_request(
             &carrier,
             claim_token,
-            outcome,
+            outcome.clone(),
             merge_checked_against_main.as_ref(),
             now_unix,
         )
@@ -107,17 +107,15 @@ async fn run_claimed(
                 error = %error.operator_diagnostic(),
                 "could not land a request whose pull request merged on GitHub"
             );
+            let outcome = match outcome {
+                GitHubJobOutcome::Failed { .. } => outcome,
+                GitHubJobOutcome::Succeeded(()) => GitHubJobOutcome::Failed {
+                    error: error.into_public_message(),
+                    retry_at_unix,
+                },
+            };
             requests
-                .finish_github_pull_request(
-                    &carrier,
-                    claim_token,
-                    GitHubJobOutcome::Failed {
-                        error: error.into_public_message(),
-                        retry_at_unix,
-                    },
-                    None,
-                    now_unix,
-                )
+                .finish_github_pull_request(&carrier, claim_token, outcome, None, now_unix)
                 .await
         }
         finish => finish,

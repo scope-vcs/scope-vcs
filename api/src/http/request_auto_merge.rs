@@ -70,7 +70,10 @@ pub(crate) fn snapshot_response(
             scope_domain::requests::evaluate_merge_gate(
                 scope_domain::requests::MergeGateInput::RequestMerge {
                     repository_lifecycle: snapshot.repository.record.lifecycle_state,
-                    subject: (&snapshot.request).into(),
+                    subject: scope_domain::requests::RequestMergeSubject::new(
+                        &snapshot.request,
+                        &snapshot.view_mains,
+                    ),
                     viewer: actor,
                     views: &snapshot.repository.views,
                     checks: snapshot.checks_outcome(),

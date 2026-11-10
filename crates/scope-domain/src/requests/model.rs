@@ -72,6 +72,13 @@ impl Request {
         self.author_user_id.as_deref().unwrap_or(&self.id)
     }
 
+    pub fn stack_status_at(
+        &self,
+        view_mains: &super::RequestViewMains,
+    ) -> super::RequestStackStatus {
+        view_mains.stack_status(&self.view, &self.main_ancestor_oid, self.stack_status)
+    }
+
     pub fn state(&self) -> RequestState {
         RequestState::from_timestamps(
             self.merged_at_unix,

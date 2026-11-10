@@ -20,10 +20,10 @@ use scope_api_contract::{
     AddRequestInviteeRequest, EditRequestIdentityRequest, LeaveRequestResponse,
     MergeRequestRequest, RemoveRequestInviteeRequest, RequestActorSummaryResponse,
     RequestCloseResponse, RequestDetailResponse, RequestInviteeMutationResponse,
-    RequestInviteeResponse, RequestListResponse, RequestMutationResponse, RequestSummaryResponse,
-    StartRequestRequest, SubmitRequestRequest,
+    RequestInviteeResponse, RequestListResponse, RequestMutationResponse, StartRequestRequest,
+    SubmitRequestRequest,
 };
-use scope_domain::views::{ViewId, Views};
+use scope_domain::views::ViewId;
 use scope_domain::{
     account::UserAccount,
     repository::access::{RepositoryAccess, RepositoryAccessContext},
@@ -35,6 +35,9 @@ use scope_domain::{
 };
 use scope_postgres::db::{EditRequestIdentityCommand, RepositoryReadPolicy};
 use serde::Deserialize;
+
+mod summary;
+use summary::request_response_for_viewer;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RequestListQuery {
@@ -87,6 +90,11 @@ pub(crate) async fn list_requests(
     } else {
         current_main_oid_for_context(&state, &repo).await?
     };
+    let view_mains = state
+        .metadata
+        .requests()
+        .request_view_mains(&repo.record.id)
+        .await?;
     let checks =
         crate::use_cases::request_checks::checks_outcomes(&state, &repo.record.id, &requests)
             .await?;
@@ -131,7 +139,10 @@ pub(crate) async fn list_requests(
                 request,
                 &RequestViewer::new(repo.access.clone(), viewer_user_id.as_deref(), false),
                 &repo.views,
-                current_main_oid.clone(),
+                RequestMains {
+                    viewer_main_oid: current_main_oid.as_deref(),
+                    view_mains: &view_mains,
+                },
                 repo.record.lifecycle_state,
                 facts,
             )
@@ -570,46 +581,6 @@ pub(crate) async fn actor_request(
         .await?
         .0;
     Ok((user, repo, request))
-}
-
-async fn request_response_for_viewer(
-    state: &AppState,
-    request: Request,
-    viewer: RequestViewer<'_>,
-    views: &Views,
-    current_main_oid: Option<String>,
-    repository_lifecycle: scope_domain::repository::RepoLifecycleState,
-) -> Result<RequestSummaryResponse, ApiError> {
-    let policy = request_policy(&request, viewer.clone(), views);
-    let invitees = if views.anyone() == Some(&request.view) && policy.exact_visible {
-        state
-            .metadata
-            .requests()
-            .request_invitees(&request.id)
-            .await?
-            .into_iter()
-            .map(request_invitee_response)
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let checks = crate::use_cases::request_checks::recorded_checks_view(state, &request)
-        .await?
-        .outcome;
-    let reviews = state
-        .metadata
-        .requests()
-        .request_reviews_outcome(&request, views)
-        .await?;
-    request_response(
-        request,
-        viewer,
-        views,
-        current_main_oid,
-        invitees,
-        RequestGateOutcomes { checks, reviews },
-        repository_lifecycle,
-    )
 }
 
 async fn current_main_oid_for_view(

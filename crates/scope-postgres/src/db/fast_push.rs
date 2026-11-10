@@ -112,7 +112,7 @@ impl RepositoryStore {
             != Some(scope_domain::requests::MergeGateAuthority::AuthorizedMainPush)
         {
             return Err(PostgresError::permission_denied(
-                main_gate.reason().unwrap_or("main push access required"),
+                main_gate.refusal().unwrap_or("main push access required"),
             ));
         }
         authorize_reviewed_update(ReviewedUpdateAuthorization {

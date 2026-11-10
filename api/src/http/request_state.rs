@@ -108,7 +108,10 @@ pub(crate) fn detail_response(
             snapshot.request.clone(),
             viewer,
             &snapshot.repository.views,
-            snapshot.current_main_oid.clone(),
+            super::responses::RequestMains {
+                viewer_main_oid: snapshot.current_main_oid.as_deref(),
+                view_mains: &snapshot.view_mains,
+            },
             snapshot
                 .invitees
                 .iter()

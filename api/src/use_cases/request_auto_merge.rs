@@ -150,7 +150,14 @@ async fn reconcile_claim(
     let gate = scope_domain::requests::evaluate_merge_gate(
         scope_domain::requests::MergeGateInput::RequestMerge {
             repository_lifecycle: context.record.lifecycle_state,
-            subject: (&request).into(),
+            subject: scope_domain::requests::RequestMergeSubject::new(
+                &request,
+                &state
+                    .metadata
+                    .requests()
+                    .request_view_mains(&request.repo_id)
+                    .await?,
+            ),
             viewer: &viewer,
             views: &context.views,
             checks: checks.outcome,

@@ -1,7 +1,8 @@
 use super::*;
 
-const PUBLIC_MAIN_MOVED: &str =
-    "Request view main moved. Rebase onto it or merge it, then run scope request push.";
+const PUBLIC_MAIN_MOVED: &str = "request must contain the latest view main";
+const PUBLIC_MAIN_MOVED_REFUSAL: &str =
+    "Request view main moved. Run scope request restack, then scope request push.";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
@@ -48,6 +49,11 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     )
     .await;
     assert_eq!(submitted.status(), StatusCode::OK);
+    for viewer in [&member, &contributor] {
+        let mergeability = &get_json(&app, &route, viewer).await["request"]["mergeability"];
+        assert_eq!(mergeability["status"], "NeedsMainUpdate");
+        assert_eq!(mergeability["reason"], PUBLIC_MAIN_MOVED);
+    }
     let blocked = api_request(
         app.clone(),
         "POST",
@@ -57,7 +63,10 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     )
     .await;
     assert_eq!(blocked.status(), StatusCode::CONFLICT);
-    assert_eq!(response_json(blocked).await["message"], PUBLIC_MAIN_MOVED);
+    assert_eq!(
+        response_json(blocked).await["message"],
+        PUBLIC_MAIN_MOVED_REFUSAL
+    );
 
     let public_remote = remote.clone();
     run_git(
@@ -77,6 +86,10 @@ async fn contributor_rebases_past_moved_public_main_then_amends_and_merges() {
     let request = stored_request(&state, REQUEST_ID).await;
     assert_eq!(request.head_oid, rebased_head);
     assert_eq!(request.main_ancestor_oid, public_main);
+    assert_eq!(
+        get_json(&app, &route, &member).await["request"]["mergeability"]["status"],
+        "Ready"
+    );
 
     let changes = get_json(&app, &format!("{route}/changes"), &contributor).await;
     let revisions = changes["revisions"].as_array().unwrap();

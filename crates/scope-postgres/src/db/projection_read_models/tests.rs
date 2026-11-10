@@ -308,6 +308,97 @@ async fn an_include_change_folds_into_one_boundary_commit_on_top_of_the_resumed_
 }
 
 #[tokio::test]
+async fn an_open_requests_view_keeps_its_main_through_a_history_rebuild() {
+    let (store, mut repo) = store_and_repo("private");
+    let docs = view("docs");
+    record(
+        &mut repo,
+        vec![commit(
+            "c0",
+            &[
+                ("/README.md", "public", None, 1),
+                ("/redacted.txt", "public", None, 2),
+            ],
+        )],
+        vec![views_change(
+            "vchg_docs",
+            "c0",
+            Views::builtin(),
+            views_with(&[("docs", &["public"])]),
+            Vec::new(),
+        )],
+    );
+    store
+        .repositories()
+        .replace_repository_for_tests(repo.clone())
+        .await
+        .unwrap();
+    store
+        .repositories()
+        .ensure_live_projection_read_models(&repo.incarnation(), &docs)
+        .await
+        .unwrap();
+    let contained_main = read_model(&store, &repo, &docs)
+        .await
+        .unwrap()
+        .head_oid
+        .unwrap();
+    store
+        .requests()
+        .start_request(scope_domain::requests::StartRequestInput {
+            id: "req_docs".into(),
+            repo_id: repo.record.id.clone(),
+            name: "docs-change".into(),
+            author_user_id: "views_owner".into(),
+            title: None,
+            author_role: scope_domain::requests::RequestActorRole::Owner,
+            author_view: ViewId::private(),
+            view: docs.clone(),
+            base: scope_domain::requests::RequestBase::Main {
+                review_base_oid: contained_main.clone(),
+            },
+            main_ancestor_oid: contained_main.clone(),
+            event_id: "event_docs".into(),
+            now_unix: 2,
+        })
+        .await
+        .unwrap();
+    repo.graph.commits[0].changes[1].label = ViewId::private();
+    record(
+        &mut repo,
+        vec![commit("c1", &[("/README.md", "public", Some(1), 3)])],
+        Vec::new(),
+    );
+    store
+        .repositories()
+        .replace_repository_for_tests(repo.clone())
+        .await
+        .unwrap();
+    let current_main = scope_git::projection_head_oid(&project_graph(
+        &repo.graph,
+        &repo.visibility_change_sets,
+        &repo.initial_views(),
+        &docs,
+    ))
+    .unwrap()
+    .unwrap();
+    assert_ne!(current_main, contained_main);
+    let mains = store
+        .requests()
+        .request_view_mains(&repo.record.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        mains.stack_status(
+            &docs,
+            &contained_main,
+            scope_domain::requests::RequestStackStatus::Main
+        ),
+        scope_domain::requests::RequestStackStatus::NeedsMainUpdate,
+    );
+}
+
+#[tokio::test]
 async fn unassigned_views_build_on_first_read_and_removed_views_lose_their_rows() {
     let (store, mut repo) = store_and_repo("private");
     let with_docs = views_with(&[("docs", &["public"])]);

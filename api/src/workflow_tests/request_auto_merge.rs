@@ -9,7 +9,6 @@ use scope_postgres::db::{RecordRequestChecksCommand, SubmitRequestCommand};
 
 const AUTO_REQUEST_ID: &str = "req_auto_merge";
 const AUTO_REQUEST_NAME: &str = "auto-merge";
-const FIRST_HEAD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SECOND_HEAD: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const THIRD_HEAD: &str = "cccccccccccccccccccccccccccccccccccccccc";
 const PUBLIC_AUTO_SUBJECT: &str = "user_auto_merge_public";
@@ -41,12 +40,22 @@ async fn open_request_with_revision(
             .unwrap();
     }
     drain_outbox(&state, "request-auto-merge-test").await;
+    let repo = find_repo(&state, TEST_REPO_OWNER, TEST_REPO_NAME)
+        .await
+        .unwrap();
+    let main_oid = state
+        .metadata
+        .repositories()
+        .repository_view_head(&repo.incarnation(), repo.record.content_version, &view)
+        .await
+        .unwrap()
+        .unwrap();
     state
         .metadata
         .requests()
         .start_request(StartRequestInput {
             base: scope_domain::requests::RequestBase::Main {
-                review_base_oid: (FIRST_HEAD.to_string()).clone(),
+                review_base_oid: main_oid.clone(),
             },
             id: request_id.to_string(),
             repo_id: TEST_REPO_ID.to_string(),
@@ -56,7 +65,7 @@ async fn open_request_with_revision(
             author_role,
             author_view: scope_domain::views::ViewId::private(),
             view,
-            main_ancestor_oid: FIRST_HEAD.to_string(),
+            main_ancestor_oid: main_oid,
             event_id: format!("event_{request_id}_started"),
             now_unix: 2,
         })
@@ -618,7 +627,7 @@ async fn successful_reconciliation_merges_the_authorized_head_once() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn public_main_advance_stops_authorization_as_merge_conflict() {
+async fn public_main_advance_stops_authorization_as_needing_a_main_update() {
     let (state, source, remote, request_id, request_head, _server) =
         native_open_request("request-auto-merge-public-main-advance", ViewId::public()).await;
     drain_outbox(&state, "request-auto-merge-public-ready").await;
@@ -642,7 +651,7 @@ async fn public_main_advance_stops_authorization_as_merge_conflict() {
     let attempt_time = unix_now();
     assert_eq!(reconcile(&state, attempt_time).await, 1);
     let stopped = auto_merge_json(app, "GET", &request_id, None, StatusCode::OK).await;
-    assert_stopped(&stopped, "MergeConflict");
+    assert_stopped(&stopped, "NeedsMainUpdate");
     assert_eq!(reconcile(&state, attempt_time + 1).await, 0);
     assert_eq!(live_file_content(&state, "/auto-merge.txt").await, None);
 }

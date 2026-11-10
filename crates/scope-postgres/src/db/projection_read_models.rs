@@ -10,6 +10,7 @@ use {
         projection_views::{ProjectionViewFile, ProjectionViewFileContent},
         repo_config::RepoConfig,
         repo_control::{LEGACY_REPO_RULES_PATH, REPO_CONTROL_PREFIX, REPO_CONTROL_ROOT},
+        requests::RequestViewMains,
         views::{ViewId, Views},
     },
 };
@@ -117,6 +118,32 @@ where
     .one(conn)
     .await?
     .filter(|row| row.current() && row.repo_version == repo_version))
+}
+
+pub(super) fn live_request_view_mains<'a>(
+    rows: impl IntoIterator<Item = &'a entities::projection_read_model::Model>,
+    repo_version: u64,
+) -> RequestViewMains {
+    RequestViewMains::new(
+        rows.into_iter()
+            .filter(|row| row.current() && u64::try_from(row.repo_version) == Ok(repo_version))
+            .filter_map(|row| Some((ViewId::parse(&row.audience).ok()?, row.head_oid.clone()?))),
+    )
+}
+
+pub(super) async fn request_view_mains<C>(
+    conn: &C,
+    repo_id: &str,
+    repo_version: u64,
+) -> Result<RequestViewMains, PostgresError>
+where
+    C: ConnectionTrait,
+{
+    let rows = entities::projection_read_model::Entity::find()
+        .filter(entities::projection_read_model::Column::RepoId.eq(repo_id.to_string()))
+        .all(conn)
+        .await?;
+    Ok(live_request_view_mains(&rows, repo_version))
 }
 
 pub(super) async fn load_live_projection_file_for_view<C>(
