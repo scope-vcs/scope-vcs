@@ -247,10 +247,13 @@ async fn restore_repairs_missing_prerequisite_from_an_empty_shelf_without_duplic
     .await
     .unwrap();
     println!("after restore: real revision reader verified from an empty shelf");
+    let moved = fixture.bundle.with_extension("moved");
+    fs::rename(&fixture.bundle, &moved).unwrap();
     assert_eq!(
         fixture.restore(true).await.unwrap(),
         [RestoreOutcome::AlreadyReadable]
     );
+    fs::rename(&moved, &fixture.bundle).unwrap();
     assert_eq!(fixture.packs().await.len(), packs.len());
     let sweep = sweep(&fixture.state, Some(&fixture.repo.record.id))
         .await

@@ -231,6 +231,7 @@ async fn restore(
 ) -> Result<Vec<RestoreOutcome>, ApiError> {
     let repo = repository(state, repo_id).await?;
     let mut selected = Vec::new();
+    let mut outcomes = Vec::new();
     for id in revision_ids {
         let revision = state
             .metadata
@@ -246,7 +247,21 @@ async fn restore(
             .filter(|request| request.repo_id == repo_id)
             .ok_or_else(|| ApiError::conflict(format!("revision {id} is not in {repo_id}")))?;
         let owner = revision.restoration_pack_owner(&request, repo.repo_config.views())?;
+        if read_revision(state, &repo, &request, &revision)
+            .await
+            .is_ok()
+        {
+            println!(
+                "repository={repo_id} revision={} already_readable",
+                revision.id
+            );
+            outcomes.push(RestoreOutcome::AlreadyReadable);
+            continue;
+        }
         selected.push((request, revision, owner));
+    }
+    if selected.is_empty() {
+        return Ok(outcomes);
     }
     let bundle = fs::canonicalize(bundle).map_err(ApiError::internal)?;
     let directory = tempfile::Builder::new()
@@ -277,19 +292,7 @@ async fn restore(
         let heads = revision.comparison_oids();
         blocking(move || verify_connectivity(&source, &heads)).await?;
     }
-    let mut outcomes = Vec::new();
     for (request, revision, owner) in selected {
-        if read_revision(state, &repo, &request, &revision)
-            .await
-            .is_ok()
-        {
-            println!(
-                "repository={repo_id} revision={} already_readable",
-                revision.id
-            );
-            outcomes.push(RestoreOutcome::AlreadyReadable);
-            continue;
-        }
         let pack_source = source.clone();
         let heads = revision.comparison_oids();
         let bytes = blocking(move || {
