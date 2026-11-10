@@ -8,10 +8,14 @@ type RunLogIntent = {
   fetched: boolean
 }
 
+type AfterPaint = (paint: (paintedAt: number) => void) => () => void
+
 export function createRunLogTimer({
+  afterPaint,
   isDocumentRoute,
   report,
 }: {
+  afterPaint: AfterPaint
   isDocumentRoute: () => boolean
   report: (timing: RunLogTiming) => void
 }) {
@@ -48,7 +52,7 @@ export function createRunLogTimer({
     commitText(runId: string, provider: RunLogTiming['provider'], text: string) {
       const committed = text ? intentFor(runId) : null
       if (!committed) return null
-      return (paintedAt: number) => {
+      const cancelPaint = afterPaint((paintedAt) => {
         if (intent !== committed) return
         intent = null
         report({
@@ -58,12 +62,26 @@ export function createRunLogTimer({
           source: committed.fetched ? 'fetched' : 'stored',
           trigger: committed.trigger,
         })
+      })
+      return () => {
+        cancelPaint()
+        if (intent === committed) intent = null
       }
     },
   }
 }
 
 const runLogTimer = createRunLogTimer({
+  afterPaint: (paint) => {
+    let task: ReturnType<typeof setTimeout> | undefined
+    const frame = requestAnimationFrame(() => {
+      task = setTimeout(() => paint(performance.now()))
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(task)
+    }
+  },
   isDocumentRoute: () => {
     const [navigation] = performance.getEntriesByType('navigation')
     return navigation !== undefined && new URL(navigation.name).pathname === window.location.pathname
@@ -106,17 +124,15 @@ export function useRunLogPaintTiming({
   settled: boolean
   text: string
 }) {
-  const painted = useRef(false)
+  const closeView = useRef<(() => void) | null>(null)
+  useLayoutEffect(() => () => closeView.current?.(), [])
   useLayoutEffect(() => {
     if (fetching) runLogTimer.observeFetching(runId)
-    if (painted.current) return
+    if (closeView.current) return
     if (!text) {
       if (settled) runLogTimer.settleWithoutText(runId)
       return
     }
-    painted.current = true
-    const finish = runLogTimer.commitText(runId, provider, text)
-    if (!finish) return
-    requestAnimationFrame(() => setTimeout(() => finish(performance.now())))
+    closeView.current = runLogTimer.commitText(runId, provider, text) ?? (() => {})
   }, [fetching, provider, runId, settled, text])
 }

@@ -11,7 +11,7 @@ import { runJobPanelId } from './run-job-ids'
 import { RunJobGraph } from './run-job-graph'
 import { orderJobsByDependency } from './run-job-graph-model'
 import { RunStatusIcon } from './run-status-icon'
-import { startRunJobTiming } from './run-log-timing'
+import { startRunJobTiming, useRunLogAbsence } from './run-log-timing'
 import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 
 export function RunDetailJobs({
@@ -42,6 +42,7 @@ export function RunDetailJobs({
   const selectedJob = jobs.find(({ job }) => job.key === selectedJobKey) ?? null
   const orderedJobs = useMemo(() => orderJobsByDependency(jobs), [jobs])
   const graphShown = jobsHaveDependencies(jobs) && showGraph
+  useRunLogAbsence(runId, graphShown)
   const jobListRef = useRef<HTMLDivElement>(null)
   function pickJob(job: RepositoryRunJobDetailResponse) {
     startRunJobTiming(runId)
