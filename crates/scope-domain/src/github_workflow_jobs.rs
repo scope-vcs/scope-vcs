@@ -51,13 +51,13 @@ impl GitHubWorkflowJob {
         self.conclusion != Some(GitHubCheckConclusion::Skipped) && !self.steps.is_empty()
     }
 
-    pub fn log_is_prefetched(&self) -> bool {
-        self.is_completed()
-            && self.ran()
-            && matches!(
-                self.conclusion,
-                Some(GitHubCheckConclusion::Failure | GitHubCheckConclusion::TimedOut)
-            )
+    pub fn has_readable_log(&self) -> bool {
+        self.is_completed() && self.ran()
+    }
+
+    pub fn failed(&self) -> bool {
+        self.conclusion
+            .is_some_and(GitHubCheckConclusion::is_failure)
     }
 
     pub fn missing_log_is_final(&self, now_unix: u64) -> bool {
@@ -80,6 +80,16 @@ impl GitHubWorkflowJob {
             steps_started: reached(1),
         }
     }
+}
+
+pub fn github_opening_job(jobs: &[GitHubWorkflowJob]) -> Option<&GitHubWorkflowJob> {
+    jobs.iter()
+        .find(|job| job.failed())
+        .or_else(|| {
+            jobs.iter()
+                .find(|job| job.status == GitHubCheckStatus::InProgress)
+        })
+        .or_else(|| jobs.first())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -266,19 +276,48 @@ mod tests {
     }
 
     #[test]
-    fn only_failed_jobs_that_ran_have_their_logs_read_when_they_finish() {
+    fn every_finished_job_that_ran_has_a_readable_log() {
         use GitHubCheckStatus::{Completed, InProgress};
         let with = |conclusion, steps| GitHubWorkflowJob {
             conclusion: Some(conclusion),
             ..job(Completed, steps)
         };
         let ran = || vec![step(1, Completed)];
-        assert!(with(GitHubCheckConclusion::Failure, ran()).log_is_prefetched());
-        assert!(with(GitHubCheckConclusion::TimedOut, ran()).log_is_prefetched());
-        assert!(!with(GitHubCheckConclusion::Success, ran()).log_is_prefetched());
-        assert!(!with(GitHubCheckConclusion::Cancelled, ran()).log_is_prefetched());
-        assert!(!with(GitHubCheckConclusion::Failure, vec![]).log_is_prefetched());
-        assert!(!job(InProgress, ran()).log_is_prefetched());
+        assert!(with(GitHubCheckConclusion::Failure, ran()).has_readable_log());
+        assert!(with(GitHubCheckConclusion::Success, ran()).has_readable_log());
+        assert!(with(GitHubCheckConclusion::Cancelled, ran()).has_readable_log());
+        assert!(!with(GitHubCheckConclusion::Failure, vec![]).has_readable_log());
+        assert!(!job(InProgress, ran()).has_readable_log());
+    }
+
+    #[test]
+    fn a_run_opens_on_its_first_failed_job_then_a_running_one_then_its_first() {
+        use GitHubCheckStatus::{Completed, InProgress, Queued};
+        let numbered = |id, job: GitHubWorkflowJob| GitHubWorkflowJob {
+            github_job_id: id,
+            ..job
+        };
+        let cancelled = GitHubWorkflowJob {
+            conclusion: Some(GitHubCheckConclusion::Cancelled),
+            ..job(Completed, vec![])
+        };
+        let opening =
+            |jobs: &[GitHubWorkflowJob]| github_opening_job(jobs).map(|job| job.github_job_id);
+        let passed = numbered(1, job(Completed, vec![]));
+        let running = numbered(2, job(InProgress, vec![]));
+        let queued = numbered(3, job(Queued, vec![]));
+        assert_eq!(
+            opening(&[
+                passed.clone(),
+                running.clone(),
+                numbered(4, cancelled.clone()),
+                numbered(5, cancelled)
+            ]),
+            Some(4)
+        );
+        assert_eq!(opening(&[passed.clone(), queued.clone(), running]), Some(2));
+        assert_eq!(opening(&[queued, passed]), Some(3));
+        assert_eq!(opening(&[]), None);
     }
 
     #[test]

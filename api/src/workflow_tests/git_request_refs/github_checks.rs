@@ -68,14 +68,19 @@ pub(super) async fn owner_request(label: &str, required: &[&str]) -> OwnerReques
     let (origin, server) = spawn_test_server(&state).await;
     let remote = format!("{origin}/git/private/{TEST_REPO_ID}");
     configure_bearer_header(&source, &remote, &bearer);
-    push_change(
-        &source,
-        &remote,
-        "refs/heads/checks",
-        "request.txt",
-        "request work\n",
-        "request change",
-    )
+    let (pushed_from, pushed_to) = (source.to_path_buf(), remote.clone());
+    tokio::task::spawn_blocking(move || {
+        push_change(
+            &pushed_from,
+            &pushed_to,
+            "refs/heads/checks",
+            "request.txt",
+            "request work\n",
+            "request change",
+        )
+    })
+    .await
+    .unwrap()
     .unwrap();
     submit_request(router(state.clone()), &request_id, &bearer).await;
     OwnerRequest {

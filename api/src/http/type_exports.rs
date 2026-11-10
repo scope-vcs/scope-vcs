@@ -23,7 +23,8 @@ use scope_api_contract::{
     RepositoryRunAttemptResponse, RepositoryRunCacheObservationResponse,
     RepositoryRunCacheResponse, RepositoryRunCacheSetupObservationResponse,
     RepositoryRunDetailResponse, RepositoryRunJobDetailResponse, RepositoryRunJobResponse,
-    RepositoryRunJobState, RepositoryRunListItemResponse, RepositoryRunStepResponse,
+    RepositoryRunJobState, RepositoryRunListItemResponse, RepositoryRunOpeningResponse,
+    RepositoryRunOpeningStepResponse, RepositoryRunStepRefResponse, RepositoryRunStepResponse,
     RepositoryRunSummaryResponse, RepositoryRunTerminalReason, RepositoryRunTrigger,
     RequestActivityPageResponse, RequestActorRole, RequestActorSummaryResponse,
     RequestAttachmentDerivativeKind, RequestAttachmentDerivativeResponse,
@@ -371,8 +372,11 @@ pub(crate) fn export_api_contract(output_path: &Path, schema_output_path: &Path)
         RepositoryRunWorkflowListResponse,
         RepositoryRunHistoryPageResponse,
         RepositoryRunLogResponse,
-        RepositoryRunDetailResponse,
         RepositoryRunStepLogPageResponse,
+        RepositoryRunStepRefResponse,
+        RepositoryRunOpeningStepResponse,
+        RepositoryRunOpeningResponse,
+        RepositoryRunDetailResponse,
     );
     let schemas = response_schemas!(
         RepositoryDependencyCheckResponse,

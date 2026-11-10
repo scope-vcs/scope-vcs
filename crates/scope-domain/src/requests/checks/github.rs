@@ -44,6 +44,20 @@ pub enum GitHubCheckConclusion {
     StartupFailure,
 }
 
+impl GitHubCheckConclusion {
+    pub fn is_failure(self) -> bool {
+        matches!(
+            self,
+            Self::Failure
+                | Self::Cancelled
+                | Self::TimedOut
+                | Self::ActionRequired
+                | Self::Stale
+                | Self::StartupFailure
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubCheckRun {
     pub commit_oid: String,
@@ -62,19 +76,8 @@ impl GitHubCheckRun {
         }
         match self.conclusion {
             None => CheckVerdict::Pending,
-            Some(
-                GitHubCheckConclusion::Success
-                | GitHubCheckConclusion::Neutral
-                | GitHubCheckConclusion::Skipped,
-            ) => CheckVerdict::Passed,
-            Some(
-                GitHubCheckConclusion::Failure
-                | GitHubCheckConclusion::Cancelled
-                | GitHubCheckConclusion::TimedOut
-                | GitHubCheckConclusion::ActionRequired
-                | GitHubCheckConclusion::Stale
-                | GitHubCheckConclusion::StartupFailure,
-            ) => CheckVerdict::Failed,
+            Some(conclusion) if conclusion.is_failure() => CheckVerdict::Failed,
+            Some(_) => CheckVerdict::Passed,
         }
     }
 }

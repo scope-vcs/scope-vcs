@@ -125,6 +125,8 @@ pub(crate) struct GitHubWorkflowRunDetailResponse {
     pub(crate) run: GitHubWorkflowRunResponse,
     pub(crate) jobs: Vec<GitHubWorkflowJobResponse>,
     pub(crate) jobs_not_read_yet: bool,
+    pub(crate) opening_job_id: Option<u64>,
+    pub(crate) opening_job_log: Option<GitHubWorkflowJobLogResponse>,
 }
 
 #[derive(Debug, Serialize)]

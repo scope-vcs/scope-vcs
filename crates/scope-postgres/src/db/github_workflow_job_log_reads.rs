@@ -34,23 +34,28 @@ const LOG_READS: GitHubReadQueue = GitHubReadQueue {
 };
 
 impl RepositoryStore {
-    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_github_job_log_read"))]
-    pub async fn queue_github_job_log_read(
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "queue_github_job_log_reads"))]
+    pub async fn queue_github_job_log_reads(
         &self,
-        github_job_id: u64,
+        github_job_ids: &[u64],
         now_unix: u64,
     ) -> Result<(), PostgresError> {
+        let job_ids = github_job_ids
+            .iter()
+            .map(|job_id| u64_to_i64(*job_id, "GitHub job id"))
+            .collect::<Result<Vec<_>, _>>()?;
         self.db
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 "INSERT INTO scope_github_workflow_job_log_reads
                     (github_job_id, attempts, next_attempt_at_unix)
-                 SELECT $1, 0, $2
-                  WHERE NOT EXISTS (SELECT 1 FROM scope_github_workflow_job_logs
-                                     WHERE github_job_id = $1)
+                 SELECT queued.github_job_id, 0, $2
+                   FROM unnest($1::bigint[]) AS queued(github_job_id)
+                  WHERE NOT EXISTS (SELECT 1 FROM scope_github_workflow_job_logs log
+                                     WHERE log.github_job_id = queued.github_job_id)
                  ON CONFLICT DO NOTHING",
                 [
-                    u64_to_i64(github_job_id, "GitHub job id")?.into(),
+                    job_ids.into(),
                     u64_to_i64(now_unix, "GitHub job log read time")?.into(),
                 ],
             ))

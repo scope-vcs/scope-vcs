@@ -4,7 +4,7 @@ use crate::{
     http::responses::{
         RepositoryRunLogResponse, RepositoryRunStepLogPageResponse, git_oid_request,
     },
-    http::run_detail_response::build_run_detail_response,
+    http::run_detail_response::{RunDetailOpening, build_run_detail_response, run_detail_opening},
     http::run_response::{repository_run_summary, run_response},
     state::AppState,
     use_cases::{
@@ -26,10 +26,11 @@ use axum::{
 };
 use scope_api_contract::{
     CreateManualRunQuery, PushTriggerCheckResponse, PushTriggerEvaluationResponse,
-    RepositoryRunDetailResponse, ResolveManualRunResponse, RunResponse,
+    RepositoryRunDetailResponse, RepositoryRunOpeningResponse, RepositoryRunOpeningStepResponse,
+    ResolveManualRunResponse, RunResponse,
 };
 use scope_domain::runs::{manual::ManualRunRequest, source::MAX_RUN_SOURCE_BUNDLE_BYTES};
-use scope_postgres::db::StepLogCursor;
+use scope_postgres::db::{StepLogCursor, StoredAttemptStepLogs};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -112,7 +113,34 @@ pub(crate) async fn get_repository_run_detail(
         .repository_availability(detail.run.workflow.repository_id())
         .await?;
     let run = repository_run_summary(&detail.run, &detail.jobs, native_runs);
-    Ok(Json(build_run_detail_response(detail, run)?))
+    let opening = match run_detail_opening(&detail) {
+        Some(RunDetailOpening { job_key, step }) => Some(RepositoryRunOpeningResponse {
+            job_key,
+            step: match step {
+                Some(step) => {
+                    let page = state
+                        .metadata
+                        .runs()
+                        .attempt_step_logs(
+                            &run_id,
+                            &step.attempt_id,
+                            step.step_index,
+                            StepLogCursor::Tail,
+                            REPOSITORY_STEP_LOG_LIMIT,
+                        )
+                        .await?;
+                    Some(RepositoryRunOpeningStepResponse {
+                        attempt_id: step.attempt_id,
+                        step_index: step.step_index,
+                        log: step_log_page_response(page, StepLogCursor::Tail),
+                    })
+                }
+                None => None,
+            },
+        }),
+        None => None,
+    };
+    Ok(Json(build_run_detail_response(detail, run, opening)?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -154,6 +182,13 @@ pub(crate) async fn get_repository_run_step_logs(
         REPOSITORY_STEP_LOG_LIMIT,
     )
     .await?;
+    Ok(Json(step_log_page_response(page, cursor)))
+}
+
+fn step_log_page_response(
+    page: StoredAttemptStepLogs,
+    cursor: StepLogCursor,
+) -> RepositoryRunStepLogPageResponse {
     let next_after = page.logs.last().map_or(
         match cursor {
             StepLogCursor::After(position) => position,
@@ -161,7 +196,7 @@ pub(crate) async fn get_repository_run_step_logs(
         },
         |stored| stored.position,
     );
-    Ok(Json(RepositoryRunStepLogPageResponse {
+    RepositoryRunStepLogPageResponse {
         logs: page
             .logs
             .into_iter()
@@ -177,7 +212,7 @@ pub(crate) async fn get_repository_run_step_logs(
         logs_truncated: page.logs_truncated,
         has_earlier: page.has_earlier,
         has_more: page.has_more,
-    }))
+    }
 }
 
 pub(crate) async fn get_push_trigger_evaluation(

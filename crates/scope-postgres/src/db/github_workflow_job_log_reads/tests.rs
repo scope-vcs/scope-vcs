@@ -34,9 +34,9 @@ async fn a_log_read_is_queued_once_per_unstored_log_and_names_its_job() {
         .save_github_workflow_job_log(13, &GitHubJobLogState::Expired, 50)
         .await
         .unwrap();
-    for job_id in [12, 12, 13] {
+    for job_ids in [&[12, 13, 12][..], &[12]] {
         repositories
-            .queue_github_job_log_read(job_id, 100)
+            .queue_github_job_log_reads(job_ids, 100)
             .await
             .unwrap();
     }
@@ -66,7 +66,7 @@ async fn a_worker_whose_lease_lapsed_cannot_finish_the_next_claim() {
         .await
         .unwrap();
     repositories
-        .queue_github_job_log_read(12, 100)
+        .queue_github_job_log_reads(&[12], 100)
         .await
         .unwrap();
     let lapsed = repositories
