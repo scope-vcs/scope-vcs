@@ -219,7 +219,10 @@ export function useRepositoryRunDetailController({
     linkPageRequested.current = link
     const through = stepLogAnchorPosition(link.line)
     const firstLoaded = loaded.logs[0]?.position
-    if (loaded.hasEarlier && firstLoaded !== undefined && through < firstLoaded) void refreshLogs(selection, { through })
+    const lastLoaded = loaded.logs.at(-1)?.position
+    const olderThanLoaded = loaded.hasEarlier && firstLoaded !== undefined && through < firstLoaded
+    const newerThanEarlierPage = loaded.viewingEarlier && lastLoaded !== undefined && through > lastLoaded
+    if (olderThanLoaded || newerThanEarlierPage) void refreshLogs(selection, { through })
   }, [key, refreshLogs, selectedLogs, view])
 
   const performAction = useCallback(async (

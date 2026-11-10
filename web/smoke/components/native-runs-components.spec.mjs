@@ -204,5 +204,8 @@ test('a running native step follows new output from a search match, and links li
   await page.evaluate(() => { location.hash = '#run-job-test:attempt:0:L20.4' })
   await inView('chunk 20 line 4')
   assert.deepEqual(await marked.allTextContents(), [await row('chunk 20 line 4').textContent()])
+  await page.evaluate(() => { location.hash = '#run-job-test:attempt:0:L40.2' })
+  await inView('chunk 40 line 2')
+  assert.deepEqual(await marked.allTextContents(), [await row('chunk 40 line 2').textContent()])
   assert.deepEqual(errors, [])
 })
