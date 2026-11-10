@@ -43,10 +43,11 @@ export function GitHubWorkflowJobPane({
   const key = githubJobKey(job)
   const finished = job.status === 'completed'
   const load = useCallback(async (signal: AbortSignal) => {
+    if (includedLog && includedLog.state !== 'pending') return readableJobLog(includedLog)
     const answer = await loadLog(key, signal)
     if (answer.state === 'pending' || (answer.state === 'kept' && answer.fetched)) observeRunLogFetching(runId)
     return readableJobLog(answer)
-  }, [key, loadLog, runId])
+  }, [includedLog, key, loadLog, runId])
   const initialValue = useMemo(() => includedLog && readableJobLog(includedLog), [includedLog])
   const log = useCachedResource({
     fallbackError: 'The log could not load.',

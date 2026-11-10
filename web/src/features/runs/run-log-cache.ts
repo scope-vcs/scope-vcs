@@ -205,9 +205,10 @@ export function seedOpeningRunLog(key: string, detail: RepositoryRunDetailRespon
   if (!opening || !step) return
   const target = { jobKey: opening.job_key, attemptId: step.attempt_id, stepIndex: step.step_index }
   const current = runLogsResource.peek(key)?.[stepKey(target)]
-  if (current?.initialized || current?.loading) return
+  if (current?.loading) return
+  if (current?.initialized && (current.viewingEarlier || current.nextAfter >= step.log.next_after)) return
   writeRunLogCache(key, target, fetchedLogState(
-    mergeFetchedRunLogs(EMPTY_LOG_STATE, step.log, undefined),
+    mergeFetchedRunLogs(current?.initialized ? current : EMPTY_LOG_STATE, step.log, undefined),
     step.log,
     false,
     completedRunLogVersion(detail),

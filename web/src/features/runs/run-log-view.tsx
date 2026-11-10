@@ -66,6 +66,14 @@ export function RunLogView({
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [following, logState.logs, logState.viewingEarlier])
 
+  useEffect(() => {
+    const section = sectionRef.current
+    if (!section || logState.viewingEarlier || !following) return
+    const observer = new ResizeObserver(() => endRef.current?.scrollIntoView({ block: 'end' }))
+    observer.observe(section)
+    return () => observer.disconnect()
+  }, [following, logState.viewingEarlier])
+
   const newLines = step.state === 'running' && pausedAt !== null
     ? countLinesAfter(logState.logs, pausedAt)
     : 0

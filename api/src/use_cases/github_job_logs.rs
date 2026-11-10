@@ -48,18 +48,40 @@ pub(crate) async fn job_log(
             "This repository is no longer connected to GitHub, so the log cannot be read.",
         ));
     }
+    let _release = IdleChannelRelease {
+        state,
+        repo_id: &connection.repository_id,
+    };
     let mut changes = state.repo_events.subscribe(&connection.repository_id);
     queue(state, &[job.github_job_id], now_unix).await?;
-    let landed = tokio::time::timeout(JOB_LOG_WAIT, wait_for_log(state, &mut changes, job)).await;
-    drop(changes);
-    state.repo_events.remove_if_idle(&connection.repository_id);
-    Ok(match landed {
-        Ok(read) => read?.map_or(GitHubJobLogRead::Pending, |log| GitHubJobLogRead::Read {
+    let landed =
+        match tokio::time::timeout(JOB_LOG_WAIT, wait_for_log(state, &mut changes, job)).await {
+            Ok(read) => read?,
+            Err(_) => {
+                state
+                    .metadata
+                    .repositories()
+                    .github_workflow_job_log(job.github_job_id)
+                    .await?
+            }
+        };
+    Ok(
+        landed.map_or(GitHubJobLogRead::Pending, |log| GitHubJobLogRead::Read {
             log,
             fetched: true,
         }),
-        Err(_) => GitHubJobLogRead::Pending,
-    })
+    )
+}
+
+struct IdleChannelRelease<'a> {
+    state: &'a AppState,
+    repo_id: &'a str,
+}
+
+impl Drop for IdleChannelRelease<'_> {
+    fn drop(&mut self) {
+        self.state.repo_events.remove_if_idle(self.repo_id);
+    }
 }
 
 pub(crate) async fn stored_job_log(
