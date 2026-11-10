@@ -1,4 +1,4 @@
-use super::{FakeGitHub, GITHUB_FULL_NAME};
+use super::{FakeGitHub, GITHUB_FULL_NAME, GITHUB_REPOSITORY_ID};
 use axum::{
     Json, Router,
     extract::{Path as AxumPath, Query as AxumQuery, State as AxumState},
@@ -28,6 +28,7 @@ pub(in crate::workflow_tests) struct FakePulls {
     reactions: Mutex<Vec<(u64, serde_json::Value)>>,
     reviews: Mutex<Vec<(u64, serde_json::Value)>>,
     pub(in crate::workflow_tests) forbidden: AtomicBool,
+    pub(in crate::workflow_tests) forbidden_by_an_ip_allow_list: AtomicBool,
     pub(in crate::workflow_tests) rate_limited_once: AtomicBool,
     pub(in crate::workflow_tests) writes_unreachable: AtomicBool,
     pub(in crate::workflow_tests) before_lookup: Mutex<Option<LookupHook>>,
@@ -44,10 +45,17 @@ impl FakePulls {
             "title": "",
             "body": "",
             "draft": false,
-            "head": { "ref": head, "sha": "" },
+            "head": { "ref": head, "sha": "", "repo": { "id": GITHUB_REPOSITORY_ID } },
             "base": { "ref": base },
             "closed_by": null,
         }));
+        number
+    }
+
+    pub(in crate::workflow_tests) fn open_from_fork(&self, head: &str, base: &str) -> u64 {
+        let number = self.open(head, base);
+        self.pulls.lock().unwrap()[number as usize - 1]["head"]["repo"]["id"] =
+            (GITHUB_REPOSITORY_ID + 1).into();
         number
     }
 
@@ -71,6 +79,17 @@ impl FakePulls {
         let pull = &mut pulls[number as usize - 1];
         pull["state"] = "closed".into();
         pull["closed_by"] = serde_json::json!({ "login": login });
+    }
+
+    pub(in crate::workflow_tests) fn rebase_onto(&self, number: u64, base: &str) {
+        self.pulls.lock().unwrap()[number as usize - 1]["base"]["ref"] = base.into();
+    }
+
+    pub(in crate::workflow_tests) fn reopen(&self, number: u64) {
+        let mut pulls = self.pulls.lock().unwrap();
+        let pull = &mut pulls[number as usize - 1];
+        pull["state"] = "open".into();
+        pull["closed_by"] = serde_json::Value::Null;
     }
 
     pub(in crate::workflow_tests) fn comment_as_app(&self, number: u64, body: &str) {
@@ -186,13 +205,22 @@ impl FakePulls {
                     .into_response(),
             );
         }
-        self.forbidden.load(Ordering::SeqCst).then(|| {
+        let message = if self.forbidden.load(Ordering::SeqCst) {
+            "Resource not accessible by integration"
+        } else if self.forbidden_by_an_ip_allow_list.load(Ordering::SeqCst) {
+            "Although you appear to have the correct authorization credentials, the `octo` \
+             organization has an IP allow list enabled, and your IP address is not permitted \
+             to access this resource."
+        } else {
+            return None;
+        };
+        Some(
             (
                 StatusCode::FORBIDDEN,
-                Json(serde_json::json!({ "message": "Resource not accessible by integration" })),
+                Json(serde_json::json!({ "message": message })),
             )
-                .into_response()
-        })
+                .into_response(),
+        )
     }
 }
 
@@ -237,6 +265,10 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                         return refused;
                     }
                     let owner = GITHUB_FULL_NAME.split_once('/').unwrap().0;
+                    let number = |name: &str, default: usize| {
+                        query.get(name).map_or(default, |value| value.parse().unwrap())
+                    };
+                    let (page, per_page) = (number("page", 1), number("per_page", 30));
                     let open = fake
                         .pulls
                         .pulls
@@ -244,10 +276,15 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                         .unwrap()
                         .iter()
                         .filter(|pull| {
+                            let head = format!("{owner}:{}", pull["head"]["ref"].as_str().unwrap());
                             pull["state"] == query["state"].as_str()
-                                && format!("{owner}:{}", pull["head"]["ref"].as_str().unwrap())
-                                    == query["head"]
+                                && query.get("head").is_none_or(|wanted| *wanted == head)
+                                && query
+                                    .get("base")
+                                    .is_none_or(|wanted| pull["base"]["ref"] == wanted.as_str())
                         })
+                        .skip((page - 1) * per_page)
+                        .take(per_page)
                         .cloned()
                         .collect::<Vec<_>>();
                     Json(open).into_response()

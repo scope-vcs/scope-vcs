@@ -1,12 +1,15 @@
 use super::{GitHubApp, client::unavailable};
 use crate::{error::ApiError, persistence::unix_now};
 use reqwest::{Method, StatusCode, header::HeaderMap};
-use scope_domain::requests::GitHubPullRequestMerge;
+use scope_domain::requests::{
+    GitHubPullRequestHead, GitHubPullRequestMerge, GitHubPullRequestsBasedOnBranch,
+};
 use serde::{Deserialize, de::DeserializeOwned};
 
 const PAGE_SIZE: usize = 100;
-const MAX_COMMENT_PAGES: usize = 10;
+const MAX_PAGES: usize = 10;
 const SECONDARY_RATE_LIMIT_WAIT_SECS: u64 = 60;
+const PERMISSION_MISSING_MESSAGE: &str = "Resource not accessible by integration";
 
 pub(crate) const PULL_REQUEST_PERMISSION_MESSAGE: &str = "The Scope GitHub App may not open \
     pull requests in this GitHub repository. Accept its request for the Pull requests read and \
@@ -32,6 +35,7 @@ pub(crate) struct GitHubPullRequestSnapshot {
 pub(crate) enum PullRequestCallError {
     Unreachable,
     PermissionMissing,
+    Forbidden,
     RateLimited { retry_at_unix: u64 },
     Rejected(String),
     Failed(ApiError),
@@ -54,6 +58,23 @@ struct PullRequestBody {
 struct BranchBody {
     #[serde(rename = "ref")]
     name: String,
+}
+
+#[derive(Deserialize)]
+struct PullRequestHeadBody {
+    head: HeadBranchBody,
+}
+
+#[derive(Deserialize)]
+struct HeadBranchBody {
+    #[serde(rename = "ref")]
+    name: String,
+    repo: Option<RepositoryIdBody>,
+}
+
+#[derive(Deserialize)]
+struct RepositoryIdBody {
+    id: u64,
 }
 
 #[derive(Deserialize)]
@@ -141,6 +162,41 @@ impl GitHubApp {
             )
             .await?;
         Ok(open.into_iter().next().map(Into::into))
+    }
+
+    pub(crate) async fn open_pull_requests_based_on(
+        &self,
+        installation_id: u64,
+        full_name: &str,
+        base_branch: &str,
+    ) -> Result<GitHubPullRequestsBasedOnBranch, PullRequestCallError> {
+        let mut heads = Vec::new();
+        for page in 1..=MAX_PAGES {
+            let query = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("state", "open")
+                .append_pair("base", base_branch)
+                .append_pair("per_page", &PAGE_SIZE.to_string())
+                .append_pair("page", &page.to_string())
+                .finish();
+            let open: Vec<PullRequestHeadBody> = self
+                .pull_request_call(
+                    installation_id,
+                    Method::GET,
+                    &format!("/repos/{full_name}/pulls?{query}"),
+                    "/repos/{owner}/{repo}/pulls",
+                    None,
+                )
+                .await?;
+            let last_page = open.len() < PAGE_SIZE;
+            heads.extend(open.into_iter().map(|pull_request| GitHubPullRequestHead {
+                github_repository_id: pull_request.head.repo.map(|repository| repository.id),
+                branch: pull_request.head.name,
+            }));
+            if last_page {
+                return Ok(GitHubPullRequestsBasedOnBranch::Open(heads));
+            }
+        }
+        Ok(GitHubPullRequestsBasedOnBranch::OpenBeyondListed(heads))
     }
 
     pub(crate) async fn create_pull_request(
@@ -265,7 +321,7 @@ impl GitHubApp {
         marker: &str,
     ) -> Result<bool, PullRequestCallError> {
         let bot_login = self.bot_login();
-        for page in 1..=MAX_COMMENT_PAGES {
+        for page in 1..=MAX_PAGES {
             let comments: Vec<CommentBody> = self
                 .pull_request_call(
                     installation_id,
@@ -377,7 +433,16 @@ fn refusal(
     }
     match status {
         StatusCode::NOT_FOUND => PullRequestCallError::Unreachable,
-        StatusCode::FORBIDDEN => PullRequestCallError::PermissionMissing,
+        StatusCode::FORBIDDEN => {
+            let permission_missing = detail
+                .as_ref()
+                .is_some_and(|detail| detail.message == PERMISSION_MISSING_MESSAGE);
+            if permission_missing {
+                PullRequestCallError::PermissionMissing
+            } else {
+                PullRequestCallError::Forbidden
+            }
+        }
         StatusCode::UNPROCESSABLE_ENTITY => {
             PullRequestCallError::Rejected(rejection_message(detail))
         }
@@ -443,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn rate_limits_wait_for_the_time_github_names_and_only_real_refusals_need_permission() {
+    fn rate_limits_wait_for_githubs_time_and_only_its_own_message_confirms_a_missing_permission() {
         let primary = classify(
             403,
             &[
@@ -478,6 +543,14 @@ mod tests {
                 "Resource not accessible by integration"
             ),
             PullRequestCallError::PermissionMissing
+        ));
+        assert!(matches!(
+            classify(
+                403,
+                &[("x-ratelimit-remaining", "4000")],
+                "Repository access blocked"
+            ),
+            PullRequestCallError::Forbidden
         ));
         assert!(matches!(
             classify(404, &[], "Not Found"),

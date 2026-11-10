@@ -2,6 +2,8 @@ use super::*;
 use crate::use_cases::github_pull_requests::run_due_github_pull_requests;
 use scope_domain::requests::review_request_comment_body;
 
+mod stacked;
+
 const REVIEW_COMMENT: &str = "@bot review";
 const FAR_FUTURE_UNIX: u64 = 4_102_444_800;
 

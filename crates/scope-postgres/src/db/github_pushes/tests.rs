@@ -220,6 +220,42 @@ async fn only_a_branch_scope_pushed_is_deleted_from_where_it_was_pushed_and_only
 }
 
 #[tokio::test]
+async fn a_deferred_deletion_waits_for_its_recheck_without_spending_an_attempt() {
+    let store = postgres_store();
+    let requests = store.requests();
+    let db = store.db.as_ref();
+    let t = now();
+    queue(db, "req_1", None, t).await;
+    let claim = async |token: &str, at: u64| {
+        requests
+            .claim_due_github_pushes(token, at, at + 100, 10)
+            .await
+            .unwrap()
+    };
+
+    for (round, at) in [t, t + 30, t + 60, t + 120, t + 240, t + 480]
+        .into_iter()
+        .enumerate()
+    {
+        let token = format!("claim_{round}");
+        let deletion = claim(&token, at).await.remove(0);
+        assert_eq!(
+            (deletion.target_oid.as_deref(), deletion.attempts),
+            (None, 1)
+        );
+        requests
+            .defer_github_branch_deletion(&deletion.id, &token, "still a base", at)
+            .await
+            .unwrap();
+        let recheck_in = (at - t).max(30);
+        assert!(
+            claim("early", at + recheck_in - 1).await.is_empty(),
+            "{round}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn deleting_a_repository_leaves_deletions_of_the_branches_it_pushed() {
     let store = postgres_store();
     let requests = store.requests();

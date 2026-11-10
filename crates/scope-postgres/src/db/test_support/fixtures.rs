@@ -13,6 +13,8 @@ use scope_domain::{
     },
     views::ViewId,
 };
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseTransaction, Statement};
+use std::time::Duration;
 
 pub fn user(id: &str, handle: &str) -> UserAccount {
     UserAccount {
@@ -69,6 +71,24 @@ pub fn seeded_store(catalog: CatalogFixture) -> MetadataStore {
         MetadataStore::connect_fresh_for_tests(&TestDatabaseTarget::required().unwrap()).unwrap();
     store.admin().seed_catalog_for_tests(catalog).unwrap();
     store
+}
+
+pub async fn blocked_by(held: &DatabaseTransaction) {
+    let waiting_on_holder = Statement::from_string(
+        DatabaseBackend::Postgres,
+        "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted \
+         AND pg_backend_pid() = ANY(pg_blocking_pids(pid))) AS blocked",
+    );
+    while !held
+        .query_one_raw(waiting_on_holder.clone())
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<bool>("", "blocked")
+        .unwrap()
+    {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 pub fn source_blob(git_oid: &str, sha256: &str, size_bytes: u64) -> SourceBlob {

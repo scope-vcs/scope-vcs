@@ -1,3 +1,7 @@
+use super::github_pull_request::{
+    BRANCH_HAS_UNLISTED_PULL_REQUESTS_MESSAGE, BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE,
+    BRANCH_PULL_REQUESTS_REFUSED_MESSAGE,
+};
 use super::*;
 use crate::github_connection::{
     GitHubConnectionStatus, GitHubDisconnectReason, GitHubRepositoryVisibility,
@@ -33,8 +37,8 @@ fn full_view_request() -> Request {
     }
 }
 
-fn intent(connection: &GitHubConnection, request: &Request) -> Option<GitHubPullRequestIntent> {
-    carrier_pull_request_intent(connection, request, None, &Views::builtin(), HEAD)
+fn base(connection: &GitHubConnection, request: &Request) -> Option<String> {
+    carrier_pull_request_base(connection, request, None, None, &Views::builtin())
 }
 
 fn open_intent(base: &str) -> GitHubPullRequestIntent {
@@ -47,7 +51,7 @@ fn open_intent(base: &str) -> GitHubPullRequestIntent {
 #[test]
 fn only_an_open_full_view_request_on_a_connected_opted_in_repository_wants_a_carrier() {
     let request = full_view_request();
-    assert_eq!(intent(&connection(), &request), Some(open_intent("main")));
+    assert_eq!(base(&connection(), &request), Some("main".into()));
 
     let mut draft = request.clone();
     draft.submitted_at_unix = None;
@@ -86,12 +90,12 @@ fn only_an_open_full_view_request_on_a_connected_opted_in_repository_wants_a_car
             "private request on an unconfirmed public repository",
         ),
     ] {
-        assert_eq!(intent(&connection, &request), None, "{case}");
+        assert_eq!(base(&connection, &request), None, "{case}");
     }
 }
 
 #[test]
-fn a_stacked_request_targets_its_parent_branch_only_while_the_parent_is_open() {
+fn a_stacked_request_targets_its_parent_branch_until_the_parent_or_its_pull_request_ends() {
     let parent = Request {
         id: "request_parent".into(),
         ..full_view_request()
@@ -105,17 +109,44 @@ fn a_stacked_request_targets_its_parent_branch_only_while_the_parent_is_open() {
         },
         ..full_view_request()
     };
-    let base = |parent: &Request| {
-        carrier_pull_request_intent(&connection(), &child, Some(parent), &Views::builtin(), HEAD)
+    let base = |parent: &Request, parent_carrier: Option<&GitHubPullRequest>| {
+        carrier_pull_request_base(
+            &connection(),
+            &child,
+            Some(parent),
+            parent_carrier,
+            &Views::builtin(),
+        )
     };
+    let parent_branch = Some("scope/requests/request_parent".to_string());
+    assert_eq!(base(&parent, None), parent_branch);
     assert_eq!(
-        base(&parent),
-        Some(open_intent("scope/requests/request_parent"))
+        base(&parent, Some(&carrier(open_intent("main")))),
+        parent_branch
     );
+    assert_eq!(
+        base(&parent, Some(&opened_carrier(GitHubPullRequestState::Open))),
+        parent_branch
+    );
+    for ended in [
+        GitHubPullRequestState::ClosedOnGitHub,
+        GitHubPullRequestState::Closed,
+        GitHubPullRequestState::Merged(merge(HEAD)),
+    ] {
+        assert_eq!(
+            base(&parent, Some(&opened_carrier(ended.clone()))),
+            Some("main".into()),
+            "{ended:?}"
+        );
+    }
+
+    let mut ended_elsewhere = opened_carrier(GitHubPullRequestState::ClosedOnGitHub);
+    ended_elsewhere.destination.github_repository_id += 1;
+    assert_eq!(base(&parent, Some(&ended_elsewhere)), parent_branch);
 
     let mut merged_parent = parent.clone();
     merged_parent.merged_at_unix = Some(40);
-    assert_eq!(base(&merged_parent), Some(open_intent("main")));
+    assert_eq!(base(&merged_parent, None), Some("main".into()));
 }
 
 #[test]
@@ -219,6 +250,75 @@ fn a_merged_requests_branch_waits_only_for_a_carrier_github_still_has_open() {
             Some(&publishing),
             Some(&opened_carrier(ended))
         ));
+    }
+}
+
+#[test]
+fn a_branch_waits_for_request_pull_requests_and_for_a_listing_github_cut_short() {
+    let destination = GitHubPushDestination::of(&connection());
+    let head = |github_repository_id: Option<u64>, branch: &str| GitHubPullRequestHead {
+        github_repository_id,
+        branch: branch.into(),
+    };
+    let from_request = || head(Some(42), "scope/requests/req_child");
+    let from_elsewhere = || {
+        vec![
+            head(Some(42), "someones-branch"),
+            head(Some(43), "scope/requests/req_in_a_fork"),
+            head(None, "scope/requests/req_in_a_deleted_fork"),
+        ]
+    };
+    let wait_for_child = || GitHubBranchDeletion::Wait {
+        requests: vec!["req_child".into()],
+        reason: BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE,
+    };
+
+    for (based_on_branch, deletion, case) in [
+        (
+            GitHubPullRequestsBasedOnBranch::Open(vec![
+                from_request(),
+                head(Some(42), "someones-branch"),
+            ]),
+            wait_for_child(),
+            "a request's pull request",
+        ),
+        (
+            GitHubPullRequestsBasedOnBranch::Open(from_elsewhere()),
+            GitHubBranchDeletion::Delete,
+            "only forks and other branches",
+        ),
+        (
+            GitHubPullRequestsBasedOnBranch::PermissionMissing,
+            GitHubBranchDeletion::Delete,
+            "the App lacks the permission to list them",
+        ),
+        (
+            GitHubPullRequestsBasedOnBranch::Refused,
+            GitHubBranchDeletion::Wait {
+                requests: Vec::new(),
+                reason: BRANCH_PULL_REQUESTS_REFUSED_MESSAGE,
+            },
+            "GitHub refused the listing for another reason",
+        ),
+        (
+            GitHubPullRequestsBasedOnBranch::OpenBeyondListed(from_elsewhere()),
+            GitHubBranchDeletion::Wait {
+                requests: Vec::new(),
+                reason: BRANCH_HAS_UNLISTED_PULL_REQUESTS_MESSAGE,
+            },
+            "more forks than Scope lists",
+        ),
+        (
+            GitHubPullRequestsBasedOnBranch::OpenBeyondListed(vec![from_request()]),
+            wait_for_child(),
+            "a request's pull request among more than Scope lists",
+        ),
+    ] {
+        assert_eq!(
+            based_on_branch.branch_deletion(&destination),
+            deletion,
+            "{case}"
+        );
     }
 }
 
@@ -499,6 +599,58 @@ fn a_close_while_scope_is_moving_the_base_is_scopes_and_the_carrier_is_recreated
         Some(GitHubPullRequestStep::OpenOrAdopt {
             base: "main".into()
         })
+    );
+}
+
+#[test]
+fn a_pull_request_on_main_is_never_moved_onto_a_request_branch() {
+    const PARENT_BRANCH: &str = "scope/requests/request_parent";
+    let retarget = |from: &str, to: &str| {
+        let mut carrier = carrier(open_intent(to));
+        carrier.record_opened(5, "url".into(), from.into(), None);
+        carrier.next_step(&settings(true, None), None)
+    };
+    let moved_onto = |base: &str| {
+        Some(GitHubPullRequestStep::Retarget {
+            number: 5,
+            base: base.into(),
+        })
+    };
+    assert_eq!(retarget("main", PARENT_BRANCH), None);
+    assert_eq!(retarget(PARENT_BRANCH, "main"), moved_onto("main"));
+    assert_eq!(
+        retarget("scope/requests/request_other", PARENT_BRANCH),
+        moved_onto(PARENT_BRANCH)
+    );
+
+    let written = carrier_text_digest("Fix parser", "Review copy");
+    let edited = carrier_text_digest("Fix the parser", "Review copy");
+    let mut left_on_main = carrier(open_intent(PARENT_BRANCH));
+    left_on_main.record_opened(5, "url".into(), "main".into(), Some(written));
+    assert_eq!(
+        left_on_main.next_step(&settings(true, None), Some(&edited)),
+        Some(GitHubPullRequestStep::UpdateText {
+            number: 5,
+            text: edited.clone()
+        })
+    );
+    left_on_main.record_text_written(edited.clone());
+    assert_eq!(
+        left_on_main.next_step(&settings(true, Some("review please")), Some(&edited)),
+        Some(GitHubPullRequestStep::Comment {
+            number: 5,
+            head_oid: HEAD.into()
+        })
+    );
+
+    left_on_main.observe(observation(5, CLOSED_BY_SOMEONE));
+    assert_eq!(
+        left_on_main.pull_request.as_ref().unwrap().state,
+        GitHubPullRequestState::ClosedOnGitHub
+    );
+    assert_eq!(
+        left_on_main.next_step(&settings(true, None), Some(&edited)),
+        None
     );
 }
 

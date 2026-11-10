@@ -110,22 +110,19 @@ pub struct GitHubPullRequestStatus {
     pub error: Option<String>,
 }
 
-pub fn carrier_pull_request_intent(
+pub fn carrier_pull_request_base(
     connection: &GitHubConnection,
     request: &Request,
     parent: Option<&Request>,
+    parent_carrier: Option<&GitHubPullRequest>,
     views: &Views,
-    pushed_head_oid: &str,
-) -> Option<GitHubPullRequestIntent> {
+) -> Option<String> {
     let wanted = connection.is_connected()
         && connection.review_bots.open_pull_requests
         && request.state() == RequestState::Open
         && GitHubCheckTarget::for_request(request, views) == GitHubCheckTarget::Head
         && may_carry_on_github(connection, request);
-    wanted.then(|| GitHubPullRequestIntent::Open {
-        base: carrier_pull_request_base(request, parent),
-        head_oid: pushed_head_oid.to_string(),
-    })
+    wanted.then(|| parent_branch_or_main(connection, request, parent, parent_carrier))
 }
 
 pub fn may_carry_on_github(connection: &GitHubConnection, request: &Request) -> bool {
@@ -136,17 +133,35 @@ pub fn carries_private_request(request: &Request) -> bool {
     !request.view.is_public()
 }
 
-fn carrier_pull_request_base(request: &Request, parent: Option<&Request>) -> String {
+fn parent_branch_or_main(
+    connection: &GitHubConnection,
+    request: &Request,
+    parent: Option<&Request>,
+    parent_carrier: Option<&GitHubPullRequest>,
+) -> String {
+    let parent_ended_on_github = parent_carrier.is_some_and(|carrier| {
+        carrier.destination.is_connected_through(connection) && carrier.has_ended_on_github()
+    });
     request
         .base
         .parent_request_id()
         .and_then(|parent_id| {
-            parent.filter(|parent| parent.id == parent_id && parent.state() == RequestState::Open)
+            parent.filter(|parent| {
+                parent.id == parent_id
+                    && parent.state() == RequestState::Open
+                    && !parent_ended_on_github
+            })
         })
         .map_or_else(
             || MAIN_BRANCH.to_string(),
             |parent| GitHubBranch::Request(parent.id.clone()).name(),
         )
+}
+
+fn scope_moves_base(from: &str, onto: &str) -> bool {
+    let from_main_onto_a_request_branch =
+        from == MAIN_BRANCH && matches!(GitHubBranch::parse(onto), Some(GitHubBranch::Request(_)));
+    from != onto && !from_main_onto_a_request_branch
 }
 
 pub fn review_request_marker(head_oid: &str) -> String {
@@ -188,6 +203,75 @@ pub fn retains_request_branch_for_carrier(
             && carrier.is_some_and(GitHubPullRequest::is_open_on_github))
 }
 
+pub(super) const BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE: &str = "An open pull request from a Scope request \
+    is still based on this branch. Scope deletes the branch once that pull request moves or closes.";
+
+pub(super) const BRANCH_HAS_UNLISTED_PULL_REQUESTS_MESSAGE: &str = "More open pull requests are based on \
+    this branch than Scope reads from GitHub. Scope deletes the branch once it can read them all \
+    and none comes from a Scope request.";
+
+pub(super) const BRANCH_PULL_REQUESTS_REFUSED_MESSAGE: &str = "GitHub refused to list the open pull \
+    requests based on this branch without saying the Scope GitHub App lacks the permission. Scope \
+    deletes the branch once it can read them and none comes from a Scope request.";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitHubPullRequestHead {
+    pub github_repository_id: Option<u64>,
+    pub branch: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubPullRequestsBasedOnBranch {
+    PermissionMissing,
+    Refused,
+    Open(Vec<GitHubPullRequestHead>),
+    OpenBeyondListed(Vec<GitHubPullRequestHead>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitHubBranchDeletion {
+    Delete,
+    Wait {
+        requests: Vec<String>,
+        reason: &'static str,
+    },
+}
+
+impl GitHubPullRequestsBasedOnBranch {
+    pub fn branch_deletion(&self, destination: &GitHubPushDestination) -> GitHubBranchDeletion {
+        let (heads, all_listed) = match self {
+            Self::PermissionMissing => return GitHubBranchDeletion::Delete,
+            Self::Refused => {
+                return GitHubBranchDeletion::Wait {
+                    requests: Vec::new(),
+                    reason: BRANCH_PULL_REQUESTS_REFUSED_MESSAGE,
+                };
+            }
+            Self::Open(heads) => (heads, true),
+            Self::OpenBeyondListed(heads) => (heads, false),
+        };
+        let requests = heads
+            .iter()
+            .filter(|head| head.github_repository_id == Some(destination.github_repository_id))
+            .filter_map(|head| match GitHubBranch::parse(&head.branch) {
+                Some(GitHubBranch::Request(request_id)) => Some(request_id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        match (requests.is_empty(), all_listed) {
+            (true, true) => GitHubBranchDeletion::Delete,
+            (true, false) => GitHubBranchDeletion::Wait {
+                requests,
+                reason: BRANCH_HAS_UNLISTED_PULL_REQUESTS_MESSAGE,
+            },
+            (false, _) => GitHubBranchDeletion::Wait {
+                requests,
+                reason: BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE,
+            },
+        }
+    }
+}
+
 pub fn review_delivery_belongs_to_request(
     carrier: Option<&GitHubPullRequest>,
     pull_number: u64,
@@ -204,6 +288,10 @@ pub fn carrier_may_change(request: &Request) -> bool {
 impl GitHubPullRequest {
     pub fn branch(&self) -> GitHubBranch {
         GitHubBranch::Request(self.request_id.clone())
+    }
+
+    pub fn has_ended_on_github(&self) -> bool {
+        self.pull_request.is_some() && !self.is_open_on_github()
     }
 
     pub fn is_open_on_github(&self) -> bool {
@@ -245,7 +333,7 @@ impl GitHubPullRequest {
                             .as_deref()
                             .is_some_and(|written| written != *text)
                     });
-                    if &opened.base != base {
+                    if scope_moves_base(&opened.base, base) {
                         Some(GitHubPullRequestStep::Retarget {
                             number: opened.number,
                             base: base.clone(),
@@ -326,7 +414,7 @@ impl GitHubPullRequest {
     pub fn observe(&mut self, observation: GitHubPullRequestObservation) {
         let moving_base = match &self.intent {
             GitHubPullRequestIntent::Close => true,
-            GitHubPullRequestIntent::Open { base, .. } => base != &observation.base,
+            GitHubPullRequestIntent::Open { base, .. } => scope_moves_base(&observation.base, base),
         };
         let Some(opened) = self
             .pull_request

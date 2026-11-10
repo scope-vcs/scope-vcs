@@ -1,7 +1,8 @@
 use crate::db::{
     CatalogFixture, CreateRepositoryInviteMutation, IssueRepositoryInviteLinkCommand,
     MetadataStore, RequestRepositoryInviteEmailCommand, UpdateRepositoryMemberPermissionsCommand,
-    entities, test_support::fixtures,
+    entities,
+    test_support::fixtures::{self, blocked_by},
 };
 use crate::error::PostgresErrorKind;
 use scope_domain::{
@@ -20,7 +21,7 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseTransaction, EntityTrait, QueryFilter,
     Statement, TransactionTrait,
 };
-use std::{future::Future, time::Duration};
+use std::future::Future;
 
 pub(in crate::db) const HISTORY_TABLES: &str = "scope_logical_commits, scope_file_changes, scope_live_files, \
     scope_visibility_change_sets, scope_visibility_changes, scope_git_pool_packs, \
@@ -279,24 +280,6 @@ async fn unless_blocked_by<T>(
         biased;
         result = operation => Some(result),
         () = blocked_by(held) => None,
-    }
-}
-
-async fn blocked_by(held: &DatabaseTransaction) {
-    let waiting_on_holder = Statement::from_string(
-        DatabaseBackend::Postgres,
-        "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted \
-         AND pg_backend_pid() = ANY(pg_blocking_pids(pid))) AS blocked",
-    );
-    while !held
-        .query_one_raw(waiting_on_holder.clone())
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get::<bool>("", "blocked")
-        .unwrap()
-    {
-        tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 

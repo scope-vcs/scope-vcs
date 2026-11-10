@@ -733,6 +733,19 @@ fn failed_pushes_back_off_and_then_give_up() {
 }
 
 #[test]
+fn a_deletion_waiting_for_pull_requests_rechecks_after_as_long_as_it_has_waited() {
+    let queued_at = 100;
+    for (waited, recheck_in) in [(0, 30), (30, 30), (90, 90), (1_800, 1_800), (90_000, 1_800)] {
+        let now = queued_at + waited;
+        assert_eq!(
+            github_branch_deletion_recheck_at(queued_at, now),
+            now + recheck_in,
+            "{waited}"
+        );
+    }
+}
+
+#[test]
 fn scope_branches_name_their_request_the_connection_test_or_main() {
     let request = GitHubBranch::Request("req_1".into());
     assert_eq!(request.git_ref(), "refs/heads/scope/requests/req_1");

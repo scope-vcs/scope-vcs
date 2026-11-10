@@ -29,18 +29,19 @@ pub use github::{
     GitHubCheckStatus, NO_GITHUB_WORKFLOWS_STARTED,
 };
 pub use github_pull_request::{
-    GitHubPullRequest, GitHubPullRequestIntent, GitHubPullRequestJobState, GitHubPullRequestMerge,
-    GitHubPullRequestObservation, GitHubPullRequestObservedState, GitHubPullRequestState,
-    GitHubPullRequestStatus, GitHubPullRequestStatusState, GitHubPullRequestStep,
-    GitHubReviewRequest, OpenedGitHubPullRequest, carrier_may_change, carrier_pull_request_intent,
+    GitHubBranchDeletion, GitHubPullRequest, GitHubPullRequestHead, GitHubPullRequestIntent,
+    GitHubPullRequestJobState, GitHubPullRequestMerge, GitHubPullRequestObservation,
+    GitHubPullRequestObservedState, GitHubPullRequestState, GitHubPullRequestStatus,
+    GitHubPullRequestStatusState, GitHubPullRequestStep, GitHubPullRequestsBasedOnBranch,
+    GitHubReviewRequest, OpenedGitHubPullRequest, carrier_may_change, carrier_pull_request_base,
     carrier_text_digest, carries_private_request, closes_carrier_pull_request, may_carry_on_github,
     retains_request_branch_for_carrier, review_delivery_belongs_to_request,
     review_request_comment_body, review_request_marker,
 };
 pub use github_push::{
     GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubPush, GitHubPushDestination, GitHubPushState,
-    GitHubPushStatus, changes_github_workflows, github_push_retry_at, github_retry_at,
-    main_publication_contains_merge,
+    GitHubPushStatus, changes_github_workflows, github_branch_deletion_recheck_at,
+    github_push_retry_at, github_retry_at, main_publication_contains_merge,
 };
 pub use planning::{GitHubRequestChecks, RequestCheckPlan};
 pub use reviewer::RequestCheckReviewer;

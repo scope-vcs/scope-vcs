@@ -592,6 +592,7 @@ impl PushRow {
     }
 }
 
+mod deferral;
 #[cfg(test)]
 mod tests;
 
