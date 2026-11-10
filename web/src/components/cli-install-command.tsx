@@ -12,7 +12,6 @@ export function CliInstallCommand({
   codeBlockClassName,
   commands,
   initialPlatform,
-  onCopy,
   onPlatformChange,
   pickerClassName,
   platform: sharedPlatform,
@@ -20,7 +19,6 @@ export function CliInstallCommand({
   codeBlockClassName?: string
   commands: CliInstallCommands
   initialPlatform: CliPlatform
-  onCopy?: () => void
   onPlatformChange?: (platform: CliPlatform) => void
   pickerClassName?: string
   platform?: CliPlatform
@@ -50,7 +48,6 @@ export function CliInstallCommand({
         className={codeBlockClassName}
         copyLabel={`Copy ${option.copyName} install command`}
         key={platform}
-        onCopy={onCopy}
         value={commands[platform]}
       />
     </div>

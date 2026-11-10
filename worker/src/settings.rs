@@ -9,9 +9,6 @@ use std::{path::PathBuf, time::Duration};
 const DATABASE_URL_ENV: &str = "DATABASE_URL";
 const SCOPE_DATA_DIR_ENV: &str = "SCOPE_DATA_DIR";
 const SCOPE_OBJECT_STORE_MAX_BYTES_ENV: &str = "SCOPE_OBJECT_STORE_MAX_BYTES";
-const SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_CHUNK_BYTES";
-const SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV: &str = "SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES";
-const SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV: &str = "SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY";
 const CLOUD_RUN_MAX_CONCURRENCY_ENV: &str = "SCOPE_CLOUD_RUN_MAX_CONCURRENCY";
 const SCOPE_GIT_COMPACTION_CONCURRENCY_ENV: &str = "SCOPE_GIT_COMPACTION_CONCURRENCY";
 const DISPATCH_BROKER_FUNCTION_ARN_ENV: &str = "SCOPE_DISPATCH_BROKER_FUNCTION_ARN";
@@ -56,27 +53,12 @@ impl WorkerSettings {
                 .map_err(|error| anyhow::anyhow!("PORT must be a TCP port: {error}"))?,
             None => DEFAULT_HEALTH_PORT,
         };
-        let worker_id = std::env::var("SCOPE_WORKER_ID")
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(default_worker_id);
+        let worker_id = nonempty_env("SCOPE_WORKER_ID").unwrap_or_else(default_worker_id);
         let git_storage_limits = git_storage_limits_from_env()?;
         let data_dir = nonempty_env(SCOPE_DATA_DIR_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(".scope"));
-        let mut git_segment_store = GitSegmentStoreConfig::new(data_dir.join("git-segments"));
-        git_segment_store.chunk_bytes = parse_usize_env(
-            SCOPE_GIT_SEGMENT_CHUNK_BYTES_ENV,
-            git_segment_store.chunk_bytes,
-        )?;
-        git_segment_store.multipart_part_bytes = parse_usize_env(
-            SCOPE_GIT_SEGMENT_MULTIPART_PART_BYTES_ENV,
-            git_segment_store.multipart_part_bytes,
-        )?;
-        git_segment_store.channel_capacity = parse_usize_env(
-            SCOPE_GIT_SEGMENT_CHANNEL_CAPACITY_ENV,
-            git_segment_store.channel_capacity,
-        )?;
+        let git_segment_store = GitSegmentStoreConfig::from_env(data_dir.join("git-segments"))?;
         let git_compaction_concurrency = parse_usize_env(SCOPE_GIT_COMPACTION_CONCURRENCY_ENV, 1)?;
         if git_compaction_concurrency == 0 {
             anyhow::bail!("{SCOPE_GIT_COMPACTION_CONCURRENCY_ENV} must be at least 1");

@@ -9,7 +9,6 @@ repository.workspace = true
 scope_service_runtime = { workspace = true, features = ["postgres"] }
 anyhow.workspace = true
 axum.workspace = true
-getrandom.workspace = true
 hex.workspace = true
 libc.workspace = true
 serde.workspace = true

@@ -106,7 +106,7 @@ export function TypedConfirmationDialog({
           <AlertDialogFooter>
             {!confirmed ? (
               <>
-                <AlertDialogCancel size="sm" variant="secondary">
+                <AlertDialogCancel size="sm">
                   Cancel
                 </AlertDialogCancel>
                 <Button size="sm" type="submit">

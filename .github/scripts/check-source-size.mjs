@@ -1,13 +1,11 @@
-import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { promisify } from 'node:util'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { repositoryFiles } from './repository-files.mjs'
 
 export const reviewLines = 700
 export const maxLines = 1000
 
-const execFileAsync = promisify(execFile)
 const sourceExtensions = new Set(['.cjs', '.css', '.js', '.jsx', '.mjs', '.rs', '.sh', '.ts', '.tsx'])
 const ignoredFiles = new Set([
   'Cargo.lock',
@@ -90,12 +88,7 @@ export function evaluateSourceSizes(sources, auditEntries) {
 }
 
 async function trackedAndUntrackedSources(root) {
-  const { stdout } = await execFileAsync(
-    'git',
-    ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
-    { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
-  )
-  const files = stdout.split('\0').filter(Boolean).filter(isSourceFile)
+  const files = (await repositoryFiles(root)).filter(isSourceFile)
   const sources = await Promise.all(files.map(async (file) => {
     try {
       return {

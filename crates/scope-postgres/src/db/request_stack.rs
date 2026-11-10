@@ -77,7 +77,6 @@ impl RequestStore {
         expected_main_oid: &str,
         now_unix: u64,
     ) -> Result<Request, PostgresError> {
-        use sea_orm::TransactionTrait;
         let tx = self.db.begin().await.map_err(PostgresError::internal)?;
         let observed = request_by_id(&tx, request_id)
             .await?
@@ -111,22 +110,7 @@ impl RequestStore {
             now_unix,
         )?;
         let request = persist_refresh(&tx, mutation, now_unix).await?;
-        let facts = children(&tx, &request.id)
-            .await?
-            .into_iter()
-            .map(|child| RequestStackChildFacts {
-                parent_head_oid: request.head_oid.clone(),
-                request_id: child.id,
-                head_oid: child.head_oid,
-                base_version: child.base_version,
-                parent_contains_pin: child.stack_status
-                    != scope_domain::requests::RequestStackStatus::ParentRewritten,
-                contained_main_oid: None,
-                accepted_view_main_oid: None,
-                contained_main_descends_from_ancestor: false,
-            })
-            .collect::<Vec<_>>();
-        refresh_children(&tx, &request, &facts, now_unix).await?;
+        refresh_descendants(&tx, &request, now_unix).await?;
         tx.commit().await.map_err(PostgresError::internal)?;
         Ok(request)
     }
@@ -276,18 +260,43 @@ pub(super) async fn close_children(
     let facts = children(tx, &parent.id)
         .await?
         .into_iter()
-        .map(|child| RequestStackChildFacts {
-            parent_head_oid: parent.head_oid.clone(),
-            request_id: child.id,
-            head_oid: child.head_oid,
-            base_version: child.base_version,
-            parent_contains_pin: true,
-            contained_main_oid: None,
-            accepted_view_main_oid: None,
-            contained_main_descends_from_ancestor: false,
+        .map(|child| descendant_facts(parent, child, true))
+        .collect::<Vec<_>>();
+    refresh_children(tx, parent, &facts, now_unix).await
+}
+
+async fn refresh_descendants(
+    tx: &DatabaseTransaction,
+    parent: &Request,
+    now_unix: u64,
+) -> Result<(), PostgresError> {
+    let facts = children(tx, &parent.id)
+        .await?
+        .into_iter()
+        .map(|child| {
+            let parent_contains_pin =
+                child.stack_status != scope_domain::requests::RequestStackStatus::ParentRewritten;
+            descendant_facts(parent, child, parent_contains_pin)
         })
         .collect::<Vec<_>>();
     refresh_children(tx, parent, &facts, now_unix).await
+}
+
+fn descendant_facts(
+    parent: &Request,
+    child: Request,
+    parent_contains_pin: bool,
+) -> RequestStackChildFacts {
+    RequestStackChildFacts {
+        parent_head_oid: parent.head_oid.clone(),
+        request_id: child.id,
+        head_oid: child.head_oid,
+        base_version: child.base_version,
+        parent_contains_pin,
+        contained_main_oid: None,
+        accepted_view_main_oid: None,
+        contained_main_descends_from_ancestor: false,
+    }
 }
 
 const GRAPH_LOCK_ATTEMPTS: usize = 8;
@@ -438,22 +447,7 @@ pub(super) async fn retarget_children(
         tx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
             "UPDATE scope_request_auto_merge_intents SET next_attempt_at_unix = $2 WHERE request_id = $1 AND status = 'Active'",
             [request.id.clone().into(), super::integer_columns::u64_to_i64(now_unix, "auto-merge wake time")?.into()])).await.map_err(PostgresError::internal)?;
-        let descendants = children(tx, &request.id)
-            .await?
-            .into_iter()
-            .map(|child| RequestStackChildFacts {
-                parent_head_oid: request.head_oid.clone(),
-                request_id: child.id,
-                head_oid: child.head_oid,
-                base_version: child.base_version,
-                parent_contains_pin: child.stack_status
-                    != scope_domain::requests::RequestStackStatus::ParentRewritten,
-                contained_main_oid: None,
-                accepted_view_main_oid: None,
-                contained_main_descends_from_ancestor: false,
-            })
-            .collect::<Vec<_>>();
-        refresh_children(tx, &request, &descendants, now_unix).await?;
+        refresh_descendants(tx, &request, now_unix).await?;
     }
     let remaining = children(tx, &parent.id).await?;
     let remaining_facts = remaining

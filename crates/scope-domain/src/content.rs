@@ -10,6 +10,16 @@ pub struct SourceBlob {
     pub size_bytes: u64,
 }
 
+impl SourceBlob {
+    pub(crate) fn content_ref_matches_identity(&self) -> bool {
+        match &self.content_ref {
+            ContentRef::GitBlob { git_oid } => git_oid == &self.git_oid,
+            ContentRef::BlobSha256(sha256) => sha256 == &self.sha256,
+            _ => false,
+        }
+    }
+}
+
 pub const DEFAULT_GIT_FILE_MODE: &str = "100644";
 const EXECUTABLE_GIT_FILE_MODE: &str = "100755";
 pub const SYMLINK_GIT_FILE_MODE: &str = "120000";

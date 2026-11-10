@@ -47,7 +47,7 @@ impl StorageRuntime {
         let git_segment_store = GitSegmentStore::new(
             backend.clone(),
             key.clone(),
-            crate::config::git_segment_store_config_from_env(data_dir.join("git-segments"))?,
+            scope_storage::GitSegmentStoreConfig::from_env(data_dir.join("git-segments"))?,
         )?;
         Self::new(
             data_dir,

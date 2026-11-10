@@ -12,15 +12,11 @@ use crate::{
 };
 use scope_domain::{
     policy::ScopePath,
-    repository::{
-        RepositoryIncarnation,
-        access::{RepositoryAccess, RepositoryAccessContext},
-    },
+    repository::access::RepositoryAccessContext,
     requests::{
         Request, RequestDiffSide, RequestDiscussion, RequestDiscussionAnchor,
         RequestDiscussionLines, RequestLinePosition, RequestRevision, carry_forward_line_range,
     },
-    views::Views,
 };
 use scope_postgres::db::RepositoryReadPolicy;
 use std::{
@@ -409,22 +405,11 @@ async fn visible_commits<'a>(
             return BTreeSet::new();
         }
     };
-    let incarnation = repo.incarnation();
     let mut visible = BTreeSet::new();
     for (revision_id, commit_oids) in commits_by_revision {
-        let result = visible_commits_in_revision(
-            state,
-            &incarnation,
-            RevisionReader {
-                policy: policy.clone(),
-                views: repo.views.clone(),
-                access: repo.access.clone(),
-            },
-            request,
-            &revision_id,
-            commit_oids,
-        )
-        .await;
+        let result =
+            visible_commits_in_revision(state, policy.clone(), request, &revision_id, commit_oids)
+                .await;
         match result {
             Ok(commit_oids) => visible.extend(
                 commit_oids
@@ -468,16 +453,9 @@ fn flatten(commits_by_revision: BTreeMap<String, BTreeSet<String>>) -> BTreeSet<
         .collect()
 }
 
-struct RevisionReader {
-    policy: scope_postgres::db::RepositoryReadPolicy,
-    views: Views,
-    access: RepositoryAccess,
-}
-
 async fn visible_commits_in_revision(
     state: &AppState,
-    incarnation: &RepositoryIncarnation,
-    reader: RevisionReader,
+    reader: RepositoryReadPolicy,
     request: &Request,
     revision_id: &str,
     commit_oids: BTreeSet<String>,
@@ -490,15 +468,10 @@ async fn visible_commits_in_revision(
     else {
         return Ok(BTreeSet::new());
     };
-    let RevisionReader {
-        policy,
-        views,
-        access,
-    } = reader;
     let inspection_state = state.clone();
     with_request_revision_store_repo(
         state,
-        incarnation,
+        &reader.context.incarnation(),
         request,
         &revision,
         move |raw_repo, revision| {
@@ -513,8 +486,8 @@ async fn visible_commits_in_revision(
             }
             let resolved = crate::use_cases::request_inspection_policy::resolve_commits(
                 &inspection_state,
-                &policy,
-                &access.view,
+                &reader,
+                &reader.context.access.view,
                 raw_repo,
                 &valid_commits,
             )?;
@@ -523,8 +496,8 @@ async fn visible_commits_in_revision(
                 let (_, hidden) = request_commit_visible_paths(
                     raw_repo,
                     &resolved,
-                    &views,
-                    &access,
+                    &reader.context.views,
+                    &reader.context.access,
                     &commit_oid,
                 )?;
                 if !hidden {

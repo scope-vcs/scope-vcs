@@ -115,17 +115,11 @@ function formatUnixDateWith(
 }
 
 export function formatRelativeUnix(
-  unixSeconds: number | null,
-  nowUnix: number = Date.now() / 1_000,
+  unixSeconds: number,
+  nowUnix: number,
 ) {
-  if (unixSeconds === null) {
-    return 'Not set'
-  }
   const deltaSeconds = unixSeconds - nowUnix
   const distance = Math.abs(deltaSeconds)
-  if (distance >= RELATIVE_HORIZON_SECONDS) {
-    return formatUnixDate(unixSeconds)
-  }
   if (distance < SECONDS_PER_MINUTE) {
     return 'just now'
   }

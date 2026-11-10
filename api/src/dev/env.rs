@@ -4,6 +4,7 @@ use crate::config::{
 };
 use crate::env_guard::{require_exact, required};
 use crate::seed_user::DevSeedUser;
+use scope_domain::account::handles::{normalize_email, normalize_handle};
 use scope_postgres::local_dev_database::LocalDevDatabase;
 
 pub(super) const SCOPE_ENV_ENV: &str = "SCOPE_ENV";
@@ -140,37 +141,6 @@ fn dev_seed_user(snapshot: &DevEnvSnapshot) -> anyhow::Result<DevSeedUser> {
     };
 
     Ok(DevSeedUser { email, handle })
-}
-
-fn normalize_email(email: &str) -> String {
-    email.trim().to_ascii_lowercase()
-}
-
-fn normalize_handle(value: &str) -> Option<String> {
-    let mut handle = String::new();
-    let mut last_was_separator = false;
-    for byte in value.trim().bytes() {
-        let next = if byte.is_ascii_alphanumeric() {
-            last_was_separator = false;
-            Some(byte.to_ascii_lowercase() as char)
-        } else if matches!(byte, b'-' | b'_') && !last_was_separator {
-            last_was_separator = true;
-            Some('-')
-        } else {
-            None
-        };
-
-        if let Some(next) = next {
-            handle.push(next);
-        }
-    }
-
-    let handle = handle.trim_matches('-').to_string();
-    if handle.is_empty() || handle.len() > 40 {
-        None
-    } else {
-        Some(handle)
-    }
 }
 
 #[cfg(test)]

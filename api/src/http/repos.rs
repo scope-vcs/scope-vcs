@@ -5,7 +5,6 @@ use crate::{
     },
     error::ApiError,
     git::repository_git::RepositoryGit,
-    http::origins::public_git_origin,
     http::repo_versions::{RepoVersion, RepoVersionRead, repo_version_file, repo_version_files},
     http::responses::*,
     persistence::unix_now,
@@ -74,7 +73,7 @@ pub(crate) async fn create_repo(
         .file_default_view
         .map(Into::into)
         .unwrap_or(ViewId::private());
-    let git_origin = public_git_origin(&state);
+    let git_origin: &str = &state.git_public_url;
     let cleanup_state = state.clone();
     let (secret, token) = generate_first_push_token(&user.id)?;
     let (push_secret, push_token) = generate_git_push_token(&user.id)?;
@@ -95,17 +94,15 @@ pub(crate) async fn create_repo(
         )
         .await?;
 
-    let user_id = user.id.clone();
-    let summary = repo_summary_for_user(&repo, &user_id, 0, git_origin)
-        .ok_or_else(|| ApiError::internal_message("created repository is missing owner role"))?;
-    let init = repo_init_response(
-        &repo,
-        &user_id,
+    let summary = repo_summary_for_access(
+        &repo.record,
+        repo.access_for_user_id(&user.id),
+        repo.repo_config.views(),
+        0,
         git_origin,
-        now,
-        Some(secret),
-        Some(push_secret),
-    )?;
+    )
+    .ok_or_else(|| ApiError::internal_message("created repository is missing owner role"))?;
+    let init = repo_init_response(&repo, summary.clone(), now, secret, push_secret);
 
     let created = CreateRepoResponse {
         repo: summary,
@@ -303,7 +300,8 @@ async fn create_canonical_push_intent(
     let base_head_oid = repo.git_head.as_ref().map(|head| head.head_oid.clone());
     let base_git_frontier = repo.git_head.as_ref().map(|head| head.frontier());
     let config_changed = repo.repo_config != input_config;
-    if base_head_oid.as_deref() == Some(head_oid.as_str()) && config_changed {
+    let applies_config_now = config_changed && base_head_oid.as_deref() == Some(head_oid.as_str());
+    if applies_config_now {
         apply_reviewed_config_before_push(
             state,
             owner,
@@ -314,12 +312,11 @@ async fn create_canonical_push_intent(
         )
         .await?;
     }
-    let intent_base_config_hash =
-        if config_changed && base_head_oid.as_deref() == Some(head_oid.as_str()) {
-            repo_config_fingerprint(&input_config)?
-        } else {
-            base_config_hash
-        };
+    let intent_base_config_hash = if applies_config_now {
+        repo_config_fingerprint(&input_config)?
+    } else {
+        base_config_hash
+    };
     let intent = state.create_push_intent(
         &repo.repo_id,
         user_id,
@@ -630,11 +627,10 @@ pub(super) fn repo_summary_response(
     state: &AppState,
     summary: RepoSummaryRead,
 ) -> Result<RepoSummaryResponse, ApiError> {
-    let git_origin = public_git_origin(state);
     Ok(RepoSummaryResponse {
         id: summary.id,
         git_remote_url: repository_git_remote_url(
-            git_origin,
+            &state.git_public_url,
             &summary.access.view,
             &summary.owner_handle,
             &summary.name,

@@ -5,7 +5,6 @@ export function ViewSelect({
   className,
   disabled,
   id,
-  label,
   onChange,
   value,
   views,
@@ -13,14 +12,12 @@ export function ViewSelect({
   className?: string
   disabled?: boolean
   id?: string
-  label?: string
   onChange: (view: ViewId) => void
   value: ViewId
   views: readonly ViewDefinition[]
 }) {
   return (
     <Select
-      aria-label={label}
       className={className}
       disabled={disabled}
       id={id}

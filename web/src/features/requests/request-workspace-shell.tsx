@@ -48,7 +48,7 @@ export function RequestWorkspaceShell({
           min={0}
           onDrag={(distance) => {
             const next = requestWorkspaceWidthFromDrag(
-              { startedCollapsed: collapsed, width, x: 0 },
+              { startedCollapsed: collapsed, width },
               distance,
             )
             if (!next) return

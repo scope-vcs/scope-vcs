@@ -60,7 +60,6 @@ function RepoListRow({ isOwner, repo }: { isOwner: boolean; repo: RepoSummaryRes
 
       <div className="relative z-10 flex shrink-0 items-center">
         <RepoPrimaryActionButton
-          includeOpen={false}
           repo={repo}
           variant="secondary"
         />

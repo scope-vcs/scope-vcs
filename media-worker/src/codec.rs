@@ -454,16 +454,7 @@ impl CodecPipeline {
             self.limits.process_threads.to_string().into(),
             path_arg(path),
         ];
-        let output = self
-            .run_codec(&self.programs.ffprobe, &args, cwd)
-            .await
-            .map_err(|error| codec_process_failure(error, CodecFailureKind::CorruptMedia))?;
-        serde_json::from_slice(&output.stdout).map_err(|error| {
-            CodecFailure::new(
-                CodecFailureKind::CodecFailed,
-                format!("ffprobe returned invalid JSON: {error}"),
-            )
-        })
+        self.run_ffprobe(&args, cwd, "JSON").await
     }
 
     async fn probe_first_frame(&self, path: &Path, cwd: &Path) -> Result<Probe, CodecFailure> {
@@ -485,14 +476,23 @@ impl CodecPipeline {
             self.limits.process_threads.to_string().into(),
             path_arg(path),
         ];
+        self.run_ffprobe(&args, cwd, "frame JSON").await
+    }
+
+    async fn run_ffprobe(
+        &self,
+        args: &[OsString],
+        cwd: &Path,
+        output_format: &'static str,
+    ) -> Result<Probe, CodecFailure> {
         let output = self
-            .run_codec(&self.programs.ffprobe, &args, cwd)
+            .run_codec(&self.programs.ffprobe, args, cwd)
             .await
             .map_err(|error| codec_process_failure(error, CodecFailureKind::CorruptMedia))?;
         serde_json::from_slice(&output.stdout).map_err(|error| {
             CodecFailure::new(
                 CodecFailureKind::CodecFailed,
-                format!("ffprobe returned invalid frame JSON: {error}"),
+                format!("ffprobe returned invalid {output_format}: {error}"),
             )
         })
     }

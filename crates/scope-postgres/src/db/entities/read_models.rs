@@ -85,6 +85,7 @@ pub mod projection_read_model {
 
 pub mod projection_file {
     use super::*;
+    use crate::db::object_references::{decode_content_ref, encode_content_ref};
     use sha2::{Digest as _, Sha256};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -143,8 +144,7 @@ pub mod projection_file {
                 oid: content.file.oid,
                 visibility: content.file.label.as_str().to_string(),
                 sha256: content.blob.sha256,
-                object_key: serde_json::to_string(&content.blob.content_ref)
-                    .map_err(PostgresError::internal)?,
+                object_key: encode_content_ref(&content.blob.content_ref)?,
                 size_bytes: u64_to_i64(content.blob.size_bytes, "projection file size")?,
                 git_file_mode: content.blob.git_file_mode,
             })
@@ -164,8 +164,7 @@ pub mod projection_file {
                     label: ViewId::parse(&self.visibility).map_err(PostgresError::internal)?,
                 },
                 blob: SourceBlob {
-                    content_ref: serde_json::from_str(&self.object_key)
-                        .map_err(PostgresError::internal)?,
+                    content_ref: decode_content_ref(&self.object_key)?,
                     sha256: self.sha256,
                     git_oid: self.oid,
                     git_file_mode: self.git_file_mode,

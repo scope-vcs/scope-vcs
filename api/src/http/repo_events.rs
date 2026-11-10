@@ -15,7 +15,7 @@ use scope_domain::{
     account::UserAccount,
     repository::access::RepositoryAccessContext,
     repository::{RepositoryIncarnation, repo_id},
-    requests::{RequestViewer, request_policy},
+    requests::request_policy,
 };
 use std::{convert::Infallible, time::Duration};
 use tokio_stream::{Stream, StreamExt, once, wrappers::BroadcastStream};
@@ -186,22 +186,14 @@ async fn stream_event_for_user(
         let Some(request) = state.metadata.requests().request_by_id(request_id).await? else {
             return Ok(None);
         };
-        let user_id = user.map(|user| user.id.as_str());
-        let is_invitee = match user_id {
-            Some(user_id) => {
-                state
-                    .metadata
-                    .requests()
-                    .request_is_invitee(request_id, user_id)
-                    .await?
-            }
-            None => false,
-        };
-        let policy = request_policy(
-            &request,
-            RequestViewer::new(repo.access.clone(), user_id, is_invitee),
-            &repo.views,
-        );
+        let viewer = super::requests::request_viewer(
+            state,
+            request_id,
+            repo.access.clone(),
+            user.map(|user| user.id.as_str()),
+        )
+        .await?;
+        let policy = request_policy(&request, viewer, &repo.views);
         let visible = match &event.kind {
             RepoChangeKind::RequestStateChanged { .. } => policy.exact_visible,
             _ => policy.activity_stream_visible,

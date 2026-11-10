@@ -157,7 +157,7 @@ impl RepositoryWorkflowFile {
         self.validate_integrity()?;
         let digest_matches = !matches!(blob.content_ref, ContentRef::BlobSha256(_))
             || blob.sha256 == hex::encode(Sha256::digest(&self.content_bytes));
-        if source_blob_identity_matches(blob)
+        if blob.content_ref_matches_identity()
             && self.oid == blob.git_oid.to_ascii_lowercase()
             && self.git_file_mode == blob.git_file_mode
             && self.size_bytes == blob.size_bytes
@@ -329,14 +329,6 @@ fn validate_identity(
         return Err(RepositoryWorkflowCatalogError::InvalidSourceChangeVersion);
     }
     Ok(())
-}
-
-fn source_blob_identity_matches(blob: &SourceBlob) -> bool {
-    match &blob.content_ref {
-        ContentRef::GitBlob { git_oid } => git_oid == &blob.git_oid,
-        ContentRef::BlobSha256(sha256) => sha256 == &blob.sha256,
-        _ => false,
-    }
 }
 
 #[cfg(test)]

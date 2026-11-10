@@ -9,7 +9,7 @@ import { RequestChangesWorkbench, type RequestChangesSearch } from '@/features/r
 import { RequestDiscussionAnchor } from '@/features/requests/request-discussion-anchor'
 import type { CreateDiscussionInput } from '@/features/requests/request-discussion-api'
 import { discussion } from '@/features/requests/request-discussion-test-fixtures'
-import './styles.css'
+import '../shared/styles.css'
 
 declare global {
   interface Window { diffHtml: string; createCalls: CreateDiscussionInput[] }

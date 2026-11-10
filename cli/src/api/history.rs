@@ -1,6 +1,5 @@
 use super::*;
 use crate::api::ApiSession;
-use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -37,11 +36,9 @@ pub fn visibility_history(
     if let Some(before) = before {
         query.push(("before", before));
     }
-    decode_json_response(
+    execute(
         api.request(reqwest::Method::GET, routes::repo_history(owner, repo))
-            .query(&query)
-            .send()
-            .context("list visibility changes")?,
-        "list visibility changes",
+            .query(&query),
+        "list visibility changes".to_string(),
     )
 }

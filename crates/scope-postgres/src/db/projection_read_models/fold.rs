@@ -335,7 +335,7 @@ where
     let next_cursor = cursor.advanced(&projection, graph, sets);
     let mut history = row
         .map(entities::projection_read_model::Model::history_cursor)
-        .unwrap_or_else(|| HistoryCursor::start(repo_id, views, view));
+        .unwrap_or_else(|| HistoryCursor::start(repo_id, view));
     let entries = history_entries_after(
         &mut history,
         view_before,

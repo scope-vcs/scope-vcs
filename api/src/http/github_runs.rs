@@ -87,8 +87,7 @@ async fn open_run(
     repo: &str,
     run_id: u64,
 ) -> Result<OpenedRun, ApiError> {
-    let (repo, access, viewer_user_id) =
-        repo_metadata_and_access(state, headers, owner, repo).await?;
+    let (repo, viewer_user_id) = repo_metadata_and_access(state, headers, owner, repo).await?;
     let not_found = || ApiError::not_found("workflow run not found");
     if state.github.is_none() {
         return Err(not_found());
@@ -104,16 +103,7 @@ async fn open_run(
         .ok_or_else(not_found)?;
     let request_visible = match detail.read.request_id.as_deref() {
         Some(request_id) if !repo.reads_full_view() => {
-            match visible_request(
-                state,
-                &repo.record.id,
-                &repo.views,
-                access.clone(),
-                viewer_user_id.as_deref(),
-                request_id,
-            )
-            .await
-            {
+            match visible_request(state, &repo, viewer_user_id.as_deref(), request_id).await {
                 Ok(_) => true,
                 Err(error) if error.status() == StatusCode::NOT_FOUND => false,
                 Err(error) => return Err(error),
@@ -121,7 +111,12 @@ async fn open_run(
         }
         _ => false,
     };
-    if !github_run_visible(&access, &repo.views, connection.visibility, request_visible) {
+    if !github_run_visible(
+        &repo.access,
+        &repo.views,
+        connection.visibility,
+        request_visible,
+    ) {
         return Err(not_found());
     }
     Ok(OpenedRun { connection, detail })

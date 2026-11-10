@@ -3,6 +3,7 @@ use super::{
     access::{RepositoryAccess, repository_access_for_user_id},
 };
 use crate::{
+    account::handles::normalize_email,
     error::DomainError,
     views::{ViewId, Views},
 };
@@ -98,7 +99,7 @@ impl RepositoryInvite {
 }
 
 pub fn normalize_repository_invite_email(email: &str) -> String {
-    email.trim().to_ascii_lowercase()
+    normalize_email(email)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

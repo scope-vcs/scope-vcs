@@ -57,9 +57,3 @@ stack and Clerk development credentials:
 ```bash
 ./dev/check smoke
 ```
-
-Benchmark methodology is documented in [`bench/README.md`](bench/README.md).
-Current technical ownership is documented in
-[`docs/architecture.md`](docs/architecture.md).
-Production migration recovery is documented in
-[`docs/maintenance-cutovers.md`](docs/maintenance-cutovers.md).

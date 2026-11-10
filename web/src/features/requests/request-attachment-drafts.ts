@@ -53,6 +53,7 @@ type Entry = {
 const MAX_DRAFTS = 16
 const MAX_RETAINED_FILE_BYTES = 1024 * 1024 * 1024
 const STORAGE_PREFIX = 'scope.request-attachment-draft.'
+const UNNAMED_ATTACHMENT_NAME = 'Pasted image'
 const entries = new Map<string, Entry>()
 const submissions = new Map<string, Promise<boolean>>()
 let cancelUploadsForDraft: (key: string) => void = () => {}
@@ -106,17 +107,23 @@ export function replaceRequestAttachmentDraftReference(
   }))
 }
 
+function draftAttachmentName(file: File) {
+  return file.name || UNNAMED_ATTACHMENT_NAME
+}
+
+export function resumesDraftAttachment(attachment: DraftAttachment, file: File) {
+  return attachment.file === null &&
+    attachment.name === draftAttachmentName(file) &&
+    attachment.size === file.size
+}
+
 export function addRequestAttachmentDraftFiles(key: string, files: File[]) {
   if (files.length === 0 || entryFor(key).draft.pending) return []
   const entry = entryFor(key)
   const additions: DraftAttachment[] = []
   let attachments = [...entry.draft.attachments]
   for (const file of files) {
-    const resumableIndex = attachments.findIndex((attachment) =>
-      attachment.file === null &&
-      attachment.name === (file.name || 'Pasted image') &&
-      attachment.size === file.size,
-    )
+    const resumableIndex = attachments.findIndex((attachment) => resumesDraftAttachment(attachment, file))
     if (resumableIndex >= 0) {
       const resumable = attachments[resumableIndex]
       if (!resumable) continue
@@ -139,7 +146,7 @@ export function addRequestAttachmentDraftFiles(key: string, files: File[]) {
       error: null,
       file,
       localId: crypto.randomUUID(),
-      name: file.name || 'Pasted image',
+      name: draftAttachmentName(file),
       operationId: crypto.randomUUID(),
       previewUrl: createPreviewUrl(file),
       progress: 0,

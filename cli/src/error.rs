@@ -56,6 +56,10 @@ impl CliError {
         Self::new(ErrorResponse::new(ErrorCode::Unauthorized, message))
     }
 
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self::new(ErrorResponse::new(ErrorCode::Conflict, message))
+    }
+
     pub fn git_failure(failure: &str, stderr: &str, retry_safety: GitRetrySafety) -> Self {
         let message = if stderr.is_empty() {
             failure.to_string()

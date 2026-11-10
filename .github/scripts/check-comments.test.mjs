@@ -8,6 +8,7 @@ test('selects comment syntax by file type and skips exempt files', () => {
   assert.equal(commentSyntax('api/src/main.rs'), 'slash')
   assert.equal(commentSyntax('web/src/app.tsx'), 'slash')
   assert.equal(commentSyntax('.github/workflows/ci.yml'), 'hash')
+  assert.equal(commentSyntax('web/.env.example'), 'hash')
   assert.equal(commentSyntax('deploy/Dockerfile.api'), 'hash')
   assert.equal(commentSyntax('dev/check', '#!/usr/bin/env bash'), 'hash')
   assert.equal(commentSyntax('dev/notes', 'plain text'), null)
@@ -35,9 +36,6 @@ test('reports line, block, and JSX comments in code', () => {
 
 test('allows machine-read comments', () => {
   const source = [
-    '// SAFETY: the pointer is valid',
-    '// for the duration of the call.',
-    'unsafe { call() }',
     '// @ts-nocheck',
     '// eslint-disable-next-line no-console',
     '/* oxlint-disable */',
@@ -47,30 +45,18 @@ test('allows machine-read comments', () => {
   assert.deepEqual(findComments('src/lib.rs', source), [])
 })
 
-test('a SAFETY continuation ends at the first non-comment line', () => {
-  const source = '// SAFETY: valid\nunsafe { call() }\n// not part of SAFETY'
-  assert.deepEqual(lines(findComments('src/lib.rs', source)), [3])
-})
-
-test('allows doc comments only on API contract items', () => {
-  const contract = [
+test('reports safety notes and doc comments, including on API contract items', () => {
+  const source = [
+    '// SAFETY: the pointer is valid',
+    'unsafe { call() }',
     '/// Shown in the generated contract.',
-    '#[derive(',
-    '    Serialize,',
-    '    JsonSchema,',
-    ')]',
+    '#[derive(Serialize, JsonSchema)]',
     'pub struct Response {',
-    '    /// A field in the contract {with braces}.',
+    '    /// A field in the contract.',
     '    pub id: String,',
     '}',
-    '',
-    '/// Internal helper beside the contract.',
-    'fn helper() {}',
   ].join('\n')
-  assert.deepEqual(lines(findComments('api/src/http/responses.rs', contract)), [11])
-  const importOnly = 'use schemars::JsonSchema;\n/// Internal helper.\nfn helper() {}'
-  assert.deepEqual(lines(findComments('api/src/use_cases/run.rs', importOnly)), [2])
-  assert.deepEqual(findComments('crates/scope-api-contract/src/git_oid.rs', '/// A Git object id.\npub struct GitOid(String);'), [])
+  assert.deepEqual(lines(findComments('crates/scope-api-contract/src/types.rs', source)), [1, 3, 6])
 })
 
 test('does not mistake shell globs or dereferences for comments', () => {

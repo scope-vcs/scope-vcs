@@ -1,11 +1,8 @@
 use super::{
-    requests::{repo_metadata_and_access, visible_request},
+    requests::actor_request,
     responses::{git_oid_response, request_actor_summary_response},
 };
-use crate::{
-    auth::scope::require_scope_user, error::ApiError, state::AppState,
-    use_cases::request_auto_merge,
-};
+use crate::{error::ApiError, state::AppState, use_cases::request_auto_merge};
 use axum::{
     Json,
     extract::{Path, State},
@@ -35,17 +32,8 @@ pub(crate) async fn authorize(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Json(input): Json<AuthorizeRequestAutoMergeRequest>,
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        Some(&user.id),
-        &request_id,
-    )
-    .await?;
+    let (user, _, request) =
+        actor_request(&state, &headers, &owner, &repo_name, &request_id).await?;
     request_auto_merge::authorize(
         &state,
         &request.id,
@@ -65,17 +53,8 @@ pub(crate) async fn cancel(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Json(input): Json<CancelRequestAutoMergeRequest>,
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        Some(&user.id),
-        &request_id,
-    )
-    .await?;
+    let (user, _, request) =
+        actor_request(&state, &headers, &owner, &repo_name, &request_id).await?;
     request_auto_merge::cancel(&state, &request.id, &user.id, input.expected_intent_id).await?;
     let snapshot =
         super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
@@ -94,12 +73,7 @@ pub(crate) fn snapshot_response(
                     subject: (&snapshot.request).into(),
                     viewer: actor,
                     views: &snapshot.repository.views,
-                    checks: scope_domain::requests::request_checks_outcome(
-                        &snapshot.request.id,
-                        &snapshot.request.head_oid,
-                        snapshot.evaluation.as_ref(),
-                        &snapshot.results,
-                    ),
+                    checks: snapshot.checks_outcome(),
                     reviews: snapshot.reviews_outcome(),
                 },
             ),

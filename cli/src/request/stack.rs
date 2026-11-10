@@ -1,12 +1,29 @@
 use super::*;
 use scope_api_contract::{
-    RequestBase, RequestRevisionContextRequest, RequestState, RequestSummaryResponse,
+    RequestBase, RequestRevisionContextRequest, RequestRevisionListResponse,
+    RequestRevisionResponse, RequestState, RequestSummaryResponse,
 };
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct SelectedBase {
     pub(super) base: RequestBase,
     pub(super) parent_base_version: Option<u64>,
+}
+
+pub(super) fn current_revisions(
+    api: ApiSession<'_>,
+    context: &local::RequestContext,
+    request_id: &str,
+) -> anyhow::Result<RequestRevisionListResponse> {
+    crate::api::request_revisions(api, api_target(context, request_id), None, None, None)
+}
+
+pub(super) fn review_revision(
+    list: &RequestRevisionListResponse,
+) -> Option<&RequestRevisionResponse> {
+    list.review_revision_id
+        .as_ref()
+        .and_then(|id| list.revisions.iter().find(|revision| &revision.id == id))
 }
 
 pub(super) fn current_parent(
@@ -18,22 +35,20 @@ pub(super) fn current_parent(
     revision: Option<&str>,
 ) -> anyhow::Result<(RequestSummaryResponse, SelectedBase)> {
     let id = request_id_for_context(api, context, Some(selector))?;
-    let parent = get_request(api, &context.target.owner, &context.target.repo, &id)?.request;
+    let parent = get_request(api, api_target(context, &id))?.request;
     if parent.state != RequestState::Open {
         return Err(crate::error::CliError::usage("the parent request must be Open").into());
     }
     if view.is_some_and(|view| view != &parent.view) {
         return Err(crate::error::CliError::usage("stacked requests require the same view").into());
     }
-    let revision_id =
-        crate::api::request_revisions(api, api_target(context, &id), None, None, None)?
-            .review_revision_id
-            .context("the parent has no saved revision")?;
+    let revision_id = current_revisions(api, context, &id)?
+        .review_revision_id
+        .context("the parent has no saved revision")?;
     if revision.is_some_and(|selected| selected != revision_id) {
-        return Err(crate::error::CliError::new(ErrorResponse::new(
-            ErrorCode::Conflict,
+        return Err(crate::error::CliError::conflict(
             "--base-revision must select the parent's current saved revision",
-        ))
+        )
         .into());
     }
     let fetched = crate::git_repo::fetch_scope_parent_with_bearer(
@@ -44,10 +59,9 @@ pub(super) fn current_parent(
         api.token,
     )?;
     if fetched != parent.head_oid.as_str() {
-        return Err(crate::error::CliError::new(ErrorResponse::new(
-            ErrorCode::Conflict,
+        return Err(crate::error::CliError::conflict(
             "the parent moved during fetch; retry with its current revision",
-        ))
+        )
         .into());
     }
     let pin = SelectedBase {
@@ -89,14 +103,13 @@ pub(super) fn publish_context(
     let body = if saved.status.success() {
         let body: RequestRevisionContextRequest = serde_json::from_slice(&saved.stdout)?;
         if body.expected_head_oid.as_str() != head || body.base != selection.base {
-            return Err(crate::error::CliError::new(ErrorResponse::new(ErrorCode::Conflict, "a previous revision-context publication needs recovery; retry with the same head and base selection")).into());
+            return Err(crate::error::CliError::conflict("a previous revision-context publication needs recovery; retry with the same head and base selection").into());
         }
         body
     } else {
-        let revision_id =
-            crate::api::request_revisions(api, api_target(context, &request.id), None, None, None)?
-                .review_revision_id
-                .ok_or_else(|| crate::error::CliError::usage("this request has no saved revision; commit its own changes, then run scope request push with the same base selection"))?;
+        let revision_id = current_revisions(api, context, &request.id)?
+            .review_revision_id
+            .ok_or_else(|| crate::error::CliError::usage("this request has no saved revision; commit its own changes, then run scope request push with the same base selection"))?;
         let body = RequestRevisionContextRequest {
             operation_key: new_client_mutation_id("revision-context")?,
             base: selection.base.clone(),
@@ -133,13 +146,7 @@ pub(super) fn publish_context(
                             | ErrorCode::ProtectedPath
                     )
                 })
-                && let Ok(history) = crate::api::request_revisions(
-                    api,
-                    api_target(context, &request.id),
-                    None,
-                    None,
-                    None,
-                )
+                && let Ok(history) = current_revisions(api, context, &request.id)
             {
                 let boundary = history
                     .revisions
@@ -183,10 +190,9 @@ pub(super) fn publish_context(
             && revision.base == body.base
             && revision.base_version == expected_base_version
     }) {
-        return Err(crate::error::CliError::new(ErrorResponse::new(
-            ErrorCode::Conflict,
+        return Err(crate::error::CliError::conflict(
             "the accepted revision does not confirm the intended head and base",
-        ))
+        )
         .into());
     }
     run_git_in_repo(git_repo, &["config", "--unset", &key])
@@ -232,14 +238,8 @@ pub(super) fn accepted_base(
     base: &RequestBase,
     expected_version: Option<u64>,
 ) -> anyhow::Result<bool> {
-    let revisions =
-        crate::api::request_revisions(api, api_target(context, &request.id), None, None, None)?;
-    let Some(revision) = revisions.review_revision_id.as_ref().and_then(|id| {
-        revisions
-            .revisions
-            .iter()
-            .find(|revision| &revision.id == id)
-    }) else {
+    let revisions = current_revisions(api, context, &request.id)?;
+    let Some(revision) = review_revision(&revisions) else {
         return Ok(false);
     };
     if revision.new_head_oid.as_deref() != Some(head) || revision.base != *base {
@@ -285,19 +285,13 @@ pub(super) fn retry_pending_context(
         return Ok(false);
     };
     if pending.base != selection.base {
-        return Err(crate::error::CliError::new(ErrorResponse::new(
-            ErrorCode::Conflict,
+        return Err(crate::error::CliError::conflict(
             "retry the pending revision-context publication with its original base",
-        ))
+        )
         .into());
     }
     publish_context(git_repo, api, context, request, &pending, head)?;
-    let current = get_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request.id,
-    )?;
+    let current = get_request(api, api_target(context, &request.id))?;
     if !accepted_base(api, context, &current.request, head, &selection.base, None)? {
         return Err(crate::error::CliError::with_recovery(
             ErrorResponse::new(ErrorCode::Conflict, "the recovered revision-context publication is no longer the current request revision")

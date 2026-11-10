@@ -1,28 +1,20 @@
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
-type RailElement = 'div' | 'header' | 'main' | 'section'
+type RailElement = 'div' | 'main' | 'section'
 type RailProps = {
   as?: RailElement
   children: ReactNode
   className?: string
-  id?: string
-  tabIndex?: number
 }
 
 function AppRail({
   as: Component = 'div',
   children,
   className,
-  id,
-  tabIndex,
 }: RailProps) {
   return (
-    <Component
-      className={cn('app-rail mx-auto w-full max-w-(--app-rail)', className)}
-      id={id}
-      tabIndex={tabIndex}
-    >
+    <Component className={cn('app-rail mx-auto w-full max-w-(--app-rail)', className)}>
       {children}
     </Component>
   )
@@ -32,16 +24,9 @@ export function PageRail({
   as,
   children,
   className,
-  id,
-  tabIndex,
 }: RailProps) {
   return (
-    <AppRail
-      as={as}
-      className={cn('px-(--app-inset)', className)}
-      id={id}
-      tabIndex={tabIndex}
-    >
+    <AppRail as={as} className={cn('px-(--app-inset)', className)}>
       {children}
     </AppRail>
   )
@@ -79,18 +64,12 @@ export function WorkbenchPane({
 }
 
 export function PageHeader({
-  actions,
-  badges,
-  children,
   description,
   title,
 }: {
-  actions?: ReactNode
-  badges?: ReactNode
-  children?: ReactNode
   description?: ReactNode
   title: ReactNode
-  }) {
+}) {
   return (
     <header className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
@@ -102,18 +81,7 @@ export function PageHeader({
             {description}
           </p>
         )}
-        {badges && (
-          <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            {badges}
-          </div>
-        )}
-        {children}
       </div>
-      {actions && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-          {actions}
-        </div>
-      )}
     </header>
   )
 }

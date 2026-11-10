@@ -16,13 +16,8 @@ use tokio::{
 };
 use tracing::Instrument as _;
 
-pub(crate) fn git_http_backend(
+pub(crate) fn git_receive_pack_advertisement(
     staging_repo: &FsPath,
-    method: &str,
-    path_suffix: &str,
-    query_string: &str,
-    body: Vec<u8>,
-    content_type: Option<String>,
     remote_user: &str,
 ) -> Result<CgiResponse, ApiError> {
     let staging_parent = staging_repo
@@ -37,21 +32,18 @@ pub(crate) fn git_http_backend(
         .arg("http-backend")
         .env("GIT_PROJECT_ROOT", staging_parent)
         .env("GIT_HTTP_EXPORT_ALL", "1")
-        .env("REQUEST_METHOD", method)
-        .env("PATH_INFO", format!("/{repo_name}/{path_suffix}"))
-        .env("QUERY_STRING", query_string)
+        .env("REQUEST_METHOD", "GET")
+        .env("PATH_INFO", format!("/{repo_name}/info/refs"))
+        .env("QUERY_STRING", "service=git-receive-pack")
         .env("REMOTE_USER", remote_user)
-        .env("CONTENT_LENGTH", body.len().to_string())
+        .env("CONTENT_LENGTH", "0")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if let Some(content_type) = content_type {
-        command.env("CONTENT_TYPE", content_type);
-    }
 
     let output = git_command_output_with_timeout(
         &mut command,
-        Some(body),
+        Some(Vec::new()),
         RuntimeBudgets::default_git_command_timeout(),
     )?;
     CgiResponse::parse(output)
@@ -150,39 +142,22 @@ pub(crate) async fn git_http_backend_streaming(
         stdin.shutdown().await.map_err(ApiError::internal)?;
         Ok::<usize, ApiError>(written)
     };
-    let request_bytes = match tokio::time::timeout_at(process_deadline, writer).await {
-        Ok(Ok(written)) => written,
-        Ok(Err(error)) => {
-            stop_git_http_backend(
-                &mut child,
-                &mut process_group,
-                &mut stdout_task,
-                &mut stderr_task,
-            )
-            .await;
-            return Err(error);
-        }
-        Err(_) => {
-            stop_git_http_backend(
-                &mut child,
-                &mut process_group,
-                &mut stdout_task,
-                &mut stderr_task,
-            )
-            .await;
-            return Err(ApiError::infrastructure_unavailable(
-                "git request upload timed out",
-            ));
-        }
+    let transfer = async {
+        let request_bytes = tokio::time::timeout_at(process_deadline, writer)
+            .await
+            .map_err(|_| ApiError::infrastructure_unavailable("git request upload timed out"))??;
+        let output = tokio::time::timeout_at(
+            process_deadline,
+            collect_git_http_backend_output(&mut child, &mut stdout_task, &mut stderr_task),
+        )
+        .await
+        .map_err(|_| ApiError::infrastructure_unavailable("git http-backend timed out"))??;
+        Ok::<_, ApiError>((request_bytes, output))
     };
-    let output = match tokio::time::timeout_at(
-        process_deadline,
-        collect_git_http_backend_output(&mut child, &mut stdout_task, &mut stderr_task),
-    )
-    .await
-    {
-        Ok(Ok(output)) => output,
-        Ok(Err(error)) => {
+    let transferred = transfer.await;
+    let (request_bytes, output) = match transferred {
+        Ok(transferred) => transferred,
+        Err(error) => {
             stop_git_http_backend(
                 &mut child,
                 &mut process_group,
@@ -191,18 +166,6 @@ pub(crate) async fn git_http_backend_streaming(
             )
             .await;
             return Err(error);
-        }
-        Err(_) => {
-            stop_git_http_backend(
-                &mut child,
-                &mut process_group,
-                &mut stdout_task,
-                &mut stderr_task,
-            )
-            .await;
-            return Err(ApiError::infrastructure_unavailable(
-                "git http-backend timed out",
-            ));
         }
     };
     process_group.disarm();

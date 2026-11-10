@@ -13,12 +13,10 @@ import { toast } from 'sonner'
 export function CopyableCodeBlock({
   className,
   copyLabel = 'Copy',
-  onCopy,
   value,
 }: {
   className?: string
   copyLabel?: string
-  onCopy?: () => void
   value: string
 }) {
   const [copied, setCopied] = useState(false)
@@ -42,7 +40,6 @@ export function CopyableCodeBlock({
     }
     setCopied(true)
     toast.success('Copied')
-    onCopy?.()
   }
 
   return (

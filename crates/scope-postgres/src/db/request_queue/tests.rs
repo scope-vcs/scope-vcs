@@ -1,5 +1,6 @@
 use super::*;
 use crate::db::requests::tests::postgres_store;
+use scope_domain::requests::RequestState;
 
 const NOW: u64 = 100;
 const VIEWER: &str = "viewer";

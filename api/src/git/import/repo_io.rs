@@ -230,11 +230,7 @@ pub(crate) async fn git_push_from_repo(
         head,
         owner,
         prerequisites,
-    } = prepare_git_push(
-        head_oid.clone(),
-        previous,
-        state.runtime_budgets.git_storage_limits(),
-    )?;
+    } = prepare_git_push(head_oid.clone(), previous)?;
     let pack_started = Instant::now();
     let pack = stage_pool_pack(
         state,

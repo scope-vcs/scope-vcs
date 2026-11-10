@@ -8,7 +8,6 @@ const variants = {
   ghost: "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
   destructive: "bg-danger/10 text-danger hover:bg-danger/20 focus-visible:border-danger/40 dark:bg-danger/20 dark:hover:bg-danger/30",
   success: "bg-success text-white shadow-[var(--shadow-card)] hover:bg-success-strong focus-visible:border-success-border",
-  danger: "bg-danger text-white shadow-[var(--shadow-card)] hover:bg-danger-strong focus-visible:border-danger-border",
 } as const
 
 const sizes = {

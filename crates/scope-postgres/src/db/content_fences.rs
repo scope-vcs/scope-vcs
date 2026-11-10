@@ -1,4 +1,4 @@
-use super::{RepositoryStore, entities};
+use super::{RepositoryStore, entities, object_references::encode_content_ref};
 use crate::error::PostgresError;
 use scope_domain::content_ref::ContentRef;
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, EntityTrait, Statement};
@@ -75,9 +75,8 @@ pub(super) async fn acquire_content_ref_fence(
     let schema = current_schema(db).await?;
     let mut encoded = content_refs
         .iter()
-        .map(serde_json::to_string)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(PostgresError::internal)?;
+        .map(encode_content_ref)
+        .collect::<Result<Vec<_>, _>>()?;
     encoded.sort_unstable();
     encoded.dedup();
 

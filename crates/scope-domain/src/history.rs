@@ -112,7 +112,7 @@ pub struct HistoryVisibilitySummary {
 
 impl HistoryEntry {
     pub fn visibility_summary(&self, views: &Views, view: &ViewId) -> HistoryVisibilitySummary {
-        let Some(measured) = visibility_summary_view(views, view) else {
+        let Some(measured) = visibility_reference_view(views, view) else {
             return HistoryVisibilitySummary::default();
         };
         let (views_before, views_after) =
@@ -129,14 +129,6 @@ impl HistoryEntry {
                 summary
             },
         )
-    }
-}
-
-fn visibility_summary_view<'a>(views: &'a Views, view: &'a ViewId) -> Option<&'a ViewId> {
-    if view == views.full() {
-        views.anyone()
-    } else {
-        Some(view)
     }
 }
 
@@ -158,7 +150,7 @@ pub fn history_view_from_projection(
     view: &ViewId,
 ) -> HistoryView {
     let repo_id = projection.repo_id.clone();
-    let mut cursor = HistoryCursor::start(&repo_id, views, view);
+    let mut cursor = HistoryCursor::start(&repo_id, view);
     let mut entries = history_entries_after(
         &mut cursor,
         BTreeMap::new(),
@@ -184,7 +176,7 @@ pub struct HistoryCursor {
 }
 
 impl HistoryCursor {
-    pub fn start(repo_id: &str, _views: &Views, view: &ViewId) -> Self {
+    pub fn start(repo_id: &str, view: &ViewId) -> Self {
         Self {
             last_entry_id: None,
             generation: history_generation_start(repo_id, view),

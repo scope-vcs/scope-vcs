@@ -190,7 +190,6 @@ for (const view of ['public', 'restricted']) {
       const model = requestChangesPresentation(response, { revision: child.id, comparison: mode }, view, 'repo')
       assert.equal(model.error, null)
       assert.equal(model.mode, mode)
-      assert.equal(model.diffMode, mode)
       assert.equal(model.selectedCommitOid, null)
       assert.equal(model.selectedCommit?.logical_commit_id, 'child-commit')
       assert.deepEqual(model.selectedCommit?.files.map(({ path }) => path), ['/child-commit.txt'])

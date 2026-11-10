@@ -57,6 +57,7 @@ use args::{
 };
 use branches::*;
 use confirm::require_confirmation;
+pub(crate) use local::REQUEST_REMOTE_KEY;
 use local::{
     last_seen_request_head, load_context, load_context_and_request_id,
     maybe_request_id_for_context, push_request_head, refresh_main_projection,
@@ -192,12 +193,7 @@ fn show_request_status(
     let context = load_context(git_repo, api, remote.as_deref())?;
     let mut human_lines = repo_access_lines(&context.repo);
     if let Some(request_id) = maybe_request_id_for_context(api, &context, request_id)? {
-        let detail = get_request(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            &request_id,
-        )?;
+        let detail = get_request(api, api_target(&context, &request_id))?;
         human_lines.extend(request_detail_lines(&detail, &context.views));
         return Ok(RequestCommandOutcome::new(
             "request.status",
@@ -349,12 +345,7 @@ fn close_request_branch(
         format!("Close published request {}", before.request.name)
     };
     require_confirmation(&prompt, yes)?;
-    let response = api_close_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )?;
+    let response = api_close_request(api, api_target(&context, &request_id))?;
     let human_line = close_receipt(&request_id, &response);
     Ok(RequestCommandOutcome::new(
         "request.close",
@@ -396,12 +387,6 @@ pub(crate) fn inspect_current_request(
         return Ok(None);
     };
     Ok(Some(
-        get_request(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            &request_id,
-        )?
-        .request,
+        get_request(api, api_target(context, &request_id))?.request,
     ))
 }

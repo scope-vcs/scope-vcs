@@ -27,10 +27,6 @@ pub(crate) fn receive_pack_staging_repo_path(
         .join(format!("{digest}-{}.git", hex::encode(bytes))))
 }
 
-pub(crate) fn receive_pack_staging_repo_prefix(incarnation: &RepositoryIncarnation) -> String {
-    repository_storage_key(incarnation)
-}
-
 pub(crate) fn request_objects_root(
     state: &AppState,
     incarnation: &RepositoryIncarnation,
@@ -71,7 +67,7 @@ pub(crate) fn delete_repo_storage(
     remove_dir_if_exists(&request_objects_root(state, &cleanup.incarnation))?;
 
     let rx_root = git_repo_storage_root(state).join("git-rx");
-    let prefix = receive_pack_staging_repo_prefix(&cleanup.incarnation);
+    let prefix = repository_storage_key(&cleanup.incarnation);
     let entries = match fs::read_dir(&rx_root) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),

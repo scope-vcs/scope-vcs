@@ -226,14 +226,6 @@ wire_enum!(RequestMergeabilityStatus => DomainRequestMergeabilityStatus {
     ReviewFindingsOpen,
 });
 wire_enum!(
-    /// How far a review bot got with the request's current head: `working`
-    /// once it reacted with eyes, `commented` once it reviewed that head,
-    /// `clear` once it approved the pull request with a thumbs up after the
-    /// head was pushed, and for bots that publish a review state, once every
-    /// review they report completed that head. `timed_out` means the bot
-    /// showed no sign of starting before the deadline after Scope requested a
-    /// review of the head, so it is advisory for that head and no longer holds
-    /// the merge.
     #[serde(rename_all = "snake_case")]
     #[cfg_attr(feature = "ts", ts(rename_all = "snake_case"))]
     RequestReviewBotState => DomainGitHubReviewBotState {
@@ -522,9 +514,7 @@ pub enum RepoChangeKind {
     Connected,
     Lagged,
     DependenciesChanged,
-    /// GitHub reported a workflow run of the connected repository.
     GitHubWorkflowRunsChanged,
-    /// GitHub reported a job of this workflow run.
     GitHubWorkflowRunChanged {
         github_run_id: u64,
     },

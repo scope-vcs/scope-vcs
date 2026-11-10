@@ -10,7 +10,7 @@ Keep core concepts, rules, transitions, invariants, and required side effects in
 
 Frontend server data must reuse existing resource and cache owners, survive navigation and reopening within the same viewer and access scope, and refresh from relevant changes without blanking valid data. Check reuse and invalidation rather than introducing component-owned fetch lifecycles.
 
-Do not write comments. Code is the foundation: express intent through names, types, structure, and tests. When code cannot carry the context, fix the underlying issue instead of explaining it. The only exceptions are machine-read text: `///` docs on API contract types (they generate the TypeScript contract), `// SAFETY:` on `unsafe` blocks, tool directives, generated files, and digest-locked migrations.
+Do not write comments or documentation files. Code is the foundation: express intent through names, types, structure, and tests. When code cannot carry the context, fix the underlying issue instead of explaining it. Requests and pull requests are the record of why a change was made. The only comments are machine-read text: tool directives, generated files, and digest-locked migrations. The only prose files are these agent instructions, agent skills, the root README, and legal and security notices.
 
 Around 1,000 lines, audit a file's responsibilities and modularize unless there is a good reason to keep it together.
 
@@ -46,8 +46,7 @@ Main on Scope only ever receives commits already on GitHub's main.
 When an operator corrects a repeat, repair the owning architecture or type in
 that change, then add a check if the wrong code can still be written. Update
 this table for remaining rules. Remove instructions made unnecessary by an
-unrepresentable state. Evidence and proof for this audit are in
-[docs/agent-corrections.md](docs/agent-corrections.md).
+unrepresentable state.
 
 | Rule requiring contributor judgment | Enforcement or explicit limit |
 | --- | --- |
@@ -58,7 +57,8 @@ unrepresentable state. Evidence and proof for this audit are in
 | Write tests that catch real breaks and stay fast. | `dev/checks/policy` runs `check-test-waits.mjs`: real-clock test waits of 5 s or more, or of a computed number of seconds, fail. Duplication, signal, and setup cost still require review with the `scope-tests` skill. |
 | Audit large files and separate responsibilities. | `dev/checks/policy` runs `check-source-size.mjs`: ownership audit at 700 lines, hard cap at 1,000. |
 | Preserve generated contracts and digest-locked migrations. | `dev/checks/contract` and `check-migration-immutability.mjs`. |
-| Avoid ordinary code comments. | `dev/checks/policy` runs `check-comments.mjs` and its regression tests, added by merged PR #525. The exceptions above remain the intended policy. |
+| Write no comments. | `dev/checks/policy` runs `check-comments.mjs` and its regression tests. Doc comments and `SAFETY` notes fail like any other comment. |
+| Write no documentation files. | `dev/checks/policy` runs `check-docs.mjs` and its regression tests: Markdown and other prose files, READMEs below the root, and anything under `docs/` fail. |
 | Avoid compatibility layers in pre-alpha; maintainer means owner or member. | Domain authorization tests cover access. Compatibility and terminology choices still require review. |
 | Do not edit root README without explicit authorization; involve the operator in new behavior. | Operator context and review; no source-only check can establish authorization. |
 | Record failed checks before retrying without a repair. | Release-flake issue workflow; no local retry interceptor. |

@@ -34,6 +34,7 @@ use scope_domain::{
     repository::collaboration::{RepositoryInvite, RepositoryMember, RepositoryMemberPermissions},
     repository::credentials::GitPushToken,
     repository::{RepoLifecycleState, RepoRecord, Repository},
+    reviewed_updates::content::ReviewedContentChange,
 };
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_storage::{ContentObjectKind, ObjectStore, put_source_blob};
@@ -593,16 +594,7 @@ async fn receive_pack_access(
     owner: &str,
     repo_name: &str,
 ) -> Result<ReceivePackAccess, crate::error::ApiError> {
-    let (authorization, push_intent) = crate::git::receive_pack_credentials(state, headers).await?;
-    git_receive_use_case::authorize(
-        state,
-        owner,
-        repo_name,
-        &ViewId::private(),
-        authorization,
-        push_intent.as_deref(),
-    )
-    .await
+    crate::git::receive_pack_access(state, headers, owner, repo_name, &ViewId::private()).await
 }
 
 async fn published_staging_repo(state: &AppState) -> PathBuf {
@@ -815,7 +807,7 @@ fn receive_pack_update(state: &AppState, changes: Vec<(&str, Option<&str>)>) -> 
         open_requests_by_view: Default::default(),
         changes: changes
             .into_iter()
-            .map(|(path, content)| ReceivePackFileChange {
+            .map(|(path, content)| ReviewedContentChange {
                 path: repo_scope_path(path).unwrap(),
                 content: content.map(|content| source_blob(state, content)),
             })

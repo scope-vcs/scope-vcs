@@ -132,15 +132,15 @@ fn push_to_main(
                     config_path.display()
                 );
             }
-            Ok(_) => return Err(CliError::new(ErrorResponse::new(ErrorCode::Conflict, format!(
+            Ok(_) => return Err(CliError::conflict(format!(
                 "Scope repo config changed, and local {} has unsynced edits. Run scope visibility edit, resolve the config, then retry scope push --main.", config_path.display()
-            ))).into()),
+            )).into()),
             Err(_) if local_config_hash == push_context.config_hash => {
                 mark_worktree_scope_repo_config_synced(&git_repo.root, &config)?;
             }
-            Err(error) => return Err(CliError::new(ErrorResponse::new(ErrorCode::Conflict, format!(
+            Err(error) => return Err(CliError::conflict(format!(
                 "{error}. Local {} has unsynced edits, so Scope will not overwrite it.", config_path.display()
-            ))).into()),
+            )).into()),
         }
     }
     let local_remote_head = scope_remote_head_oid(git_repo, remote, DEFAULT_SCOPE_BRANCH)?;
@@ -310,11 +310,9 @@ fn ensure_evaluation_poll_remaining(polls: usize) -> anyhow::Result<()> {
 
 fn ensure_push_intent_not_expired(expires_at_unix: u64) -> anyhow::Result<()> {
     if push_intent_expired(expires_at_unix) {
-        return Err(CliError::new(ErrorResponse::new(
-            ErrorCode::Conflict,
-            "Scope push review expired; rerun scope push --main",
-        ))
-        .into());
+        return Err(
+            CliError::conflict("Scope push review expired; rerun scope push --main").into(),
+        );
     }
     Ok(())
 }
@@ -353,11 +351,10 @@ fn ensure_review_base_matches_intent(
     {
         return Ok(());
     }
-    Err(CliError::new(ErrorResponse::new(
-        ErrorCode::Conflict,
-        "Scope changed while preparing push review; rerun scope push --main",
-    ))
-    .into())
+    Err(
+        CliError::conflict("Scope changed while preparing push review; rerun scope push --main")
+            .into(),
+    )
 }
 
 fn ensure_reviewed_base_matches_intent(
@@ -365,10 +362,9 @@ fn ensure_reviewed_base_matches_intent(
     intent_base_head_oid: Option<&str>,
 ) -> anyhow::Result<()> {
     if reviewed_base_oid != intent_base_head_oid {
-        return Err(CliError::new(ErrorResponse::new(
-            ErrorCode::Conflict,
+        return Err(CliError::conflict(
             "Scope changed while preparing push review; rerun scope push --main",
-        ))
+        )
         .into());
     }
     Ok(())
@@ -437,10 +433,9 @@ fn ensure_intent_destination(
     if intent.lands_as_request == lands_as_request {
         return Ok(());
     }
-    Err(CliError::new(ErrorResponse::new(
-        ErrorCode::Conflict,
+    Err(CliError::conflict(
         "your repository access changed while preparing the push; rerun scope push --main",
-    ))
+    )
     .into())
 }
 
@@ -463,11 +458,7 @@ fn push_head_with_intent(
         },
     ) {
         Err(_) if push_intent_expired(intent.expires_at_unix) => {
-            Err(CliError::new(ErrorResponse::new(
-                ErrorCode::Conflict,
-                "Scope push review expired; rerun scope push --main",
-            ))
-            .into())
+            Err(CliError::conflict("Scope push review expired; rerun scope push --main").into())
         }
         result => result,
     }

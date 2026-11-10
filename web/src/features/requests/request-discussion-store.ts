@@ -1,6 +1,6 @@
 import { runRequestContentSubmission } from './request-attachment-drafts'
 import type { RequestParams } from '@/api/types'
-import type { RepoChangeEvent } from '@/api/types.generated'
+import type { RepoChangeEvent, RequestActorSummaryResponse } from '@/api/types.generated'
 import { useRepoChangeSubscription } from '@/features/repo-detail/repo-layout-context'
 import { resourceErrorMessage } from '../../lib/use-cached-resource'
 import {
@@ -29,7 +29,6 @@ import type {
   RequestDiscussionActionInput,
 } from './request-discussion-api'
 import type {
-  RequestActorSummary,
   RequestDiscussion,
   RequestDiscussionChanges,
   RequestDiscussionMutation,
@@ -59,7 +58,7 @@ export function useRequestDiscussionStore({
   viewerId,
 }: {
   actions: RequestDiscussionActions
-  actor: RequestActorSummary
+  actor: RequestActorSummaryResponse
   initialPage: RequestDiscussionPage
   params: RequestParams
   repoId: string
@@ -272,7 +271,7 @@ function optimisticDiscussion({
   clientDiscussionId,
   requestId,
 }: {
-  actor: RequestActorSummary
+  actor: RequestActorSummaryResponse
   body: string
   clientDiscussionId: string
   requestId: string

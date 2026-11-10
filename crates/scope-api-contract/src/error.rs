@@ -21,8 +21,6 @@ pub enum ErrorCode {
     RangeNotSatisfiable,
     RequestTimeout,
     ServiceUnavailable,
-    /// The account owns repositories other members use, listed in
-    /// `fields.repositories`.
     SharedRepositories,
     TooManyRequests,
     Unauthorized,
@@ -59,7 +57,6 @@ pub struct ErrorFields {
     pub installed_protocol: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supported_protocol: Option<u32>,
-    /// Repository ids, as `owner/name`, that the error is about.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub repositories: Vec<String>,
 }

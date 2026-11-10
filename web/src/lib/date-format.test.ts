@@ -46,20 +46,7 @@ test('relative time uses natural wording inside thirty days', () => {
   }
 })
 
-test('relative time falls back to an absolute date past thirty days', () => {
+test('relative time stays relative just inside thirty days', () => {
   const justInside = NOW_SECONDS - (86400 * 30 - 1)
-  const justOutside = NOW_SECONDS - 86400 * 30
   assert.equal(formatRelativeUnix(justInside, NOW_SECONDS), '29 days ago')
-  assert.equal(
-    formatRelativeUnix(justOutside, NOW_SECONDS),
-    formatUnixDate(justOutside),
-  )
-  assert.equal(
-    formatRelativeUnix(justOutside, NOW_SECONDS),
-    'Dec 16, 2025, 12:00 PM',
-  )
-})
-
-test('relative time has the same missing value wording as absolute dates', () => {
-  assert.equal(formatRelativeUnix(null, NOW_SECONDS), 'Not set')
 })

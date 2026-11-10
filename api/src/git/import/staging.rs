@@ -5,22 +5,13 @@ use scope_domain::reviewed_updates::content::{
 };
 use scope_domain::runs::catalog::RepositoryWorkflowCatalog;
 use scope_domain::views::ViewId;
+use scope_domain::{error::DomainError, repo_actions::reviewed_update_domain_error};
 use scope_domain::{
-    content::SourceBlob,
     repository::Repository,
     repository::git::{GitHead, GitPoolPack},
 };
-use scope_domain::{
-    error::DomainError, policy::ScopePath, repo_actions::reviewed_update_domain_error,
-};
 use scope_git::DEFAULT_GIT_BRANCH;
 use std::collections::BTreeMap;
-
-#[derive(Clone, Debug)]
-pub(crate) struct ReceivePackFileChange {
-    pub(crate) path: ScopePath,
-    pub(crate) content: Option<SourceBlob>,
-}
 
 pub(crate) fn ensure_default_branch(branch: &str) -> Result<(), DomainError> {
     let branch = branch.trim();
@@ -48,7 +39,7 @@ pub(crate) struct ReceivePackUpdate {
     pub(crate) main_pack: GitPoolPack,
     pub(crate) workflow_catalog: RepositoryWorkflowCatalog,
     pub(crate) landing_file_mutation: RepositoryLandingFileMutation,
-    pub(crate) changes: Vec<ReceivePackFileChange>,
+    pub(crate) changes: Vec<ReviewedContentChange>,
     pub(crate) previous_config: Option<RepoConfig>,
     pub(crate) base_config_hash: String,
     pub(crate) config: RepoConfig,
@@ -73,14 +64,7 @@ impl ReceivePackUpdate {
             message: self.message,
             git_head: self.git_head,
             main_pack: self.main_pack,
-            changes: self
-                .changes
-                .into_iter()
-                .map(|change| ReviewedContentChange {
-                    path: change.path,
-                    content: change.content,
-                })
-                .collect(),
+            changes: self.changes,
             previous_config: self.previous_config,
             config: self.config,
             open_requests_by_view: self.open_requests_by_view,

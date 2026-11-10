@@ -60,22 +60,13 @@ pub(super) async fn validate(
             .transpose()?,
         lines,
     };
-    ensure_target(
-        state,
-        &context.repo,
-        &context.access,
-        &context.request,
-        &revision,
-        &anchor,
-    )
-    .await?;
+    ensure_target(state, &context.repo, &context.request, &revision, &anchor).await?;
     Ok(anchor)
 }
 
 pub(super) async fn ensure_target(
     state: &AppState,
     repo_context: &RepositoryAccessContext,
-    access: &RepositoryAccess,
     request: &Request,
     revision: &RequestRevision,
     anchor: &RequestDiscussionAnchor,
@@ -90,7 +81,7 @@ pub(super) async fn ensure_target(
         .repository_policy_config(repo_context)
         .await?;
     let inspection_state = state.clone();
-    let access = access.clone();
+    let access = repo_context.access.clone();
     let checked = anchor.clone();
     with_request_revision_store_repo(
         state,

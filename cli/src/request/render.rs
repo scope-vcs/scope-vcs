@@ -198,13 +198,14 @@ fn github_origin(discussion: &RequestDiscussionSummaryResponse) -> String {
 }
 
 pub(super) fn request_line(request: &RequestSummaryResponse) -> String {
-    format_request_line(RequestLine {
-        name: &request.name,
-        id: &request.id,
-        state: request.state,
-        title: &request.title,
-        head_oid: &request.head_oid,
-    })
+    format!(
+        "{:<9}  {} ({}) — {} · head {}",
+        state_label(request.state),
+        terminal_text(&request.name),
+        terminal_text(&request.id),
+        terminal_text(&request.title),
+        short_oid(&request.head_oid)
+    )
 }
 
 pub(super) fn wait_label(submitted_at_unix: u64, now_unix: u64) -> String {
@@ -359,25 +360,6 @@ fn request_activity_lines(activity: &RequestActivityPageResponse) -> Vec<String>
         lines.push(format!("{action} · at {}", event.created_at_unix));
     }
     lines
-}
-
-struct RequestLine<'a> {
-    name: &'a str,
-    id: &'a str,
-    state: RequestState,
-    title: &'a str,
-    head_oid: &'a str,
-}
-
-fn format_request_line(line: RequestLine<'_>) -> String {
-    format!(
-        "{:<9}  {} ({}) — {} · head {}",
-        state_label(line.state),
-        terminal_text(line.name),
-        terminal_text(line.id),
-        terminal_text(line.title),
-        short_oid(line.head_oid)
-    )
 }
 
 fn capabilities_label(permissions: &RequestPermissionsResponse) -> String {

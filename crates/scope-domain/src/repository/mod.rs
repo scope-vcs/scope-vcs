@@ -152,10 +152,6 @@ impl Repository {
         initial_views(&self.visibility_change_sets, self.repo_config.views())
     }
 
-    pub fn is_waiting_for_first_push(&self) -> bool {
-        self.record.lifecycle_state == RepoLifecycleState::AwaitingFirstPush
-    }
-
     pub fn bump_change_version(&mut self) {
         self.record.bump_change_version();
     }

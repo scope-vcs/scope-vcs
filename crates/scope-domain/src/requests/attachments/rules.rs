@@ -648,28 +648,16 @@ fn validate_derivatives(
                 "request attachment derivative metadata is invalid",
             ));
         }
-        let kind_and_media_type_match = match derivative.kind {
-            RequestAttachmentDerivativeKind::ImagePreview
-                if kind == RequestAttachmentKind::Photo =>
-            {
+        let kind_and_media_type_match = match (derivative.kind, kind) {
+            (RequestAttachmentDerivativeKind::ImagePreview, RequestAttachmentKind::Photo)
+            | (RequestAttachmentDerivativeKind::VideoPoster, RequestAttachmentKind::Video) => {
                 RequestAttachmentKind::from_media_type(&derivative.media_type)
                     == Some(RequestAttachmentKind::Photo)
                     && derivative.width.is_some()
                     && derivative.height.is_some()
                     && derivative.duration_millis.is_none()
             }
-            RequestAttachmentDerivativeKind::VideoPoster
-                if kind == RequestAttachmentKind::Video =>
-            {
-                RequestAttachmentKind::from_media_type(&derivative.media_type)
-                    == Some(RequestAttachmentKind::Photo)
-                    && derivative.width.is_some()
-                    && derivative.height.is_some()
-                    && derivative.duration_millis.is_none()
-            }
-            RequestAttachmentDerivativeKind::VideoPlayback
-                if kind == RequestAttachmentKind::Video =>
-            {
+            (RequestAttachmentDerivativeKind::VideoPlayback, RequestAttachmentKind::Video) => {
                 derivative.media_type.eq_ignore_ascii_case("video/mp4")
                     && derivative.width.is_some()
                     && derivative.height.is_some()

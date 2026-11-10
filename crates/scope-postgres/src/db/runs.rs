@@ -11,7 +11,7 @@ use crate::error::PostgresError;
 use scope_domain::{
     repository::RepositoryIncarnation,
     runs::{
-        attempt::RunAttempt,
+        attempt::{AttemptState, RunAttempt},
         job::{RunJob, create_run_jobs, request_run_cancellation, retry_run},
         run::Run,
         step::{AttemptConclusion, RunAttemptStep},
@@ -165,8 +165,12 @@ impl RunStore {
             .saturating_sub(scope_domain::runs::attempt::MAX_RUN_ATTEMPT_AGE_SECONDS as i64);
         Ok(entities::run_attempt::Entity::find()
             .filter(
-                entities::run_attempt::Column::State
-                    .is_in(["dispatching".to_string(), "running".to_string()]),
+                entities::run_attempt::Column::State.is_in(
+                    AttemptState::ALL
+                        .into_iter()
+                        .filter(|state| !state.is_terminal())
+                        .map(AttemptState::as_str),
+                ),
             )
             .filter(
                 entities::run_attempt::Column::LeaseExpiresAtUnix

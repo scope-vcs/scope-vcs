@@ -216,15 +216,12 @@ async fn deleting_an_account_keeps_its_work_in_other_repositories() {
 
     let refused = store
         .auth()
-        .resolve_clerk_user(
-            &ExternalIdentity {
-                provider: "clerk".into(),
-                subject: "user_clerk_leaver".into(),
-                email: Some(leaver.email.clone()),
-                email_verified: true,
-            },
-            11,
-        )
+        .resolve_clerk_user(&ExternalIdentity {
+            provider: "clerk".into(),
+            subject: "user_clerk_leaver".into(),
+            email: Some(leaver.email.clone()),
+            email_verified: true,
+        })
         .await
         .unwrap_err();
     assert_eq!(refused.kind, PostgresErrorKind::Unauthenticated);

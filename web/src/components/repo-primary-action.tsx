@@ -4,80 +4,36 @@ import { ArrowRight } from 'lucide-react'
 import type { ComponentProps } from 'react'
 import type { RepoSummaryResponse } from '@/api/types.generated'
 
-type RepoActionRoute =
-  | '/$owner/$repo'
-  | '/$owner/$repo/settings'
-
 type RepoPrimaryAction = {
   label: string
-  to: RepoActionRoute
-}
-
-type RepoAttentionAction = {
-  icon: 'init'
-  label: string
-  primaryLabel: string
-  to: RepoActionRoute
-}
-
-type RepoPrimaryActionOptions = {
-  includeOpen?: boolean
-  requireOwner?: boolean
+  to: '/$owner/$repo/settings'
 }
 
 function repoPrimaryAction(
   repo: RepoSummaryResponse,
-  {
-    includeOpen = true,
-    requireOwner = false,
-  }: RepoPrimaryActionOptions = {},
+  requireOwner = false,
 ): RepoPrimaryAction | null {
   if (requireOwner && repo.access.actor !== 'Owner') {
     return null
   }
 
-  const attentionAction = repoAttentionAction(repo)
-  if (attentionAction) {
-    return {
-      label: attentionAction.primaryLabel,
-      to: attentionAction.to,
-    }
-  }
-
-  return includeOpen ? { label: 'Open', to: '/$owner/$repo' } : null
-}
-
-function repoAttentionAction(
-  repo: RepoSummaryResponse,
-): RepoAttentionAction | null {
-  if (repo.lifecycle_state === 'AwaitingFirstPush') {
-    if (repo.access.actor !== 'Owner') {
-      return null
-    }
-
-    return {
-      icon: 'init',
-      label: 'Initialization incomplete',
-      primaryLabel: 'Clean up',
-      to: '/$owner/$repo/settings',
-    }
+  if (repo.lifecycle_state === 'AwaitingFirstPush' && repo.access.actor === 'Owner') {
+    return { label: 'Clean up', to: '/$owner/$repo/settings' }
   }
 
   return null
 }
 
 export function RepoPrimaryActionButton({
-  includeOpen,
   repo,
   requireOwner,
   variant = 'secondary',
 }: {
-  includeOpen?: boolean
   repo: RepoSummaryResponse
   requireOwner?: boolean
   variant?: ComponentProps<typeof Button>['variant']
 }) {
-  const action = repoPrimaryAction(repo, { includeOpen, requireOwner })
+  const action = repoPrimaryAction(repo, requireOwner)
 
   if (!action) {
     return null

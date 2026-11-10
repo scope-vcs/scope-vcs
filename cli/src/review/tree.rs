@@ -99,11 +99,6 @@ impl ReviewTree {
     }
 
     pub fn file_paths_under(&self, id: usize) -> Vec<&str> {
-        let node = self.node(id);
-        if node.kind == ReviewNodeKind::File {
-            return vec![node.path.as_str()];
-        }
-
         let mut paths = Vec::new();
         self.collect_file_paths(id, &mut paths);
         paths

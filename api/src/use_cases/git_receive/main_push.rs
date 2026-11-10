@@ -51,17 +51,17 @@ pub(super) async fn prepare_main_push(
     staging_repo: &Path,
     access: &ReceivePackAccess,
 ) -> Result<(PreparedReceivePackUpdate, usize), ApiError> {
-    let (author_id, push_intent, first_push) = match access {
+    let (author_id, push_intent, mode) = match access {
         ReceivePackAccess::FirstPush {
             author_id,
             push_intent,
             ..
-        } => (author_id, push_intent, true),
+        } => (author_id, push_intent, ReviewedUpdateMode::FirstPush),
         ReceivePackAccess::ReadyMember {
             author_id,
             push_intent,
             ..
-        } => (author_id, push_intent, false),
+        } => (author_id, push_intent, ReviewedUpdateMode::ReadyPush),
         ReceivePackAccess::ViewMainPusher { .. } | ReceivePackAccess::RequestContributor { .. } => {
             return Err(ApiError::bad_request(
                 "only pushes through the full view update main directly",
@@ -69,29 +69,16 @@ pub(super) async fn prepare_main_push(
         }
     };
     let canonical_intent = push_intent.canonical()?;
-    let mut prepared = if first_push {
-        reviewed_update_from_staging_repo(
-            state,
-            owner,
-            repo_name,
-            staging_repo,
-            author_id,
-            canonical_intent.config.clone(),
-            ReviewedUpdateMode::FirstPush,
-        )
-        .await?
-    } else {
-        reviewed_update_from_staging_repo(
-            state,
-            owner,
-            repo_name,
-            staging_repo,
-            author_id,
-            canonical_intent.config.clone(),
-            ReviewedUpdateMode::ReadyPush,
-        )
-        .await?
-    };
+    let mut prepared = reviewed_update_from_staging_repo(
+        state,
+        owner,
+        repo_name,
+        staging_repo,
+        author_id,
+        canonical_intent.config.clone(),
+        mode,
+    )
+    .await?;
     prepared.base_git_frontier = Some(
         match canonical_intent.base_for_head(push_intent, &prepared.head_oid) {
             Ok(base) => base,

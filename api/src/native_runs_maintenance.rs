@@ -42,9 +42,11 @@ pub async fn run_native_runs_command_for_maintenance(
     let json = match command {
         NativeRunsCommand::List => {
             serde_json::to_string(&NativeRunsAccountListResponse::from_listings(
-                native_runs::list_accounts(&metadata)
+                metadata
+                    .native_runs()
+                    .accounts()
                     .await
-                    .map_err(operator_error)?,
+                    .map_err(|error| operator_error(error.into()))?,
             ))?
         }
         NativeRunsCommand::Add { handle, note } => {

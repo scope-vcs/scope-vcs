@@ -308,7 +308,6 @@ function useRequestChangesModel({
   const {
     aggregate,
     commits,
-    diffMode,
     error: inspectionError,
     mode,
     selectedCommit,
@@ -322,7 +321,7 @@ function useRequestChangesModel({
   )
   const selectedRevisionId = selectedRevision?.id ?? null
   const generation = selectedCommitOid ? `${selectedRevision?.position ?? 0}` : `${aggregate?.base_oid ?? ''}:${aggregate?.head_oid ?? ''}`
-  const revisionKey = `request:${params.request_id}:${selectedRevision?.id ?? 'none'}:${diffMode}`
+  const revisionKey = `request:${params.request_id}:${selectedRevision?.id ?? 'none'}:${mode}`
   const selectedFilePath = search.path ?? null
   const selectedFile = selectedCommit?.files.find(
     ({ path }) => path === selectedFilePath,
@@ -342,19 +341,19 @@ function useRequestChangesModel({
     : null
   const loadSelectedDiff = useCallback(
     async (budget: ReviewDiffRenderBudget, signal: AbortSignal) => {
-      if (!selectedRevisionId || !selectedFilePath || diffMode === 'commit' && !selectedCommitOid) {
+      if (!selectedRevisionId || !selectedFilePath || mode === 'commit' && !selectedCommitOid) {
         throw new Error('Select a changed file.')
       }
       return loadDiff({
         ...params,
         budget,
-        comparison: diffMode,
+        comparison: mode,
         commit_oid: selectedCommitOid ?? undefined,
         path: selectedFilePath,
         revision_id: selectedRevisionId,
       }, signal)
     },
-    [loadDiff, params, selectedCommitOid, selectedFilePath, selectedRevisionId, diffMode],
+    [loadDiff, params, selectedCommitOid, selectedFilePath, selectedRevisionId, mode],
   )
   const diffResource = useReviewFileDiffResource({
     fallbackError: 'Request file diff is unavailable.',

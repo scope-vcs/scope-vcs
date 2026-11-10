@@ -54,7 +54,6 @@ export function RepoHomePage({
               />
             ) : content.status === 'loading' && <BlockSkeleton className="h-8 w-24" />)}
             <RepoPrimaryActionButton
-              includeOpen={false}
               repo={repo}
               requireOwner
               variant="default"

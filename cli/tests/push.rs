@@ -226,7 +226,6 @@ fn ctrl_c_during_delayed_login_validation_exits_before_publish() {
     assert!(request_started.load(Ordering::Acquire));
 
     let cancelled_at = Instant::now();
-    // SAFETY: child.id() names the live CLI subprocess created above.
     assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
     let status = wait_for_exit(
         &mut child,
@@ -257,7 +256,6 @@ fn spawn_in_terminal(mut command: Command) -> (File, Child) {
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    // SAFETY: openpty initializes both file descriptors, which are immediately owned by File.
     assert_eq!(
         unsafe {
             libc::openpty(
@@ -270,7 +268,6 @@ fn spawn_in_terminal(mut command: Command) -> (File, Child) {
         },
         0
     );
-    // SAFETY: openpty returned two new, valid, owned descriptors.
     let terminal_output = unsafe { File::from_raw_fd(master_fd) };
     let terminal = unsafe { File::from_raw_fd(slave_fd) };
     command
@@ -346,7 +343,6 @@ fn browser_login_instructions_remain_readable_and_cancellable() {
         std::thread::sleep(Duration::from_millis(10));
     }
     std::thread::sleep(Duration::from_millis(700));
-    // SAFETY: child.id() is the live CLI subprocess created by this test.
     assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGINT) }, 0);
     let status = wait_for_exit(
         &mut child,

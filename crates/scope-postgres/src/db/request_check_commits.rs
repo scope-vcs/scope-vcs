@@ -2,13 +2,14 @@ use super::{
     RequestStore, entities,
     request_checks::{
         evaluation_for_head, queue_tested_commit_push, save_evaluation, select_current_evaluation,
+        stop_auto_merge_for_evaluation,
     },
 };
 use crate::error::PostgresError;
-use scope_domain::requests::{
-    GitHubTestedCommit, Request, RequestCheckPlan, stop_request_auto_merge_for_check_evaluation,
+use scope_domain::requests::{GitHubTestedCommit, Request, RequestCheckPlan};
+use sea_orm::{
+    ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, Statement, TransactionTrait,
 };
-use sea_orm::{ConnectionTrait, DatabaseBackend, EntityTrait, Statement, TransactionTrait};
 
 use super::request_checks::RequestChecksMutation;
 
@@ -89,21 +90,7 @@ impl RequestStore {
         let queued_github_push = push_to_github
             && queue_tested_commit_push(&tx, &request, &evaluation.tested_oid, command.now_unix)
                 .await?;
-        if let Some(stored) = active_auto_merge
-            && let Some(stopped) = stop_request_auto_merge_for_check_evaluation(
-                &request,
-                &stored.intent,
-                &evaluation,
-                super::request_auto_merge::automatic_event_id("stopped", &stored.intent.id),
-            )?
-        {
-            super::request_auto_merge::persist_existing_auto_merge_mutation(
-                &tx,
-                stored.model,
-                &stopped,
-            )
-            .await?;
-        }
+        stop_auto_merge_for_evaluation(&tx, active_auto_merge, &request, &evaluation).await?;
         tx.commit().await?;
         Ok(Some(RequestChecksMutation {
             evaluation,
@@ -117,12 +104,10 @@ impl RequestStore {
         &self,
         repo_id: &str,
     ) -> Result<Vec<Request>, PostgresError> {
-        let ids = self
-            .db
-            .query_all_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                r#"
-                SELECT request.id
+        entities::request::Model::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+                SELECT request.*
                   FROM scope_request_check_evaluations evaluation
                   JOIN scope_requests request
                     ON request.id = evaluation.request_id
@@ -136,23 +121,13 @@ impl RequestStore {
                    AND evaluation.check_private_main_oid <> head.head_oid
                  ORDER BY request.id
                 "#,
-                [repo_id.into()],
-            ))
-            .await?
-            .into_iter()
-            .map(|row| {
-                row.try_get::<String>("", "id")
-                    .map_err(PostgresError::internal)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut requests = Vec::with_capacity(ids.len());
-        for id in ids {
-            if let Some(request) = super::request_rows::request_by_id(self.db.as_ref(), &id).await?
-            {
-                requests.push(request);
-            }
-        }
-        Ok(requests)
+            [repo_id.into()],
+        ))
+        .all(self.db.as_ref())
+        .await?
+        .into_iter()
+        .map(entities::request::Model::try_into_domain)
+        .collect()
     }
 }
 
