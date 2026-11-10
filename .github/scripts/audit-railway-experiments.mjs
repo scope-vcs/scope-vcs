@@ -3,7 +3,9 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { previewPullRequestNumber } from "./preview-environment-identity.mjs";
+import { previewEnvironmentPullRequest } from "./preview-environment-identity.mjs";
+import { previewRequested } from "./preview-pull-request.mjs";
+import { railwayEnvironmentInventory } from "./railway-environment-inventory.mjs";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function utcTimestamp(value) {
@@ -16,23 +18,8 @@ function utcTimestamp(value) {
 export function auditRailwayExperiments({ manifest, registry, project, pullRequests = [], now = Date.now() }) {
   const issues = [];
   if (!Number.isFinite(now)) throw new Error("Audit time must be valid");
-  const protectedIds = ["production", "staging"].map(name => manifest.environments?.[name]?.environmentId);
-  if (protectedIds.some(id => !uuid.test(id ?? "")) || new Set(protectedIds).size !== 2) {
-    throw new Error("Manifest must identify distinct production and staging environments");
-  }
-  if (project?.id !== manifest.railway?.projectId || !Array.isArray(project.environments?.edges)) {
-    throw new Error("Railway response must identify the manifest project and its environments");
-  }
-  if (project.environments.pageInfo?.hasNextPage !== false) {
-    throw new Error("Railway environment inventory is incomplete; all environments must be audited");
-  }
+  const { environments, protectedIds, liveIds } = railwayEnvironmentInventory(manifest, project);
   if (!registry || typeof registry !== "object" || Array.isArray(registry)) throw new Error("Experiment registry must be an object keyed by provider environment ID");
-  const environments = project.environments.edges.map(({ node }) => node);
-  const liveIds = new Set();
-  for (const environment of environments) {
-    if (!uuid.test(environment?.id ?? "") || liveIds.has(environment.id)) throw new Error("Railway returned an invalid or duplicate environment ID");
-    liveIds.add(environment.id);
-  }
   for (const id of protectedIds) if (!liveIds.has(id)) issues.push(`Protected environment ${id} is missing`);
   for (const [id, entry] of Object.entries(registry)) {
     if (!uuid.test(id)) issues.push(`Registry key ${id} is not an exact provider environment ID`);
@@ -45,10 +32,8 @@ export function auditRailwayExperiments({ manifest, registry, project, pullReque
   }
   const experiments = environments.filter(environment => {
     if (protectedIds.includes(environment.id)) return false;
-    const number = previewPullRequestNumber(environment.name);
-    return !(number !== null && environment.isEphemeral === true &&
-      environment.sourceEnvironment?.id === manifest.environments.staging.environmentId &&
-      pullRequests.some(pr => pr.number === number && pr.state === "open"));
+    const number = previewEnvironmentPullRequest(manifest, environment);
+    return !(number !== null && pullRequests.some(pr => pr.number === number && previewRequested(pr)));
   });
   for (const environment of experiments) {
     const match = /^test-[a-z0-9]+(?:-[a-z0-9]+)*-(\d{4})(\d{2})(\d{2})$/.exec(environment.name ?? "");

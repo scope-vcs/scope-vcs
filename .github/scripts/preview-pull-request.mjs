@@ -2,14 +2,19 @@
 
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { previewEnvironmentPullRequest } from './preview-environment-identity.mjs';
+import { railwayEnvironmentInventory } from './railway-environment-inventory.mjs';
 
 export const PREVIEW_LABEL = 'preview';
 const SHA = /^[0-9a-f]{40}$/;
 const PULL_REQUEST = /^[1-9][0-9]{0,8}$/;
 
+export function previewRequested(pull) {
+  return pull.state === 'open' && pull.labels?.some(({ name }) => name === PREVIEW_LABEL) === true;
+}
+
 export function qualifiesForPreview(pull, repository) {
-  return pull.state === 'open' && pull.base?.ref === 'main' && pull.head?.repo?.full_name === repository &&
-    pull.labels?.some(({ name }) => name === PREVIEW_LABEL) === true;
+  return previewRequested(pull) && pull.base?.ref === 'main' && pull.head?.repo?.full_name === repository;
 }
 
 export async function buildAction({ run, repository, sourceSha, request }) {
@@ -43,9 +48,25 @@ export async function buildAction({ run, repository, sourceSha, request }) {
 export async function cleanupAction({ pullRequest, repository, request }) {
   if (!PULL_REQUEST.test(String(pullRequest))) throw new Error('A positive pull request number is required.');
   const pull = await request(`/repos/${repository}/pulls/${pullRequest}`);
-  return qualifiesForPreview(pull, repository)
+  if (!['open', 'closed'].includes(pull?.state) || !Array.isArray(pull.labels) ||
+      !pull.labels.every(label => typeof label?.name === 'string')) {
+    throw new Error(`GitHub did not confirm the state and labels of pull request #${pullRequest}.`);
+  }
+  return previewRequested(pull)
     ? { action: 'skip', reason: `pull request #${pullRequest} qualifies for a preview again` }
     : { action: 'delete', pullRequest: Number(pullRequest) };
+}
+
+export async function reconcileAction({ manifest, project, repository, request }) {
+  const { environments } = railwayEnvironmentInventory(manifest, project);
+  const candidates = new Set(environments.map(environment => previewEnvironmentPullRequest(manifest, environment))
+    .filter(number => number !== null));
+  const pullRequests = [];
+  for (const pullRequest of candidates) {
+    const result = await cleanupAction({ pullRequest, repository, request });
+    if (result.action === 'delete') pullRequests.push(pullRequest);
+  }
+  return { action: pullRequests.length ? 'delete' : 'skip', pullRequests };
 }
 
 async function githubRequest(path) {
@@ -67,12 +88,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       result = await buildAction({ run, repository, sourceSha, request: githubRequest });
     } else if (command === 'cleanup') {
       result = await cleanupAction({ pullRequest: target, repository, request: githubRequest });
+    } else if (command === 'reconcile') {
+      const manifest = JSON.parse(readFileSync('.github/deployment-services.json', 'utf8'));
+      const project = JSON.parse(readFileSync(target, 'utf8')).data?.project;
+      result = await reconcileAction({ manifest, project, repository, request: githubRequest });
     } else {
-      throw new Error('usage: preview-pull-request.mjs build [prepared-release.json] | cleanup <pull-request-number>');
+      throw new Error('usage: preview-pull-request.mjs build [prepared-release.json] | cleanup <pull-request-number> | reconcile <railway-environments.json>');
     }
-    console.log(result.reason ? `${result.action}: ${result.reason}.` : `${result.action}: pull request #${result.pullRequest}.`);
+    console.log(JSON.stringify(result));
     appendFileSync(process.env.GITHUB_OUTPUT,
-      `action=${result.action}\npull_request=${result.pullRequest ?? ''}\nsource_sha=${result.sourceSha ?? ''}\n`);
+      `action=${result.action}\npull_request=${result.pullRequest ?? ''}\nsource_sha=${result.sourceSha ?? ''}\npull_requests=${JSON.stringify(result.pullRequests ?? [])}\n`);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

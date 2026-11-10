@@ -14,8 +14,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  audit:
+  reconcile:
+    name: Plan stale preview cleanup
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: production
+    outputs:
+      pull_requests: ${{ steps.plan.outputs.pull_requests }}
+    steps:
+      - name: Checkout main cleanup policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: .github
+      - name: Read Railway environment identities
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: bash .github/scripts/read-railway-environments.sh > "$RUNNER_TEMP/railway-environments.json"
+      - name: Plan cleanup from current pull requests
+        id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/preview-pull-request.mjs reconcile "$RUNNER_TEMP/railway-environments.json"
+
+  cleanup:
+    name: Reconcile preview environment
+    needs: reconcile
+    if: needs.reconcile.outputs.pull_requests != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        pull_request: ${{ fromJSON(needs.reconcile.outputs.pull_requests) }}
+    uses: ./.github/workflows/preview-environment-cleanup.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      pull_request: ${{ matrix.pull_request }}
+
+  audit:
+    needs: [reconcile, cleanup]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: production
@@ -29,18 +70,11 @@ jobs:
       - name: Read Railway environment identities
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          source .github/scripts/railway-graphql.sh
-          project_id="$(jq -er '.railway.projectId' .github/deployment-services.json)"
-          # shellcheck disable=SC2016
-          query='query($id:String!){project(id:$id){id environments(first:100){pageInfo{hasNextPage} edges{node{id name createdAt isEphemeral sourceEnvironment{id}}}}}}'
-          railway_graphql read "$query" "$(jq -cn --arg id "$project_id" '{id:$id}')" > "$RUNNER_TEMP/railway-environments.json"
+        run: bash .github/scripts/read-railway-environments.sh > "$RUNNER_TEMP/railway-environments.json"
       - name: Read open pull requests
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" | jq 'add | map({number, state})' > "$RUNNER_TEMP/open-pull-requests.json"
+        run: gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" | jq 'add | map({number, state, labels})' > "$RUNNER_TEMP/open-pull-requests.json"
       - name: Audit experiment owners and expiry
         run: node .github/scripts/audit-railway-experiments.mjs "$RUNNER_TEMP/railway-environments.json" "$RUNNER_TEMP/open-pull-requests.json"

@@ -71,8 +71,8 @@ test("incomplete or unconfirmed inventory fails instead of hiding experiments", 
   assert.throws(() => auditRailwayExperiments(f), /inventory is incomplete/);
 });
 
-test("only ephemeral staging previews for open pull requests bypass experiment policy", () => {
-  const preview = (overrides = {}, pullRequests = [{number: 42, state: "open"}]) => {
+test("only ephemeral staging previews for open labeled pull requests bypass experiment policy", () => {
+  const preview = (overrides = {}, pullRequests = [{number: 42, state: "open", labels: [{name: "preview"}]}]) => {
     const f = fixture();
     f.pullRequests = pullRequests;
     f.project.environments.edges.push({node: {id, name: "pr-42", isEphemeral: true,
@@ -84,6 +84,7 @@ test("only ephemeral staging previews for open pull requests bypass experiment p
   });
   for (const f of [
     preview({}, [{number: 42, state: "closed"}]),
+    preview({}, [{number: 42, state: "open", labels: []}]),
     preview({}, []),
     preview({isEphemeral: false}),
     preview({sourceEnvironment: {id: manifest.environments.production.environmentId}}),
