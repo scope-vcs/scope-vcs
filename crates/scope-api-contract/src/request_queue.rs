@@ -17,30 +17,22 @@ pub struct RequestQueuePageResponse {
 pub struct RequestQueueItemResponse {
     pub attention_at_unix: u64,
     pub request: RequestListItemResponse,
-    /// Null once that account is deleted; clients show a deleted user.
     pub author: Option<RequestActorSummaryResponse>,
     pub attention: RequestAttentionResponse,
     pub claimer: Option<RequestActorSummaryResponse>,
-    /// What the viewer does next: mergeability on their own requests, attention on others'.
     pub next_step: RequestQueueNextStep,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestAttentionResponse {
-    /// The viewer's group for this request on its own. Group counts and flat
-    /// lists use it.
     pub group: RequestQueueGroup,
-    /// The group a view that draws stacks together shows this row in. A
-    /// waiting request moves to Needs you when another request in its stack
-    /// on the same queue page needs the viewer; otherwise this equals `group`.
     pub stack_group: RequestQueueGroup,
     pub state: RequestAttentionState,
     pub reason: RequestAttentionReason,
     pub activity_version: u64,
     pub through_activity_version: u64,
     pub snoozed_until_unix: Option<u64>,
-    /// Counts the writes to the viewer's attention record; zero without one.
     pub revision: u64,
     pub can_claim: bool,
     pub can_set_aside: bool,
@@ -53,7 +45,6 @@ pub struct RequestAttentionResponse {
 pub struct RequestAttentionMutationResponse {
     pub attention: RequestAttentionResponse,
     pub claimer: Option<RequestActorSummaryResponse>,
-    /// The queue row's next step after this change.
     pub next_step: RequestQueueNextStep,
 }
 

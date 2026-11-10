@@ -319,7 +319,7 @@ fn explain_stale_attention(
     if refusal.response().code != ErrorCode::Conflict {
         return error;
     }
-    let Ok(current) = get_request(api, target.owner, target.repo, target.request_id) else {
+    let Ok(current) = get_request(api, target) else {
         return error;
     };
     let current_version = current.request.activity_version;

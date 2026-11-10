@@ -57,9 +57,9 @@ pub(crate) async fn ensure_request_ref_is_view_safe(
     let (view_main_oid, visible_paths) =
         fetch_current_view_projection(request_view, state, staging_repo).await?;
     ensure_request_branch_is_based_on_view_main(request_view, staging_repo, new_head_oid)?;
-    let commit_oids = commits_after(staging_repo, VIEW_REQUEST_BASE_REF, new_head_oid)?;
+    let commit_oids = commits_after(staging_repo, new_head_oid)?;
     validated_view_parent_oids(request_view.name(), staging_repo, &commit_oids)?;
-    let commits = validated_changed_paths_by_commit(staging_repo, commit_oids)?;
+    let commits = validated_changed_paths_by_commit(staging_repo, &view_main_oid, commit_oids)?;
     let history = changed_path_history(request_view.git, state, &commits).await?;
     let policy = request_view_paths(request_view, repo_config, &visible_paths, &history);
     for (_, paths) in &commits {
@@ -78,7 +78,7 @@ pub(crate) async fn validate_view_request_merge_range(
     let (base_oid, visible_paths) =
         fetch_current_view_projection(request_view, state, staging_repo).await?;
     ensure_view_head_is_request_ancestor(staging_repo, request_head_oid)?;
-    let commit_oids = commits_after(staging_repo, VIEW_REQUEST_BASE_REF, request_head_oid)?;
+    let commit_oids = commits_after(staging_repo, request_head_oid)?;
     let view_name = request_view.name();
     if commit_oids.is_empty() {
         return Err(ApiError::conflict(format!(
@@ -90,7 +90,7 @@ pub(crate) async fn validate_view_request_merge_range(
         return Err(ApiError::conflict(VIEW_MAIN_MOVED_ERROR));
     }
 
-    let changed = validated_changed_paths_by_commit(staging_repo, commit_oids)?;
+    let changed = validated_changed_paths_by_commit(staging_repo, &base_oid, commit_oids)?;
     let history = changed_path_history(request_view.git, state, &changed).await?;
     let policy = request_view_paths(request_view, repo_config, &visible_paths, &history);
     let mut commits = Vec::with_capacity(changed.len());
@@ -142,14 +142,7 @@ fn validated_view_parent_oids(
     let mut seen = BTreeSet::new();
     let mut view_parent_oids = BTreeSet::new();
     for commit_oid in commit_oids {
-        let parent_oids = git_stdout_text(
-            staging_repo,
-            &["show", "-s", "--format=%P", commit_oid],
-            "reading request commit parents",
-        )?
-        .split_ascii_whitespace()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
+        let parent_oids = commit_parent_oids(staging_repo, commit_oid)?;
         if parent_oids.is_empty() {
             return Err(based_on_view_main());
         }
@@ -213,7 +206,7 @@ async fn fetch_current_view_projection(
         ],
         "fetching the request view base",
     )?;
-    let base_oid = git_commit_oid(staging_repo, VIEW_REQUEST_BASE_REF)?;
+    let base_oid = view_request_base_oid(staging_repo)?;
     Ok((base_oid, view_tree_paths(staging_repo)?))
 }
 
@@ -258,12 +251,8 @@ fn ensure_request_branch_is_based_on_view_main(
     )))
 }
 
-fn commits_after(
-    staging_repo: &FsPath,
-    base: &str,
-    new_head_oid: &str,
-) -> Result<Vec<String>, ApiError> {
-    let exclude_base = format!("^{base}");
+fn commits_after(staging_repo: &FsPath, new_head_oid: &str) -> Result<Vec<String>, ApiError> {
+    let exclude_base = format!("^{VIEW_REQUEST_BASE_REF}");
     Ok(git_stdout_text(
         staging_repo,
         &[
@@ -308,26 +297,33 @@ fn native_request_commit(
     )?
     .trim()
     .to_string();
-    let parents = git_stdout_text(
-        staging_repo,
-        &["show", "-s", "--format=%P", commit_oid],
-        "reading request commit parents",
-    )?;
     Ok(NativeRequestCommit {
         oid: commit_oid.to_string(),
-        parent_oids: parents
-            .split_ascii_whitespace()
-            .map(ToString::to_string)
-            .collect(),
+        parent_oids: commit_parent_oids(staging_repo, commit_oid)?,
         tree_oid,
         changed_paths,
     })
 }
 
-fn git_commit_oid(staging_repo: &FsPath, revision: &str) -> Result<String, ApiError> {
+fn commit_parent_oids(staging_repo: &FsPath, commit_oid: &str) -> Result<Vec<String>, ApiError> {
+    Ok(git_stdout_text(
+        staging_repo,
+        &["show", "-s", "--format=%P", commit_oid],
+        "reading request commit parents",
+    )?
+    .split_ascii_whitespace()
+    .map(ToString::to_string)
+    .collect())
+}
+
+fn view_request_base_oid(staging_repo: &FsPath) -> Result<String, ApiError> {
     git_stdout_text(
         staging_repo,
-        &["rev-parse", "--verify", &format!("{revision}^{{commit}}")],
+        &[
+            "rev-parse",
+            "--verify",
+            &format!("{VIEW_REQUEST_BASE_REF}^{{commit}}"),
+        ],
         "reading current request view main",
     )
     .map(|oid| oid.trim().to_string())
@@ -335,13 +331,14 @@ fn git_commit_oid(staging_repo: &FsPath, revision: &str) -> Result<String, ApiEr
 
 fn validated_changed_paths_by_commit(
     staging_repo: &FsPath,
+    view_base_oid: &str,
     commit_oids: Vec<String>,
 ) -> Result<Vec<(String, Vec<String>)>, ApiError> {
     commit_oids
         .into_iter()
         .map(|commit_oid| {
             validate_pushed_tree(staging_repo, &commit_oid)?;
-            let paths = request_changed_paths(staging_repo, &commit_oid)?;
+            let paths = request_changed_paths(staging_repo, view_base_oid, &commit_oid)?;
             Ok((commit_oid, paths))
         })
         .collect()
@@ -399,16 +396,12 @@ fn ensure_view_request_commit_paths(
     Ok(changed_paths.into_iter().collect())
 }
 
-fn request_changed_paths(staging_repo: &FsPath, commit_oid: &str) -> Result<Vec<String>, ApiError> {
-    let view_base_oid = git_commit_oid(staging_repo, VIEW_REQUEST_BASE_REF)?;
-    let parents = git_stdout_text(
-        staging_repo,
-        &["show", "-s", "--format=%P", commit_oid],
-        "reading request commit parents",
-    )?
-    .split_ascii_whitespace()
-    .map(ToString::to_string)
-    .collect::<Vec<_>>();
+fn request_changed_paths(
+    staging_repo: &FsPath,
+    view_base_oid: &str,
+    commit_oid: &str,
+) -> Result<Vec<String>, ApiError> {
+    let parents = commit_parent_oids(staging_repo, commit_oid)?;
     let diff_base = parents
         .iter()
         .find(|parent| parent.as_str() == view_base_oid)

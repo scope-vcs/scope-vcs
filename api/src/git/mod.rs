@@ -146,21 +146,7 @@ pub(crate) async fn git_info_refs(
     };
     match query.service.as_deref() {
         Some(GIT_RECEIVE_PACK) => {
-            let (authorization, push_intent) =
-                match receive_pack_credentials(&state, &headers).await {
-                    Ok(credentials) => credentials,
-                    Err(error) => return git_error_response(error),
-                };
-            let access = match git_receive::authorize(
-                &state,
-                &org,
-                &repo,
-                &view,
-                authorization,
-                push_intent.as_deref(),
-            )
-            .await
-            {
+            let access = match receive_pack_access(&state, &headers, &org, &repo, &view).await {
                 Ok(access) => access,
                 Err(error) => return git_error_response(error),
             };
@@ -170,7 +156,7 @@ pub(crate) async fn git_info_refs(
             };
             let work = async move {
                 let _permit = permit;
-                handle_git_receive_pack(&state, &org, &repo, "GET", Vec::new(), None, access).await
+                handle_git_receive_pack(&state, &org, &repo, access).await
             };
             let operation = tokio::spawn(work.in_current_span());
             match operation.await {
@@ -192,7 +178,7 @@ pub(crate) async fn git_info_refs(
                     upload::fetch_folder::capabilities(&state, &headers, &org, &repo, &view).await
                 }
                 GitProtocol::V0 => {
-                    git_upload_pack_repo_for_request(
+                    upload::fetch_folder::prepare(
                         &state,
                         &headers,
                         &org,
@@ -249,20 +235,7 @@ pub(crate) async fn git_receive_pack(
         Err(error) => return git_error_response(error),
     };
     let headers = request.headers().clone();
-    let (authorization, push_intent) = match receive_pack_credentials(&state, &headers).await {
-        Ok(credentials) => credentials,
-        Err(error) => return git_error_response(error),
-    };
-    let access = match git_receive::authorize(
-        &state,
-        &org,
-        &repo,
-        &view,
-        authorization,
-        push_intent.as_deref(),
-    )
-    .await
-    {
+    let access = match receive_pack_access(&state, &headers, &org, &repo, &view).await {
         Ok(access) => access,
         Err(error) => return git_error_response(error),
     };
@@ -477,15 +450,26 @@ pub(crate) fn decode_git_request_body(
     Ok(decoded)
 }
 
-pub(crate) async fn receive_pack_credentials(
+pub(crate) async fn receive_pack_access(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<(ReceivePackAuthorization, Option<String>), ApiError> {
-    Ok((
-        receive_pack_authorization(state, headers).await?,
-        optional_push_intent_from_headers(headers)?,
-    ))
+    owner: &str,
+    repo_name: &str,
+    view: &ViewId,
+) -> Result<ReceivePackAccess, ApiError> {
+    let authorization = receive_pack_authorization(state, headers).await?;
+    let push_intent = optional_push_intent_from_headers(headers)?;
+    git_receive::authorize(
+        state,
+        owner,
+        repo_name,
+        view,
+        authorization,
+        push_intent.as_deref(),
+    )
+    .await
 }
+
 fn optional_push_intent_from_headers(headers: &HeaderMap) -> Result<Option<String>, ApiError> {
     let Some(value) = headers.get(PUSH_INTENT_HEADER) else {
         return Ok(None);
@@ -501,13 +485,10 @@ fn optional_push_intent_from_headers(headers: &HeaderMap) -> Result<Option<Strin
     }
 }
 
-pub(crate) async fn handle_git_receive_pack(
+async fn handle_git_receive_pack(
     state: &AppState,
     owner: &str,
     repo_name: &str,
-    method: &str,
-    body: Vec<u8>,
-    content_type: Option<String>,
     access: ReceivePackAccess,
 ) -> Result<Response, ApiError> {
     let preparation = git_receive::prepare(
@@ -520,15 +501,7 @@ pub(crate) async fn handle_git_receive_pack(
     .await?;
     let remote_user = preparation.access.author_id().to_string();
     let staging_repo = TemporaryRepository(preparation.staging_repo);
-    let mut cgi = git_http_backend(
-        &staging_repo,
-        method,
-        "info/refs",
-        "service=git-receive-pack",
-        body,
-        content_type,
-        &remote_user,
-    )?;
+    let mut cgi = git_receive_pack_advertisement(&staging_repo, &remote_user)?;
     if cgi.status.is_success() {
         cgi.body = advertise_additional_refs(&cgi.body, &preparation.advertised_request_refs)?;
     }

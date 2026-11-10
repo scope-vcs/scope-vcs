@@ -52,12 +52,7 @@ pub(super) fn start_request_branch(
             &["switch", "--quiet", "--no-track", "-c", &branch, &base_oid],
         )
     {
-        let cleanup = api_close_request(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            &response.request.id,
-        );
+        let cleanup = api_close_request(api, api_target(&context, &response.request.id));
         return match cleanup {
             Ok(_) => Err(switch_error).context(
                 "create local request branch failed; the empty request was closed and removed, so it is safe to retry",
@@ -116,13 +111,7 @@ pub(super) fn start_request_branch(
             )
         })?;
     }
-    let detail = get_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &response.request.id,
-    )
-    .map_err(|error| {
+    let detail = get_request(api, api_target(&context, &response.request.id)).map_err(|error| {
         recovery::request_partial(
             &context,
             &response.request,
@@ -177,12 +166,7 @@ pub(super) fn push_request_branch(
     let context = load_context(Some(git_repo), api, remote.as_deref())?;
     local::require_git_remote(&context)?;
     let request_id = request_id_for_context(api, &context, request_id)?;
-    let detail = get_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )?;
+    let detail = get_request(api, api_target(&context, &request_id))?;
     if !detail.request.permissions.can_push_branch {
         return Err(crate::error::CliError::new(ErrorResponse::new(
             ErrorCode::Forbidden,
@@ -258,13 +242,8 @@ pub(super) fn push_request_branch(
         &request_head_oid,
     )
     .map_err(|error| recover("update_remote_ref", error))?;
-    let detail = get_request(
-        api,
-        &context.target.owner,
-        &context.target.repo,
-        &request_id,
-    )
-    .map_err(|error| recover("refresh_request", error))?;
+    let detail = get_request(api, api_target(&context, &request_id))
+        .map_err(|error| recover("refresh_request", error))?;
     if pending.is_some() {
         restack::state::clear(git_repo)
             .map_err(|error| recover("clear_restack_selection", error))?;

@@ -528,7 +528,6 @@ async fn deletion_is_claimed(
     .map(|claimed| claimed.unwrap_or(false))
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn insert_reference(
     tx: &DatabaseTransaction,
     repository_id: &str,

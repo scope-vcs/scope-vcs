@@ -26,7 +26,7 @@ pub(super) fn selected_for_push(
         if selector.is_some() || revision.is_some() {
             let parent_name = match &selected.base {
                 RequestBase::Request { request_id, .. } => Some(
-                    get_request(api, &context.target.owner, &context.target.repo, request_id)?
+                    get_request(api, api_target(context, request_id))?
                         .request
                         .name,
                 ),
@@ -34,22 +34,17 @@ pub(super) fn selected_for_push(
             };
             if !stack::selector_matches(&selected.base, selector, revision, parent_name.as_deref())
             {
-                return Err(crate::error::CliError::new(ErrorResponse::new(
-                    ErrorCode::Conflict,
+                return Err(crate::error::CliError::conflict(
                     "the explicit base disagrees with the pending publication selection",
-                ))
+                )
                 .into());
             }
         }
         return Ok(Some(selected));
     }
     if let Some(revision) = revision {
-        let history =
-            crate::api::request_revisions(api, api_target(context, &request.id), None, None, None)?;
-        if let Some(accepted) = history
-            .review_revision_id
-            .as_ref()
-            .and_then(|id| history.revisions.iter().find(|row| &row.id == id))
+        let history = stack::current_revisions(api, context, &request.id)?;
+        if let Some(accepted) = stack::review_revision(&history)
             && accepted.new_head_oid.as_deref() == Some(head)
             && matches!(&accepted.base, RequestBase::Request { revision_id, .. } if revision_id == revision)
             && stack::accepted_base(api, context, request, head, &accepted.base, None)?
@@ -90,13 +85,7 @@ pub(super) fn publish_selected(
             return Ok(());
         }
         if let Some(pending) = pending {
-            let history = crate::api::request_revisions(
-                api,
-                api_target(context, &request.id),
-                None,
-                None,
-                None,
-            )?;
+            let history = stack::current_revisions(api, context, &request.id)?;
             if request.head_oid.as_str() != pending.expected_head
                 || request.base_version != pending.expected_base_version
                 || history.review_revision_id.as_deref() != pending.expected_revision.as_deref()
@@ -113,13 +102,7 @@ pub(super) fn publish_selected(
         restack::require_preserved_main(repo, request, &selected.base)?;
         if head == request.head_oid.as_str() {
             stack::publish_context(repo, api, context, request, selected, head)?;
-            let current = get_request(
-                api,
-                &context.target.owner,
-                &context.target.repo,
-                &request.id,
-            )?
-            .request;
+            let current = get_request(api, api_target(context, &request.id))?.request;
             if !stack::accepted_base(api, context, &current, head, &selected.base, None)? {
                 return Err(crate::error::CliError::with_recovery(
                     ErrorResponse::new(
@@ -143,13 +126,7 @@ pub(super) fn publish_selected(
         )
         .map_err(|error| local::request_push_error(error, &request.id));
         let expected_version = stack::publication_base_version(request, &selected.base)?;
-        let current = get_request(
-            api,
-            &context.target.owner,
-            &context.target.repo,
-            &request.id,
-        )?
-        .request;
+        let current = get_request(api, api_target(context, &request.id))?.request;
         if !stack::accepted_base(
             api,
             context,

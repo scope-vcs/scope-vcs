@@ -7,7 +7,11 @@ use super::{
 use crate::error::PostgresError;
 use scope_domain::{
     account::UserAccount,
-    account::{ExternalIdentity, deletion::CLERK_PROVIDER, handles::is_reserved_handle},
+    account::{
+        ExternalIdentity,
+        deletion::CLERK_PROVIDER,
+        handles::{is_reserved_handle, normalize_email, normalize_handle},
+    },
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend, EntityTrait, FromQueryResult,
@@ -35,7 +39,6 @@ impl AuthStore {
     pub async fn resolve_clerk_user(
         &self,
         identity: &ExternalIdentity,
-        _now_unix: u64,
     ) -> Result<ClerkUserResolution, PostgresError> {
         let verified_email = verified_identity_email(identity)?;
         let tx = self.db.begin().await?;
@@ -291,37 +294,6 @@ where
     Ok(owner.is_none_or(|user| user.id == user_id))
 }
 
-fn normalize_handle(value: &str) -> Option<String> {
-    let mut handle = String::new();
-    let mut last_was_separator = false;
-    for byte in value.trim().bytes() {
-        let next = if byte.is_ascii_alphanumeric() {
-            last_was_separator = false;
-            Some(byte.to_ascii_lowercase() as char)
-        } else if matches!(byte, b'-' | b'_') && !last_was_separator {
-            last_was_separator = true;
-            Some('-')
-        } else {
-            None
-        };
-
-        if let Some(next) = next {
-            handle.push(next);
-        }
-    }
-
-    let handle = handle.trim_matches('-').to_string();
-    if handle.is_empty() || handle.len() > 40 {
-        None
-    } else {
-        Some(handle)
-    }
-}
-
-fn normalize_email(email: &str) -> String {
-    email.trim().to_ascii_lowercase()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,10 +313,7 @@ mod tests {
             let barrier = Arc::clone(&barrier);
             tasks.spawn(async move {
                 barrier.wait().await;
-                store
-                    .auth()
-                    .resolve_clerk_user(&identity, 1_700_000_000)
-                    .await
+                store.auth().resolve_clerk_user(&identity).await
             });
         }
 
@@ -375,7 +344,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        let persisted = auth.resolve_clerk_user(&identity, 1).await.unwrap().user;
+        let persisted = auth.resolve_clerk_user(&identity).await.unwrap().user;
         assert_eq!(
             assert_round_trips(1, auth.resolve_existing_clerk_user(&identity))
                 .await
@@ -395,13 +364,10 @@ mod tests {
                 .unwrap(),
             persisted
         );
-        auth.resolve_clerk_user(
-            &ExternalIdentity {
-                subject: "other".into(),
-                ..identity.clone()
-            },
-            2,
-        )
+        auth.resolve_clerk_user(&ExternalIdentity {
+            subject: "other".into(),
+            ..identity.clone()
+        })
         .await
         .unwrap();
         let conflict = assert_round_trips(1, auth.resolve_existing_clerk_user(&identity))

@@ -72,15 +72,14 @@ pub(super) async fn actor_has_open_editable_request(
         .branch_mutable_requests_with_invitee_status(repo_id, actor_user_id)
         .await?
     {
-        if views.may_read(address_view, &request.view)
-            && request_actor_can_edit_ref(
-                &request,
-                actor_user_id,
-                access.clone(),
-                is_invitee,
-                views,
-            )
-        {
+        if request_actor_can_edit_ref(
+            &request,
+            actor_user_id,
+            access.clone(),
+            is_invitee,
+            views,
+            address_view,
+        ) {
             return Ok(true);
         }
     }
@@ -130,14 +129,14 @@ pub(crate) async fn prepare_request_staging_repo(
         .await?;
     if matches!(kind, RequestStagingKind::RequestRefsOnly)
         && !candidates.iter().any(|(request, is_invitee)| {
-            views.may_read(address_view, &request.view)
-                && request_actor_can_edit_ref(
-                    request,
-                    actor_user_id,
-                    access.clone(),
-                    *is_invitee,
-                    views,
-                )
+            request_actor_can_edit_ref(
+                request,
+                actor_user_id,
+                access.clone(),
+                *is_invitee,
+                views,
+                address_view,
+            )
         })
     {
         return Err(ApiError::not_found(format!(
@@ -242,14 +241,14 @@ async fn seed_editable_request_refs_for_repo(
     let requests = candidates
         .into_iter()
         .filter(|(request, is_invitee)| {
-            views.may_read(address_view, &request.view)
-                && request_actor_can_edit_ref(
-                    request,
-                    actor_user_id,
-                    access.clone(),
-                    *is_invitee,
-                    views,
-                )
+            request_actor_can_edit_ref(
+                request,
+                actor_user_id,
+                access.clone(),
+                *is_invitee,
+                views,
+                address_view,
+            )
         })
         .map(|(request, _)| request)
         .collect::<Vec<_>>();
@@ -400,12 +399,12 @@ pub(super) async fn persist_request_ref_revision(
             "repository changed after receive-pack; retry the push",
         ));
     }
-    let (publication, parent_facts) =
+    let parent_facts =
         crate::use_cases::request_base_publication::prepare_request_base_publication(
             state,
             &incarnation,
             &request,
-            base_publication,
+            base_publication.as_ref(),
             staging_repo,
             &update.new_head_oid,
             context.change_version,
@@ -421,8 +420,8 @@ pub(super) async fn persist_request_ref_revision(
         )
         .await?;
     let mut published_request = request.clone();
-    if let Some(publication) = &publication {
-        published_request.base = publication.base.clone();
+    if let Some(headers) = &base_publication {
+        published_request.base = headers.base.clone();
     }
     let request_view = request.view.clone();
     let now_unix = unix_now()?;
@@ -445,11 +444,6 @@ pub(super) async fn persist_request_ref_revision(
         scope,
     )
     .await?;
-    let expected_base_version = publication
-        .as_ref()
-        .map_or(request.base_version, |publication| {
-            publication.expected_base_version
-        });
     let mutation = state
         .metadata
         .requests()
@@ -460,15 +454,15 @@ pub(super) async fn persist_request_ref_revision(
                 actor_can_edit: false,
                 expected_old_head_oid,
                 new_head_oid: update.new_head_oid.clone(),
-                new_base: publication.map(|publication| publication.base),
+                new_base: base_publication.map(|headers| headers.base),
                 new_base_stack_depth: None,
                 git_facts: persisted.git_facts.clone(),
                 event_id: crate::persistence_ids::generate_prefixed_id("event_request_revision")?,
                 body: None,
                 now_unix,
             },
-            expected_base_version,
-            parent_facts,
+            request.base_version,
+            Some(parent_facts),
             child_facts,
             PushedRevisionObjects {
                 object_generation: object_generation.clone(),
@@ -557,9 +551,14 @@ async fn ensure_request_ref_update_allowed(
         .requests()
         .request_is_invitee(&request.id, actor_user_id)
         .await?;
-    if !views.may_read(address_view, &request.view)
-        || !request_actor_can_edit_ref(&request, actor_user_id, access, is_invitee, views)
-    {
+    if !request_actor_can_edit_ref(
+        &request,
+        actor_user_id,
+        access,
+        is_invitee,
+        views,
+        address_view,
+    ) {
         return Err(ApiError::not_found("request not found"));
     }
     Ok((context, request))
@@ -571,11 +570,13 @@ fn request_actor_can_edit_ref(
     access: RepositoryAccess,
     is_invitee: bool,
     views: &Views,
+    address_view: &ViewId,
 ) -> bool {
-    request_policy(
-        request,
-        RequestViewer::new(access, Some(actor_user_id), is_invitee),
-        views,
-    )
-    .branch_mutable
+    views.may_read(address_view, &request.view)
+        && request_policy(
+            request,
+            RequestViewer::new(access, Some(actor_user_id), is_invitee),
+            views,
+        )
+        .branch_mutable
 }

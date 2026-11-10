@@ -171,7 +171,6 @@ export function requestChangesPresentation(
   return {
     aggregate,
     commits: usesCommitFiles ? commits : selectedCommit ? [selectedCommit] : [],
-    diffMode: usesCommitFiles ? 'commit' as const : mode,
     error,
     mode,
     selectedCommit,

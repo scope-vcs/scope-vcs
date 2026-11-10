@@ -4,11 +4,7 @@
 
 export type ErrorCode = "attachment_upload_expired" | "bad_request" | "cli_upgrade_required" | "conflict" | "forbidden" | "internal" | "not_found" | "payload_too_large" | "protected_path" | "range_not_satisfiable" | "request_timeout" | "service_unavailable" | "shared_repositories" | "too_many_requests" | "unauthorized";
 
-export type ErrorFields = { paths?: Array<string>, installed_protocol?: number | null, supported_protocol?: number | null,
-/**
- * Repository ids, as `owner/name`, that the error is about.
- */
-repositories?: Array<string>, };
+export type ErrorFields = { paths?: Array<string>, installed_protocol?: number | null, supported_protocol?: number | null, repositories?: Array<string>, };
 
 export type ErrorResponse = { code: ErrorCode, message: string, error_reference?: string | null, instruction?: string | null, fields?: ErrorFields, retryable: boolean, };
 
@@ -158,25 +154,9 @@ export type CreateRepoResponse = { repo: RepoSummaryResponse, init: RepoInitResp
 
 export type DeleteRepoResponse = { id: string, deleted: boolean, };
 
-export type CreatePushIntentRequest = { head_oid: string,
-/**
- * The fingerprint of the config the pusher reviewed; required when pushing through the full view and ignored otherwise.
- */
-base_config_hash: string | null,
-/**
- * The reviewed config; required when pushing through the full view and ignored otherwise.
- */
-config: RepoConfig | null,
-/**
- * The view of the remote the push goes through.
- */
-view: ViewId, };
+export type CreatePushIntentRequest = { head_oid: string, base_config_hash: string | null, config: RepoConfig | null, view: ViewId, };
 
-export type CreatePushIntentResponse = { token: string, base_head_oid: GitOid | null, expires_at_unix: number,
-/**
- * True when the view is narrower than the full view, so the push lands as an auto-merged request in that view.
- */
-lands_as_request: boolean, };
+export type CreatePushIntentResponse = { token: string, base_head_oid: GitOid | null, expires_at_unix: number, lands_as_request: boolean, };
 
 export type RepoInitResponse = { repo: RepoSummaryResponse, git_remote_url: string, remote_name: string, push_branch: string, token: FirstPushTokenResponse | null, push_token: GitPushTokenResponse | null, };
 
@@ -188,25 +168,9 @@ export type GitPushTokenResponse = { created_at_unix: number, secret: string | n
 
 export type RepoFileResponse = { path: string, oid: string, tracked: boolean, label: ViewId, };
 
-export type RepoFileContentRequest = { path: string, view: ViewId | null,
-/**
- * Reads the request's latest push instead of main. Excludes `update`.
- */
-request: string | null,
-/**
- * Reads main as of this history entry's `source_id`. Excludes `request`.
- */
-update: string | null, };
+export type RepoFileContentRequest = { path: string, view: ViewId | null, request: string | null, update: string | null, };
 
-export type RepoFilesRequest = { view: ViewId | null,
-/**
- * Reads the request's latest push instead of main. Excludes `update`.
- */
-request: string | null,
-/**
- * Reads main as of this history entry's `source_id`. Excludes `request`.
- */
-update: string | null, };
+export type RepoFilesRequest = { view: ViewId | null, request: string | null, update: string | null, };
 
 export type RepoFileContentResponse = { path: string, oid: string, label: ViewId, size_bytes: number, content: ReviewFileContentResponse, };
 
@@ -216,11 +180,7 @@ export type RepositoryCollaborationResponse = { members: Array<RepositoryMemberR
 
 export type RepositoryMemberResponse = { user_id: string, handle: string, email: string, permissions: RepositoryMemberPermissions, created_at_unix: number, updated_at_unix: number, };
 
-export type RepositoryInviteResponse = { id: string, invited_email: string, permissions: RepositoryMemberPermissions, state: RepositoryInviteState, expires_at_unix: number,
-/**
- * The newest email for this invite. `None` when it was never emailed.
- */
-email: RepositoryInviteEmailResponse | null, };
+export type RepositoryInviteResponse = { id: string, invited_email: string, permissions: RepositoryMemberPermissions, state: RepositoryInviteState, expires_at_unix: number, email: RepositoryInviteEmailResponse | null, };
 
 export type RepositoryInviteEmailResponse = { state: RepositoryInviteEmailStateResponse, requested_at_unix: number, };
 
@@ -238,88 +198,15 @@ export type RepositoryInviteViewerResponse = "ready" | "signed_out" | "wrong_acc
 
 export type AcceptRepositoryInviteResponse = { repo: RepoSummaryResponse, member: RepositoryMemberResponse, };
 
-export type GitHubConnectionResponse = {
-/**
- * `false` when this server has no GitHub App, so nothing can connect.
- */
-configured: boolean, connection: GitHubConnectionDetailsResponse | null,
-/**
- * The check names GitHub must pass before a request merges.
- */
-required_checks: Array<string>,
-/**
- * GitHub accounts whose reviews Scope imports without asking GitHub whether they can write; cleared on disconnect.
- */
-review_bots: Array<GitHubReviewBotResponse>,
-/**
- * Whether the viewer may confirm that a public GitHub repository
- * receives what Scope pushes, private requests included.
- */
-can_confirm_public: boolean,
-/**
- * Whether the viewer may turn on publishing main: a maintainer who reads
- * the full view and can change file visibility.
- */
-can_publish_main: boolean,
-/**
- * The latest connection test, while the repository has a link.
- */
-setup_check: GitHubSetupCheckResponse | null,
-/**
- * How many of GitHub's most recent workflow runs connecting imports.
- */
-run_import_count: number,
-/**
- * The latest import of the linked GitHub repository's runs.
- */
-run_import: GitHubRunImportResponse | null, };
+export type GitHubConnectionResponse = { configured: boolean, connection: GitHubConnectionDetailsResponse | null, required_checks: Array<string>, review_bots: Array<GitHubReviewBotResponse>, can_confirm_public: boolean, can_publish_main: boolean, setup_check: GitHubSetupCheckResponse | null, run_import_count: number, run_import: GitHubRunImportResponse | null, };
 
-export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string,
-/**
- * `None` once that account was deleted.
- */
-connected_by: RequestActorSummaryResponse | null, connected_at_unix: number,
-/**
- * Set when GitHub took the repository away from Scope.
- */
-disconnected: GitHubDisconnectionResponse | null,
-/**
- * Everything Scope pushes to a public GitHub repository is public.
- */
-public_on_github: boolean,
-/**
- * False while a repository that became public waits for a maintainer to
- * confirm; private requests are not sent there meanwhile.
- */
-public_confirmed: boolean,
-/**
- * Whether Scope opens a GitHub pull request for each submitted
- * full-view request so review bots on GitHub review it.
- */
-open_review_bot_pull_requests: boolean,
-/**
- * Posted on that pull request when Scope opens it and after each new
- * head Scope pushes there.
- */
-review_request_comment: string | null, main_publication: GitHubMainPublicationResponse, };
+export type GitHubConnectionDetailsResponse = { github_full_name: string, github_url: string, connected_by: RequestActorSummaryResponse | null, connected_at_unix: number, disconnected: GitHubDisconnectionResponse | null, public_on_github: boolean, public_confirmed: boolean, open_review_bot_pull_requests: boolean, review_request_comment: string | null, main_publication: GitHubMainPublicationResponse, };
 
 export type GitHubDisconnectionResponse = { reason: GitHubDisconnectReasonResponse, at_unix: number, };
 
-export type GitHubMainPublicationResponse = {
-/**
- * Whether every change to Scope main is pushed to GitHub main, never forced.
- */
-enabled: boolean,
-/**
- * The latest push of main to this GitHub repository.
- */
-latest: GitHubMainPushResponse | null, };
+export type GitHubMainPublicationResponse = { enabled: boolean, latest: GitHubMainPushResponse | null, };
 
-export type GitHubMainPushResponse = { state: GitHubMainPushStateResponse, commit_oid: string,
-/**
- * Why the latest attempt failed. A queued push with an error tries again.
- */
-error: string | null, updated_at_unix: number, };
+export type GitHubMainPushResponse = { state: GitHubMainPushStateResponse, commit_oid: string, error: string | null, updated_at_unix: number, };
 
 export type GitHubMainPushStateResponse = "queued" | "running" | "succeeded" | "failed";
 
@@ -327,58 +214,25 @@ export type SetGitHubMainPublicationRequest = { enabled: boolean, };
 
 export type GitHubDisconnectReasonResponse = "app_uninstalled" | "installation_suspended" | "repository_removed";
 
-export type GitHubAuthorizeRequest = {
-/**
- * The origin of the page that started connecting. GitHub returns there
- * when it is an allowed Scope web origin, so a development stack reached
- * at another address works. Without it, the public app origin is used.
- */
-web_origin: string | null, };
+export type GitHubAuthorizeRequest = { web_origin: string | null, };
 
 export type GitHubAuthorizeResponse = { authorize_url: string, };
 
 export type GitHubSetupRequest = { state: string, code: string, };
 
-export type GitHubSetupResponse = { owner_handle: string, repo_name: string, repositories: Array<GitHubRepositoryResponse>,
-/**
- * Where to install the app on a repository that is missing.
- */
-install_url: string, grant: string,
-/**
- * How many recent workflow runs the repository imports, which
- * connecting can change.
- */
-run_import_count: number, };
+export type GitHubSetupResponse = { owner_handle: string, repo_name: string, repositories: Array<GitHubRepositoryResponse>, install_url: string, grant: string, run_import_count: number, };
 
 export type GitHubRepositoryResponse = { id: number, full_name: string, private: boolean, };
 
-export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_id: number,
-/**
- * Required for a public GitHub repository: everything Scope pushes there,
- * private requests and private files included, becomes public.
- */
-acknowledge_public: boolean,
-/**
- * How many of GitHub's most recent workflow runs to import, which
- * becomes the repository's import count.
- */
-run_import_count: number, };
+export type ConnectGitHubRepositoryRequest = { grant: string, github_repository_id: number, acknowledge_public: boolean, run_import_count: number, };
 
 export type SetGitHubRequiredChecksRequest = { names: Array<string>, };
 
-export type GitHubReviewBotResponse = { login: string,
-/**
- * Whether requests wait for this bot to finish their latest commit before they can merge.
- */
-required: boolean, };
+export type GitHubReviewBotResponse = { login: string, required: boolean, };
 
 export type SetGitHubReviewBotsRequest = { bots: Array<GitHubReviewBotRequest>, };
 
-export type GitHubReviewBotRequest = { login: string,
-/**
- * Whether requests wait for this bot to finish their latest commit before they can merge.
- */
-required: boolean, };
+export type GitHubReviewBotRequest = { login: string, required: boolean, };
 
 export type SetGitHubReviewBotPullRequestsRequest = { enabled: boolean, };
 
@@ -388,94 +242,29 @@ export type SetGitHubRunImportCountRequest = { count: number, };
 
 export type GitHubRunImportStateResponse = "queued" | "running" | "succeeded" | "failed";
 
-export type GitHubRunImportResponse = { state: GitHubRunImportStateResponse,
-/**
- * The most runs it reads.
- */
-run_count: number,
-/**
- * How many runs it stored, once it succeeded.
- */
-imported_count: number,
-/**
- * What GitHub answered when the latest attempt failed. A queued import
- * with an error tries again.
- */
-error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
+export type GitHubRunImportResponse = { state: GitHubRunImportStateResponse, run_count: number, imported_count: number, error: string | null, queued_at_unix: number, finished_at_unix: number | null, };
 
 export type GitHubSetupCheckStateResponse = "pushing" | "waiting" | "finished" | "failed";
 
-export type GitHubSetupCheckResponse = { branch: string, commit_oid: string, state: GitHubSetupCheckStateResponse, started_at_unix: number, finished_at_unix: number | null,
-/**
- * The check names GitHub reported for the test, which can be required.
- */
-check_names: Array<string>,
-/**
- * GitHub's answer to a refused push, or why no workflow started.
- */
-message: string | null, };
+export type GitHubSetupCheckResponse = { branch: string, commit_oid: string, state: GitHubSetupCheckStateResponse, started_at_unix: number, finished_at_unix: number | null, check_names: Array<string>, message: string | null, };
 
-export type GitHubWorkflowRunsResponse = {
-/**
- * Whether this server can connect repositories to GitHub at all.
- */
-configured: boolean,
-/**
- * `None` when the repository is not linked to GitHub; its runs are Scope's own.
- */
-github: GitHubWorkflowRunListResponse | null, };
+export type GitHubWorkflowRunsResponse = { configured: boolean, github: GitHubWorkflowRunListResponse | null, };
 
 export type GitHubWorkflowNamesResponse = { workflows: Array<string>, };
 
-export type GitHubWorkflowRunListResponse = {
-/**
- * The repository's Actions page, which has every run and its logs.
- */
-actions_url: string,
-/**
- * A page of runs, newest first.
- */
-workflow_runs: Array<GitHubWorkflowRunResponse>,
-/**
- * Continues the list after this page, while there is more.
- */
-next_cursor: string | null, };
+export type GitHubWorkflowRunListResponse = { actions_url: string, workflow_runs: Array<GitHubWorkflowRunResponse>, next_cursor: string | null, };
 
-export type GitHubWorkflowRunResponse = { id: number, workflow_name: string, branch: string | null, head_oid: string, event: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, html_url: string, run_started_at_unix: number | null, updated_at_unix: number,
-/**
- * The Scope request whose branch the run is on.
- */
-request_id: string | null, };
+export type GitHubWorkflowRunResponse = { id: number, workflow_name: string, branch: string | null, head_oid: string, event: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, html_url: string, run_started_at_unix: number | null, updated_at_unix: number, request_id: string | null, };
 
-export type GitHubWorkflowRunDetailResponse = { run: GitHubWorkflowRunResponse,
-/**
- * In the order GitHub created them.
- */
-jobs: Array<GitHubWorkflowJobResponse>,
-/**
- * True until Scope first reads the current run attempt's jobs from GitHub.
- */
-jobs_not_read_yet: boolean, };
+export type GitHubWorkflowRunDetailResponse = { run: GitHubWorkflowRunResponse, jobs: Array<GitHubWorkflowJobResponse>, jobs_not_read_yet: boolean, };
 
-export type GitHubWorkflowJobResponse = { id: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null,
-/**
- * The job on GitHub, which keeps its whole log.
- */
-html_url: string, steps: Array<GitHubWorkflowStepResponse>, };
+export type GitHubWorkflowJobResponse = { id: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, html_url: string, steps: Array<GitHubWorkflowStepResponse>, };
 
 export type GitHubWorkflowStepResponse = { number: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, };
 
-export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string,
-/**
- * Whether `text` is only the end of a longer log.
- */
-truncated: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
+export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string, truncated: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
 
-export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null,
-/**
- * Matches entry messages, source IDs and visibility-change paths.
- */
-search: string | null, };
+export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, search: string | null, };
 
 export type HistoryEntryRequest = { view: ViewId | null, };
 
@@ -495,19 +284,11 @@ export type HistoryEntryKind = "push" | "merged_request" | "visibility_change" |
 
 export type HistoryFeed = "updates" | "all" | "visibility";
 
-export type HistoryEntryDetailResponse = { native_commits: HistoryNativeCommitsResponse | null, view: ViewId, repo_id: string, occurred_at_unix: number | null, id: string, source_id: string,
-/**
- * Adjacent entries in all activity, addressed by source id.
- */
-older_source_id: string | null, newer_source_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, views: ViewsTransition | null, };
+export type HistoryEntryDetailResponse = { native_commits: HistoryNativeCommitsResponse | null, view: ViewId, repo_id: string, occurred_at_unix: number | null, id: string, source_id: string, older_source_id: string | null, newer_source_id: string | null, kind: HistoryEntryKind, author: string | null, message: string, file_change_count: number, visibility_summary: HistoryVisibilitySummaryResponse, files: Array<HistoryEntryFileResponse>, visibility_changes: Array<HistoryVisibilityChangeResponse>, views: ViewsTransition | null, };
 
 export type HistoryEntryFileResponse = { path: string, kind: FileChangeKind, old_mode: string | null, new_mode: string | null, old_oid: string | null, new_oid: string | null, label: ViewId, };
 
-export type HistoryNativeCommitsResponse = {
-/**
- * The view the request that made these commits was merged through.
- */
-view: ViewId, commits: Array<NativeHistoryCommitResponse>, };
+export type HistoryNativeCommitsResponse = { view: ViewId, commits: Array<NativeHistoryCommitResponse>, };
 
 export type NativeHistoryCommitResponse = { oid: string, parent_oids: Array<string>, tree_oid: string, author: string, message: string, occurred_at_unix: number, files: Array<HistoryEntryFileResponse>, };
 
@@ -541,50 +322,19 @@ export type RequestAttentionState = "active" | "waiting" | "snoozed" | "settled"
 
 export type RequestAttentionReason = "authored" | "invited" | "claimed" | "unclaimed" | "claimed_elsewhere" | "new_activity" | "restored" | "snooze_expired" | "waiting" | "snoozed" | "settled" | "open" | "closed" | "merged";
 
-export type RequestAttentionResponse = {
-/**
- * The viewer's group for this request on its own. Group counts and flat
- * lists use it.
- */
-group: RequestQueueGroup,
-/**
- * The group a view that draws stacks together shows this row in. A
- * waiting request moves to Needs you when another request in its stack
- * on the same queue page needs the viewer; otherwise this equals `group`.
- */
-stack_group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null,
-/**
- * Counts the writes to the viewer's attention record; zero without one.
- */
-revision: number, can_claim: boolean, can_set_aside: boolean, can_restore: boolean, can_release: boolean, };
+export type RequestAttentionResponse = { group: RequestQueueGroup, stack_group: RequestQueueGroup, state: RequestAttentionState, reason: RequestAttentionReason, activity_version: number, through_activity_version: number, snoozed_until_unix: number | null, revision: number, can_claim: boolean, can_set_aside: boolean, can_restore: boolean, can_release: boolean, };
 
 export type RequestAttentionActionRequest = { "action": "claim", expected_activity_version: number, } | { "action": "wait", expected_activity_version: number, } | { "action": "settle", expected_activity_version: number, } | { "action": "snooze", expected_activity_version: number, until_unix: number, } | { "action": "restore", expected_activity_version: number, } | { "action": "release", expected_activity_version: number, } | { "action": "acknowledge", expected_activity_version: number, };
 
-export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null,
-/**
- * The queue row's next step after this change.
- */
-next_step: RequestQueueNextStep, };
+export type RequestAttentionMutationResponse = { attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, next_step: RequestQueueNextStep, };
 
-export type RequestQueueItemResponse = { attention_at_unix: number, request: RequestListItemResponse,
-/**
- * Null once that account is deleted; clients show a deleted user.
- */
-author: RequestActorSummaryResponse | null, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null,
-/**
- * What the viewer does next: mergeability on their own requests, attention on others'.
- */
-next_step: RequestQueueNextStep, };
+export type RequestQueueItemResponse = { attention_at_unix: number, request: RequestListItemResponse, author: RequestActorSummaryResponse | null, attention: RequestAttentionResponse, claimer: RequestActorSummaryResponse | null, next_step: RequestQueueNextStep, };
 
 export type RequestQueuePageResponse = { requests: Array<RequestQueueItemResponse>, next_cursor: string | null, next_attention_at_unix: number | null, };
 
 export type RequestListResponse = { requests: Array<RequestListItemResponse>, next_cursor: string | null, };
 
-export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse,
-/**
- * Null until the current revision's line counts are recorded, or when the viewer's readable files cannot be counted.
- */
-diff_stat: RequestDiffStatResponse | null, };
+export type RequestDetailResponse = { stack_navigation: RequestStackNavigationResponse, request: RequestSummaryResponse, diff_stat: RequestDiffStatResponse | null, };
 
 export type RequestDiffStatResponse = { additions: number, deletions: number, changed_files: number, };
 
@@ -600,19 +350,7 @@ export type RequestRatingsResponse = { ratings: Array<RequestRatingResponse>, el
 
 export type RequestMutationResponse = { request: RequestSummaryResponse, };
 
-export type RequestListItemResponse = { stack_parent: RequestStackParentResponse | null, base: RequestBase, base_version: number, stack_status: RequestStackStatus,
-/**
- * Counts this request and its request ancestors; main-rooted requests have depth 1, with a maximum of 33.
- */
-stack_depth: number, id: string, name: string, title: string,
-/**
- * Null once that account is deleted; clients show a deleted user.
- */
-author_user_id: string | null, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse,
-/**
- * Null until the current revision's line counts are recorded, or when the viewer's readable files cannot be counted.
- */
-diff_stat: RequestDiffStatResponse | null, };
+export type RequestListItemResponse = { stack_parent: RequestStackParentResponse | null, base: RequestBase, base_version: number, stack_status: RequestStackStatus, stack_depth: number, id: string, name: string, title: string, author_user_id: string | null, author_role: RequestActorRole, view: ViewId, head_oid: GitOid, state: RequestState, submitted_at_unix: number | null, updated_at_unix: number, mergeability: RequestMergeabilityResponse, diff_stat: RequestDiffStatResponse | null, };
 
 export type RequestBase = { "kind": "main", review_base_oid: GitOid, } | { "kind": "request", request_id: string, revision_id: string, head_oid: GitOid, };
 
@@ -634,21 +372,9 @@ export type RequestRevisionContextRequest = { operation_key: string, base: Reque
 
 export type RequestRevisionContextResponse = { request: RequestSummaryResponse, revision_id: string, };
 
-export type RequestSummaryResponse = { id: string, name: string, title: string, description_markdown: string,
-/**
- * Null once that account is deleted; clients show a deleted user.
- */
-author_user_id: string | null, author_role: RequestActorRole, view: ViewId, base: RequestBase, base_version: number, stack_status: RequestStackStatus,
-/**
- * Counts this request and its request ancestors; main-rooted requests have depth 1, with a maximum of 33.
- */
-stack_depth: number, main_ancestor_oid: GitOid, head_oid: GitOid, state: RequestState, activity_version: number, submitted_at_unix: number | null, closed_at_unix: number | null, closed_by_user_id: string | null, merged_at_unix: number | null, merged_by_user_id: string | null, merged_head_oid: GitOid | null, merged_main_oid: GitOid | null, created_at_unix: number, updated_at_unix: number, invitees: Array<RequestInviteeResponse>, permissions: RequestPermissionsResponse, mergeability: RequestMergeabilityResponse, };
+export type RequestSummaryResponse = { id: string, name: string, title: string, description_markdown: string, author_user_id: string | null, author_role: RequestActorRole, view: ViewId, base: RequestBase, base_version: number, stack_status: RequestStackStatus, stack_depth: number, main_ancestor_oid: GitOid, head_oid: GitOid, state: RequestState, activity_version: number, submitted_at_unix: number | null, closed_at_unix: number | null, closed_by_user_id: string | null, merged_at_unix: number | null, merged_by_user_id: string | null, merged_head_oid: GitOid | null, merged_main_oid: GitOid | null, created_at_unix: number, updated_at_unix: number, invitees: Array<RequestInviteeResponse>, permissions: RequestPermissionsResponse, mergeability: RequestMergeabilityResponse, };
 
-export type RequestInviteeResponse = { user: RequestActorSummaryResponse,
-/**
- * Null once that account is deleted; clients show a deleted user.
- */
-invited_by_user_id: string | null, created_at_unix: number, };
+export type RequestInviteeResponse = { user: RequestActorSummaryResponse, invited_by_user_id: string | null, created_at_unix: number, };
 
 export type AddRequestInviteeRequest = { handle: string, };
 
@@ -686,95 +412,23 @@ export type GitHubCheckConclusion = "success" | "neutral" | "skipped" | "failure
 
 export type RequestGitHubPushState = "awaiting_approval" | "sending" | "sent" | "failed";
 
-export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch: string,
-/**
- * Only maintainers see what GitHub answered.
- */
-error: string | null, };
+export type RequestGitHubPushResponse = { state: RequestGitHubPushState, branch: string, error: string | null, };
 
 export type RequestGitHubPullRequestState = "opening" | "open" | "closed" | "closed_on_github" | "merged" | "failed";
 
-export type RequestGitHubPullRequestResponse = { state: RequestGitHubPullRequestState,
-/**
- * `None` until Scope opens or adopts the pull request.
- */
-number: number | null, url: string | null,
-/**
- * Only maintainers see what GitHub answered.
- */
-error: string | null, };
+export type RequestGitHubPullRequestResponse = { state: RequestGitHubPullRequestState, number: number | null, url: string | null, error: string | null, };
 
 export type RequestReviewBotState = "not_started" | "working" | "commented" | "clear" | "timed_out";
 
-export type RequestReviewBotResponse = { login: string,
-/**
- * Whether the request waits for this bot to finish its head before it can merge.
- */
-required: boolean, state: RequestReviewBotState, };
+export type RequestReviewBotResponse = { login: string, required: boolean, state: RequestReviewBotState, };
 
-export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null,
-/**
- * The workflow run and job on Scope's run page that answer the
- * check, when it is a GitHub Actions job the viewer may open there.
- */
-run: RequestCheckRunResponse | null, };
+export type RequestCheckResponse = { "provider": "native", workflow_path: string, workflow_name: string, run_id: string | null, run_state: RunState | null, } | { "provider": "github", name: string, status: GitHubCheckStatus | null, conclusion: GitHubCheckConclusion | null, details_url: string | null, run: RequestCheckRunResponse | null, };
 
 export type RequestCheckRunResponse = { run_id: string, workflow_name: string, job_id: string, };
 
-export type RequestChecksResponse = { request_id: string, head_oid: GitOid,
-/**
- * `None` while the head has no evaluation: nothing is known about its checks yet.
- * Otherwise the approval step of the evaluation, which does not change when
- * the checks finish; `outcome` carries the result.
- */
-state: RequestCheckEvaluationState | null,
-/**
- * What the head's required checks add up to, the answer mergeability
- * gates on: `clear` once every one passed or none is required,
- * `pending` while any is unfinished, `failed` once one did not succeed.
- */
-outcome: RequestChecksOutcome, message: string | null, checks: Array<RequestCheckResponse>,
-/**
- * Whether the viewer can start checks that wait for a maintainer.
- */
-can_approve: boolean,
-/**
- * Set when the repository's checks run on GitHub and the head is on its
- * way there or waits for approval to go.
- */
-github_push: RequestGitHubPushResponse | null,
-/**
- * Set when the repository opens pull requests for review bots and this
- * request has one, or Scope is opening one.
- */
-github_pull_request: RequestGitHubPullRequestResponse | null,
-/**
- * The repository's review bots, in their listed order, for full-view
- * requests; empty when none is listed or the request is narrower.
- */
-review_bots: Array<RequestReviewBotResponse>,
-/**
- * Whether required review bots hold the merge. They do only while the
- * repository opens pull requests for review bots, since a bot can only
- * review a request through that pull request.
- */
-review_bots_enforced: boolean,
-/**
- * Whether the request changes workflow files that its GitHub checks run, at
- * any check state. Only worked out for a viewer who may review the checks.
- */
-changes_github_workflows: boolean,
-/**
- * Whether this private request's checks run in a public GitHub
- * repository, where everything Scope pushes is public.
- */
-private_request_on_public_github: boolean, mergeability: RequestMergeabilityResponse, };
+export type RequestChecksResponse = { request_id: string, head_oid: GitOid, state: RequestCheckEvaluationState | null, outcome: RequestChecksOutcome, message: string | null, checks: Array<RequestCheckResponse>, can_approve: boolean, github_push: RequestGitHubPushResponse | null, github_pull_request: RequestGitHubPullRequestResponse | null, review_bots: Array<RequestReviewBotResponse>, review_bots_enforced: boolean, changes_github_workflows: boolean, private_request_on_public_github: boolean, mergeability: RequestMergeabilityResponse, };
 
-export type RequestEventResponse = { id: string, position: number,
-/**
- * Null once that account is deleted; clients show a deleted user.
- */
-actor: RequestActorSummaryResponse | null, kind: RequestEventKind, payload: RequestEventPayload, created_at_unix: number, };
+export type RequestEventResponse = { id: string, position: number, actor: RequestActorSummaryResponse | null, kind: RequestEventKind, payload: RequestEventPayload, created_at_unix: number, };
 
 export type RequestEventPayload = { "BaseRetargeted": { old_base: RequestBase, landed_head_oid: string, main_oid: string | null, } } | { "Started": { identity: RequestIdentityAuditFact, } } | { "Submitted": { head_oid: string, } } | { "RevisionPushed": { old_head_oid: string, new_head_oid: string, note: string | null, } } | { "Merged": { head_oid: string, main_oid: string | null, } } | { "Closed": { head_oid: string, } } | { "IdentityEdited": { before: RequestIdentityAuditFact, after: RequestIdentityAuditFact, } } | { "DiscussionResolved": { discussion_id: string, } } | { "DiscussionReopened": { discussion_id: string, } } | { "AutoMergeEnabled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeCancelled": { intent_id: string, revision_id: string, head_oid: string, } } | { "AutoMergeStopped": { intent_id: string, revision_id: string, head_oid: string, reason: RequestAutoMergeStopReason, } } | { "AutoMergeFulfilled": { intent_id: string, revision_id: string, head_oid: string, main_oid: string | null, } };
 
@@ -784,47 +438,15 @@ export type RequestActorSummaryResponse = { id: string, handle: string, };
 
 export type RequestDiscussionStatus = "Open" | "Resolved";
 
-export type RequestDiscussionReplyReferenceResponse = { id: string, position: number,
-/**
- * Null once that Scope account is deleted; clients show a deleted user.
- */
-author: RequestDiscussionAuthorResponse | null, body_markdown: string, };
+export type RequestDiscussionReplyReferenceResponse = { id: string, position: number, author: RequestDiscussionAuthorResponse | null, body_markdown: string, };
 
-export type RequestDiscussionReplyResponse = { id: string, discussion_id: string, position: number,
-/**
- * Null once that Scope account is deleted; clients show a deleted user.
- */
-author: RequestDiscussionAuthorResponse | null, body_markdown: string, reply_to: RequestDiscussionReplyReferenceResponse | null, created_at_unix: number, };
+export type RequestDiscussionReplyResponse = { id: string, discussion_id: string, position: number, author: RequestDiscussionAuthorResponse | null, body_markdown: string, reply_to: RequestDiscussionReplyReferenceResponse | null, created_at_unix: number, };
 
-export type RequestDiscussionSummaryResponse = { id: string, request_id: string, client_discussion_id: string, opened_position: number, last_activity_position: number,
-/**
- * Null once that Scope account is deleted; clients show a deleted user.
- */
-author: RequestDiscussionAuthorResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null,
-/**
- * Null while open, or once the resolving Scope account is deleted.
- */
-resolved_by: RequestDiscussionResolverResponse | null, };
+export type RequestDiscussionSummaryResponse = { id: string, request_id: string, client_discussion_id: string, opened_position: number, last_activity_position: number, author: RequestDiscussionAuthorResponse | null, body_markdown: string, anchor: RequestDiscussionAnchor | null, status: RequestDiscussionStatus, reply_count: number, read_through_position: number, unread_count: number, latest_replies: Array<RequestDiscussionReplyResponse>, created_at_unix: number, resolved_at_unix: number | null, resolved_by: RequestDiscussionResolverResponse | null, };
 
-export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null,
-/**
- * The changed path; with a commit it is in that commit's diff, otherwise in the revision's whole-request diff.
- */
-path: string | null, lines: RequestDiscussionLineRange | null,
-/**
- * Where the lines sit on the request's latest revision; null unless the anchor has lines and a newer revision exists.
- */
-latest: RequestDiscussionLatestPosition | null, };
+export type RequestDiscussionAnchor = { revision_id: string, revision_position: number, commit_oid: string | null, path: string | null, lines: RequestDiscussionLineRange | null, latest: RequestDiscussionLatestPosition | null, };
 
-export type RequestDiscussionAnchorInput = { revision_id: string, commit_oid: string | null,
-/**
- * A changed path; without a commit it must be changed by the revision's whole-request diff.
- */
-path: string | null,
-/**
- * Lines on one side of the path's diff; requires a path.
- */
-lines: RequestDiscussionLineRange | null, };
+export type RequestDiscussionAnchorInput = { revision_id: string, commit_oid: string | null, path: string | null, lines: RequestDiscussionLineRange | null, };
 
 export type RequestDiffSide = "old" | "new";
 
@@ -844,11 +466,7 @@ export type RequestRevisionCommitResponse = { oid: string, parent_oids: Array<st
 
 export type RequestRevisionInspectionState = "Complete" | "Incomplete" | "Unavailable";
 
-export type RequestRevisionResponse = { base: RequestBase, base_version: number, id: string, position: number,
-/**
- * Null once that account is deleted; clients show a deleted user.
- */
-actor: RequestActorSummaryResponse | null, old_head_oid: string | null, new_head_oid: string | null, commits: Array<RequestRevisionCommitResponse>, inspection: RequestRevisionInspectionState, created_at_unix: number, };
+export type RequestRevisionResponse = { base: RequestBase, base_version: number, id: string, position: number, actor: RequestActorSummaryResponse | null, old_head_oid: string | null, new_head_oid: string | null, commits: Array<RequestRevisionCommitResponse>, inspection: RequestRevisionInspectionState, created_at_unix: number, };
 
 export type RequestRevisionListResponse = { comparison: RequestComparisonResponse | null, review_revision_id: string | null, revisions: Array<RequestRevisionResponse>, has_earlier_revisions: boolean, };
 
@@ -930,11 +548,7 @@ export type RepositoryRunAttemptResponse = { id: string, number: number, externa
 
 export type RepositoryRunWorkflowResponse = { key: string, name: string, path: string, manual: boolean, push_main: boolean, job_count: number, };
 
-export type RepositoryRunWorkflowListResponse = { workflows: Array<RepositoryRunWorkflowResponse>,
-/**
- * Whether the repository's owner is listed for Scope's hosted runner.
- */
-native_runs_available: boolean, };
+export type RepositoryRunWorkflowListResponse = { workflows: Array<RepositoryRunWorkflowResponse>, native_runs_available: boolean, };
 
 export type RepositoryRunHistoryPageResponse = { runs: Array<RepositoryRunListItemResponse>, next_cursor: string | null, };
 

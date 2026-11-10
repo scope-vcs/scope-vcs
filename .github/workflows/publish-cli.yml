@@ -2,13 +2,6 @@ name: Publish CLI
 
 on:
   workflow_call:
-    inputs:
-      source_sha:
-        type: string
-        default: ""
-      artifact_run_id:
-        type: string
-        default: ""
 
 permissions:
   actions: read
@@ -28,12 +21,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       - name: Download artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          run-id: ${{ inputs.artifact_run_id || github.run_id }}
+          run-id: ${{ github.run_id }}
           github-token: ${{ github.token }}
           pattern: scope-*
           path: cli/dist
@@ -42,9 +35,9 @@ jobs:
       - name: Download service
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          run-id: ${{ inputs.artifact_run_id || github.run_id }}
+          run-id: ${{ github.run_id }}
           github-token: ${{ github.token }}
-          name: cli-service-release-${{ inputs.source_sha || github.sha }}
+          name: cli-service-release-${{ github.sha }}
           path: artifacts
 
       - name: Verify artifacts and write checksums
@@ -93,7 +86,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: bash .github/scripts/prepare-railway-artifact.sh cli-downloads .railway-cli prepared-cli-release.json
@@ -109,7 +102,7 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
           SCOPE_DEPLOYMENT_COMPONENT: cli-downloads
           SCOPE_DEPLOYMENT_EVIDENCE_PATH: production-deployments.ndjson
-          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+          SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
         run: |
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"

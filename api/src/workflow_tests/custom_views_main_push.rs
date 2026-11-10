@@ -337,16 +337,12 @@ async fn prepare_agent_main_push(
         "x-scope-push-intent",
         view_push_intent(state, head).await.parse().unwrap(),
     );
-    let (authorization, push_intent) = crate::git::receive_pack_credentials(state, &headers)
-        .await
-        .unwrap();
-    let access = git_receive_use_case::authorize(
+    let access = crate::git::receive_pack_access(
         state,
+        &headers,
         TEST_REPO_OWNER,
         TEST_REPO_NAME,
         &view("agent"),
-        authorization,
-        push_intent.as_deref(),
     )
     .await
     .unwrap();

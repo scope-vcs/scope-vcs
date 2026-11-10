@@ -15,9 +15,6 @@ on:
       prepare_web:
         type: boolean
         default: false
-      recover_cutover_id:
-        type: string
-        default: ""
       prepared_run_id:
         type: string
         default: ""

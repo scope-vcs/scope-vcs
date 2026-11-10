@@ -1,4 +1,10 @@
-import type { RequestAttachmentTargetKind } from '@/api/types.generated'
+import type { RequestParams } from '@/api/types'
+import type {
+  RequestAttachmentPartReceiptResponse,
+  RequestAttachmentTargetInput,
+  RequestAttachmentTransferResponse,
+} from '@/api/types.generated'
+import type { FinishAttachmentInput, PrepareAttachmentInput } from './request-attachment-api'
 import {
   patchRequestAttachmentDraftFile,
   readRequestAttachmentDraft,
@@ -11,47 +17,11 @@ import { hashAttachmentFile } from './request-attachment-hash-client'
 import { HttpError } from '../../api/http'
 import { resourceErrorMessage } from '../../lib/use-cached-resource'
 
-export type AttachmentUploadParams = {
-  owner: string
-  repo: string
-  request_id: string
-}
-
-type AttachmentUploadTarget = {
-  discussion_id: string | null
-  kind: RequestAttachmentTargetKind
-}
-
-type AttachmentPartReceipt = {
-  part_number: number
-  sha256: string
-  size_bytes: number
-}
-
 export type AttachmentUploadActions = {
-  finish: (input: AttachmentUploadParams & {
-    attachment_id: string
-    upload_id: string
-    parts: AttachmentPartReceipt[]
-  }) => Promise<{ id: string }>
-  prepare: (input: AttachmentUploadParams & {
-    declared_media_type: string
-    filename: string
-    operation_id: string
-    sha256: string
-    size_bytes: number
-    target: AttachmentUploadTarget
-  }) => Promise<{
+  finish: (input: FinishAttachmentInput) => Promise<{ id: string }>
+  prepare: (input: PrepareAttachmentInput) => Promise<{
     attachment: { id: string }
-    transfer: {
-      acknowledged_parts: AttachmentPartReceipt[]
-      grant: string
-      media_base_url: string
-      max_concurrent_parts: number
-      preferred_part_bytes: number
-      upload_id: string
-      expires_at_unix: number
-    }
+    transfer: RequestAttachmentTransferResponse
   }>
 }
 
@@ -82,8 +52,8 @@ export async function uploadRequestAttachment({
   actions: AttachmentUploadActions
   draftKey: string
   localId: string
-  params: AttachmentUploadParams
-  target: AttachmentUploadTarget
+  params: RequestParams
+  target: RequestAttachmentTargetInput
   onCompleted?: () => void
   hashFile?: typeof hashAttachmentFile
 }) {
@@ -111,7 +81,7 @@ export async function uploadRequestAttachment({
     })
     assertActive(controller)
     let prepared: Awaited<ReturnType<AttachmentUploadActions['prepare']>> | null = null
-    let receipts: AttachmentPartReceipt[] | null = null
+    let receipts: RequestAttachmentPartReceiptResponse[] | null = null
     for (let authorizationAttempt = 0; authorizationAttempt < 3; authorizationAttempt += 1) {
       try {
         prepared = await actions.prepare({
@@ -185,7 +155,7 @@ export function removeUploadingRequestAttachment(
 
 export function attachmentTargetForDraft(
   target: RequestAttachmentDraftTarget,
-): AttachmentUploadTarget {
+): RequestAttachmentTargetInput {
   if (target === 'description') {
     return { discussion_id: null, kind: 'Description' }
   }
@@ -206,7 +176,7 @@ async function uploadParts({
   draftKey: string
   file: File
   localId: string
-  transfer: Awaited<ReturnType<AttachmentUploadActions['prepare']>>['transfer']
+  transfer: RequestAttachmentTransferResponse
 }) {
   const partBytes = Math.max(1, transfer.preferred_part_bytes)
   const count = Math.ceil(file.size / partBytes)
@@ -362,7 +332,7 @@ function putPart({
   signal: AbortSignal
   url: string
 }) {
-  return new Promise<AttachmentPartReceipt>((resolve, reject) => {
+  return new Promise<RequestAttachmentPartReceiptResponse>((resolve, reject) => {
     const request = new XMLHttpRequest()
     const abort = () => request.abort()
     signal.addEventListener('abort', abort, { once: true })
@@ -418,7 +388,7 @@ class TransferAuthorizationExpired extends Error {
   }
 }
 
-function isPartReceipt(value: unknown): value is AttachmentPartReceipt {
+function isPartReceipt(value: unknown): value is RequestAttachmentPartReceiptResponse {
   if (!value || typeof value !== 'object') return false
   const receipt = value as Record<string, unknown>
   return Number.isInteger(receipt.part_number) &&

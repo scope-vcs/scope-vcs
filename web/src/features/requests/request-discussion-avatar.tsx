@@ -8,20 +8,7 @@ import {
   type DiscussionAuthor,
 } from './request-discussion-author'
 
-const ACTOR_HUE_PAIRS = [
-  [255, 295],
-  [215, 255],
-  [175, 215],
-  [140, 175],
-  [20, 350],
-  [305, 335],
-  [45, 20],
-  [275, 225],
-  [335, 15],
-  [295, 330],
-  [65, 35],
-  [190, 150],
-] as const
+const ACTOR_HUES = [255, 215, 175, 140, 20, 305, 45, 275, 335, 295, 65, 190]
 
 export function RequestDiscussionAuthorSource({ author }: { author: DiscussionAuthor }) {
   const sourceUrl = discussionAuthorSourceUrl(author)
@@ -46,24 +33,8 @@ export function RequestDiscussionAuthorAvatar({
   author: DiscussionAuthor
   small?: boolean
 }) {
-  return (
-    <RequestDiscussionActorAvatar
-      handle={discussionAuthorName(author)}
-      imageUrl={discussionAuthorAvatarUrl(author)}
-      small={small}
-    />
-  )
-}
-
-export function RequestDiscussionActorAvatar({
-  handle,
-  imageUrl = null,
-  small = false,
-}: {
-  handle: string
-  imageUrl?: string | null
-  small?: boolean
-}) {
+  const handle = discussionAuthorName(author)
+  const imageUrl = discussionAuthorAvatarUrl(author)
   if (imageUrl) {
     return (
       <img
@@ -84,16 +55,15 @@ export function RequestDiscussionActorAvatar({
         'dark:bg-[oklch(0.34_0.05_var(--actor-hue))] dark:text-[oklch(0.86_0.06_var(--actor-hue))]',
         small ? 'size-5 text-[9px]' : 'size-8 text-xs',
       )}
-      style={{ '--actor-hue': actorHues(handle).hue } as CSSProperties}
+      style={{ '--actor-hue': actorHue(handle) } as CSSProperties}
     >
       {handle.slice(0, 2)}
     </div>
   )
 }
 
-export function actorHues(handle: string) {
+function actorHue(handle: string) {
   let hash = 0
   for (const char of handle) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  const [hue, accent] = ACTOR_HUE_PAIRS[hash % ACTOR_HUE_PAIRS.length]
-  return { hue, accent, angle: (hash >>> 5) % 360 }
+  return ACTOR_HUES[hash % ACTOR_HUES.length]
 }

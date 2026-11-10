@@ -272,7 +272,6 @@ impl ProductEvent {
         event
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn discussion_event(
         name: &'static str,
         actor_user_id: &str,

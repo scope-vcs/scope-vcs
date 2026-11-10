@@ -87,8 +87,8 @@ pub struct CapacityRetry {
 }
 
 impl RunJob {
-    pub fn new(run: &Run, definition: &WorkflowJob) -> Result<Self, DomainError> {
-        Ok(Self {
+    pub fn new(run: &Run, definition: &WorkflowJob) -> Self {
+        Self {
             run_id: run.id.clone(),
             key: definition.id().clone(),
             pinned_container_image: definition.container().pinned_image().clone(),
@@ -103,7 +103,7 @@ impl RunJob {
             updated_at_unix: run.created_at_unix,
             completed_at_unix: None,
             capacity_retry: None,
-        })
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -358,12 +358,12 @@ impl RunJob {
 
 pub fn create_run_jobs(run: &Run, revision: &WorkflowRevision) -> Result<Vec<RunJob>, DomainError> {
     run.validate_workflow_revision(revision)?;
-    revision
+    Ok(revision
         .definition()
         .jobs()
         .iter()
         .map(|definition| RunJob::new(run, definition))
-        .collect()
+        .collect())
 }
 
 pub fn reconcile_run(

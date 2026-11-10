@@ -160,9 +160,7 @@ async fn request_reader(
     }
     let (request, _) = visible_request(
         read.state,
-        &repo.context.record.id,
-        &repo.context.views,
-        access,
+        &repo.context,
         viewer_user_id.as_deref(),
         request_id,
     )

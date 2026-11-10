@@ -45,48 +45,31 @@ response_enum!(GitHubDisconnectReasonResponse => GitHubDisconnectReason {
     AppUninstalled, InstallationSuspended, RepositoryRemoved,
 });
 
-/// A repository's GitHub connection as its maintainers see it.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubConnectionResponse {
-    /// `false` when this server has no GitHub App, so nothing can connect.
     pub(crate) configured: bool,
     pub(crate) connection: Option<GitHubConnectionDetailsResponse>,
-    /// The check names GitHub must pass before a request merges.
     pub(crate) required_checks: Vec<String>,
-    /// GitHub accounts whose reviews Scope imports without asking GitHub whether they can write; cleared on disconnect.
     pub(crate) review_bots: Vec<GitHubReviewBotResponse>,
-    /// Whether the viewer may confirm that a public GitHub repository
-    /// receives what Scope pushes, private requests included.
     pub(crate) can_confirm_public: bool,
-    /// Whether the viewer may turn on publishing main: a maintainer who reads
-    /// the full view and can change file visibility.
     pub(crate) can_publish_main: bool,
-    /// The latest connection test, while the repository has a link.
     pub(crate) setup_check: Option<GitHubSetupCheckResponse>,
-    /// How many of GitHub's most recent workflow runs connecting imports.
     pub(crate) run_import_count: u32,
-    /// The latest import of the linked GitHub repository's runs.
     pub(crate) run_import: Option<GitHubRunImportResponse>,
 }
 
-/// An import of the GitHub repository's most recent workflow runs.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubRunImportResponse {
     pub(crate) state: GitHubRunImportStateResponse,
-    /// The most runs it reads.
     pub(crate) run_count: u32,
-    /// How many runs it stored, once it succeeded.
     pub(crate) imported_count: u32,
-    /// What GitHub answered when the latest attempt failed. A queued import
-    /// with an error tries again.
     pub(crate) error: Option<String>,
     pub(crate) queued_at_unix: u64,
     pub(crate) finished_at_unix: Option<u64>,
 }
 
-/// A test that pushes main to a branch of its own and waits for workflows.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubSetupCheckResponse {
@@ -95,30 +78,22 @@ pub(crate) struct GitHubSetupCheckResponse {
     pub(crate) state: GitHubSetupCheckStateResponse,
     pub(crate) started_at_unix: u64,
     pub(crate) finished_at_unix: Option<u64>,
-    /// The check names GitHub reported for the test, which can be required.
     pub(crate) check_names: Vec<String>,
-    /// GitHub's answer to a refused push, or why no workflow started.
     pub(crate) message: Option<String>,
 }
 
-/// The Runs page of a repository whose checks run on GitHub.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubWorkflowRunsResponse {
-    /// Whether this server can connect repositories to GitHub at all.
     pub(crate) configured: bool,
-    /// `None` when the repository is not linked to GitHub; its runs are Scope's own.
     pub(crate) github: Option<GitHubWorkflowRunListResponse>,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubWorkflowRunListResponse {
-    /// The repository's Actions page, which has every run and its logs.
     pub(crate) actions_url: String,
-    /// A page of runs, newest first.
     pub(crate) workflow_runs: Vec<GitHubWorkflowRunResponse>,
-    /// Continues the list after this page, while there is more.
     pub(crate) next_cursor: Option<String>,
 }
 
@@ -141,19 +116,14 @@ pub(crate) struct GitHubWorkflowRunResponse {
     pub(crate) html_url: String,
     pub(crate) run_started_at_unix: Option<u64>,
     pub(crate) updated_at_unix: u64,
-    /// The Scope request whose branch the run is on.
     pub(crate) request_id: Option<String>,
 }
 
-/// A GitHub Actions workflow run on Scope's run page, with the jobs of its
-/// latest attempt as GitHub last reported them.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubWorkflowRunDetailResponse {
     pub(crate) run: GitHubWorkflowRunResponse,
-    /// In the order GitHub created them.
     pub(crate) jobs: Vec<GitHubWorkflowJobResponse>,
-    /// True until Scope first reads the current run attempt's jobs from GitHub.
     pub(crate) jobs_not_read_yet: bool,
 }
 
@@ -166,7 +136,6 @@ pub(crate) struct GitHubWorkflowJobResponse {
     pub(crate) conclusion: Option<GitHubCheckConclusion>,
     pub(crate) started_at_unix: Option<u64>,
     pub(crate) completed_at_unix: Option<u64>,
-    /// The job on GitHub, which keeps its whole log.
     pub(crate) html_url: String,
     pub(crate) steps: Vec<GitHubWorkflowStepResponse>,
 }
@@ -182,71 +151,55 @@ pub(crate) struct GitHubWorkflowStepResponse {
     pub(crate) completed_at_unix: Option<u64>,
 }
 
-/// A finished job's log. GitHub offers it only once the job completes. A job
-/// that was skipped or ran no steps never wrote one. `pending` means Scope is
-/// reading the log from GitHub; the run's change event says when it is stored.
 #[derive(Debug, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 #[cfg_attr(feature = "type-export", ts(tag = "state", rename_all = "snake_case"))]
 pub(crate) enum GitHubWorkflowJobLogResponse {
-    Kept {
-        text: String,
-        /// Whether `text` is only the end of a longer log.
-        truncated: bool,
-    },
+    Kept { text: String, truncated: bool },
     Expired,
     NotRun,
     Pending,
 }
 
-/// How many of GitHub's most recent workflow runs the repository imports.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct SetGitHubRunImportCountRequest {
     pub(crate) count: u32,
 }
 
-/// A GitHub account listed as a review bot.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubReviewBotResponse {
     pub(crate) login: String,
-    /// Whether requests wait for this bot to finish their latest commit before they can merge.
     pub(crate) required: bool,
 }
 
-/// The whole list of review bots, replacing the stored one; at most 20 distinct GitHub logins such as `greptile-apps[bot]`.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct SetGitHubReviewBotsRequest {
     pub(crate) bots: Vec<GitHubReviewBotRequest>,
 }
 
-/// A GitHub login to list as a review bot.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubReviewBotRequest {
     pub(crate) login: String,
-    /// Whether requests wait for this bot to finish their latest commit before they can merge.
     pub(crate) required: bool,
 }
 
-/// Turns review bot pull requests on or off for the repository.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct SetGitHubReviewBotPullRequestsRequest {
     pub(crate) enabled: bool,
 }
 
-/// The comment Scope posts on review bot pull requests. Empty posts none.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct SetGitHubReviewRequestCommentRequest {
     pub(crate) comment: String,
 }
 
-/// The whole list of required check names, replacing the stored one.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct SetGitHubRequiredChecksRequest {
@@ -258,32 +211,20 @@ pub(crate) struct SetGitHubRequiredChecksRequest {
 pub(crate) struct GitHubConnectionDetailsResponse {
     pub(crate) github_full_name: String,
     pub(crate) github_url: String,
-    /// `None` once that account was deleted.
     pub(crate) connected_by: Option<RequestActorSummaryResponse>,
     pub(crate) connected_at_unix: u64,
-    /// Set when GitHub took the repository away from Scope.
     pub(crate) disconnected: Option<GitHubDisconnectionResponse>,
-    /// Everything Scope pushes to a public GitHub repository is public.
     pub(crate) public_on_github: bool,
-    /// False while a repository that became public waits for a maintainer to
-    /// confirm; private requests are not sent there meanwhile.
     pub(crate) public_confirmed: bool,
-    /// Whether Scope opens a GitHub pull request for each submitted
-    /// full-view request so review bots on GitHub review it.
     pub(crate) open_review_bot_pull_requests: bool,
-    /// Posted on that pull request when Scope opens it and after each new
-    /// head Scope pushes there.
     pub(crate) review_request_comment: Option<String>,
     pub(crate) main_publication: GitHubMainPublicationResponse,
 }
 
-/// Publishing Scope's main to the linked GitHub repository's main.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubMainPublicationResponse {
-    /// Whether every change to Scope main is pushed to GitHub main, never forced.
     pub(crate) enabled: bool,
-    /// The latest push of main to this GitHub repository.
     pub(crate) latest: Option<GitHubMainPushResponse>,
 }
 
@@ -292,12 +233,10 @@ pub(crate) struct GitHubMainPublicationResponse {
 pub(crate) struct GitHubMainPushResponse {
     pub(crate) state: GitHubMainPushStateResponse,
     pub(crate) commit_oid: String,
-    /// Why the latest attempt failed. A queued push with an error tries again.
     pub(crate) error: Option<String>,
     pub(crate) updated_at_unix: u64,
 }
 
-/// Turns publishing Scope main to GitHub on or off.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct SetGitHubMainPublicationRequest {
@@ -311,25 +250,19 @@ pub(crate) struct GitHubDisconnectionResponse {
     pub(crate) at_unix: u64,
 }
 
-/// Starts authorizing the app for a repository.
 #[derive(Debug, Default, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubAuthorizeRequest {
-    /// The origin of the page that started connecting. GitHub returns there
-    /// when it is an allowed Scope web origin, so a development stack reached
-    /// at another address works. Without it, the public app origin is used.
     #[serde(default)]
     pub(crate) web_origin: Option<String>,
 }
 
-/// GitHub's OAuth screen for the app, carrying a signed setup state.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubAuthorizeResponse {
     pub(crate) authorize_url: String,
 }
 
-/// What GitHub's OAuth screen sent back to the setup page.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubSetupRequest {
@@ -337,19 +270,14 @@ pub(crate) struct GitHubSetupRequest {
     pub(crate) code: String,
 }
 
-/// The GitHub repositories the maintainer can push through the app, and the
-/// grant that connecting one of them requires.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 pub(crate) struct GitHubSetupResponse {
     pub(crate) owner_handle: String,
     pub(crate) repo_name: String,
     pub(crate) repositories: Vec<GitHubRepositoryResponse>,
-    /// Where to install the app on a repository that is missing.
     pub(crate) install_url: String,
     pub(crate) grant: String,
-    /// How many recent workflow runs the repository imports, which
-    /// connecting can change.
     pub(crate) run_import_count: u32,
 }
 
@@ -366,12 +294,8 @@ pub(crate) struct GitHubRepositoryResponse {
 pub(crate) struct ConnectGitHubRepositoryRequest {
     pub(crate) grant: String,
     pub(crate) github_repository_id: u64,
-    /// Required for a public GitHub repository: everything Scope pushes there,
-    /// private requests and private files included, becomes public.
     #[serde(default)]
     pub(crate) acknowledge_public: bool,
-    /// How many of GitHub's most recent workflow runs to import, which
-    /// becomes the repository's import count.
     pub(crate) run_import_count: u32,
 }
 

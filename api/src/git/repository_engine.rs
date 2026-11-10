@@ -387,25 +387,31 @@ impl RepositoryEngine {
                 missing_prerequisites.store(true, Ordering::Relaxed);
                 return Ok(());
             }
-            if target.is_dir() {
+            let install_into = |repo: &Path, context: &'static str| -> Result<(), ApiError> {
                 install_verified_git_pack(
-                    &target,
+                    repo,
                     local_pack,
                     crate::runtime_budgets::RuntimeBudgets::default_git_command_timeout(),
                 )?;
                 run_timed_git_restore_phase(
                     repository_id,
                     "promote_update_ref",
-                    Some(&target),
+                    Some(repo),
                     &[
                         "update-ref",
                         &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
                         expected_head,
                     ],
-                    "advancing repository Git cache from the accepted pack",
+                    context,
                 )?;
-                sanitize_repository_git_cache_repo(&target, expected_head)?;
-                return self.cache.note_applied(incarnation, &target, push_sequence);
+                sanitize_repository_git_cache_repo(repo, expected_head)?;
+                self.cache.note_applied(incarnation, repo, push_sequence)
+            };
+            if target.is_dir() {
+                return install_into(
+                    &target,
+                    "advancing repository Git cache from the accepted pack",
+                );
             }
             let attempt = REPOSITORY_MATERIALIZATION_ATTEMPT.fetch_add(1, Ordering::Relaxed);
             let temp = self.cache_root().join(format!(
@@ -418,27 +424,8 @@ impl RepositoryEngine {
                 &["--bare", "init", temp.to_string_lossy().as_ref()],
                 "seeding repository Git cache from accepted push",
             )?;
-            let build = (|| {
-                install_verified_git_pack(
-                    &temp,
-                    local_pack,
-                    crate::runtime_budgets::RuntimeBudgets::default_git_command_timeout(),
-                )?;
-                run_timed_git_restore_phase(
-                    repository_id,
-                    "promote_update_ref",
-                    Some(&temp),
-                    &[
-                        "update-ref",
-                        &format!("refs/heads/{DEFAULT_GIT_BRANCH}"),
-                        expected_head,
-                    ],
-                    "seeding repository Git cache head",
-                )?;
-                sanitize_repository_git_cache_repo(&temp, expected_head)?;
-                self.cache.note_applied(incarnation, &temp, push_sequence)?;
-                fs::rename(&temp, &target).map_err(ApiError::internal)
-            })();
+            let build = install_into(&temp, "seeding repository Git cache head")
+                .and_then(|()| fs::rename(&temp, &target).map_err(ApiError::internal));
             if build.is_err() {
                 let _ = fs::remove_dir_all(&temp);
             }

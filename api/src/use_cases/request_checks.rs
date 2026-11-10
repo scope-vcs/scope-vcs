@@ -19,7 +19,7 @@ use scope_domain::{
         RequestCheckReviewer, RequestChecksOutcome, RequestRevision, request_checks_outcome,
         request_head_awaits_evaluation,
     },
-    runs::{availability::NativeRunsAvailability, workflow::revision::WorkflowRevision},
+    runs::workflow::revision::WorkflowRevision,
     views::Views,
 };
 use scope_postgres::db::{
@@ -107,14 +107,6 @@ pub(crate) async fn recorded_checks_view(
     })
 }
 
-pub(crate) async fn checks_outcome(
-    state: &AppState,
-    repo: &RepoRecord,
-    request: &Request,
-) -> Result<RequestChecksOutcome, ApiError> {
-    Ok(checks_view(state, repo, request).await?.outcome)
-}
-
 async fn evaluate_saved_head(
     state: &AppState,
     repo: &RepoRecord,
@@ -174,17 +166,6 @@ async fn evaluate_saved_head(
     ))
     .await
     .map(Some)
-}
-
-async fn native_runs_availability(
-    state: &AppState,
-    request: &Request,
-) -> Result<NativeRunsAvailability, ApiError> {
-    Ok(state
-        .metadata
-        .native_runs()
-        .repository_availability(&request.repo_id)
-        .await?)
 }
 
 pub(crate) async fn checks_outcomes(
@@ -432,7 +413,11 @@ async fn evaluate_request_checks(
                 )
             }
             RequestCheckProvider::Native => {
-                let native_runs = native_runs_availability(state, request).await?;
+                let native_runs = state
+                    .metadata
+                    .native_runs()
+                    .repository_availability(&request.repo_id)
+                    .await?;
                 let revisions = if native_runs.is_available() {
                     native_revisions.await?
                 } else {

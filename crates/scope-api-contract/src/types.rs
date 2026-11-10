@@ -188,13 +188,10 @@ pub struct RepoConfigResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct CreatePushIntentRequest {
     pub head_oid: String,
-    /// The fingerprint of the config the pusher reviewed; required when pushing through the full view and ignored otherwise.
     #[serde(default)]
     pub base_config_hash: Option<String>,
-    /// The reviewed config; required when pushing through the full view and ignored otherwise.
     #[serde(default)]
     pub config: Option<RepoConfig>,
-    /// The view of the remote the push goes through.
     pub view: ViewId,
 }
 
@@ -204,7 +201,6 @@ pub struct CreatePushIntentResponse {
     pub token: String,
     pub base_head_oid: Option<GitOid>,
     pub expires_at_unix: u64,
-    /// True when the view is narrower than the full view, so the push lands as an auto-merged request in that view.
     pub lands_as_request: bool,
 }
 
@@ -220,11 +216,9 @@ pub struct RequestListResponse {
 pub struct RequestDetailResponse {
     pub stack_navigation: RequestStackNavigationResponse,
     pub request: RequestSummaryResponse,
-    /// Null until the current revision's line counts are recorded, or when the viewer's readable files cannot be counted.
     pub diff_stat: Option<RequestDiffStatResponse>,
 }
 
-/// Line counts over the files the viewer can read in a request's current revision, counted like GitHub: every changed file counts and binary files add no lines.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestDiffStatResponse {
@@ -306,14 +300,12 @@ pub struct RequestSummaryResponse {
     pub name: String,
     pub title: String,
     pub description_markdown: String,
-    /// Null once that account is deleted; clients show a deleted user.
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub view: ViewId,
     pub base: RequestBase,
     pub base_version: u64,
     pub stack_status: RequestStackStatus,
-    /// Counts this request and its request ancestors; main-rooted requests have depth 1, with a maximum of 33.
     pub stack_depth: u32,
     pub main_ancestor_oid: GitOid,
     pub head_oid: GitOid,
@@ -337,7 +329,6 @@ pub struct RequestSummaryResponse {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RequestInviteeResponse {
     pub user: RequestActorSummaryResponse,
-    /// Null once that account is deleted; clients show a deleted user.
     pub invited_by_user_id: Option<String>,
     pub created_at_unix: u64,
 }
@@ -374,12 +365,10 @@ pub struct RequestListItemResponse {
     pub base: RequestBase,
     pub base_version: u64,
     pub stack_status: RequestStackStatus,
-    /// Counts this request and its request ancestors; main-rooted requests have depth 1, with a maximum of 33.
     pub stack_depth: u32,
     pub id: String,
     pub name: String,
     pub title: String,
-    /// Null once that account is deleted; clients show a deleted user.
     pub author_user_id: Option<String>,
     pub author_role: RequestActorRole,
     pub view: ViewId,
@@ -388,7 +377,6 @@ pub struct RequestListItemResponse {
     pub submitted_at_unix: Option<u64>,
     pub updated_at_unix: u64,
     pub mergeability: RequestMergeabilityResponse,
-    /// Null until the current revision's line counts are recorded, or when the viewer's readable files cannot be counted.
     pub diff_stat: Option<RequestDiffStatResponse>,
 }
 
@@ -423,7 +411,6 @@ pub struct RequestMergeabilityResponse {
 pub struct RequestEventResponse {
     pub id: String,
     pub position: u64,
-    /// Null once that account is deleted; clients show a deleted user.
     pub actor: Option<RequestActorSummaryResponse>,
     pub kind: RequestEventKind,
     pub payload: RequestEventPayload,
@@ -442,7 +429,6 @@ pub struct RequestActorSummaryResponse {
 pub struct RequestDiscussionReplyReferenceResponse {
     pub id: String,
     pub position: u64,
-    /// Null once that Scope account is deleted; clients show a deleted user.
     pub author: Option<RequestDiscussionAuthorResponse>,
     pub body_markdown: String,
 }
@@ -453,7 +439,6 @@ pub struct RequestDiscussionReplyResponse {
     pub id: String,
     pub discussion_id: String,
     pub position: u64,
-    /// Null once that Scope account is deleted; clients show a deleted user.
     pub author: Option<RequestDiscussionAuthorResponse>,
     pub body_markdown: String,
     pub reply_to: Option<RequestDiscussionReplyReferenceResponse>,
@@ -468,7 +453,6 @@ pub struct RequestDiscussionSummaryResponse {
     pub client_discussion_id: String,
     pub opened_position: u64,
     pub last_activity_position: u64,
-    /// Null once that Scope account is deleted; clients show a deleted user.
     pub author: Option<RequestDiscussionAuthorResponse>,
     pub body_markdown: String,
     pub anchor: Option<RequestDiscussionAnchor>,
@@ -479,7 +463,6 @@ pub struct RequestDiscussionSummaryResponse {
     pub latest_replies: Vec<RequestDiscussionReplyResponse>,
     pub created_at_unix: u64,
     pub resolved_at_unix: Option<u64>,
-    /// Null while open, or once the resolving Scope account is deleted.
     pub resolved_by: Option<RequestDiscussionResolverResponse>,
 }
 
@@ -524,7 +507,6 @@ pub struct RequestRevisionResponse {
     pub base_version: u64,
     pub id: String,
     pub position: u64,
-    /// Null once that account is deleted; clients show a deleted user.
     pub actor: Option<RequestActorSummaryResponse>,
     pub old_head_oid: Option<String>,
     pub new_head_oid: Option<String>,
@@ -604,7 +586,6 @@ pub struct StartRequestRequest {
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct SubmitRequestRequest {}
 
-/// Refuses the merge when the request head has moved past what the caller reviewed.
 #[derive(Debug, Deserialize, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct MergeRequestRequest {

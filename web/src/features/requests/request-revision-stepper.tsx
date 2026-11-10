@@ -1,4 +1,4 @@
-import type { RequestRevisionListResponse } from '@/api/types.generated'
+import type { RequestComparisonMode, RequestRevisionListResponse } from '@/api/types.generated'
 import { RelativeTimestamp } from '@/components/timestamp'
 import { Popover } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -45,7 +45,7 @@ export function RequestRevisionStepper({
                   className="grid gap-0.5 px-3 py-2 hover:bg-muted focus-visible:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring aria-[current]:bg-muted"
                   onClick={close}
                   params={params}
-                  search={(current) => ({ revision: revision.id, comparison: current.comparison, commit: current.comparison === 'commit' ? revision.commits.at(-1)?.oid : undefined })}
+                  search={revisionSearch(revision)}
                   to="/$owner/$repo/requests/$requestId/changes"
                 >
                   <span className="font-medium text-foreground">
@@ -78,6 +78,14 @@ export function RequestRevisionStepper({
   )
 }
 
+function revisionSearch(revision: Revision) {
+  return (current: { comparison?: RequestComparisonMode }) => ({
+    revision: revision.id,
+    comparison: current.comparison,
+    commit: current.comparison === 'commit' ? revision.commits.at(-1)?.oid : undefined,
+  })
+}
+
 export function commitCount(revision: Revision) {
   return `${revision.commits.length} ${revision.commits.length === 1 ? 'commit' : 'commits'}`
 }
@@ -98,7 +106,7 @@ function StepLink({
     <Link
       className={cn(STEP_CLASS, 'hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring')}
       params={params}
-      search={(current) => ({ revision: revision.id, comparison: current.comparison, commit: current.comparison === 'commit' ? revision.commits.at(-1)?.oid : undefined })}
+      search={revisionSearch(revision)}
       title={`Revision ${revision.position}`}
       to="/$owner/$repo/requests/$requestId/changes"
     >

@@ -26,16 +26,8 @@ async fn request_viewer(
     repo_name: &str,
     request_id: &str,
 ) -> Result<Option<String>, ApiError> {
-    let (repo, access, viewer) = repo_metadata_and_access(state, headers, owner, repo_name).await?;
-    visible_request(
-        state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        viewer.as_deref(),
-        request_id,
-    )
-    .await?;
+    let (repo, viewer) = repo_metadata_and_access(state, headers, owner, repo_name).await?;
+    visible_request(state, &repo, viewer.as_deref(), request_id).await?;
     Ok(viewer)
 }
 

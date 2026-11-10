@@ -52,7 +52,7 @@ pub struct RequestListPageQuery<'a> {
 
 #[derive(Clone, Debug, FromQueryResult)]
 pub(super) struct RequestListModel {
-    id: String,
+    pub(super) id: String,
     name: String,
     title: String,
     author_user_id: Option<String>,

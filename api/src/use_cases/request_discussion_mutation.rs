@@ -6,10 +6,10 @@ use crate::{
     use_cases::request_anchor_projection::{self, AnchorProjections},
 };
 use scope_domain::{
-    repository::access::{RepositoryAccess, RepositoryAccessContext},
+    repository::access::RepositoryAccessContext,
     requests::{
-        MarkRequestDiscussionReadInput, Request, RequestDiscussionAnchor, RequestDiscussionReply,
-        RequestViewer, request_actor_role, request_policy,
+        CreateRequestDiscussionReplyMutation, MarkRequestDiscussionReadInput, Request,
+        RequestDiscussionAnchor, RequestViewer, request_actor_role, request_policy,
     },
 };
 pub(crate) use scope_postgres::db::DiscussionTransition;
@@ -62,18 +62,6 @@ pub(crate) struct TransitionDiscussionCommand {
     pub(crate) transition: DiscussionTransition,
 }
 
-pub(crate) struct ReopenAndReplyCommand {
-    pub(crate) owner: String,
-    pub(crate) repo_name: String,
-    pub(crate) request_id: String,
-    pub(crate) discussion_id: String,
-    pub(crate) actor_user_id: String,
-    pub(crate) client_reply_id: String,
-    pub(crate) body_markdown: String,
-    pub(crate) reply_to_reply_id: Option<String>,
-    pub(crate) wait_after_reply: bool,
-}
-
 pub(crate) struct MarkDiscussionReadCommand {
     pub(crate) owner: String,
     pub(crate) repo_name: String,
@@ -101,7 +89,6 @@ pub(crate) struct MarkDiscussionReadResult {
 
 pub(super) struct MutationContext {
     pub(super) repo: RepositoryAccessContext,
-    pub(super) access: RepositoryAccess,
     pub(super) request: Request,
 }
 
@@ -143,7 +130,7 @@ pub(crate) async fn create_discussion(
                 &context.request.id,
                 &mutation.discussion.id,
                 context.request.view.clone(),
-                request_actor_role(context.access.clone()),
+                request_actor_role(context.repo.access.clone()),
                 mutation.discussion.anchor.is_some(),
             ));
     }
@@ -180,27 +167,7 @@ pub(crate) async fn create_reply(
             now_unix: unix_now()?,
         })
         .await?;
-    let discussion_id = mutation.discussion.id;
-    if mutation.created {
-        state
-            .product_analytics
-            .capture(ProductEvent::discussion_reply_created(
-                &command.actor_user_id,
-                context.repo.incarnation().incarnation_id(),
-                &context.request.id,
-                &discussion_id,
-                context.request.view.clone(),
-                request_actor_role(context.access.clone()),
-            ));
-    }
-    reply_mutation_result(
-        state,
-        &context,
-        discussion_id,
-        mutation.reply,
-        &command.actor_user_id,
-    )
-    .await
+    reply_mutation_result(state, &context, &command.actor_user_id, mutation).await
 }
 
 pub(crate) async fn transition_discussion(
@@ -240,7 +207,7 @@ pub(crate) async fn transition_discussion(
                 &context.request.id,
                 &command.discussion_id,
                 context.request.view.clone(),
-                request_actor_role(context.access.clone()),
+                request_actor_role(context.repo.access.clone()),
             ));
     }
     let through_position = discussion.last_activity_position;
@@ -262,7 +229,7 @@ pub(crate) async fn transition_discussion(
 
 pub(crate) async fn reopen_and_reply(
     state: &AppState,
-    command: ReopenAndReplyCommand,
+    command: CreateReplyCommand,
 ) -> Result<ReplyMutationResult, ApiError> {
     let context = mutation_context(
         state,
@@ -290,27 +257,7 @@ pub(crate) async fn reopen_and_reply(
             now_unix: unix_now()?,
         })
         .await?;
-    let discussion_id = mutation.discussion.id;
-    if mutation.created {
-        state
-            .product_analytics
-            .capture(ProductEvent::discussion_reply_created(
-                &command.actor_user_id,
-                context.repo.incarnation().incarnation_id(),
-                &context.request.id,
-                &discussion_id,
-                context.request.view.clone(),
-                request_actor_role(context.access.clone()),
-            ));
-    }
-    reply_mutation_result(
-        state,
-        &context,
-        discussion_id,
-        mutation.reply,
-        &command.actor_user_id,
-    )
-    .await
+    reply_mutation_result(state, &context, &command.actor_user_id, mutation).await
 }
 
 pub(crate) async fn mark_read(
@@ -356,7 +303,7 @@ pub(crate) async fn first_valid_anchor(
         else {
             continue;
         };
-        match anchor::ensure_target(state, repo, &repo.access, request, &revision, &anchor).await {
+        match anchor::ensure_target(state, repo, request, &revision, &anchor).await {
             Ok(()) => return Ok(Some(anchor)),
             Err(error)
                 if matches!(
@@ -380,7 +327,6 @@ async fn mutation_context(
     actor_user_id: &str,
 ) -> Result<MutationContext, ApiError> {
     let repo = find_read_access(state, owner, repo_name, Some(actor_user_id)).await?;
-    let access = repo.access.clone();
     let request = state
         .metadata
         .requests()
@@ -395,27 +341,36 @@ async fn mutation_context(
     if request.repo_id != repo.record.id
         || !request_policy(
             &request,
-            RequestViewer::new(access.clone(), Some(actor_user_id), is_invitee),
+            RequestViewer::new(repo.access.clone(), Some(actor_user_id), is_invitee),
             &repo.views,
         )
         .exact_visible
     {
         return Err(ApiError::not_found("request not found"));
     }
-    Ok(MutationContext {
-        repo,
-        access,
-        request,
-    })
+    Ok(MutationContext { repo, request })
 }
 
 async fn reply_mutation_result(
     state: &AppState,
     context: &MutationContext,
-    discussion_id: String,
-    reply: RequestDiscussionReply,
     actor_user_id: &str,
+    mutation: CreateRequestDiscussionReplyMutation,
 ) -> Result<ReplyMutationResult, ApiError> {
+    let discussion_id = mutation.discussion.id;
+    let reply = mutation.reply;
+    if mutation.created {
+        state
+            .product_analytics
+            .capture(ProductEvent::discussion_reply_created(
+                actor_user_id,
+                context.repo.incarnation().incarnation_id(),
+                &context.request.id,
+                &discussion_id,
+                context.request.view.clone(),
+                request_actor_role(context.repo.access.clone()),
+            ));
+    }
     publish_timeline_change(state, context, discussion_id.clone(), reply.position).await;
     let discussion = load_discussion_result(state, context, &discussion_id, actor_user_id).await?;
     let (reply, reply_actors) = state

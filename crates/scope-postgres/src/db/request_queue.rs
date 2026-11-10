@@ -1,4 +1,6 @@
-use super::{RequestListRow, RequestStore, auth::load_users_by_ids, entities};
+use super::{
+    RequestListRow, RequestStore, auth::load_users_by_ids, entities, request_rows::RequestListModel,
+};
 use crate::{
     db::integer_columns::{i64_to_u64, u64_to_i64},
     error::PostgresError,
@@ -7,11 +9,10 @@ use scope_domain::{
     account::UserAccount,
     repository::access::RepositoryAccess,
     requests::{
-        REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_QUEUE_RULES, RequestActorRole, RequestAttention,
-        RequestAttentionReason, RequestAttentionState, RequestClaim, RequestListPredicate,
-        RequestQueueClassification, RequestQueueFacts, RequestQueuePredicate,
-        RequestQueuePredicateAtom, RequestQueueSection, RequestState, classify_request_queue_item,
-        request_queue_visibility_predicate,
+        REQUEST_LIST_MAX_PAGE_SIZE, REQUEST_QUEUE_RULES, RequestAttention, RequestAttentionReason,
+        RequestAttentionState, RequestClaim, RequestListPredicate, RequestQueueClassification,
+        RequestQueueFacts, RequestQueuePredicate, RequestQueuePredicateAtom, RequestQueueSection,
+        classify_request_queue_item, request_queue_visibility_predicate,
     },
     views::Views,
 };
@@ -55,29 +56,9 @@ pub struct RequestQueuePage {
 
 #[derive(Debug, FromQueryResult)]
 struct QueueModel {
-    id: String,
-    name: String,
-    title: String,
-    author_user_id: Option<String>,
-    author_role: String,
-    audience: String,
-    head_oid: String,
-    base_kind: String,
-    review_base_oid: String,
-    parent_request_id: Option<String>,
-    parent_revision_id: Option<String>,
-    parent_head_oid: Option<String>,
-    base_version: i64,
-    main_ancestor_oid: String,
-    stack_status: String,
-    stack_depth: i32,
-    submitted_at_unix: Option<i64>,
-    closed_at_unix: Option<i64>,
-    merged_at_unix: Option<i64>,
-    updated_at_unix: i64,
-    activity_version: i64,
+    #[sea_orm(nested)]
+    request: RequestListModel,
     attention_at_unix: i64,
-    has_pushed_head: bool,
     viewer_is_invitee: bool,
     attention_state: Option<String>,
     attention_reason: Option<String>,
@@ -133,9 +114,14 @@ impl RequestStore {
         let mut user_ids = Vec::with_capacity(rows.len() * 2);
         let mut projected = Vec::with_capacity(rows.len());
         for row in rows {
-            user_ids.extend(row.author_user_id.clone());
-            user_ids.extend(row.claimer_user_id.clone());
-            projected.push(row.try_into_queue_row(&input)?);
+            let row = row.try_into_queue_row(&input)?;
+            user_ids.extend(row.request.author_user_id.clone());
+            user_ids.extend(
+                row.claim
+                    .as_ref()
+                    .map(|claim| claim.claimer_user_id.clone()),
+            );
+            projected.push(row);
         }
         let users = load_users_by_ids(self.db.as_ref(), user_ids).await?;
         let next_attention_at_unix = if input.access.is_maintainer() {
@@ -162,18 +148,13 @@ impl QueueModel {
         self,
         input: &RequestQueuePageQuery<'_>,
     ) -> Result<RequestQueueRow, PostgresError> {
-        let state = request_state(
-            self.submitted_at_unix,
-            self.closed_at_unix,
-            self.merged_at_unix,
-        );
-        let activity_version = i64_to_u64(self.activity_version, "request activity version")?;
         let attention = self.attention(input.viewer_user_id)?;
         let claim = self.claim()?;
+        let request = self.request.try_into_read_model()?;
         let classification = classify_request_queue_item(RequestQueueFacts {
-            request_state: state,
-            request_activity_version: activity_version,
-            request_author_user_id: self.author_user_id.as_deref(),
+            request_state: request.state,
+            request_activity_version: request.activity_version,
+            request_author_user_id: request.author_user_id.as_deref(),
             viewer_user_id: input.viewer_user_id,
             viewer_is_maintainer: input.access.is_maintainer(),
             viewer_is_invitee: self.viewer_is_invitee,
@@ -186,41 +167,12 @@ impl QueueModel {
                 "request queue SQL and domain classification disagree",
             ));
         }
-        let updated_at_unix = i64_to_u64(self.updated_at_unix, "request update time")?;
         Ok(RequestQueueRow {
             cursor: RequestQueueCursor {
                 updated_at_unix: i64_to_u64(self.attention_at_unix, "queue attention time")?,
-                request_id: self.id.clone(),
+                request_id: request.id.clone(),
             },
-            request: RequestListRow {
-                id: self.id,
-                name: self.name,
-                title: self.title,
-                author_user_id: self.author_user_id,
-                author_role: entities::decode_enum::<RequestActorRole>(self.author_role)?,
-                view: scope_domain::views::ViewId::parse(&self.audience)
-                    .map_err(PostgresError::internal)?,
-                head_oid: self.head_oid,
-                base: entities::request::BaseColumns {
-                    kind: self.base_kind,
-                    review_base_oid: self.review_base_oid,
-                    parent_request_id: self.parent_request_id,
-                    parent_revision_id: self.parent_revision_id,
-                    parent_head_oid: self.parent_head_oid,
-                }
-                .try_into_domain()?,
-                base_version: i64_to_u64(self.base_version, "request base version")?,
-                main_ancestor_oid: self.main_ancestor_oid,
-                stack_status: entities::decode_enum(self.stack_status)?,
-                stack_depth: u32::try_from(self.stack_depth).map_err(PostgresError::internal)?,
-                state,
-                submitted_at_unix: optional_u64(self.submitted_at_unix, "request submission time")?,
-                closed_at_unix: optional_u64(self.closed_at_unix, "request close time")?,
-                merged_at_unix: optional_u64(self.merged_at_unix, "request merge time")?,
-                updated_at_unix,
-                activity_version,
-                has_pushed_head: self.has_pushed_head,
-            },
+            request,
             attention: classification,
             claim,
         })
@@ -237,7 +189,7 @@ impl QueueModel {
             PostgresError::internal_message("attention row is missing its viewer")
         })?;
         Ok(Some(RequestAttention {
-            request_id: self.id.clone(),
+            request_id: self.request.id.clone(),
             user_id: user_id.to_string(),
             state: entities::decode_enum::<RequestAttentionState>(state)?,
             reason: entities::decode_enum::<RequestAttentionReason>(
@@ -272,7 +224,7 @@ impl QueueModel {
             return Ok(None);
         };
         Ok(Some(RequestClaim {
-            request_id: self.id.clone(),
+            request_id: self.request.id.clone(),
             claimer_user_id,
             claimed_at_unix: i64_to_u64(
                 self.claimed_at_unix.ok_or_else(|| {
@@ -287,22 +239,6 @@ impl QueueModel {
                 "request claim update time",
             )?,
         }))
-    }
-}
-
-fn request_state(
-    submitted_at_unix: Option<i64>,
-    closed_at_unix: Option<i64>,
-    merged_at_unix: Option<i64>,
-) -> RequestState {
-    if merged_at_unix.is_some() {
-        RequestState::Merged
-    } else if closed_at_unix.is_some() {
-        RequestState::Closed
-    } else if submitted_at_unix.is_some() {
-        RequestState::Open
-    } else {
-        RequestState::Draft
     }
 }
 

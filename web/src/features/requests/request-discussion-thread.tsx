@@ -100,7 +100,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
   })
 
   async function submitReply(body: string, submissionId: string, waitAfterReply = false) {
-    const posted = await postReply(body, { submissionId, waitAfterReply })
+    const posted = await postReply(body, submissionId, { waitAfterReply })
     if (posted) onCloseComposer()
     return posted
   }
@@ -355,8 +355,7 @@ export const RequestDiscussionThread = memo(function RequestDiscussionThread({
                     openComposer()
                   }}
                   onRetry={(failedReply) =>
-                    void postReply(failedReply.body_markdown, {
-                      clientReplyId: failedReply.id,
+                    void postReply(failedReply.body_markdown, failedReply.id, {
                       replyToReplyId:
                         failedReply.reply_to?.id ?? failedReply.optimistic_reply_to_reply_id ?? null,
                       retryReference: failedReply.reply_to,

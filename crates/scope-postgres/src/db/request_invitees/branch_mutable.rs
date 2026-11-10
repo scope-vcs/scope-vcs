@@ -116,11 +116,14 @@ mod tests {
             .await
             .unwrap();
         assert!(authored.iter().all(|(_, invited)| !invited));
-        let fetched = requests
-            .requests_with_invitee_status("owner/repo", Some("user_target_0"))
-            .await
-            .unwrap();
-        assert_eq!(fetched.len(), 4);
+        assert_eq!(
+            requests
+                .requests_by_repo_id("owner/repo")
+                .await
+                .unwrap()
+                .len(),
+            4
+        );
         assert!(
             requests
                 .branch_mutable_requests_with_invitee_status("missing/repo", "user_target_0")

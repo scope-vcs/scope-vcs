@@ -37,6 +37,25 @@ impl TryFrom<scope_domain::requests::RequestBase> for RequestBase {
     }
 }
 
+impl From<RequestBase> for scope_domain::requests::RequestBase {
+    fn from(base: RequestBase) -> Self {
+        match base {
+            RequestBase::Main { review_base_oid } => Self::Main {
+                review_base_oid: review_base_oid.as_str().to_string(),
+            },
+            RequestBase::Request {
+                request_id,
+                revision_id,
+                head_oid,
+            } => Self::Request {
+                request_id,
+                revision_id,
+                head_oid: head_oid.as_str().to_string(),
+            },
+        }
+    }
+}
+
 crate::wire::wire_enum!(
     #[serde(rename_all = "snake_case")]
     RequestStackStatus => DomainRequestStackStatus {

@@ -107,8 +107,7 @@ fn store_seed_head_pack(
     .join()
     .map_err(|_| ApiError::internal_message("seed Git segment upload thread panicked"))?
     .map_err(|error| ApiError::infrastructure_unavailable(error.to_string()))?;
-    let prepared =
-        scope_git::prepare_git_push(head_oid, None, scope_git::GitStorageLimits::default())?;
+    let prepared = scope_git::prepare_git_push(head_oid, None)?;
     let upload = GitSegmentUpload {
         segment_id: staged.segment.segment_id.clone(),
         repository_id,

@@ -1,11 +1,5 @@
-use super::{
-    requests::{repo_metadata_and_access, visible_request},
-    responses::git_oid_response,
-};
-use crate::{
-    auth::scope::require_scope_user, error::ApiError, persistence::unix_now, state::AppState,
-    use_cases::request_checks,
-};
+use super::{requests::actor_request, responses::git_oid_response};
+use crate::{error::ApiError, persistence::unix_now, state::AppState, use_cases::request_checks};
 use axum::{
     Json,
     extract::{Path, State},
@@ -52,19 +46,11 @@ pub(crate) async fn approve_request_checks(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Json(input): Json<ApproveRequestChecksRequest>,
 ) -> Result<Json<RequestChecksResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        Some(&user.id),
-        &request_id,
-    )
-    .await?;
-    RequestCheckReviewer::for_actor(&user.id, &access, &repo.views)
-        .ok_or_else(|| ApiError::forbidden(RequestCheckReviewer::refusal(&access, &repo.views)))?;
+    let (user, repo, request) =
+        actor_request(&state, &headers, &owner, &repo_name, &request_id).await?;
+    RequestCheckReviewer::for_actor(&user.id, &repo.access, &repo.views).ok_or_else(|| {
+        ApiError::forbidden(RequestCheckReviewer::refusal(&repo.access, &repo.views))
+    })?;
     let mutation = crate::use_cases::request_check_sources::approve(
         &state,
         &repo.record,
@@ -97,12 +83,7 @@ pub(crate) fn snapshot_response(
     let access = viewer.access.clone();
     let evaluation = &snapshot.evaluation;
     let results = &snapshot.results;
-    let outcome = scope_domain::requests::request_checks_outcome(
-        &request.id,
-        &request.head_oid,
-        evaluation.as_ref(),
-        results,
-    );
+    let outcome = snapshot.checks_outcome();
     let decision = request_mergeability(
         request,
         &viewer,

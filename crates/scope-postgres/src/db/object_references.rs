@@ -5,12 +5,11 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
 
-fn encode_content_ref(content_ref: &ContentRef) -> Result<String, PostgresError> {
+pub(in crate::db) fn encode_content_ref(content_ref: &ContentRef) -> Result<String, PostgresError> {
     serde_json::to_string(content_ref).map_err(PostgresError::internal)
 }
 
-#[cfg(test)]
-fn decode_content_ref(encoded: &str) -> Result<ContentRef, PostgresError> {
+pub(in crate::db) fn decode_content_ref(encoded: &str) -> Result<ContentRef, PostgresError> {
     serde_json::from_str(encoded).map_err(PostgresError::internal)
 }
 

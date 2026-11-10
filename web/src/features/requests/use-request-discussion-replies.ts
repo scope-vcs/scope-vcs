@@ -92,15 +92,13 @@ export function useRequestDiscussionReplies({
 
   async function postReply(
     body: string,
+    clientReplyId: string,
     options: {
-      clientReplyId?: string
       replyToReplyId?: string | null
       retryReference?: RequestDiscussionReplyView['reply_to']
-      submissionId?: string
       waitAfterReply?: boolean
     } = {},
   ) {
-    const clientReplyId = options.clientReplyId ?? options.submissionId ?? crypto.randomUUID()
     return runRequestContentSubmission(clientReplyId, async () => {
     const replyToReplyId = options.replyToReplyId === undefined
       ? quoteId

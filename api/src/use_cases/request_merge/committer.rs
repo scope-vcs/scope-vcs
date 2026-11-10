@@ -519,10 +519,9 @@ async fn settle_first_failure(
     mut merge: QueuedMerge,
     failure: RequestMergeFailure,
 ) -> Option<QueuedMerge> {
-    let moved = failure.is_conflict()
-        && merge.attempt < MERGE_ATTEMPTS
-        && repository_moved_since(state, committed, &merge.submission.command).await;
-    if retries_preparation(&failure, moved, merge.attempt) {
+    if retries_preparation(&failure, merge.attempt)
+        && repository_moved_since(state, committed, &merge.submission.command).await
+    {
         tracing::info!(
             attempt = merge.attempt,
             request_id = %merge.submission.request.id,

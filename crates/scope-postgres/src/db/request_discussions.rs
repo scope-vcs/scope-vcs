@@ -419,33 +419,20 @@ impl RequestStore {
             .ok_or_else(|| PostgresError::not_found("request discussion not found"))?;
         let actor_is_maintainer = repo.access.is_maintainer();
         let actor = actor_user_id.clone();
+        let input = RequestDiscussionTransitionInput {
+            request_id,
+            discussion_id,
+            actor_user_id,
+            actor_is_maintainer,
+            actor_can_transition: policy.permissions.can_transition_discussion,
+            event_id,
+            now_unix,
+        };
         let mutation = match transition {
-            DiscussionTransition::Resolve => resolve_request_discussion(
-                request,
-                discussion,
-                RequestDiscussionTransitionInput {
-                    request_id,
-                    discussion_id,
-                    actor_user_id,
-                    actor_is_maintainer,
-                    actor_can_transition: policy.permissions.can_transition_discussion,
-                    event_id,
-                    now_unix,
-                },
-            )?,
-            DiscussionTransition::Reopen => reopen_request_discussion(
-                request,
-                discussion,
-                RequestDiscussionTransitionInput {
-                    request_id,
-                    discussion_id,
-                    actor_user_id,
-                    actor_is_maintainer,
-                    actor_can_transition: policy.permissions.can_transition_discussion,
-                    event_id,
-                    now_unix,
-                },
-            )?,
+            DiscussionTransition::Resolve => {
+                resolve_request_discussion(request, discussion, input)?
+            }
+            DiscussionTransition::Reopen => reopen_request_discussion(request, discussion, input)?,
         };
         save_request_row(&tx, &mutation.request).await?;
         save_discussion(&tx, &mutation.discussion).await?;

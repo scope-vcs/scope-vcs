@@ -12,8 +12,6 @@ pub const REPO_CONFIG_VERSION: u64 = 3;
 
 #[derive(Debug, Error)]
 pub enum RepoConfigError {
-    #[error("repo config is missing")]
-    Missing,
     #[error("repo config JSON is invalid: {0}")]
     InvalidJson(serde_json::Error),
     #[error("repo config kind must be scope.repo-config")]

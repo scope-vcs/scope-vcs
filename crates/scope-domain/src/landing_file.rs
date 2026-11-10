@@ -22,7 +22,7 @@ impl RepositoryLandingFile {
         blob: &SourceBlob,
         content_bytes: Vec<u8>,
     ) -> Result<Self, DomainError> {
-        if !source_identity_matches(blob) {
+        if !blob.content_ref_matches_identity() {
             return Err(DomainError::invariant_violation(
                 "repository landing file has an invalid source identity",
             ));
@@ -82,7 +82,7 @@ impl RepositoryLandingFile {
 
     pub fn verify_source(&self, blob: &SourceBlob) -> Result<(), DomainError> {
         self.validate_integrity()?;
-        let valid = source_identity_matches(blob)
+        let valid = blob.content_ref_matches_identity()
             && self.oid == blob.git_oid
             && self.git_file_mode == blob.git_file_mode
             && self.size_bytes == blob.size_bytes
@@ -95,14 +95,6 @@ impl RepositoryLandingFile {
                 "repository landing file does not match projected metadata",
             ))
         }
-    }
-}
-
-fn source_identity_matches(blob: &SourceBlob) -> bool {
-    match &blob.content_ref {
-        ContentRef::GitBlob { git_oid } => git_oid == &blob.git_oid,
-        ContentRef::BlobSha256(sha256) => sha256 == &blob.sha256,
-        _ => false,
     }
 }
 

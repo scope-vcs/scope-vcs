@@ -1,7 +1,6 @@
-use super::requests::{repo_metadata_and_access, visible_request};
+use super::requests::{actor_request, repo_metadata_and_access, visible_request};
 use crate::{
-    auth::scope::require_scope_user, error::ApiError, persistence::unix_now,
-    repo_events::RepoChangeReason, state::AppState,
+    error::ApiError, persistence::unix_now, repo_events::RepoChangeReason, state::AppState,
 };
 use axum::{
     Json,
@@ -24,17 +23,10 @@ pub(crate) async fn list_request_ratings(
     headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
 ) -> Result<Json<RequestRatingsResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
+    let (repo, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        viewer_user_id.as_deref(),
-        &request_id,
-    )
-    .await?;
+    let (request, _) =
+        visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     ratings_response(&state, &request, viewer_user_id.as_deref()).await
 }
 
@@ -44,17 +36,8 @@ pub(crate) async fn create_request_rating(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Json(payload): Json<CreateRequestRatingRequest>,
 ) -> Result<Json<RequestRatingResponse>, ApiError> {
-    let user = require_scope_user(&state, &headers).await?;
-    let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        Some(&user.id),
-        &request_id,
-    )
-    .await?;
+    let (user, repo, request) =
+        actor_request(&state, &headers, &owner, &repo_name, &request_id).await?;
     let rating = state
         .metadata
         .requests()

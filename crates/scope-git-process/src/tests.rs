@@ -1,20 +1,10 @@
 use super::*;
-use crate::lifecycle::{
-    child_process_state, parse_status_usize, parse_trimmed_usize, wait_status_exit_code,
-};
+use crate::lifecycle::{child_process_state, wait_status_exit_code};
 use std::{
     io::Read,
     process::Command,
     time::{Duration, Instant},
 };
-
-#[test]
-fn parses_linux_process_status_values() {
-    let status = "Name:\tapi\nThreads:\t27\nVmRSS:\t1024 kB\n";
-    assert_eq!(parse_status_usize(status, "Threads"), Some(27));
-    assert_eq!(parse_status_usize(status, "Missing"), None);
-    assert_eq!(parse_trimmed_usize(" max\n"), None);
-}
 
 #[test]
 fn pid1_reaper_preserves_exit_and_signal_statuses() {

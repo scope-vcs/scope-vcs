@@ -16,14 +16,12 @@ type RequestWorkspaceWidthState = {
 type RequestWorkspaceWidthDrag = {
   startedCollapsed: boolean
   width: number
-  x: number
 }
 
 export function requestWorkspaceWidthFromDrag(
   start: RequestWorkspaceWidthDrag,
-  pointerX: number,
+  movement: number,
 ): RequestWorkspaceWidthState | null {
-  const movement = pointerX - start.x
   if (start.startedCollapsed) {
     if (movement < REOPEN_DRAG_DISTANCE) return null
     return {

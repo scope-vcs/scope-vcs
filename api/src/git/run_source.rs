@@ -614,7 +614,7 @@ pub(crate) fn inspect_manual_run_bundle(
         .args(["clone", "--bare", "--no-local"])
         .arg(&bundle)
         .arg(&bare);
-    if run_git_inspection(&mut clone, "Git bundle clone", 0)?.is_none() {
+    if !run_git_inspection(&mut clone, "Git bundle clone")? {
         return Err(ApiError::bad_request("invalid Git bundle"));
     }
     let mut commit = Command::new("git");
@@ -622,7 +622,7 @@ pub(crate) fn inspect_manual_run_bundle(
         .arg("--git-dir")
         .arg(&bare)
         .args(["cat-file", "-e", &format!("{git_oid}^{{commit}}")]);
-    if run_git_inspection(&mut commit, "Git commit inspection", 0)?.is_none() {
+    if !run_git_inspection(&mut commit, "Git commit inspection")? {
         return Err(ApiError::bad_request(
             "requested Git commit is not present in the bundle",
         ));
@@ -720,17 +720,13 @@ fn git_blob(bare: &Path, git_oid: &str, path: &str) -> Result<Option<Vec<u8>>, A
     Ok(Some(output.stdout))
 }
 
-fn run_git_inspection(
-    command: &mut Command,
-    operation: &str,
-    max_stdout_bytes: usize,
-) -> Result<Option<Vec<u8>>, ApiError> {
+fn run_git_inspection(command: &mut Command, operation: &str) -> Result<bool, ApiError> {
     let span = prepare_git_subprocess(command)?;
     let _entered = span.enter();
     let output = run_process(
         command,
         None,
-        ProcessLimits::new(GIT_INSPECTION_TIMEOUT).with_max_stdout_bytes(max_stdout_bytes),
+        ProcessLimits::new(GIT_INSPECTION_TIMEOUT).with_max_stdout_bytes(0),
         operation,
     )
     .map_err(|error| {
@@ -741,7 +737,7 @@ fn run_git_inspection(
         }
     })?;
     record_git_exit(&span, output.status);
-    Ok(output.status.success().then_some(output.stdout))
+    Ok(output.status.success())
 }
 
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), ApiError> {

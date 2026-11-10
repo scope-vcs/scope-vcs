@@ -8,7 +8,7 @@ use crate::{
         request_discussion_mutation::{
             self, CreateDiscussionCommand, CreateReplyCommand, DiscussionAnchorInput,
             DiscussionMutationResult, DiscussionTransition, MarkDiscussionReadCommand,
-            ReopenAndReplyCommand, ReplyMutationResult, TransitionDiscussionCommand,
+            ReplyMutationResult, TransitionDiscussionCommand,
         },
     },
 };
@@ -27,7 +27,7 @@ use scope_api_contract::{
     RequestDiscussionReplyResponse, RequestDiscussionSummaryResponse,
 };
 use scope_domain::requests::{
-    REQUEST_ACTIVITY_PAGE_MAX_EVENTS, RequestLinePosition, RequestViewer, request_policy,
+    REQUEST_ACTIVITY_PAGE_MAX_EVENTS, RequestLinePosition, request_policy,
 };
 use serde::Deserialize;
 
@@ -75,17 +75,10 @@ pub(crate) async fn list_discussions(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Query(query): Query<DiscussionListQuery>,
 ) -> Result<Json<RequestDiscussionPageResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
+    let (repo, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        viewer_user_id.as_deref(),
-        &request_id,
-    )
-    .await?;
+    let (request, _) =
+        visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     let limit = query
         .limit
         .unwrap_or(DEFAULT_DISCUSSION_LIMIT)
@@ -201,17 +194,9 @@ pub(crate) async fn list_replies(
     Path((owner, repo_name, request_id, discussion_id)): Path<(String, String, String, String)>,
     Query(query): Query<DiscussionRepliesQuery>,
 ) -> Result<Json<RequestDiscussionRepliesPageResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
+    let (repo, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        viewer_user_id.as_deref(),
-        &request_id,
-    )
-    .await?;
+    visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     ensure_discussion_in_request(&state, &request_id, &discussion_id).await?;
     if let Some(reply_id) = query.reply.as_deref() {
         if query.before.is_some() {
@@ -329,7 +314,7 @@ pub(crate) async fn reopen_and_reply(
     let user = require_scope_user(&state, &headers).await?;
     let result = request_discussion_mutation::reopen_and_reply(
         &state,
-        ReopenAndReplyCommand {
+        CreateReplyCommand {
             owner,
             repo_name,
             request_id,
@@ -375,17 +360,10 @@ pub(crate) async fn changed_discussions(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Query(query): Query<DiscussionChangesQuery>,
 ) -> Result<Json<RequestDiscussionChangesResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
+    let (repo, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        viewer_user_id.as_deref(),
-        &request_id,
-    )
-    .await?;
+    let (request, _) =
+        visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     let limit = query.limit.unwrap_or(100).clamp(1, 100);
     let mut batch = state
         .metadata
@@ -424,34 +402,11 @@ pub(crate) async fn activity(
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Query(query): Query<ActivityQuery>,
 ) -> Result<Json<RequestActivityPageResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
+    let (repo, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
-    let (request, _) = visible_request(
-        &state,
-        &repo.record.id,
-        &repo.views,
-        access.clone(),
-        viewer_user_id.as_deref(),
-        &request_id,
-    )
-    .await?;
-    let is_invitee = match viewer_user_id.as_deref() {
-        Some(user_id) => {
-            state
-                .metadata
-                .requests()
-                .request_is_invitee(&request.id, user_id)
-                .await?
-        }
-        None => false,
-    };
-    if !request_policy(
-        &request,
-        RequestViewer::new(access.clone(), viewer_user_id.as_deref(), is_invitee),
-        &repo.views,
-    )
-    .activity_stream_visible
-    {
+    let (request, viewer) =
+        visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
+    if !request_policy(&request, viewer, &repo.views).activity_stream_visible {
         return Err(ApiError::not_found("request not found"));
     }
     let latest = query.latest.unwrap_or(false);
@@ -493,7 +448,7 @@ pub(crate) async fn activity(
         .into_iter()
         .map(|event| {
             let actor = recorded_actor_response(event.actor_user_id.as_deref(), &users)?;
-            request_event_response(event, actor, &access, &repo.views)
+            request_event_response(event, actor, &repo.access, &repo.views)
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
     Ok(Json(RequestActivityPageResponse {

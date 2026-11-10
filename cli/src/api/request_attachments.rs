@@ -1,4 +1,4 @@
-use super::{RequestTarget, decode_json_response, routes};
+use super::{RequestTarget, decode_json_response, execute, routes};
 use crate::api::ApiSession;
 use anyhow::{Context, bail};
 use reqwest::{Url, blocking::Client};
@@ -13,7 +13,7 @@ pub fn get_request_attachment_limits(
     api: ApiSession<'_>,
     target: RequestTarget<'_>,
 ) -> anyhow::Result<RequestAttachmentLimitsResponse> {
-    super::requests::execute(
+    execute(
         api.request(
             reqwest::Method::GET,
             routes::repo_request_attachment_limits(target.owner, target.repo, target.request_id),
@@ -30,7 +30,7 @@ pub fn prepare_request_attachment(
     target: RequestTarget<'_>,
     request: &PrepareRequestAttachmentRequest,
 ) -> anyhow::Result<PrepareRequestAttachmentResponse> {
-    super::requests::execute(
+    execute(
         api.request(
             reqwest::Method::POST,
             routes::repo_request_attachment_prepare(target.owner, target.repo, target.request_id),
@@ -49,7 +49,7 @@ pub fn finish_request_attachment(
     attachment_id: &str,
     request: &FinishRequestAttachmentRequest,
 ) -> anyhow::Result<RequestAttachmentResponse> {
-    super::requests::execute(
+    execute(
         api.request(
             reqwest::Method::POST,
             routes::repo_request_attachment_finish(
@@ -72,7 +72,7 @@ pub fn get_request_attachment(
     target: RequestTarget<'_>,
     attachment_id: &str,
 ) -> anyhow::Result<RequestAttachmentResponse> {
-    super::requests::execute(
+    execute(
         api.request(
             reqwest::Method::GET,
             routes::repo_request_attachment(

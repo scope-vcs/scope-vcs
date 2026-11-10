@@ -62,7 +62,6 @@ export function createApiClient() {
   }
 
   return {
-    authenticated: async () => Boolean(await requestAuthToken()),
     delete: <T>(path: string, validator: ApiValidator<T>, options?: ApiRequestOptions) =>
       request('DELETE', path, validator, options),
     get: <T>(path: string, validator: ApiValidator<T>, options?: ApiRequestOptions) =>

@@ -1,3 +1,4 @@
+use crate::runs::validation::is_kebab_name;
 use thiserror::Error;
 
 const REPO_IMAGE_CONTEXT_PREFIX: &str = "/.scope/images/";
@@ -23,7 +24,7 @@ impl ImageContextPath {
         let Some((image_name, context_path)) = relative.split_once('/') else {
             return Err(ImageContextPathError::InvalidPath);
         };
-        if !is_kebab_name(image_name)
+        if !is_kebab_name(image_name, MAX_REPO_IMAGE_NAME_BYTES)
             || context_path.is_empty()
             || context_path
                 .split('/')
@@ -52,17 +53,6 @@ impl ImageContextPath {
             .and_then(|relative| relative.split_once('/'))
             .expect("validated image context paths contain an image name and context path")
     }
-}
-
-fn is_kebab_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= MAX_REPO_IMAGE_NAME_BYTES
-        && !name.starts_with('-')
-        && !name.ends_with('-')
-        && !name.contains("--")
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 #[cfg(test)]

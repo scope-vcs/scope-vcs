@@ -1,7 +1,6 @@
-import { LoaderCircle, Search, X } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { useEffect, useRef, type InputHTMLAttributes, type KeyboardEventHandler } from 'react'
 import { isTypingTarget } from '@/lib/keyboard-target'
-import { cn } from '@/lib/utils'
 
 export function NavigationSearch({
   label,
@@ -11,8 +10,6 @@ export function NavigationSearch({
   onChange,
   onOpen,
   onKeyDown,
-  describedBy,
-  status,
   input,
   onEscape,
   shortcut = true,
@@ -24,8 +21,6 @@ export function NavigationSearch({
   onChange: (value: string) => void
   onOpen: () => void
   onKeyDown?: KeyboardEventHandler<HTMLInputElement>
-  describedBy?: string
-  status?: string
   input?: InputHTMLAttributes<HTMLInputElement>
   onEscape?: () => void
   shortcut?: boolean
@@ -66,13 +61,9 @@ export function NavigationSearch({
       />
       <input
         {...input}
-        aria-describedby={describedBy}
         aria-label={label}
         autoComplete="off"
-        className={cn(
-          'h-8 w-full min-w-0 text-ellipsis rounded border border-border bg-background pr-8 pl-7 text-xs placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-search-cancel-button]:hidden',
-          status && value && 'pr-16',
-        )}
+        className="h-8 w-full min-w-0 text-ellipsis rounded border border-border bg-background pr-8 pl-7 text-xs placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-search-cancel-button]:hidden"
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
@@ -96,23 +87,12 @@ export function NavigationSearch({
           <X aria-hidden="true" className="size-3.5" />
         </button>
       ) : (
-        !status && (
-          <kbd
-            aria-hidden="true"
-            className="pointer-events-none absolute right-2 text-xs text-muted-foreground"
-          >
-            /
-          </kbd>
-        )
-      )}
-      {status && (
-        <LoaderCircle
-          aria-label={status}
-          className={cn(
-            'absolute size-3.5 animate-spin text-muted-foreground',
-            value ? 'right-8' : 'right-2',
-          )}
-        />
+        <kbd
+          aria-hidden="true"
+          className="pointer-events-none absolute right-2 text-xs text-muted-foreground"
+        >
+          /
+        </kbd>
       )}
     </search>
   )

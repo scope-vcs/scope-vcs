@@ -1,9 +1,6 @@
-use super::{
-    mapping::encode_content_ref,
-    types::{SourceBlobCleanupBatch, SourceBlobCleanupDecision},
-};
+use super::types::{SourceBlobCleanupBatch, SourceBlobCleanupDecision};
 use crate::{
-    db::{CleanupStore, entities},
+    db::{CleanupStore, entities, object_references::encode_content_ref},
     error::PostgresError,
 };
 use scope_domain::{content::SourceBlob, repo_actions::RepoStorageCleanup, repository::repo_id};

@@ -2,7 +2,6 @@ use std::{
     collections::BTreeSet,
     fs,
     io::ErrorKind,
-    path::Path,
     process::{Child, Command},
     sync::atomic::{AtomicI32, Ordering},
     thread,
@@ -40,8 +39,6 @@ fn install_reaper_signal_handlers() -> std::io::Result<()> {
     }
 
     for signal in [libc::SIGTERM, libc::SIGINT, libc::SIGHUP] {
-        // SAFETY: sigaction is initialized before use and the handler performs
-        // only an async-signal-safe atomic store.
         let result = unsafe {
             let mut action: libc::sigaction = std::mem::zeroed();
             action.sa_sigaction = remember_signal as *const () as usize;
@@ -69,7 +66,6 @@ fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
             continue;
         }
 
-        // SAFETY: the negative pid targets only the service process group.
         unsafe {
             libc::kill(-service_pid, libc::SIGKILL);
         }
@@ -81,7 +77,6 @@ fn reap_service_process(service_pid: u32) -> std::io::Result<()> {
 fn forward_pending_signal(service_pid: i32) {
     let signal = PENDING_REAPER_SIGNAL.swap(0, Ordering::SeqCst);
     if signal != 0 {
-        // SAFETY: the negative pid targets only the service process group.
         unsafe {
             libc::kill(-service_pid, signal);
         }
@@ -101,7 +96,6 @@ fn drain_adopted_descendants() {
             let Ok(process_id) = i32::try_from(process_id) else {
                 continue;
             };
-            // SAFETY: both pids name descendants this reaper adopted, as a group leader or a direct child.
             unsafe {
                 libc::kill(-process_id, libc::SIGKILL);
                 libc::kill(process_id, libc::SIGKILL);
@@ -122,8 +116,6 @@ fn reap_exited_descendants() {
 fn reap_exited_child() -> std::io::Result<Option<(i32, i32)>> {
     loop {
         let mut status = 0;
-        // SAFETY: this dedicated reaper owns all children. The pointer is a
-        // valid status integer and WNOHANG keeps signal forwarding responsive.
         let reaped = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
         if reaped == -1 {
             let error = std::io::Error::last_os_error();
@@ -150,80 +142,8 @@ pub(crate) fn wait_status_exit_code(status: i32) -> i32 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ProcessSnapshot {
-    pub process_id: u32,
-    pub parent_process_id: Option<usize>,
-    pub threads: Option<usize>,
-    pub open_file_descriptors: Option<usize>,
-    pub child_processes: Option<usize>,
-    pub zombie_child_processes: Option<usize>,
-    pub cgroup_pids_current: Option<usize>,
-    pub cgroup_pids_max: Option<usize>,
-    pub cgroup_pids_unlimited: bool,
-}
-
-pub fn current_process_snapshot() -> ProcessSnapshot {
-    let status = fs::read_to_string("/proc/self/status").ok();
-    let pids_max = fs::read_to_string("/sys/fs/cgroup/pids.max").ok();
-    let children = child_process_counts();
-    ProcessSnapshot {
-        process_id: std::process::id(),
-        parent_process_id: status
-            .as_deref()
-            .and_then(|contents| parse_status_usize(contents, "PPid")),
-        threads: status
-            .as_deref()
-            .and_then(|contents| parse_status_usize(contents, "Threads")),
-        open_file_descriptors: count_directory_entries("/proc/self/fd"),
-        child_processes: children.map(|counts| counts.total),
-        zombie_child_processes: children.map(|counts| counts.zombies),
-        cgroup_pids_current: read_usize("/sys/fs/cgroup/pids.current"),
-        cgroup_pids_max: pids_max.as_deref().and_then(parse_trimmed_usize),
-        cgroup_pids_unlimited: pids_max
-            .as_deref()
-            .is_some_and(|value| value.trim() == "max"),
-    }
-}
-
-pub(crate) fn parse_status_usize(contents: &str, name: &str) -> Option<usize> {
-    contents.lines().find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        (key == name).then(|| parse_trimmed_usize(value)).flatten()
-    })
-}
-
-pub(crate) fn parse_trimmed_usize(value: &str) -> Option<usize> {
+fn parse_trimmed_usize(value: &str) -> Option<usize> {
     value.trim().parse().ok()
-}
-
-fn read_usize(path: impl AsRef<Path>) -> Option<usize> {
-    fs::read_to_string(path)
-        .ok()
-        .as_deref()
-        .and_then(parse_trimmed_usize)
-}
-
-fn count_directory_entries(path: impl AsRef<Path>) -> Option<usize> {
-    Some(fs::read_dir(path).ok()?.filter_map(Result::ok).count())
-}
-
-#[derive(Clone, Copy)]
-struct ChildProcessCounts {
-    total: usize,
-    zombies: usize,
-}
-
-fn child_process_counts() -> Option<ChildProcessCounts> {
-    let children = child_process_ids()?;
-    let zombies = children
-        .iter()
-        .filter(|pid| child_process_state(**pid).as_deref() == Some("Z"))
-        .count();
-    Some(ChildProcessCounts {
-        total: children.len(),
-        zombies,
-    })
 }
 
 fn child_process_ids() -> Option<BTreeSet<usize>> {
@@ -235,6 +155,7 @@ fn child_process_ids() -> Option<BTreeSet<usize>> {
     Some(children)
 }
 
+#[cfg(test)]
 pub(crate) fn child_process_state(pid: usize) -> Option<String> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let command_end = stat.rfind(')')?;
@@ -251,7 +172,6 @@ pub fn configure_process_group(command: &mut Command) {
 
 pub fn kill_process_group(process_id: u32) {
     if let Ok(process_group) = i32::try_from(process_id) {
-        // SAFETY: a negative, non-zero pid targets only the process group created for this child.
         unsafe {
             libc::kill(-process_group, libc::SIGKILL);
         }

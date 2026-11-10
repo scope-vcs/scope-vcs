@@ -11,7 +11,6 @@ getrandom.workspace = true
 hex.workspace = true
 scope_domain.workspace = true
 scope_storage.workspace = true
-serde.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt", "sync"] }

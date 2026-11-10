@@ -52,7 +52,7 @@ pub(crate) async fn request_queue(
     Path((owner, repo_name)): Path<(String, String)>,
     Query(query): Query<RequestQueueQuery>,
 ) -> Result<Json<RequestQueuePageResponse>, ApiError> {
-    let (repo, access, viewer_user_id) =
+    let (repo, viewer_user_id) =
         repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let request_views = match query.view.clone().map(scope_domain::views::ViewId::from) {
         Some(view) if repo.can_read_view(&view) => {
@@ -93,7 +93,7 @@ pub(crate) async fn request_queue(
             repo_id: &repo.record.id,
             section: query.section,
             viewer_user_id: viewer_user_id.as_deref(),
-            access: access.clone(),
+            access: repo.access.clone(),
             views: &repo.views,
             request_views,
             search,
@@ -170,7 +170,7 @@ pub(crate) async fn request_queue(
                 .get(&request_id)
                 .copied()
                 .unwrap_or(scope_domain::requests::RequestReviewsOutcome::Clear);
-            let viewer = RequestViewer::new(access.clone(), viewer_user_id.as_deref(), false);
+            let viewer = RequestViewer::new(repo.access.clone(), viewer_user_id.as_deref(), false);
             let parent_request_id = match parents.get(&request_id) {
                 Some(RequestStackParent::Available { request }) => Some(request.id.clone()),
                 _ => None,
@@ -188,7 +188,7 @@ pub(crate) async fn request_queue(
                 row.attention.section,
                 row.attention.reason,
                 next_step,
-                access.is_maintainer(),
+                repo.access.is_maintainer(),
             );
             let item = RequestQueueItemResponse {
                 attention_at_unix: row.cursor.updated_at_unix,
@@ -244,7 +244,7 @@ pub(crate) async fn apply_attention(
     Json(input): Json<RequestAttentionActionRequest>,
 ) -> Result<Json<RequestAttentionMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let (repo, access, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (repo, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
     let (action, expected_activity_version) = match input {
         RequestAttentionActionRequest::Claim {
             expected_activity_version,
@@ -323,12 +323,7 @@ pub(crate) async fn apply_attention(
     };
     let snapshot =
         super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
-    let checks = scope_domain::requests::request_checks_outcome(
-        &snapshot.request.id,
-        &snapshot.request.head_oid,
-        snapshot.evaluation.as_ref(),
-        &snapshot.results,
-    );
+    let checks = snapshot.checks_outcome();
     let next_step = request_queue_next_step(
         (&snapshot.request).into(),
         &super::request_state::viewer(&snapshot),
@@ -342,7 +337,7 @@ pub(crate) async fn apply_attention(
         result.attention.section,
         result.attention.reason,
         next_step,
-        access.is_maintainer(),
+        repo.access.is_maintainer(),
     );
     Ok(Json(RequestAttentionMutationResponse {
         attention: attention_response(result.attention, result.activity_version, group),

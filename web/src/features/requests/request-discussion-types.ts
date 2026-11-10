@@ -1,19 +1,12 @@
 import type {
-  CreateRequestDiscussionReplyRequest,
-  CreateRequestDiscussionRequest,
   RequestActivityPageResponse,
-  RequestActorSummaryResponse,
   RequestDiscussionChangesResponse,
   RequestDiscussionMutationResponse,
   RequestDiscussionPageResponse,
   RequestDiscussionReplyMutationResponse,
   RequestDiscussionReplyResponse,
-  RequestDiscussionStatus,
   RequestDiscussionSummaryResponse,
 } from '@/api/types.generated'
-
-export type RequestActorSummary = RequestActorSummaryResponse
-export type { RequestDiscussionStatus }
 
 export type RequestDiscussionReply = RequestDiscussionReplyResponse
 export type RequestDiscussion = RequestDiscussionSummaryResponse
@@ -36,7 +29,3 @@ export type RequestDiscussionReplyView = RequestDiscussionReply & {
   optimistic_wait_after_reply?: boolean
   pending?: DiscussionPendingState
 }
-
-export type CreateRequestDiscussionInput = CreateRequestDiscussionRequest
-export type CreateRequestDiscussionReplyInput =
-  CreateRequestDiscussionReplyRequest

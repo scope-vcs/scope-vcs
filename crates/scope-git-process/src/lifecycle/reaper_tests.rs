@@ -63,7 +63,6 @@ fn signal_between_pending_check_and_wait_remains_responsive() {
             let mut service = service_waiting_for_term();
             let service_pid = service.id() as i32;
             forward_pending_signal(service_pid);
-            // SAFETY: this isolated process installed a handler for SIGTERM above.
             assert_eq!(unsafe { libc::raise(libc::SIGTERM) }, 0);
             assert_eq!(reap_exited_child().unwrap(), None);
             forward_pending_signal(service_pid);
@@ -83,7 +82,6 @@ fn reaper_forwards_a_signal_while_the_service_is_idle() {
             let service = service_waiting_for_term();
             thread::spawn(|| {
                 thread::sleep(Duration::from_millis(75));
-                // SAFETY: signal only this isolated reaper test process.
                 assert_eq!(
                     unsafe { libc::kill(std::process::id() as i32, libc::SIGTERM) },
                     0

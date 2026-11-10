@@ -8,7 +8,7 @@ import { RequestChangesWorkbench, type RequestChangesSearch } from '@/features/r
 import { RequestLifecycleActions } from '@/features/requests/request-lifecycle-actions'
 import { RepoLayoutProvider } from '@/features/repo-detail/repo-layout-context'
 import type { RepoLiveState } from '@/api/types'
-import './styles.css'
+import '../shared/styles.css'
 
 const head = 'b'.repeat(40)
 const base = 'a'.repeat(40)

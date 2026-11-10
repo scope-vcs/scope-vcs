@@ -1,6 +1,6 @@
 import { createCachedResource } from '../../lib/cached-resource'
 import { resourceErrorMessage } from '../../lib/use-cached-resource'
-import { collectionFromPage, mergeRefreshedDiscussionPage, type DiscussionCollection } from './request-discussion-model'
+import { collectionFromPage, mergeRefreshedDiscussionPage, orderedDiscussions, type DiscussionCollection } from './request-discussion-model'
 import { createRequestDiscussionSync } from './request-discussion-sync'
 import type { RequestDiscussionChanges, RequestDiscussionPage } from './request-discussion-types'
 
@@ -149,10 +149,7 @@ export function writeRequestDiscussionScroll(key: string, scrollTop: number) {
 function discussionSessionPage(session: DiscussionSession): RequestDiscussionPage {
   const { collection } = session
   return {
-    discussions: collection.order.flatMap((id) => {
-      const discussion = collection.byId.get(id)
-      return discussion ? [discussion] : []
-    }).reverse(),
+    discussions: orderedDiscussions(collection).reverse(),
     next_cursor: collection.nextCursor,
     snapshot_version: collection.snapshotVersion,
   }

@@ -94,14 +94,7 @@ async fn a_committed_reply_is_published_even_when_response_hydration_fails() {
         .await
         .unwrap();
     let mut receiver = state.repo_events.subscribe("owner/repo");
-    let result = reply_mutation_result(
-        &state,
-        &context,
-        mutation.discussion.id,
-        mutation.reply,
-        "owner",
-    )
-    .await;
+    let result = reply_mutation_result(&state, &context, "owner", mutation).await;
     assert!(matches!(result, Err(error) if error.kind == crate::error::ErrorKind::NotFound));
     let event = receiver
         .try_recv()

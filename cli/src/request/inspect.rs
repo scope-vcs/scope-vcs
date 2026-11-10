@@ -16,7 +16,6 @@ pub(super) fn checkout_request(
     api: ApiSession<'_>,
     args: RequestCheckoutArgs,
 ) -> anyhow::Result<RequestCommandOutcome> {
-    ensure_clean_working_tree(git_repo, "scope request checkout")?;
     let (context, request_id, detail) = load_exact_request(Some(git_repo), api, args.target)?;
     if context.target.remote.is_empty() {
         return Err(crate::error::CliError::usage(
@@ -72,8 +71,7 @@ pub(super) fn checkout_request(
             git_repo,
             &["cat-file", "-e", &format!("{head_oid}^{{commit}}")],
         )? {
-            let parent =
-                get_request(api, &context.target.owner, &context.target.repo, parent_id)?.request;
+            let parent = get_request(api, api_target(&context, parent_id))?.request;
             if matches!(
                 parent.state,
                 scope_api_contract::RequestState::Draft | scope_api_contract::RequestState::Open
@@ -93,10 +91,9 @@ pub(super) fn checkout_request(
             git_repo,
             &["cat-file", "-e", &format!("{head_oid}^{{commit}}")],
         )? {
-            return Err(crate::error::CliError::new(ErrorResponse::new(
-                ErrorCode::Conflict,
+            return Err(crate::error::CliError::conflict(
                 "the pinned parent object is unavailable; no branch was switched",
-            ))
+            )
             .into());
         }
         run_git_in_repo(
@@ -157,7 +154,7 @@ fn ensure_checkout_branch_matches_request(
     if !exists {
         return Ok(());
     }
-    match branch_config_value(git_repo, branch, "scopeRequestId")?.as_deref() {
+    match branch_config_value(git_repo, branch, local::REQUEST_ID_KEY)?.as_deref() {
         Some(bound_id) if bound_id == request_id => Ok(()),
         Some(_) => Err(crate::error::CliError::usage(format!(
             "local branch '{branch}' is linked to another request; choose a new name with --branch"
@@ -238,12 +235,7 @@ pub(super) fn diff_request(
         .as_ref()
         .map(|comparison| args::ComparisonArg::from(comparison.mode))
         .unwrap_or(comparison_mode);
-    let selected = revisions.review_revision_id.as_deref().and_then(|id| {
-        revisions
-            .revisions
-            .iter()
-            .find(|revision| revision.id == id)
-    });
+    let selected = stack::review_revision(&revisions);
     if args.path.is_none()
         && let Some(commit) = args.commit.as_deref()
         && !selected.is_some_and(|revision| revision.commits.iter().any(|item| item.oid == commit))
