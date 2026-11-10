@@ -163,4 +163,49 @@ async fn a_parent_merged_on_github_lands_with_every_child_moved_to_main_or_not_a
         below_a_blocked_child.stack_status,
         RequestStackStatus::AncestorBlocked
     );
+
+    let mut merged_without_a_restack = squash_merged_on_github(
+        claim_carrier_of(store, &second, "claim_3", 200).await,
+        &second.head_oid,
+    );
+    let scope_domain::requests::GitHubPullRequestState::Merged(merge) =
+        &mut merged_without_a_restack
+            .pull_request
+            .as_mut()
+            .unwrap()
+            .state
+    else {
+        unreachable!()
+    };
+    merge.merge_commit_oid = oid('e');
+    store
+        .db
+        .execute_unprepared(&format!(
+            "UPDATE scope_git_heads SET head_oid = '{}' WHERE repo_id = 'owner/repo'",
+            oid('e')
+        ))
+        .await
+        .unwrap();
+    let child_landed = store
+        .requests()
+        .finish_github_pull_request(
+            &merged_without_a_restack,
+            "claim_3",
+            GitHubJobOutcome::Succeeded(()),
+            Some(crate::db::GitHubMergeCheckedAgainstMain {
+                main: scope_domain::requests::GitHubMergeMainCheck {
+                    main_oid: oid('e'),
+                    merge_commit_oid: oid('e'),
+                    main_contains_merge: true,
+                },
+                stack_children: Vec::new(),
+            }),
+            201,
+        )
+        .await;
+    assert_eq!(
+        child_landed.unwrap(),
+        GitHubPullRequestFinish::RecordedAndLanded
+    );
+    assert_eq!(load(store, &second.id).await.state(), RequestState::Merged);
 }
