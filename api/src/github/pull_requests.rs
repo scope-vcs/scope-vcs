@@ -5,7 +5,7 @@ use scope_domain::requests::GitHubPullRequestHead;
 use serde::{Deserialize, de::DeserializeOwned};
 
 const PAGE_SIZE: usize = 100;
-const MAX_COMMENT_PAGES: usize = 10;
+const MAX_PAGES: usize = 10;
 const SECONDARY_RATE_LIMIT_WAIT_SECS: u64 = 60;
 
 pub(crate) const PULL_REQUEST_PERMISSION_MESSAGE: &str = "The Scope GitHub App may not open \
@@ -156,27 +156,36 @@ impl GitHubApp {
         full_name: &str,
         base_branch: &str,
     ) -> Result<Vec<GitHubPullRequestHead>, PullRequestCallError> {
-        let query = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("state", "open")
-            .append_pair("base", base_branch)
-            .append_pair("per_page", &PAGE_SIZE.to_string())
-            .finish();
-        let open: Vec<PullRequestHeadBody> = self
-            .pull_request_call(
-                installation_id,
-                Method::GET,
-                &format!("/repos/{full_name}/pulls?{query}"),
-                "/repos/{owner}/{repo}/pulls",
-                None,
-            )
-            .await?;
-        Ok(open
-            .into_iter()
-            .map(|pull_request| GitHubPullRequestHead {
+        let mut heads = Vec::new();
+        for page in 1..=MAX_PAGES {
+            let query = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("state", "open")
+                .append_pair("base", base_branch)
+                .append_pair("per_page", &PAGE_SIZE.to_string())
+                .append_pair("page", &page.to_string())
+                .finish();
+            let open: Vec<PullRequestHeadBody> = self
+                .pull_request_call(
+                    installation_id,
+                    Method::GET,
+                    &format!("/repos/{full_name}/pulls?{query}"),
+                    "/repos/{owner}/{repo}/pulls",
+                    None,
+                )
+                .await?;
+            let last_page = open.len() < PAGE_SIZE;
+            heads.extend(open.into_iter().map(|pull_request| GitHubPullRequestHead {
                 github_repository_id: pull_request.head.repo.map(|repository| repository.id),
                 branch: pull_request.head.name,
-            })
-            .collect())
+            }));
+            if last_page {
+                return Ok(heads);
+            }
+        }
+        Err(PullRequestCallError::Rejected(format!(
+            "More than {} open pull requests are based on {base_branch}.",
+            MAX_PAGES * PAGE_SIZE
+        )))
     }
 
     pub(crate) async fn create_pull_request(
@@ -287,7 +296,7 @@ impl GitHubApp {
         marker: &str,
     ) -> Result<bool, PullRequestCallError> {
         let bot_login = self.bot_login();
-        for page in 1..=MAX_COMMENT_PAGES {
+        for page in 1..=MAX_PAGES {
             let comments: Vec<CommentBody> = self
                 .pull_request_call(
                     installation_id,

@@ -150,6 +150,9 @@ async fn a_pull_request_scope_has_not_recorded_keeps_its_base_until_scope_moves_
     let (parent, state, fake) = (&stack.parent, &stack.parent.state, &stack.parent.fake);
     expect_json(set_publication(state, true).await, StatusCode::OK).await;
     stack.settle_pushes().await;
+    for _ in 0..100 {
+        fake.pulls.open_from_fork("someones-fork", &parent.branch());
+    }
     let landed = fake.pulls.open(&stack.child_branch, &parent.branch());
 
     stack.merge_parent().await;

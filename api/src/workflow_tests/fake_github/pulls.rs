@@ -51,6 +51,12 @@ impl FakePulls {
         number
     }
 
+    pub(in crate::workflow_tests) fn open_from_fork(&self, head: &str, base: &str) {
+        let number = self.open(head, base);
+        self.pulls.lock().unwrap()[number as usize - 1]["head"]["repo"]["id"] =
+            (GITHUB_REPOSITORY_ID + 1).into();
+    }
+
     pub(in crate::workflow_tests) fn close_as(&self, number: u64, login: &str) {
         let mut pulls = self.pulls.lock().unwrap();
         let pull = &mut pulls[number as usize - 1];
@@ -245,7 +251,12 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                         })
                         .cloned()
                         .collect::<Vec<_>>();
-                    Json(open).into_response()
+                    let number = |name: &str, default: usize| {
+                        query.get(name).map_or(default, |value| value.parse().unwrap())
+                    };
+                    let (page, per_page) = (number("page", 1), number("per_page", 30));
+                    let listed = open.into_iter().skip((page - 1) * per_page).take(per_page);
+                    Json(listed.collect::<Vec<_>>()).into_response()
                 },
             )
             .post(
