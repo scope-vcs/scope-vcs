@@ -27,6 +27,7 @@ const detail: RepositoryRunDetailResponse = {
     updated_at_unix: 3, completed_at_unix: 3, can_cancel: false, can_retry: false,
   },
   jobs: [],
+  opening: null,
 }
 const log = (position: number) => ({
   position, sequence: position, text: `line ${position}\n`, byte_length: 7,

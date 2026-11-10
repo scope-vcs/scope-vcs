@@ -3,7 +3,8 @@ import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { StepLogs } from './repository-run-detail-controller'
-import { RUN_LOG_TEXT_CLASS, runLogPreClass } from './run-layout'
+import { RUN_LOG_TEXT_CLASS } from './run-layout'
+import { RunLogText } from './run-log-text'
 import { useRunLogPaintTiming } from './run-log-timing'
 import type { RepositoryRunStepResponse } from '@/api/types.generated'
 
@@ -98,11 +99,7 @@ export function RunLogView({
           </Button>
         </p>
       ) : null}
-      <pre className={runLogPreClass(wrap)}>
-        {text.length > 0
-          ? text
-          : <span className="text-muted-foreground">{logState.loading ? 'Loading output…' : 'No output yet.'}</span>}
-      </pre>
+      <RunLogText empty={logState.loading ? 'Loading output…' : 'No output yet.'} text={text} wrap={wrap} />
       <div aria-hidden="true" ref={endRef} />
       {logState.viewingEarlier || newLines > 0 ? (
         <div className="sticky bottom-4 z-10 flex h-0 items-end justify-center">

@@ -6,7 +6,7 @@ import type {
 import { Button } from '@/components/ui/button'
 import { useCachedResource, useRetryOnReconnect } from '@/lib/use-cached-resource'
 import { cn } from '@/lib/utils'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { githubRunResult } from './github-run-status'
 import {
   githubJobFailedStep,
@@ -20,18 +20,21 @@ import {
 } from './github-workflow-run-detail-resource'
 import { RunDuration } from './run-duration'
 import { RunLogControls } from './run-job-header'
+import { RUN_LOG_TEXT_CLASS, RUN_STEP_ROW_CLASS } from './run-layout'
+import { RunLogText } from './run-log-text'
 import { useRunLogPaintTiming } from './run-log-timing'
-import { RUN_LOG_TEXT_CLASS, RUN_STEP_ROW_CLASS, runLogPreClass } from './run-layout'
 import { RunStatusIcon } from './run-status-icon'
 
 const LINK_CLASS = 'underline underline-offset-2 hover:text-foreground'
 
 export function GitHubWorkflowJobPane({
+  includedLog,
   job,
   loadLog,
   runId,
   scope,
 }: {
+  includedLog: GitHubWorkflowJobLogResponse | null
   job: GitHubWorkflowJobResponse
   loadLog: (jobId: string, signal: AbortSignal) => Promise<GitHubWorkflowJobLogResponse>
   runId: string
@@ -39,13 +42,12 @@ export function GitHubWorkflowJobPane({
 }) {
   const key = githubJobKey(job)
   const finished = job.status === 'completed'
-  const load = useCallback(async (signal: AbortSignal) => {
-    const log = await loadLog(key, signal)
-    return log.state === 'kept' ? { ...log, text: stripLogTimestamps(log.text) } : log
-  }, [key, loadLog])
+  const load = useCallback(async (signal: AbortSignal) => readableJobLog(await loadLog(key, signal)), [key, loadLog])
+  const initialValue = useMemo(() => includedLog && readableJobLog(includedLog), [includedLog])
   const log = useCachedResource({
     fallbackError: 'The log could not load.',
     identity: scope && finished ? githubWorkflowJobLogIdentity(scope, runId, key) : null,
+    initialValue,
     load,
     resource: githubWorkflowJobLogResource,
   })
@@ -120,15 +122,17 @@ export function GitHubWorkflowJobPane({
                   </a>
                 </p>
               ) : null}
-              <pre className={runLogPreClass(wrap)}>
-                {log.value.text || <span className="text-muted-foreground">No output.</span>}
-              </pre>
+              <RunLogText empty="No output." text={log.value.text} wrap={wrap} />
             </>
           )}
         </section>
       </div>
     </>
   )
+}
+
+function readableJobLog(log: GitHubWorkflowJobLogResponse): GitHubWorkflowJobLogResponse {
+  return log.state === 'kept' ? { ...log, text: stripLogTimestamps(log.text) } : log
 }
 
 function GitHubStepRow({ step }: { step: GitHubWorkflowStepResponse }) {

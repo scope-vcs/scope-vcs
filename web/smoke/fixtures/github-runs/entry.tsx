@@ -100,6 +100,8 @@ let runDetail: GitHubWorkflowRunDetailResponse = {
     job(105, 'revoke preview token', { conclusion: 'skipped', started_at_unix: null }),
   ],
   jobs_not_read_yet: false,
+  opening_job_id: 102,
+  opening_job_log: null,
 }
 const stamp = '2026-10-05T12:00:00.1234567Z '
 const logs: Record<string, GitHubWorkflowJobLogResponse> = {
@@ -111,6 +113,18 @@ const logs: Record<string, GitHubWorkflowJobLogResponse> = {
     truncated: true,
   },
   103: { state: 'kept', text: `${stamp}Build finished.\n`, truncated: false },
+}
+runDetail = { ...runDetail, opening_job_log: logs[102]! }
+const longLogDetail: GitHubWorkflowRunDetailResponse = {
+  run: initialRuns.workflow_runs[2]!,
+  jobs: [job(301, 'package', { steps: [setUp, step(2, 'Package every artifact')] })],
+  jobs_not_read_yet: false,
+  opening_job_id: 301,
+  opening_job_log: {
+    state: 'kept',
+    text: Array.from({ length: 21_000 }, (_, index) => `${stamp}packaged artifact ${index} into the release bundle`).join('\n'),
+    truncated: false,
+  },
 }
 const runLoads: string[] = []
 const logLoads: string[] = []
@@ -131,7 +145,7 @@ Object.assign(window, {
 async function loadRunDetail(runId: string) {
   runLoads.push(runId)
   await new Promise<void>((resolve) => detailResolvers.push(resolve))
-  return runDetail
+  return runId === '3' ? longLogDetail : runDetail
 }
 async function loadJobLog(jobId: string) {
   logLoads.push(jobId)
@@ -189,6 +203,7 @@ function ConnectedNoRuns() {
     initialNames={{ workflows: [] }}
     initialRuns={none}
     loadNames={async () => ({ workflows: [] })}
+    loadRunDetail={loadRunDetail}
     loadRuns={async () => ({ configured: true, github: none })}
     params={{ owner: owner!, repo: repo! }}
   />
@@ -200,6 +215,7 @@ function Runs() {
     initialNames={initialNames}
     initialRuns={initialRuns}
     loadNames={loadNames}
+    loadRunDetail={loadRunDetail}
     loadRuns={loadRuns}
     params={{ owner: owner!, repo: repo! }}
   />
@@ -207,10 +223,12 @@ function Runs() {
 
 function Run() {
   const { owner, repo, runId } = useParams({ strict: false })
-  const initialDetail = runId === '1' ? runDetail : {
+  const initialDetail = runId === '1' ? runDetail : runId === '3' ? null : {
     run: initialRuns.workflow_runs[1]!,
     jobs: [],
     jobs_not_read_yet: true,
+    opening_job_id: null,
+    opening_job_log: null,
   }
   return <GitHubWorkflowRunDetailPage
     initialDetail={initialDetail}

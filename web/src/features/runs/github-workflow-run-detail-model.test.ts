@@ -10,10 +10,9 @@ import {
   githubJobLogAbsence,
   githubRunCanChange,
   isGitHubRunId,
-  selectGitHubJob,
   stripLogTimestamps,
 } from './github-workflow-run-detail-model'
-import { jobKeyForHash, runJobPanelId } from './run-job-ids'
+import { jobKeyForHash } from './run-job-ids'
 
 function job(id: number, overrides: Partial<GitHubWorkflowJobResponse> = {}): GitHubWorkflowJobResponse {
   return {
@@ -41,28 +40,14 @@ function detail(
     },
     jobs,
     jobs_not_read_yet: false,
+    opening_job_id: jobs[0]?.id ?? null,
+    opening_job_log: null,
   }
 }
 
 test('GitHub numbers its runs while Scope prefixes its own', () => {
   assert.equal(isGitHubRunId('12345678901'), true)
   for (const runId of ['run_01h', '', '12a', '-1']) assert.equal(isGitHubRunId(runId), false, runId)
-})
-
-test('a run opens on the job a link names, else its failure, else what is running', () => {
-  const jobs = [
-    job(1),
-    job(2, { status: 'in_progress', conclusion: null }),
-    job(3, { conclusion: 'timed_out' }),
-    job(4, { conclusion: 'failure' }),
-  ]
-  const linked = jobKeyForHash(jobs.map((listed) => String(listed.id)), `#${runJobPanelId('2')}`)
-  assert.equal(selectGitHubJob(jobs, linked)?.id, 2)
-  assert.equal(selectGitHubJob(jobs, null)?.id, 3)
-  assert.equal(selectGitHubJob(jobs, '99')?.id, 3)
-  assert.equal(selectGitHubJob(jobs.slice(0, 2), null)?.id, 2)
-  assert.equal(selectGitHubJob([job(1), job(5)], null)?.id, 1)
-  assert.equal(selectGitHubJob([], null), null)
 })
 
 test('only a run-job hash names a job', () => {

@@ -183,13 +183,7 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
     const retained = mode === 'earlier' || previous.viewingEarlier
       ? mergeStepLogPage(previous, page, after)
       : mergeFetchedRunLogs(previous, page, after)
-    writeRunLogCache(key, target, {
-      ...retained, error: null, loading: false, initialized: true,
-      logsTruncated: page.logs_truncated, hasMore: page.has_more,
-      viewingEarlier: before !== undefined, failedPage: null,
-      nextAfter: page.next_after,
-      completedVersion,
-    })
+    writeRunLogCache(key, target, fetchedLogState(retained, page, before !== undefined, completedVersion))
     return true
   }, (error: unknown) => {
     if (inFlight.get(requestKey) !== request) return false
@@ -203,6 +197,36 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
   })
   inFlight.set(requestKey, request)
   return request
+}
+
+export function seedOpeningRunLog(key: string, detail: RepositoryRunDetailResponse) {
+  const { opening } = detail
+  const step = opening?.step
+  if (!opening || !step) return
+  const target = { jobKey: opening.job_key, attemptId: step.attempt_id, stepIndex: step.step_index }
+  const current = runLogsResource.peek(key)?.[stepKey(target)]
+  if (current?.initialized || current?.loading) return
+  writeRunLogCache(key, target, fetchedLogState(
+    mergeFetchedRunLogs(EMPTY_LOG_STATE, step.log, undefined),
+    step.log,
+    false,
+    completedRunLogVersion(detail),
+  ))
+}
+
+function fetchedLogState(
+  retained: { logs: RepositoryRunLogResponse[]; hasEarlier: boolean },
+  page: RepositoryRunStepLogPageResponse,
+  viewingEarlier: boolean,
+  completedVersion: string | null,
+): StepLogState {
+  return {
+    ...retained, error: null, loading: false, initialized: true,
+    logsTruncated: page.logs_truncated, hasMore: page.has_more,
+    viewingEarlier, failedPage: null,
+    nextAfter: page.next_after,
+    completedVersion,
+  }
 }
 
 function mergeFetchedRunLogs(

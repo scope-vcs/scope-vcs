@@ -198,7 +198,7 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   }
   await failed.click()
   await log.getByText('Process completed with exit code 1.', { exact: false }).waitFor()
-  assert.deepEqual(await page.evaluate(() => window.logLoads), ['102'])
+  assert.deepEqual(await page.evaluate(() => window.logLoads), [])
 
   await job('build').click()
   await page.evaluate(() => {
@@ -210,7 +210,7 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   await log.getByText('The log appears when this job finishes.').waitFor()
   await page.evaluate(() => window.finishRunLoad())
   await log.getByText('Build finished.').waitFor()
-  assert.deepEqual(await page.evaluate(() => window.logLoads), ['102', '103'])
+  assert.deepEqual(await page.evaluate(() => window.logLoads), ['103'])
 
   await page.goto(new URL('/octo/demo/runs', base).href)
   await page.goto(new URL('/octo/demo/runs/1#run-job-101', base).href)
@@ -247,5 +247,38 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
       await screenshot(page, { fullPage: true, path: `${shots}.run-jobs-loading-${name}.png` })
     }
   }
+  assert.deepEqual(errors, [])
+})
+
+test('hovering a run starts its read, and its long included log lays out only the blocks on screen', async (t) => {
+  const { base, errors, page } = await openFixture(t, 'github-runs', githubRunsFixture)
+  const blocksOnScreen = () => page.evaluate(() => [...document.querySelectorAll('[data-log-block]')]
+    .map((block, index) => block.firstElementChild.checkVisibility({ contentVisibilityAuto: true }) ? index : -1)
+    .filter((index) => index >= 0))
+
+  await page.goto(new URL('/octo/demo/runs', base).href, { timeout: 30_000 })
+  const run = page.locator('main li').nth(2).getByRole('link', { name: 'ci', exact: true })
+  await run.hover()
+  await page.waitForFunction(() => window.runLoads.length === 1)
+  assert.deepEqual(await page.evaluate(() => window.runLoads), ['3'])
+  await page.evaluate(() => window.finishRunLoad())
+  await run.click()
+  await page.waitForURL('**/octo/demo/runs/3')
+  const log = page.getByRole('region', { name: 'Log' })
+  await log.getByText('packaged artifact 0 into', { exact: false }).waitFor()
+  assert.deepEqual(await page.evaluate(() => ({ runs: window.runLoads, logs: window.logLoads })), { runs: ['3'], logs: [] })
+
+  assert.equal(await page.locator('[data-log-block]').count(), 105)
+  await page.waitForFunction(() => document.querySelector('[data-log-block]').firstElementChild
+    .checkVisibility({ contentVisibilityAuto: true }))
+  const opened = await blocksOnScreen()
+  assert.ok(opened.length > 0 && opened.length <= 3, `blocks laid out on open: ${opened}`)
+  assert.equal(opened[0], 0)
+
+  await page.evaluate(() => [...document.querySelectorAll('[data-log-block]')].at(-1).scrollIntoView({ block: 'end' }))
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-log-block]')].at(-1).firstElementChild
+    .checkVisibility({ contentVisibilityAuto: true }))
+  assert.ok((await blocksOnScreen()).includes(104))
+  await log.getByText('packaged artifact 20999 into', { exact: false }).waitFor()
   assert.deepEqual(errors, [])
 })

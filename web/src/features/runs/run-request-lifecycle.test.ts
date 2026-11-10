@@ -21,7 +21,7 @@ const detail: RepositoryRunDetailResponse = {
     id: 'run', workflow_name: 'tests', git_oid: 'abc', trigger: 'manual',
     state: 'running', cancellation_requested: false, created_at_unix: 1,
     updated_at_unix: 2, completed_at_unix: null, can_cancel: true, can_retry: false,
-  }, jobs: [],
+  }, jobs: [], opening: null,
 }
 const completed: RepositoryRunDetailResponse = { ...detail, run: { ...detail.run, state: 'succeeded', updated_at_unix: 3, completed_at_unix: 3 } }
 function deferred<T>() {

@@ -1,5 +1,5 @@
 import { createCachedResource } from '../../lib/cached-resource'
-import { runResourceNeedsRecovery } from './run-resource'
+import { ensureRunResource, runResourceNeedsRecovery } from './run-resource'
 import type { RepositoryRunDetailResponse } from '@/api/types.generated'
 
 export type RunDetailSnapshot = {
@@ -43,4 +43,8 @@ export async function refreshRunDetail(
 export async function loadRunDetailSnapshot(key: string, loadDetail: (signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>, signal: AbortSignal): Promise<RunDetailSnapshot> {
   const detail = await loadDetail(AbortSignal.any([signal, AbortSignal.timeout(15_000)]))
   return { detail, generation: Number(runDetailResource.getSnapshot(key).version ?? 0), updatedAt: Date.now() }
+}
+
+export function startRunDetail(key: string, loadDetail: (signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>) {
+  void ensureRunResource(runDetailResource, key, (signal) => loadRunDetailSnapshot(key, loadDetail, signal)).catch(() => {})
 }

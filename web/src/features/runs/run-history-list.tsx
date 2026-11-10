@@ -20,6 +20,7 @@ export function RunHistoryList({
   empty,
   loadMore,
   loadingMore,
+  onOpenRun,
   params,
   runs,
   selectedWorkflowName,
@@ -29,6 +30,7 @@ export function RunHistoryList({
   empty?: ReactNode
   loadMore: () => void
   loadingMore: boolean
+  onOpenRun: (runId: string) => void
   params: RepoParams
   runs: RepositoryRunHistoryPageResponse['runs']
   selectedWorkflowName?: string
@@ -50,7 +52,7 @@ export function RunHistoryList({
       ) : (
         <div className="divide-y divide-border">
           {runs.map((run) => (
-            <RunRow key={run.id} params={params} run={run} />
+            <RunRow key={run.id} onOpen={() => onOpenRun(run.id)} params={params} run={run} />
           ))}
         </div>
       )}

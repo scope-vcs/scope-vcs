@@ -128,7 +128,10 @@ async fn run_detail_reconstructs_jobs_attempts_and_steps_and_opens_on_the_last_s
             .collect::<Vec<_>>(),
         ["first\n", "second\n"]
     );
-    assert_eq!(opening_step["log"]["next_after"], fixture.second_log_position);
+    assert_eq!(
+        opening_step["log"]["next_after"],
+        fixture.second_log_position
+    );
 }
 
 #[tokio::test]
