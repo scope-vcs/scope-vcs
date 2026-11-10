@@ -397,7 +397,7 @@ def profile_settings(profiles, name):
 
 
 def cargo_commands(text):
-    for line in re.split(r"\n|&&|\|\||;", text):
+    for line in re.split(r"\n|&&|\|\||;", re.sub(r"\\\n", " ", text)):
         if "deployment-components.mjs build" in line:
             yield "Cargo.toml", "release"
             continue

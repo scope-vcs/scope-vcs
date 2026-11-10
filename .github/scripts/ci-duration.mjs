@@ -48,6 +48,7 @@ function durationIssueBody(jobs, runUrl) {
 export async function recentPullRequestRuns({ github, owner, repo, since }) {
   const sameRepository = run => run.head_repository?.full_name === `${owner}/${repo}`;
   const samples = new Map();
+  const seen = new Set();
   const runs = [];
   for (let page = 1; runs.length < MAX_RUNS; page += 1) {
     const { data } = await github.rest.actions.listWorkflowRuns({
@@ -64,10 +65,11 @@ export async function recentPullRequestRuns({ github, owner, repo, since }) {
         startedAt: run.run_started_at,
         jobs: jobs.map(job => ({ name: job.name, conclusion: job.conclusion, completedAt: job.completed_at })),
       };
+      for (const job of recorded.jobs) seen.add(job.name);
       for (const job of successfulJobs(recorded)) samples.set(job.name, (samples.get(job.name) ?? 0) + 1);
       runs.push(recorded);
     }
-    const enough = runs.length >= SAMPLE_SIZE && [...samples.values()].every(count => count >= SAMPLE_SIZE);
+    const enough = runs.length >= SAMPLE_SIZE && [...seen].every(name => (samples.get(name) ?? 0) >= SAMPLE_SIZE);
     if (current.length < PAGE_SIZE || enough) break;
   }
   return runs;

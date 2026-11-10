@@ -73,7 +73,7 @@ test('a slow job comments on the open budget issue instead of opening another, a
 });
 
 test('older pages are read until every job has ten successful samples, stopping at the last workflow change or 200 runs', async () => {
-  const history = async (rareEvery, sinceRuns = 1000) => {
+  const history = async (rare, sinceRuns = 1000) => {
     const listWorkflowRuns = mock.fn(async ({ page }) => ({ data: { workflow_runs: Array.from({ length: 50 }, (_, index) => ({
       id: (page - 1) * 50 + index, run_attempt: 1, html_url: 'u',
       run_started_at: new Date(start - ((page - 1) * 50 + index) * 60_000).toISOString(),
@@ -83,15 +83,16 @@ test('older pages are read until every job has ten successful samples, stopping 
       rest: { actions: { listWorkflowRuns, listJobsForWorkflowRun: 'jobs' } },
       paginate: async (_, { run_id: id }) => [
         { name: 'Common', conclusion: 'success', completed_at: new Date(start).toISOString() },
-        { name: 'Rare', conclusion: id % rareEvery === 0 ? 'success' : 'skipped', completed_at: new Date(start).toISOString() },
+        { name: 'Rare', conclusion: rare(id) ? 'success' : 'skipped', completed_at: new Date(start).toISOString() },
       ],
     };
     const since = new Date(start - sinceRuns * 60_000).toISOString();
     const runs = await recentPullRequestRuns({ github, owner: 'o', repo: 'r', since });
     return [listWorkflowRuns.mock.callCount(), runs.length];
   };
-  assert.deepEqual(await history(1), [1, 50]);
-  assert.deepEqual(await history(7), [2, 100]);
-  assert.deepEqual(await history(50), [4, 200]);
-  assert.deepEqual(await history(50, 70), [2, 71]);
+  assert.deepEqual(await history(() => true), [1, 50]);
+  assert.deepEqual(await history(id => id % 7 === 0), [2, 100]);
+  assert.deepEqual(await history(id => id >= 50), [2, 100]);
+  assert.deepEqual(await history(id => id % 50 === 0), [4, 200]);
+  assert.deepEqual(await history(id => id % 50 === 0, 70), [2, 71]);
 });

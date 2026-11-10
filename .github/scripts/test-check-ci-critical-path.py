@@ -152,6 +152,7 @@ class CargoCommandTest(unittest.TestCase):
         for command, expected in (
             ("cargo build --release --manifest-path cli/Cargo.toml", ("cli/Cargo.toml", "release")),
             ("cargo build --profile=release --manifest-path=cli/Cargo.toml", ("cli/Cargo.toml", "release")),
+            ("cargo build --manifest-path cli/Cargo.toml \\\n  --profile release --locked", ("cli/Cargo.toml", "release")),
             ("cargo test", (None, "test")),
             ("cargo bench", (None, "bench")),
         ):
