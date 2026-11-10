@@ -170,3 +170,47 @@ test('web vitals require a known metric, finite value, and safe route alias', ()
     metric: 'INP', route_name: 'private-route', value: 42,
   }), siteOrigin), null)
 })
+
+test('run log timings keep a fixed contract on the run route', () => {
+  const capture = (properties: CaptureResult['properties']): CaptureResult => ({
+    event: 'run_log_timing',
+    properties: {
+      distinct_id: 'anonymous-id',
+      duration_ms: 412,
+      log_bytes: 2048,
+      provider: 'github',
+      route_name: 'repository_run',
+      source: 'fetched',
+      trigger: 'job_click',
+      ...properties,
+    },
+    uuid: 'event-id',
+  })
+
+  assert.deepEqual(sanitizeCapture(capture({ job_name: 'private-job', run_id: '123' }), siteOrigin), {
+    event: 'run_log_timing',
+    properties: {
+      $geoip_disable: true,
+      distinct_id: 'anonymous-id',
+      duration_ms: 412,
+      log_bytes: 2048,
+      provider: 'github',
+      route_name: 'repository_run',
+      source: 'fetched',
+      trigger: 'job_click',
+    },
+    uuid: 'event-id',
+  })
+  for (const invalid of [
+    { route_name: 'request_changes' },
+    { trigger: 'hover' },
+    { provider: 'gitlab' },
+    { source: 'browser' },
+    { duration_ms: 12.5 },
+    { duration_ms: -1 },
+    { duration_ms: 600_001 },
+    { log_bytes: Number.POSITIVE_INFINITY },
+  ]) {
+    assert.equal(sanitizeCapture(capture(invalid), siteOrigin), null, JSON.stringify(invalid))
+  }
+})

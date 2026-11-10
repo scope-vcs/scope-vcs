@@ -39,6 +39,9 @@ const errorKinds = new Set([
 ])
 const errorOrigins = new Set(['hydration', 'promise', 'route', 'window'])
 const webVitalMetrics = new Set(['CLS', 'INP', 'LCP'])
+const runLogTriggers = new Set(['job_click', 'list_click', 'page_load'])
+const runLogProviders = new Set(['github', 'native'])
+const runLogSources = new Set(['fetched', 'stored'])
 
 type PageViewContext = {
   origin: string
@@ -97,6 +100,10 @@ export function sanitizeCapture(
 
   if (capture.event === 'web_vital') {
     return sanitizeWebVital(capture)
+  }
+
+  if (capture.event === 'run_log_timing') {
+    return sanitizeRunLogTiming(capture)
   }
 
   if (capture.event !== '$pageview') return null
@@ -196,6 +203,46 @@ function sanitizeWebVital(capture: CaptureResult) {
     route_name: route.name,
     value,
   })
+}
+
+function sanitizeRunLogTiming(capture: CaptureResult) {
+  const {
+    duration_ms: durationMs,
+    log_bytes: logBytes,
+    provider,
+    route_name: routeName,
+    source,
+    trigger,
+  } = capture.properties
+  if (
+    routeName !== 'repository_run'
+    || !isMember(runLogTriggers, trigger)
+    || !isMember(runLogProviders, provider)
+    || !isMember(runLogSources, source)
+    || !isCount(durationMs)
+    || durationMs > 600_000
+    || !isCount(logBytes)
+  ) {
+    return null
+  }
+
+  return withoutPersonMutations(capture, {
+    ...transportProperties(capture.properties),
+    duration_ms: durationMs,
+    log_bytes: logBytes,
+    provider,
+    route_name: routeName,
+    source,
+    trigger,
+  })
+}
+
+function isMember(values: ReadonlySet<string>, value: Property | undefined): value is string {
+  return typeof value === 'string' && values.has(value)
+}
+
+function isCount(value: Property | undefined): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
 function safeRoute(routeName: Property | undefined) {

@@ -1,0 +1,41 @@
+name: Run page log budget
+
+on:
+  schedule:
+    - cron: '43 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: run-log-budget
+  cancel-in-progress: false
+
+jobs:
+  budget:
+    name: Check run page log timing
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Report run log budgets
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+          POSTHOG_PROJECT_ID: ${{ secrets.POSTHOG_PROJECT_ID }}
+        with:
+          retries: 3
+          script: |
+            const { reportRunLogBudget } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/run-log-budget.mjs`);
+            await reportRunLogBudget({
+              github, ...context.repo, env: process.env,
+              runUrl: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            });

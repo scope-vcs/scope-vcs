@@ -6,6 +6,7 @@ import { runDisplayState, runTriggerLabel } from './run-formatting'
 import { runStatus } from './run-status'
 import { RunDuration } from './run-duration'
 import { RunStatusIcon } from './run-status-icon'
+import { startRunListTiming } from './run-log-timing'
 import { RelativeTimestamp } from '@/components/timestamp'
 import {
   RUN_HISTORY_ROW_CLASS,
@@ -33,6 +34,7 @@ export function RunRow({
         'group outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         isRunning && 'bg-info-soft/40',
       )}
+      onClick={(event) => startRunListTiming(event, run.id)}
       params={{ ...params, runId: run.id }}
       to="/$owner/$repo/runs/$runId"
     >

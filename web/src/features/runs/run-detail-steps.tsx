@@ -9,6 +9,7 @@ import { RunEnvironmentPanel, RunEnvironmentToggle } from './run-attempt-environ
 import { RunDuration } from './run-duration'
 import { RunJobHeader } from './run-job-header'
 import { RunLogView } from './run-log-view'
+import { startRunJobTiming } from './run-log-timing'
 import { RunStatusIcon } from './run-status-icon'
 import { RUN_STEP_ROW_CLASS } from './run-layout'
 import type {
@@ -22,6 +23,7 @@ export function RunDetailSteps({
   jobDetail,
   onSelectAttempt,
   onSelectStep,
+  runId,
   selection,
   stepLogs,
 }: {
@@ -29,6 +31,7 @@ export function RunDetailSteps({
   jobDetail: RepositoryRunJobDetailResponse
   onSelectAttempt: (attemptId: string) => void
   onSelectStep: (attemptId: string, stepIndex: number) => void
+  runId: string
   selection: StepSelection | null
   stepLogs: StepLogs
 }) {
@@ -74,7 +77,11 @@ export function RunDetailSteps({
               <StepRow
                 attemptId={attempt.id}
                 key={step.index}
-                onSelect={() => onSelectStep(attempt.id, step.index)}
+                onSelect={() => {
+                  if (openStep !== step.index) startRunJobTiming(runId)
+                  onSelectStep(attempt.id, step.index)
+                }}
+                runId={runId}
                 selected={openStep === step.index}
                 step={step}
                 stepLogs={stepLogs}
@@ -104,6 +111,7 @@ export function RunDetailSteps({
 function StepRow({
   attemptId,
   onSelect,
+  runId,
   selected,
   step,
   stepLogs,
@@ -111,6 +119,7 @@ function StepRow({
 }: {
   attemptId: string
   onSelect: () => void
+  runId: string
   selected: boolean
   step: RepositoryRunStepResponse
   stepLogs: StepLogs
@@ -146,6 +155,7 @@ function StepRow({
           id={panelId}
           key={panelId}
           logs={stepLogs}
+          runId={runId}
           step={step}
           wrap={wrap}
         />

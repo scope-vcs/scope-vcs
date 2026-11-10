@@ -20,6 +20,7 @@ import {
 } from './github-workflow-run-detail-resource'
 import { RunDuration } from './run-duration'
 import { RunLogControls } from './run-job-header'
+import { useRunLogPaintTiming } from './run-log-timing'
 import { RUN_LOG_TEXT_CLASS, RUN_STEP_ROW_CLASS, runLogPreClass } from './run-layout'
 import { RunStatusIcon } from './run-status-icon'
 
@@ -53,6 +54,13 @@ export function GitHubWorkflowJobPane({
   const result = githubRunResult(job.status, job.conclusion)
   const failedStep = githubJobFailedStep(job)
   const logText = log.value?.state === 'kept' ? log.value.text : null
+  useRunLogPaintTiming({
+    fetching: log.value?.state === 'pending',
+    provider: 'github',
+    runId,
+    settled: !finished || (log.value ? log.value.state !== 'pending' : log.error !== null),
+    text: logText ?? '',
+  })
 
   return (
     <>

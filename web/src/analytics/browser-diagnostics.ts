@@ -26,7 +26,7 @@ export function installBrowserDiagnostics(options: Parameters<typeof installFron
       window.removeEventListener('error', onWindowError)
       window.removeEventListener('unhandledrejection', onUnhandledRejection)
     },
-    flushErrors: session.flushErrors,
+    flushPending: session.flushPending,
     flushVitals() {
       documentVitals.flush()
     },

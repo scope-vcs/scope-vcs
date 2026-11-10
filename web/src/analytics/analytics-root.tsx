@@ -95,7 +95,7 @@ function AnalyticsRuntime({
     ))
     appliedKey.current = resolvedIdentityKey
     captureCurrentPage(client, currentPage.current, capturedPage)
-    diagnostics.current?.flushErrors()
+    diagnostics.current?.flushPending()
     diagnostics.current?.flushVitals()
   }, [client, eventContext, resolvedIdentityKey, resolvedScopeUserId])
 

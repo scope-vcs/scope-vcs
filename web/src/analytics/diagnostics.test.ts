@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict'
 import test, { type TestContext } from 'node:test'
 import {
+  captureRunLogTiming,
   classifyFrontendError,
   reportFrontendError,
 } from './diagnostics'
 import { createDocumentVitalAttribution, installBrowserDiagnostics } from './browser-diagnostics'
 
-test('buffered frontend reports retain occurrence context through gating and reinstall', (t) => {
+test('buffered frontend errors and run log timings retain occurrence context through gating and reinstall', (t) => {
   const { browser, installations } = diagnosticBrowser(t)
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-08T18:00:00.000Z') })
-  const captures: Array<{ properties: Record<string, number | string | null>; timestamp?: string }> = []
+  const captures: Array<{ event: string; properties: Record<string, number | string | null>; timestamp?: string }> = []
   Object.assign(browser, { location: { pathname: '/private-owner/private-repo/requests/private-id/changes' } })
   reportFrontendError(new Error('private hydration payload'), 'hydration')
+  captureRunLogTiming({ durationMs: 640, logBytes: 12, provider: 'github', source: 'fetched', trigger: 'page_load' })
   const original = installBrowserDiagnostics({
     release: 'web-original',
     routeName: 'request_changes',
@@ -25,12 +27,13 @@ test('buffered frontend reports retain occurrence context through gating and rei
   const replacement = installBrowserDiagnostics({
     release: 'web-replacement',
     routeName: 'repository_code',
-    capture: (_event, properties, timestamp) => { captures.push({ properties, timestamp }); return true },
+    capture: (event, properties, timestamp) => { captures.push({ event, properties, timestamp }); return true },
   })
   installations.push(replacement)
-  replacement.flushErrors()
+  replacement.flushPending()
 
   assert.deepEqual(captures, [{
+    event: 'frontend_error',
     properties: {
       error_kind: 'unknown_error',
       error_origin: 'hydration',
@@ -39,11 +42,23 @@ test('buffered frontend reports retain occurrence context through gating and rei
     },
     timestamp: '2026-10-08T18:00:00.000Z',
   }, {
+    event: 'frontend_error',
     properties: {
       error_kind: 'type_error',
       error_origin: 'route',
       release: 'web-original',
       route_name: 'request_changes',
+    },
+    timestamp: '2026-10-08T18:00:00.000Z',
+  }, {
+    event: 'run_log_timing',
+    properties: {
+      duration_ms: 640,
+      log_bytes: 12,
+      provider: 'github',
+      route_name: 'repository_run',
+      source: 'fetched',
+      trigger: 'page_load',
     },
     timestamp: '2026-10-08T18:00:00.000Z',
   }])

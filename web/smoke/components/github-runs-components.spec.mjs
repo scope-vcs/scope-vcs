@@ -11,6 +11,8 @@ async function screenshot(page, options) {
 }
 
 const githubRunsFixture = { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true }
+const runPageRequestBudget = { listClick: 2, pageLoad: 2 }
+const requestsSoFar = (page) => page.evaluate(() => window.loads.length + window.runLoads.length + window.logLoads.length)
 
 test('GitHub workflow runs open on Scope, keep their list across navigation and refresh in place', async (t) => {
   const { base, errors, page } = await openFixture(t, 'github-runs', githubRunsFixture)
@@ -160,6 +162,8 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   assert.equal(await failed.getAttribute('aria-pressed'), 'true')
   await page.getByText('at Run the unit and integration test suites').waitFor()
   await log.getByText('Process completed with exit code 1.', { exact: false }).waitFor()
+  assert.equal(await requestsSoFar(page), runPageRequestBudget.listClick,
+    'a run opened from the list stays within its request budget before log text shows')
   assert.equal((await log.locator('pre').textContent()).includes('2026-10-05T'), false)
   assert.equal(
     await log.getByRole('link', { name: 'Full log' }).getAttribute('href'),
@@ -211,6 +215,8 @@ test('a GitHub run shows its jobs, steps and finished logs, follows job links an
   await page.goto(new URL('/octo/demo/runs', base).href)
   await page.goto(new URL('/octo/demo/runs/1#run-job-101', base).href)
   await log.getByText('Found 0 warnings and 0 errors.').waitFor()
+  assert.equal(await requestsSoFar(page), runPageRequestBudget.pageLoad,
+    'a run loaded directly stays within its request budget before log text shows')
   assert.equal(await job('lint').getAttribute('aria-pressed'), 'true')
   await page.setViewportSize({ width: 390, height: 844 })
   await page.evaluate(() => { location.hash = '#run-job-104' })

@@ -17,6 +17,7 @@ import { useRunResource } from './run-resource'
 import { RunDetailPagePending } from './run-detail-pending'
 import { useCallback, useMemo } from 'react'
 import { runLogCacheKey } from './run-log-cache'
+import { useRunLogTimingPage } from './run-log-timing'
 
 type RunDetailPageProps = {
   cancelRun: () => Promise<void>
@@ -34,6 +35,7 @@ type RunDetailPageProps = {
 export function RepositoryRunDetailPage(props: RunDetailPageProps) {
   const { userId, isLoaded } = useAuth()
   const { repo } = useRepoLayout()
+  useRunLogTimingPage(props.params.run_id)
   const cacheKey = isLoaded
     ? runLogCacheKey(repoResourceScope(repo, userId ?? null), props.params.run_id)
     : null
@@ -113,6 +115,7 @@ function RunDetailView({
         onSelectJob={showJob}
         onSelectStep={toggleStep}
         onToggleGraph={toggleGraph}
+        runId={params.run_id}
         selectedJobKey={selectedJobKey}
         selection={selection}
         showGraph={showGraph}

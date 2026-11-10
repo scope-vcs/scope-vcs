@@ -4,6 +4,7 @@ import { ArrowDown } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { StepLogs } from './repository-run-detail-controller'
 import { RUN_LOG_TEXT_CLASS, runLogPreClass } from './run-layout'
+import { useRunLogPaintTiming } from './run-log-timing'
 import type { RepositoryRunStepResponse } from '@/api/types.generated'
 
 const FOLLOW_THRESHOLD_PX = 32
@@ -11,16 +12,24 @@ const FOLLOW_THRESHOLD_PX = 32
 export function RunLogView({
   id,
   logs,
+  runId,
   step,
   wrap,
 }: {
   id: string
   logs: StepLogs
+  runId: string
   step: RepositoryRunStepResponse
   wrap: boolean
 }) {
   const logState = logs.state
   const text = logState.logs.map((log) => log.text).join('')
+  useRunLogPaintTiming({
+    provider: 'native',
+    runId,
+    settled: !logState.loading && (logState.initialized || logState.error !== null),
+    text,
+  })
   const [following, setFollowing] = useState(true)
   const [pausedAt, setPausedAt] = useState<number | null>(null)
   const lastPosition = logState.logs.at(-1)?.position ?? -1
