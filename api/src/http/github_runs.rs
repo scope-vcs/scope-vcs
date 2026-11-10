@@ -78,13 +78,18 @@ fn job_log_response(log: GitHubJobLogRead) -> GitHubWorkflowJobLogResponse {
     match log {
         GitHubJobLogRead::NotRun => GitHubWorkflowJobLogResponse::NotRun,
         GitHubJobLogRead::Pending => GitHubWorkflowJobLogResponse::Pending,
-        GitHubJobLogRead::Read(GitHubJobLogState::Expired) => GitHubWorkflowJobLogResponse::Expired,
-        GitHubJobLogRead::Read(GitHubJobLogState::Kept(log)) => {
-            GitHubWorkflowJobLogResponse::Kept {
-                text: log.text,
-                truncated: log.truncated,
-            }
-        }
+        GitHubJobLogRead::Read {
+            log: GitHubJobLogState::Expired,
+            ..
+        } => GitHubWorkflowJobLogResponse::Expired,
+        GitHubJobLogRead::Read {
+            log: GitHubJobLogState::Kept(log),
+            fetched,
+        } => GitHubWorkflowJobLogResponse::Kept {
+            text: log.text,
+            truncated: log.truncated,
+            fetched,
+        },
     }
 }
 

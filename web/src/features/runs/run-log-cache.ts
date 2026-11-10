@@ -214,6 +214,16 @@ export function seedOpeningRunLog(key: string, detail: RepositoryRunDetailRespon
   ))
 }
 
+export function runLogCoversOpening(key: string, detail: RepositoryRunDetailResponse, selection: StepSelection) {
+  const { opening } = detail
+  const step = opening?.step
+  if (!opening || !step || stepKey(selection) !== stepKey({ jobKey: opening.job_key, attemptId: step.attempt_id, stepIndex: step.step_index })) {
+    return false
+  }
+  const cached = runLogsResource.peek(key)?.[stepKey(selection)]
+  return Boolean(cached?.initialized && !cached.viewingEarlier && cached.nextAfter >= step.log.next_after)
+}
+
 function fetchedLogState(
   retained: { logs: RepositoryRunLogResponse[]; hasEarlier: boolean },
   page: RepositoryRunStepLogPageResponse,

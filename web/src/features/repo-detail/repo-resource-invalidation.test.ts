@@ -202,7 +202,7 @@ test('a GitHub run report asks again only for its logs still being read', () => 
   const kept = githubWorkflowJobLogIdentity('viewer-a', '7', '71')
   const otherRun = githubWorkflowJobLogIdentity('viewer-a', '8', '80')
   githubWorkflowJobLogResource.write(pending, { state: 'pending' })
-  githubWorkflowJobLogResource.write(kept, { state: 'kept', text: 'done', truncated: false })
+  githubWorkflowJobLogResource.write(kept, { state: 'kept', text: 'done', truncated: false, fetched: false })
   githubWorkflowJobLogResource.write(otherRun, { state: 'pending' })
   invalidateRepoResources('viewer-a', event({ GitHubWorkflowRunChanged: { github_run_id: 7 } }))
   assert.equal(githubWorkflowJobLogResource.getSnapshot(pending).stale, true)

@@ -18,7 +18,10 @@ pub(crate) const JOB_LOG_WAIT: Duration = Duration::from_secs(2);
 pub(crate) enum GitHubJobLogRead {
     NotRun,
     Pending,
-    Read(GitHubJobLogState),
+    Read {
+        log: GitHubJobLogState,
+        fetched: bool,
+    },
 }
 
 enum LogReadOutcome {
@@ -51,7 +54,10 @@ pub(crate) async fn job_log(
     drop(changes);
     state.repo_events.remove_if_idle(&connection.repository_id);
     Ok(match landed {
-        Ok(read) => read?.map_or(GitHubJobLogRead::Pending, GitHubJobLogRead::Read),
+        Ok(read) => read?.map_or(GitHubJobLogRead::Pending, |log| GitHubJobLogRead::Read {
+            log,
+            fetched: true,
+        }),
         Err(_) => GitHubJobLogRead::Pending,
     })
 }
@@ -68,7 +74,10 @@ pub(crate) async fn stored_job_log(
         .repositories()
         .github_workflow_job_log(job.github_job_id)
         .await?
-        .map(GitHubJobLogRead::Read))
+        .map(|log| GitHubJobLogRead::Read {
+            log,
+            fetched: false,
+        }))
 }
 
 async fn wait_for_log(
@@ -95,6 +104,17 @@ async fn wait_for_log(
             return Ok(Some(log));
         }
     }
+}
+
+pub(super) async fn queue_log_of_finished_failure(
+    state: &AppState,
+    job: &GitHubWorkflowJob,
+    now_unix: u64,
+) -> Result<(), ApiError> {
+    if !job.log_is_read_when_it_finishes() {
+        return Ok(());
+    }
+    queue(state, &[job.github_job_id], now_unix).await
 }
 
 pub(super) async fn queue_readable_logs(

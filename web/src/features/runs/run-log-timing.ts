@@ -115,6 +115,10 @@ export function useRunLogTimingPage(runId: string) {
   }, [runId])
 }
 
+export function observeRunLogFetching(runId: string) {
+  runLogTimer.observeFetching(runId)
+}
+
 export function useRunLogAbsence(runId: string, absent: boolean) {
   useLayoutEffect(() => {
     if (absent) runLogTimer.settleWithoutText(runId)
@@ -122,13 +126,11 @@ export function useRunLogAbsence(runId: string, absent: boolean) {
 }
 
 export function useRunLogPaintTiming({
-  fetching = false,
   provider,
   runId,
   settled,
   text,
 }: {
-  fetching?: boolean
   provider: RunLogTiming['provider']
   runId: string
   settled: boolean
@@ -144,12 +146,11 @@ export function useRunLogPaintTiming({
     }
   }, [runId, view])
   useLayoutEffect(() => {
-    if (fetching) runLogTimer.observeFetching(runId)
     if (closeView.current) return
     if (!text) {
       if (settled) runLogTimer.settleWithoutText(runId)
       return
     }
     closeView.current = runLogTimer.commitText(runId, provider, text) ?? (() => {})
-  }, [fetching, provider, runId, settled, text])
+  }, [provider, runId, settled, text])
 }

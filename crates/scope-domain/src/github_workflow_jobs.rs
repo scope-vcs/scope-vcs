@@ -55,6 +55,14 @@ impl GitHubWorkflowJob {
         self.is_completed() && self.ran()
     }
 
+    pub fn log_is_read_when_it_finishes(&self) -> bool {
+        self.has_readable_log()
+            && matches!(
+                self.conclusion,
+                Some(GitHubCheckConclusion::Failure | GitHubCheckConclusion::TimedOut)
+            )
+    }
+
     pub fn failed(&self) -> bool {
         self.conclusion
             .is_some_and(GitHubCheckConclusion::is_failure)
@@ -276,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn every_finished_job_that_ran_has_a_readable_log() {
+    fn every_finished_job_that_ran_has_a_readable_log_and_failures_are_read_as_they_finish() {
         use GitHubCheckStatus::{Completed, InProgress};
         let with = |conclusion, steps| GitHubWorkflowJob {
             conclusion: Some(conclusion),
@@ -288,6 +296,11 @@ mod tests {
         assert!(with(GitHubCheckConclusion::Cancelled, ran()).has_readable_log());
         assert!(!with(GitHubCheckConclusion::Failure, vec![]).has_readable_log());
         assert!(!job(InProgress, ran()).has_readable_log());
+        assert!(with(GitHubCheckConclusion::Failure, ran()).log_is_read_when_it_finishes());
+        assert!(with(GitHubCheckConclusion::TimedOut, ran()).log_is_read_when_it_finishes());
+        assert!(!with(GitHubCheckConclusion::Success, ran()).log_is_read_when_it_finishes());
+        assert!(!with(GitHubCheckConclusion::Cancelled, ran()).log_is_read_when_it_finishes());
+        assert!(!with(GitHubCheckConclusion::Failure, vec![]).log_is_read_when_it_finishes());
     }
 
     #[test]

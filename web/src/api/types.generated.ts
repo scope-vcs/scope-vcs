@@ -262,7 +262,7 @@ export type GitHubWorkflowJobResponse = { id: number, name: string, status: GitH
 
 export type GitHubWorkflowStepResponse = { number: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, };
 
-export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string, truncated: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
+export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string, truncated: boolean, fetched: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
 
 export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, search: string | null, };
 

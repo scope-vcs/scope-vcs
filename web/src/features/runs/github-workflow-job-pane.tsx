@@ -22,7 +22,7 @@ import { RunDuration } from './run-duration'
 import { RunLogControls } from './run-job-header'
 import { RUN_LOG_TEXT_CLASS, RUN_STEP_ROW_CLASS } from './run-layout'
 import { RunLogText } from './run-log-text'
-import { useRunLogPaintTiming } from './run-log-timing'
+import { observeRunLogFetching, useRunLogPaintTiming } from './run-log-timing'
 import { RunStatusIcon } from './run-status-icon'
 
 const LINK_CLASS = 'underline underline-offset-2 hover:text-foreground'
@@ -42,7 +42,11 @@ export function GitHubWorkflowJobPane({
 }) {
   const key = githubJobKey(job)
   const finished = job.status === 'completed'
-  const load = useCallback(async (signal: AbortSignal) => readableJobLog(await loadLog(key, signal)), [key, loadLog])
+  const load = useCallback(async (signal: AbortSignal) => {
+    const answer = await loadLog(key, signal)
+    if (answer.state === 'pending' || (answer.state === 'kept' && answer.fetched)) observeRunLogFetching(runId)
+    return readableJobLog(answer)
+  }, [key, loadLog, runId])
   const initialValue = useMemo(() => includedLog && readableJobLog(includedLog), [includedLog])
   const log = useCachedResource({
     fallbackError: 'The log could not load.',
@@ -57,7 +61,6 @@ export function GitHubWorkflowJobPane({
   const failedStep = githubJobFailedStep(job)
   const logText = log.value?.state === 'kept' ? log.value.text : null
   useRunLogPaintTiming({
-    fetching: log.value?.state === 'pending',
     provider: 'github',
     runId,
     settled: !finished || (log.value ? log.value.state !== 'pending' : log.error !== null),

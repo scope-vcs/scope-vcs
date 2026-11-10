@@ -33,6 +33,7 @@ import {
   runLogsResource,
   refreshRunLogs,
   refreshRunLogsAfterInFlight,
+  runLogCoversOpening,
   seedOpeningRunLog,
   type RunLogMode,
   type StepLogState,
@@ -187,6 +188,7 @@ export function useRepositoryRunDetailController({
     const selection = view.selection
     if (!selection) return
     seedOpeningRunLog(key, detail)
+    if (runLogCoversOpening(key, detail, selection)) return
     const cached = runLogsResource.peek(key)?.[stepKey(selection)]
     if (cached && canReuseRunLogs(cached, detail)) return
     if (!runCanChange(detail.run.state)) {

@@ -60,6 +60,7 @@ pub(crate) async fn refresh_job_for_delivery(
             std::slice::from_ref(&job),
         )
         .await?;
+    github_job_logs::queue_log_of_finished_failure(state, &job, unix_now()?).await?;
     publish(state, &connection, job.github_run_id).await
 }
 

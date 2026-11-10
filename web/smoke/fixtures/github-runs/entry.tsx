@@ -105,14 +105,15 @@ let runDetail: GitHubWorkflowRunDetailResponse = {
 }
 const stamp = '2026-10-05T12:00:00.1234567Z '
 const logs: Record<string, GitHubWorkflowJobLogResponse> = {
-  101: { state: 'kept', text: `\uFEFF${stamp}##[group]Run pnpm lint\n${stamp}$ oxlint src\n${stamp}Found 0 warnings and 0 errors.\n`, truncated: false },
+  101: { state: 'kept', text: `\uFEFF${stamp}##[group]Run pnpm lint\n${stamp}$ oxlint src\n${stamp}Found 0 warnings and 0 errors.\n`, truncated: false, fetched: false },
   102: {
     state: 'kept',
     text: Array.from({ length: 40 }, (_, index) => `${stamp}  ✔ suite ${index} passes every case it was given, including the long-running integration fixtures (${index * 3}ms)`).join('\n')
       + `\n${stamp}  ✖ request queue keeps its order (12ms)\n${stamp}##[error]Process completed with exit code 1.\n`,
     truncated: true,
+    fetched: false,
   },
-  103: { state: 'kept', text: `${stamp}Build finished.\n`, truncated: false },
+  103: { state: 'kept', text: `${stamp}Build finished.\n`, truncated: false, fetched: false },
 }
 runDetail = { ...runDetail, opening_job_log: logs[102]! }
 const longLogDetail: GitHubWorkflowRunDetailResponse = {
@@ -124,6 +125,7 @@ const longLogDetail: GitHubWorkflowRunDetailResponse = {
     state: 'kept',
     text: Array.from({ length: 21_000 }, (_, index) => `${stamp}packaged artifact ${index} into the release bundle`).join('\n'),
     truncated: false,
+    fetched: false,
   },
 }
 const runLoads: string[] = []

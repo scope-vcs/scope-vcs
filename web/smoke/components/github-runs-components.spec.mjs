@@ -11,7 +11,7 @@ async function screenshot(page, options) {
 }
 
 const githubRunsFixture = { aliases: [fixtureClerk, fixtureRepositorySearch], tailwind: true }
-const runPageRequestBudget = { listClick: 2, pageLoad: 2 }
+const runPageRequestBudget = { listClick: 1, pageLoad: 1 }
 const requestsSoFar = (page) => page.evaluate(() => window.loads.length + window.runLoads.length + window.logLoads.length)
 
 test('GitHub workflow runs open on Scope, keep their list across navigation and refresh in place', async (t) => {

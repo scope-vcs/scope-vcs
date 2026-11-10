@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { fixtureClerk, fixturePath, openFixture } from '../support/fixture-server.mjs'
 
-const runPageRequestBudget = { listClick: 1, pageLoad: 2 }
+const runPageRequestBudget = { listClick: 1, pageLoad: 1 }
 const reads = (page) => page.evaluate(() => Object.values(window.loads).reduce((total, count) => total + count, 0))
 
 test('seeded native run navigation makes one read per resource on cold load and reopen', async (t) => {
@@ -60,12 +60,8 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await page.getByRole('heading', { name: 'Runs', exact: true }).waitFor()
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)))
   assert.equal(await page.evaluate(() => window.loads.history), 1, 'seeded cold history load must not read again on mount')
-  const readsBeforeListClick = await reads(page)
-  await page.getByRole('link', { name: /tests.*#abcdef1/ }).click()
+  await page.getByRole('link', { name: 'Detail', exact: true }).click()
   await page.getByRole('heading', { name: /Runs.*tests/ }).waitFor()
-  await page.getByText('retained build output', { exact: false }).waitFor()
-  assert.equal(await reads(page) - readsBeforeListClick, runPageRequestBudget.listClick,
-    'a run opened from the list stays within its request budget before log text shows')
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)))
   assert.equal(await page.evaluate(() => window.loads.detail), 1, 'seeded cold detail load must not read again on mount')
   await page.getByRole('link', { name: 'History', exact: true }).click()
@@ -135,11 +131,15 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await cold.goto(new URL('/owner/repo/runs?client=true', base).href)
   await cold.getByRole('heading', { name: 'Runs', exact: true }).waitFor()
   assert.equal(await cold.evaluate(() => window.loads.history), 1)
+  const readsBeforeListClick = await reads(cold)
   const row = cold.getByRole('link').filter({ hasText: 'tests' }).first()
   await row.hover()
   await cold.waitForFunction(() => window.loads.detail === 1)
   await row.click()
   await cold.getByRole('heading', { name: /Runs.*tests/ }).waitFor()
+  await cold.getByText('retained build output', { exact: false }).waitFor()
+  assert.equal(await reads(cold) - readsBeforeListClick, runPageRequestBudget.listClick,
+    'a run opened from the list stays within its request budget before log text shows')
   assert.equal(await cold.evaluate(() => window.loads.detail), 1)
   await cold.getByRole('button', { name: 'Cancel', exact: true }).click()
   await cold.getByRole('button', { name: 'Run again' }).waitFor()

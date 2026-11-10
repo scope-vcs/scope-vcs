@@ -158,7 +158,11 @@ pub(crate) struct GitHubWorkflowStepResponse {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 #[cfg_attr(feature = "type-export", ts(tag = "state", rename_all = "snake_case"))]
 pub(crate) enum GitHubWorkflowJobLogResponse {
-    Kept { text: String, truncated: bool },
+    Kept {
+        text: String,
+        truncated: bool,
+        fetched: bool,
+    },
     Expired,
     NotRun,
     Pending,
