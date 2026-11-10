@@ -201,5 +201,8 @@ test('a running native step follows new output from a search match, and links li
   await page.getByRole('navigation', { name: 'Jobs' }).locator('button[aria-pressed="true"]').click()
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   assert.equal(await page.evaluate(() => window.loads.logs), logReads, 'reselecting the job after back to latest keeps the latest page')
+  await page.evaluate(() => { location.hash = '#run-job-test:attempt:0:L20.4' })
+  await inView('chunk 20 line 4')
+  assert.deepEqual(await marked.allTextContents(), [await row('chunk 20 line 4').textContent()])
   assert.deepEqual(errors, [])
 })

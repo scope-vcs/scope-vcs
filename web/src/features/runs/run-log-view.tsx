@@ -70,9 +70,9 @@ export function RunLogView({
   }, [])
 
   useLayoutEffect(() => {
-    if (!logState.viewingEarlier) return
+    if (!logState.viewingEarlier || focus) return
     startRef.current?.scrollIntoView({ block: 'start' })
-  }, [logState.logs, logState.viewingEarlier])
+  }, [focus, logState.logs, logState.viewingEarlier])
 
   useLayoutEffect(() => {
     if (logState.viewingEarlier || !following || focus) return
