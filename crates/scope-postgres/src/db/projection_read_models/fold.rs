@@ -161,10 +161,16 @@ where
         .into_iter()
         .map(|row| row.try_into_domain().map(|member| member.permissions.view))
         .collect::<Result<BTreeSet<_>, _>>()?;
+    let requested = super::super::request_rows::open_request_counts_by_view(conn, repo_id).await?;
     Ok(views
         .iter()
         .map(|definition| &definition.id)
-        .filter(|id| *id == views.full() || views.anyone() == Some(*id) || assigned.contains(*id))
+        .filter(|id| {
+            *id == views.full()
+                || views.anyone() == Some(*id)
+                || assigned.contains(*id)
+                || requested.contains_key(*id)
+        })
         .cloned()
         .collect())
 }

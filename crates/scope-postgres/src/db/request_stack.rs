@@ -62,6 +62,25 @@ pub struct RequestStackChildFacts {
 }
 
 impl RequestStore {
+    pub async fn request_view_mains(
+        &self,
+        repo_id: &str,
+    ) -> Result<scope_domain::requests::RequestViewMains, PostgresError> {
+        let Some(repository) = entities::repository::Entity::find_by_id(repo_id.to_string())
+            .one(self.db.as_ref())
+            .await
+            .map_err(PostgresError::internal)?
+        else {
+            return Ok(Default::default());
+        };
+        super::projection_read_models::request_view_mains(
+            self.db.as_ref(),
+            repo_id,
+            super::integer_columns::i64_to_u64(repository.content_version, "repository version")?,
+        )
+        .await
+    }
+
     pub async fn request_stack_children(
         &self,
         parent_id: &str,

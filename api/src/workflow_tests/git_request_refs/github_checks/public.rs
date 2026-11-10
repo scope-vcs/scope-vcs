@@ -281,7 +281,7 @@ async fn a_contribution_that_conflicts_with_private_code_reports_it_and_pushes_n
     assert_eq!(view["message"], PRIVATE_CODE_CONFLICT_MESSAGE);
     assert_eq!(view["can_approve"], false);
     assert_eq!(view["github_push"], serde_json::Value::Null);
-    assert_eq!(view["mergeability"]["status"], "ChecksConfigurationError");
+    assert_eq!(view["mergeability"]["status"], "NeedsMainUpdate");
     assert_eq!(
         approve(&state, &git_head_oid(&source)).await.status(),
         StatusCode::CONFLICT
@@ -604,7 +604,7 @@ async fn a_contribution_that_new_private_main_conflicts_with_reports_it() {
     let view = checks(&state, REQUEST_ID, &member).await;
     assert_eq!(view["state"], "configuration-error");
     assert_eq!(view["message"], PRIVATE_CODE_CONFLICT_MESSAGE);
-    assert_eq!(view["mergeability"]["status"], "ChecksConfigurationError");
+    assert_eq!(view["mergeability"]["status"], "NeedsMainUpdate");
     assert_eq!(
         merge(&state, REQUEST_ID).await.status(),
         StatusCode::CONFLICT

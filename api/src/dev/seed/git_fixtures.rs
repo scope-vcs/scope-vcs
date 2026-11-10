@@ -20,16 +20,19 @@ pub(super) fn git_pack_state(
 }
 
 pub(super) fn update_demo_git_packs(
+    object_store: &SeedObjects,
     git_segment_store: &scope_storage::GitSegmentStore,
-    repository_id: &str,
+    repo: &Repository,
     initial: SeedGitCommit<'_>,
     accepted: SeedGitCommit<'_>,
 ) -> Result<(GitHead, SeedRequestGallery, SeedPoolPack), ApiError> {
+    let repository_id = repo.record.id.as_str();
     with_seed_git_repo("update-demo-live", |repo_path| {
         apply_seed_commits(repo_path, &[initial])?;
         let initial_oid = seed_git_head(repo_path)?;
         apply_seed_commits(repo_path, &[accepted])?;
         let main_oid = seed_git_head(repo_path)?;
+        let public_main_oid = fetch_public_main(object_store, repo, repo_path)?;
         let accepted_ref = canonical_request_ref("document-release-flow");
         seed_git(
             Some(repo_path),
@@ -44,7 +47,7 @@ pub(super) fn update_demo_git_packs(
                 files: &[("src/retry.ts", UPDATE_DEMO_RETRY_HELPER)],
                 message: "Add bounded retry timing",
             },
-            &main_oid,
+            &public_main_oid,
         )?;
         let ready_pack = store_seed_request_pack(
             git_segment_store,
@@ -59,7 +62,6 @@ pub(super) fn update_demo_git_packs(
             repository_id,
             repo_path,
             &ready_oid,
-            &main_oid,
         )?;
         let held_oid = seed_request_branch(
             repo_path,
@@ -86,7 +88,7 @@ pub(super) fn update_demo_git_packs(
                 files: &[("docs/request-queue.md", UPDATE_DEMO_QUEUE_DRAFT)],
                 message: "Draft request queue copy",
             },
-            &main_oid,
+            &public_main_oid,
         )?;
         let neutral_oid = seed_request_branch(
             repo_path,
@@ -95,7 +97,12 @@ pub(super) fn update_demo_git_packs(
                 files: &[("docs/cache-note.md", UPDATE_DEMO_CACHE_NOTE)],
                 message: "Document cache tradeoff",
             },
-            &main_oid,
+            &public_main_oid,
+        )?;
+        seed_git(
+            Some(repo_path),
+            &["reset", "--hard", &main_oid],
+            "restoring seeded main branch",
         )?;
         let (main_head, main_pack) =
             store_seed_git_pack(git_segment_store, repository_id, repo_path)?;
@@ -144,7 +151,7 @@ pub(super) fn update_demo_git_packs(
                 id: "req_demo_working",
                 name: "request-queue-copy",
                 title: "Tighten request queue copy",
-                base_oid: main_oid.clone(),
+                base_oid: public_main_oid.clone(),
                 head_oid: working_oid,
                 pack: working_pack,
                 description_markdown: Some("A private working draft for the request author."),
@@ -157,7 +164,7 @@ pub(super) fn update_demo_git_packs(
                 id: "req_demo_ready",
                 name: "bounded-retry-timing",
                 title: "Add bounded retry timing",
-                base_oid: main_oid.clone(),
+                base_oid: public_main_oid.clone(),
                 head_oid: ready_oid,
                 pack: ready_pack,
                 description_markdown: Some(request_discussions::READY_REQUEST_DESCRIPTION),
@@ -209,7 +216,7 @@ pub(super) fn update_demo_git_packs(
                 id: "req_demo_neutral",
                 name: "cache-observability-note",
                 title: "Document the cache tradeoff",
-                base_oid: main_oid,
+                base_oid: public_main_oid,
                 head_oid: neutral_oid,
                 pack: neutral_pack,
                 description_markdown: Some("A public request kept as closed history."),
@@ -223,12 +230,60 @@ pub(super) fn update_demo_git_packs(
     })
 }
 
+fn fetch_public_main(
+    object_store: &SeedObjects,
+    repo: &Repository,
+    repo_path: &FsPath,
+) -> Result<String, ApiError> {
+    let views = repo.initial_views();
+    let public = ViewId::public();
+    let projection = scope_domain::projection::project_graph(
+        &repo.graph,
+        &repo.visibility_change_sets,
+        &views,
+        &public,
+    );
+    let public_main_oid = scope_git::projection_head_oid(&projection)
+        .map_err(ApiError::internal)?
+        .ok_or_else(|| ApiError::internal_message("seeded public view has no main"))?;
+    let cache_root = temp_seed_git_repo_path("update-demo-public")?;
+    fs::create_dir_all(&cache_root).map_err(ApiError::internal)?;
+    let fetched = crate::git::projection_repo::projection_bare_repo_with_loader(
+        &cache_root,
+        &repo.incarnation(),
+        &views.labels(&public).into_iter().collect::<Vec<_>>(),
+        &projection,
+        None,
+        None,
+        |blob| object_store.bytes(blob),
+    )
+    .and_then(|public_repo| {
+        seed_git(
+            Some(repo_path),
+            &[
+                "fetch",
+                "--no-tags",
+                public_repo.to_string_lossy().as_ref(),
+                &public_main_oid,
+            ],
+            "fetching seeded public main",
+        )
+    });
+    fs::remove_dir_all(&cache_root).map_err(ApiError::internal)?;
+    fetched.map(|()| public_main_oid)
+}
+
 pub(super) fn seed_request_branch(
     repo_path: &FsPath,
     request_id: &str,
     commit: SeedGitCommit<'_>,
-    main_oid: &str,
+    base_oid: &str,
 ) -> Result<String, ApiError> {
+    seed_git(
+        Some(repo_path),
+        &["reset", "--hard", base_oid],
+        "checking out seeded request base",
+    )?;
     apply_seed_commits(repo_path, &[commit])?;
     let head_oid = seed_git_head(repo_path)?;
     let request_ref = canonical_request_ref(request_id);
@@ -236,11 +291,6 @@ pub(super) fn seed_request_branch(
         Some(repo_path),
         &["update-ref", &request_ref, &head_oid],
         "creating seeded request ref",
-    )?;
-    seed_git(
-        Some(repo_path),
-        &["reset", "--hard", main_oid],
-        "restoring seeded main branch",
     )?;
     Ok(head_oid)
 }

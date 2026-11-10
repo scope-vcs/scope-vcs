@@ -97,7 +97,7 @@ async fn locked_merge_allows_owner_and_persists_content_and_request_once() {
 }
 
 #[tokio::test]
-async fn a_native_merge_lets_a_waiting_request_squash_merged_on_github_land_as_the_merger() {
+async fn a_native_merge_by_a_member_without_push_access_lands_a_waiting_github_merge() {
     use crate::db::github_pull_requests::tests::{
         claim,
         merge_landing::{finish_merged, squash_merged_on_github},
@@ -129,11 +129,12 @@ async fn a_native_merge_lets_a_waiting_request_squash_merged_on_github_land_as_t
         .await
         .unwrap();
     assert!(claim(&store, "claim_2", 5).await.is_empty());
+    member_without_push_access(&store).await;
     let prepared = merge_preparation(&store).await;
 
     store
         .requests()
-        .merge_request_content(merge_command(&store, "user_owner", prepared).await)
+        .merge_request_content(merge_command(&store, "user_guest", prepared).await)
         .await
         .unwrap();
 
@@ -152,7 +153,7 @@ async fn a_native_merge_lets_a_waiting_request_squash_merged_on_github_land_as_t
         .unwrap()
         .unwrap();
     assert_eq!(landed.state(), RequestState::Merged);
-    assert_eq!(landed.merged_by_user_id.as_deref(), Some("user_owner"));
+    assert_eq!(landed.merged_by_user_id.as_deref(), Some("user_guest"));
 }
 
 #[tokio::test]
@@ -286,6 +287,32 @@ struct MergePreparation {
     workflow_catalog: RepositoryWorkflowCatalog,
 }
 
+async fn member_without_push_access(store: &super::super::MetadataStore) {
+    use scope_domain::repository::collaboration::{RepositoryMember, RepositoryMemberPermissions};
+    let mut repo = store
+        .repositories()
+        .repository_for_tests("owner/repo")
+        .await
+        .unwrap()
+        .unwrap();
+    repo.collaboration.members.push(RepositoryMember {
+        repo_id: repo.record.id.clone(),
+        user_id: "user_guest".into(),
+        permissions: RepositoryMemberPermissions {
+            can_push: false,
+            can_change_file_visibility: false,
+            view: scope_domain::views::ViewId::private(),
+        },
+        created_at_unix: 1,
+        updated_at_unix: 1,
+    });
+    store
+        .repositories()
+        .replace_repository_for_tests(repo)
+        .await
+        .unwrap();
+}
+
 async fn merge_store() -> super::super::MetadataStore {
     merge_store_with_github(false).await
 }
@@ -313,13 +340,24 @@ async fn merge_store_with_github(github: bool) -> super::super::MetadataStore {
         .await
         .unwrap();
     start_public_request(&store).await;
+    let public_main = super::super::projection_read_models::live_projection_read_model(
+        store.db.as_ref(),
+        "owner/repo",
+        2,
+        &scope_domain::views::ViewId::public(),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .head_oid
+    .unwrap();
     store
         .requests()
         .mutate_request_for_tests("req_1", |request| {
             request.base = scope_domain::requests::RequestBase::Main {
-                review_base_oid: BASE_HEAD.into(),
+                review_base_oid: public_main.clone(),
             };
-            request.main_ancestor_oid = BASE_HEAD.into();
+            request.main_ancestor_oid = public_main;
             request.submitted_at_unix = Some(4);
             request.updated_at_unix = 4;
         })

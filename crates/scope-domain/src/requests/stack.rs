@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{error::DomainError, views::ViewId};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const REQUEST_STACK_MAX_ANCESTORS: u32 = 32;
 pub const REQUEST_STACK_MAX_DEPTH: u32 = REQUEST_STACK_MAX_ANCESTORS + 1;
@@ -51,6 +51,14 @@ impl RequestStackStatus {
         }
     }
 
+    pub fn containing_view_main(self, view: &ViewId, contains_view_main: bool) -> Self {
+        if self == Self::Main && !view.is_private() && !contains_view_main {
+            Self::NeedsMainUpdate
+        } else {
+            self
+        }
+    }
+
     pub const fn blocking_reason(self) -> Option<&'static str> {
         match self {
             Self::Main => None,
@@ -61,6 +69,37 @@ impl RequestStackStatus {
             Self::IntegrationConflict => Some("request integration conflicts with main"),
             Self::NeedsMainUpdate => Some("request must contain the latest view main"),
         }
+    }
+
+    pub const fn merge_refusal(self) -> Option<&'static str> {
+        match self {
+            Self::NeedsMainUpdate => {
+                Some("Request view main moved. Run scope request restack, then scope request push.")
+            }
+            _ => self.blocking_reason(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RequestViewMains(BTreeMap<ViewId, String>);
+
+impl RequestViewMains {
+    pub fn new(main_oids: impl IntoIterator<Item = (ViewId, String)>) -> Self {
+        Self(main_oids.into_iter().collect())
+    }
+
+    pub fn stack_status(
+        &self,
+        view: &ViewId,
+        contained_main_oid: &str,
+        recorded: RequestStackStatus,
+    ) -> RequestStackStatus {
+        let contains_view_main = self
+            .0
+            .get(view)
+            .is_none_or(|main_oid| main_oid == contained_main_oid);
+        recorded.containing_view_main(view, contains_view_main)
     }
 }
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::requests::RequestMergeSubject;
 use crate::{
     requests::{
         GitHubCheckResults, NativeRequestCheck, RequestCheck, RequestCheckEvaluationState,
@@ -404,7 +405,7 @@ fn gate_readiness(
     request_auto_merge_readiness(crate::requests::evaluate_merge_gate(
         crate::requests::MergeGateInput::RequestMerge {
             repository_lifecycle: crate::repository::RepoLifecycleState::Ready,
-            subject: request.into(),
+            subject: RequestMergeSubject::new(request, &Default::default()),
             viewer: &viewer,
             views: &views,
             checks,

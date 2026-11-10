@@ -3,8 +3,8 @@ use crate::{error::ApiError, state::AppState};
 use scope_domain::{
     repository::access::RepositoryActor,
     requests::{
-        MergeGateAuthority, MergeGateInput, Request, RequestViewer, evaluate_merge_gate,
-        request_policy,
+        MergeGateAuthority, MergeGateInput, Request, RequestMergeSubject, RequestViewer,
+        evaluate_merge_gate, request_policy,
     },
 };
 
@@ -84,7 +84,14 @@ pub(super) async fn ensure_checks_cleared(
         .outcome;
     let decision = evaluate_merge_gate(MergeGateInput::RequestMerge {
         repository_lifecycle: context.record.lifecycle_state,
-        subject: request.into(),
+        subject: RequestMergeSubject::new(
+            request,
+            &state
+                .metadata
+                .requests()
+                .request_view_mains(&request.repo_id)
+                .await?,
+        ),
         viewer: &viewer,
         views: &context.views,
         checks,
@@ -96,7 +103,7 @@ pub(super) async fn ensure_checks_cleared(
     });
     if decision.authority() != Some(MergeGateAuthority::RequestMerge) {
         return Err(
-            ApiError::conflict(decision.reason().unwrap_or("request CI has not cleared")).into(),
+            ApiError::conflict(decision.refusal().unwrap_or("request CI has not cleared")).into(),
         );
     }
     Ok(())

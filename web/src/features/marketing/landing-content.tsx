@@ -1,7 +1,7 @@
 import type { CliInstallCommands, CliPlatform } from '@/api/types'
 import { CliInstallCommand } from '@/components/cli-install-command'
-import { ScopeLogo } from '@/components/scope-logo'
-import { SiteLinks, sourceUrl, ThemeSwitch } from '@/components/site-footer'
+import { PublicFooter, PublicHeader, publicColumn } from '@/components/public-page'
+import { sourceUrl } from '@/components/site-footer'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { ArrowUpRight } from 'lucide-react'
@@ -12,7 +12,6 @@ import { MergeGraph } from './merge-graph'
 import { RepoPanel } from './repo-panel'
 import { ScrollCue } from './scroll-cue'
 
-const landingShell = 'mx-auto w-[calc(100%-64px)] max-w-[1120px] max-[521px]:w-[calc(100%-40px)]'
 const column = 'relative min-w-0 scroll-mt-8'
 const columnTitle = 'max-w-[12ch] text-[clamp(32px,3.6vw,48px)] leading-[1.04] font-medium tracking-[-.045em]'
 const columnNote = 'absolute left-0 top-[calc(100%+24px)] max-w-[34ch]'
@@ -39,17 +38,14 @@ export function LandingContent({
 
   return (
     <LandingViewProvider view={view}>
-      <div className={landingShell}>
-        <header className="relative flex h-[76px] items-center justify-between">
-          <Link aria-label="Scope home" to="/">
-            <ScopeLogo className="landing-logo" />
-          </Link>
+      <div className={publicColumn}>
+        <PublicHeader logoClassName="landing-logo">
           <Note className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap max-[901px]:whitespace-normal max-[421px]:left-0 max-[421px]:top-[calc(100%-4px)] max-[421px]:translate-none" id="nav">
             <span className="pointer-coarse:hidden">{notes.nav}</span>
             <span className="hidden pointer-coarse:inline">{touchNavNote}</span>
           </Note>
           <Link className="text-sm hover:text-success-strong" params={{ _splat: '' }} search={{ redirect_url: '/' }} to="/sign-in/$">Sign in</Link>
-        </header>
+        </PublicHeader>
 
         <main className="outline-none" id={isPublic ? 'main-content' : undefined} tabIndex={isPublic ? -1 : undefined}>
           <section className="relative grid min-h-[min(calc(100dvh-76px),820px)] grid-cols-[minmax(0,1fr)_400px] items-center gap-24 pb-24 max-[901px]:min-h-0 max-[901px]:grid-cols-1 max-[901px]:gap-14 max-[901px]:pt-28 max-[421px]:pt-40">
@@ -95,14 +91,9 @@ export function LandingContent({
           </section>
         </main>
 
-        <footer className="relative flex min-h-24 flex-wrap items-center justify-between gap-5 text-[13px] text-muted-foreground max-[901px]:pb-8">
-          <Link aria-label="Scope home" to="/"><ScopeLogo className="landing-logo h-5 opacity-65" /></Link>
+        <PublicFooter label={isPublic ? 'Project' : undefined} logoClassName="landing-logo">
           <Note className="absolute left-1/2 top-1/2 max-w-[44ch] -translate-x-1/2 -translate-y-1/2 text-center max-[1151px]:static max-[1151px]:order-last max-[1151px]:block max-[1151px]:max-w-none max-[1151px]:basis-full max-[1151px]:translate-none max-[1151px]:text-left" id="footer" />
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            <SiteLinks className="flex gap-6 [&_a:hover]:text-success-strong" label={isPublic ? 'Project' : undefined} />
-            <ThemeSwitch />
-          </div>
-        </footer>
+        </PublicFooter>
       </div>
     </LandingViewProvider>
   )

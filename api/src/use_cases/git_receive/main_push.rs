@@ -192,7 +192,7 @@ pub(crate) async fn persist_main_push(
                     != Some(scope_domain::requests::MergeGateAuthority::AuthorizedMainPush)
                 {
                     return Err(DomainError::forbidden(
-                        main_gate.reason().unwrap_or("main push access required"),
+                        main_gate.refusal().unwrap_or("main push access required"),
                     ));
                 }
 

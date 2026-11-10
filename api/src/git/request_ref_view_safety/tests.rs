@@ -129,10 +129,10 @@ fn merge_validation_rejects_request_without_current_view_head() {
     .unwrap();
 
     assert_eq!(
-        ensure_view_head_is_request_ancestor(&repo, &request_head)
+        ensure_view_head_is_request_ancestor(&ViewId::public(), &repo, &request_head)
             .unwrap_err()
             .public_message(),
-        VIEW_MAIN_MOVED_ERROR
+        "Request view main moved. Run scope request restack, then scope request push."
     );
 }
 
