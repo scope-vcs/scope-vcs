@@ -24,9 +24,6 @@ on:
       deploy_media_worker:
         type: boolean
         default: false
-      deploy_web:
-        type: boolean
-        default: false
       successful_deployments:
         type: string
         default: "{}"
@@ -99,7 +96,6 @@ jobs:
           SCOPE_DEPLOY_API: ${{ inputs.deploy_api && '1' || '0' }}
           SCOPE_DEPLOY_MEDIA: ${{ inputs.deploy_media && '1' || '0' }}
           SCOPE_DEPLOY_MEDIA_WORKER: ${{ inputs.deploy_media_worker && '1' || '0' }}
-          SCOPE_DEPLOY_WEB: ${{ inputs.deploy_web && '1' || '0' }}
         run: |
           manifest=.github/deployment-services.json
           RAILWAY_PROJECT_ID="$(jq -r '.railway.projectId' "$manifest")"

@@ -19,7 +19,6 @@ deploy_router_requested="${SCOPE_DEPLOY_ROUTER:-1}"
 deploy_api_requested="${SCOPE_DEPLOY_API:-1}"
 deploy_media_requested="${SCOPE_DEPLOY_MEDIA:-1}"
 deploy_media_worker_requested="${SCOPE_DEPLOY_MEDIA_WORKER:-1}"
-deploy_web_requested="${SCOPE_DEPLOY_WEB:-0}"
 successful_deployments="${SCOPE_SUCCESSFUL_DEPLOYMENTS:-}"
 [[ -n "$successful_deployments" ]] || successful_deployments='{}'
 deployment_evidence_path="${SCOPE_DEPLOYMENT_EVIDENCE_PATH:-}"
@@ -35,7 +34,7 @@ if [[ -n "$deployment_evidence_path" ]]; then
 fi
 
 for deployment_flag in deploy_worker_requested deploy_router_requested \
-  deploy_api_requested deploy_media_requested deploy_media_worker_requested deploy_web_requested; do
+  deploy_api_requested deploy_media_requested deploy_media_worker_requested; do
   if [[ "${!deployment_flag}" != "0" && "${!deployment_flag}" != "1" ]]; then
     echo "${deployment_flag} must be 0 or 1." >&2
     exit 2
@@ -322,10 +321,6 @@ deploy_selected_releases() {
     activate_release api "$api_service"
     promote_pending_evidence
   fi
-  if [[ "$deploy_web_requested" == "1" ]]; then
-    activate_release web "$web_service"
-    promote_pending_evidence
-  fi
   node .github/scripts/railway-predecessor-teardown.mjs wait "$predecessor_teardown_dir"
 }
 
@@ -416,7 +411,6 @@ selected_components=()
 [[ "$deploy_router_requested" == "0" ]] || selected_components+=(git-router)
 [[ "$deploy_media_requested" == "0" ]] || selected_components+=(media-api)
 [[ "$deploy_media_worker_requested" == "0" ]] || selected_components+=(media-worker)
-[[ "$deploy_web_requested" == "0" ]] || selected_components+=(web)
 validate_prepared_release "${selected_components[@]}"
 validate_maintenance_artifact
 

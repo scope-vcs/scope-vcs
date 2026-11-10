@@ -195,7 +195,6 @@ fs.writeFileSync(process.argv[1], JSON.stringify({schemaVersion:1,sourceSha,comp
     SCOPE_DEPLOY_API="${SCOPE_DEPLOY_API:-1}" \
     SCOPE_DEPLOY_MEDIA=0 \
     SCOPE_DEPLOY_MEDIA_WORKER=0 \
-    SCOPE_DEPLOY_WEB="${SCOPE_DEPLOY_WEB:-0}" \
     SCOPE_SUCCESSFUL_DEPLOYMENTS="$successful_deployments" \
     SCOPE_DEPLOYMENT_EVIDENCE_PATH="$test_dir/$name-evidence.jsonl" \
     SCOPE_SERVICE_HEALTH_TIMEOUT_SECONDS=0 \
@@ -416,12 +415,6 @@ rolling_teardown_barrier() {
   assert_in_order rolling-teardown-barrier "$up/run-worker" "$up/api"
 }
 
-rolling_web() {
-  FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_WEB=1 run_cutover pass rolling-web
-  assert_evidence_components rolling-web run-worker,api,web
-  assert_in_order rolling-web "$m verify" "$up/run-worker" "$up/api" "$up/web"
-}
-
 rolling_worker() {
   FAKE_INITIAL_EXACT=1 SCOPE_DEPLOY_API=0 run_cutover pass rolling-worker
   assert_evidence_components rolling-worker run-worker
@@ -562,7 +555,7 @@ scenarios=(
   success parallel_activation delayed_teardown migration_router_selected stale_stop_status
   draining_writer invalid_workflow_catalog degraded degraded_media wrong_api_region
   degraded_during_shutdown crashed_worker evidence_promotion rollback unknown
-  rolling rolling_teardown_barrier rolling_web rolling_worker carried_worker_drift rolling_worker_unhealthy
+  rolling rolling_teardown_barrier rolling_worker carried_worker_drift rolling_worker_unhealthy
   router_bootstrap router_instance_refused router_drift_refused router_domain_invalid
   maintenance_forces_all transient_plan interrupted intentionally_closed bootstrap
   partial_reopen lost_activation_response denied_api denied_worker denied_media_worker

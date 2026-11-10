@@ -404,7 +404,6 @@ jobs:
       deploy_router: ${{ needs.plan.outputs.router == 'true' }}
       deploy_media: ${{ needs.plan.outputs.media == 'true' }}
       deploy_api: ${{ needs.plan.outputs.api == 'true' }}
-      deploy_web: ${{ needs.plan.outputs.web == 'true' }}
       successful_deployments: ${{ needs.readiness-preflight.outputs.deployments || needs.plan.outputs.deployed_components || '{}' }}
       recover_cutover_id: ${{ needs.plan.outputs.recover_cutover_id || '' }}
     secrets: inherit

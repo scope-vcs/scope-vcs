@@ -43,7 +43,8 @@ if [[ "$*" == *"deployment list"* ]]; then
     printf '%s\\n' '[{"id":"old-deployment","status":"REMOVED"}]'
     exit 0
   fi
-  if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && -f "$SCOPE_TEST_REMOVALS" && "$*" == *"--service api"* ]]; then
+  if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && "$*" == *"--service api"* ]] &&
+    grep -q api-deployment "$SCOPE_TEST_REMOVALS" 2>/dev/null; then
     printf '%s\\n' '[{"id":"api-deployment","status":"REMOVED"}]'
     exit 0
   fi
@@ -86,7 +87,8 @@ if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-false" ]]; then
   printf '%s\\n' '{"data":{"deploymentRemove":false}}'
   exit 0
 fi
-if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && "$(wc -l < "$SCOPE_TEST_REMOVALS")" == 1 ]]; then
+if [[ "\${SCOPE_TEST_SCENARIO:-}" == "remove-ambiguous" && "$(grep -c api-deployment "$SCOPE_TEST_REMOVALS")" == 1 ]] &&
+  grep -q api-deployment <<< "$2"; then
   printf '%s\\n' '{"data":{"deploymentRemove":true}}'
   exit 22
 fi
