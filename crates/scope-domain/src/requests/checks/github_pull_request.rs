@@ -158,6 +158,12 @@ fn parent_branch_or_main(
         )
 }
 
+fn scope_moves_base(from: &str, onto: &str) -> bool {
+    let from_main_onto_a_request_branch =
+        from == MAIN_BRANCH && matches!(GitHubBranch::parse(onto), Some(GitHubBranch::Request(_)));
+    from != onto && !from_main_onto_a_request_branch
+}
+
 pub fn review_request_marker(head_oid: &str) -> String {
     format!("<!-- scope-review-request head={head_oid} -->")
 }
@@ -204,6 +210,10 @@ pub(super) const BRANCH_HAS_UNLISTED_PULL_REQUESTS_MESSAGE: &str = "More open pu
     this branch than Scope reads from GitHub. Scope deletes the branch once it can read them all \
     and none comes from a Scope request.";
 
+pub(super) const BRANCH_PULL_REQUESTS_REFUSED_MESSAGE: &str = "GitHub refused to list the open pull \
+    requests based on this branch without saying the Scope GitHub App lacks the permission. Scope \
+    deletes the branch once it can read them and none comes from a Scope request.";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubPullRequestHead {
     pub github_repository_id: Option<u64>,
@@ -212,7 +222,8 @@ pub struct GitHubPullRequestHead {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubPullRequestsBasedOnBranch {
-    Unreadable,
+    PermissionMissing,
+    Refused,
     Open(Vec<GitHubPullRequestHead>),
     OpenBeyondListed(Vec<GitHubPullRequestHead>),
 }
@@ -229,7 +240,13 @@ pub enum GitHubBranchDeletion {
 impl GitHubPullRequestsBasedOnBranch {
     pub fn branch_deletion(&self, destination: &GitHubPushDestination) -> GitHubBranchDeletion {
         let (heads, all_listed) = match self {
-            Self::Unreadable => return GitHubBranchDeletion::Delete,
+            Self::PermissionMissing => return GitHubBranchDeletion::Delete,
+            Self::Refused => {
+                return GitHubBranchDeletion::Wait {
+                    requests: Vec::new(),
+                    reason: BRANCH_PULL_REQUESTS_REFUSED_MESSAGE,
+                };
+            }
             Self::Open(heads) => (heads, true),
             Self::OpenBeyondListed(heads) => (heads, false),
         };
@@ -316,7 +333,7 @@ impl GitHubPullRequest {
                             .as_deref()
                             .is_some_and(|written| written != *text)
                     });
-                    if &opened.base != base {
+                    if scope_moves_base(&opened.base, base) {
                         Some(GitHubPullRequestStep::Retarget {
                             number: opened.number,
                             base: base.clone(),
@@ -397,7 +414,7 @@ impl GitHubPullRequest {
     pub fn observe(&mut self, observation: GitHubPullRequestObservation) {
         let moving_base = match &self.intent {
             GitHubPullRequestIntent::Close => true,
-            GitHubPullRequestIntent::Open { base, .. } => base != &observation.base,
+            GitHubPullRequestIntent::Open { base, .. } => scope_moves_base(&observation.base, base),
         };
         let Some(opened) = self
             .pull_request

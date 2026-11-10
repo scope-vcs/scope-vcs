@@ -553,7 +553,7 @@ pub(super) fn call_failure(error: PullRequestCallError) -> JobFailure {
                 .to_string(),
             at_unix: retry_at_unix,
         },
-        PullRequestCallError::PermissionMissing => {
+        PullRequestCallError::PermissionMissing | PullRequestCallError::Forbidden => {
             JobFailure::GiveUp(PULL_REQUEST_PERMISSION_MESSAGE.to_string())
         }
         PullRequestCallError::Rejected(message) => JobFailure::GiveUp(message),

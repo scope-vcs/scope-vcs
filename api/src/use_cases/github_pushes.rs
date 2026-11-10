@@ -413,7 +413,10 @@ async fn wait_for_pull_requests_based_on(
         .await
     {
         Ok(based_on_branch) => based_on_branch,
-        Err(PullRequestCallError::PermissionMissing) => GitHubPullRequestsBasedOnBranch::Unreadable,
+        Err(PullRequestCallError::PermissionMissing) => {
+            GitHubPullRequestsBasedOnBranch::PermissionMissing
+        }
+        Err(PullRequestCallError::Forbidden) => GitHubPullRequestsBasedOnBranch::Refused,
         Err(error) => return Err(call_failure(error)),
     };
     match based_on_branch.branch_deletion(destination) {

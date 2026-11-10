@@ -1,5 +1,6 @@
 use super::github_pull_request::{
     BRANCH_HAS_UNLISTED_PULL_REQUESTS_MESSAGE, BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE,
+    BRANCH_PULL_REQUESTS_REFUSED_MESSAGE,
 };
 use super::*;
 use crate::github_connection::{
@@ -287,9 +288,17 @@ fn a_branch_waits_for_request_pull_requests_and_for_a_listing_github_cut_short()
             "only forks and other branches",
         ),
         (
-            GitHubPullRequestsBasedOnBranch::Unreadable,
+            GitHubPullRequestsBasedOnBranch::PermissionMissing,
             GitHubBranchDeletion::Delete,
-            "unreadable",
+            "the App lacks the permission to list them",
+        ),
+        (
+            GitHubPullRequestsBasedOnBranch::Refused,
+            GitHubBranchDeletion::Wait {
+                requests: Vec::new(),
+                reason: BRANCH_PULL_REQUESTS_REFUSED_MESSAGE,
+            },
+            "GitHub refused the listing for another reason",
         ),
         (
             GitHubPullRequestsBasedOnBranch::OpenBeyondListed(from_elsewhere()),
@@ -590,6 +599,58 @@ fn a_close_while_scope_is_moving_the_base_is_scopes_and_the_carrier_is_recreated
         Some(GitHubPullRequestStep::OpenOrAdopt {
             base: "main".into()
         })
+    );
+}
+
+#[test]
+fn a_pull_request_on_main_is_never_moved_onto_a_request_branch() {
+    const PARENT_BRANCH: &str = "scope/requests/request_parent";
+    let retarget = |from: &str, to: &str| {
+        let mut carrier = carrier(open_intent(to));
+        carrier.record_opened(5, "url".into(), from.into(), None);
+        carrier.next_step(&settings(true, None), None)
+    };
+    let moved_onto = |base: &str| {
+        Some(GitHubPullRequestStep::Retarget {
+            number: 5,
+            base: base.into(),
+        })
+    };
+    assert_eq!(retarget("main", PARENT_BRANCH), None);
+    assert_eq!(retarget(PARENT_BRANCH, "main"), moved_onto("main"));
+    assert_eq!(
+        retarget("scope/requests/request_other", PARENT_BRANCH),
+        moved_onto(PARENT_BRANCH)
+    );
+
+    let written = carrier_text_digest("Fix parser", "Review copy");
+    let edited = carrier_text_digest("Fix the parser", "Review copy");
+    let mut left_on_main = carrier(open_intent(PARENT_BRANCH));
+    left_on_main.record_opened(5, "url".into(), "main".into(), Some(written));
+    assert_eq!(
+        left_on_main.next_step(&settings(true, None), Some(&edited)),
+        Some(GitHubPullRequestStep::UpdateText {
+            number: 5,
+            text: edited.clone()
+        })
+    );
+    left_on_main.record_text_written(edited.clone());
+    assert_eq!(
+        left_on_main.next_step(&settings(true, Some("review please")), Some(&edited)),
+        Some(GitHubPullRequestStep::Comment {
+            number: 5,
+            head_oid: HEAD.into()
+        })
+    );
+
+    left_on_main.observe(observation(5, CLOSED_BY_SOMEONE));
+    assert_eq!(
+        left_on_main.pull_request.as_ref().unwrap().state,
+        GitHubPullRequestState::ClosedOnGitHub
+    );
+    assert_eq!(
+        left_on_main.next_step(&settings(true, None), Some(&edited)),
+        None
     );
 }
 

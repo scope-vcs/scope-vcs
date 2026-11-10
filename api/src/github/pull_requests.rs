@@ -9,6 +9,7 @@ use serde::{Deserialize, de::DeserializeOwned};
 const PAGE_SIZE: usize = 100;
 const MAX_PAGES: usize = 10;
 const SECONDARY_RATE_LIMIT_WAIT_SECS: u64 = 60;
+const PERMISSION_MISSING_MESSAGE: &str = "Resource not accessible by integration";
 
 pub(crate) const PULL_REQUEST_PERMISSION_MESSAGE: &str = "The Scope GitHub App may not open \
     pull requests in this GitHub repository. Accept its request for the Pull requests read and \
@@ -34,6 +35,7 @@ pub(crate) struct GitHubPullRequestSnapshot {
 pub(crate) enum PullRequestCallError {
     Unreachable,
     PermissionMissing,
+    Forbidden,
     RateLimited { retry_at_unix: u64 },
     Rejected(String),
     Failed(ApiError),
@@ -431,7 +433,16 @@ fn refusal(
     }
     match status {
         StatusCode::NOT_FOUND => PullRequestCallError::Unreachable,
-        StatusCode::FORBIDDEN => PullRequestCallError::PermissionMissing,
+        StatusCode::FORBIDDEN => {
+            let permission_missing = detail
+                .as_ref()
+                .is_some_and(|detail| detail.message == PERMISSION_MISSING_MESSAGE);
+            if permission_missing {
+                PullRequestCallError::PermissionMissing
+            } else {
+                PullRequestCallError::Forbidden
+            }
+        }
         StatusCode::UNPROCESSABLE_ENTITY => {
             PullRequestCallError::Rejected(rejection_message(detail))
         }
@@ -497,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn rate_limits_wait_for_the_time_github_names_and_only_real_refusals_need_permission() {
+    fn rate_limits_wait_for_githubs_time_and_only_its_own_message_confirms_a_missing_permission() {
         let primary = classify(
             403,
             &[
@@ -532,6 +543,14 @@ mod tests {
                 "Resource not accessible by integration"
             ),
             PullRequestCallError::PermissionMissing
+        ));
+        assert!(matches!(
+            classify(
+                403,
+                &[("x-ratelimit-remaining", "4000")],
+                "Repository access blocked"
+            ),
+            PullRequestCallError::Forbidden
         ));
         assert!(matches!(
             classify(404, &[], "Not Found"),

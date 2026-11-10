@@ -28,6 +28,7 @@ pub(in crate::workflow_tests) struct FakePulls {
     reactions: Mutex<Vec<(u64, serde_json::Value)>>,
     reviews: Mutex<Vec<(u64, serde_json::Value)>>,
     pub(in crate::workflow_tests) forbidden: AtomicBool,
+    pub(in crate::workflow_tests) forbidden_by_an_ip_allow_list: AtomicBool,
     pub(in crate::workflow_tests) rate_limited_once: AtomicBool,
     pub(in crate::workflow_tests) writes_unreachable: AtomicBool,
     pub(in crate::workflow_tests) before_lookup: Mutex<Option<LookupHook>>,
@@ -78,6 +79,10 @@ impl FakePulls {
         let pull = &mut pulls[number as usize - 1];
         pull["state"] = "closed".into();
         pull["closed_by"] = serde_json::json!({ "login": login });
+    }
+
+    pub(in crate::workflow_tests) fn rebase_onto(&self, number: u64, base: &str) {
+        self.pulls.lock().unwrap()[number as usize - 1]["base"]["ref"] = base.into();
     }
 
     pub(in crate::workflow_tests) fn reopen(&self, number: u64) {
@@ -200,13 +205,22 @@ impl FakePulls {
                     .into_response(),
             );
         }
-        self.forbidden.load(Ordering::SeqCst).then(|| {
+        let message = if self.forbidden.load(Ordering::SeqCst) {
+            "Resource not accessible by integration"
+        } else if self.forbidden_by_an_ip_allow_list.load(Ordering::SeqCst) {
+            "Although you appear to have the correct authorization credentials, the `octo` \
+             organization has an IP allow list enabled, and your IP address is not permitted \
+             to access this resource."
+        } else {
+            return None;
+        };
+        Some(
             (
                 StatusCode::FORBIDDEN,
-                Json(serde_json::json!({ "message": "Resource not accessible by integration" })),
+                Json(serde_json::json!({ "message": message })),
             )
-                .into_response()
-        })
+                .into_response(),
+        )
     }
 }
 

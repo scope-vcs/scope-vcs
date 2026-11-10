@@ -287,3 +287,48 @@ async fn a_child_stays_on_a_parent_whose_pull_request_reopened_before_the_child_
         parent.branch()
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_child_a_maintainer_moved_to_main_stays_there_while_its_parents_pull_request_is_open() {
+    let stack = Stack::create("carrier-stacked-moved-to-main").await;
+    let (parent, fake) = (&stack.parent, &stack.parent.fake);
+    stack.settle_pushes().await;
+    stack.settle_pull_requests().await;
+    let opened = stack.pull(&stack.child_branch);
+    assert_eq!(opened["base"]["ref"], parent.branch());
+
+    fake.pulls
+        .rebase_onto(opened["number"].as_u64().unwrap(), "main");
+    stack.deliver_change_of(&stack.child_branch).await;
+    stack.settle_pull_requests().await;
+    let child = stack.pull(&stack.child_branch);
+    assert_eq!(child["base"]["ref"], "main");
+    assert_eq!(child["state"], "open");
+    assert_eq!(child["number"], opened["number"]);
+    assert_eq!(stack.pull(&parent.branch())["state"], "open");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_branch_stays_while_github_refuses_the_listing_for_anything_but_a_missing_permission() {
+    let request = owner_request("carrier-listing-refused", &[]).await;
+    let (state, fake) = (&request.state, &request.fake);
+    push_pass(state, unix_now()).await;
+    let head = request.head();
+    assert_eq!(fake.branch_head(&request.branch()), Some(head.clone()));
+
+    close_request(&request).await;
+    let refused_by_an_ip_allow_list = &fake.pulls.forbidden_by_an_ip_allow_list;
+    refused_by_an_ip_allow_list.store(true, Ordering::SeqCst);
+    assert_eq!(push_pass(state, unix_now()).await, 1);
+    assert_eq!(push_pass(state, unix_now()).await, 0);
+    for hour in 1..=5 {
+        let rechecked = push_pass(state, FAR_FUTURE_UNIX + hour * 3_600).await;
+        assert_eq!(rechecked, 1, "{hour}");
+    }
+    assert_eq!(fake.branch_head(&request.branch()), Some(head));
+
+    refused_by_an_ip_allow_list.store(false, Ordering::SeqCst);
+    fake.pulls.forbidden.store(true, Ordering::SeqCst);
+    assert_eq!(push_pass(state, FAR_FUTURE_UNIX + 6 * 3_600).await, 1);
+    assert_eq!(fake.branch_head(&request.branch()), None);
+}
