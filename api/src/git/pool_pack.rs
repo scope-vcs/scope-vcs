@@ -18,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-const MAX_INLINE_POOL_PACK_BYTES: u64 = 1024 * 1024;
+pub(crate) const MAX_INLINE_POOL_PACK_BYTES: u64 = 1024 * 1024;
 
 pub(crate) struct StagedPoolPack {
     pub(crate) pack: GitPoolPack,
@@ -118,27 +118,41 @@ pub(crate) async fn stage_pool_pack(
     staging_repo: &FsPath,
     revision: PoolPackRevision,
 ) -> Result<StagedPoolPack, ApiError> {
-    let started = Instant::now();
     let revisions = std::iter::once(revision.head_oid.clone())
         .chain(revision.prerequisites.iter().map(|oid| format!("^{oid}")))
         .collect::<Vec<_>>();
+    stage_pool_pack_revisions(
+        state,
+        repository_id,
+        staging_repo,
+        revision,
+        revisions,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn stage_pool_pack_revisions(
+    state: &AppState,
+    repository_id: &str,
+    staging_repo: &FsPath,
+    revision: PoolPackRevision,
+    revisions: Vec<String>,
+    pack_id: Option<String>,
+) -> Result<StagedPoolPack, ApiError> {
+    let started = Instant::now();
     let files = {
         let staging_repo = staging_repo.to_path_buf();
         let revisions = revisions.clone();
         crate::git::blocking::run(move || write_pool_pack_files(&staging_repo, &revisions)).await?
     };
     let bytes = fs::metadata(&files.pack).map_err(ApiError::internal)?.len();
-    let max_object_bytes = state
-        .runtime_budgets
-        .git_storage_limits()
-        .max_object_bytes();
-    if bytes > max_object_bytes as u64 {
-        return Err(ApiError::payload_too_large(format!(
-            "Git pack exceeds the {max_object_bytes} byte repository storage limit"
-        )));
-    }
+    validate_pool_pack_size(state, bytes)?;
     let (id, storage, local) = if bytes <= MAX_INLINE_POOL_PACK_BYTES {
-        let id = generate_prefixed_id("git_pool_pack")?;
+        let id = match &pack_id {
+            Some(id) => id.clone(),
+            None => generate_prefixed_id("git_pool_pack")?,
+        };
         let (files, sealed) = {
             let store = state.git_segment_store.clone();
             let repository_id = repository_id.to_string();
@@ -162,7 +176,7 @@ pub(crate) async fn stage_pool_pack(
         let staged = stage_git_pack(state, repository_id, staging_repo, &revisions).await?;
         let segment = staged.staged_segment.segment.clone();
         (
-            segment.segment_id.clone(),
+            pack_id.unwrap_or_else(|| segment.segment_id.clone()),
             GitPoolPackStorage::Segment(segment),
             LocalPoolPack::Segment(staged),
         )
@@ -187,7 +201,20 @@ pub(crate) async fn stage_pool_pack(
     })
 }
 
-fn write_pool_pack_files(
+pub(crate) fn validate_pool_pack_size(state: &AppState, bytes: u64) -> Result<(), ApiError> {
+    let max_object_bytes = state
+        .runtime_budgets
+        .git_storage_limits()
+        .max_object_bytes();
+    if bytes > max_object_bytes as u64 {
+        return Err(ApiError::payload_too_large(format!(
+            "Git pack exceeds the {max_object_bytes} byte repository storage limit"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn write_pool_pack_files(
     staging_repo: &FsPath,
     revisions: &[String],
 ) -> Result<PoolPackFiles, ApiError> {

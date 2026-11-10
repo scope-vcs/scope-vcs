@@ -1,5 +1,4 @@
 use crate::{
-    config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
         cache::GitRepoHandle, command::run_git_output, repository_git::RepositoryGit,
@@ -8,6 +7,7 @@ use crate::{
     persistence::ensure_private_dir,
     state::AppState,
 };
+use scope_domain::repository::git::EMPTY_GIT_OID;
 use scope_domain::repository::{RepoLifecycleState, RepositoryIncarnation};
 use scope_git::DEFAULT_GIT_BRANCH;
 use scope_postgres::db::GitPushState;

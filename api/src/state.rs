@@ -128,6 +128,47 @@ impl AppState {
         Ok(state)
     }
 
+    pub(crate) async fn for_pool_pack_recovery(data_dir: PathBuf) -> anyhow::Result<Self> {
+        let storage = StorageRuntime::from_env_at(StorageSource::S3, data_dir).await?;
+        let metadata =
+            MetadataStore::connect_with_max_connections(database_url_from_env()?, 2).await?;
+        Ok(Self::assemble(
+            AppServices {
+                storage,
+                metadata,
+                run_caches: RunCacheStorage::from_env()?,
+                media_grants: MediaGrantIssuer::from_env()?,
+                product_analytics: ProductAnalytics::disabled(),
+                git_public_url: git_public_url_from_env(None)?,
+            },
+            Integrations::from_env()?,
+            RepoChangeBus::default(),
+            None,
+        ))
+    }
+
+    pub(crate) fn with_recovery_cache(
+        &self,
+        root: PathBuf,
+    ) -> Result<Self, crate::error::ApiError> {
+        let store = Arc::new(
+            self.git_segment_store
+                .with_local_root(root.join("git-segments"))
+                .map_err(crate::error::ApiError::internal)?,
+        );
+        let engine = RepositoryEngine::new(
+            root.join("git-cache"),
+            crate::config::DEFAULT_GIT_CACHE_MAX_BYTES,
+            store.clone(),
+        )?;
+        Ok(Self {
+            data_dir: Arc::new(root),
+            git_segment_store: store,
+            repository_engine: engine,
+            ..self.clone()
+        })
+    }
+
     pub(crate) async fn connect(services: AppServices) -> anyhow::Result<Self> {
         let integrations = Integrations::from_env()?;
         let repo_events = RepoChangeBus::default();

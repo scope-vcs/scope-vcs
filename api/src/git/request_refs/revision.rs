@@ -2,7 +2,6 @@ use super::pool::{
     PoolInstall, PoolRepos, RequestObjectRepos, install_missing_request_packs, request_object_repos,
 };
 use crate::{
-    config::EMPTY_GIT_OID,
     error::ApiError,
     git::{
         cache::GitRepoHandle, command::run_git, pool_install::present_commits,
@@ -68,7 +67,7 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     let request_for_install = request.clone();
     let revision_for_install = revision.clone();
     let target = shelf.as_ref().to_path_buf();
-    let heads = revision_heads(revision);
+    let heads = revision.comparison_oids();
     let (leases_sender, mut leases_receiver) = tokio::sync::oneshot::channel();
     state
         .repository_engine
@@ -118,19 +117,6 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
     inspect_revision(state, &path, request, revision, leases, action).await
 }
 
-fn revision_heads(revision: &RequestRevision) -> Vec<String> {
-    [
-        &revision.new_head_oid,
-        &revision.old_head_oid,
-        revision.base.review_base_oid(),
-        &revision.main_ancestor_oid,
-    ]
-    .into_iter()
-    .filter(|oid| *oid != EMPTY_GIT_OID)
-    .map(|oid| oid.to_string())
-    .collect()
-}
-
 async fn install_revision_objects(
     state: &AppState,
     shelf: &Path,
@@ -143,11 +129,11 @@ async fn install_revision_objects(
         .copy_full_scope_packs(
             state,
             std::slice::from_ref(request),
-            &revision_heads(revision),
+            &revision.comparison_oids(),
         )
         .await?;
     let target = shelf.to_path_buf();
-    let heads = revision_heads(revision);
+    let heads = revision.comparison_oids();
     crate::git::blocking::run(move || {
         let present = present_commits(&target, heads.iter().map(String::as_str))?;
         if heads.iter().all(|head| present.contains(head)) {
@@ -173,7 +159,7 @@ async fn install_revision_packs(
         state,
         install,
         std::slice::from_ref(request),
-        &revision_heads(revision),
+        &revision.comparison_oids(),
     )
     .await?;
     Ok(leases)

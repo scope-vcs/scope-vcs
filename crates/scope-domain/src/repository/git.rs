@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub const EMPTY_GIT_OID: &str = "0000000000000000000000000000000000000000";
 pub const GIT_FETCH_ADVERTISEMENT_RETENTION_SECONDS: u64 = 300;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
