@@ -51,10 +51,11 @@ impl FakePulls {
         number
     }
 
-    pub(in crate::workflow_tests) fn open_from_fork(&self, head: &str, base: &str) {
+    pub(in crate::workflow_tests) fn open_from_fork(&self, head: &str, base: &str) -> u64 {
         let number = self.open(head, base);
         self.pulls.lock().unwrap()[number as usize - 1]["head"]["repo"]["id"] =
             (GITHUB_REPOSITORY_ID + 1).into();
+        number
     }
 
     pub(in crate::workflow_tests) fn merge_as(
@@ -250,6 +251,10 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                         return refused;
                     }
                     let owner = GITHUB_FULL_NAME.split_once('/').unwrap().0;
+                    let number = |name: &str, default: usize| {
+                        query.get(name).map_or(default, |value| value.parse().unwrap())
+                    };
+                    let (page, per_page) = (number("page", 1), number("per_page", 30));
                     let open = fake
                         .pulls
                         .pulls
@@ -264,14 +269,11 @@ pub(super) fn routes() -> Router<Arc<FakeGitHub>> {
                                     .get("base")
                                     .is_none_or(|wanted| pull["base"]["ref"] == wanted.as_str())
                         })
+                        .skip((page - 1) * per_page)
+                        .take(per_page)
                         .cloned()
                         .collect::<Vec<_>>();
-                    let number = |name: &str, default: usize| {
-                        query.get(name).map_or(default, |value| value.parse().unwrap())
-                    };
-                    let (page, per_page) = (number("page", 1), number("per_page", 30));
-                    let listed = open.into_iter().skip((page - 1) * per_page).take(per_page);
-                    Json(listed.collect::<Vec<_>>()).into_response()
+                    Json(open).into_response()
                 },
             )
             .post(

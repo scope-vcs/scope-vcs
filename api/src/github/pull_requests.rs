@@ -1,7 +1,9 @@
 use super::{GitHubApp, client::unavailable};
 use crate::{error::ApiError, persistence::unix_now};
 use reqwest::{Method, StatusCode, header::HeaderMap};
-use scope_domain::requests::{GitHubPullRequestHead, GitHubPullRequestMerge};
+use scope_domain::requests::{
+    GitHubPullRequestHead, GitHubPullRequestMerge, GitHubPullRequestsBasedOnBranch,
+};
 use serde::{Deserialize, de::DeserializeOwned};
 
 const PAGE_SIZE: usize = 100;
@@ -160,12 +162,12 @@ impl GitHubApp {
         Ok(open.into_iter().next().map(Into::into))
     }
 
-    pub(crate) async fn open_pull_request_heads_based_on(
+    pub(crate) async fn open_pull_requests_based_on(
         &self,
         installation_id: u64,
         full_name: &str,
         base_branch: &str,
-    ) -> Result<Vec<GitHubPullRequestHead>, PullRequestCallError> {
+    ) -> Result<GitHubPullRequestsBasedOnBranch, PullRequestCallError> {
         let mut heads = Vec::new();
         for page in 1..=MAX_PAGES {
             let query = url::form_urlencoded::Serializer::new(String::new())
@@ -189,13 +191,10 @@ impl GitHubApp {
                 branch: pull_request.head.name,
             }));
             if last_page {
-                return Ok(heads);
+                return Ok(GitHubPullRequestsBasedOnBranch::Open(heads));
             }
         }
-        Err(PullRequestCallError::Rejected(format!(
-            "More than {} open pull requests are based on {base_branch}.",
-            MAX_PAGES * PAGE_SIZE
-        )))
+        Ok(GitHubPullRequestsBasedOnBranch::OpenBeyondListed(heads))
     }
 
     pub(crate) async fn create_pull_request(

@@ -175,6 +175,36 @@ async fn a_pull_request_scope_has_not_recorded_keeps_its_base_until_scope_moves_
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_branch_under_more_pull_requests_than_scope_lists_goes_once_they_close() {
+    let stack = Stack::create("carrier-stacked-unlisted").await;
+    let (parent, state, fake) = (&stack.parent, &stack.parent.state, &stack.parent.fake);
+    stack.settle_pushes().await;
+    stack.settle_pull_requests().await;
+    let from_forks = (0..1_000)
+        .map(|_| fake.pulls.open_from_fork("someones-fork", &parent.branch()))
+        .collect::<Vec<_>>();
+
+    close_request(parent).await;
+    stack.settle_pull_requests().await;
+    assert_eq!(stack.pull(&stack.child_branch)["base"]["ref"], "main");
+    stack.settle_pushes().await;
+    for hour in 1..=2 {
+        let rechecked = push_pass(state, FAR_FUTURE_UNIX + hour * 3_600).await;
+        assert_eq!(rechecked, 1, "{hour}");
+    }
+    assert_eq!(
+        stack.parent_branch_on_github(),
+        Some(stack.parent_head.clone())
+    );
+
+    for number in from_forks {
+        fake.pulls.close_as(number, "octocat");
+    }
+    assert_eq!(push_pass(state, FAR_FUTURE_UNIX + 3 * 3_600).await, 1);
+    assert_eq!(stack.parent_branch_on_github(), None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_disconnected_repository_keeps_a_closed_parents_branch_under_an_open_pull_request() {
     let stack = Stack::create("carrier-stacked-disconnected").await;
     let (parent, state) = (&stack.parent, &stack.parent.state);

@@ -31,6 +31,7 @@ pub(super) async fn persist_lifecycle_mutation(
         super::github_pull_requests::queue_carrier_close(tx, request, connection.as_ref()).await?;
         super::github_pull_requests::recompute_child_carrier_intents(
             tx,
+            &request.repo_id,
             &request.id,
             request.updated_at_unix,
         )

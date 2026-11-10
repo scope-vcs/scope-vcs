@@ -110,23 +110,19 @@ pub struct GitHubPullRequestStatus {
     pub error: Option<String>,
 }
 
-pub fn carrier_pull_request_intent(
+pub fn carrier_pull_request_base(
     connection: &GitHubConnection,
     request: &Request,
     parent: Option<&Request>,
     parent_carrier: Option<&GitHubPullRequest>,
     views: &Views,
-    pushed_head_oid: &str,
-) -> Option<GitHubPullRequestIntent> {
+) -> Option<String> {
     let wanted = connection.is_connected()
         && connection.review_bots.open_pull_requests
         && request.state() == RequestState::Open
         && GitHubCheckTarget::for_request(request, views) == GitHubCheckTarget::Head
         && may_carry_on_github(connection, request);
-    wanted.then(|| GitHubPullRequestIntent::Open {
-        base: carrier_pull_request_base(connection, request, parent, parent_carrier),
-        head_oid: pushed_head_oid.to_string(),
-    })
+    wanted.then(|| parent_branch_or_main(connection, request, parent, parent_carrier))
 }
 
 pub fn may_carry_on_github(connection: &GitHubConnection, request: &Request) -> bool {
@@ -137,7 +133,7 @@ pub fn carries_private_request(request: &Request) -> bool {
     !request.view.is_public()
 }
 
-fn carrier_pull_request_base(
+fn parent_branch_or_main(
     connection: &GitHubConnection,
     request: &Request,
     parent: Option<&Request>,
@@ -201,8 +197,12 @@ pub fn retains_request_branch_for_carrier(
             && carrier.is_some_and(GitHubPullRequest::is_open_on_github))
 }
 
-pub const BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE: &str = "An open pull request from a Scope request \
+pub(super) const BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE: &str = "An open pull request from a Scope request \
     is still based on this branch. Scope deletes the branch once that pull request moves or closes.";
+
+pub(super) const BRANCH_HAS_UNLISTED_PULL_REQUESTS_MESSAGE: &str = "More open pull requests are based on \
+    this branch than Scope reads from GitHub. Scope deletes the branch once it can read them all \
+    and none comes from a Scope request.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitHubPullRequestHead {
@@ -214,18 +214,24 @@ pub struct GitHubPullRequestHead {
 pub enum GitHubPullRequestsBasedOnBranch {
     Unreadable,
     Open(Vec<GitHubPullRequestHead>),
+    OpenBeyondListed(Vec<GitHubPullRequestHead>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GitHubBranchDeletion {
     Delete,
-    WaitForRequests(Vec<String>),
+    Wait {
+        requests: Vec<String>,
+        reason: &'static str,
+    },
 }
 
 impl GitHubPullRequestsBasedOnBranch {
     pub fn branch_deletion(&self, destination: &GitHubPushDestination) -> GitHubBranchDeletion {
-        let Self::Open(heads) = self else {
-            return GitHubBranchDeletion::Delete;
+        let (heads, all_listed) = match self {
+            Self::Unreadable => return GitHubBranchDeletion::Delete,
+            Self::Open(heads) => (heads, true),
+            Self::OpenBeyondListed(heads) => (heads, false),
         };
         let requests = heads
             .iter()
@@ -235,10 +241,16 @@ impl GitHubPullRequestsBasedOnBranch {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        if requests.is_empty() {
-            GitHubBranchDeletion::Delete
-        } else {
-            GitHubBranchDeletion::WaitForRequests(requests)
+        match (requests.is_empty(), all_listed) {
+            (true, true) => GitHubBranchDeletion::Delete,
+            (true, false) => GitHubBranchDeletion::Wait {
+                requests,
+                reason: BRANCH_HAS_UNLISTED_PULL_REQUESTS_MESSAGE,
+            },
+            (false, _) => GitHubBranchDeletion::Wait {
+                requests,
+                reason: BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE,
+            },
         }
     }
 }

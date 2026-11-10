@@ -15,9 +15,8 @@ use scope_domain::views::ViewId;
 use scope_domain::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
     requests::{
-        BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE, GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch,
-        GitHubBranchDeletion, GitHubPullRequestsBasedOnBranch, GitHubPush, GitHubPushState,
-        github_push_retry_at,
+        GITHUB_MAIN_DIVERGED_MESSAGE, GitHubBranch, GitHubBranchDeletion,
+        GitHubPullRequestsBasedOnBranch, GitHubPush, GitHubPushState, github_push_retry_at,
     },
 };
 use scope_postgres::db::{GitHubJobOutcome, GitHubPushStanding};
@@ -406,32 +405,27 @@ async fn wait_for_pull_requests_based_on(
 ) -> Result<(), JobFailure> {
     let destination = &push.destination;
     let based_on_branch = match app
-        .open_pull_request_heads_based_on(
+        .open_pull_requests_based_on(
             destination.installation_id,
             &destination.github_full_name,
             &push.branch.name(),
         )
         .await
     {
-        Ok(heads) => GitHubPullRequestsBasedOnBranch::Open(heads),
+        Ok(based_on_branch) => based_on_branch,
         Err(PullRequestCallError::PermissionMissing) => GitHubPullRequestsBasedOnBranch::Unreadable,
         Err(error) => return Err(call_failure(error)),
     };
     match based_on_branch.branch_deletion(destination) {
         GitHubBranchDeletion::Delete => Ok(()),
-        GitHubBranchDeletion::WaitForRequests(requests) => {
+        GitHubBranchDeletion::Wait { requests, reason } => {
             let now_unix = unix_now()?.max(now_unix);
             let store = state.metadata.requests();
             store
-                .recompute_github_pull_request_intents(&push.repo_id, &requests, now_unix)
+                .recompute_github_pull_request_intents(&push.repo_id, requests, now_unix)
                 .await?;
             store
-                .defer_github_branch_deletion(
-                    &push.id,
-                    claim_token,
-                    BRANCH_IS_A_PULL_REQUEST_BASE_MESSAGE,
-                    now_unix,
-                )
+                .defer_github_branch_deletion(&push.id, claim_token, reason, now_unix)
                 .await?;
             state.wakeups.github_pull_requests.notify_one();
             Err(JobFailure::Deferred)
