@@ -5,7 +5,7 @@ import type {
   GitHubWorkflowStepResponse,
 } from '@/api/types.generated'
 import { githubRunResult } from './github-run-status'
-import { readLogLines, type LogLine } from './run-log-lines'
+import { readLogLines, type LogLine, type LogStamp } from './run-log-lines'
 
 export function isGitHubRunId(runId: string) {
   return /^\d+$/.test(runId)
@@ -34,26 +34,38 @@ export function githubJobLog(
   text: string,
   steps: readonly Pick<GitHubWorkflowStepResponse, 'number' | 'started_at_unix'>[],
 ): GitHubJobLog {
-  const started = steps.filter((step) => step.started_at_unix !== null)
-  const first = (started[0] ?? steps[0])?.number ?? 0
-  const lines = readLogLines(
-    text,
-    (second, previous) => second === null ? previous : stepStartedBy(started, second) ?? first,
-    first,
-  )
+  const lines = readLogLines(text, { stepsOf: (stamps) => githubLineSteps(stamps, steps) })
   const stepLines = new Map<number, LogLine[]>(steps.map((step) => [step.number, []]))
   for (const line of lines) stepLines.get(line.step)?.push(line)
   return { lines, stepLines }
 }
 
-function stepStartedBy(
-  started: readonly Pick<GitHubWorkflowStepResponse, 'number' | 'started_at_unix'>[],
-  second: number,
+function githubLineSteps(
+  stamps: readonly LogStamp[],
+  steps: readonly Pick<GitHubWorkflowStepResponse, 'number' | 'started_at_unix'>[],
 ) {
-  for (let index = started.length - 1; index >= 0; index--) {
-    if (started[index]!.started_at_unix! <= second) return started[index]!.number
+  const started = steps.filter((step) => step.started_at_unix !== null)
+  const owners = new Array<number>(stamps.length).fill((started[0] ?? steps[0])?.number ?? 0)
+  let previous = -1
+  for (const step of started) {
+    const boundary = stepBoundary(stamps, step.started_at_unix!, previous)
+    if (boundary === -1) break
+    owners.fill(step.number, boundary)
+    previous = boundary
   }
-  return null
+  return owners
+}
+
+function stepBoundary(stamps: readonly LogStamp[], second: number, previous: number) {
+  let reached = -1
+  for (let index = Math.max(previous, 0); index < stamps.length; index++) {
+    const stamp = stamps[index]!
+    if (stamp.second === null || stamp.second < second) continue
+    if (stamp.second > second) return reached === -1 ? index : reached
+    if (stamp.group && index > previous) return index
+    if (reached === -1) reached = index
+  }
+  return reached
 }
 
 export function githubOpeningStep(job: GitHubWorkflowJobResponse): number | null {

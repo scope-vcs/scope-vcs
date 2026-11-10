@@ -4,18 +4,21 @@ import test from 'node:test'
 import { fixtureClerk, fixturePath, openFixture } from '../support/fixture-server.mjs'
 
 const runPageRequestBudget = { listClick: 1, pageLoad: 1 }
+const nativeRunsFixture = {
+  timeout: 30_000,
+  tailwind: true,
+  aliases: [
+    fixtureClerk,
+    { find: '@/routes/-run-history-actions', replacement: fixturePath('native-runs', 'actions.ts') },
+    { find: '@/routes/-repo-settings-actions', replacement: fixturePath('native-runs', 'actions.ts') },
+  ],
+}
 const reads = (page) => page.evaluate(() => Object.values(window.loads).reduce((total, count) => total + count, 0))
 
 test('seeded native run navigation makes one read per resource on cold load and reopen', async (t) => {
   const { base, browser, errors, page } = await openFixture(t, 'native-runs', {
+    ...nativeRunsFixture,
     ssr: true,
-    timeout: 30_000,
-    tailwind: true,
-    aliases: [
-      fixtureClerk,
-      { find: '@/routes/-run-history-actions', replacement: fixturePath('native-runs', 'actions.ts') },
-      { find: '@/routes/-repo-settings-actions', replacement: fixturePath('native-runs', 'actions.ts') },
-    ],
     plugins: [{
       name: 'native-run-hydration-fixture',
       configureServer(server) {
@@ -144,5 +147,52 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await cold.getByRole('button', { name: 'Cancel', exact: true }).click()
   await cold.getByRole('button', { name: 'Run again' }).waitFor()
   assert.equal(await cold.evaluate(() => window.loads.detail), 2)
+  assert.deepEqual(errors, [])
+})
+
+test('a running native step follows new output from a search match, and links lines by attempt and log position', async (t) => {
+  const { base, errors, page } = await openFixture(t, 'native-runs', nativeRunsFixture)
+  const output = page.getByRole('region', { name: 'Build output' })
+  const row = (text) => output.locator('[data-line]').filter({ hasText: new RegExp(`^\\d+${text}$`) })
+  const inView = (text) => page.waitForFunction((wanted) => {
+    const line = [...document.querySelectorAll('[data-line]')].find((element) => element.textContent.endsWith(wanted))
+    const box = line?.getBoundingClientRect()
+    return box !== undefined && box.top >= 0 && box.bottom <= window.innerHeight
+  }, text, { timeout: 5_000 })
+  const appendOutput = () => page.evaluate(() => {
+    window.appendOutput()
+    window.emitChange({ RunChanged: { run_id: 'run-1', change: 'StatusChanged' } })
+  })
+  const marked = output.locator('[data-line][class*="outline-border-strong"]')
+
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto(new URL('/owner/repo/runs/run-1?client=true&long', base).href)
+  await inView('chunk 40 line 4')
+  await page.getByRole('searchbox', { name: 'Search log' }).fill('chunk 21 line 0')
+  await inView('chunk 21 line 0')
+  await appendOutput()
+  const tail = page.getByRole('button', { name: '5 new lines' })
+  await tail.click()
+  await inView('chunk 41 line 4')
+  await appendOutput()
+  await inView('chunk 42 line 4')
+  assert.equal(await page.getByRole('button', { name: /new lines?$/ }).count(), 0)
+
+  await row('chunk 30 line 2').getByRole('link').click()
+  assert.equal(await page.evaluate(() => location.hash), '#run-job-test:attempt:0:L30.2')
+  await page.getByRole('button', { name: 'Load earlier output' }).click()
+  await row('chunk 1 line 0').waitFor()
+  assert.equal(await marked.count(), 0)
+  await page.getByRole('button', { name: 'Back to latest' }).click()
+  await row('chunk 30 line 2').waitFor()
+  assert.deepEqual(await marked.allTextContents(), [await row('chunk 30 line 2').textContent()])
+
+  await page.evaluate(() => { location.hash = '#run-job-test:attempt-1:0:L1.0' })
+  await row('first attempt ran out of memory').waitFor()
+  assert.deepEqual(await marked.allTextContents(), [await row('first attempt ran out of memory').textContent()])
+
+  await page.evaluate(() => { location.hash = '#run-job-test:attempt:0:L2.0' })
+  await row('chunk 42 line 4').waitFor()
+  assert.equal(await marked.count(), 0)
   assert.deepEqual(errors, [])
 })

@@ -12,6 +12,7 @@ export type RunLogSearch = ReturnType<typeof useRunLogSearch>
 export function useRunLogSearch(lines: readonly LogLine[]) {
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
+  const [focused, setFocused] = useState(true)
   const matches = useMemo(() => findLogMatches(lines, query), [lines, query])
   const byLine = useMemo(() => {
     const grouped = new Map<number, LogMatch[]>()
@@ -24,7 +25,7 @@ export function useRunLogSearch(lines: readonly LogLine[]) {
   }, [matches])
   const position = matches.length === 0 ? -1 : Math.min(index, matches.length - 1)
   const current = position === -1 ? null : matches[position]!
-  const currentLine = current?.line ?? null
+  const currentLine = focused ? current?.line ?? null : null
   const focus = useMemo<RunLogFocus | null>(
     () => (currentLine === null ? null : { line: currentLine, match: position }),
     [currentLine, position],
@@ -40,10 +41,15 @@ export function useRunLogSearch(lines: readonly LogLine[]) {
     move(delta: 1 | -1) {
       if (matches.length === 0) return
       setIndex((position + delta + matches.length) % matches.length)
+      setFocused(true)
+    },
+    release() {
+      setFocused(false)
     },
     search(value: string) {
       setQuery(value)
       setIndex(0)
+      setFocused(true)
     },
   }
 }

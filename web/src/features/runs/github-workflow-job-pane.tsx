@@ -19,7 +19,7 @@ import {
 } from './github-workflow-run-detail-resource'
 import { RunDuration } from './run-duration'
 import { runJobPanelId, runLogLineId, type RunJobLink } from './run-job-ids'
-import { lineByNumber, logLinesText, type LogLine } from './run-log-lines'
+import { lineByAnchor, lineByNumber, logLinesText, type LogLine } from './run-log-lines'
 import { RunLogPlaceholder, RunLogText, type RunLogFocus } from './run-log-text'
 import { observeRunLogFetching, useRunLogPaintTiming } from './run-log-timing'
 import { RunLogTools, useRunLogSearch } from './run-log-tools'
@@ -28,8 +28,9 @@ import { RunStepRow } from './run-step-row'
 
 const LINK_CLASS = 'underline underline-offset-2 hover:text-foreground'
 const NO_LINES: readonly LogLine[] = []
+const NO_STEPS: ReadonlySet<number> = new Set()
 
-type FocusRequest = number | 'first-error' | null
+type FocusRequest = string | 'first-error' | null
 
 export function GitHubWorkflowJobPane({
   includedLog,
@@ -71,28 +72,43 @@ export function GitHubWorkflowJobPane({
   const search = useRunLogSearch(parsed?.lines ?? NO_LINES)
 
   const [seenLink, setSeenLink] = useState(link)
-  const [openSteps, setOpenSteps] = useState<ReadonlySet<number>>(() => openingSteps(job, link))
-  const [markedLine, setMarkedLine] = useState(link?.line ?? null)
+  const [openSteps, setOpenSteps] = useState<ReadonlySet<number> | null>(() => openingSteps(job, link))
+  const [markedAnchor, setMarkedAnchor] = useState(link?.line ?? null)
   const [focusRequest, setFocusRequest] = useState<FocusRequest>(link?.line ?? (failedStep ? 'first-error' : null))
   if (link !== seenLink) {
     setSeenLink(link)
     const linkedStep = link?.step ?? null
-    if (linkedStep !== null) setOpenSteps((current) => new Set([...current, linkedStep]))
-    setMarkedLine(link?.line ?? null)
+    if (linkedStep !== null) setOpenSteps((current) => new Set([...current ?? [], linkedStep]))
+    setMarkedAnchor(link?.line ?? null)
     setFocusRequest(link?.line ?? null)
+  }
+  if (openSteps === null) {
+    const opening = githubOpeningStep(job)
+    if (opening !== null) {
+      setOpenSteps(new Set([opening]))
+      if (failedStep && focusRequest === null) setFocusRequest('first-error')
+    }
   }
   if (search.query && focusRequest !== null) setFocusRequest(null)
 
+  const markedLine = useMemo(
+    () => (parsed ? lineByAnchor(parsed.lines, markedAnchor)?.number ?? null : null),
+    [markedAnchor, parsed],
+  )
   const focus = useMemo<RunLogFocus | null>(() => {
     if (!parsed || focusRequest === null) return null
-    if (focusRequest !== 'first-error') return { line: focusRequest }
+    if (focusRequest !== 'first-error') {
+      const line = lineByAnchor(parsed.lines, focusRequest)
+      return line ? { line: line.number } : null
+    }
     const failedLines = failedStep ? parsed.stepLines.get(failedStep.number) ?? [] : []
     const firstError = failedLines.find((line) => line.kind === 'error')
     return firstError ? { line: firstError.number } : null
   }, [failedStep, focusRequest, parsed])
   const activeFocus = search.focus ?? focus
   const matchStep = search.current && parsed ? lineByNumber(parsed.lines, search.current.line)?.step : null
-  const shownSteps = matchStep == null || openSteps.has(matchStep) ? openSteps : new Set([...openSteps, matchStep])
+  const openedSteps = openSteps ?? NO_STEPS
+  const shownSteps = matchStep == null || openedSteps.has(matchStep) ? openedSteps : new Set([...openedSteps, matchStep])
   const shownKey = [...shownSteps].sort().join(',')
   const visibleText = useMemo(() => {
     if (!parsed) return ''
@@ -108,14 +124,14 @@ export function GitHubWorkflowJobPane({
     text: visibleText,
   })
 
-  function linkLine(step: number, line: number) {
-    window.history.replaceState(window.history.state, '', `#${runLogLineId(key, step, line)}`)
-    setMarkedLine(line)
+  function linkLine(step: number, line: LogLine) {
+    window.history.replaceState(window.history.state, '', `#${runLogLineId(key, null, step, line.anchor)}`)
+    setMarkedAnchor(line.anchor)
   }
 
   function toggleStep(step: number) {
     setOpenSteps((current) => {
-      const next = new Set(current)
+      const next = new Set(current ?? [])
       if (!next.delete(step)) next.add(step)
       return next
     })
@@ -139,7 +155,7 @@ export function GitHubWorkflowJobPane({
         empty="No output."
         focus={activeFocus}
         followTail={false}
-        lineId={(line) => runLogLineId(key, step, line)}
+        lineId={(line) => runLogLineId(key, null, step, line.anchor)}
         lines={lines}
         markedLine={markedLine}
         matches={search.byLine}
@@ -212,9 +228,9 @@ export function GitHubWorkflowJobPane({
   )
 }
 
-function openingSteps(job: GitHubWorkflowJobResponse, link: RunJobLink | null): ReadonlySet<number> {
+function openingSteps(job: GitHubWorkflowJobResponse, link: RunJobLink | null): ReadonlySet<number> | null {
   const step = link?.step ?? githubOpeningStep(job)
-  return new Set(step === null ? [] : [step])
+  return step === null ? null : new Set([step])
 }
 
 function LogNote({ children }: { children: ReactNode }) {

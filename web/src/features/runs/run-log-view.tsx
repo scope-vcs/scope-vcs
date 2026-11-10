@@ -16,6 +16,7 @@ export function RunLogView({
   lines,
   logs,
   markedLine,
+  onFollowTail,
   onLinkLine,
   runId,
   search,
@@ -24,11 +25,12 @@ export function RunLogView({
   wrap,
 }: {
   focus: RunLogFocus | null
-  lineId: (line: number) => string
+  lineId: (line: LogLine) => string
   lines: readonly LogLine[]
   logs: StepLogs
   markedLine: number | null
-  onLinkLine: (line: number) => void
+  onFollowTail: () => void
+  onLinkLine: (line: LogLine) => void
   runId: string
   search: RunLogSearch
   step: RepositoryRunStepResponse
@@ -136,6 +138,7 @@ export function RunLogView({
             disabled={logState.loading && logState.viewingEarlier}
             onClick={() => {
               if (logState.viewingEarlier) logs.latest()
+              onFollowTail()
               setFollowing(true)
             }}
             size="sm"

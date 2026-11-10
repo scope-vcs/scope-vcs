@@ -124,7 +124,7 @@ const testLog = [
     '##[endgroup]',
     '##[command]/usr/bin/pnpm test',
     ...Array.from({ length: 40 }, (_, index) => `  ${ESC}[32m✔${ESC}[39m suite ${index} passes every case it was given, including the long-running integration fixtures ${ESC}[2m(${index * 3}ms)${ESC}[22m`),
-    `  ${ESC}[31m✖ request queue keeps its order${ESC}[39m ${ESC}[2m(12ms)${ESC}[22m`,
+    `  ${ESC}[31m× request queue keeps its order${ESC}[39m ${ESC}[2m(12ms)${ESC}[22m`,
     `    ${ESC}[1mAssertionError${ESC}[22m: expected ${ESC}[33m3${ESC}[39m runs, got ${ESC}[33m2${ESC}[39m`,
     `    at ${ESC}[36mrun-history-model.test.ts:41:10${ESC}[39m`,
     `${ESC}[38;5;244mtests 41 · pass 40 · fail 1${ESC}[0m`,
@@ -161,6 +161,15 @@ Object.assign(window, {
   finishBuild: () => {
     const finished = { ...runningJob, status: 'completed' as const, conclusion: 'success' as const, completed_at_unix: now }
     runDetail = { ...runDetail, jobs: runDetail.jobs.map((listed) => listed.id === 103 ? finished : listed) }
+  },
+  startDeploy: () => {
+    const deploying = step(2, 'Deploy the preview', { status: 'in_progress', conclusion: null, completed_at_unix: null })
+    runDetail = {
+      ...runDetail,
+      jobs: runDetail.jobs.map((listed) => listed.id === 104
+        ? { ...listed, status: 'in_progress' as const, started_at_unix: now - 290, steps: [setUp, deploying] }
+        : listed),
+    }
   },
   emitRunChanged: (githubRunId: number) => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), {
     repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: { GitHubWorkflowRunChanged: { github_run_id: githubRunId } },

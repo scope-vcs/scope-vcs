@@ -51,11 +51,15 @@ test('GitHub numbers its runs while Scope prefixes its own', () => {
   for (const runId of ['run_01h', '', '12a', '-1']) assert.equal(isGitHubRunId(runId), false, runId)
 })
 
-test('a run-job hash names a job, and a line hash also names its step and line', () => {
+test('a run-job hash names a job, and a line hash also names its step, line and native attempt', () => {
   const keys = ['2', 'build linux']
-  assert.deepEqual(runJobLinkForHash(keys, `#${runJobPanelId('build linux')}`), { key: 'build linux', step: null, line: null })
-  assert.deepEqual(runJobLinkForHash(keys, `#${runLogLineId('2', 4, 435)}`), { key: '2', step: 4, line: 435 })
-  for (const hash of ['#run-job-3', '#run-job-3:4:L1', '#run-job-2:4', '#ci', '']) {
+  assert.deepEqual(runJobLinkForHash(keys, `#${runJobPanelId('build linux')}`), { key: 'build linux', attempt: null, step: null, line: null })
+  assert.deepEqual(runJobLinkForHash(keys, `#${runLogLineId('2', null, 4, '435')}`), { key: '2', attempt: null, step: 4, line: '435' })
+  assert.deepEqual(
+    runJobLinkForHash(keys, `#${runLogLineId('build linux', 'attempt:1', 0, '17.3')}`),
+    { key: 'build linux', attempt: 'attempt:1', step: 0, line: '17.3' },
+  )
+  for (const hash of ['#run-job-3', '#run-job-3:4:L1', '#run-job-2:4', '#run-job-2:a:4:L1.', '#ci', '']) {
     assert.equal(runJobLinkForHash(keys, hash), null, hash)
   }
 })
@@ -78,12 +82,16 @@ test('a failed job names the step it stopped at', () => {
   assert.equal(githubOpeningStep(job(1, { steps })), 2, 'a passed job opens its longest step')
 })
 
-test('job log lines go to the last step started by their timestamp second', () => {
+test('job log lines start a step at its first group line in its start second, or else at its first line from that second on', () => {
+  const at = (time: string) => Date.parse(`2026-10-05T12:00:${time}Z`) / 1000
   const steps = [
-    { number: 1, started_at_unix: Date.parse('2026-10-05T12:00:01Z') / 1000 },
-    { number: 2, started_at_unix: Date.parse('2026-10-05T12:00:03Z') / 1000 },
+    { number: 1, started_at_unix: at('01') },
+    { number: 2, started_at_unix: at('03') },
     { number: 3, started_at_unix: null },
-    { number: 4, started_at_unix: Date.parse('2026-10-05T12:00:05Z') / 1000 },
+    { number: 4, started_at_unix: at('05') },
+    { number: 5, started_at_unix: at('09') },
+    { number: 6, started_at_unix: at('11') },
+    { number: 7, started_at_unix: at('12') },
   ]
   const log = githubJobLog([
     '\uFEFF2026-10-05T12:00:00.5000000Z before the first step',
@@ -91,7 +99,14 @@ test('job log lines go to the last step started by their timestamp second', () =
     'continued without a timestamp',
     '2026-10-05T12:00:03.0000000Z ##[group]Check out',
     '2026-10-05T12:00:04.1000000Z fetched',
-    '2026-10-05T12:00:09.0000000Z ##[error]failed',
+    '2026-10-05T12:00:06.0000000Z ##[group]Run pnpm test',
+    '2026-10-05T12:00:06.0000000Z ##[endgroup]',
+    '2026-10-05T12:00:09.1000000Z not ok 3 - request queue keeps its order',
+    '2026-10-05T12:00:09.2000000Z ##[error]Process completed with exit code 1.',
+    '2026-10-05T12:00:09.3000000Z ##[group]Run actions/upload-artifact@v4',
+    '2026-10-05T12:00:09.4000000Z with:',
+    '2026-10-05T12:00:12.0000000Z Post job cleanup.',
+    '2026-10-05T12:00:12.1000000Z ##[command]/usr/bin/git version',
     '',
   ].join('\n'), steps)
   const byStep = [...log.stepLines].map(([step, lines]) => [step, lines.map((line) => [line.number, line.text, line.group])])
@@ -99,11 +114,13 @@ test('job log lines go to the last step started by their timestamp second', () =
     [1, [[1, 'before the first step', null], [2, 'Set up', null], [3, 'continued without a timestamp', 2]]],
     [2, [[4, 'Check out', null], [5, 'fetched', 4]]],
     [3, []],
-    [4, [[6, 'failed', null]]],
+    [4, [[6, 'Run pnpm test', null], [8, 'not ok 3 - request queue keeps its order', null], [9, 'Process completed with exit code 1.', null]]],
+    [5, [[10, 'Run actions/upload-artifact@v4', null], [11, 'with:', 10]]],
+    [6, []],
+    [7, [[12, 'Post job cleanup.', null], [13, '/usr/bin/git version', null]]],
   ])
   assert.equal(log.lines[0]!.time, '2026-10-05T12:00:00.5000000Z')
   assert.equal(log.lines[2]!.time, null)
-  assert.deepEqual(log.lines.map((line) => line.number), [1, 2, 3, 4, 5, 6])
 })
 
 test('a job without a log says why instead of offering a retry', () => {

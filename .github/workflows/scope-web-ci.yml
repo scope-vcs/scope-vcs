@@ -91,5 +91,6 @@ jobs:
         with:
           name: web-component-diagnostics
           path: web/.tmp/*/*.png
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

@@ -36,11 +36,11 @@ type RunLogTextProps = {
   empty: ReactNode
   focus: RunLogFocus | null
   followTail: boolean
-  lineId: (line: number) => string
+  lineId: (line: LogLine) => string
   lines: readonly LogLine[]
   markedLine: number | null
   matches: ReadonlyMap<number, readonly LogMatch[]>
-  onLinkLine: (line: number) => void
+  onLinkLine: (line: LogLine) => void
   times: boolean
   wrap: boolean
 }
@@ -119,11 +119,11 @@ export function RunLogText({
 type LogBlockProps = {
   currentMatch: LogMatch | null
   eager: boolean
-  lineId: (line: number) => string
+  lineId: (line: LogLine) => string
   lines: readonly LogLine[]
   markedLine: number | null
   matches: ReadonlyMap<number, readonly LogMatch[]>
-  onLinkLine: (line: number) => void
+  onLinkLine: (line: LogLine) => void
   onToggleGroup: (group: number) => void
   openGroups: ReadonlySet<number>
   times: boolean
@@ -181,7 +181,7 @@ function LogRow({
   times,
   wrap,
 }: Omit<LogBlockProps, 'eager' | 'lines'> & { line: LogLine }) {
-  const id = lineId(line.number)
+  const id = lineId(line)
   const group = line.kind === 'group'
   const open = group && openGroups.has(line.number)
   const pieces = logLinePieces(line, matches.get(line.number) ?? NO_MATCHES, currentMatch)
@@ -202,7 +202,7 @@ function LogRow({
         href={`#${id}`}
         onClick={(event) => {
           event.preventDefault()
-          onLinkLine(line.number)
+          onLinkLine(line)
         }}
       >
         {line.number}

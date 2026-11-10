@@ -42,13 +42,13 @@ export function runCanChange(state: RunState): boolean {
 
 export function openingView(
   detail: Pick<RepositoryRunDetailResponse, 'jobs' | 'opening'>,
-  link: { key: string; step: number | null } | null = null,
+  link: { key: string; attempt: string | null; step: number | null } | null = null,
 ): InitialRunView {
   const linked = link === null
     ? undefined
     : detail.jobs.find(({ job }) => job.key === link.key)
   if (linked) {
-    const attempt = latestAttempt(linked.attempts)
+    const attempt = linked.attempts.find(({ id }) => id === link?.attempt)
     const stepIndex = link?.step ?? null
     if (attempt && stepIndex !== null && attempt.steps.some((step) => step.index === stepIndex)) {
       return viewOf(linked.job.key, { attempt_id: attempt.id, step_index: stepIndex })

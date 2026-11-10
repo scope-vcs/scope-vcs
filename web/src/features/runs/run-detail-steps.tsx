@@ -6,7 +6,7 @@ import type {
 import { RunEnvironmentPanel, RunEnvironmentToggle } from './run-attempt-environment'
 import { RunJobHeader } from './run-job-header'
 import { runLogLineId, type RunJobLink } from './run-job-ids'
-import { logLinesText, readLogLines } from './run-log-lines'
+import { lineByAnchor, logLinesText, readStepLogLines } from './run-log-lines'
 import type { RunLogFocus } from './run-log-text'
 import { startRunJobTiming } from './run-log-timing'
 import { RunLogTools, useRunLogSearch } from './run-log-tools'
@@ -16,6 +16,8 @@ import type {
   RepositoryRunAttemptResponse,
   RepositoryRunJobDetailResponse,
 } from '@/api/types.generated'
+
+const NO_LOGS: StepLogs['state']['logs'] = []
 
 export function RunDetailSteps({
   attempt,
@@ -44,23 +46,28 @@ export function RunDetailSteps({
     selection.attemptId === attempt.id
     ? selection.stepIndex
     : null
-  const text = openStep === null ? '' : stepLogs.state.logs.map((log) => log.text).join('')
-  const lines = useMemo(() => readLogLines(text), [text])
+  const logs = openStep === null ? NO_LOGS : stepLogs.state.logs
+  const text = useMemo(() => logs.map((log) => log.text).join(''), [logs])
+  const lines = useMemo(() => readStepLogLines(logs), [logs])
   const search = useRunLogSearch(lines)
   const copyText = useMemo(() => logLinesText(lines), [lines])
   const [seenLink, setSeenLink] = useState(link)
   const [marked, setMarked] = useState(() => linkedLine(link, job.key))
+  const [linkFocused, setLinkFocused] = useState(true)
   if (link !== seenLink) {
     setSeenLink(link)
     setMarked(linkedLine(link, job.key))
+    setLinkFocused(true)
   }
-  const markedLine = marked && marked.step === openStep ? marked.line : null
-  const linked = linkedLine(link, job.key)
-  const linkFocusLine = linked && linked.step === openStep ? linked.line : null
-  const linkReady = linkFocusLine !== null && lines.length > 0
+  const shownLine = (target: LinkedLine | null) =>
+    target && attempt && target.attempt === attempt.id && target.step === openStep
+      ? lineByAnchor(lines, target.anchor)?.number ?? null
+      : null
+  const markedLine = shownLine(marked)
+  const linkFocusLine = linkFocused ? shownLine(linkedLine(link, job.key)) : null
   const linkFocus = useMemo<RunLogFocus | null>(
-    () => (linkReady && linkFocusLine !== null ? { line: linkFocusLine } : null),
-    [linkFocusLine, linkReady],
+    () => (linkFocusLine === null ? null : { line: linkFocusLine }),
+    [linkFocusLine],
   )
 
   return (
@@ -119,13 +126,17 @@ export function RunDetailSteps({
                 >
                   <RunLogView
                     focus={search.focus ?? linkFocus}
-                    lineId={(line) => runLogLineId(job.key, step.index, line)}
+                    lineId={(line) => runLogLineId(job.key, attempt.id, step.index, line.anchor)}
                     lines={lines}
                     logs={stepLogs}
                     markedLine={markedLine}
+                    onFollowTail={() => {
+                      search.release()
+                      setLinkFocused(false)
+                    }}
                     onLinkLine={(line) => {
-                      window.history.replaceState(window.history.state, '', `#${runLogLineId(job.key, step.index, line)}`)
-                      setMarked({ step: step.index, line })
+                      window.history.replaceState(window.history.state, '', `#${runLogLineId(job.key, attempt.id, step.index, line.anchor)}`)
+                      setMarked({ attempt: attempt.id, step: step.index, anchor: line.anchor })
                     }}
                     runId={runId}
                     search={search}
@@ -151,8 +162,10 @@ export function RunDetailSteps({
   )
 }
 
-function linkedLine(link: RunJobLink | null, jobKey: string) {
-  return link && link.key === jobKey && link.step !== null && link.line !== null
-    ? { step: link.step, line: link.line }
+type LinkedLine = { attempt: string; step: number; anchor: string }
+
+function linkedLine(link: RunJobLink | null, jobKey: string): LinkedLine | null {
+  return link && link.key === jobKey && link.attempt !== null && link.step !== null && link.line !== null
+    ? { attempt: link.attempt, step: link.step, anchor: link.line }
     : null
 }
