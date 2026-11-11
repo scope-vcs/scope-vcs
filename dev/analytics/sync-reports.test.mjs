@@ -6,49 +6,79 @@ import { posthogRequest, syncProductReports } from './sync-reports.mjs'
 
 const report = { key: 'activation', name: 'Activation', description: 'Fixture', query: { kind: 'DataTableNode', source: { kind: 'HogQLQuery', query: 'SELECT 1' } } }
 
-test('browser geography counts scoped pageviews and retains missing location coverage', () => {
-  const geography = buildProductReports({
+function queryReport(key, events) {
+  const report = buildProductReports({
     excludedUserIds: ['scope_usr_internal'], excludedRepositoryIds: ['repoi_internal'],
-  }).find((item) => item.key === 'browser-geography')
+  }).find((item) => item.key === key)
   const database = new DatabaseSync(':memory:')
   try {
     database.function('now', () => '2026-10-21 12:00:00')
+    database.aggregate('quantile', {
+      start: () => [],
+      step: (values, level, value) => [...values, [level, value]],
+      result: (values) => {
+        const sorted = values.map(([, value]) => value).sort((left, right) => left - right)
+        return sorted[Math.ceil(values[0][0] * sorted.length) - 1]
+      },
+    })
     database.exec('CREATE TABLE events (event TEXT, timestamp TEXT, distinct_id TEXT, properties TEXT)')
     const insert = database.prepare('INSERT INTO events VALUES (?, ?, ?, ?)')
-    const pageview = ({ event = '$pageview', timestamp = '2026-10-20 12:00:00', distinctId = 'anonymous', ...properties } = {}) => {
-      insert.run(event, timestamp, distinctId, JSON.stringify({
-        environment: 'production', source: 'browser',
-        $geoip_country_name: 'United States', $geoip_subdivision_1_name: 'Texas', $geoip_city_name: 'Austin',
-        ...properties,
-      }))
+    for (const { event, timestamp = '2026-10-20 12:00:00', distinctId = 'anonymous', ...properties } of events) {
+      insert.run(event, timestamp, distinctId, JSON.stringify({ environment: 'production', ...properties }))
     }
-    pageview()
-    pageview()
-    pageview({ timestamp: '2026-09-21 12:00:00' })
-    pageview({ $geoip_city_name: null })
-    pageview({ $geoip_country_name: 'Germany', $geoip_subdivision_1_name: 'Berlin', $geoip_city_name: 'Berlin' })
-    pageview({ $geoip_country_name: null, $geoip_subdivision_1_name: null, $geoip_city_name: null })
-    pageview({ $geoip_country_name: '', $geoip_subdivision_1_name: '', $geoip_city_name: '' })
-    pageview({ $geoip_country_name: undefined, $geoip_subdivision_1_name: undefined, $geoip_city_name: undefined })
-    pageview({ environment: 'test' })
-    pageview({ source: 'server' })
-    pageview({ event: 'frontend_error' })
-    pageview({ timestamp: '2026-09-21 11:59:59' })
-    pageview({ distinctId: 'scope_usr_internal' })
-    pageview({ repository_id: 'repoi_internal' })
-    const sql = geography.query.source.query
+    const sql = report.query.source.query
+      .replace(/quantile\(([\d.]+)\)\(toFloat\(([^)]+)\)\)/g, 'quantile($1, $2)')
       .replace(/properties\.([A-Za-z0-9_$]+)/g, (_, name) => `json_extract(properties, '$.${name}')`)
       .replace(/now\(\) - INTERVAL (\d+) DAY/g, "datetime(now(), '-$1 days')")
-    const rows = database.prepare(sql).all().map((row) => ({ ...row }))
-    assert.deepEqual(rows, [
-      { country: 'United States', region: 'Texas', city: 'Austin', pageviews: 3 },
-      { country: 'Unknown', region: 'Unknown', city: 'Unknown', pageviews: 3 },
-      { country: 'Germany', region: 'Berlin', city: 'Berlin', pageviews: 1 },
-      { country: 'United States', region: 'Texas', city: 'Unknown', pageviews: 1 },
-    ])
+    return database.prepare(sql).all().map((row) => ({ ...row }))
   } finally {
     database.close()
   }
+}
+
+test('browser geography counts scoped pageviews and retains missing location coverage', () => {
+  const pageview = ({ event = '$pageview', ...properties } = {}) => ({
+    event, source: 'browser',
+    $geoip_country_name: 'United States', $geoip_subdivision_1_name: 'Texas', $geoip_city_name: 'Austin',
+    ...properties,
+  })
+  assert.deepEqual(queryReport('browser-geography', [
+    pageview(),
+    pageview(),
+    pageview({ timestamp: '2026-09-21 12:00:00' }),
+    pageview({ $geoip_city_name: null }),
+    pageview({ $geoip_country_name: 'Germany', $geoip_subdivision_1_name: 'Berlin', $geoip_city_name: 'Berlin' }),
+    pageview({ $geoip_country_name: null, $geoip_subdivision_1_name: null, $geoip_city_name: null }),
+    pageview({ $geoip_country_name: '', $geoip_subdivision_1_name: '', $geoip_city_name: '' }),
+    pageview({ $geoip_country_name: undefined, $geoip_subdivision_1_name: undefined, $geoip_city_name: undefined }),
+    pageview({ environment: 'test' }),
+    pageview({ source: 'server' }),
+    pageview({ event: 'frontend_error' }),
+    pageview({ timestamp: '2026-09-21 11:59:59' }),
+    pageview({ distinctId: 'scope_usr_internal' }),
+    pageview({ repository_id: 'repoi_internal' }),
+  ]), [
+    { country: 'United States', region: 'Texas', city: 'Austin', pageviews: 3 },
+    { country: 'Unknown', region: 'Unknown', city: 'Unknown', pageviews: 3 },
+    { country: 'Germany', region: 'Berlin', city: 'Berlin', pageviews: 1 },
+    { country: 'United States', region: 'Texas', city: 'Unknown', pageviews: 1 },
+  ])
+})
+
+test('run log timing reports percentiles and stored share per trigger and provider for the last week', () => {
+  const timing = (trigger, provider, durationMs, source = 'stored', properties = {}) => ({
+    event: 'run_log_timing', trigger, provider, duration_ms: durationMs, log_source: source, ...properties,
+  })
+  assert.deepEqual(queryReport('run-log-timing', [
+    ...[100, 200, 300, 400].map((duration, index) => timing('job_click', 'github', duration, index === 0 ? 'fetched' : 'stored')),
+    timing('page_load', 'native', 900),
+    timing('job_click', 'github', 9000, 'stored', { timestamp: '2026-10-14 11:59:59' }),
+    timing('job_click', 'github', 9000, 'stored', { environment: 'test' }),
+    timing('job_click', 'github', 9000, 'stored', { event: 'web_vital' }),
+  ]), [
+    { trigger: 'job_click', provider: 'github', samples: 4, p50_ms: 200, p75_ms: 300, p95_ms: 400, stored_percent: 75 },
+    { trigger: 'page_load', provider: 'native', samples: 1, p50_ms: 900, p75_ms: 900, p95_ms: 900, stored_percent: 100 },
+  ])
 })
 
 test('invalid queries stop publication before any dashboard or insight mutation', async () => {

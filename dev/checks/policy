@@ -27,7 +27,7 @@ python3 .github/scripts/test-check-workflow-timeouts.py
 python3 .github/scripts/check-workflow-timeouts.py
 python3 .github/scripts/test-check-ci-critical-path.py
 python3 .github/scripts/check-ci-critical-path.py
-node --test .github/scripts/ci-duration.test.mjs
+node --test .github/scripts/ci-duration.test.mjs .github/scripts/run-log-budget.test.mjs
 node .github/scripts/check-production-origins.mjs
 node --test .github/scripts/check-production-origins.test.mjs
 node --test .github/scripts/check-gates.test.mjs .github/scripts/check-apt-bootstrap.test.mjs

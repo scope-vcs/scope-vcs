@@ -34,6 +34,7 @@ import { RunStatusIcon } from './run-status-icon'
 import { githubWorkflowNamesResource } from './github-workflow-names-resource'
 import { RUN_LINK_CLASS, RUN_ROW_CLASS, RUN_ROW_TIMESTAMP_CLASS } from './run-layout'
 import { RunsRefreshAlert } from './runs-page-error'
+import { startRunListTiming } from './run-log-timing'
 
 export function GitHubWorkflowRunsPage({
   initialRuns,
@@ -214,7 +215,10 @@ function GitHubWorkflowRunItem({ params, row, onOpen }: {
       <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2">
         <Link
           className={cn('truncate text-sm font-medium', RUN_LINK_CLASS)}
-          onClick={onOpen}
+          onClick={(event) => {
+            startRunListTiming(event, row.key)
+            onOpen()
+          }}
           params={{ ...params, runId: row.key }}
           to="/$owner/$repo/runs/$runId"
         >

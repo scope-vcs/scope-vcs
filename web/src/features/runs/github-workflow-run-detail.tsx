@@ -28,6 +28,7 @@ import {
   useGitHubWorkflowRunRecheck,
 } from './github-workflow-run-detail-resource'
 import { RunDuration } from './run-duration'
+import { startRunJobTiming, useRunLogAbsence, useRunLogTimingPage } from './run-log-timing'
 import { useRunJobHash } from './run-job-hash'
 import { jobKeyForHash, runJobPanelId } from './run-job-ids'
 import { RUN_JOB_ITEM_CLASS, RUN_JOB_LIST_CLASS, RUN_LINK_CLASS, runJobButtonClass } from './run-layout'
@@ -58,6 +59,7 @@ export function GitHubWorkflowRunDetailPage({
 }: GitHubWorkflowRunDetailPageProps) {
   const { isLoaded, userId } = useAuth()
   const { repo } = useRepoLayout()
+  useRunLogTimingPage(params.run_id)
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const identity = scope ? githubWorkflowRunDetailIdentity(scope, params.run_id) : null
   const pageDetail = initialDetail && initialScope === scope ? initialDetail : null
@@ -113,9 +115,11 @@ function GitHubWorkflowRunView({
     return key !== null
   })
   const selectedJob = selectGitHubJob(detail.jobs, chosenKey)
+  useRunLogAbsence(params.run_id, selectedJob === null && !detail.jobs_not_read_yet)
 
   function pickJob(job: GitHubWorkflowJobResponse) {
     const key = githubJobKey(job)
+    if (job !== selectedJob) startRunJobTiming(params.run_id)
     setChosenKey(key)
     window.history.replaceState(window.history.state, '', `#${runJobPanelId(key)}`)
   }

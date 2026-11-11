@@ -11,6 +11,7 @@ import { runJobPanelId } from './run-job-ids'
 import { RunJobGraph } from './run-job-graph'
 import { orderJobsByDependency } from './run-job-graph-model'
 import { RunStatusIcon } from './run-status-icon'
+import { startRunJobTiming, useRunLogAbsence } from './run-log-timing'
 import type { RepositoryRunJobDetailResponse } from '@/api/types.generated'
 
 export function RunDetailJobs({
@@ -20,6 +21,7 @@ export function RunDetailJobs({
   onSelectJob,
   onSelectStep,
   onToggleGraph,
+  runId,
   selectedJobKey,
   selection,
   showGraph,
@@ -31,6 +33,7 @@ export function RunDetailJobs({
   onSelectJob: (job: RepositoryRunJobDetailResponse) => void
   onSelectStep: (jobKey: string, attemptId: string, stepIndex: number) => void
   onToggleGraph: () => void
+  runId: string
   selectedJobKey: string | null
   selection: StepSelection | null
   showGraph: boolean
@@ -39,8 +42,10 @@ export function RunDetailJobs({
   const selectedJob = jobs.find(({ job }) => job.key === selectedJobKey) ?? null
   const orderedJobs = useMemo(() => orderJobsByDependency(jobs), [jobs])
   const graphShown = jobsHaveDependencies(jobs) && showGraph
+  useRunLogAbsence(runId, graphShown)
   const jobListRef = useRef<HTMLDivElement>(null)
   function pickJob(job: RepositoryRunJobDetailResponse) {
+    if (job.job.key !== selectedJobKey) startRunJobTiming(runId)
     onSelectJob(job)
     if (showGraph) onToggleGraph()
   }
@@ -98,6 +103,7 @@ export function RunDetailJobs({
                 onSelectAttempt(selectedJob.job.key, attemptId)}
               onSelectStep={(attemptId, stepIndex) =>
                 onSelectStep(selectedJob.job.key, attemptId, stepIndex)}
+              runId={runId}
               selection={selection}
               stepLogs={stepLogs}
             />

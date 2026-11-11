@@ -26,7 +26,7 @@ type FrontendErrorReport = {
 }
 
 export type DiagnosticCapture = (
-  event: 'frontend_error' | 'web_vital',
+  event: 'frontend_error' | 'run_log_timing' | 'web_vital',
   properties: Record<string, number | string | null>,
   occurredAt?: string,
 ) => boolean | void
@@ -40,6 +40,20 @@ type DiagnosticInstallation = {
 const installations = new Set<DiagnosticInstallation>()
 let documentRelease: string | null | undefined
 const pendingErrors: FrontendErrorReport[] = []
+const pendingRunLogTimings: RunLogTimingReport[] = []
+
+export type RunLogTiming = {
+  trigger: 'job_click' | 'list_click' | 'page_load'
+  provider: 'github' | 'native'
+  durationMs: number
+  source: 'fetched' | 'stored'
+  logBytes: number
+}
+
+type RunLogTimingReport = {
+  properties: Record<string, number | string>
+  occurredAt: string
+}
 
 export function reportFrontendError(
   error: unknown,
@@ -54,7 +68,7 @@ export function reportFrontendError(
     routeName: installation ? installation.routeName : documentRouteName(),
     release: installation ? installation.release : documentRelease,
   }
-  if (!installation || !captureError(installation, report)) retainPendingError(report)
+  if (!installation || !captureError(installation, report)) retainPending(pendingErrors, report)
 }
 
 export function classifyFrontendError(error: unknown): FrontendErrorKind {
@@ -82,14 +96,14 @@ export function installFrontendDiagnostics({
   if (documentRelease === undefined) documentRelease = release
   const firstInstallation = installations.size === 0
   installations.add(installation)
-  flushPendingErrors()
+  flushPendingReports()
 
   return {
     firstInstallation,
     dispose() {
       return installations.delete(installation) && installations.size === 0
     },
-    flushErrors: flushPendingErrors,
+    flushPending: flushPendingReports,
     setRoute(nextRouteName: string | null) {
       installation.routeName = nextRouteName
     },
@@ -115,17 +129,42 @@ function captureError(installation: DiagnosticInstallation, report: FrontendErro
   }, report.occurredAt) !== false
 }
 
-function flushPendingErrors() {
+function flushPendingReports() {
   const installation = currentInstallation()
   if (!installation) return
   for (const report of pendingErrors.splice(0)) {
-    if (!captureError(installation, report)) retainPendingError(report)
+    if (!captureError(installation, report)) retainPending(pendingErrors, report)
+  }
+  for (const report of pendingRunLogTimings.splice(0)) {
+    if (!captureRunLogTimingReport(installation, report)) retainPending(pendingRunLogTimings, report)
   }
 }
 
-function retainPendingError(report: FrontendErrorReport) {
-  if (pendingErrors.length === 10) pendingErrors.shift()
-  pendingErrors.push(report)
+function retainPending<Report>(reports: Report[], report: Report) {
+  if (reports.length === 10) reports.shift()
+  reports.push(report)
+}
+
+export function captureRunLogTiming(timing: RunLogTiming) {
+  const report: RunLogTimingReport = {
+    properties: {
+      duration_ms: timing.durationMs,
+      log_bytes: timing.logBytes,
+      provider: timing.provider,
+      route_name: 'repository_run',
+      log_source: timing.source,
+      trigger: timing.trigger,
+    },
+    occurredAt: new Date().toISOString(),
+  }
+  const installation = currentInstallation()
+  if (!installation || !captureRunLogTimingReport(installation, report)) {
+    retainPending(pendingRunLogTimings, report)
+  }
+}
+
+function captureRunLogTimingReport(installation: DiagnosticInstallation, report: RunLogTimingReport) {
+  return installation.capture('run_log_timing', report.properties, report.occurredAt) !== false
 }
 
 export function captureWebVital(properties: Record<string, number | string | null>) {
