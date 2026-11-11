@@ -1,0 +1,38 @@
+name: Install PostgreSQL test server
+description: Cache signed PostgreSQL packages per runner image and install verified local packages without network access.
+runs:
+  using: composite
+  steps:
+    - id: plan
+      shell: bash
+      run: |
+        version="$(bash dev/install-test-postgres.sh version)"
+        installer="$(sha256sum dev/install-test-postgres.sh dev/install-test-postgres.asc .github/actions/install-test-postgres/action.yml | sha256sum | cut -c1-16)"
+        echo "key=test-postgres-${ImageOS:?}-${ImageVersion:?}-${RUNNER_ARCH:?}-$version-$installer" >> "$GITHUB_OUTPUT"
+        echo "cache=$RUNNER_TEMP/test-postgres-packages" >> "$GITHUB_OUTPUT"
+        mkdir -p "$RUNNER_TEMP/test-postgres-packages"
+
+    - id: restore
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+      with:
+        path: ${{ steps.plan.outputs.cache }}
+        key: ${{ steps.plan.outputs.key }}
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        POSTGRES_PACKAGE_CACHE: ${{ steps.plan.outputs.cache }}
+      run: |
+        sudo bash dev/install-test-postgres.sh download "$POSTGRES_PACKAGE_CACHE"
+        sudo chown -R "$(id -u):$(id -g)" "$POSTGRES_PACKAGE_CACHE"
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
+      with:
+        path: ${{ steps.plan.outputs.cache }}
+        key: ${{ steps.plan.outputs.key }}
+
+    - shell: bash
+      env:
+        POSTGRES_PACKAGE_CACHE: ${{ steps.plan.outputs.cache }}
+      run: sudo bash dev/install-test-postgres.sh install "$POSTGRES_PACKAGE_CACHE"
