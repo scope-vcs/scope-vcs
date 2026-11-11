@@ -3943,10 +3943,10 @@ LICENSE-APACHE: text 954f335b8baf5e1a5748b3a1bf6eeb2ec0b28ae19813f02063d64be0057
 LICENSE-MIT: text 8d1f81ea4e87111d557b185d58d996e7bcb974c19c364197fffd4e814fd9b6fa
 
 ==============================================================================
-rustix 1.1.5
+rustix 1.1.6
 Declared license: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
 Selected license: MIT
-Source: https://static.crates.io/crates/rustix/rustix-1.1.5.crate
+Source: https://static.crates.io/crates/rustix/rustix-1.1.6.crate
 
 Published author metadata: ["Dan Gohman <dev@sunfishcode.online>", "Jakub Konka <kubkon@jakubkonka.com>"]
 Repository: "https://github.com/bytecodealliance/rustix"
