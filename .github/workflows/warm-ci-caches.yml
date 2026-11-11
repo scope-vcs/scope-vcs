@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     paths:
+      - .github/actions/install-test-postgres/**
+      - dev/install-test-postgres.sh
+      - dev/install-test-postgres.asc
       - Cargo.lock
       - '**/Cargo.toml'
       - cli/Cargo.lock
@@ -20,6 +23,9 @@ on:
       - .github/scripts/deployment-components.mjs
       - .github/scripts/select-cli-distribution-targets.mjs
 
+  schedule:
+    - cron: '43 6 * * *'
+
 concurrency:
   group: warm-ci-caches
   cancel-in-progress: true
@@ -28,13 +34,26 @@ permissions:
   contents: read
 
 jobs:
+  postgres:
+    name: PostgreSQL test package cache
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install PostgreSQL test server
+        uses: ./.github/actions/install-test-postgres
+
   backend:
+    if: github.event_name != 'schedule'
     name: Backend caches
     uses: ./.github/workflows/scope-api-ci.yml
     with:
       warm_cache: true
 
   cli:
+    if: github.event_name != 'schedule'
     name: CLI caches
     uses: ./.github/workflows/scope-cli-build.yml
     with:
@@ -42,6 +61,7 @@ jobs:
       distribution_mode: pull-request
 
   media-worker-image:
+    if: github.event_name != 'schedule'
     name: Media worker image cache
     permissions:
       contents: read
