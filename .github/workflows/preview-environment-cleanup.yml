@@ -6,6 +6,9 @@ on:
       pull_request:
         type: number
         required: true
+    secrets:
+      RAILWAY_API_TOKEN:
+        required: true
 
 permissions:
   contents: read

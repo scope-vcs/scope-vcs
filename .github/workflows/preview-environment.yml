@@ -272,6 +272,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.action == 'delete'
     uses: ./.github/workflows/preview-environment-cleanup.yml
+    secrets:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
     permissions:
       contents: read
       pull-requests: write
