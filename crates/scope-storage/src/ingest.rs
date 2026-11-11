@@ -105,7 +105,12 @@ impl GitSegmentStore {
         let object_key = reservation.object_key;
         let (local_tx, local_rx) = mpsc::channel(self.config.channel_capacity);
         let (remote_tx, remote_rx) = mpsc::channel(self.config.channel_capacity);
-        let local_task = tokio::spawn(write_local(local_dir, segment_id.clone(), local_rx));
+        let local_task = tokio::spawn(write_local(
+            Arc::clone(&self.local_root_lease),
+            local_dir,
+            segment_id.clone(),
+            local_rx,
+        ));
         let remote_task = tokio::spawn(upload_remote(
             RemoteIngestRequest {
                 backend: Arc::clone(&self.backend),
@@ -357,6 +362,7 @@ struct RemoteOutcome {
 }
 
 async fn write_local(
+    _local_root_lease: Arc<std::fs::File>,
     directory: PathBuf,
     segment_id: String,
     mut receiver: mpsc::Receiver<StreamMessage>,
