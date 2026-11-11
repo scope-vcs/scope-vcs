@@ -60,7 +60,7 @@ pub(crate) async fn refresh_job_for_delivery(
             std::slice::from_ref(&job),
         )
         .await?;
-    github_job_logs::prefetch(state, std::slice::from_ref(&job), unix_now()?).await?;
+    github_job_logs::queue_log_of_finished_failure(state, &job, unix_now()?).await?;
     publish(state, &connection, job.github_run_id).await
 }
 
@@ -92,6 +92,9 @@ pub(crate) async fn run_jobs(
             )
             .await?;
         state.wakeups.github_job_reads.notify_one();
+    }
+    if connection.is_connected() {
+        github_job_logs::queue_readable_logs(state, &jobs, now_unix).await?;
     }
     Ok(GitHubRunJobs {
         not_read_yet: github_jobs_not_read_yet(
@@ -251,8 +254,7 @@ async fn read_run_jobs(
             &jobs,
         )
         .await?;
-    github_job_logs::prefetch(state, &jobs, unix_now()?).await?;
-    Ok(())
+    github_job_logs::queue_readable_logs(state, &jobs, unix_now()?).await
 }
 
 pub(super) async fn publish(

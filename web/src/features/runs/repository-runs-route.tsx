@@ -2,8 +2,10 @@ import type { RepoGitHubWorkflowRunsInput, RepoParams, RepoRunHistoryInput } fro
 import { GitHubWorkflowRunsPage } from '@/features/runs/github-workflow-runs'
 import { RepositoryRunsPage } from '@/features/runs/repository-runs-page'
 import {
+  loadRepoGitHubWorkflowRun,
   loadRepoGitHubWorkflowRuns,
   loadRepoGitHubWorkflowNames,
+  loadRepoRunDetail,
   loadRepoRunHistory,
   loadRepoRunPage,
   loadRepoRunWorkflows,
@@ -57,12 +59,22 @@ function RunRouteContent({
     [],
   )
 
+  const { owner, repo } = params
+  const loadGitHubRunDetail = useCallback(
+    (runId: string, signal: AbortSignal) =>
+      loadRepoGitHubWorkflowRun({ data: { owner, repo, run_id: runId }, signal }),
+    [owner, repo],
+  )
+  const loadRunDetail = useCallback(
+    (runId: string, signal?: AbortSignal) => loadRepoRunDetail({ data: { owner, repo, run_id: runId }, signal }),
+    [owner, repo],
+  )
+
   const identity = scope ? runHistoryCacheKey(scope, githubRuns ? 'github' : 'native', workflow) : null
   const initialValue = useMemo<RetainedRunHistory | null>(() => {
     if (!scope || initialResources?.scope !== scope) return null
     return runPageSnapshot(initialResources.resources)
   }, [scope, initialResources])
-  const { owner, repo } = params
   const load = useCallback(async (signal: AbortSignal): Promise<RetainedRunHistory> => {
     if (!identity) throw new Error('Run history scope is unavailable.')
     return loadRunPageSnapshot({
@@ -89,6 +101,7 @@ function RunRouteContent({
         key={`${params.owner}/${params.repo}`}
         loadRuns={loadGitHubRuns}
         loadNames={loadGitHubNames}
+        loadRunDetail={loadGitHubRunDetail}
         params={params}
       />
     )
@@ -102,6 +115,7 @@ function RunRouteContent({
       loadPage={loadPage}
       loadHistory={loadHistory}
       loadWorkflows={loadWorkflows}
+      loadRunDetail={loadRunDetail}
       params={params}
       workflow={workflow}
     />

@@ -1,21 +1,14 @@
-import type { RunState } from '@/api/types.generated'
-
-type StepLike = {
-  index: number
-  state: string
-}
+import type { RepositoryRunDetailResponse, RunState } from '@/api/types.generated'
 
 type AttemptLike = {
   id: string
   number: number
-  steps: readonly StepLike[]
 }
 
 type JobLike = {
   job: {
     key: string
     needs: readonly string[]
-    state: string
   }
   attempts: readonly AttemptLike[]
 }
@@ -47,42 +40,26 @@ export function runCanChange(state: RunState): boolean {
   }
 }
 
-export function selectInitialView(
-  jobs: readonly JobLike[],
+export function openingView(
+  detail: Pick<RepositoryRunDetailResponse, 'jobs' | 'opening'>,
   linkedJobKey: string | null = null,
 ): InitialRunView {
-  const linkedJob = linkedJobKey === null
+  const linked = linkedJobKey === null
     ? undefined
-    : jobs.find(({ job }) => job.key === linkedJobKey)
-  if (linkedJob) {
-    return viewOf(linkedJob, (steps) => stepIn(steps, 'failed') ?? stepIn(steps, 'running') ?? steps.at(-1))
-  }
-  const failedJob = jobs.find(({ job }) => job.state === 'failed')
-  if (failedJob) return viewOf(failedJob, (steps) => stepIn(steps, 'failed'))
-  for (const jobDetail of jobs) {
-    const view = viewOf(jobDetail, (steps) => stepIn(steps, 'running'))
-    if (view.selection) return view
-  }
-  const lastJob = jobs.at(-1)
-  const last = lastJob ? viewOf(lastJob, (steps) => steps.at(-1)) : null
-  return last?.selection ? last : { selectedJobKey: null, selection: null }
-}
-
-function stepIn(steps: readonly StepLike[], state: string) {
-  return steps.find((step) => step.state === state)
+    : detail.jobs.find(({ job }) => job.key === linkedJobKey)
+  if (linked) return viewOf(linked.job.key, linked.opening_step)
+  return detail.opening
+    ? viewOf(detail.opening.job_key, detail.opening.step)
+    : { selectedJobKey: null, selection: null }
 }
 
 function viewOf(
-  jobDetail: JobLike,
-  pick: (steps: readonly StepLike[]) => StepLike | undefined,
+  jobKey: string,
+  step: { attempt_id: string; step_index: number } | null,
 ): InitialRunView {
-  const attempt = latestAttempt(jobDetail.attempts)
-  const step = attempt ? pick(attempt.steps) : undefined
   return {
-    selectedJobKey: jobDetail.job.key,
-    selection: attempt && step
-      ? { attemptId: attempt.id, jobKey: jobDetail.job.key, stepIndex: step.index }
-      : null,
+    selectedJobKey: jobKey,
+    selection: step ? { attemptId: step.attempt_id, jobKey, stepIndex: step.step_index } : null,
   }
 }
 

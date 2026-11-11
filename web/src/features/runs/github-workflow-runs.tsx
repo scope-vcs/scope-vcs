@@ -1,5 +1,6 @@
 import type { RepoGitHubWorkflowRunsInput, RepoParams } from '@/api/types'
 import type {
+  GitHubWorkflowRunDetailResponse,
   GitHubWorkflowRunListResponse,
   GitHubWorkflowNamesResponse,
   GitHubWorkflowRunsResponse,
@@ -24,7 +25,7 @@ import {
   githubWorkflowRunRow,
   reloadGitHubWorkflowRunPages,
 } from './github-workflow-run-model'
-import { seedGitHubWorkflowRunDetail } from './github-workflow-run-detail-resource'
+import { startGitHubWorkflowRunDetail } from './github-workflow-run-detail-resource'
 import {
   githubWorkflowRunsIdentity,
   githubWorkflowRunsResource,
@@ -41,12 +42,14 @@ export function GitHubWorkflowRunsPage({
   initialNames,
   loadRuns,
   loadNames,
+  loadRunDetail,
   params,
 }: {
   initialRuns: GitHubWorkflowRunListResponse
   initialNames: GitHubWorkflowNamesResponse
   loadRuns: (input: RepoGitHubWorkflowRunsInput, signal: AbortSignal) => Promise<GitHubWorkflowRunsResponse>
   loadNames: (input: RepoParams, signal: AbortSignal) => Promise<GitHubWorkflowNamesResponse>
+  loadRunDetail: (runId: string, signal: AbortSignal) => Promise<GitHubWorkflowRunDetailResponse>
   params: RepoParams
 }) {
   const { isLoaded, userId } = useAuth()
@@ -166,7 +169,10 @@ export function GitHubWorkflowRunsPage({
                   params={params}
                   row={row}
                   onOpen={() => {
-                    if (scope && runs) seedGitHubWorkflowRunDetail(scope, runs.workflow_runs[index])
+                    const run = runs.workflow_runs[index]
+                    if (scope && run) {
+                      startGitHubWorkflowRunDetail(scope, run, (signal) => loadRunDetail(String(run.id), signal))
+                    }
                   }}
                 />)}
               </ul>
@@ -219,6 +225,8 @@ function GitHubWorkflowRunItem({ params, row, onOpen }: {
             startRunListTiming(event, row.key)
             onOpen()
           }}
+          onFocus={onOpen}
+          onPointerEnter={onOpen}
           params={{ ...params, runId: row.key }}
           to="/$owner/$repo/runs/$runId"
         >

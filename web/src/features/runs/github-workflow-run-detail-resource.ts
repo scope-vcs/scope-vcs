@@ -10,7 +10,7 @@ const RECHECK_INTERVAL_MS = 15_000
 
 export const githubWorkflowRunDetailResource = createCachedResource<GitHubWorkflowRunDetailResponse>({
   maxEntries: 16,
-  maxWeight: 2 * 1024 * 1024,
+  maxWeight: 16 * 1024 * 1024,
   weightOf: (value) => JSON.stringify(value).length * 2,
 })
 
@@ -18,12 +18,30 @@ export function githubWorkflowRunDetailIdentity(scope: string, runId: string) {
   return `${scope}\0${runId}`
 }
 
-export function seedGitHubWorkflowRunDetail(scope: string, run: GitHubWorkflowRunResponse) {
+export type GitHubWorkflowRunDetailLoad = (signal: AbortSignal) => Promise<GitHubWorkflowRunDetailResponse>
+
+const fetchedAt = new WeakMap<GitHubWorkflowRunDetailResponse, number>()
+
+export function recordingFetch(load: GitHubWorkflowRunDetailLoad): GitHubWorkflowRunDetailLoad {
+  return async (signal) => {
+    const detail = await load(signal)
+    fetchedAt.set(detail, Date.now())
+    return detail
+  }
+}
+
+export function startGitHubWorkflowRunDetail(
+  scope: string,
+  run: GitHubWorkflowRunResponse,
+  load: GitHubWorkflowRunDetailLoad,
+) {
+  const identity = githubWorkflowRunDetailIdentity(scope, String(run.id))
   githubWorkflowRunDetailResource.seed(
-    githubWorkflowRunDetailIdentity(scope, String(run.id)),
-    { run, jobs: [], jobs_not_read_yet: true },
+    identity,
+    { run, jobs: [], jobs_not_read_yet: true, opening_job_id: null, opening_job_log: null },
     'row',
   )
+  void githubWorkflowRunDetailResource.load(identity, '', recordingFetch(load)).catch(() => {})
 }
 
 export function invalidateGitHubWorkflowRunDetails(scope: string, runId?: number) {
@@ -36,7 +54,22 @@ export function invalidateGitHubWorkflowRunDetails(scope: string, runId?: number
   githubWorkflowJobLogResource.invalidateMatching((identity) => {
     if (!identity.startsWith(logs)) return false
     const log = githubWorkflowJobLogResource.getSnapshot(identity)
-    return log.pending || log.value?.state === 'pending'
+    if (log.pending) recheckIfStillPending(identity)
+    return !log.pending && log.value?.state === 'pending'
+  })
+}
+
+const logsAwaitingAnswer = new Set<string>()
+
+function recheckIfStillPending(identity: string) {
+  if (logsAwaitingAnswer.has(identity)) return
+  logsAwaitingAnswer.add(identity)
+  const unsubscribe = githubWorkflowJobLogResource.subscribe(identity, () => {
+    const snapshot = githubWorkflowJobLogResource.getSnapshot(identity)
+    if (snapshot.pending) return
+    unsubscribe()
+    logsAwaitingAnswer.delete(identity)
+    if (snapshot.value?.state === 'pending') githubWorkflowJobLogResource.invalidate(identity)
   })
 }
 
@@ -63,7 +96,9 @@ export function useGitHubWorkflowRunRecheck(
         githubWorkflowRunDetailResource.invalidate(identity)
       }
     }
-    if (githubWorkflowRunDetailResource.peek(identity) !== pageValueRef.current) recheck()
+    const cached = githubWorkflowRunDetailResource.peek(identity)
+    const fresh = cached !== null && Date.now() - (fetchedAt.get(cached) ?? 0) < RECHECK_INTERVAL_MS
+    if (cached !== pageValueRef.current && !fresh) recheck()
     const onFocus = () => {
       if (document.visibilityState === 'visible') recheck()
     }

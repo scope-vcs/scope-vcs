@@ -8,6 +8,8 @@ import {
   runLogsResource,
   runLogCacheKey,
   refreshRunLogs,
+  runLogCoversOpening,
+  seedOpeningRunLog,
   stepKey,
   writeRunLogCache,
   appendStreamRunLog,
@@ -27,6 +29,7 @@ const detail: RepositoryRunDetailResponse = {
     updated_at_unix: 3, completed_at_unix: 3, can_cancel: false, can_retry: false,
   },
   jobs: [],
+  opening: null,
 }
 const log = (position: number) => ({
   position, sequence: position, text: `line ${position}\n`, byte_length: 7,
@@ -186,4 +189,22 @@ test('retention limits steps per run', () => {
   }
   assert.equal(Object.keys(readRunLogCache(key)).length, 8)
   assert.equal(readRunLogCache(key)[stepKey(selection)], undefined)
+})
+
+test('a run detail that carries newer opening output updates cached output so the step needs no read', () => {
+  writeRunLogCache(key, selection, loaded)
+  const opening = {
+    job_key: selection.jobKey,
+    step: {
+      attempt_id: selection.attemptId,
+      step_index: selection.stepIndex,
+      log: { logs: [log(1), log(2)], next_after: 2, has_earlier: false, has_more: false, logs_truncated: false },
+    },
+  }
+  const newer = { ...detail, opening }
+  seedOpeningRunLog(key, newer)
+  assert.deepEqual(readRunLogCache(key)[stepKey(selection)]?.logs.map((entry) => entry.position), [1, 2])
+  assert.equal(runLogCoversOpening(key, newer, selection), true)
+  seedOpeningRunLog(key, { ...detail, opening: { ...opening, step: { ...opening.step, log: { ...opening.step.log, logs: [log(1)], next_after: 1 } } } })
+  assert.deepEqual(readRunLogCache(key)[stepKey(selection)]?.logs.map((entry) => entry.position), [1, 2], 'older output never replaces newer cached output')
 })

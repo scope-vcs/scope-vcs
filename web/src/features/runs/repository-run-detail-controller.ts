@@ -18,7 +18,7 @@ import {
   selectJob,
   selectStep,
   runCanChange,
-  selectInitialView,
+  openingView,
   type StepSelection,
 } from './repository-run-detail-model'
 import { useRunJobHash } from './run-job-hash'
@@ -33,6 +33,8 @@ import {
   runLogsResource,
   refreshRunLogs,
   refreshRunLogsAfterInFlight,
+  runLogCoversOpening,
+  seedOpeningRunLog,
   type RunLogMode,
   type StepLogState,
 } from './run-log-cache'
@@ -65,7 +67,7 @@ type DetailViewState = {
 }
 
 function createDetailViewState(detail: RepositoryRunDetailResponse): DetailViewState {
-  const initialView = selectInitialView(detail.jobs)
+  const initialView = openingView(detail)
   return {
     actionError: null,
     attemptOverrides: {},
@@ -98,6 +100,7 @@ export function useRepositoryRunDetailController({
   const [key] = useState(() => cacheKey ?? crypto.randomUUID())
   useState(() => {
     initializeRunDetail(key, initialDetail)
+    seedOpeningRunLog(key, runDetailResource.peek(key)?.detail ?? initialDetail)
     runLogsResource.read(key)
   })
   const detailSnapshot = useSyncExternalStore(
@@ -121,7 +124,7 @@ export function useRepositoryRunDetailController({
       const reconciledAction = current.reconciliationGeneration !== null &&
         (detailSnapshot.value?.generation ?? 0) >= current.reconciliationGeneration
       const selectionStillValid = current.selection !== null && selectionExists(current.selection, detail.jobs)
-      const initialView = current.manualSelection ? null : selectInitialView(detail.jobs, current.linkedJobKey)
+      const initialView = current.manualSelection ? null : openingView(detail, current.linkedJobKey)
       const selection = selectionStillValid ? current.selection
         : current.manualSelection ? null : initialView?.selection ?? null
       return {
@@ -143,7 +146,7 @@ export function useRepositoryRunDetailController({
     if (linkedJobKey === null) return false
     updateView((current) => ({
       ...current,
-      ...selectInitialView(detail.jobs, linkedJobKey),
+      ...openingView(detail, linkedJobKey),
       linkedJobKey,
       manualSelection: false,
     }))
@@ -184,6 +187,8 @@ export function useRepositoryRunDetailController({
   useEffect(() => {
     const selection = view.selection
     if (!selection) return
+    seedOpeningRunLog(key, detail)
+    if (runLogCoversOpening(key, detail, selection)) return
     const cached = runLogsResource.peek(key)?.[stepKey(selection)]
     if (cached && canReuseRunLogs(cached, detail)) return
     if (!runCanChange(detail.run.state)) {

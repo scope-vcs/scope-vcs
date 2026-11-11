@@ -12,19 +12,16 @@ import { useCachedResource } from '@/lib/use-cached-resource'
 import { useHydrated } from '@/lib/use-hydrated'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { githubRunResult } from './github-run-status'
 import { GitHubWorkflowJobPane } from './github-workflow-job-pane'
-import {
-  githubJobKey,
-  githubRunCanChange,
-  selectGitHubJob,
-} from './github-workflow-run-detail-model'
+import { githubJobKey, githubRunCanChange } from './github-workflow-run-detail-model'
 import {
   githubWorkflowRunDetailIdentity,
   githubWorkflowRunDetailResource,
+  recordingFetch,
   useGitHubWorkflowRunRecheck,
 } from './github-workflow-run-detail-resource'
 import { RunDuration } from './run-duration'
@@ -63,11 +60,12 @@ export function GitHubWorkflowRunDetailPage({
   const scope = isLoaded ? repoResourceScope(repo, userId ?? null) : null
   const identity = scope ? githubWorkflowRunDetailIdentity(scope, params.run_id) : null
   const pageDetail = initialDetail && initialScope === scope ? initialDetail : null
+  const load = useMemo(() => recordingFetch(loadDetail), [loadDetail])
   const resource = useCachedResource({
     fallbackError: 'The run could not refresh.',
     identity,
     initialValue: pageDetail,
-    load: loadDetail,
+    load,
     resource: githubWorkflowRunDetailResource,
   })
   if (!resource.value) {
@@ -114,7 +112,9 @@ function GitHubWorkflowRunView({
     if (key !== null) setChosenKey(key)
     return key !== null
   })
-  const selectedJob = selectGitHubJob(detail.jobs, chosenKey)
+  const selectedJob = detail.jobs.find((job) => githubJobKey(job) === chosenKey)
+    ?? detail.jobs.find((job) => job.id === detail.opening_job_id)
+    ?? null
   useRunLogAbsence(params.run_id, selectedJob === null && !detail.jobs_not_read_yet)
 
   function pickJob(job: GitHubWorkflowJobResponse) {
@@ -174,6 +174,7 @@ function GitHubWorkflowRunView({
               id={runJobPanelId(githubJobKey(selectedJob))}
             >
               <GitHubWorkflowJobPane
+                includedLog={selectedJob.id === detail.opening_job_id ? detail.opening_job_log : null}
                 job={selectedJob}
                 key={githubJobKey(selectedJob)}
                 loadLog={loadLog}

@@ -17,17 +17,6 @@ export function githubRunCanChange({ jobs, run }: GitHubWorkflowRunDetailRespons
   return run.status !== 'completed' || jobs.length === 0 || jobs.some((job) => job.status !== 'completed')
 }
 
-export function selectGitHubJob(
-  jobs: readonly GitHubWorkflowJobResponse[],
-  chosenKey: string | null,
-): GitHubWorkflowJobResponse | null {
-  return (chosenKey === null ? undefined : jobs.find((job) => githubJobKey(job) === chosenKey))
-    ?? jobs.find((job) => githubRunResult(job.status, job.conclusion).state === 'failed')
-    ?? jobs.find((job) => job.status === 'in_progress')
-    ?? jobs[0]
-    ?? null
-}
-
 export function githubJobFailedStep(job: GitHubWorkflowJobResponse) {
   return githubRunResult(job.status, job.conclusion).state === 'failed'
     ? job.steps.find((step) => githubRunResult(step.status, step.conclusion).state === 'failed') ?? null

@@ -266,7 +266,9 @@ mod tests {
                     ],
                     steps: Vec::<RepositoryRunStepResponse>::new(),
                 }],
+                opening_step: None,
             }],
+            opening: None,
         };
 
         let output = detail_lines(&detail).join("\n");

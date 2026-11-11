@@ -256,13 +256,13 @@ export type GitHubWorkflowRunListResponse = { actions_url: string, workflow_runs
 
 export type GitHubWorkflowRunResponse = { id: number, workflow_name: string, branch: string | null, head_oid: string, event: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, html_url: string, run_started_at_unix: number | null, updated_at_unix: number, request_id: string | null, };
 
-export type GitHubWorkflowRunDetailResponse = { run: GitHubWorkflowRunResponse, jobs: Array<GitHubWorkflowJobResponse>, jobs_not_read_yet: boolean, };
+export type GitHubWorkflowRunDetailResponse = { run: GitHubWorkflowRunResponse, jobs: Array<GitHubWorkflowJobResponse>, jobs_not_read_yet: boolean, opening_job_id: number | null, opening_job_log: GitHubWorkflowJobLogResponse | null, };
 
 export type GitHubWorkflowJobResponse = { id: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, html_url: string, steps: Array<GitHubWorkflowStepResponse>, };
 
 export type GitHubWorkflowStepResponse = { number: number, name: string, status: GitHubCheckStatus, conclusion: GitHubCheckConclusion | null, started_at_unix: number | null, completed_at_unix: number | null, };
 
-export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string, truncated: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
+export type GitHubWorkflowJobLogResponse = { "state": "kept", text: string, truncated: boolean, fetched: boolean, } | { "state": "expired" } | { "state": "not_run" } | { "state": "pending" };
 
 export type HistoryPageRequest = { feed: HistoryFeed | null, view: ViewId | null, before: string | null, search: string | null, };
 
@@ -522,7 +522,7 @@ export type RepositoryRunJobState = "blocked" | "queued" | "dispatching" | "runn
 
 export type RepositoryRunJobResponse = { key: string, needs: Array<string>, pinned_container_image: string, state: RepositoryRunJobState, created_at_unix: number, started_at_unix: number | null, updated_at_unix: number, completed_at_unix: number | null, };
 
-export type RepositoryRunJobDetailResponse = { job: RepositoryRunJobResponse, attempts: Array<RepositoryRunAttemptResponse>, };
+export type RepositoryRunJobDetailResponse = { job: RepositoryRunJobResponse, attempts: Array<RepositoryRunAttemptResponse>, opening_step: RepositoryRunStepRefResponse | null, };
 
 export type AttemptState = "dispatching" | "running" | "succeeded" | "failed" | "canceled" | "lost";
 
@@ -554,9 +554,15 @@ export type RepositoryRunHistoryPageResponse = { runs: Array<RepositoryRunListIt
 
 export type RepositoryRunLogResponse = { byte_length: number, position: number, sequence: number, text: string, created_at_unix: number, };
 
-export type RepositoryRunDetailResponse = { run: RepositoryRunSummaryResponse, jobs: Array<RepositoryRunJobDetailResponse>, };
-
 export type RepositoryRunStepLogPageResponse = { logs: Array<RepositoryRunLogResponse>, next_after: number, logs_truncated: boolean, has_earlier: boolean, has_more: boolean, };
+
+export type RepositoryRunStepRefResponse = { attempt_id: string, step_index: number, };
+
+export type RepositoryRunOpeningStepResponse = { attempt_id: string, step_index: number, log: RepositoryRunStepLogPageResponse, };
+
+export type RepositoryRunOpeningResponse = { job_key: string, step: RepositoryRunOpeningStepResponse | null, };
+
+export type RepositoryRunDetailResponse = { run: RepositoryRunSummaryResponse, jobs: Array<RepositoryRunJobDetailResponse>, opening: RepositoryRunOpeningResponse | null, };
 
 export const ApiRouteTemplates = {
   account: "/v1/account",

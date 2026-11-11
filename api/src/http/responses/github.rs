@@ -125,6 +125,8 @@ pub(crate) struct GitHubWorkflowRunDetailResponse {
     pub(crate) run: GitHubWorkflowRunResponse,
     pub(crate) jobs: Vec<GitHubWorkflowJobResponse>,
     pub(crate) jobs_not_read_yet: bool,
+    pub(crate) opening_job_id: Option<u64>,
+    pub(crate) opening_job_log: Option<GitHubWorkflowJobLogResponse>,
 }
 
 #[derive(Debug, Serialize)]
@@ -156,7 +158,11 @@ pub(crate) struct GitHubWorkflowStepResponse {
 #[cfg_attr(feature = "type-export", derive(schemars::JsonSchema, ts_rs::TS))]
 #[cfg_attr(feature = "type-export", ts(tag = "state", rename_all = "snake_case"))]
 pub(crate) enum GitHubWorkflowJobLogResponse {
-    Kept { text: String, truncated: bool },
+    Kept {
+        text: String,
+        truncated: bool,
+        fetched: bool,
+    },
     Expired,
     NotRun,
     Pending,

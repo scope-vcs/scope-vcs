@@ -18,9 +18,11 @@ import {
 } from './run-layout'
 
 export function RunRow({
+  onOpen,
   params,
   run,
 }: {
+  onOpen: () => void
   params: RepoParams
   run: RepositoryRunHistoryPageResponse['runs'][number]
 }) {
@@ -34,7 +36,12 @@ export function RunRow({
         'group outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         isRunning && 'bg-info-soft/40',
       )}
-      onClick={(event) => startRunListTiming(event, run.id)}
+      onClick={(event) => {
+        startRunListTiming(event, run.id)
+        onOpen()
+      }}
+      onFocus={onOpen}
+      onPointerEnter={onOpen}
       params={{ ...params, runId: run.id }}
       to="/$owner/$repo/runs/$runId"
     >

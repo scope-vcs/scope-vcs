@@ -199,6 +199,29 @@ pub struct RepositoryRunJobResponse {
 pub struct RepositoryRunJobDetailResponse {
     pub job: RepositoryRunJobResponse,
     pub attempts: Vec<RepositoryRunAttemptResponse>,
+    pub opening_step: Option<RepositoryRunStepRefResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunStepRefResponse {
+    pub attempt_id: String,
+    pub step_index: u32,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunOpeningStepResponse {
+    pub attempt_id: String,
+    pub step_index: u32,
+    pub log: RepositoryRunStepLogPageResponse,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
+pub struct RepositoryRunOpeningResponse {
+    pub job_key: String,
+    pub step: Option<RepositoryRunOpeningStepResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -206,6 +229,7 @@ pub struct RepositoryRunJobDetailResponse {
 pub struct RepositoryRunDetailResponse {
     pub run: RepositoryRunSummaryResponse,
     pub jobs: Vec<RepositoryRunJobDetailResponse>,
+    pub opening: Option<RepositoryRunOpeningResponse>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -278,7 +302,7 @@ pub struct RepositoryRunHistoryPageResponse {
     pub next_cursor: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepositoryRunLogResponse {
     pub byte_length: usize,
@@ -288,7 +312,7 @@ pub struct RepositoryRunLogResponse {
     pub created_at_unix: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 pub struct RepositoryRunStepLogPageResponse {
     pub logs: Vec<RepositoryRunLogResponse>,

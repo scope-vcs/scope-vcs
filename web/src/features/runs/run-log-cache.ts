@@ -183,13 +183,7 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
     const retained = mode === 'earlier' || previous.viewingEarlier
       ? mergeStepLogPage(previous, page, after)
       : mergeFetchedRunLogs(previous, page, after)
-    writeRunLogCache(key, target, {
-      ...retained, error: null, loading: false, initialized: true,
-      logsTruncated: page.logs_truncated, hasMore: page.has_more,
-      viewingEarlier: before !== undefined, failedPage: null,
-      nextAfter: page.next_after,
-      completedVersion,
-    })
+    writeRunLogCache(key, target, fetchedLogState(retained, page, before !== undefined, completedVersion))
     return true
   }, (error: unknown) => {
     if (inFlight.get(requestKey) !== request) return false
@@ -203,6 +197,48 @@ export function refreshRunLogs({ key, target, detail, params, loadLogs, mode = '
   })
   inFlight.set(requestKey, request)
   return request
+}
+
+export function seedOpeningRunLog(key: string, detail: RepositoryRunDetailResponse) {
+  const { opening } = detail
+  const step = opening?.step
+  if (!opening || !step) return
+  const target = { jobKey: opening.job_key, attemptId: step.attempt_id, stepIndex: step.step_index }
+  const current = runLogsResource.peek(key)?.[stepKey(target)]
+  if (current?.loading) return
+  if (current?.initialized && (current.viewingEarlier || current.nextAfter >= step.log.next_after)) return
+  writeRunLogCache(key, target, fetchedLogState(
+    mergeFetchedRunLogs(current?.initialized ? current : EMPTY_LOG_STATE, step.log, undefined),
+    step.log,
+    false,
+    completedRunLogVersion(detail),
+  ))
+}
+
+export function runLogCoversOpening(key: string, detail: RepositoryRunDetailResponse, selection: StepSelection) {
+  const { opening } = detail
+  const step = opening?.step
+  if (!opening || !step || selection.jobKey !== opening.job_key ||
+    selection.attemptId !== step.attempt_id || selection.stepIndex !== step.step_index) {
+    return false
+  }
+  const cached = runLogsResource.peek(key)?.[stepKey(selection)]
+  return Boolean(cached?.initialized && !cached.viewingEarlier && cached.nextAfter >= step.log.next_after)
+}
+
+function fetchedLogState(
+  retained: { logs: RepositoryRunLogResponse[]; hasEarlier: boolean },
+  page: RepositoryRunStepLogPageResponse,
+  viewingEarlier: boolean,
+  completedVersion: string | null,
+): StepLogState {
+  return {
+    ...retained, error: null, loading: false, initialized: true,
+    logsTruncated: page.logs_truncated, hasMore: page.has_more,
+    viewingEarlier, failedPage: null,
+    nextAfter: page.next_after,
+    completedVersion,
+  }
 }
 
 function mergeFetchedRunLogs(

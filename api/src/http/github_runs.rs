@@ -21,7 +21,7 @@ use axum::{
 };
 use scope_domain::{
     github_connection::GitHubConnection,
-    github_workflow_jobs::{GitHubJobLogState, github_run_visible},
+    github_workflow_jobs::{GitHubJobLogState, github_opening_job, github_run_visible},
 };
 use scope_postgres::db::GitHubWorkflowRunDetailRead;
 
@@ -33,7 +33,16 @@ pub(crate) async fn get_github_workflow_run(
     let OpenedRun { connection, detail } =
         open_run(&state, &headers, &owner, &repo, run_id).await?;
     let jobs = github_workflow_jobs::run_jobs(&state, &connection, &detail, unix_now()?).await?;
+    let opening_job = github_opening_job(&jobs.jobs);
+    let opening_job_log = match opening_job.filter(|job| job.is_completed()) {
+        Some(job) => github_job_logs::stored_job_log(&state, job)
+            .await?
+            .map(job_log_response),
+        None => None,
+    };
     Ok(Json(GitHubWorkflowRunDetailResponse {
+        opening_job_id: opening_job.map(|job| job.github_job_id),
+        opening_job_log,
         run: github_workflow_run_response(detail.read),
         jobs: jobs
             .jobs
@@ -62,17 +71,26 @@ pub(crate) async fn get_github_workflow_job_log(
         .await?
         .ok_or_else(|| ApiError::not_found("job not found"))?;
     let log = github_job_logs::job_log(&state, &connection, &job, unix_now()?).await?;
-    Ok(Json(match log {
+    Ok(Json(job_log_response(log)))
+}
+
+fn job_log_response(log: GitHubJobLogRead) -> GitHubWorkflowJobLogResponse {
+    match log {
         GitHubJobLogRead::NotRun => GitHubWorkflowJobLogResponse::NotRun,
         GitHubJobLogRead::Pending => GitHubWorkflowJobLogResponse::Pending,
-        GitHubJobLogRead::Read(GitHubJobLogState::Expired) => GitHubWorkflowJobLogResponse::Expired,
-        GitHubJobLogRead::Read(GitHubJobLogState::Kept(log)) => {
-            GitHubWorkflowJobLogResponse::Kept {
-                text: log.text,
-                truncated: log.truncated,
-            }
-        }
-    }))
+        GitHubJobLogRead::Read {
+            log: GitHubJobLogState::Expired,
+            ..
+        } => GitHubWorkflowJobLogResponse::Expired,
+        GitHubJobLogRead::Read {
+            log: GitHubJobLogState::Kept(log),
+            fetched,
+        } => GitHubWorkflowJobLogResponse::Kept {
+            text: log.text,
+            truncated: log.truncated,
+            fetched,
+        },
+    }
 }
 
 struct OpenedRun {

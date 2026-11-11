@@ -1,5 +1,6 @@
 import type { RepoParams, RepoRunHistoryInput } from '@/api/types'
 import type {
+  RepositoryRunDetailResponse,
   RepositoryRunHistoryPageResponse,
   RepositoryRunWorkflowListResponse,
 } from '@/api/types.generated'
@@ -22,6 +23,8 @@ import { useRepoLayout } from '../repo-detail/repo-layout-context'
 import { repoResourceScope } from '../repo-detail/repo-resource-scope'
 import { initializeRunHistory, loadMoreRunHistory, refreshRunHistory, runHistoryCacheKey, runHistoryResource, type RunPageLoader } from './run-history-cache'
 import { runWorkflowsResource } from './run-workflows-resource'
+import { startRunDetail } from './run-detail-resource'
+import { runLogCacheKey } from './run-log-cache'
 
 const HISTORY_CHANGES = ['Created', 'StatusChanged'] as const
 
@@ -43,6 +46,7 @@ type RepositoryRunsPageProps = {
     input: RepoParams,
     signal?: AbortSignal,
   ) => Promise<RepositoryRunWorkflowListResponse | null>
+  loadRunDetail: (runId: string, signal?: AbortSignal) => Promise<RepositoryRunDetailResponse>
   params: RepoParams
   workflow?: string
 }
@@ -54,7 +58,7 @@ export function RepositoryRunsPage(props: RepositoryRunsPageProps) {
     ? repoResourceScope(repo, userId ?? null)
     : null
   const cacheKey = scope ? runHistoryCacheKey(scope, 'native', props.workflow) : null
-  return <RepositoryRunsPageContent github={props.github} initialResources={props.initialResources} loadPage={props.loadPage} loadHistory={props.loadHistory} loadWorkflows={props.loadWorkflows} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} scope={scope} />
+  return <RepositoryRunsPageContent github={props.github} initialResources={props.initialResources} loadPage={props.loadPage} loadHistory={props.loadHistory} loadWorkflows={props.loadWorkflows} loadRunDetail={props.loadRunDetail} params={props.params} workflow={props.workflow} key={cacheKey ?? 'unavailable'} cacheKey={cacheKey} scope={scope} />
 }
 
 function RepositoryRunsPageContent({
@@ -64,6 +68,7 @@ function RepositoryRunsPageContent({
   loadPage,
   loadHistory,
   loadWorkflows,
+  loadRunDetail,
   params,
   scope,
   workflow,
@@ -100,6 +105,9 @@ function RepositoryRunsPageContent({
     }, [key, input, loadHistory, loadPage]),
   })
   const loadMore = () => loadMoreRunHistory({ key, input, loadHistory })
+  const openRun = (runId: string) => {
+    if (scope) startRunDetail(runLogCacheKey(scope, runId), (signal) => loadRunDetail(runId, signal))
+  }
   const filteredRuns = useMemo(() => history
     ? history.runs.filter((run) => runMatchesStatusFilter(run, statusFilter)) : [],
   [history, statusFilter])
@@ -171,6 +179,7 @@ function RepositoryRunsPageContent({
             ) : undefined}
             loadMore={() => void loadMore()}
             loadingMore={loadingMore}
+            onOpenRun={openRun}
             params={params}
             runs={filteredRuns}
             selectedWorkflowName={selectedWorkflow?.name}

@@ -94,7 +94,7 @@ async fn active_run(log_chunks: usize) -> InspectableRun {
 }
 
 #[tokio::test]
-async fn run_detail_reconstructs_jobs_attempts_and_steps() {
+async fn run_detail_reconstructs_jobs_attempts_and_steps_and_opens_on_the_last_steps_log() {
     let fixture = inspectable_run(false, 2).await;
     let uri = scope_api_contract::routes::repo_run_detail(
         TEST_REPO_OWNER,
@@ -112,6 +112,25 @@ async fn run_detail_reconstructs_jobs_attempts_and_steps() {
     assert_eq!(
         body["jobs"][0]["attempts"][0]["steps"][0]["command"],
         "printf 'hello from runner\\n'"
+    );
+    let step = serde_json::json!({ "attempt_id": fixture.attempt_id, "step_index": 0 });
+    assert_eq!(body["jobs"][0]["opening_step"], step);
+    assert_eq!(body["opening"]["job_key"], "checks");
+    let opening_step = &body["opening"]["step"];
+    assert_eq!(opening_step["attempt_id"], step["attempt_id"]);
+    assert_eq!(opening_step["step_index"], 0);
+    assert_eq!(
+        opening_step["log"]["logs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|log| log["text"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["first\n", "second\n"]
+    );
+    assert_eq!(
+        opening_step["log"]["next_after"],
+        fixture.second_log_position
     );
 }
 

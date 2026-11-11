@@ -3,19 +3,84 @@ use scope_api_contract::{
     RepositoryRunAttemptResponse, RepositoryRunCacheObservationResponse,
     RepositoryRunCacheResponse, RepositoryRunCacheSetupObservationResponse,
     RepositoryRunDetailResponse, RepositoryRunJobDetailResponse, RepositoryRunJobResponse,
-    RepositoryRunStepResponse, RepositoryRunSummaryResponse, RepositoryRunTerminalReason,
+    RepositoryRunOpeningResponse, RepositoryRunStepRefResponse, RepositoryRunStepResponse,
+    RepositoryRunSummaryResponse, RepositoryRunTerminalReason,
 };
 use scope_domain::runs::{
     cache::{definition::WorkflowCache, observation::AttemptCacheObservation},
-    step::AttemptTerminalReason,
+    opening::{JobLatestSteps, job_opening_step, run_opening},
+    step::{AttemptTerminalReason, RunAttemptStep},
 };
 use scope_postgres::db::RunDetail;
 use std::collections::BTreeMap;
 
+pub(super) struct RunDetailOpening {
+    pub(super) job_key: String,
+    pub(super) step: Option<RepositoryRunStepRefResponse>,
+}
+
+pub(super) fn run_detail_opening(detail: &RunDetail) -> Option<RunDetailOpening> {
+    let latest = latest_steps(detail);
+    let jobs = detail
+        .workflow_revision
+        .definition()
+        .jobs()
+        .iter()
+        .filter_map(|definition| {
+            let key = definition.id().as_str();
+            let job = detail.jobs.iter().find(|job| job.key.as_str() == key)?;
+            Some((
+                key,
+                JobLatestSteps {
+                    job_state: job.state,
+                    steps: latest.get(key).copied().unwrap_or_default(),
+                },
+            ))
+        })
+        .collect::<Vec<_>>();
+    let latest_by_job = jobs.iter().map(|(_, latest)| *latest).collect::<Vec<_>>();
+    let opening = run_opening(&latest_by_job)?;
+    Some(RunDetailOpening {
+        job_key: jobs[opening.job].0.to_string(),
+        step: opening.step.map(step_ref),
+    })
+}
+
+fn latest_steps(detail: &RunDetail) -> BTreeMap<&str, &[RunAttemptStep]> {
+    let mut latest = BTreeMap::<&str, (u32, &[RunAttemptStep])>::new();
+    for attempt in &detail.attempts {
+        let job_key = attempt.attempt.job_key.as_str();
+        if latest
+            .get(job_key)
+            .is_none_or(|(number, _)| attempt.attempt.number > *number)
+        {
+            latest.insert(job_key, (attempt.attempt.number, &attempt.steps));
+        }
+    }
+    latest
+        .into_iter()
+        .map(|(job_key, (_, steps))| (job_key, steps))
+        .collect()
+}
+
+fn step_ref(step: &RunAttemptStep) -> RepositoryRunStepRefResponse {
+    RepositoryRunStepRefResponse {
+        attempt_id: step.attempt_id.clone(),
+        step_index: step.step_index,
+    }
+}
+
 pub(super) fn build_run_detail_response(
     detail: RunDetail,
     run: RepositoryRunSummaryResponse,
+    opening: Option<RepositoryRunOpeningResponse>,
 ) -> Result<RepositoryRunDetailResponse, ApiError> {
+    let mut opening_steps = latest_steps(&detail)
+        .into_iter()
+        .filter_map(|(job_key, steps)| {
+            Some((job_key.to_string(), step_ref(job_opening_step(steps)?)))
+        })
+        .collect::<BTreeMap<_, _>>();
     let workflow = detail.workflow_revision.definition();
     let mut attempts_by_job = BTreeMap::<String, Vec<RepositoryRunAttemptResponse>>::new();
     for attempt_detail in detail.attempts {
@@ -113,6 +178,7 @@ pub(super) fn build_run_detail_response(
                     completed_at_unix: job.completed_at_unix,
                 },
                 attempts,
+                opening_step: opening_steps.remove(key),
             })
         })
         .collect::<Result<Vec<_>, ApiError>>()?;
@@ -121,7 +187,7 @@ pub(super) fn build_run_detail_response(
             "persisted run execution is not present in its workflow revision",
         ));
     }
-    Ok(RepositoryRunDetailResponse { run, jobs })
+    Ok(RepositoryRunDetailResponse { run, jobs, opening })
 }
 
 fn cache_responses(

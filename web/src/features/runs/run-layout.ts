@@ -18,10 +18,6 @@ export const RUN_LINK_CLASS = 'underline-offset-2 hover:text-foreground hover:un
 
 export const RUN_LOG_TEXT_CLASS = 'bg-background font-mono text-xs leading-5 text-foreground'
 
-export function runLogPreClass(wrap: boolean) {
-  return cn('mt-1 overflow-x-auto break-words pb-4', wrap ? 'whitespace-pre-wrap' : 'whitespace-pre')
-}
-
 export const RUN_JOB_LIST_CLASS =
   'flex min-w-0 flex-1 flex-wrap gap-1 p-2 lg:flex-col lg:flex-nowrap lg:gap-0 lg:p-0'
 
