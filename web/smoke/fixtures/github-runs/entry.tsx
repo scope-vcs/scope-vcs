@@ -85,14 +85,22 @@ const runningJob = job(103, 'build', {
   status: 'in_progress', conclusion: null, completed_at_unix: null,
   steps: [setUp, checkout, step(3, 'Build the web bundle and the API image', { status: 'in_progress', conclusion: null, completed_at_unix: null }), step(4, 'Upload artifacts', { status: 'queued', conclusion: null, started_at_unix: null, completed_at_unix: null })],
 })
+const validate = 'Validate selected components'
+const passedJob = (id: number, name: string) => job(id, name, { steps: [setUp, checkout, step(3, 'Run checks', { completed_at_unix: now - 200 })] })
 let runDetail: GitHubWorkflowRunDetailResponse = {
   run: initialRuns.workflow_runs[0]!,
   jobs: [
-    job(101, 'lint', { steps: [setUp, checkout, step(3, 'Install dependencies'), step(4, 'Lint'), step(5, 'Complete job')] }),
-    job(102, 'test (ubuntu-latest, node 24)', {
+    job(101, 'lint', { steps: [setUp, checkout, step(3, 'Install dependencies'), step(4, 'Lint', { completed_at_unix: now - 240 }), step(5, 'Complete job')] }),
+    job(102, `${validate} / Server validation / test (ubuntu-latest, node 24)`, {
       conclusion: 'failure',
-      steps: [setUp, checkout, step(3, 'Run the unit and integration test suites', { conclusion: 'failure' }), step(4, 'Upload coverage', { conclusion: 'skipped' }), step(5, 'Complete job')],
+      steps: [setUp, checkout, step(3, 'Run the unit and integration test suites', { conclusion: 'failure', completed_at_unix: now - 230 }), step(4, 'Upload coverage', { conclusion: 'skipped' }), step(5, 'Complete job')],
     }),
+    passedJob(106, `${validate} / Server validation / Web validation / Check scope-web components in a production build`),
+    passedJob(107, `${validate} / Server validation / Server validation gate`),
+    passedJob(108, `${validate} / Client validation / Check the command-line client on every supported platform and shell`),
+    passedJob(109, `${validate} / Client validation / Check desktop`),
+    passedJob(110, `${validate} / Integration validation / Signed-in contribution journey`),
+    passedJob(111, `${validate} / Integration validation / Seeded local stack browser smoke`),
     runningJob,
     job(104, 'deploy preview environment to the staging cluster', {
       status: 'queued', conclusion: null, started_at_unix: null, completed_at_unix: null,
@@ -103,27 +111,42 @@ let runDetail: GitHubWorkflowRunDetailResponse = {
   opening_job_id: 102,
   opening_job_log: null,
 }
-const stamp = '2026-10-05T12:00:00.1234567Z '
+const ESC = '\u001b'
+const stamp = (offset: number) => `${new Date((now - 300 + offset) * 1000).toISOString().replace('Z', '0000Z')} `
+const stamped = (offset: number, lines: string[]) => lines.map((line) => `${stamp(offset)}${line}`)
+const testLog = [
+  ...stamped(10, ['Current runner version: \'2.329.0\'', '##[group]Operating System', 'Ubuntu', '24.04.3', 'LTS', '##[endgroup]']),
+  ...stamped(20, ['##[group]Run actions/checkout@v4', 'with:', '  repository: octo/demo', '##[endgroup]', 'Syncing repository: octo/demo']),
+  ...stamped(30, [
+    '##[group]Run pnpm test',
+    'pnpm test',
+    'shell: /usr/bin/bash -e {0}',
+    '##[endgroup]',
+    '##[command]/usr/bin/pnpm test',
+    ...Array.from({ length: 40 }, (_, index) => `  ${ESC}[32m✔${ESC}[39m suite ${index} passes every case it was given, including the long-running integration fixtures ${ESC}[2m(${index * 3}ms)${ESC}[22m`),
+    `  ${ESC}[31m× request queue keeps its order${ESC}[39m ${ESC}[2m(12ms)${ESC}[22m`,
+    `    ${ESC}[1mAssertionError${ESC}[22m: expected ${ESC}[33m3${ESC}[39m runs, got ${ESC}[33m2${ESC}[39m`,
+    `    at ${ESC}[36mrun-history-model.test.ts:41:10${ESC}[39m`,
+    `${ESC}[38;5;244mtests 41 · pass 40 · fail 1${ESC}[0m`,
+    '##[warning]Node.js 20 actions are deprecated.',
+    '##[error]Process completed with exit code 1.',
+  ]),
+  ...stamped(50, ['Cleaning up orphan processes']),
+]
 const logs: Record<string, GitHubWorkflowJobLogResponse> = {
-  101: { state: 'kept', text: `\uFEFF${stamp}##[group]Run pnpm lint\n${stamp}$ oxlint src\n${stamp}Found 0 warnings and 0 errors.\n`, truncated: false, fetched: false },
-  102: {
-    state: 'kept',
-    text: Array.from({ length: 40 }, (_, index) => `${stamp}  ✔ suite ${index} passes every case it was given, including the long-running integration fixtures (${index * 3}ms)`).join('\n')
-      + `\n${stamp}  ✖ request queue keeps its order (12ms)\n${stamp}##[error]Process completed with exit code 1.\n`,
-    truncated: true,
-    fetched: false,
-  },
-  103: { state: 'kept', text: `${stamp}Build finished.\n`, truncated: false, fetched: false },
+  101: { state: 'kept', text: `﻿${stamp(40)}##[group]Run pnpm lint\n${stamp(40)}$ oxlint src\n${stamp(40)}##[endgroup]\n${stamp(41)}Found 0 warnings and 0 errors.\n`, truncated: false, fetched: false },
+  102: { state: 'kept', text: `﻿${testLog.join('\n')}\n`, truncated: true, fetched: false },
+  103: { state: 'kept', text: `${stamp(35)}Build finished.\n`, truncated: false, fetched: false },
 }
 runDetail = { ...runDetail, opening_job_log: logs[102]! }
 const longLogDetail: GitHubWorkflowRunDetailResponse = {
   run: initialRuns.workflow_runs[2]!,
-  jobs: [job(301, 'package', { steps: [setUp, step(2, 'Package every artifact')] })],
+  jobs: [job(301, 'package', { steps: [setUp, step(2, 'Package every artifact', { completed_at_unix: now - 200 })] })],
   jobs_not_read_yet: false,
   opening_job_id: 301,
   opening_job_log: {
     state: 'kept',
-    text: Array.from({ length: 21_000 }, (_, index) => `${stamp}packaged artifact ${index} into the release bundle`).join('\n'),
+    text: Array.from({ length: 21_000 }, (_, index) => `${stamp(20)}packaged artifact ${index} into the release bundle`).join('\n'),
     truncated: false,
     fetched: false,
   },
@@ -139,6 +162,15 @@ Object.assign(window, {
     const finished = { ...runningJob, status: 'completed' as const, conclusion: 'success' as const, completed_at_unix: now }
     runDetail = { ...runDetail, jobs: runDetail.jobs.map((listed) => listed.id === 103 ? finished : listed) }
   },
+  startDeploy: () => {
+    const deploying = step(2, 'Deploy the preview', { status: 'in_progress', conclusion: null, completed_at_unix: null })
+    runDetail = {
+      ...runDetail,
+      jobs: runDetail.jobs.map((listed) => listed.id === 104
+        ? { ...listed, status: 'in_progress' as const, started_at_unix: now - 290, steps: [setUp, deploying] }
+        : listed),
+    }
+  },
   emitRunChanged: (githubRunId: number) => invalidateRepoResources(repoResourceScope(live.repo, 'viewer'), {
     repo_id: 'octo/demo', incarnation_id: 'incarnation', version: 0, kind: { GitHubWorkflowRunChanged: { github_run_id: githubRunId } },
   }),
@@ -147,7 +179,7 @@ Object.assign(window, {
 async function loadRunDetail(runId: string) {
   runLoads.push(runId)
   await new Promise<void>((resolve) => detailResolvers.push(resolve))
-  return runId === '3' ? longLogDetail : runDetail
+  return structuredClone(runId === '3' ? longLogDetail : runDetail)
 }
 async function loadJobLog(jobId: string) {
   logLoads.push(jobId)

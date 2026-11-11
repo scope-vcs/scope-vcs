@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { RepositoryRunAttemptResponse, RepositoryRunDetailResponse } from '@/api/types.generated'
+import { runJobLinkForHash, runLogLineId } from './run-job-ids'
+import { readStepLogLines } from './run-log-lines'
 import {
   attemptForJob,
   jobsHaveDependencies,
   latestAttempt,
   mergeStepLogPage,
   mergeStepLogs,
+  openingView,
   reconcileAttemptOverrides,
   runCanChange,
   selectAttempt,
@@ -221,5 +225,39 @@ describe('run detail navigation', () => {
     assert.deepEqual(open.selection, target)
     assert.equal(closed.selection, null)
     assert.equal(closed.selectedJobKey, 'deploy')
+  })
+
+  it('links a native log line by its attempt and log position, whichever page shows it', () => {
+    const log = (position: number, text: string) => ({ position, sequence: position, text, byte_length: text.length, created_at_unix: 1 })
+    const firstPage = readStepLogLines([log(4, 'compiling\n'), log(5, 'test a ok\nAssertionError: '), log(6, 'expected 3\nfailed\n')])
+    const latestPage = readStepLogLines([log(5, 'test a ok\nAssertionError: '), log(6, 'expected 3\nfailed\n')])
+    const midLinePage = readStepLogLines([log(6, 'expected 3\nfailed\n')])
+    const failure = firstPage.find((line) => line.text === 'AssertionError: expected 3')!
+    assert.deepEqual(firstPage.map((line) => line.anchor), ['4.0', '5.0', '5.1', '6.1'])
+    for (const page of [latestPage, midLinePage]) {
+      for (const line of page) {
+        const named = firstPage.find((first) => first.anchor === line.anchor)
+        if (named) assert.equal(line.text, named.text, line.anchor)
+      }
+    }
+    assert.equal(latestPage.find((line) => line.anchor === failure.anchor)?.text, failure.text)
+    assert.equal(midLinePage.find((line) => line.anchor === '6.1')?.text, 'failed')
+
+    const attempt = (id: string, number: number): RepositoryRunAttemptResponse => ({
+      id, number, external_run_id: null, runtime_version: '1', state: 'failed', created_at_unix: 1, started_at_unix: 1,
+      completed_at_unix: 2, terminal_reason: null, cache_setup: null, caches: [],
+      steps: [{ index: 0, name: 'Test', command: 'make test', state: 'failed', started_at_unix: 1, completed_at_unix: 2, exit_code: 1 }],
+    })
+    const detail: Pick<RepositoryRunDetailResponse, 'jobs' | 'opening'> = {
+      jobs: [{
+        job: { key: 'test', needs: [], pinned_container_image: 'image', state: 'failed', created_at_unix: 1, started_at_unix: 1, updated_at_unix: 2, completed_at_unix: 2 },
+        attempts: [attempt('first', 1), attempt('retry', 2)],
+        opening_step: { attempt_id: 'retry', step_index: 0 },
+      }],
+      opening: null,
+    }
+    const open = (attemptId: string) => openingView(detail, runJobLinkForHash(['test'], `#${runLogLineId('test', attemptId, 0, failure.anchor)}`))
+    assert.deepEqual(open('first').selection, { attemptId: 'first', jobKey: 'test', stepIndex: 0 })
+    assert.deepEqual(open('retired').selection, { attemptId: 'retry', jobKey: 'test', stepIndex: 0 })
   })
 })

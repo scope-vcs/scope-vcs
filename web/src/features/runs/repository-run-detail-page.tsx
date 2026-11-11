@@ -70,6 +70,7 @@ function RunDetailView({
     actionError,
     attemptOverrides,
     detail,
+    link,
     metadataError,
     pendingAction,
     performAction,
@@ -112,6 +113,7 @@ function RunDetailView({
       <RunDetailJobs
         attemptOverrides={attemptOverrides}
         jobs={detail.jobs}
+        link={link}
         onSelectAttempt={selectAttempt}
         onSelectJob={showJob}
         onSelectStep={toggleStep}

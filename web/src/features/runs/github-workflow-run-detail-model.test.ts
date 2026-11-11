@@ -7,12 +7,13 @@ import type {
 } from '@/api/types.generated'
 import {
   githubJobFailedStep,
+  githubJobLog,
   githubJobLogAbsence,
+  githubOpeningStep,
   githubRunCanChange,
   isGitHubRunId,
-  stripLogTimestamps,
 } from './github-workflow-run-detail-model'
-import { jobKeyForHash } from './run-job-ids'
+import { runJobLinkForHash, runJobPanelId, runLogLineId } from './run-job-ids'
 
 function job(id: number, overrides: Partial<GitHubWorkflowJobResponse> = {}): GitHubWorkflowJobResponse {
   return {
@@ -50,10 +51,17 @@ test('GitHub numbers its runs while Scope prefixes its own', () => {
   for (const runId of ['run_01h', '', '12a', '-1']) assert.equal(isGitHubRunId(runId), false, runId)
 })
 
-test('only a run-job hash names a job', () => {
-  assert.equal(jobKeyForHash(['2'], '#run-job-3'), null)
-  assert.equal(jobKeyForHash(['2'], '#ci'), null)
-  assert.equal(jobKeyForHash(['2'], ''), null)
+test('a run-job hash names a job, and a line hash also names its step, line and native attempt', () => {
+  const keys = ['2', 'build linux']
+  assert.deepEqual(runJobLinkForHash(keys, `#${runJobPanelId('build linux')}`), { key: 'build linux', attempt: null, step: null, line: null })
+  assert.deepEqual(runJobLinkForHash(keys, `#${runLogLineId('2', null, 4, '435')}`), { key: '2', attempt: null, step: 4, line: '435' })
+  assert.deepEqual(
+    runJobLinkForHash(keys, `#${runLogLineId('build linux', 'attempt:1', 0, '17.3')}`),
+    { key: 'build linux', attempt: 'attempt:1', step: 0, line: '17.3' },
+  )
+  for (const hash of ['#run-job-3', '#run-job-3:4:L1', '#run-job-2:4', '#run-job-2:a:4:L1.', '#ci', '']) {
+    assert.equal(runJobLinkForHash(keys, hash), null, hash)
+  }
 })
 
 test('a run can change until it and every job it lists complete', () => {
@@ -70,18 +78,63 @@ test('a failed job names the step it stopped at', () => {
   ] satisfies GitHubWorkflowJobResponse['steps']
   assert.equal(githubJobFailedStep(job(1, { conclusion: 'failure', steps }))?.name, 'Test')
   assert.equal(githubJobFailedStep(job(1, { steps })), null)
+  assert.equal(githubOpeningStep(job(1, { conclusion: 'failure', steps })), 2)
+  assert.equal(githubOpeningStep(job(1, { steps })), 2, 'a passed job opens its longest step')
 })
 
-test('log lines lose the timestamps GitHub stamps on them', () => {
-  assert.equal(
-    stripLogTimestamps(
-      '﻿2026-10-05T12:00:00.1234567Z ##[group]Run tests\r\n' +
-      '2026-10-05T12:00:01.0000000Z   ok 1 - adds\n' +
-      '2026-10-05T12:00:02Z\n' +
-      'printed 2026-10-05T12:00:03.0000000Z mid-line\n',
-    ),
-    '##[group]Run tests\r\n  ok 1 - adds\n\nprinted 2026-10-05T12:00:03.0000000Z mid-line\n',
-  )
+test('job log lines start each step at the next unclaimed group line in its start second, leaving earlier steps of that second the lines before it', () => {
+  const at = (time: string) => Date.parse(`2026-10-05T12:00:${time}Z`) / 1000
+  const steps = [
+    { number: 1, started_at_unix: at('01') },
+    { number: 2, started_at_unix: at('03') },
+    { number: 3, started_at_unix: null },
+    { number: 4, started_at_unix: at('05') },
+    { number: 5, started_at_unix: at('09') },
+    { number: 6, started_at_unix: at('11') },
+    { number: 7, started_at_unix: at('12') },
+  ]
+  const log = githubJobLog([
+    '\uFEFF2026-10-05T12:00:00.5000000Z before the first step',
+    '2026-10-05T12:00:02.9999999Z ##[group]Set up',
+    'continued without a timestamp',
+    '2026-10-05T12:00:03.0000000Z ##[group]Check out',
+    '2026-10-05T12:00:04.1000000Z fetched',
+    '2026-10-05T12:00:06.0000000Z ##[group]Run pnpm test',
+    '2026-10-05T12:00:06.0000000Z ##[endgroup]',
+    '2026-10-05T12:00:09.1000000Z not ok 3 - request queue keeps its order',
+    '2026-10-05T12:00:09.2000000Z ##[error]Process completed with exit code 1.',
+    '2026-10-05T12:00:09.3000000Z ##[group]Run actions/upload-artifact@v4',
+    '2026-10-05T12:00:09.4000000Z with:',
+    '2026-10-05T12:00:12.0000000Z Post job cleanup.',
+    '2026-10-05T12:00:12.1000000Z ##[command]/usr/bin/git version',
+    '',
+  ].join('\n'), steps)
+  const byStep = [...log.stepLines].map(([step, lines]) => [step, lines.map((line) => [line.number, line.text, line.group])])
+  assert.deepEqual(byStep, [
+    [1, [[1, 'before the first step', null], [2, 'Set up', null], [3, 'continued without a timestamp', 2]]],
+    [2, [[4, 'Check out', null], [5, 'fetched', 4]]],
+    [3, []],
+    [4, [[6, 'Run pnpm test', null], [8, 'not ok 3 - request queue keeps its order', null], [9, 'Process completed with exit code 1.', null]]],
+    [5, [[10, 'Run actions/upload-artifact@v4', null], [11, 'with:', 10]]],
+    [6, []],
+    [7, [[12, 'Post job cleanup.', null], [13, '/usr/bin/git version', null]]],
+  ])
+  assert.equal(log.lines[0]!.time, '2026-10-05T12:00:00.5000000Z')
+  assert.equal(log.lines[2]!.time, null)
+
+  const sameSecond = githubJobLog([
+    '2026-10-05T12:00:01.1000000Z Current runner version: 2.320.0',
+    '2026-10-05T12:00:01.2000000Z ##[group]Run actions/checkout@v4',
+    '2026-10-05T12:00:01.3000000Z Syncing repository',
+    '2026-10-05T12:00:01.4000000Z ##[group]Run pnpm install',
+    '2026-10-05T12:00:01.5000000Z Done in 0.4s',
+    '',
+  ].join('\n'), [1, 2, 3].map((number) => ({ number, started_at_unix: at('01') })))
+  assert.deepEqual([...sameSecond.stepLines].map(([step, lines]) => [step, lines.map((line) => line.text)]), [
+    [1, ['Current runner version: 2.320.0']],
+    [2, ['Run actions/checkout@v4', 'Syncing repository']],
+    [3, ['Run pnpm install', 'Done in 0.4s']],
+  ])
 })
 
 test('a job without a log says why instead of offering a retry', () => {

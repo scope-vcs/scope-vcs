@@ -1,9 +1,8 @@
 import type { RunActionInput } from '@/api/types'
 import type { RepositoryRunDetailResponse } from '@/api/types.generated'
 import { SeparatedMeta, SeparatedMetaItem } from '@/components/separated-meta'
+import { RelativeTimestamp } from '@/components/timestamp'
 import { Button } from '@/components/ui/button'
-import { formatUnixDate, formatUnixDateUtc } from '@/lib/date-format'
-import { useHydrated } from '@/lib/use-hydrated'
 import { cn } from '@/lib/utils'
 import { Link } from '@tanstack/react-router'
 import { LoaderCircle, RotateCcw, Square } from 'lucide-react'
@@ -11,6 +10,7 @@ import type { ReactNode } from 'react'
 import { runCanChange } from './repository-run-detail-model'
 import { runDisplayState, runTriggerLabel } from './run-formatting'
 import { RunDuration } from './run-duration'
+import { runJobTallies } from './run-job-tree-model'
 import { RUN_TONE_TEXT_CLASS, RunStatusIcon } from './run-status-icon'
 import { runDurationLead, runStatus } from './run-status'
 
@@ -33,101 +33,134 @@ export function RunDetailHeader({
 }) {
   const { run } = detail
   const state = runDisplayState(run)
-  const hydrated = useHydrated()
-  const formatDate = hydrated ? formatUnixDate : formatUnixDateUtc
 
   return (
-    <header className="px-4 py-3">
-      <div className="flex items-center gap-4">
-        <div className="min-w-0 flex-1">
-          <RunHeaderTitle name={run.workflow_name} params={params} />
-          <SeparatedMeta className="mt-0.5 text-xs text-muted-foreground">
-            <SeparatedMetaItem>
-              <RunHeaderStatus
-                state={state}
-                title={`Started ${formatDate(run.created_at_unix)} · updated ${formatDate(run.updated_at_unix)}`}
-              >
-                <span>
-                  {runDurationLead(state)}{' '}
-                  <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
-                </span>
-              </RunHeaderStatus>
-            </SeparatedMetaItem>
-            <SeparatedMetaItem>{runTriggerLabel(run.trigger)}</SeparatedMetaItem>
-            <SeparatedMetaItem>
-              <code>{run.git_oid.slice(0, 7)}</code>
-            </SeparatedMetaItem>
-          </SeparatedMeta>
+    <RunPageHeader
+      action={runCanChange(run.state) ? (
+        <Button
+          disabled={!run.can_cancel || pendingAction !== null}
+          onClick={onCancel}
+          size="sm"
+          variant="secondary"
+        >
+          {pendingAction === 'cancel' ? <LoaderCircle className="animate-spin" /> : <Square />}
+          Cancel
+        </Button>
+      ) : (
+        <Button
+          disabled={!run.can_retry || pendingAction !== null}
+          onClick={onRetry}
+          size="sm"
+          variant="secondary"
+        >
+          {pendingAction === 'retry' ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
+          Run again
+        </Button>
+      )}
+      error={metadataError}
+      jobStates={detail.jobs.map(({ job }) => job.state)}
+      name={run.workflow_name}
+      onRetry={onRefresh}
+      params={params}
+      state={state}
+    >
+      <SeparatedMetaItem>
+        <RunHeaderStatus state={state}>
+          {runDurationLead(state)}{' '}
+          <RunDuration end={run.completed_at_unix} start={run.created_at_unix} />
+        </RunHeaderStatus>
+      </SeparatedMetaItem>
+      <SeparatedMetaItem>
+        <code>{run.git_oid.slice(0, 7)}</code>
+      </SeparatedMetaItem>
+      <SeparatedMetaItem>{runTriggerLabel(run.trigger)}</SeparatedMetaItem>
+      <SeparatedMetaItem>
+        started <RelativeTimestamp value={run.created_at_unix} />
+      </SeparatedMetaItem>
+    </RunPageHeader>
+  )
+}
+
+export function RunPageHeader({
+  action,
+  children,
+  error,
+  jobStates,
+  name,
+  onRetry,
+  params,
+  state,
+}: {
+  action: ReactNode
+  children: ReactNode
+  error: string | null
+  jobStates: readonly string[]
+  name: string
+  onRetry: () => void
+  params: RunActionInput
+  state: string
+}) {
+  const tallies = runJobTallies(jobStates.map((jobState) => ({ state: jobState })))
+  return (
+    <header className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      <div className="min-w-0 flex-[1_1_20rem]">
+        <p className="text-xs text-muted-foreground">
+          <Link
+            className="hover:text-foreground hover:underline hover:underline-offset-2"
+            params={{ owner: params.owner, repo: params.repo }}
+            to="/$owner/$repo/runs"
+          >
+            Runs
+          </Link>
+          <span aria-hidden="true" className="px-1 text-muted-foreground/60">/</span>
+          <span>{name}</span>
+        </p>
+        <div className="mt-0.5 flex min-w-0 items-center gap-2">
+          <RunStatusIcon state={state} />
+          <h1 className="min-w-0 break-words text-base font-semibold leading-6 tracking-[-0.01em]">{name}</h1>
         </div>
-        {runCanChange(run.state) ? (
-          <Button
-            disabled={!run.can_cancel || pendingAction !== null}
-            onClick={onCancel}
-            size="sm"
-            variant="secondary"
-          >
-            {pendingAction === 'cancel' ? <LoaderCircle className="animate-spin" /> : <Square />}
-            Cancel
-          </Button>
-        ) : (
-          <Button
-            disabled={!run.can_retry || pendingAction !== null}
-            onClick={onRetry}
-            size="sm"
-            variant="secondary"
-          >
-            {pendingAction === 'retry' ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
-            Run again
-          </Button>
-        )}
+        <SeparatedMeta className="mt-0.5 text-xs text-muted-foreground">{children}</SeparatedMeta>
       </div>
-      <LiveUpdatesPaused error={metadataError} onRetry={onRefresh} />
+      {tallies.length > 0 || action ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {tallies.length > 0 ? (
+            <ul aria-label="Jobs by status" className="flex flex-wrap items-center gap-1.5">
+              {tallies.map((tally) => (
+                <li
+                  className={cn(
+                    'inline-flex h-6 items-center rounded-full border px-2.5 text-xs font-medium tabular-nums',
+                    tally.tone === 'danger'
+                      ? 'border-danger-border bg-danger-soft text-danger-strong'
+                      : 'border-border bg-card text-foreground',
+                  )}
+                  key={tally.tone}
+                >
+                  {tally.count} {tally.label}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {action}
+        </div>
+      ) : null}
+      <LiveUpdatesPaused error={error} onRetry={onRetry} />
     </header>
   )
 }
 
-export function RunHeaderTitle({ name, params }: { name: string; params: RunActionInput }) {
+export function RunHeaderStatus({ children, state }: { children: ReactNode; state: string }) {
   return (
-    <h1 className="flex min-w-0 items-baseline gap-1.5 text-[15px] leading-[22px]">
-      <Link
-        className="text-muted-foreground hover:text-foreground"
-        params={{ owner: params.owner, repo: params.repo }}
-        to="/$owner/$repo/runs"
-      >
-        Runs
-      </Link>
-      <span aria-hidden="true" className="text-muted-foreground/50">/</span>
-      <span className="truncate font-semibold tracking-[-0.01em]">{name}</span>
-    </h1>
-  )
-}
-
-export function RunHeaderStatus({
-  children,
-  state,
-  title,
-}: {
-  children: ReactNode
-  state: string
-  title: string | undefined
-}) {
-  return (
-    <span
-      className={cn('flex items-center gap-1.5', RUN_TONE_TEXT_CLASS[runStatus(state).tone])}
-      suppressHydrationWarning
-      title={title}
-    >
-      <RunStatusIcon state={state} />
+    <span className={cn('font-medium', RUN_TONE_TEXT_CLASS[runStatus(state).tone])} suppressHydrationWarning>
       {children}
     </span>
   )
 }
 
-export function LiveUpdatesPaused({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+function LiveUpdatesPaused({ error, onRetry }: { error: string | null; onRetry: () => void }) {
   if (!error) return null
   return (
     <p
-      className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+      className="flex basis-full flex-wrap items-center gap-2 text-xs text-muted-foreground"
       role="status"
     >
       <span>Live updates paused. {error}</span>

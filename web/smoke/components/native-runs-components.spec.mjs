@@ -4,18 +4,21 @@ import test from 'node:test'
 import { fixtureClerk, fixturePath, openFixture } from '../support/fixture-server.mjs'
 
 const runPageRequestBudget = { listClick: 1, pageLoad: 1 }
+const nativeRunsFixture = {
+  timeout: 30_000,
+  tailwind: true,
+  aliases: [
+    fixtureClerk,
+    { find: '@/routes/-run-history-actions', replacement: fixturePath('native-runs', 'actions.ts') },
+    { find: '@/routes/-repo-settings-actions', replacement: fixturePath('native-runs', 'actions.ts') },
+  ],
+}
 const reads = (page) => page.evaluate(() => Object.values(window.loads).reduce((total, count) => total + count, 0))
 
 test('seeded native run navigation makes one read per resource on cold load and reopen', async (t) => {
   const { base, browser, errors, page } = await openFixture(t, 'native-runs', {
+    ...nativeRunsFixture,
     ssr: true,
-    timeout: 30_000,
-    tailwind: true,
-    aliases: [
-      fixtureClerk,
-      { find: '@/routes/-run-history-actions', replacement: fixturePath('native-runs', 'actions.ts') },
-      { find: '@/routes/-repo-settings-actions', replacement: fixturePath('native-runs', 'actions.ts') },
-    ],
     plugins: [{
       name: 'native-run-hydration-fixture',
       configureServer(server) {
@@ -61,13 +64,13 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)))
   assert.equal(await page.evaluate(() => window.loads.history), 1, 'seeded cold history load must not read again on mount')
   await page.getByRole('link', { name: 'Detail', exact: true }).click()
-  await page.getByRole('heading', { name: /Runs.*tests/ }).waitFor()
+  await page.getByRole('heading', { level: 1, name: 'tests', exact: true }).waitFor()
   await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)))
   assert.equal(await page.evaluate(() => window.loads.detail), 1, 'seeded cold detail load must not read again on mount')
   await page.getByRole('link', { name: 'History', exact: true }).click()
   await page.getByRole('heading', { name: 'Runs', exact: true }).waitFor()
   await page.getByRole('link', { name: 'Detail', exact: true }).click()
-  await page.getByRole('heading', { name: /Runs.*tests/ }).waitFor()
+  await page.getByRole('heading', { level: 1, name: 'tests', exact: true }).waitFor()
   assert.deepEqual(await page.evaluate(() => ({ history: window.loads.history, detail: window.loads.detail })), { history: 1, detail: 1 })
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 844 })
@@ -80,7 +83,7 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await page.waitForFunction(() => window.loads.detail === 2)
   await page.evaluate(() => { window.holdLoads(); window.completeRun(); window.emitChange({ RunChanged: { run_id: 'run-1', change: 'StatusChanged' } }) })
   await page.waitForFunction(() => window.loads.detail === 3)
-  assert.equal(await page.getByRole('heading', { name: /Runs.*tests/ }).count(), 1)
+  assert.equal(await page.getByRole('heading', { level: 1, name: 'tests', exact: true }).count(), 1)
   await page.evaluate(() => window.releaseLoads())
   await page.getByRole('button', { name: 'Run again' }).waitFor()
   await page.getByRole('link', { name: 'History', exact: true }).click()
@@ -117,7 +120,7 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await page.evaluate(() => { window.holdLoads(); window.setPermitted(false); window.setActor('Public') })
   await page.getByText('Loading run details', { exact: true }).waitFor()
   assert.equal(await page.getByText('retained build output', { exact: false }).count(), 0)
-  assert.equal(await page.getByRole('heading', { name: /Runs.*tests/ }).count(), 0)
+  assert.equal(await page.getByRole('heading', { level: 1, name: 'tests', exact: true }).count(), 0)
   await page.evaluate(() => window.releaseLoads())
   await page.getByText('Run denied', { exact: true }).waitFor()
   await page.evaluate(() => { window.holdLoads(); window.setViewer('other') })
@@ -136,7 +139,7 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await row.hover()
   await cold.waitForFunction(() => window.loads.detail === 1)
   await row.click()
-  await cold.getByRole('heading', { name: /Runs.*tests/ }).waitFor()
+  await cold.getByRole('heading', { level: 1, name: 'tests', exact: true }).waitFor()
   await cold.getByText('retained build output', { exact: false }).waitFor()
   assert.equal(await reads(cold) - readsBeforeListClick, runPageRequestBudget.listClick,
     'a run opened from the list stays within its request budget before log text shows')
@@ -144,5 +147,65 @@ test('seeded native run navigation makes one read per resource on cold load and 
   await cold.getByRole('button', { name: 'Cancel', exact: true }).click()
   await cold.getByRole('button', { name: 'Run again' }).waitFor()
   assert.equal(await cold.evaluate(() => window.loads.detail), 2)
+  assert.deepEqual(errors, [])
+})
+
+test('a running native step follows new output from a search match, and links lines by attempt and log position', async (t) => {
+  const { base, errors, page } = await openFixture(t, 'native-runs', nativeRunsFixture)
+  const output = page.getByRole('region', { name: 'Build output' })
+  const row = (text) => output.locator('[data-line]').filter({ hasText: new RegExp(`^\\d+${text}$`) })
+  const inView = (text) => page.waitForFunction((wanted) => {
+    const line = [...document.querySelectorAll('[data-line]')].find((element) => element.textContent.endsWith(wanted))
+    const box = line?.getBoundingClientRect()
+    return box !== undefined && box.top >= 0 && box.bottom <= window.innerHeight
+  }, text, { timeout: 5_000 })
+  const appendOutput = () => page.evaluate(() => {
+    window.appendOutput()
+    window.emitChange({ RunChanged: { run_id: 'run-1', change: 'StatusChanged' } })
+  })
+  const marked = output.locator('[data-line][class*="outline-border-strong"]')
+
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto(new URL('/owner/repo/runs/run-1?client=true&long', base).href)
+  await inView('chunk 40 line 4')
+  await page.getByRole('searchbox', { name: 'Search log' }).fill('chunk 21 line 0')
+  await inView('chunk 21 line 0')
+  await appendOutput()
+  const tail = page.getByRole('button', { name: '5 new lines' })
+  await tail.click()
+  await inView('chunk 41 line 4')
+  await appendOutput()
+  await inView('chunk 42 line 4')
+  assert.equal(await page.getByRole('button', { name: /new lines?$/ }).count(), 0)
+
+  await row('chunk 30 line 2').getByRole('link').click()
+  assert.equal(await page.evaluate(() => location.hash), '#run-job-test:attempt:0:L30.2')
+  await page.getByRole('button', { name: 'Load earlier output' }).click()
+  await row('chunk 1 line 0').waitFor()
+  assert.equal(await marked.count(), 0)
+  await page.getByRole('button', { name: 'Back to latest' }).click()
+  await row('chunk 30 line 2').waitFor()
+  assert.deepEqual(await marked.allTextContents(), [await row('chunk 30 line 2').textContent()])
+
+  await page.evaluate(() => { location.hash = '#run-job-test:attempt-1:0:L1.0' })
+  await row('first attempt ran out of memory').waitFor()
+  assert.deepEqual(await marked.allTextContents(), [await row('first attempt ran out of memory').textContent()])
+
+  await page.evaluate(() => { location.hash = '#run-job-test:attempt:0:L2.3' })
+  await inView('chunk 2 line 3')
+  assert.deepEqual(await marked.allTextContents(), [await row('chunk 2 line 3').textContent()])
+  assert.equal(await row('chunk 3 line 0').count(), 0)
+  await page.getByRole('button', { name: 'Back to latest' }).click()
+  await row('chunk 42 line 4').waitFor()
+  const logReads = await page.evaluate(() => window.loads.logs)
+  await page.getByRole('navigation', { name: 'Jobs' }).locator('button[aria-pressed="true"]').click()
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  assert.equal(await page.evaluate(() => window.loads.logs), logReads, 'reselecting the job after back to latest keeps the latest page')
+  await page.evaluate(() => { location.hash = '#run-job-test:attempt:0:L20.4' })
+  await inView('chunk 20 line 4')
+  assert.deepEqual(await marked.allTextContents(), [await row('chunk 20 line 4').textContent()])
+  await page.evaluate(() => { location.hash = '#run-job-test:attempt:0:L40.2' })
+  await inView('chunk 40 line 2')
+  assert.deepEqual(await marked.allTextContents(), [await row('chunk 40 line 2').textContent()])
   assert.deepEqual(errors, [])
 })

@@ -1,15 +1,14 @@
 import type { RunActionInput } from '@/api/types'
 import type {
   GitHubWorkflowJobLogResponse,
-  GitHubWorkflowJobResponse,
   GitHubWorkflowRunDetailResponse,
   GitHubWorkflowRunResponse,
 } from '@/api/types.generated'
 import { WorkbenchPane } from '@/components/page-header'
-import { SeparatedMeta, SeparatedMetaItem } from '@/components/separated-meta'
-import { formatUnixDate, formatUnixDateUtc } from '@/lib/date-format'
+import { SeparatedMetaItem } from '@/components/separated-meta'
+import { RelativeTimestamp } from '@/components/timestamp'
+import { buttonVariants } from '@/components/ui/button-variants'
 import { useCachedResource } from '@/lib/use-cached-resource'
-import { useHydrated } from '@/lib/use-hydrated'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { Link } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
@@ -27,17 +26,13 @@ import {
 import { RunDuration } from './run-duration'
 import { startRunJobTiming, useRunLogAbsence, useRunLogTimingPage } from './run-log-timing'
 import { useRunJobHash } from './run-job-hash'
-import { jobKeyForHash, runJobPanelId } from './run-job-ids'
-import { RUN_JOB_ITEM_CLASS, RUN_JOB_LIST_CLASS, RUN_LINK_CLASS, runJobButtonClass } from './run-layout'
-import { RunStatusIcon } from './run-status-icon'
+import { runJobLinkForHash, runJobPanelId, type RunJobLink } from './run-job-ids'
+import { RunJobTree } from './run-job-tree'
+import { RUN_BODY_CLASS } from './run-layout'
 import { runDurationLead } from './run-status'
 import { RunDetailPageError } from './repository-run-detail-page'
 import { RunDetailPagePending } from './run-detail-pending'
-import {
-  LiveUpdatesPaused,
-  RunHeaderStatus,
-  RunHeaderTitle,
-} from './run-detail-header'
+import { RunHeaderStatus, RunPageHeader } from './run-detail-header'
 
 type GitHubWorkflowRunDetailPageProps = {
   initialDetail: GitHubWorkflowRunDetailResponse | null
@@ -107,18 +102,29 @@ function GitHubWorkflowRunView({
   useGitHubWorkflowRunRecheck(identity, githubRunCanChange(detail), pageDetail)
 
   const [chosenKey, setChosenKey] = useState<string | null>(null)
+  const [link, setLink] = useState<RunJobLink | null>(null)
   useRunJobHash((hash) => {
-    const key = jobKeyForHash(detail.jobs.map(githubJobKey), hash)
-    if (key !== null) setChosenKey(key)
-    return key !== null
+    const linked = runJobLinkForHash(detail.jobs.map(githubJobKey), hash)
+    if (linked === null) return null
+    setChosenKey(linked.key)
+    setLink(linked)
+    return linked.key
   })
   const selectedJob = detail.jobs.find((job) => githubJobKey(job) === chosenKey)
     ?? detail.jobs.find((job) => job.id === detail.opening_job_id)
     ?? null
   useRunLogAbsence(params.run_id, selectedJob === null && !detail.jobs_not_read_yet)
+  const summaries = useMemo(() => detail.jobs.map((job) => ({
+    key: githubJobKey(job),
+    name: job.name,
+    state: githubRunResult(job.status, job.conclusion).state,
+    startedAt: job.started_at_unix,
+    completedAt: job.completed_at_unix,
+  })), [detail.jobs])
 
-  function pickJob(job: GitHubWorkflowJobResponse) {
-    const key = githubJobKey(job)
+  function pickJob(key: string) {
+    const job = detail.jobs.find((listed) => githubJobKey(listed) === key)
+    if (!job) return
     if (job !== selectedJob) startRunJobTiming(params.run_id)
     setChosenKey(key)
     window.history.replaceState(window.history.state, '', `#${runJobPanelId(key)}`)
@@ -128,6 +134,7 @@ function GitHubWorkflowRunView({
     <WorkbenchPane className="flex flex-col lg:h-[calc(100dvh-var(--app-topbar))]">
       <GitHubWorkflowRunHeader
         error={error}
+        jobStates={summaries.map((job) => job.state)}
         onRetry={onRetry}
         params={params}
         run={detail.run}
@@ -137,37 +144,8 @@ function GitHubWorkflowRunView({
           {detail.jobs_not_read_yet ? 'Loading jobs…' : 'Jobs appear here once the run starts.'}
         </p>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
-          <nav
-            aria-label="Jobs"
-            className="flex min-w-0 items-center border-b border-border lg:block lg:overflow-y-auto lg:border-b-0 lg:border-r lg:py-2"
-          >
-            <ul className={RUN_JOB_LIST_CLASS}>
-              {detail.jobs.map((job) => {
-                const key = githubJobKey(job)
-                const selected = job === selectedJob
-                return (
-                  <li className={RUN_JOB_ITEM_CLASS} key={key}>
-                    <button
-                      aria-controls={runJobPanelId(key)}
-                      aria-pressed={selected}
-                      className={runJobButtonClass(selected)}
-                      onClick={() => pickJob(job)}
-                      type="button"
-                    >
-                      <RunStatusIcon state={githubRunResult(job.status, job.conclusion).state} />
-                      <span className="min-w-0 flex-1 truncate">{job.name}</span>
-                      {job.started_at_unix === null ? null : (
-                        <span className="text-xs font-normal text-muted-foreground">
-                          <RunDuration end={job.completed_at_unix} start={job.started_at_unix} />
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </nav>
+        <div className={RUN_BODY_CLASS}>
+          <RunJobTree jobs={summaries} onSelect={pickJob} selectedKey={selectedJob ? githubJobKey(selectedJob) : null} />
           {selectedJob ? (
             <div
               className="flex min-w-0 flex-col lg:min-h-0"
@@ -177,6 +155,7 @@ function GitHubWorkflowRunView({
                 includedLog={selectedJob.id === detail.opening_job_id ? detail.opening_job_log : null}
                 job={selectedJob}
                 key={githubJobKey(selectedJob)}
+                link={link?.key === githubJobKey(selectedJob) ? link : null}
                 loadLog={loadLog}
                 runId={params.run_id}
                 scope={scope}
@@ -191,59 +170,74 @@ function GitHubWorkflowRunView({
 
 function GitHubWorkflowRunHeader({
   error,
+  jobStates,
   onRetry,
   params,
   run,
 }: {
   error: string | null
+  jobStates: readonly string[]
   onRetry: () => void
   params: RunActionInput
   run: GitHubWorkflowRunResponse
 }) {
   const result = githubRunResult(run.status, run.conclusion)
-  const hydrated = useHydrated()
-  const formatDate = hydrated ? formatUnixDate : formatUnixDateUtc
   const started = run.run_started_at_unix
 
   return (
-    <header className="px-4 py-3">
-      <RunHeaderTitle name={run.workflow_name} params={params} />
-      <SeparatedMeta className="mt-0.5 text-xs text-muted-foreground">
+    <RunPageHeader
+      action={(
+        <a
+          className={buttonVariants({ size: 'sm', variant: 'secondary' })}
+          href={run.html_url}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          Open on GitHub
+        </a>
+      )}
+      error={error}
+      jobStates={jobStates}
+      name={run.workflow_name}
+      onRetry={onRetry}
+      params={params}
+      state={result.state}
+    >
+      <SeparatedMetaItem>
+        <RunHeaderStatus state={result.state}>
+          {started === null ? (
+            <span className="first-letter:uppercase">{result.label}</span>
+          ) : (
+            <>
+              {runDurationLead(result.state, result.label)}{' '}
+              <RunDuration end={run.status === 'completed' ? run.updated_at_unix : null} start={started} />
+            </>
+          )}
+        </RunHeaderStatus>
+      </SeparatedMetaItem>
+      {run.branch ? (
         <SeparatedMetaItem>
-          <RunHeaderStatus
-            state={result.state}
-            title={started === null ? undefined : `Started ${formatDate(started)}`}
-          >
-            {started === null ? (
-              <span className="first-letter:uppercase">{result.label}</span>
-            ) : (
-              <span>
-                {runDurationLead(result.state, result.label)}{' '}
-                <RunDuration end={run.status === 'completed' ? run.updated_at_unix : null} start={started} />
-              </span>
-            )}
-          </RunHeaderStatus>
+          {run.request_id ? (
+            <Link
+              className="underline underline-offset-2 hover:text-foreground"
+              params={{ owner: params.owner, repo: params.repo, requestId: run.request_id }}
+              title="Open the request"
+              to="/$owner/$repo/requests/$requestId"
+            >
+              {run.branch}
+            </Link>
+          ) : run.branch}
         </SeparatedMetaItem>
-        {run.branch ? (
-          <SeparatedMetaItem>
-            {run.request_id ? (
-              <Link
-                className={RUN_LINK_CLASS}
-                params={{ owner: params.owner, repo: params.repo, requestId: run.request_id }}
-                title="Open the request"
-                to="/$owner/$repo/requests/$requestId"
-              >
-                {run.branch}
-              </Link>
-            ) : run.branch}
-          </SeparatedMetaItem>
-        ) : null}
+      ) : null}
+      <SeparatedMetaItem>
+        <code>{run.head_oid.slice(0, 7)}</code>
+      </SeparatedMetaItem>
+      <SeparatedMetaItem>{run.event.replaceAll('_', ' ')}</SeparatedMetaItem>
+      {started === null ? null : (
         <SeparatedMetaItem>
-          <code>{run.head_oid.slice(0, 7)}</code>
+          started <RelativeTimestamp value={started} />
         </SeparatedMetaItem>
-        <SeparatedMetaItem>{run.event}</SeparatedMetaItem>
-      </SeparatedMeta>
-      <LiveUpdatesPaused error={error} onRetry={onRetry} />
-    </header>
+      )}
+    </RunPageHeader>
   )
 }
