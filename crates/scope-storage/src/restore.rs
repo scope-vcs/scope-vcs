@@ -121,9 +121,11 @@ impl GitSegmentStore {
         timings: GitSegmentRestoreTimings,
     ) -> Result<Option<VerifiedGitPack>, GitStorageError> {
         let cache = Arc::clone(&self.verified_cache);
+        let local_root_lease = Arc::clone(&self.local_root_lease);
         let path = path.to_path_buf();
         let segment = segment.clone();
         tokio::task::spawn_blocking(move || {
+            let _local_root_lease = local_root_lease;
             cache.lease_existing(&path, segment.plaintext_bytes, &segment.sha256, timings)
         })
         .await
@@ -137,10 +139,12 @@ impl GitSegmentStore {
         segment: &GitSegmentRef,
     ) -> Result<VerifiedPackPin, GitStorageError> {
         let cache = Arc::clone(&self.verified_cache);
+        let local_root_lease = Arc::clone(&self.local_root_lease);
         let source = source.to_path_buf();
         let path = path.to_path_buf();
         let segment = segment.clone();
         tokio::task::spawn_blocking(move || {
+            let _local_root_lease = local_root_lease;
             cache.install(&source, &path, segment.plaintext_bytes, &segment.sha256)
         })
         .await

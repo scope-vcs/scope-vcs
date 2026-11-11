@@ -19,6 +19,7 @@ const REPOSITORY_ID: &str = "repository-123";
 
 mod backend;
 mod ingest_control;
+mod startup;
 use backend::TestObjectBackend;
 
 #[tokio::test]
@@ -331,7 +332,11 @@ async fn failed_part_aborts_multipart_and_removes_local_output() {
     assert!(error.to_string().contains("part failed"));
     assert_eq!(fixture.backend.aborted(), 1);
     assert_eq!(fixture.backend.completed(), 0);
-    assert!(all_files(&fixture.local_root).await.is_empty());
+    assert!(
+        all_files(&fixture.local_root.join("staging"))
+            .await
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -431,12 +436,13 @@ async fn startup_cleanup_preserves_verified_packs_and_eviction_respects_their_le
         .unwrap();
     tokio::fs::write(&abandoned_temp, b"partial").await.unwrap();
 
-    fixture.store.cleanup_temporary().await.unwrap();
-
-    assert!(!abandoned_temp.exists());
-    assert!(pack.path().is_file());
-    assert!(index_path.is_file());
-    assert!(fixture.backend.object(&staged.object_key).is_some());
+    let abandoned_staging = fixture.local_root.join("staging/abandoned.pack.tmp");
+    tokio::fs::write(&abandoned_staging, b"partial")
+        .await
+        .unwrap();
+    let config = fixture.store.config.clone();
+    let reopen =
+        || GitSegmentStore::new(fixture.backend.clone(), test_key(), config.clone()).unwrap();
     let usage = fixture.store.verified_cache_usage().unwrap();
     assert_eq!(usage.pack_count, 1);
     assert_eq!(usage.retained_bytes, b"published object".len() as u64 + 5);
@@ -446,15 +452,21 @@ async fn startup_cleanup_preserves_verified_packs_and_eviction_respects_their_le
     assert_eq!(still_leased.retained_bytes, usage.retained_bytes);
     let pack_path = pack.path().to_path_buf();
     drop(pack);
-    let reopen = || {
-        GitSegmentStore::new(
-            fixture.backend.clone(),
-            test_key(),
-            fixture.store.config.clone(),
-        )
-        .unwrap()
-    };
+    let active = fixture.store.clone();
+    drop(fixture.store);
+    let peer = reopen();
+    drop(active);
+    let second_peer = reopen();
+    assert!(abandoned_temp.exists());
+    assert!(abandoned_staging.exists());
+    drop(peer);
+    drop(second_peer);
     let restarted = reopen();
+    assert!(!abandoned_temp.exists());
+    assert!(!abandoned_staging.exists());
+    assert!(pack_path.is_file());
+    assert!(index_path.is_file());
+    assert!(fixture.backend.object(&staged.object_key).is_some());
     let retained = restarted
         .get_verified_pack(&incarnation, &staged.segment)
         .await
@@ -499,17 +511,23 @@ async fn failed_complete_is_followed_by_abort() {
     assert!(matches!(error, GitStorageError::Backend(_)));
     assert_eq!(fixture.backend.aborted(), 1);
     assert!(fixture.backend.objects().is_empty());
-    assert!(all_files(&fixture.local_root).await.is_empty());
+    assert!(
+        all_files(&fixture.local_root.join("staging"))
+            .await
+            .is_empty()
+    );
 }
 
 #[tokio::test]
 async fn local_failure_aborts_the_remote_upload() {
     let fixture_root = tempfile::tempdir().unwrap();
     let invalid_root = fixture_root.path().join("not-a-directory");
-    tokio::fs::write(&invalid_root, b"file").await.unwrap();
     let backend = Arc::new(TestObjectBackend::default());
-    let config = test_config(invalid_root, 4, 8, 1);
+    let config = test_config(invalid_root.clone(), 4, 8, 1);
     let store = GitSegmentStore::new(backend.clone(), test_key(), config).unwrap();
+    tokio::fs::write(invalid_root.join("staging"), b"file")
+        .await
+        .unwrap();
 
     let error = store
         .ingest(REPOSITORY_ID, &b"local write fails"[..], u64::MAX)

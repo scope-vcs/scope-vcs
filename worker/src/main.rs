@@ -89,7 +89,6 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
         encryption_key,
         settings.git_segment_store.clone(),
     )?);
-    git_segment_store.cleanup_temporary().await?;
     let result = tokio::try_join!(
         control::run(
             metadata.clone(),

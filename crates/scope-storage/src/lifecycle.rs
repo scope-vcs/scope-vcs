@@ -2,26 +2,16 @@ use super::{
     BackendError, GitSegmentStore, GitStorageError, StagedGitSegment, VerifiedPackCacheUsage,
     is_hex_id_32, sync_directory,
 };
-use std::time::Duration;
+use std::{
+    fs::{File, OpenOptions, TryLockError},
+    path::Path,
+    time::Duration,
+};
 use tokio::fs;
 
 pub(crate) const REMOTE_CLEANUP_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl GitSegmentStore {
-    pub async fn cleanup_temporary(&self) -> Result<(), GitStorageError> {
-        for path in [
-            self.config.local_root.join("staging"),
-            self.verified_temp_directory(),
-        ] {
-            match fs::remove_dir_all(path).await {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(GitStorageError::Local(error)),
-            }
-        }
-        Ok(())
-    }
-
     pub fn verified_cache_usage(&self) -> Result<VerifiedPackCacheUsage, GitStorageError> {
         self.verified_cache.usage()
     }
@@ -101,4 +91,37 @@ impl GitSegmentStore {
         }
         Ok(())
     }
+}
+
+pub(super) fn open_local_root(root: &Path) -> std::io::Result<File> {
+    open_local_root_with_cleanup(root, |path| std::fs::remove_dir_all(path))
+}
+
+pub(super) fn open_local_root_with_cleanup(
+    root: &Path,
+    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+) -> std::io::Result<File> {
+    std::fs::create_dir_all(root)?;
+    let lease = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(root.join(".temporary.lock"))?;
+    match lease.try_lock() {
+        Ok(()) => {
+            for path in [root.join("staging"), root.join("verified/.tmp")] {
+                match remove(&path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error),
+                }
+            }
+            lease.unlock()?;
+        }
+        Err(TryLockError::WouldBlock) => {}
+        Err(TryLockError::Error(error)) => return Err(error),
+    }
+    lease.lock_shared()?;
+    Ok(lease)
 }

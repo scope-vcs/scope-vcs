@@ -108,7 +108,6 @@ impl AppState {
     pub async fn from_env() -> anyhow::Result<Self> {
         let git_public_url = git_public_url_from_env(None)?;
         let storage = StorageRuntime::from_env(StorageSource::S3).await?;
-        storage.git_segment_store.cleanup_temporary().await?;
         crate::git::request_refs::sweep_revision_jobs(&storage.data_dir)?;
         let metadata = MetadataStore::connect_with_max_connections(
             database_url_from_env()?,

@@ -139,6 +139,7 @@ pub struct GitSegmentStore {
     backend: Arc<dyn ObjectBackend>,
     encryption_key: EncryptionKey,
     config: GitSegmentStoreConfig,
+    local_root_lease: Arc<std::fs::File>,
     verified_cache: Arc<VerifiedPackCache>,
     hydration_permits: Arc<tokio::sync::Semaphore>,
 }
@@ -150,11 +151,15 @@ impl GitSegmentStore {
         config: GitSegmentStoreConfig,
     ) -> Result<Self, GitStorageError> {
         config.validate(backend.minimum_part_bytes())?;
+        let local_root_lease = Arc::new(
+            lifecycle::open_local_root(&config.local_root).map_err(GitStorageError::Local)?,
+        );
         let verified_cache = VerifiedPackCache::new(config.local_root.join("verified"));
         Ok(Self {
             backend,
             encryption_key,
             config,
+            local_root_lease,
             verified_cache,
             hydration_permits: Arc::new(tokio::sync::Semaphore::new(MAX_VERIFIED_PACK_HYDRATIONS)),
         })

@@ -20,7 +20,11 @@ async fn destination_failure_before_fanout_preserves_the_backend_error() {
     assert!(matches!(error, GitStorageError::Backend(_)));
     assert!(error.to_string().contains("begin failed"));
     assert!(fixture.backend.objects().is_empty());
-    assert!(all_files(&fixture.local_root).await.is_empty());
+    assert!(
+        all_files(&fixture.local_root.join("staging"))
+            .await
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -54,7 +58,11 @@ async fn input_errors_and_limits_remain_primary_when_destinations_also_fail() {
         GitStorageError::PlaintextLimitExceeded { max_bytes: 0 }
     ));
     assert!(fixture.backend.objects().is_empty());
-    assert!(all_files(&fixture.local_root).await.is_empty());
+    assert!(
+        all_files(&fixture.local_root.join("staging"))
+            .await
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -86,7 +94,11 @@ async fn ingest_accepts_the_plaintext_limit_and_cleans_up_on_the_next_byte() {
             matches!(error, GitStorageError::PlaintextLimitExceeded { max_bytes } if max_bytes == limit)
         );
         assert!(fixture.backend.objects().is_empty());
-        assert!(all_files(&fixture.local_root).await.is_empty());
+        assert!(
+            all_files(&fixture.local_root.join("staging"))
+                .await
+                .is_empty()
+        );
     }
 }
 
@@ -112,7 +124,11 @@ async fn blocking_ingest_stops_after_the_first_byte_past_the_limit() {
     ));
     assert_eq!(consumed.load(Ordering::SeqCst), 5);
     assert!(fixture.backend.objects().is_empty());
-    assert!(all_files(&fixture.local_root).await.is_empty());
+    assert!(
+        all_files(&fixture.local_root.join("staging"))
+            .await
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -157,7 +173,11 @@ async fn process_timeout_cancels_a_stalled_multipart_ingest_without_detached_wor
     assert!(started.elapsed() < Duration::from_secs(2));
     assert_eq!(fixture.backend.pending_for(&object_key), 0);
     assert!(fixture.backend.object(&object_key).is_none());
-    assert!(all_files(&fixture.local_root).await.is_empty());
+    assert!(
+        all_files(&fixture.local_root.join("staging"))
+            .await
+            .is_empty()
+    );
 }
 
 struct TrackedReader {
@@ -230,6 +250,10 @@ async fn ingest_rollback_attempts_delete_and_reports_secondary_failures() {
             output.contains(expected),
             "cleanup failure must be reported: {output}"
         );
-        assert!(all_files(&fixture.local_root).await.is_empty());
+        assert!(
+            all_files(&fixture.local_root.join("staging"))
+                .await
+                .is_empty()
+        );
     }
 }
