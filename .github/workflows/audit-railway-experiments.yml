@@ -48,6 +48,8 @@ jobs:
       matrix:
         pull_request: ${{ fromJSON(needs.reconcile.outputs.pull_requests) }}
     uses: ./.github/workflows/preview-environment-cleanup.yml
+    secrets:
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
     permissions:
       contents: read
       pull-requests: write

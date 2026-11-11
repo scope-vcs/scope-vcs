@@ -185,7 +185,7 @@ test('Railway inventory reader preserves complete environment identities for rec
   }
 });
 
-test('scheduled and event cleanup serialize with deploys, recheck before deleting, and audit after failed or skipped cleanup', () => {
+test('scheduled and event cleanup forward only the required environment token, serialize with deploys, recheck, and audit', () => {
   const workflows = JSON.parse(execFileSync('python3', ['-c',
     "import json, pathlib, yaml; print(json.dumps({name: yaml.safe_load(pathlib.Path('.github/workflows/' + name + '.yml').read_text())['jobs'] for name in ['preview-environment', 'preview-environment-cleanup', 'audit-railway-experiments']}))",
   ], { encoding: 'utf8' }));
@@ -193,6 +193,13 @@ test('scheduled and event cleanup serialize with deploys, recheck before deletin
   const scheduled = workflows['audit-railway-experiments'];
   const shared = workflows['preview-environment-cleanup'].delete;
   assert.equal(event.delete.uses, scheduled.cleanup.uses);
+  const railwayToken = '${{ secrets.RAILWAY_API_TOKEN }}';
+  assert.deepEqual([event.delete.secrets, scheduled.cleanup.secrets], [
+    { RAILWAY_API_TOKEN: railwayToken }, { RAILWAY_API_TOKEN: railwayToken },
+  ]);
+  assert.match(readFileSync('.github/workflows/preview-environment-cleanup.yml', 'utf8'),
+    /\n    secrets:\n      RAILWAY_API_TOKEN:\n        required: true\n/);
+  assert.equal(shared.environment, 'preview');
   assert.equal(shared.concurrency.group.replace('inputs.pull_request', 'needs.plan.outputs.pull_request'), event.deploy.concurrency.group);
   assert.equal(shared.concurrency['cancel-in-progress'], false);
   const recheck = shared.steps.findIndex(step => step.id === 'recheck');
@@ -200,6 +207,7 @@ test('scheduled and event cleanup serialize with deploys, recheck before deletin
   assert.equal(deletion, recheck + 1);
   assert.match(shared.steps[recheck].run, /preview-pull-request\.mjs cleanup/);
   assert.equal(shared.steps[deletion].if, "steps.recheck.outputs.action == 'delete'");
+  assert.deepEqual(shared.steps[deletion].env, { RAILWAY_API_TOKEN: railwayToken });
   assert.equal(scheduled.cleanup.strategy['fail-fast'], false);
   assert.ok(scheduled.audit.needs.includes('cleanup'));
   const auditCondition = Function('cancelled', 'github', `return ${scheduled.audit.if.slice(3, -2)};`);
