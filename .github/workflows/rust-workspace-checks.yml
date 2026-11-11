@@ -82,7 +82,7 @@ jobs:
           save-if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (matrix.lane == 'workspace' || matrix.lane == 'api') }}
 
       - name: Install PostgreSQL test server
-        run: sudo ./dev/install-test-postgres.sh
+        uses: ./.github/actions/install-test-postgres
 
       - name: Test Rust workspace lane
         env:
