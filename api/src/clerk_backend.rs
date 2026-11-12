@@ -136,8 +136,8 @@ impl ClerkBackendApi {
         };
         let status = response.status().as_u16();
         match status {
-            200 => match response.json::<VerifiedOAuthAccessToken>().await {
-                Ok(token) => token.into_check(),
+            200 => match response.json::<serde_json::Value>().await {
+                Ok(body) => verified_token_check(body),
                 Err(error) => ClerkOAuthTokenCheck::Unavailable(format!(
                     "Clerk answered an unreadable token: {error}"
                 )),
@@ -145,6 +145,18 @@ impl ClerkBackendApi {
             400 | 404 | 422 => ClerkOAuthTokenCheck::Inactive,
             _ => ClerkOAuthTokenCheck::Unavailable(format!("Clerk answered {status}")),
         }
+    }
+}
+
+fn verified_token_check(body: serde_json::Value) -> ClerkOAuthTokenCheck {
+    if body.get("active") == Some(&serde_json::Value::Bool(false)) {
+        return ClerkOAuthTokenCheck::Inactive;
+    }
+    match serde_json::from_value::<VerifiedOAuthAccessToken>(body) {
+        Ok(token) => token.into_check(),
+        Err(error) => ClerkOAuthTokenCheck::Unavailable(format!(
+            "Clerk answered an unreadable token: {error}"
+        )),
     }
 }
 
@@ -210,6 +222,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_inactive_verification_is_an_invalid_token_not_an_outage() {
+        assert_eq!(
+            verified_token_check(serde_json::json!({ "active": false })),
+            ClerkOAuthTokenCheck::Inactive
+        );
+    }
+
+    #[test]
     fn a_verified_token_reads_its_audience_in_any_shape_clerk_sends() {
         for (aud, expected) in [
             (
@@ -222,15 +242,13 @@ mod tests {
             ),
             (serde_json::Value::Null, vec![]),
         ] {
-            let verified: VerifiedOAuthAccessToken = serde_json::from_value(serde_json::json!({
+            let ClerkOAuthTokenCheck::Active(token) = verified_token_check(serde_json::json!({
                 "subject": "user_agent",
                 "scopes": ["read"],
                 "aud": aud,
                 "revoked": false,
                 "expired": false,
-            }))
-            .unwrap();
-            let ClerkOAuthTokenCheck::Active(token) = verified.into_check() else {
+            })) else {
                 panic!("an unrevoked, unexpired token is active");
             };
             assert_eq!(token.audiences, expected);

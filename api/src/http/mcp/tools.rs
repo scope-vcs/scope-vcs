@@ -97,7 +97,7 @@ impl Operation {
                 "Show one request: title, description, state, author, base, head commit, and line counts."
             }
             Self::RequestDiff => {
-                "Show what a request changes. Without a path, lists the changed files in its latest revision. With a path, shows that file's diff."
+                "Show what a request changes. Without a path, lists the changed files in its latest revision and returns review_revision_id. With a path and that revision ID, shows the file's diff."
             }
             Self::RequestCi => {
                 "Show CI for a request's current revision, its review bots, and whether it can merge."
@@ -142,7 +142,7 @@ impl Operation {
                     "repo": repo,
                     "request": request,
                     "path": { "type": "string", "description": "File path to diff, such as src/main.rs" },
-                    "revision": { "type": "string", "description": "Revision ID; defaults to the latest" },
+                    "revision": { "type": "string", "description": "Revision ID; required with path, and selects the listing otherwise" },
                 }),
                 json!(["repo", "request"]),
             ),
@@ -214,17 +214,13 @@ impl Operation {
             }
             Self::RequestDiff => {
                 let (owner, repo, request) = request_path(&args)?;
-                let path = Path((owner.clone(), repo.clone(), request.clone()));
-                let revisions =
-                    list_request_revisions(state.clone(), path, query(&args)?, viewer.clone())
-                        .await?;
                 if optional(&args, "path")?.is_none() {
-                    return to_value(Ok(revisions));
+                    let path = Path((owner, repo, request));
+                    return to_value(
+                        list_request_revisions(state, path, query(&args)?, viewer).await,
+                    );
                 }
-                let revision = revisions.0.review_revision_id.ok_or_else(|| {
-                    ToolError::Arguments("request has no revision to diff".into())
-                })?;
-                let path = Path((owner, repo, request, revision));
+                let path = Path((owner, repo, request, required(&args, "revision")?));
                 to_value(get_request_revision_file_diff(state, path, query(&args)?, viewer).await)
             }
             Self::FileRead => {
