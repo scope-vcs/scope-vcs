@@ -1,5 +1,8 @@
 use super::{requests::actor_request, responses::git_oid_response};
-use crate::{error::ApiError, persistence::unix_now, state::AppState, use_cases::request_checks};
+use crate::{
+    auth::viewer::Viewer, error::ApiError, persistence::unix_now, state::AppState,
+    use_cases::request_checks,
+};
 use axum::{
     Json,
     extract::{Path, State},
@@ -26,11 +29,11 @@ use std::collections::HashMap;
 
 pub(crate) async fn get_request_checks(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    viewer: Viewer,
 ) -> Result<Json<RequestChecksResponse>, ApiError> {
     let snapshot =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+        super::request_state::load(&state, &viewer, &owner, &repo_name, &request_id).await?;
     snapshot_response(
         &state,
         &snapshot,
@@ -60,8 +63,14 @@ pub(crate) async fn approve_request_checks(
     )
     .await?;
     request_checks::publish_request_checks_change(&state, &repo.incarnation(), &mutation).await;
-    let snapshot =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    let snapshot = super::request_state::load(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo_name,
+        &request_id,
+    )
+    .await?;
     snapshot_response(
         &state,
         &snapshot,

@@ -1,5 +1,5 @@
 use crate::{
-    auth::scope::optional_scope_user,
+    auth::viewer::Viewer,
     error::ApiError,
     http::{
         file_diffs::review_file_diff_response_for_blobs,
@@ -15,7 +15,6 @@ use crate::{
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::HeaderMap,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use scope_domain::{
@@ -41,11 +40,11 @@ struct HistoryCursor {
 
 pub(crate) async fn get_history_page(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
     Query(input): Query<HistoryPageRequest>,
+    viewer: Viewer,
 ) -> Result<Json<crate::http::responses::HistoryPageResponse>, ApiError> {
-    let (repo, view) = repo_and_view(&state, &headers, &owner, &repo_name, input.view).await?;
+    let (repo, view) = repo_and_view(&state, &viewer, &owner, &repo_name, input.view).await?;
     let feed = input.feed.unwrap_or_default();
     let boundary = input
         .before
@@ -114,11 +113,11 @@ async fn history_entry_page(
 
 pub(crate) async fn get_history_entry(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, entry_id)): Path<(String, String, String)>,
     Query(input): Query<HistoryEntryRequest>,
+    viewer: Viewer,
 ) -> Result<Json<crate::http::responses::HistoryEntryDetailResponse>, ApiError> {
-    let (repo, view) = repo_and_view(&state, &headers, &owner, &repo_name, input.view).await?;
+    let (repo, view) = repo_and_view(&state, &viewer, &owner, &repo_name, input.view).await?;
     let page = history_entry_page(&state, &repo, &view, &entry_id).await?;
     let history = page.view;
     let entry = history_entry_for_id(&history.entries, &entry_id)?;
@@ -153,11 +152,11 @@ pub(crate) async fn get_history_entry(
 
 pub(crate) async fn get_history_entry_file_diff(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, entry_id)): Path<(String, String, String)>,
     Query(input): Query<HistoryEntryFileDiffRequest>,
+    viewer: Viewer,
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
-    let (repo, view) = repo_and_view(&state, &headers, &owner, &repo_name, input.view).await?;
+    let (repo, view) = repo_and_view(&state, &viewer, &owner, &repo_name, input.view).await?;
     let page = history_entry_page(&state, &repo, &view, &entry_id).await?;
     let history = page.view;
     let entry = history_entry_for_id(&history.entries, &entry_id)?;
@@ -219,19 +218,12 @@ fn history_entry_file<'a>(
 
 pub(crate) async fn repo_and_view(
     state: &AppState,
-    headers: &HeaderMap,
+    viewer: &Viewer,
     owner: &str,
     repo_name: &str,
     requested_view: Option<scope_api_contract::ViewId>,
 ) -> Result<(RepositoryAccessContext, ViewId), ApiError> {
-    let user = optional_scope_user(state, headers).await?;
-    let repo = find_read_access(
-        state,
-        owner,
-        repo_name,
-        user.as_ref().map(|user| user.id.as_str()),
-    )
-    .await?;
+    let repo = find_read_access(state, owner, repo_name, viewer.user_id()).await?;
     let view = requested_view
         .map(Into::into)
         .unwrap_or_else(|| repo.access.view.clone());

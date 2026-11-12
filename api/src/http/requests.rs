@@ -1,5 +1,5 @@
 use crate::{
-    auth::scope::{optional_scope_user, require_scope_user},
+    auth::{scope::require_scope_user, viewer::Viewer},
     error::ApiError,
     http::responses::*,
     persistence::unix_now,
@@ -41,19 +41,19 @@ use summary::request_response_for_viewer;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RequestListQuery {
-    cursor: Option<String>,
-    limit: Option<usize>,
-    name: Option<String>,
+    pub(crate) cursor: Option<String>,
+    pub(crate) limit: Option<usize>,
+    pub(crate) name: Option<String>,
 }
 
 pub(crate) async fn list_requests(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
     Query(query): Query<RequestListQuery>,
+    viewer: Viewer,
 ) -> Result<Json<RequestListResponse>, ApiError> {
     let (repo, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+        repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
     let after_id = query
         .cursor
         .as_deref()
@@ -169,11 +169,11 @@ fn encode_request_list_cursor(last_id: &str) -> String {
 
 pub(crate) async fn get_request(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    viewer: Viewer,
 ) -> Result<Json<RequestDetailResponse>, ApiError> {
     let snapshot =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+        super::request_state::load(&state, &viewer, &owner, &repo_name, &request_id).await?;
     let diff_stat = super::request_state::diff_stat(&state, &snapshot).await?;
     Ok(Json(super::request_state::detail_response(
         &snapshot,
@@ -522,14 +522,12 @@ async fn invitee_mutation_response(
 
 pub(crate) async fn repo_and_access(
     state: &AppState,
-    headers: &HeaderMap,
+    viewer: &Viewer,
     owner: &str,
     repo_name: &str,
 ) -> Result<(RepositoryReadPolicy, Option<String>), ApiError> {
-    let user = optional_scope_user(state, headers).await?;
-    let user_id = user.map(|user| user.id);
-    let repo = read_policy(state, owner, repo_name, user_id.as_deref()).await?;
-    Ok((repo, user_id))
+    let repo = read_policy(state, owner, repo_name, viewer.user_id()).await?;
+    Ok((repo, viewer.user_id().map(str::to_string)))
 }
 
 async fn read_policy(
@@ -601,19 +599,13 @@ async fn current_main_oid_for_view(
 
 pub(crate) async fn repo_metadata_and_access(
     state: &AppState,
-    headers: &HeaderMap,
+    viewer: &Viewer,
     owner: &str,
     repo_name: &str,
 ) -> Result<(RepositoryAccessContext, Option<String>), ApiError> {
-    let user = optional_scope_user(state, headers).await?;
-    let repo = crate::repo_access::find_read_access(
-        state,
-        owner,
-        repo_name,
-        user.as_ref().map(|user| user.id.as_str()),
-    )
-    .await?;
-    Ok((repo, user.map(|user| user.id)))
+    let repo =
+        crate::repo_access::find_read_access(state, owner, repo_name, viewer.user_id()).await?;
+    Ok((repo, viewer.user_id().map(str::to_string)))
 }
 
 pub(crate) async fn current_main_oid_for_context(

@@ -2,6 +2,7 @@ use crate::{
     auth::{
         scope::{optional_scope_user, require_scope_user},
         tokens::{generate_first_push_token, generate_git_push_token},
+        viewer::Viewer,
     },
     error::ApiError,
     git::repository_git::RepositoryGit,
@@ -41,14 +42,13 @@ const MAX_PUSH_INTENT_CONFIG_BYTES: usize = 4096;
 
 pub(crate) async fn get_owner_repositories(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path(handle): Path<String>,
+    viewer: Viewer,
 ) -> Result<Json<OwnerProfileResponse>, ApiError> {
-    let user = optional_scope_user(&state, &headers).await?;
     let profile = state
         .metadata
         .repositories()
-        .owner_profile(&handle, user.as_ref().map(|user| user.id.as_str()))
+        .owner_profile(&handle, viewer.user_id())
         .await?
         .ok_or_else(|| ApiError::not_found(format!("user {handle} not found")))?;
     let mut repositories = Vec::new();
@@ -494,27 +494,23 @@ pub(crate) async fn get_files(
     Path((owner, repo_name)): Path<(String, String)>,
     Query(input): Query<RepoFilesRequest>,
 ) -> Result<Json<Vec<RepoFileResponse>>, ApiError> {
-    if let Some(version) = RepoVersion::select(input.request, input.update)? {
+    let version = RepoVersion::select(input.request, input.update)?;
+    let viewer = Viewer::resolve(&state, &headers).await?;
+    if let Some(version) = version {
         let read = RepoVersionRead {
             state: &state,
-            headers: &headers,
+            viewer: &viewer,
             owner: &owner,
             repo: &repo_name,
             view: input.view.map(ViewId::from),
         };
         return Ok(Json(repo_version_files(read, version).await?));
     }
-    let user = optional_scope_user(&state, &headers).await?;
     let view = input.view.map(ViewId::from);
     let files = state
         .metadata
         .repositories()
-        .repo_live_files(
-            &owner,
-            &repo_name,
-            user.as_ref().map(|user| user.id.as_str()),
-            view.as_ref(),
-        )
+        .repo_live_files(&owner, &repo_name, viewer.user_id(), view.as_ref())
         .await?
         .ok_or_else(|| ApiError::not_found(format!("repo {owner}/{repo_name} not found")))?;
 
@@ -523,9 +519,9 @@ pub(crate) async fn get_files(
 
 pub(crate) async fn get_file_content(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
     Query(input): Query<RepoFileContentRequest>,
+    viewer: Viewer,
 ) -> Result<Json<RepoFileContentResponse>, ApiError> {
     let path = ScopePath::parse(format!("/{}", input.path)).map_err(ApiError::bad_request)?;
     if path == ScopePath::root() {
@@ -534,14 +530,13 @@ pub(crate) async fn get_file_content(
     if let Some(version) = RepoVersion::select(input.request, input.update)? {
         let read = RepoVersionRead {
             state: &state,
-            headers: &headers,
+            viewer: &viewer,
             owner: &owner,
             repo: &repo_name,
             view: input.view.map(ViewId::from),
         };
         return Ok(Json(repo_version_file(read, version, path).await?));
     }
-    let user = optional_scope_user(&state, &headers).await?;
     let view = input.view.map(ViewId::from);
     let projected = state
         .metadata
@@ -549,7 +544,7 @@ pub(crate) async fn get_file_content(
         .repo_live_file_with_landing_content(
             &owner,
             &repo_name,
-            user.as_ref().map(|user| user.id.as_str()),
+            viewer.user_id(),
             view.as_ref(),
             &path,
         )

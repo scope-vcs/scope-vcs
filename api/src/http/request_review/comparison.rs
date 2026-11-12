@@ -2,8 +2,8 @@ use super::*;
 
 #[derive(Deserialize)]
 pub(crate) struct RequestComparisonFileDiffRequest {
-    path: String,
-    comparison: Option<RequestComparisonMode>,
+    pub(crate) path: String,
+    pub(crate) comparison: Option<RequestComparisonMode>,
 }
 
 pub(super) fn selected_mode(
@@ -110,11 +110,11 @@ pub(super) fn inspect_comparison(
 
 pub(crate) async fn get_request_revision_file_diff(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id, revision_id)): Path<(String, String, String, String)>,
     Query(input): Query<RequestComparisonFileDiffRequest>,
+    viewer: Viewer,
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
-    let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (repo, viewer_user_id) = repo_and_access(&state, &viewer, &owner, &repo_name).await?;
     let mode = selected_mode(input.comparison, false)?;
     let (request, _) = visible_request(
         &state,

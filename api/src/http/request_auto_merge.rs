@@ -2,7 +2,9 @@ use super::{
     requests::actor_request,
     responses::{git_oid_response, request_actor_summary_response},
 };
-use crate::{error::ApiError, state::AppState, use_cases::request_auto_merge};
+use crate::{
+    auth::viewer::Viewer, error::ApiError, state::AppState, use_cases::request_auto_merge,
+};
 use axum::{
     Json,
     extract::{Path, State},
@@ -18,11 +20,11 @@ use scope_domain::requests::{
 
 pub(crate) async fn get(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    viewer: Viewer,
 ) -> Result<Json<RequestAutoMergeResponse>, ApiError> {
     let snapshot =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+        super::request_state::load(&state, &viewer, &owner, &repo_name, &request_id).await?;
     snapshot_response(&snapshot, super::request_state::viewer(&snapshot)).map(Json)
 }
 
@@ -42,8 +44,14 @@ pub(crate) async fn authorize(
         input.expected_head_oid.as_str().to_string(),
     )
     .await?;
-    let snapshot =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    let snapshot = super::request_state::load(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo_name,
+        &request_id,
+    )
+    .await?;
     snapshot_response(&snapshot, super::request_state::viewer(&snapshot)).map(Json)
 }
 
@@ -56,8 +64,14 @@ pub(crate) async fn cancel(
     let (user, _, request) =
         actor_request(&state, &headers, &owner, &repo_name, &request_id).await?;
     request_auto_merge::cancel(&state, &request.id, &user.id, input.expected_intent_id).await?;
-    let snapshot =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    let snapshot = super::request_state::load(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo_name,
+        &request_id,
+    )
+    .await?;
     snapshot_response(&snapshot, super::request_state::viewer(&snapshot)).map(Json)
 }
 

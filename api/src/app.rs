@@ -310,7 +310,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             routes::REPO_REQUEST_REVISION_FILE_DIFF,
-            get(http::request_review::get_request_revision_file_diff),
+            get(http::request_review::comparison::get_request_revision_file_diff),
         )
         .route(
             routes::REPO_REQUEST_REVISION_COMMIT_FILE_DIFF,

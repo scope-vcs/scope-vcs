@@ -1,4 +1,5 @@
 use crate::{
+    auth::viewer::Viewer,
     error::ApiError,
     git::request_refs::with_request_revision_store_repo,
     http::{
@@ -14,7 +15,6 @@ use crate::{
         request_tree::{request_tree_file, request_tree_files},
     },
 };
-use axum::http::HeaderMap;
 use scope_domain::{
     history::HistoryTreeFile,
     policy::ScopePath,
@@ -48,7 +48,7 @@ impl RepoVersion {
 
 pub(crate) struct RepoVersionRead<'a> {
     pub(crate) state: &'a AppState,
-    pub(crate) headers: &'a HeaderMap,
+    pub(crate) viewer: &'a Viewer,
     pub(crate) owner: &'a str,
     pub(crate) repo: &'a str,
     pub(crate) view: Option<ViewId>,
@@ -118,7 +118,7 @@ async fn update_reader(
 ) -> Result<(RepositoryAccessContext, ViewId), ApiError> {
     repo_and_view(
         read.state,
-        read.headers,
+        read.viewer,
         read.owner,
         read.repo,
         read.view.clone().map(Into::into),
@@ -152,7 +152,7 @@ async fn request_reader(
     request_id: &str,
 ) -> Result<RequestReader, ApiError> {
     let (repo, viewer_user_id) =
-        repo_and_access(read.state, read.headers, read.owner, read.repo).await?;
+        repo_and_access(read.state, read.viewer, read.owner, read.repo).await?;
     let access = repo.context.access.clone();
     let reader = read.view.clone().unwrap_or_else(|| access.view.clone());
     if !repo.context.can_read_view(&reader) {

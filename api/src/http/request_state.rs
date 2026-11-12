@@ -1,10 +1,7 @@
-use crate::{
-    auth::scope::optional_scope_user, error::ApiError, persistence::unix_now, state::AppState,
-};
+use crate::{auth::viewer::Viewer, error::ApiError, persistence::unix_now, state::AppState};
 use axum::{
     Json,
     extract::{Path, State},
-    http::HeaderMap,
 };
 use scope_api_contract::{RequestDetailResponse, RequestStateResponse};
 use scope_domain::requests::{DiffStat, RequestViewer};
@@ -12,11 +9,11 @@ use scope_postgres::db::RequestStateSnapshot;
 
 pub(crate) async fn get(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    viewer: Viewer,
 ) -> Result<Json<RequestStateResponse>, ApiError> {
-    let snapshot = load(&state, &headers, &owner, &repo_name, &request_id).await?;
-    let viewer = viewer(&snapshot);
+    let snapshot = load(&state, &viewer, &owner, &repo_name, &request_id).await?;
+    let viewer = self::viewer(&snapshot);
     let diff_stat = diff_stat(&state, &snapshot).await?;
     Ok(Json(RequestStateResponse {
         viewer: snapshot
@@ -37,21 +34,15 @@ pub(crate) async fn get(
 
 pub(crate) async fn load(
     state: &AppState,
-    headers: &HeaderMap,
+    viewer: &Viewer,
     owner: &str,
     repo_name: &str,
     request_id: &str,
 ) -> Result<RequestStateSnapshot, ApiError> {
-    let user = optional_scope_user(state, headers).await?;
     state
         .metadata
         .requests()
-        .request_state_snapshot(
-            owner,
-            repo_name,
-            request_id,
-            user.as_ref().map(|user| user.id.as_str()),
-        )
+        .request_state_snapshot(owner, repo_name, request_id, viewer.user_id())
         .await
         .map_err(Into::into)
 }

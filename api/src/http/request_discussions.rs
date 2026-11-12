@@ -1,5 +1,5 @@
 use crate::{
-    auth::scope::require_scope_user,
+    auth::{scope::require_scope_user, viewer::Viewer},
     error::ApiError,
     http::{requests::*, responses::*},
     state::AppState,
@@ -40,13 +40,13 @@ const MAX_REPLY_LIMIT: u64 = 100;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct DiscussionListQuery {
-    cursor: Option<String>,
-    discussion: Option<String>,
-    limit: Option<usize>,
-    revision: Option<String>,
-    commit: Option<String>,
-    include_revision_anchor: Option<bool>,
-    include_carried_line_anchors: Option<bool>,
+    pub(crate) cursor: Option<String>,
+    pub(crate) discussion: Option<String>,
+    pub(crate) limit: Option<usize>,
+    pub(crate) revision: Option<String>,
+    pub(crate) commit: Option<String>,
+    pub(crate) include_revision_anchor: Option<bool>,
+    pub(crate) include_carried_line_anchors: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,12 +71,12 @@ pub(crate) struct ActivityQuery {
 
 pub(crate) async fn list_discussions(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Query(query): Query<DiscussionListQuery>,
+    viewer: Viewer,
 ) -> Result<Json<RequestDiscussionPageResponse>, ApiError> {
     let (repo, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+        repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
     let (request, _) =
         visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     let limit = query
@@ -190,12 +190,12 @@ pub(crate) async fn create_discussion(
 
 pub(crate) async fn list_replies(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id, discussion_id)): Path<(String, String, String, String)>,
     Query(query): Query<DiscussionRepliesQuery>,
+    viewer: Viewer,
 ) -> Result<Json<RequestDiscussionRepliesPageResponse>, ApiError> {
     let (repo, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+        repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
     visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     ensure_discussion_in_request(&state, &request_id, &discussion_id).await?;
     if let Some(reply_id) = query.reply.as_deref() {
@@ -356,12 +356,12 @@ pub(crate) async fn mark_read(
 
 pub(crate) async fn changed_discussions(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Query(query): Query<DiscussionChangesQuery>,
+    viewer: Viewer,
 ) -> Result<Json<RequestDiscussionChangesResponse>, ApiError> {
     let (repo, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+        repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
     let (request, _) =
         visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     let limit = query.limit.unwrap_or(100).clamp(1, 100);
@@ -398,12 +398,12 @@ pub(crate) async fn changed_discussions(
 
 pub(crate) async fn activity(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Query(query): Query<ActivityQuery>,
+    viewer: Viewer,
 ) -> Result<Json<RequestActivityPageResponse>, ApiError> {
     let (repo, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+        repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
     let (request, viewer) =
         visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     if !request_policy(&request, viewer, &repo.views).activity_stream_visible {
