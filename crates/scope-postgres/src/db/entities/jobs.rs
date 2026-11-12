@@ -1,13 +1,13 @@
 use super::*;
 
-pub mod outbox_job {
+pub(crate) mod outbox_job {
     use super::*;
 
-    pub const PUSH_MAIN_TRIGGER_WORKFLOW_SCHEMA_VERSION: u8 = 5;
+    pub(crate) const PUSH_MAIN_TRIGGER_WORKFLOW_SCHEMA_VERSION: u8 = 5;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_outbox_jobs")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         #[sea_orm(unique)]
@@ -29,12 +29,12 @@ pub mod outbox_job {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn projection_read_model_rebuild(
+        pub(crate) fn projection_read_model_rebuild(
             id: String,
             repo_id: &str,
             repo_version: u64,
@@ -64,7 +64,7 @@ pub mod outbox_job {
             })
         }
 
-        pub fn push_main_trigger_evaluation(
+        pub(crate) fn push_main_trigger_evaluation(
             id: String,
             job_kind: &str,
             repo_id: &str,
@@ -100,12 +100,12 @@ pub mod outbox_job {
     }
 }
 
-pub mod git_compaction_job {
+pub(crate) mod git_compaction_job {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_git_compaction_jobs")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         pub target_sequence: i64,
@@ -121,32 +121,32 @@ pub mod git_compaction_job {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod metadata_lock {
+pub(crate) mod metadata_lock {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_metadata_locks")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub key: String,
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-pub mod repo_storage_cleanup_job {
+pub(crate) mod repo_storage_cleanup_job {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repo_storage_cleanup_jobs")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         pub generation: String,
@@ -162,12 +162,12 @@ pub mod repo_storage_cleanup_job {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(
+        pub(crate) fn from_domain(
             cleanup: &RepoStorageCleanup,
             generation: String,
             now_unix: u64,
@@ -190,7 +190,7 @@ pub mod repo_storage_cleanup_job {
             })
         }
 
-        pub fn into_domain(self) -> RepoStorageCleanup {
+        pub(crate) fn into_domain(self) -> RepoStorageCleanup {
             RepoStorageCleanup {
                 owner_handle: self.owner_handle,
                 repo_name: self.repo_name,
@@ -203,13 +203,13 @@ pub mod repo_storage_cleanup_job {
         }
     }
 }
-pub mod source_blob_cleanup_job {
+pub(crate) mod source_blob_cleanup_job {
     use super::*;
     use crate::db::object_references::{decode_content_ref, encode_content_ref};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_orphan_object_jobs")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub object_key: String,
         pub generation: String,
@@ -226,12 +226,12 @@ pub mod source_blob_cleanup_job {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(
+        pub(crate) fn from_domain(
             blob: &SourceBlob,
             generation: String,
             now_unix: u64,
@@ -253,7 +253,7 @@ pub mod source_blob_cleanup_job {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<SourceBlob, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<SourceBlob, PostgresError> {
             Ok(SourceBlob {
                 content_ref: decode_content_ref(&self.object_key)?,
                 sha256: self.sha256,

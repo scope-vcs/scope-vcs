@@ -113,7 +113,7 @@ where
 }
 
 #[cfg(any(test, feature = "seeding"))]
-pub async fn save_pending_repo_storage_deletions<C>(
+pub(crate) async fn save_pending_repo_storage_deletions<C>(
     conn: &C,
     pending_repo_storage_deletions: &[RepoStorageCleanup],
     now_unix: u64,
@@ -127,7 +127,7 @@ where
     Ok(())
 }
 
-pub async fn pending_repo_storage_cleanup_exists<C>(
+pub(crate) async fn pending_repo_storage_cleanup_exists<C>(
     conn: &C,
     cleanup_repo_id: &str,
 ) -> Result<bool, PostgresError>
@@ -142,7 +142,7 @@ where
 }
 
 #[cfg(any(test, feature = "seeding"))]
-pub async fn save_pending_source_blob_deletions<C>(
+pub(crate) async fn save_pending_source_blob_deletions<C>(
     conn: &C,
     pending_source_blob_deletions: &[SourceBlob],
     now_unix: u64,

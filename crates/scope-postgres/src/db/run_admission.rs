@@ -1,5 +1,5 @@
 use super::{
-    DispatchClaim, RunStore,
+    AttemptDispatch, DispatchClaim, RunStore,
     native_runs::lock_native_runs_availability,
     run_attempt_persistence::{locked_jobs, locked_run},
     run_state_sql::{
@@ -25,7 +25,6 @@ pub(super) async fn lock_admission(tx: &DatabaseTransaction) -> Result<(), Postg
 }
 
 impl RunStore {
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "admit_next_job"))]
     pub async fn admit_next_job(
         &self,
@@ -116,11 +115,13 @@ impl RunStore {
                 &tx,
                 &run_id,
                 &job_key,
-                attempt_id,
-                token_hash,
-                runtime_version,
-                now_unix,
-                lease_expires_at_unix,
+                AttemptDispatch {
+                    attempt_id,
+                    token_hash,
+                    runtime_version,
+                    now_unix,
+                    lease_expires_at_unix,
+                },
             )
             .await?;
         tx.commit().await?;

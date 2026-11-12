@@ -123,11 +123,13 @@ jobs:
         .dispatch_job(
             "run-check-evidence",
             "check",
-            "attempt-evidence",
-            &token,
-            "runtime",
-            5,
-            20,
+            crate::db::AttemptDispatch {
+                attempt_id: "attempt-evidence",
+                token_hash: &token,
+                runtime_version: "runtime",
+                now_unix: 5,
+                lease_expires_at_unix: 20,
+            },
         )
         .await
         .unwrap();

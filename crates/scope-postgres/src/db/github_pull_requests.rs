@@ -146,7 +146,9 @@ impl RequestStore {
             .as_ref()
             .and_then(|opened| match &opened.state {
                 GitHubPullRequestState::Merged(merge) => Some(merge),
-                _ => None,
+                GitHubPullRequestState::Open
+                | GitHubPullRequestState::Closed
+                | GitHubPullRequestState::ClosedOnGitHub => None,
             });
         let mut values = recorded_values(progress)?;
         values.extend([

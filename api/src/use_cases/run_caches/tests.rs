@@ -108,13 +108,15 @@ impl Fixture {
         let caches = self.state.metadata.caches();
         caches
             .prepare_upload(
-                &self.repository_id,
-                &digest,
-                &"f".repeat(64),
-                &digest,
-                1,
-                "test-local",
-                &upload_id,
+                scope_postgres::db::RequestedCacheUpload {
+                    repository_id: &self.repository_id,
+                    identity_digest: &digest,
+                    compatibility_group_digest: &"f".repeat(64),
+                    checksum_sha256: &digest,
+                    size_bytes: 1,
+                    storage_backend: "test-local",
+                    upload_id: &upload_id,
+                },
                 created_at,
             )
             .await
@@ -270,11 +272,13 @@ async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger, attempt_id: &s
     runs.dispatch_job(
         &run_id,
         "checks",
-        attempt_id,
-        &machine_token_hash(token),
-        "test-runtime",
-        fixture.now,
-        fixture.now + 3_600,
+        scope_postgres::db::AttemptDispatch {
+            attempt_id,
+            token_hash: &machine_token_hash(token),
+            runtime_version: "test-runtime",
+            now_unix: fixture.now,
+            lease_expires_at_unix: fixture.now + 3_600,
+        },
     )
     .await
     .unwrap();

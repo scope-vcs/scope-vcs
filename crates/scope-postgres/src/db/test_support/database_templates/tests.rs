@@ -193,7 +193,7 @@ fn dropped_stores_release_their_connections_while_database_drops_are_queued() {
             .unwrap();
 
     drop(store);
-    let admin_url = target.database_url.clone();
+    let admin_url = target.database_url;
     let name = database_name.clone();
     let remaining = run_test_future(async move {
         let admin = Database::connect(&admin_url).await.unwrap();
@@ -368,7 +368,7 @@ fn process_exit_removes_only_its_registered_databases() {
     });
     assert_eq!(external_value, 1);
 
-    let admin_url = target.database_url.clone();
+    let admin_url = target.database_url;
     let external_name = external_database.clone();
     let databases = run_test_future(async move {
         let admin = Database::connect(&admin_url).await.unwrap();

@@ -35,7 +35,7 @@ pub(super) fn run_test_future<R: Send + 'static>(
             }
         })
         .await;
-        let _ = sender.send(outcome);
+        sender.send(outcome).ok();
     });
     match receiver
         .recv()
@@ -54,7 +54,9 @@ pub(super) fn test_runtime() -> &'static tokio::runtime::Handle {
         std::thread::spawn(move || {
             let runtime = tokio::runtime::Runtime::new()
                 .expect("creating test database runtime should succeed");
-            sender.send(runtime.handle().clone()).unwrap();
+            sender
+                .send(runtime.handle().clone())
+                .expect("test database runtime handle should be awaited");
             runtime.block_on(std::future::pending::<()>());
         });
         receiver.recv().expect("test database runtime should start")

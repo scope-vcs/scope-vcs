@@ -72,11 +72,13 @@ pub(super) async fn run_job(
         .dispatch_job(
             run_id,
             job_key,
-            &attempt,
-            &token,
-            RUNTIME_VERSION,
-            *clock,
-            *clock + DEFAULT_LEASE_SECONDS,
+            scope_postgres::db::AttemptDispatch {
+                attempt_id: &attempt,
+                token_hash: &token,
+                runtime_version: RUNTIME_VERSION,
+                now_unix: *clock,
+                lease_expires_at_unix: *clock + DEFAULT_LEASE_SECONDS,
+            },
         )
         .await?;
 

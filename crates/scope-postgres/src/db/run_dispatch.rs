@@ -15,6 +15,15 @@ use sea_orm::{
 
 const CLOUD_TASK_STOP_CLAIM_LEASE_SECS: u64 = 15 * 60;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AttemptDispatch<'a> {
+    pub attempt_id: &'a str,
+    pub token_hash: &'a str,
+    pub runtime_version: &'a str,
+    pub now_unix: u64,
+    pub lease_expires_at_unix: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct CloudTaskStop {
     pub attempt_id: String,
@@ -186,48 +195,36 @@ impl RunStore {
     }
 
     #[cfg(any(test, feature = "seeding"))]
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "dispatch_job"))]
     pub async fn dispatch_job(
         &self,
         run_id: &str,
         job_key: &str,
-        attempt_id: &str,
-        token_hash: &str,
-        runtime_version: &str,
-        now_unix: u64,
-        lease_expires_at_unix: u64,
+        dispatch: AttemptDispatch<'_>,
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await?;
         super::run_admission::lock_admission(&tx).await?;
         let claim = self
-            .dispatch_in_transaction(
-                &tx,
-                run_id,
-                job_key,
-                attempt_id,
-                token_hash,
-                runtime_version,
-                now_unix,
-                lease_expires_at_unix,
-            )
+            .dispatch_in_transaction(&tx, run_id, job_key, dispatch)
             .await?;
         tx.commit().await?;
         Ok(claim)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) async fn dispatch_in_transaction(
         &self,
         tx: &DatabaseTransaction,
         run_id: &str,
         job_key: &str,
-        attempt_id: &str,
-        token_hash: &str,
-        runtime_version: &str,
-        now_unix: u64,
-        lease_expires_at_unix: u64,
+        dispatch: AttemptDispatch<'_>,
     ) -> Result<DispatchClaim, PostgresError> {
+        let AttemptDispatch {
+            attempt_id,
+            token_hash,
+            runtime_version,
+            now_unix,
+            lease_expires_at_unix,
+        } = dispatch;
         let run_snapshot = entities::run::Entity::find_by_id(run_id.to_string())
             .one(tx)
             .await?

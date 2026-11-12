@@ -239,11 +239,13 @@ async fn uploaded_enqueue_replay_preserves_dispatch_and_terminal_execution() {
     runs.dispatch_job(
         &first.run.id,
         "checks",
-        "replay-attempt",
-        &token,
-        "runtime",
-        12,
-        100,
+        crate::db::AttemptDispatch {
+            attempt_id: "replay-attempt",
+            token_hash: &token,
+            runtime_version: "runtime",
+            now_unix: 12,
+            lease_expires_at_unix: 100,
+        },
     )
     .await
     .unwrap();

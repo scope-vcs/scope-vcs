@@ -22,13 +22,15 @@ async fn media_api_role_authorizes_stores_and_serves_an_upload() {
     assert_eq!(
         media_api
             .reserve_upload_part(
-                "role_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "role_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 released_part.clone(),
                 "write_role",
                 11,
-                20,
+                20
             )
             .await
             .unwrap(),
@@ -42,13 +44,15 @@ async fn media_api_role_authorizes_stores_and_serves_an_upload() {
     assert_eq!(
         media_api
             .reserve_upload_part(
-                "role_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "role_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 stored_part.clone(),
                 "write_role_retry",
                 13,
-                20,
+                20
             )
             .await
             .unwrap(),
@@ -57,13 +61,15 @@ async fn media_api_role_authorizes_stores_and_serves_an_upload() {
     assert_eq!(
         media_api
             .mark_upload_part_stored(
-                "role_attachment",
-                &prepared.upload_id,
-                OWNER_ID,
+                AttachmentUploadSession {
+                    attachment_id: "role_attachment",
+                    upload_id: &prepared.upload_id,
+                    uploader_user_id: OWNER_ID
+                },
                 1,
                 &stored_part.object_key,
                 "write_role_retry",
-                14,
+                14
             )
             .await
             .unwrap(),

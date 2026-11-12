@@ -19,7 +19,9 @@ use axum::{
 use scope_api_contract::{RequestAttachmentMediaTarget, RequestAttachmentPartReceiptResponse};
 use scope_domain::requests::attachments::RequestMediaObject;
 use scope_media_storage::{MAX_CHUNK_BYTES, MEDIA_PUT_TIMEOUT, WriteAttempt};
-use scope_postgres::db::{RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult};
+use scope_postgres::db::{
+    AttachmentUploadSession, RequestMediaObjectTarget, ReserveUploadPartResult, StorePartResult,
+};
 use scope_service_runtime::{http::ServiceError, random_hex, unix_now};
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
@@ -98,9 +100,11 @@ pub(crate) async fn put_upload_part(
         .metadata
         .media()
         .reserve_upload_part(
-            &claims.attachment_id,
-            &claims.upload_id,
-            &claims.uploader_user_id,
+            AttachmentUploadSession {
+                attachment_id: &claims.attachment_id,
+                upload_id: &claims.upload_id,
+                uploader_user_id: &claims.uploader_user_id,
+            },
             planned,
             &write_token,
             write_started_at_unix,
@@ -141,9 +145,11 @@ pub(crate) async fn put_upload_part(
         .metadata
         .media()
         .mark_upload_part_stored(
-            &claims.attachment_id,
-            &claims.upload_id,
-            &claims.uploader_user_id,
+            AttachmentUploadSession {
+                attachment_id: &claims.attachment_id,
+                upload_id: &claims.upload_id,
+                uploader_user_id: &claims.uploader_user_id,
+            },
             part_number,
             &reserved.object_key,
             &write_token,

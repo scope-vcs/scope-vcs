@@ -27,7 +27,7 @@ pub struct RequestDiscussionReplyReferenceReadModel {
     pub body_markdown: String,
 }
 
-pub struct DiscussionPageFilter<'a> {
+pub(super) struct DiscussionPageFilter<'a> {
     pub discussion_id: Option<&'a str>,
     pub revision_id: Option<&'a str>,
     pub commit_oid: Option<&'a str>,
@@ -35,7 +35,7 @@ pub struct DiscussionPageFilter<'a> {
     pub include_carried_line_anchors: bool,
 }
 
-pub async fn discussion_by_id<C>(
+pub(super) async fn discussion_by_id<C>(
     conn: &C,
     id: &str,
 ) -> Result<Option<RequestDiscussion>, PostgresError>
@@ -49,7 +49,7 @@ where
         .transpose()
 }
 
-pub async fn discussion_by_client_id<C>(
+pub(super) async fn discussion_by_client_id<C>(
     conn: &C,
     request_id: &str,
     author_user_id: &str,
@@ -68,7 +68,7 @@ where
         .transpose()
 }
 
-pub async fn github_discussion_by_client_id<C>(
+pub(super) async fn github_discussion_by_client_id<C>(
     conn: &C,
     request_id: &str,
     client_discussion_id: &str,
@@ -86,7 +86,7 @@ where
         .transpose()
 }
 
-pub async fn discussions_page_for_request<C>(
+pub(super) async fn discussions_page_for_request<C>(
     conn: &C,
     request_id: &str,
     snapshot_version: u64,
@@ -156,7 +156,7 @@ where
         .collect()
 }
 
-pub async fn changed_discussions_for_request<C>(
+pub(super) async fn changed_discussions_for_request<C>(
     conn: &C,
     request_id: &str,
     after_position: u64,
@@ -179,7 +179,7 @@ where
         .collect()
 }
 
-pub async fn replies_for_discussion<C>(
+pub(super) async fn replies_for_discussion<C>(
     conn: &C,
     discussion_id: &str,
     before_position: Option<u64>,
@@ -233,7 +233,7 @@ where
     Ok(replies)
 }
 
-pub async fn reply_previews_for_discussions<C>(
+pub(super) async fn reply_previews_for_discussions<C>(
     conn: &C,
     discussion_ids: &[String],
 ) -> Result<BTreeMap<String, (u64, Vec<RequestDiscussionReplyReadModel>)>, PostgresError>
@@ -324,7 +324,7 @@ fn reply_read_model(row: &QueryResult) -> Result<RequestDiscussionReplyReadModel
     Ok(RequestDiscussionReplyReadModel { reply, reply_to })
 }
 
-pub async fn unread_content_counts<C>(
+pub(super) async fn unread_content_counts<C>(
     conn: &C,
     discussions: &[RequestDiscussion],
     read_states: &BTreeMap<String, RequestDiscussionReadState>,
@@ -395,7 +395,7 @@ where
     Ok(result)
 }
 
-pub async fn reply_by_id<C>(
+pub(super) async fn reply_by_id<C>(
     conn: &C,
     id: &str,
 ) -> Result<Option<RequestDiscussionReply>, PostgresError>
@@ -409,7 +409,7 @@ where
         .transpose()
 }
 
-pub async fn reply_by_client_id<C>(
+pub(super) async fn reply_by_client_id<C>(
     conn: &C,
     discussion_id: &str,
     author_user_id: &str,
@@ -428,7 +428,7 @@ where
         .transpose()
 }
 
-pub async fn read_states_for_user<C>(
+pub(super) async fn read_states_for_user<C>(
     conn: &C,
     discussion_ids: &[String],
     user_id: &str,
@@ -455,7 +455,7 @@ where
         .collect()
 }
 
-pub async fn read_state<C>(
+pub(super) async fn read_state<C>(
     conn: &C,
     discussion_id: &str,
     user_id: &str,
@@ -473,7 +473,10 @@ where
     .transpose()
 }
 
-pub async fn insert_discussion<C>(conn: &C, value: &RequestDiscussion) -> Result<(), PostgresError>
+pub(super) async fn insert_discussion<C>(
+    conn: &C,
+    value: &RequestDiscussion,
+) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -484,7 +487,10 @@ where
     Ok(())
 }
 
-pub async fn save_discussion<C>(conn: &C, value: &RequestDiscussion) -> Result<(), PostgresError>
+pub(super) async fn save_discussion<C>(
+    conn: &C,
+    value: &RequestDiscussion,
+) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -521,7 +527,10 @@ where
     Ok(())
 }
 
-pub async fn insert_reply<C>(conn: &C, value: &RequestDiscussionReply) -> Result<(), PostgresError>
+pub(super) async fn insert_reply<C>(
+    conn: &C,
+    value: &RequestDiscussionReply,
+) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -532,7 +541,7 @@ where
     Ok(())
 }
 
-pub async fn save_read_state<C>(
+pub(super) async fn save_read_state<C>(
     conn: &C,
     value: &RequestDiscussionReadState,
 ) -> Result<(), PostgresError>

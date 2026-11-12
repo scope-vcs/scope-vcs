@@ -17,7 +17,6 @@ impl RunStore {
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "complete_attempt_step"))]
     pub async fn complete_attempt_step(
         &self,

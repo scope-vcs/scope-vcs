@@ -16,7 +16,10 @@ pub struct RequestRevisionWindow {
     pub has_earlier_revisions: bool,
 }
 
-pub async fn revision_by_id<C>(conn: &C, id: &str) -> Result<Option<RequestRevision>, PostgresError>
+pub(super) async fn revision_by_id<C>(
+    conn: &C,
+    id: &str,
+) -> Result<Option<RequestRevision>, PostgresError>
 where
     C: ConnectionTrait,
 {
@@ -27,7 +30,7 @@ where
         .transpose()
 }
 
-pub async fn latest_revision_for_request<C>(
+pub(super) async fn latest_revision_for_request<C>(
     conn: &C,
     request_id: &str,
 ) -> Result<Option<RequestRevision>, PostgresError>
@@ -44,7 +47,7 @@ where
         .transpose()
 }
 
-pub async fn latest_revision_through<C>(
+pub(super) async fn latest_revision_through<C>(
     conn: &C,
     request_id: &str,
     through_position: u64,
@@ -66,7 +69,7 @@ where
         .transpose()
 }
 
-pub async fn latest_revision_with_head<C>(
+pub(super) async fn latest_revision_with_head<C>(
     conn: &C,
     request_id: &str,
     head_oid: &str,
@@ -117,7 +120,7 @@ where
     .collect())
 }
 
-pub async fn revisions_for_request_ids<C>(
+pub(super) async fn revisions_for_request_ids<C>(
     conn: &C,
     request_ids: &[String],
 ) -> Result<Vec<RequestRevision>, PostgresError>
@@ -136,7 +139,7 @@ where
         .collect()
 }
 
-pub async fn revision_positions_for_request<C>(
+pub(super) async fn revision_positions_for_request<C>(
     conn: &C,
     request_id: &str,
 ) -> Result<BTreeMap<String, u64>, PostgresError>
@@ -156,7 +159,7 @@ where
         .collect()
 }
 
-pub async fn revision_window_for_request<C>(
+pub(super) async fn revision_window_for_request<C>(
     conn: &C,
     request_id: &str,
     selected_revision_id: Option<&str>,
@@ -201,7 +204,10 @@ where
     })
 }
 
-pub async fn insert_revision<C>(conn: &C, value: &RequestRevision) -> Result<(), PostgresError>
+pub(super) async fn insert_revision<C>(
+    conn: &C,
+    value: &RequestRevision,
+) -> Result<(), PostgresError>
 where
     C: ConnectionTrait,
 {

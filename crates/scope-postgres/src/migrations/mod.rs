@@ -38,7 +38,7 @@ use serde::Serialize;
 const MIGRATION_LOCK: &str = "scope:metadata-migrations";
 const MIGRATION_TABLE: &str = "seaql_migrations";
 
-pub struct Migrator;
+pub(crate) struct Migrator;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct PendingMigration {
@@ -197,7 +197,7 @@ impl Default for MigrationLimits {
     }
 }
 
-pub async fn apply_in_maintenance(
+pub(crate) async fn apply_in_maintenance(
     db: &DatabaseConnection,
     limits: MigrationLimits,
 ) -> Result<(), DbErr> {
@@ -210,7 +210,7 @@ pub async fn apply_in_maintenance(
     tx.commit().await
 }
 
-pub async fn preflight(
+pub(crate) async fn preflight(
     db: &DatabaseConnection,
     limits: MigrationLimits,
 ) -> Result<MigrationPlan, DbErr> {
@@ -252,7 +252,7 @@ async fn set_operation_limits<C: ConnectionTrait>(
     Ok(())
 }
 
-pub async fn plan<C>(db: &C) -> Result<MigrationPlan, DbErr>
+pub(crate) async fn plan<C>(db: &C) -> Result<MigrationPlan, DbErr>
 where
     C: ConnectionTrait,
 {
@@ -303,7 +303,7 @@ where
     Ok(())
 }
 
-pub async fn assert_exact_state<C>(db: &C) -> Result<(), DbErr>
+pub(crate) async fn assert_exact_state<C>(db: &C) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {

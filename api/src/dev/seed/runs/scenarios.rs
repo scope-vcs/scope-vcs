@@ -143,11 +143,13 @@ pub(super) async fn seed_canceled_run(
     runs.dispatch_job(
         &run_id,
         "test",
-        &attempt,
-        &token,
-        RUNTIME_VERSION,
-        clock,
-        clock + DEFAULT_LEASE_SECONDS,
+        scope_postgres::db::AttemptDispatch {
+            attempt_id: &attempt,
+            token_hash: &token,
+            runtime_version: RUNTIME_VERSION,
+            now_unix: clock,
+            lease_expires_at_unix: clock + DEFAULT_LEASE_SECONDS,
+        },
     )
     .await?;
     clock += 1;
@@ -251,11 +253,13 @@ pub(super) async fn seed_timed_out_run(
     runs.dispatch_job(
         &run_id,
         "lint",
-        &attempt,
-        &token,
-        RUNTIME_VERSION,
-        clock,
-        clock + DEFAULT_LEASE_SECONDS,
+        scope_postgres::db::AttemptDispatch {
+            attempt_id: &attempt,
+            token_hash: &token,
+            runtime_version: RUNTIME_VERSION,
+            now_unix: clock,
+            lease_expires_at_unix: clock + DEFAULT_LEASE_SECONDS,
+        },
     )
     .await?;
     clock += 1;

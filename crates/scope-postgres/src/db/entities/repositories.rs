@@ -1,11 +1,11 @@
 use super::*;
 
-pub mod repository {
+pub(crate) mod repository {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repositories")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub id: String,
         pub incarnation_id: String,
@@ -22,12 +22,12 @@ pub mod repository {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(repo: &Repository) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(repo: &Repository) -> Result<Self, PostgresError> {
             Ok(Self {
                 id: repo.record.id.clone(),
                 incarnation_id: repo.record.incarnation_id.clone(),
@@ -53,7 +53,7 @@ pub mod repository {
             })
         }
 
-        pub fn try_into_domain(
+        pub(crate) fn try_into_domain(
             self,
             facts: RepositoryFacts,
             collaboration: RepositoryCollaboration,
@@ -90,13 +90,13 @@ pub mod repository {
     }
 }
 
-pub mod repository_landing_file {
+pub(crate) mod repository_landing_file {
     use super::*;
     use scope_domain::landing_file::{REPOSITORY_LANDING_FILE_PATH, RepositoryLandingFile};
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_landing_files")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         pub path: String,
@@ -108,12 +108,12 @@ pub mod repository_landing_file {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(
+        pub(crate) fn from_domain(
             repo_id: &str,
             landing_file: RepositoryLandingFile,
         ) -> Result<Self, PostgresError> {
@@ -131,7 +131,7 @@ pub mod repository_landing_file {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<RepositoryLandingFile, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<RepositoryLandingFile, PostgresError> {
             if self.path != REPOSITORY_LANDING_FILE_PATH {
                 return Err(PostgresError::internal_message(
                     "repository landing file has an unexpected path",
@@ -153,12 +153,12 @@ pub mod repository_landing_file {
     }
 }
 
-pub mod repository_workflow_catalog {
+pub(crate) mod repository_workflow_catalog {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_workflow_catalogs")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         pub source_head_oid: String,
@@ -167,17 +167,17 @@ pub mod repository_workflow_catalog {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-pub mod repository_workflow_file {
+pub(crate) mod repository_workflow_file {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_workflow_files")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         #[sea_orm(primary_key, auto_increment = false)]
@@ -189,16 +189,16 @@ pub mod repository_workflow_file {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 }
-pub mod repository_first_push_token {
+pub(crate) mod repository_first_push_token {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_first_push_tokens")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         pub token_hash: String,
@@ -209,12 +209,15 @@ pub mod repository_first_push_token {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(repo_id: &str, token: &FirstPushToken) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(
+            repo_id: &str,
+            token: &FirstPushToken,
+        ) -> Result<Self, PostgresError> {
             Ok(Self {
                 repo_id: repo_id.to_string(),
                 token_hash: token.token_hash.clone(),
@@ -228,7 +231,7 @@ pub mod repository_first_push_token {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<FirstPushToken, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<FirstPushToken, PostgresError> {
             Ok(FirstPushToken {
                 token_hash: self.token_hash,
                 secret: None,
@@ -243,12 +246,12 @@ pub mod repository_first_push_token {
         }
     }
 }
-pub mod repository_git_push_token {
+pub(crate) mod repository_git_push_token {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_repository_git_push_tokens")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         pub token_hash: String,
@@ -257,12 +260,15 @@ pub mod repository_git_push_token {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(repo_id: &str, token: &GitPushToken) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(
+            repo_id: &str,
+            token: &GitPushToken,
+        ) -> Result<Self, PostgresError> {
             Ok(Self {
                 repo_id: repo_id.to_string(),
                 token_hash: token.token_hash.clone(),
@@ -271,7 +277,7 @@ pub mod repository_git_push_token {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<GitPushToken, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<GitPushToken, PostgresError> {
             Ok(GitPushToken {
                 token_hash: self.token_hash,
                 owner_user_id: self.owner_user_id,
@@ -280,12 +286,12 @@ pub mod repository_git_push_token {
         }
     }
 }
-pub mod git_head {
+pub(crate) mod git_head {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_git_heads")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub repo_id: String,
         pub head_oid: String,
@@ -295,12 +301,12 @@ pub mod git_head {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
-        pub fn from_domain(repo_id: &str, head: &GitHead) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(repo_id: &str, head: &GitHead) -> Result<Self, PostgresError> {
             Ok(Self {
                 repo_id: repo_id.to_string(),
                 head_oid: head.head_oid.clone(),
@@ -310,7 +316,7 @@ pub mod git_head {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<GitHead, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<GitHead, PostgresError> {
             Ok(GitHead {
                 head_oid: self.head_oid,
                 push_sequence: i64_to_u64(self.push_sequence, "Git push sequence")?,
@@ -323,12 +329,12 @@ pub mod git_head {
     }
 }
 
-pub mod git_segment_upload {
+pub(crate) mod git_segment_upload {
     use super::*;
 
     #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
     #[sea_orm(table_name = "scope_git_segment_uploads")]
-    pub struct Model {
+    pub(crate) struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
         pub segment_id: String,
         pub repo_id: String,
@@ -343,13 +349,13 @@ pub mod git_segment_upload {
     }
 
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
+    pub(crate) enum Relation {}
 
     impl ActiveModelBehavior for ActiveModel {}
 
     impl Model {
         #[cfg(any(test, feature = "seeding"))]
-        pub fn from_domain(upload: &GitSegmentUpload) -> Result<Self, PostgresError> {
+        pub(crate) fn from_domain(upload: &GitSegmentUpload) -> Result<Self, PostgresError> {
             Ok(Self {
                 segment_id: upload.segment_id.clone(),
                 repo_id: upload.repository_id.clone(),
@@ -379,7 +385,7 @@ pub mod git_segment_upload {
             })
         }
 
-        pub fn try_into_domain(self) -> Result<GitSegmentUpload, PostgresError> {
+        pub(crate) fn try_into_domain(self) -> Result<GitSegmentUpload, PostgresError> {
             Ok(GitSegmentUpload {
                 segment_id: self.segment_id,
                 repository_id: self.repo_id,

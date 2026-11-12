@@ -11,6 +11,7 @@ use scope_api_contract::{
 use scope_domain::runs::cache::identity::CacheIdentity;
 use scope_postgres::db::{
     CacheAttemptAccess, CacheCommitResult, CachePrepareResult, CacheRestoreKind, CacheUploadRecord,
+    RequestedCacheUpload,
 };
 use scope_storage::{S3Backend, S3Presigner, S3Settings};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
@@ -193,13 +194,15 @@ pub(crate) async fn prepare_upload(
         .metadata
         .caches()
         .prepare_upload(
-            &authorized.repository_id,
-            &authorized.exact_digest,
-            &authorized.compatibility_group_digest,
-            &request.object_digest,
-            request.size_bytes,
-            &storage.backend,
-            &random_upload_id()?,
+            RequestedCacheUpload {
+                repository_id: &authorized.repository_id,
+                identity_digest: &authorized.exact_digest,
+                compatibility_group_digest: &authorized.compatibility_group_digest,
+                checksum_sha256: &request.object_digest,
+                size_bytes: request.size_bytes,
+                storage_backend: &storage.backend,
+                upload_id: &random_upload_id()?,
+            },
             now,
         )
         .await?;

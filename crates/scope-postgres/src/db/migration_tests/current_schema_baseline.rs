@@ -156,7 +156,10 @@ async fn the_baseline_schema_inventory_detects_each_kind_of_drift() {
     assert_eq!(inventory_after(&db, "").await, baseline);
 }
 
-async fn inventory_after(db: &DatabaseConnection, drift: &str) -> serde_json::Value {
+async fn inventory_after(
+    db: &DatabaseConnection,
+    drift: &str,
+) -> serde_json::Map<String, serde_json::Value> {
     use sea_orm::TransactionTrait;
 
     let tx = db.begin().await.unwrap();

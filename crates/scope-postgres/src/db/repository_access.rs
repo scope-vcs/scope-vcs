@@ -270,14 +270,17 @@ pub(super) struct RepositoryAccessRead {
 }
 
 impl RepositoryAccessRead {
-    pub fn request_view_mains(&self) -> scope_domain::requests::RequestViewMains {
+    pub(super) fn request_view_mains(&self) -> scope_domain::requests::RequestViewMains {
         super::projection_read_models::live_request_view_mains(
             &self.projections,
             self.context.record.content_version,
         )
     }
 
-    pub fn projection(&self, view: &ViewId) -> Option<&entities::projection_read_model::Model> {
+    pub(super) fn projection(
+        &self,
+        view: &ViewId,
+    ) -> Option<&entities::projection_read_model::Model> {
         self.projections.iter().find(|row| {
             row.audience == view.as_str()
                 && row.current()

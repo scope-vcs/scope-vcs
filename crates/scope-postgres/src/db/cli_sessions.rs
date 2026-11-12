@@ -8,7 +8,7 @@ use crate::error::PostgresError;
 use scope_domain::account::SessionIdentity;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseBackend, IntoActiveModel, Statement};
 
-pub async fn insert_cli_session_in_tx<C>(
+pub(super) async fn insert_cli_session_in_tx<C>(
     conn: &C,
     user_id: &str,
     session: NewCliSession,
@@ -33,7 +33,7 @@ where
     Ok(SessionIdentity::from(&user))
 }
 
-pub fn cli_session_summary_from_model(
+pub(super) fn cli_session_summary_from_model(
     session: entities::cli_session::Model,
 ) -> Result<CliSessionSummary, PostgresError> {
     Ok(CliSessionSummary {

@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "scope_request_revision_context_receipts")]
-pub struct Model {
+pub(crate) struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub request_id: String,
     #[sea_orm(primary_key, auto_increment = false)]
@@ -13,6 +13,6 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub(crate) enum Relation {}
 
 impl ActiveModelBehavior for ActiveModel {}
