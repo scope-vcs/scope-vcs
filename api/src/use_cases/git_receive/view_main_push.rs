@@ -281,7 +281,7 @@ async fn provisional_request(
             },
             StartRequestInput {
                 base: scope_domain::requests::RequestBase::Main {
-                    review_base_oid: (provisional.view_main_oid.to_string()).clone(),
+                    review_base_oid: provisional.view_main_oid.to_string(),
                 },
                 id: provisional.request_id.to_string(),
                 repo_id: context.repo_id.clone(),

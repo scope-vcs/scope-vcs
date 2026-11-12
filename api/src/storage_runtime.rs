@@ -31,14 +31,11 @@ pub(crate) struct StorageRuntime {
 }
 
 impl StorageRuntime {
-    pub(crate) async fn from_env(source: StorageSource) -> anyhow::Result<Self> {
-        Self::from_env_at(source, data_dir(&git_repo_root())).await
+    pub(crate) fn from_env(source: StorageSource) -> anyhow::Result<Self> {
+        Self::from_env_at(source, data_dir(&git_repo_root()))
     }
 
-    pub(crate) async fn from_env_at(
-        source: StorageSource,
-        data_dir: PathBuf,
-    ) -> anyhow::Result<Self> {
+    pub(crate) fn from_env_at(source: StorageSource, data_dir: PathBuf) -> anyhow::Result<Self> {
         ensure_private_dir(&data_dir)
             .map_err(|error| anyhow::anyhow!(error.into_operator_diagnostic()))?;
         let raw_key = encryption_key_from_env()?;

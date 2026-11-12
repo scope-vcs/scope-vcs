@@ -114,7 +114,7 @@ pub(super) async fn persist_batch(
         );
     }
     for (reply, landed) in landed_replies {
-        let _ = reply.send(Ok(landed));
+        reply.send(Ok(landed)).ok();
     }
     let mut retry = Vec::new();
     if let Some(error) = rejected

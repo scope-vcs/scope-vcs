@@ -86,7 +86,7 @@ impl BackgroundWork {
     }
 
     pub async fn shutdown(self) {
-        let _ = self.stop.send(true);
+        self.stop.send_replace(true);
         for (name, task) in self.tasks {
             if let Err(error) = task.await {
                 tracing::error!(task = name, %error, "background loop exited unexpectedly");

@@ -38,11 +38,6 @@ impl MediaGrantIssuer {
         })
     }
 
-    pub(crate) fn expires_at(&self, now: u64) -> anyhow::Result<u64> {
-        now.checked_add(MEDIA_GRANT_LIFETIME_SECONDS)
-            .ok_or_else(|| anyhow::anyhow!("media grant expiry overflow"))
-    }
-
     pub(crate) fn sign(&self, claims: &impl serde::Serialize) -> anyhow::Result<String> {
         Ok(encode(
             &Header::new(Algorithm::EdDSA),
@@ -82,7 +77,8 @@ impl MediaGrantIssuer {
 
     #[cfg(any(test, feature = "local-dev"))]
     pub(crate) fn test() -> Self {
-        Self::new("http://127.0.0.1:8083".into(), TEST_PRIVATE_KEY.into()).unwrap()
+        Self::new("http://127.0.0.1:8083".into(), TEST_PRIVATE_KEY.into())
+            .expect("the bundled test media grant key is a valid Ed25519 key")
     }
 
     #[cfg(feature = "local-dev")]
@@ -96,6 +92,11 @@ impl MediaGrantIssuer {
             _ => anyhow::bail!("local media configuration requires both URL and signing key"),
         }
     }
+}
+
+pub(crate) fn media_grant_expires_at(now: u64) -> anyhow::Result<u64> {
+    now.checked_add(MEDIA_GRANT_LIFETIME_SECONDS)
+        .ok_or_else(|| anyhow::anyhow!("media grant expiry overflow"))
 }
 
 #[cfg(test)]
@@ -113,7 +114,7 @@ mod tests {
             request_id: "request-a".into(),
             uploader_user_id: "uploader-a".into(),
             upload_id: "upload-a".into(),
-            expires_at_unix: issuer.expires_at(10).unwrap(),
+            expires_at_unix: media_grant_expires_at(10).unwrap(),
         };
         let token = issuer.sign(&claims).unwrap();
         let mut validation = Validation::new(Algorithm::EdDSA);

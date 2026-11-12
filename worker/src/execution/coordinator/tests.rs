@@ -313,7 +313,13 @@ async fn competing_workers_reserve_capacity_before_concurrent_provider_starts() 
         match run.state {
             scope_domain::runs::run::RunState::Dispatching => admitted_runs += 1,
             scope_domain::runs::run::RunState::Queued => {}
-            state => panic!("unexpected run state: {state:?}"),
+            state @ (scope_domain::runs::run::RunState::Running
+            | scope_domain::runs::run::RunState::Succeeded
+            | scope_domain::runs::run::RunState::Failed
+            | scope_domain::runs::run::RunState::Canceled
+            | scope_domain::runs::run::RunState::Lost) => {
+                panic!("unexpected run state: {state:?}")
+            }
         }
     }
     assert_eq!(admitted_runs, 3);

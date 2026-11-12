@@ -211,7 +211,15 @@ async fn wait_for_run_change(
                     ..
                 } if changed_run_id == run_id => return,
                 RepoChangeKind::RepositoryChanged { .. } => return,
-                _ => {}
+                RepoChangeKind::Connected
+                | RepoChangeKind::Lagged
+                | RepoChangeKind::DependenciesChanged
+                | RepoChangeKind::GitHubWorkflowRunsChanged
+                | RepoChangeKind::GitHubWorkflowRunChanged { .. }
+                | RepoChangeKind::RequestStateChanged { .. }
+                | RepoChangeKind::RequestTimelineChanged { .. }
+                | RepoChangeKind::RequestAttachmentChanged { .. }
+                | RepoChangeKind::RunChanged { .. } => {}
             },
             Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => return,
             Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -227,7 +235,7 @@ async fn send_stream_error(
 ) {
     let data = stream_error_data(error);
     if let Ok(event) = Event::default().event("error").json_data(data) {
-        let _ = sender.send(Ok(event)).await;
+        sender.send(Ok(event)).await.ok();
     }
 }
 

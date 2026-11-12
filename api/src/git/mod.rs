@@ -49,7 +49,6 @@ use receive_protocol::{advertise_additional_refs, read_receive_pack_commands};
 use scope_domain::{requests::GitFetchAsk, views::ViewId};
 use serde::Deserialize;
 use std::{
-    fs,
     io::Read,
     ops::Deref,
     path::{Path as FsPath, PathBuf},
@@ -103,10 +102,10 @@ impl Drop for TemporaryRepository {
         let path = self.0.clone();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             runtime.spawn_blocking(move || {
-                let _ = fs::remove_dir_all(path);
+                crate::git::storage::discard_dir(&path);
             });
         } else {
-            let _ = fs::remove_dir_all(path);
+            crate::git::storage::discard_dir(&path);
         }
     }
 }

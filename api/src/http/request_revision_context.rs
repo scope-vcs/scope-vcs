@@ -97,7 +97,10 @@ pub(crate) async fn publish(
             .await?;
             let main = match &parent {
                 RequestBasePublicationFacts::Main { main_head_oid, .. } => main_head_oid.clone(),
-                _ => restore_request_main(&state, &incarnation, &request.view, &staging).await?,
+                RequestBasePublicationFacts::Unchanged { .. }
+                | RequestBasePublicationFacts::Request(_) => {
+                    restore_request_main(&state, &incarnation, &request.view, &staging).await?
+                }
             };
             if &request.view != snapshot.repository.views.full() {
                 let git =
@@ -163,7 +166,7 @@ pub(crate) async fn publish(
                 .map_err(ApiError::from)
         }
         .await;
-        let _ = std::fs::remove_dir_all(staging);
+        crate::git::storage::discard_dir(&staging);
         publication?
     };
     if mutation.event.id == event_id {

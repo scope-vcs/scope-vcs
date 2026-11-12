@@ -176,7 +176,15 @@ impl From<scope_postgres::error::PostgresError> for ApiError {
         let mut error = match kind {
             ErrorKind::Internal => Self::internal_message(error.message),
             ErrorKind::ServiceUnavailable => Self::temporarily_unavailable(error.message),
-            kind => Self::new(kind, error.message),
+            kind @ (ErrorKind::BadRequest
+            | ErrorKind::Conflict
+            | ErrorKind::Forbidden
+            | ErrorKind::NotFound
+            | ErrorKind::PayloadTooLarge
+            | ErrorKind::RangeNotSatisfiable
+            | ErrorKind::RequestTimeout
+            | ErrorKind::TooManyRequests
+            | ErrorKind::Unauthorized) => Self::new(kind, error.message),
         };
         if expired {
             error.code = ErrorCode::AttachmentUploadExpired;

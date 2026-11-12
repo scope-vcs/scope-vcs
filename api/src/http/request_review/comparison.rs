@@ -137,7 +137,9 @@ pub(crate) async fn get_request_revision_file_diff(
         &revision,
         match mode {
             RequestComparisonMode::Push => RequestDiffRange::Push,
-            _ => RequestDiffRange::Request,
+            RequestComparisonMode::Request | RequestComparisonMode::Commit => {
+                RequestDiffRange::Request
+            }
         },
         path,
     )

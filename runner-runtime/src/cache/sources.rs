@@ -98,50 +98,44 @@ impl SourceSnapshot {
     pub(super) fn restore(&mut self, archives: &[RestoredArchive]) -> anyhow::Result<()> {
         let source_archives: Vec<_> = archives
             .iter()
-            .filter(|archive| archive.sources.is_some())
+            .filter_map(|archive| {
+                archive
+                    .sources
+                    .as_ref()
+                    .map(|sources| (sources, archive.newest_output))
+            })
             .collect();
-        if source_archives.is_empty() {
+        let Some(newest_output) = source_archives
+            .iter()
+            .map(|(_, newest_output)| *newest_output)
+            .max()
+        else {
             return Ok(());
-        }
+        };
         if source_archives
             .iter()
-            .any(|archive| archive.sources.as_ref().unwrap().root != self.root)
+            .any(|(sources, _)| sources.root != self.root)
         {
             bail!("cached source metadata belongs to another workspace");
         }
-        let newest_output = source_archives
-            .iter()
-            .map(|archive| archive.newest_output)
-            .max()
-            .unwrap();
         let changed_time = SystemTime::now().max(
             newest_output
                 .checked_add(Duration::from_nanos(1))
                 .context("cached output timestamp overflow")?,
         );
         for (path, current) in &mut self.entries {
-            let mut unchanged_time = None;
-            let unchanged_everywhere = source_archives.iter().all(|archive| {
-                let saved = archive.sources.as_ref().unwrap();
-                let Some(previous) = saved
-                    .entries
-                    .get(path)
-                    .filter(|entry| entry.digest == current.digest)
-                else {
-                    return false;
-                };
-                unchanged_time = Some(
-                    unchanged_time.map_or(previous.modified, |time: SystemTime| {
-                        time.min(previous.modified)
-                    }),
-                );
-                true
-            });
-            let modified = if unchanged_everywhere {
-                unchanged_time.unwrap()
-            } else {
-                changed_time
-            };
+            let unchanged_time = source_archives
+                .iter()
+                .map(|(saved, _)| {
+                    saved
+                        .entries
+                        .get(path)
+                        .filter(|entry| entry.digest == current.digest)
+                        .map(|entry| entry.modified)
+                })
+                .collect::<Option<Vec<_>>>()
+                .and_then(|times| times.into_iter().min());
+            let modified = unchanged_time.unwrap_or(changed_time);
             files::set_modified(&self.root, path, modified)?;
             current.modified = modified;
             let metadata = files::inspect(&self.root, path)?

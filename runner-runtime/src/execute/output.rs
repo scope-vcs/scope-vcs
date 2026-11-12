@@ -121,22 +121,22 @@ impl OutputCapture {
         let stop_in_worker = Arc::clone(&stop_uploading);
         let (notice_sender, notices) = mpsc::channel();
         let upload_thread = thread::spawn(move || {
-            let result = upload_output(
-                spool,
-                sink.as_ref(),
+            let upload = LogUpload {
+                sink: sink.as_ref(),
                 step,
                 next_sequence,
                 logs_truncated,
                 policy,
-                stop_in_worker,
-                locally_discarded,
-                &notice_sender,
-            );
+                stop_uploading: &stop_in_worker,
+                notices: &notice_sender,
+                pending: String::new(),
+            };
+            let result = upload_output(&spool, upload, &locally_discarded);
             let notice = match result {
                 Ok(summary) => OutputNotice::Finished(summary),
                 Err(error) => OutputNotice::Failed(error),
             };
-            let _ = notice_sender.send(notice);
+            notice_sender.send(notice).ok();
         });
 
         Ok(Self {
@@ -253,6 +253,7 @@ fn read_output(
     }
 }
 
+#[expect(unsafe_code)]
 fn set_nonblocking(stream: &impl AsRawFd) -> anyhow::Result<()> {
     let descriptor = stream.as_raw_fd();
     let flags = unsafe { libc::fcntl(descriptor, libc::F_GETFL) };
@@ -292,31 +293,14 @@ impl LogBatchDeadline {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn upload_output<S: ExecutionSink>(
-    spool: Arc<LogSpool>,
-    sink: &S,
-    step: u32,
-    next_sequence: u64,
-    logs_truncated: bool,
-    policy: UploadPolicy,
-    stop_uploading: Arc<AtomicBool>,
-    locally_discarded: Arc<AtomicBool>,
-    notices: &mpsc::Sender<OutputNotice>,
+    spool: &LogSpool,
+    mut upload: LogUpload<'_, S>,
+    locally_discarded: &AtomicBool,
 ) -> anyhow::Result<OutputSummary> {
-    let mut upload = LogUpload {
-        sink,
-        step,
-        next_sequence,
-        logs_truncated,
-        policy,
-        stop_uploading: &stop_uploading,
-        notices,
-        pending: String::new(),
-    };
     let mut pending_utf8 = [Vec::new(), Vec::new()];
     let mut deadline = LogBatchDeadline::default();
-    let mut discarding = logs_truncated;
+    let mut discarding = upload.logs_truncated;
     if discarding {
         spool.discard_output();
     }
@@ -414,7 +398,7 @@ impl<S: ExecutionSink> LogUpload<'_, S> {
                 }
                 Some(AppendLogOutcome::Truncated) => {
                     self.logs_truncated = true;
-                    let _ = self.notices.send(OutputNotice::Truncated);
+                    self.notices.send(OutputNotice::Truncated).ok();
                 }
                 None => self.logs_truncated = true,
             }
@@ -493,10 +477,8 @@ mod tests {
     fn appends(sink: &FakeSink) -> Vec<(u64, String)> {
         sink.calls()
             .into_iter()
-            .filter_map(|call| match call {
-                Call::Append { sequence, text, .. } => Some((sequence, text)),
-                _ => None,
-            })
+            .filter_map(Call::into_append)
+            .map(|append| (append.sequence, append.text))
             .collect()
     }
 

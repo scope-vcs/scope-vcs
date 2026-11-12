@@ -670,5 +670,5 @@ async fn restricted_view_push_staging_borrows_no_objects() {
         alternates.trim().is_empty(),
         "a public-view push must only see objects its view can reach: {alternates}"
     );
-    let _ = fs::remove_dir_all(&preparation.staging_repo);
+    crate::git::storage::remove_dir_if_exists(&preparation.staging_repo).unwrap();
 }

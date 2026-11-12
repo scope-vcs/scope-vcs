@@ -28,7 +28,7 @@ fn bound_socket() -> tokio::net::TcpSocket {
     socket
 }
 
-async fn dead_rank_one_with_live_router(
+fn dead_rank_one_with_live_router(
     upstream: Router,
     read_timeout: Duration,
     replay_max_bytes: usize,
@@ -134,7 +134,7 @@ async fn upload_pack_get_and_post_fail_over_after_a_connect_failure() {
         let upstream = Router::new().fallback(any(|request: Request| async move {
             Response::new(request.into_body())
         }));
-        let router = dead_rank_one_with_live_router(upstream, Duration::from_secs(1), 1024).await;
+        let router = dead_rank_one_with_live_router(upstream, Duration::from_secs(1), 1024);
         let uri = if method == Method::GET {
             "/git/public/scope/router/info/refs?service=git-upload-pack"
         } else {
@@ -376,7 +376,7 @@ async fn receive_pack_never_fails_over_or_replays() {
         counter.fetch_add(1, Ordering::SeqCst);
         async { StatusCode::OK }
     }));
-    let router = dead_rank_one_with_live_router(fallback, Duration::from_secs(1), 1024).await;
+    let router = dead_rank_one_with_live_router(fallback, Duration::from_secs(1), 1024);
 
     for (method, uri, body) in [
         (

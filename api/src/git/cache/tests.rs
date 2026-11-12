@@ -43,7 +43,7 @@ fn active_repository_is_not_evicted_when_the_cache_exceeds_its_byte_budget() {
     assert!(active_path.exists());
     assert!(!inactive_path.exists());
     drop(lease);
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn idle_repository_is_retained_while_the_cache_fits_its_byte_budget() {
     let repo_path = registry.path_for(&repo);
     fs::create_dir_all(&repo_path).unwrap();
     fs::write(repo_path.join("pack"), [0_u8; 40]).unwrap();
-    registry.note_applied(&repo, &repo_path, 1).unwrap();
+    note_applied_push(&repo, &repo_path, 1).unwrap();
     fs::File::options()
         .write(true)
         .open(repo_path.join(LAST_USED_FILE))
@@ -65,7 +65,7 @@ fn idle_repository_is_retained_while_the_cache_fits_its_byte_budget() {
     registry.prune().unwrap();
 
     assert!(repo_path.exists());
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn exact_repository_removal_waits_for_lease_from_another_registry() {
     drop(lease);
     assert!(deleting_registry.remove(&repo).unwrap());
     assert!(!path.exists());
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -94,13 +94,11 @@ fn applied_frontier_requires_the_exact_repository_incarnation() {
     let recreated = RepositoryIncarnation::new("owner/repo", "repoi_recreated").unwrap();
     let recreated_path = registry.path_for(&recreated);
     fs::create_dir_all(&recreated_path).unwrap();
-    registry
-        .note_applied(&predecessor, &recreated_path, 41)
-        .unwrap();
+    note_applied_push(&predecessor, &recreated_path, 41).unwrap();
 
-    assert_eq!(registry.applied_sequence(&recreated, &recreated_path), None);
+    assert_eq!(applied_push_sequence(&recreated, &recreated_path), None);
     assert_ne!(registry.path_for(&predecessor), recreated_path);
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -113,7 +111,7 @@ fn stale_temporary_materialization_is_removed() {
     prune_stale_materializations(&root, SystemTime::now(), Duration::ZERO).unwrap();
 
     assert!(!materialization.exists());
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -136,7 +134,7 @@ fn derived_repository_counts_toward_the_budget_and_is_leased_while_in_use() {
     drop(lease);
     registry.prune_to(0).unwrap();
     assert!(!derived_path.exists());
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -163,7 +161,7 @@ fn derived_repository_lease_keeps_its_alternate_source_materialized() {
     registry.prune_to(0).unwrap();
     assert!(!view_path.exists());
     assert!(!source_path.exists());
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -174,14 +172,14 @@ fn least_recently_used_repository_is_evicted_when_cache_exceeds_byte_budget() {
     let old_path = registry.path_for(&old);
     fs::create_dir_all(&old_path).unwrap();
     fs::write(old_path.join("pack"), [0_u8; 40]).unwrap();
-    registry.note_applied(&old, &old_path, 1).unwrap();
+    note_applied_push(&old, &old_path, 1).unwrap();
     thread::sleep(Duration::from_millis(10));
 
     let new = incarnation("owner/new");
     let new_path = registry.path_for(&new);
     fs::create_dir_all(&new_path).unwrap();
     fs::write(new_path.join("pack"), [0_u8; 40]).unwrap();
-    registry.note_applied(&new, &new_path, 1).unwrap();
+    note_applied_push(&new, &new_path, 1).unwrap();
 
     assert!(old_path.exists());
     assert!(new_path.exists());
@@ -190,7 +188,7 @@ fn least_recently_used_repository_is_evicted_when_cache_exceeds_byte_budget() {
 
     assert!(!old_path.exists());
     assert!(new_path.exists());
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -262,7 +260,7 @@ fn sanitizer_keeps_only_the_committed_main_ref() {
         String::from_utf8(output.stdout).unwrap(),
         format!("refs/heads/{DEFAULT_GIT_BRANCH}\0{head}\n")
     );
-    let _ = fs::remove_dir_all(repo);
+    crate::git::storage::remove_dir_if_exists(&repo).unwrap();
 }
 
 #[test]
@@ -353,7 +351,6 @@ fn follower_with_a_newer_repository_frontier_runs_a_second_build() {
     let (release_leader_tx, release_leader_rx) = mpsc::channel();
     let leader = {
         let coordinator = coordinator.clone();
-        let first_ready = first_ready.clone();
         let builds = builds.clone();
         thread::spawn(move || {
             coordinator.materialize(
@@ -479,7 +476,6 @@ fn cache_namespaces_do_not_hide_global_capacity_pressure() {
     let leader = {
         let coordinator = coordinator.clone();
         let budgets = budgets.clone();
-        let projection_ready = projection_ready.clone();
         thread::spawn(move || {
             coordinator.materialize(
                 GitDerivedCacheNamespace::Projection,
@@ -553,7 +549,7 @@ fn recursive_eviction_does_not_block_other_leases_or_delete_a_replacement() {
     });
     started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     let (lease_tx, lease_rx) = mpsc::channel();
-    let lease_registry = registry.clone();
+    let lease_registry = registry;
     let lease_worker = thread::spawn(move || {
         let other = lease_registry.lease(&incarnation("owner/other")).unwrap();
         let replacement = lease_registry.lease(&repo).unwrap();

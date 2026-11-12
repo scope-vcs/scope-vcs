@@ -454,7 +454,7 @@ fn request_revision_commits(
             raw_repo,
             &repo.policy,
             &repo.context.views,
-            access.clone(),
+            access,
             &identity_only_oids,
         )?;
         for (index, commit) in identity_only_indexes.into_iter().zip(identity_only) {

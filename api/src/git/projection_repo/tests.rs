@@ -93,7 +93,7 @@ fn generated_projection_preserves_a_leading_quote_in_a_file_name() {
     .unwrap();
 
     assert_eq!(paths, b"\"quoted.txt\0");
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[test]
@@ -142,7 +142,7 @@ fn projection_identity_and_materializer_reject_the_same_reserved_path() {
         "Scope hit an internal error."
     );
     assert!(identity_error.contains("reserved .git component"));
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 #[tokio::test]
@@ -463,7 +463,7 @@ async fn native_commit_is_reused_exactly_and_tree_corruption_fails_closed() {
     assert!(error.operator_diagnostic().contains("tree does not match"));
     assert_eq!(error.public_message(), "Scope hit an internal error.");
 
-    let _ = fs::remove_dir_all(root);
+    crate::git::storage::remove_dir_if_exists(&root).unwrap();
 }
 
 fn projected_change(path: &str, content: &str) -> ProjectedChange {

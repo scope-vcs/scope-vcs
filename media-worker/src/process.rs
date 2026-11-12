@@ -81,10 +81,12 @@ pub(crate) async fn run_bounded(
             source,
         })?,
         Err(_) => {
-            let _ = child.start_kill();
-            let _ = child.wait().await;
-            let _ = stdout_task.await;
-            let _ = stderr_task.await;
+            child.start_kill().ok();
+            if let Err(error) = child.wait().await {
+                tracing::warn!(%error, program = %program_label, "failed to reap timed-out codec process");
+            }
+            stdout_task.await.ok();
+            stderr_task.await.ok();
             return Err(ProcessFailure::Timeout {
                 program: program_label,
                 seconds: limits.timeout.as_secs(),
@@ -136,7 +138,20 @@ async fn join_output(
     }
 }
 
+#[expect(unsafe_code)]
 fn install_process_limits(command: &mut Command, limits: CodecProcessLimits) {
+    fn set_limit(resource: libc::__rlimit_resource_t, value: u64) -> io::Result<()> {
+        let limit = libc::rlimit {
+            rlim_cur: value,
+            rlim_max: value,
+        };
+        if unsafe { libc::setrlimit(resource, &limit) } == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
     unsafe {
         command.pre_exec(move || {
             set_limit(libc::RLIMIT_CORE, 0)?;
@@ -146,18 +161,6 @@ fn install_process_limits(command: &mut Command, limits: CodecProcessLimits) {
             set_limit(libc::RLIMIT_NPROC, limits.processes)?;
             Ok(())
         });
-    }
-}
-
-fn set_limit(resource: libc::__rlimit_resource_t, value: u64) -> io::Result<()> {
-    let limit = libc::rlimit {
-        rlim_cur: value,
-        rlim_max: value,
-    };
-    if unsafe { libc::setrlimit(resource, &limit) } == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
     }
 }
 

@@ -27,7 +27,7 @@ pub fn local_maintenance_database_url() -> anyhow::Result<String> {
 pub async fn app_state_from_env() -> anyhow::Result<AppState> {
     let settings = env::validate_local_dev_environment()?;
     let git_public_url = git_public_url_from_env(Some(LOCAL_API_ORIGIN))?;
-    let storage = StorageRuntime::from_env(StorageSource::Filesystem).await?;
+    let storage = StorageRuntime::from_env(StorageSource::Filesystem)?;
     let catalog = seed::catalog(
         storage.object_store.as_ref(),
         storage.git_segment_store.as_ref(),

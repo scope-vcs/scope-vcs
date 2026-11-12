@@ -57,7 +57,7 @@ async fn serve(addr: SocketAddr, state: AppState) -> anyhow::Result<()> {
     let result = axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
-            let _ = stop_background_work.send(true);
+            stop_background_work.send_replace(true);
         })
         .await
         .context("serving api");

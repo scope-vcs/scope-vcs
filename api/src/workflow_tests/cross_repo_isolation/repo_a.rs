@@ -56,9 +56,8 @@ fn absent_twin(value: &str) -> String {
         .rposition(char::is_ascii_alphanumeric)
         .unwrap_or_else(|| panic!("{value} has no character to vary"));
     chars[last] = match chars[last] {
-        '9' => 'a',
+        '9' | 'z' => 'a',
         'f' => '0',
-        'z' => 'a',
         'Z' => 'A',
         c => char::from(c as u8 + 1),
     };
@@ -432,7 +431,7 @@ pub(super) async fn repo_a() -> RepoA {
         ("derivative_id", "preview".to_string()),
         ("part_number", "1".to_string()),
         ("invite_id", invite_id),
-        ("member_user_id", member_id().to_string()),
+        ("member_user_id", member_id()),
         (
             "session_id",
             sessions["sessions"][0]["id"].as_str().unwrap().to_string(),

@@ -271,7 +271,7 @@ fn dependency_repository(
         .map(|file| {
             add_change(
                 &file.scope_path(),
-                blob(object_store, file.content)?,
+                blob(object_store, file.content),
                 file.label(),
             )
         })

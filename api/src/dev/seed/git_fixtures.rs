@@ -203,7 +203,7 @@ pub(super) fn update_demo_git_packs(
                 id: "req_demo_rejected",
                 name: "verbose-cli-output",
                 title: "Try verbose CLI output",
-                base_oid: main_oid.clone(),
+                base_oid: main_oid,
                 head_oid: rejected_oid,
                 pack: rejected_pack,
                 description_markdown: None,

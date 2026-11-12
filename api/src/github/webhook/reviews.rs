@@ -159,7 +159,8 @@ mod tests {
                 GitHubReviewImportSubject::Thread { .. } => {
                     vec![GitHubAccount::new(5, "octocat", GitHubAccountType::User, None).unwrap()]
                 }
-                _ => Vec::new(),
+                GitHubReviewImportSubject::Review { .. }
+                | GitHubReviewImportSubject::Reply { .. } => Vec::new(),
             },
             subject,
         })

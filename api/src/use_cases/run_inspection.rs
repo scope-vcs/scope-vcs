@@ -83,22 +83,31 @@ pub(crate) async fn inspect_run_detail(
         .ok_or_else(|| ApiError::not_found("run not found"))
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct StepLogPageQuery<'a> {
+    pub(crate) attempt_id: &'a str,
+    pub(crate) step_index: u32,
+    pub(crate) cursor: StepLogCursor,
+    pub(crate) limit: u64,
+}
+
 pub(crate) async fn inspect_run_step_logs(
     state: &AppState,
     user_id: &str,
     owner: &str,
     repo_name: &str,
     run_id: &str,
-    attempt_id: &str,
-    step_index: u32,
-    cursor: StepLogCursor,
-    limit: u64,
+    page: StepLogPageQuery<'_>,
 ) -> Result<StoredAttemptStepLogs, ApiError> {
     require_run_access(state, user_id, owner, repo_name, run_id).await?;
     Ok(state
         .metadata
         .runs()
-        .attempt_step_logs(run_id, attempt_id, step_index, cursor, limit)
+        .attempt_step_logs(
+            run_id,
+            page.attempt_id,
+            page.step_index,
+            page.cursor,
+            page.limit,
+        )
         .await?)
 }

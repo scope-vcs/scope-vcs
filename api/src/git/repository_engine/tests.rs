@@ -44,7 +44,6 @@ fn same_repository_operations_are_serialized() {
         let engine = engine.clone();
         let active = active.clone();
         let max_active = max_active.clone();
-        let first_ready = first_ready.clone();
         let repo = repo.clone();
         thread::spawn(move || {
             engine.coordinate_repository_blocking(
@@ -64,11 +63,7 @@ fn same_repository_operations_are_serialized() {
     };
     started_rx.recv().unwrap();
     let second = {
-        let engine = engine.clone();
-        let active = active.clone();
         let max_active = max_active.clone();
-        let second_ready = second_ready.clone();
-        let repo = repo.clone();
         thread::spawn(move || {
             engine.coordinate_repository_blocking(
                 &repo,
@@ -101,7 +96,6 @@ fn independent_repositories_run_in_parallel() {
     let first_repo = incarnation("owner/one");
     let first = {
         let engine = engine.clone();
-        let first_repo = first_repo.clone();
         thread::spawn(move || {
             engine.coordinate_repository_blocking(
                 &first_repo,
@@ -118,7 +112,6 @@ fn independent_repositories_run_in_parallel() {
 
     let (second_done_tx, second_done_rx) = mpsc::channel();
     let second = {
-        let engine = engine.clone();
         let second_repo = incarnation("owner/two");
         thread::spawn(move || {
             engine.coordinate_repository_blocking(
@@ -267,7 +260,7 @@ fn an_incremental_pack_without_its_prerequisite_defers_to_pool_catch_up() {
     );
     let replica = engine.repository_path(&repo);
     assert!(!replica.exists());
-    assert_eq!(engine.cache.applied_sequence(&repo, &replica), None);
+    assert_eq!(applied_push_sequence(&repo, &replica), None);
 
     let other = incarnation("owner/other");
     let other_replica = engine.repository_path(&other);
@@ -281,7 +274,7 @@ fn an_incremental_pack_without_its_prerequisite_defers_to_pool_catch_up() {
         fixture.link_second(&engine, &other).unwrap(),
         PushedPackLink::MissingPrerequisites
     );
-    assert_eq!(engine.cache.applied_sequence(&other, &other_replica), None);
+    assert_eq!(applied_push_sequence(&other, &other_replica), None);
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -307,7 +300,7 @@ fn delayed_post_push_sync_cannot_regress_a_newer_replica() {
 
     let replica = engine.repository_path(&repo);
     assert_eq!(git_head(&replica), fixture.second_head);
-    assert_eq!(engine.cache.applied_sequence(&repo, &replica), Some(2));
+    assert_eq!(applied_push_sequence(&repo, &replica), Some(2));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -330,12 +323,7 @@ fn separate_engines_do_not_reuse_a_predecessor_incarnation_cache() {
     assert_ne!(predecessor_path, recreated_path);
     assert!(predecessor_path.exists());
     assert!(recreated_path.exists());
-    assert_eq!(
-        recreated_engine
-            .cache
-            .applied_sequence(&recreated, &recreated_path),
-        Some(1)
-    );
+    assert_eq!(applied_push_sequence(&recreated, &recreated_path), Some(1));
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -375,7 +363,7 @@ async fn cancelled_derived_build_and_active_readers_remain_leased_during_evictio
     };
     started.notified().await;
     waiter.abort();
-    let _ = waiter.await;
+    waiter.await.ok();
     engine.cache.prune().unwrap();
     assert!(path.exists(), "detached build retains its own lease");
     let reader = engine.lease_derived(path.clone()).unwrap();

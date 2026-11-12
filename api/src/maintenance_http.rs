@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::get,
 };
@@ -27,10 +27,10 @@ async fn unavailable(headers: HeaderMap) -> Response {
     *response.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
     response
         .headers_mut()
-        .insert(header::RETRY_AFTER, "60".parse().unwrap());
+        .insert(header::RETRY_AFTER, HeaderValue::from_static("60"));
     response
         .headers_mut()
-        .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
 
@@ -41,7 +41,9 @@ pub async fn serve() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, port)).await?;
     axum::serve(listener, router())
         .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+            if let Err(error) = tokio::signal::ctrl_c().await {
+                tracing::error!(%error, "failed to listen for the maintenance shutdown signal");
+            }
         })
         .await?;
     Ok(())

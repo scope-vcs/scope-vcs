@@ -14,7 +14,8 @@ use crate::{
             resolve_manual_run as resolve_manual_run_control, retry_run as retry_run_control,
         },
         run_inspection::{
-            inspect_run, inspect_run_detail, inspect_run_step_logs, require_full_view_member,
+            StepLogPageQuery, inspect_run, inspect_run_detail, inspect_run_step_logs,
+            require_full_view_member,
         },
     },
 };
@@ -176,10 +177,12 @@ pub(crate) async fn get_repository_run_step_logs(
         &owner,
         &repo_name,
         &run_id,
-        &attempt_id,
-        step_index,
-        cursor,
-        REPOSITORY_STEP_LOG_LIMIT,
+        StepLogPageQuery {
+            attempt_id: &attempt_id,
+            step_index,
+            cursor,
+            limit: REPOSITORY_STEP_LOG_LIMIT,
+        },
     )
     .await?;
     Ok(Json(step_log_page_response(page, cursor)))
@@ -192,7 +195,7 @@ fn step_log_page_response(
     let next_after = page.logs.last().map_or(
         match cursor {
             StepLogCursor::After(position) => position,
-            _ => 0,
+            StepLogCursor::Tail | StepLogCursor::Before(_) => 0,
         },
         |stored| stored.position,
     );

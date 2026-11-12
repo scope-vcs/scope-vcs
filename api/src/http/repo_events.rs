@@ -79,7 +79,7 @@ pub(crate) async fn repo_events(
                     _ = stream_state.reconciliation.tick() => {
                         if let Err(error) = stream_state.revalidate_authentication().await {
                             stream_state.finished = true;
-                            return Some((sse_error_event(error), stream_state));
+                            return Some((Ok(sse_error_event(error)), stream_state));
                         }
                         stream_state.resync_event()
                     }
@@ -99,11 +99,11 @@ pub(crate) async fn repo_events(
                 )
                 .await
                 {
-                    Ok(Some(event)) => return Some((sse_event(event), stream_state)),
+                    Ok(Some(event)) => return Some((Ok(sse_event(event)), stream_state)),
                     Ok(None) => continue,
                     Err(error) => {
                         stream_state.finished = true;
-                        return Some((sse_error_event(error), stream_state));
+                        return Some((Ok(sse_error_event(error)), stream_state));
                     }
                 }
             }
@@ -111,7 +111,7 @@ pub(crate) async fn repo_events(
     );
 
     Ok(
-        Sse::new(once(sse_event(initial)).chain(updates)).keep_alive(
+        Sse::new(once(Ok::<_, Infallible>(sse_event(initial))).chain(updates)).keep_alive(
             KeepAlive::new()
                 .interval(Duration::from_secs(20))
                 .text("keep-alive"),
@@ -196,7 +196,15 @@ async fn stream_event_for_user(
         let policy = request_policy(&request, viewer, &repo.views);
         let visible = match &event.kind {
             RepoChangeKind::RequestStateChanged { .. } => policy.exact_visible,
-            _ => policy.activity_stream_visible,
+            RepoChangeKind::Connected
+            | RepoChangeKind::Lagged
+            | RepoChangeKind::DependenciesChanged
+            | RepoChangeKind::GitHubWorkflowRunsChanged
+            | RepoChangeKind::GitHubWorkflowRunChanged { .. }
+            | RepoChangeKind::RepositoryChanged { .. }
+            | RepoChangeKind::RequestTimelineChanged { .. }
+            | RepoChangeKind::RequestAttachmentChanged { .. }
+            | RepoChangeKind::RunChanged { .. } => policy.activity_stream_visible,
         };
         if !visible {
             return Ok(None);
@@ -258,7 +266,14 @@ fn event_for_access(
         kind: match event.kind {
             RepoChangeKind::Connected => RepoChangeKind::Connected,
             RepoChangeKind::Lagged => RepoChangeKind::Lagged,
-            _ => RepoChangeKind::RepositoryChanged {
+            RepoChangeKind::DependenciesChanged
+            | RepoChangeKind::GitHubWorkflowRunsChanged
+            | RepoChangeKind::GitHubWorkflowRunChanged { .. }
+            | RepoChangeKind::RepositoryChanged { .. }
+            | RepoChangeKind::RequestStateChanged { .. }
+            | RepoChangeKind::RequestTimelineChanged { .. }
+            | RepoChangeKind::RequestAttachmentChanged { .. }
+            | RepoChangeKind::RunChanged { .. } => RepoChangeKind::RepositoryChanged {
                 reason: RepoChangeReason::Redacted.as_str().to_string(),
             },
         },
@@ -268,13 +283,13 @@ fn event_for_access(
     })
 }
 
-fn sse_event(event: RepoChangeEvent) -> Result<Event, Infallible> {
+fn sse_event(event: RepoChangeEvent) -> Event {
     let data = serde_json::to_string(&event).expect("repo change events must serialize");
-    Ok(Event::default().event("repo-change").data(data))
+    Event::default().event("repo-change").data(data)
 }
 
-fn sse_error_event(error: ApiError) -> Result<Event, Infallible> {
+fn sse_error_event(error: ApiError) -> Event {
     let (_, body) = error.into_public_parts();
     let data = serde_json::to_string(&body).expect("public API errors must serialize");
-    Ok(Event::default().event("error").data(data))
+    Event::default().event("error").data(data)
 }

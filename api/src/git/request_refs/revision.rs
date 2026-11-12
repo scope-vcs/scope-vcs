@@ -106,7 +106,9 @@ pub(crate) async fn with_request_revision_store_repo<T: Send + 'static>(
                 &install,
             )
             .await?;
-            let _ = leases_sender.send(leases);
+            leases_sender.send(leases).map_err(|_| {
+                ApiError::internal_message("request revision lease receiver closed")
+            })?;
             Ok(())
         })
         .await?;

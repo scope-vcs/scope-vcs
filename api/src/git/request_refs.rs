@@ -171,7 +171,7 @@ pub(crate) fn create_request_receive_pack_staging_repo(
         &["config", "http.receivepack", "true"],
         "enabling request receive-pack",
     ) {
-        let _ = fs::remove_dir_all(&repo_root);
+        crate::git::storage::discard_dir(&repo_root);
         return Err(error);
     }
     Ok(repo_root)
