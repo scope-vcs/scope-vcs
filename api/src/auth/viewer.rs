@@ -13,8 +13,16 @@ impl Viewer {
         optional_scope_user(state, headers).await.map(Self)
     }
 
+    pub(crate) fn signed_in(user: UserAccount) -> Self {
+        Self(Some(user))
+    }
+
+    pub(crate) fn account(&self) -> Option<&UserAccount> {
+        self.0.as_ref()
+    }
+
     pub(crate) fn user_id(&self) -> Option<&str> {
-        self.0.as_ref().map(|user| user.id.as_str())
+        self.account().map(|user| user.id.as_str())
     }
 }
 

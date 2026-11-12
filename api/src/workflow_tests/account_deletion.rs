@@ -1,7 +1,6 @@
 use super::*;
 use crate::{
-    clerk_users::{ClerkUserDeletion, ClerkUsers, ScriptedClerkUsers},
-    use_cases::clerk_user_deletion::delete_due_clerk_users,
+    clerk_backend::ClerkUserDeletion, use_cases::clerk_user_deletion::delete_due_clerk_users,
 };
 
 async fn request(app: &axum::Router, method: &str, path: &str, bearer: &str) -> Response {
@@ -27,13 +26,6 @@ async fn cli_bearer(app: &axum::Router) -> String {
     )
     .await;
     format!("Bearer {}", exchanged["session_token"].as_str().unwrap())
-}
-
-fn scripted_clerk(state: &AppState) -> Arc<ScriptedClerkUsers> {
-    match &state.clerk_users {
-        ClerkUsers::Scripted(clerk) => clerk.clone(),
-        _ => unreachable!("test state scripts Clerk"),
-    }
 }
 
 #[tokio::test]

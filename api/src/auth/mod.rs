@@ -1,3 +1,4 @@
+pub(crate) mod agent;
 pub(crate) mod clerk;
 pub(crate) mod cli;
 pub(crate) mod runtime;

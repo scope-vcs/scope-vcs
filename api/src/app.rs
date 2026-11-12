@@ -15,6 +15,11 @@ pub fn router(state: AppState) -> Router {
     let router = Router::new()
         .route(routes::HEALTH, get(http::account::healthz))
         .route(routes::READINESS, get(http::account::readyz))
+        .route(routes::MCP, post(http::mcp::serve))
+        .route(
+            routes::MCP_PROTECTED_RESOURCE_METADATA,
+            get(http::mcp::protected_resource_metadata),
+        )
         .route(
             routes::CLI_DEVICE_LOGIN,
             post(http::device_login::start_cli_device_login),

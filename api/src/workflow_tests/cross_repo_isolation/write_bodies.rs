@@ -24,6 +24,22 @@ pub(super) fn write_bodies(params: &BTreeMap<&'static str, String>) -> WriteBodi
     let bodies: Vec<(&str, String, Value)> = vec![
         (
             "POST",
+            "/mcp".into(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "file_read",
+                    "arguments": {
+                        "repo": format!("{}/{}", params["owner"], params["repo"]),
+                        "path": "ops/hidden.txt",
+                    },
+                },
+            }),
+        ),
+        (
+            "POST",
             "/v1/repos".into(),
             json!({ "name": "isolation-created" }),
         ),

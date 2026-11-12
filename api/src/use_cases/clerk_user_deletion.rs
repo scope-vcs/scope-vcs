@@ -1,7 +1,7 @@
 use crate::background_work::{BackgroundLoop, BackgroundWork, Cadence, Readiness};
 use crate::{
     auth::tokens::random_token,
-    clerk_users::{CLERK_REQUEST_TIMEOUT, ClerkUserDeletion},
+    clerk_backend::{CLERK_REQUEST_TIMEOUT, ClerkUserDeletion},
     error::ApiError,
     persistence::unix_now,
     state::AppState,
@@ -30,7 +30,7 @@ pub(crate) async fn delete_due_clerk_users(
         .claim_due_clerk_user_deletions(&claim_token, now, now + CLAIM_LEASE_SECS, BATCH_SIZE)
         .await?;
     for clerk_user_id in &claimed {
-        let recorded = match state.clerk_users.delete_user(clerk_user_id).await {
+        let recorded = match state.clerk_backend.delete_user(clerk_user_id).await {
             ClerkUserDeletion::Deleted => {
                 auth.complete_clerk_user_deletion(clerk_user_id, &claim_token, current_time()?)
                     .await
