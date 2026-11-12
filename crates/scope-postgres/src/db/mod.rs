@@ -251,7 +251,7 @@ pub use run_admission::DispatchAdmission;
 pub use run_cache_authorization::CacheAttemptAccess;
 pub use run_cache_observations::{AttemptCacheFinalizationCommand, AttemptCachePreparationCommand};
 pub use run_details::{RunAttemptDetail, RunDetail};
-pub use run_dispatch::{AttemptDispatch, CloudTaskStop};
+pub use run_dispatch::CloudTaskStop;
 pub use run_history::{RepositoryRun, RunHistoryCursor, RunHistoryPageQuery};
 pub use run_log_reads::{StepLogCursor, StoredAttemptStepLogs, StoredRunLog};
 pub use run_log_writes::AppendRunLogResult;

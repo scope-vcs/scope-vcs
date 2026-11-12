@@ -15,15 +15,6 @@ use sea_orm::{
 
 const CLOUD_TASK_STOP_CLAIM_LEASE_SECS: u64 = 15 * 60;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AttemptDispatch<'a> {
-    pub attempt_id: &'a str,
-    pub token_hash: &'a str,
-    pub runtime_version: &'a str,
-    pub now_unix: u64,
-    pub lease_expires_at_unix: u64,
-}
-
 #[derive(Clone, Debug)]
 pub struct CloudTaskStop {
     pub attempt_id: String,
@@ -200,12 +191,13 @@ impl RunStore {
         &self,
         run_id: &str,
         job_key: &str,
-        dispatch: AttemptDispatch<'_>,
+        dispatch: AttemptDispatch,
+        now_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
         let tx = self.db.begin().await?;
         super::run_admission::lock_admission(&tx).await?;
         let claim = self
-            .dispatch_in_transaction(&tx, run_id, job_key, dispatch)
+            .dispatch_in_transaction(&tx, run_id, job_key, dispatch, now_unix)
             .await?;
         tx.commit().await?;
         Ok(claim)
@@ -216,15 +208,9 @@ impl RunStore {
         tx: &DatabaseTransaction,
         run_id: &str,
         job_key: &str,
-        dispatch: AttemptDispatch<'_>,
+        dispatch: AttemptDispatch,
+        now_unix: u64,
     ) -> Result<DispatchClaim, PostgresError> {
-        let AttemptDispatch {
-            attempt_id,
-            token_hash,
-            runtime_version,
-            now_unix,
-            lease_expires_at_unix,
-        } = dispatch;
         let run_snapshot = entities::run::Entity::find_by_id(run_id.to_string())
             .one(tx)
             .await?
@@ -237,17 +223,7 @@ impl RunStore {
             .job(&job.key)
             .ok_or_else(|| PostgresError::internal_message("run job definition is missing"))?;
         let (attempt, steps) = job
-            .dispatch(
-                &run_snapshot,
-                definition,
-                AttemptDispatch {
-                    attempt_id: attempt_id.to_string(),
-                    token_hash: token_hash.to_string(),
-                    runtime_version: runtime_version.to_string(),
-                    lease_expires_at_unix,
-                },
-                now_unix,
-            )
+            .dispatch(&run_snapshot, definition, dispatch, now_unix)
             .map_err(PostgresError::from)?;
 
         entities::run_attempt::Entity::insert(

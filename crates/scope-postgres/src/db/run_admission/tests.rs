@@ -89,13 +89,13 @@ async fn final_dispatch_expiry_is_terminal_and_healthy_job_progresses() {
         .dispatch_job(
             "run-000",
             "checks",
-            AttemptDispatch {
-                attempt_id: "last-attempt",
-                token_hash: &"b".repeat(64),
-                runtime_version: "runtime",
-                now_unix: 11,
+            scope_domain::runs::job::AttemptDispatch {
+                attempt_id: "last-attempt".to_string(),
+                token_hash: "b".repeat(64),
+                runtime_version: "runtime".to_string(),
                 lease_expires_at_unix: 12,
             },
+            11,
         )
         .await
         .unwrap();
@@ -374,13 +374,13 @@ async fn expired_capacity_window_and_cancellation_settle_queued_retry() {
             .dispatch_job(
                 &id,
                 "checks",
-                AttemptDispatch {
-                    attempt_id: &format!("capacity-{index}"),
-                    token_hash: &format!("{index:064x}"),
-                    runtime_version: "runtime",
-                    now_unix: 11,
+                scope_domain::runs::job::AttemptDispatch {
+                    attempt_id: format!("capacity-{index}"),
+                    token_hash: format!("{index:064x}"),
+                    runtime_version: "runtime".to_string(),
                     lease_expires_at_unix: 100,
                 },
+                11,
             )
             .await
             .unwrap();

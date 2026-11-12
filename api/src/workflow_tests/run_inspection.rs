@@ -51,13 +51,13 @@ async fn active_run(log_chunks: usize) -> InspectableRun {
     runs.dispatch_job(
         &run_id,
         "checks",
-        scope_postgres::db::AttemptDispatch {
-            attempt_id: &attempt_id,
-            token_hash: &bootstrap_token_hash,
-            runtime_version: "test-runtime",
-            now_unix: 2,
+        scope_domain::runs::job::AttemptDispatch {
+            attempt_id: attempt_id.clone(),
+            token_hash: bootstrap_token_hash.clone(),
+            runtime_version: "test-runtime".to_string(),
             lease_expires_at_unix: 100,
         },
+        2,
     )
     .await
     .unwrap();

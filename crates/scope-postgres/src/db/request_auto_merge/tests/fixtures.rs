@@ -130,13 +130,13 @@ jobs:
         .dispatch_job(
             "run-check-evidence",
             "check",
-            crate::db::AttemptDispatch {
-                attempt_id: "attempt-evidence",
-                token_hash: &token,
-                runtime_version: "runtime",
-                now_unix: 5,
+            scope_domain::runs::job::AttemptDispatch {
+                attempt_id: "attempt-evidence".to_string(),
+                token_hash: token.clone(),
+                runtime_version: "runtime".to_string(),
                 lease_expires_at_unix: 20,
             },
+            5,
         )
         .await
         .unwrap();

@@ -195,13 +195,13 @@ async fn active_run(state: &AppState) -> (String, String) {
     runs.dispatch_job(
         &run_id,
         "checks",
-        scope_postgres::db::AttemptDispatch {
-            attempt_id: &attempt_id,
-            token_hash: &bootstrap,
-            runtime_version: "test-runtime",
-            now_unix: 2,
+        scope_domain::runs::job::AttemptDispatch {
+            attempt_id: attempt_id.clone(),
+            token_hash: bootstrap.clone(),
+            runtime_version: "test-runtime".to_string(),
             lease_expires_at_unix: 100,
         },
+        2,
     )
     .await
     .unwrap();

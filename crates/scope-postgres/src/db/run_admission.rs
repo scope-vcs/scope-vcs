@@ -1,5 +1,5 @@
 use super::{
-    AttemptDispatch, DispatchClaim, RunStore,
+    DispatchClaim, RunStore,
     native_runs::lock_native_runs_availability,
     run_attempt_persistence::{locked_jobs, locked_run},
     run_state_sql::{
@@ -115,13 +115,13 @@ impl RunStore {
                 &tx,
                 &run_id,
                 &job_key,
-                AttemptDispatch {
-                    attempt_id,
-                    token_hash,
-                    runtime_version,
-                    now_unix,
+                scope_domain::runs::job::AttemptDispatch {
+                    attempt_id: attempt_id.to_string(),
+                    token_hash: token_hash.to_string(),
+                    runtime_version: runtime_version.to_string(),
                     lease_expires_at_unix,
                 },
+                now_unix,
             )
             .await?;
         tx.commit().await?;

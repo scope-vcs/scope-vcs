@@ -274,13 +274,13 @@ async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger, attempt_id: &s
     runs.dispatch_job(
         &run_id,
         "checks",
-        scope_postgres::db::AttemptDispatch {
-            attempt_id,
-            token_hash: &machine_token_hash(token),
-            runtime_version: "test-runtime",
-            now_unix: fixture.now,
+        scope_domain::runs::job::AttemptDispatch {
+            attempt_id: attempt_id.to_string(),
+            token_hash: machine_token_hash(token),
+            runtime_version: "test-runtime".to_string(),
             lease_expires_at_unix: fixture.now + 3_600,
         },
+        fixture.now,
     )
     .await
     .unwrap();

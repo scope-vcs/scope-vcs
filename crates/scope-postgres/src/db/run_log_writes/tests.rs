@@ -22,13 +22,13 @@ async fn fixture() -> MetadataStore {
         runs.dispatch_job(
             "run",
             job,
-            crate::db::AttemptDispatch {
-                attempt_id: &format!("attempt-{job}"),
-                token_hash: &token,
-                runtime_version: "runtime",
-                now_unix: 11,
+            scope_domain::runs::job::AttemptDispatch {
+                attempt_id: format!("attempt-{job}"),
+                token_hash: token.clone(),
+                runtime_version: "runtime".to_string(),
                 lease_expires_at_unix: 100,
             },
+            11,
         )
         .await
         .unwrap();
