@@ -71,13 +71,13 @@ export function RequestStackContext({ detail, params, childrenLoading = false, c
           <Popover
             align="auto"
             label={status.label}
-            panel={() => (
+            renderPanel={() => (
               <div className="w-64 space-y-1.5 text-xs text-muted-foreground">
                 {reason ? <p className="first-letter:uppercase">{reason}</p> : null}
                 {pin ? <p className="font-mono">{pin}</p> : null}
               </div>
             )}
-            trigger={(props) => (
+            renderTrigger={(props) => (
               <button {...props} className="rounded-md focus-visible:outline-2 focus-visible:outline-ring" type="button">
                 <Badge variant={status.variant}>{status.label}</Badge>
               </button>

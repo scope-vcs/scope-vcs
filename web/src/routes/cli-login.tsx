@@ -24,7 +24,7 @@ import { SignInButton, useUser } from '@clerk/tanstack-react-start'
 import { createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { CheckCircle2, LoaderCircle, LogIn, ShieldCheck } from 'lucide-react'
-import { type FormEvent, useEffect, useState } from 'react'
+import { type SubmitEvent, useEffect, useState } from 'react'
 
 const completeCliLogin = createServerFn({ method: 'POST' })
   .validator(parseCompleteCliLoginInput)
@@ -81,7 +81,7 @@ function CliLoginRoute() {
     }
   }, [callbackUrl])
 
-  async function authorizeCli(event: FormEvent<HTMLFormElement>) {
+  async function authorizeCli(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     setState({ kind: 'pending' })
     try {
@@ -121,9 +121,9 @@ function CliLoginRoute() {
 
   return (
     <AppShell
-      header={() => (
+      header={
         <ApplicationTopbar contextLabel="CLI login" />
-      )}
+      }
     >
       <PageContent>
         <PageHeader

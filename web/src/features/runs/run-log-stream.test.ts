@@ -35,7 +35,7 @@ test('open run stream resumes by position and updates the retained cache without
   const requests: string[] = []
   const authorizations: Array<string | null> = []
   globalThis.fetch = async (input, init) => {
-    const url = String(input)
+    const url = input instanceof Request ? input.url : String(input)
     requests.push(url)
     authorizations.push(new Headers(init?.headers).get('authorization'))
     return requests.length === 1
@@ -79,7 +79,7 @@ test('viewer reset aborts the stream before late output can restore the old cach
 test('a server error reconnects from the last position and only lost access stops the stream', async () => {
   const requests: string[] = []
   globalThis.fetch = async (input) => {
-    requests.push(String(input))
+    requests.push(input instanceof Request ? input.url : String(input))
     return requests.length === 1
       ? stream(['log', log(2)], ['error', { code: 'internal', message: 'database unavailable', retryable: false }])
       : requests.length === 2

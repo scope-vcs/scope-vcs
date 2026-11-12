@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { RequestQueueItemResponse, RequestStackParentResponse } from '../../api/types.generated'
 import { foldStackedRequestRows, requestRailRows, requestStackMembers, stackRequestRows } from './request-workspace-stack'
 
-function row(id: string, parent: string | 'unavailable' | null = null) {
+function row(id: string, parent: string | null = null) {
   const stack_parent: RequestStackParentResponse | null =
     parent === null
       ? null
@@ -112,7 +112,7 @@ test('the collapsed rail closes a stack outline on the last row it shows, and ke
     ...Array.from({ length: count }, (_, index) => row(`p${index}`)),
     ...ids.map((id, index) => row(id, index ? 's0' : null)),
   ]), new Set())
-  assert.equal(requestRailRows(prefixed(5), undefined)[5].edge, 'single')
+  assert.equal(requestRailRows(prefixed(5), undefined)[5]?.edge, 'single')
   assert.equal(requestRailRows(prefixed(5), 's7').at(-1)?.edge, 'end')
   assert.equal(requestRailRows(prefixed(6), 's7').at(-1)?.edge, 'single')
 })

@@ -44,16 +44,20 @@ function githubLineSteps(
   stamps: readonly LogStamp[],
   steps: readonly Pick<GitHubWorkflowStepResponse, 'number' | 'started_at_unix'>[],
 ) {
-  const started = steps.filter((step) => step.started_at_unix !== null)
-  const owners = new Array<number>(stamps.length).fill((started[0] ?? steps[0])?.number ?? 0)
+  const started = steps.flatMap(({ number, started_at_unix: second }) =>
+    second === null ? [] : [{ number, second }])
+  const initialOwner = (started[0] ?? steps[0])?.number ?? 0
+  const owners = Array.from({ length: stamps.length }, () => initialOwner)
   let previous = -1
-  for (const [order, step] of started.entries()) {
-    const second = step.started_at_unix!
-    const stepsInSecond = started.slice(order).filter((later) => later.started_at_unix === second).length
+  for (const [order, { number, second }] of started.entries()) {
+    const stepsInSecond = started.slice(order).filter((later) => later.second === second).length
     const groups = unclaimedGroups(stamps, second, previous)
-    const boundary = groups.length >= stepsInSecond ? groups[0]! : firstLineFrom(stamps, second, previous)
+    const [firstGroup] = groups
+    const boundary = firstGroup !== undefined && groups.length >= stepsInSecond
+      ? firstGroup
+      : firstLineFrom(stamps, second, previous)
     if (boundary === -1) break
-    owners.fill(step.number, boundary)
+    owners.fill(number, boundary)
     previous = boundary
   }
   return owners
@@ -62,19 +66,17 @@ function githubLineSteps(
 function unclaimedGroups(stamps: readonly LogStamp[], second: number, previous: number) {
   const groups: number[] = []
   for (let index = previous + 1; index < stamps.length; index++) {
-    const stamp = stamps[index]!
-    if (stamp.second !== null && stamp.second > second) break
+    const stamp = stamps[index]
+    if (stamp === undefined || (stamp.second !== null && stamp.second > second)) break
     if (stamp.group && stamp.second === second) groups.push(index)
   }
   return groups
 }
 
 function firstLineFrom(stamps: readonly LogStamp[], second: number, previous: number) {
-  for (let index = Math.max(previous, 0); index < stamps.length; index++) {
-    const stamp = stamps[index]!.second
-    if (stamp !== null && stamp >= second) return index
-  }
-  return -1
+  const start = Math.max(previous, 0)
+  return stamps.findIndex((stamp, index) =>
+    index >= start && stamp.second !== null && stamp.second >= second)
 }
 
 export function githubOpeningStep(job: GitHubWorkflowJobResponse): number | null {

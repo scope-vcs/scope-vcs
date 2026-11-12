@@ -5,7 +5,7 @@ import { BoundedDelivery } from './delivery'
 const event = { event: '$pageview', properties: { distinct_id: 'anonymous' } }
 
 test('queue and payload limits drop excess capture without waiting for delivery', () => {
-  const delivery = new BoundedDelivery({ fetcher: async () => new Promise<Response>(() => {}) })
+  const delivery = new BoundedDelivery({ beacon: () => true, fetcher: async () => new Promise<Response>(() => {}) })
   for (let index = 0; index < 65; index++) assert.equal(delivery.enqueue(event), true)
   assert.equal(delivery.enqueue(event), false)
   assert.equal(delivery.enqueue({ value: 'x'.repeat(16 * 1024) }), false)
@@ -19,7 +19,7 @@ test('temporary rejection is retried, while permanent rejection is dropped', asy
     fetcher: async (_url, init) => {
       attempts.push(statuses.shift()!)
       assert.equal(init?.credentials, 'omit')
-      assert.equal(init?.referrerPolicy, 'no-referrer')
+      assert.equal(init.referrerPolicy, 'no-referrer')
       return new Response(null, { status: attempts.at(-1) })
     },
   })
@@ -88,7 +88,7 @@ test('page hide offers active and queued events to sendBeacon with their origina
   delivery.enqueue(queued)
   delivery.flushOnPageHide()
   assert.equal(aborted, true)
-  assert.deepEqual(await Promise.all(sent.map(async payload => JSON.parse(await payload.text()))), [active, queued])
+  assert.deepEqual(await Promise.all(sent.map(parseBlob)), [active, queued])
   assert.equal(delivery.enqueue(event), false)
   delivery.resume()
   assert.equal(delivery.enqueue(event), true)
@@ -114,4 +114,8 @@ async function until(condition: () => boolean) {
     assert.ok(Date.now() < deadline, 'delivery did not reach expected state')
     await new Promise(resolve => setTimeout(resolve, 10))
   }
+}
+
+async function parseBlob(payload: Blob): Promise<unknown> {
+  return JSON.parse(await payload.text())
 }

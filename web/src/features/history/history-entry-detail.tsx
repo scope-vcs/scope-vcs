@@ -53,10 +53,10 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
           {historyCommitTitle(detail)}
         </h1>
         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          {metadataItems(detail, views).map((item, index) => (
-            <span className="flex items-center gap-2" key={index}>
+          {metadataItems(detail, views).map(({ key, node }, index) => (
+            <span className="flex items-center gap-2" key={key}>
               {index > 0 ? <span aria-hidden="true">·</span> : null}
-              {item}
+              {node}
             </span>
           ))}
         </p>
@@ -68,15 +68,25 @@ export function HistoryEntryDetailPanel(props: ChangedFilesProps & {
   )
 }
 
-function metadataItems(detail: HistoryEntryDetailResponse, views: RepoViews): ReactNode[] {
+function metadataItems(
+  detail: HistoryEntryDetailResponse,
+  views: RepoViews,
+): { key: string; node: ReactNode }[] {
   const count = historyEntryCountLabel(detail, detail.view, views)
   return [
-    detail.kind === 'push' ? null : historyEntryKindLabel(detail.kind),
-    detail.author,
-    detail.occurred_at_unix === null ? null : <AbsoluteTimestamp value={detail.occurred_at_unix} />,
-    <span className="select-all font-mono text-xs" title={detail.source_id}>
-      {compactHistorySourceId(detail.source_id)}
-    </span>,
-    count || null,
+    detail.kind === 'push' ? null : { key: 'kind', node: historyEntryKindLabel(detail.kind) },
+    { key: 'author', node: detail.author },
+    detail.occurred_at_unix === null
+      ? null
+      : { key: 'occurred', node: <AbsoluteTimestamp value={detail.occurred_at_unix} /> },
+    {
+      key: 'source',
+      node: (
+        <span className="select-all font-mono text-xs" title={detail.source_id}>
+          {compactHistorySourceId(detail.source_id)}
+        </span>
+      ),
+    },
+    count === '' ? null : { key: 'count', node: count },
   ].filter((item) => item !== null)
 }

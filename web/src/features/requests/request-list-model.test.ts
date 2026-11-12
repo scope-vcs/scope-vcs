@@ -10,7 +10,7 @@ test('pagination preserves order and replaces repeated rows with current server 
   const original = page([row('first'), row('second')])
   const next = appendQueuePage(original, page([row('second', 'Updated'), row('third')]))
   assert.deepEqual(next.requests.map(({ request }) => [request.id, request.title]), [['first', 'first'], ['second', 'Updated'], ['third', 'third']])
-  assert.equal(original.requests[1].request.title, 'second')
+  assert.equal(original.requests[1]?.request.title, 'second')
 })
 
 test('attention expiry uses server-wide next time, including requests outside loaded rows', () => {

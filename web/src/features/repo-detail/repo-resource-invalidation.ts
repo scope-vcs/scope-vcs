@@ -42,10 +42,10 @@ export function invalidateRepoResources(
   const recovery = !event || event.kind === 'Connected'
   const prefix = `${JSON.stringify([scope]).slice(0, -1)},`
   const inScope = (identity: string) => identity.startsWith(`${scope}\0`)
-  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed) {
+  if (repositoryChanged || recovery || event.kind === 'Lagged' || changed) {
     invalidateRunHistoryScope(scope, recovery)
   }
-  if (repositoryChanged || recovery || event?.kind === 'Lagged' || changed?.change === 'StatusChanged') {
+  if (repositoryChanged || recovery || event.kind === 'Lagged' || changed?.change === 'StatusChanged') {
     runDetailResource.invalidateMatching((key) => key.startsWith(prefix) &&
       (!changed || key === runLogCacheKey(scope, changed.run_id)) &&
       (!recovery || runResourceNeedsRecovery(runDetailResource, key)))

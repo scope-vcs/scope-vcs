@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
 import { floodRadius, lensZoom, PACE, restingPoint, restRadius, ringOpacity, stepLens, tickPaths, type LensFrame } from './lens-motion'
 
 export interface LensElements {
@@ -21,6 +21,21 @@ const OPEN_DELAY_MS = 950 / PACE
 const HINT_DELAY_MS = 3200 / PACE
 const SETTLED = .05
 const CLOSE_OVER_LINK_MS = 120
+const COARSE_POINTER_QUERY = '(pointer: coarse)'
+
+function subscribeToCoarsePointer(onChange: () => void) {
+  const query = matchMedia(COARSE_POINTER_QUERY)
+  query.addEventListener('change', onChange)
+  return () => query.removeEventListener('change', onChange)
+}
+
+function readCoarsePointer() {
+  return matchMedia(COARSE_POINTER_QUERY).matches
+}
+
+function readServerCoarsePointer() {
+  return false
+}
 
 export function useLens(elements: LensElements) {
   const frame = useRef<LensFrame>({ x: 0, y: 0, r: 0, rotation: 0 })
@@ -29,7 +44,7 @@ export function useLens(elements: LensElements) {
   const [holding, setHolding] = useState(false)
   const [hint, setHint] = useState(false)
   const [message, setMessage] = useState('')
-  const [touch, setTouch] = useState(false)
+  const touch = useSyncExternalStore(subscribeToCoarsePointer, readCoarsePointer, readServerCoarsePointer)
 
   useEffect(() => {
     const page = elements.page.current
@@ -39,7 +54,6 @@ export function useLens(elements: LensElements) {
     if (!page || !privateLayer || !ring || !grip) return
 
     const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
-    setTouch(matchMedia('(pointer: coarse)').matches)
     const anchor = page.querySelector('[data-view="public"] [data-lens-anchor]')
     const input = { mode: 'rest' as Mode, clientX: 0, clientY: 0, pin: { x: 0, y: 0 }, held: false, over: false, opened: reduced, on: true }
     let drawnRadius = -1
@@ -53,17 +67,16 @@ export function useLens(elements: LensElements) {
     }
 
     const tick = (time: number) => {
+      setReady(true)
       const pageBox = page.getBoundingClientRect()
       const viewport = { width: innerWidth, height: innerHeight }
       const drifting = !reduced && input.on && input.mode === 'rest'
       let target = input.mode === 'follow'
         ? { x: input.clientX - pageBox.left, y: input.clientY - pageBox.top }
         : input.mode === 'rest' ? null : input.pin
-      if (!target) {
-        target = anchor
-          ? restingPoint(anchor.getBoundingClientRect(), pageBox, viewport, time, drifting)
-          : { x: viewport.width / 2 - pageBox.left, y: viewport.height / 2 - pageBox.top }
-      }
+      target ??= anchor
+        ? restingPoint(anchor.getBoundingClientRect(), pageBox, viewport, time, drifting)
+        : { x: viewport.width / 2 - pageBox.left, y: viewport.height / 2 - pageBox.top }
       const previous = frame.current
       const next = stepLens(previous, { ...target, r: targetRadius() }, { instant: reduced || input.mode === 'drag', resting: input.mode === 'rest' })
       frame.current = next
@@ -181,7 +194,6 @@ export function useLens(elements: LensElements) {
       wake()
     }, reduced ? 0 : OPEN_DELAY_MS)
     const hintTimer = window.setTimeout(() => setHint(true), reduced ? 0 : HINT_DELAY_MS)
-    setReady(true)
     wake()
 
     addEventListener('pointermove', onPointerMove)

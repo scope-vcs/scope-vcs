@@ -17,11 +17,11 @@ export function requestChangeSelection(
   const revision = selectedRevisionId
     ? revisions.find(({ id }) => id === selectedRevisionId) ?? null
     : null
-  const commit = revision && (
-    search.commit && revision.commits.some(({ oid }) => oid === search.commit)
+  const commit = revision
+    ? search.commit && revision.commits.some(({ oid }) => oid === search.commit)
       ? search.commit
-      : revision.commits.at(-1)?.oid
-  ) || null
+      : revision.commits.at(-1)?.oid ?? null
+    : null
   const error = selectionError(revision, commit, search, selectedRevisionId)
   return {
     commit,

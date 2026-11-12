@@ -25,7 +25,7 @@ import { AbsoluteTimestamp } from '@/components/timestamp'
 import { commitCount } from './request-revision-stepper'
 import { Link } from '@tanstack/react-router'
 import { MessageSquare } from 'lucide-react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useLayoutEffect, useMemo } from 'react'
 import { compactDiscussionSummary } from './discussion-preview-text'
 import {
   comparisonDiscussionReferenceQuery,
@@ -168,7 +168,7 @@ export function RequestChangesWorkbench({
     [discussionReferences, model.selectedCommitSummary, model.selectedRevision, params, references, revisions.has_earlier_revisions],
   )
   const emptyDescription = model.commitState.status === 'failed'
-    ? model.commitState.error ?? 'Request changes are unavailable.'
+    ? model.commitState.error
     : 'Changes appear here after the request branch is pushed.'
   const emptyTitle = model.commitState.status === 'failed'
     ? 'Request changes unavailable'
@@ -246,7 +246,7 @@ function useRequestDiscussionReferences({
     ? requestDiscussionReferenceIdentity(accessScope, params.request_id, query.key)
     : null
   const seed = query && query.key === initialReferences.referenceKey ? initialReferences.page : null
-  useMemo(() => {
+  useLayoutEffect(() => {
     if (identity && seed) openRequestDiscussionReferences(identity, seed)
   }, [identity, seed])
   const input = query?.input
@@ -271,7 +271,7 @@ function useRequestDiscussionReferences({
   return {
     discussions: page.value?.discussions ?? [],
     error: page.error,
-    incomplete: page.value?.next_cursor != null,
+    incomplete: page.value !== null && page.value.next_cursor !== null,
     loadMore: page.status === 'loaded' && page.value.next_cursor && !page.refreshing && !page.error
       ? loadMore
       : undefined,

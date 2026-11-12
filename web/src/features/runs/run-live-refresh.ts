@@ -7,7 +7,7 @@ import {
   createRefreshCoordinator,
   type RefreshScheduler,
 } from '../../lib/refresh-coordinator'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import {
   useRepoChangeSubscription,
   useRepoLayout,
@@ -47,24 +47,31 @@ export function useRunLiveRefresh({
     mutableRef.current = mutable
   }, [mutable, refresh])
 
-  const coordinator = useMemo(() => createRunRefreshCoordinator({
-    acceptedChanges,
-    refresh: (reasons, signal) => refreshRef.current(reasons, signal),
-    repoId: repo.id,
-    runId,
-    schedule: browserScheduler,
-  }), [acceptedChanges, repo.id, runId])
+  const coordinatorRef = useRef<RunRefreshCoordinator | null>(null)
+
+  useEffect(() => {
+    const coordinator = createRunRefreshCoordinator({
+      acceptedChanges,
+      refresh: (reasons, signal) => refreshRef.current(reasons, signal),
+      repoId: repo.id,
+      runId,
+      schedule: browserScheduler,
+    })
+    coordinatorRef.current = coordinator
+    return () => {
+      coordinatorRef.current = null
+      coordinator.stop()
+    }
+  }, [acceptedChanges, repo.id, runId])
 
   const onEvent = useCallback((event: RepoChangeEvent) => {
-    if (mutableRef.current) coordinator.onEvent(event)
-  }, [coordinator])
+    if (mutableRef.current) coordinatorRef.current?.onEvent(event)
+  }, [])
   useRepoChangeSubscription(onEvent)
-
-  useEffect(() => () => coordinator.stop(), [coordinator])
 
   useEffect(() => {
     if (!mutable) return
-    const reconcile = () => coordinator.requestRefresh('Recovery')
+    const reconcile = () => coordinatorRef.current?.requestRefresh('Recovery')
     const onFocus = () => {
       if (document.visibilityState === 'visible') reconcile()
     }
@@ -81,12 +88,9 @@ export function useRunLiveRefresh({
       document.removeEventListener('visibilitychange', onFocus)
       window.clearInterval(interval)
     }
-  }, [coordinator, mutable])
+  }, [mutable])
 
-  return useCallback(
-    () => coordinator.requestRefresh('Manual'),
-    [coordinator],
-  )
+  return useCallback(() => coordinatorRef.current?.requestRefresh('Manual'), [])
 }
 
 export function createRunRefreshCoordinator({

@@ -80,11 +80,11 @@ test('uploads with the server concurrency bound and replaces the pending referen
     })
 
     assert.equal(peakInFlight, 2)
-    assert.deepEqual(uploadedParts.sort(), [1, 2, 3])
+    assert.deepEqual(uploadedParts.sort((left, right) => left - right), [1, 2, 3])
     assert.deepEqual(finishedParts.map((part) => part.part_number), [1, 2, 3])
     const draft = readRequestAttachmentDraft(key)
     assert.equal(draft.attachments[0]?.status, 'uploaded')
-    assert.equal(draft.attachments[0]?.attachmentId, 'attachment-final')
+    assert.equal(draft.attachments[0].attachmentId, 'attachment-final')
     assert.equal(
       draft.text,
       `[walkthrough](${requestAttachmentMarkdownReference('attachment-final')})`,
@@ -397,7 +397,7 @@ for (const status of [400, 403, 404, 413]) {
     assert.equal(send.mock.callCount(), 1)
     const draft = readRequestAttachmentDraft(key).attachments[0]
     assert.equal(draft?.status, 'failed')
-    assert.equal(draft?.error, `Part 1 upload failed (${status}).`)
+    assert.equal(draft.error, `Part 1 upload failed (${status}).`)
   })
 }
 
@@ -424,7 +424,7 @@ test('keeps retrying a part with capped backoff until its retry budget is spent'
   assert.equal(send.mock.callCount(), 14)
   const draft = readRequestAttachmentDraft(key).attachments[0]
   assert.equal(draft?.status, 'failed')
-  assert.equal(draft?.error, 'Part 1 upload failed (503).')
+  assert.equal(draft.error, 'Part 1 upload failed (503).')
 })
 
 test('removing an upload during retry backoff stops further attempts', async (t) => {

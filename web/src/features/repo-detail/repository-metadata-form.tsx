@@ -2,7 +2,7 @@ import type { RepoSummaryResponse } from '@/api/types.generated'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useEffect, useReducer, useState, type FormEvent } from 'react'
+import { useEffect, useReducer, useState, type SubmitEvent } from 'react'
 import {
   acceptMetadataSave,
   reconcileMetadataDraft,
@@ -58,7 +58,7 @@ export function RepositoryMetadataForm({
     setState({ status: 'idle' })
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (state.status === 'saving') return
     setState({ status: 'saving' })
@@ -77,7 +77,7 @@ export function RepositoryMetadataForm({
   return (
     <RepositoryDetailsSection>
       <form
-        onSubmit={submit}
+        onSubmit={(event) => void submit(event)}
       >
         <fieldset className="max-w-xl space-y-4" disabled={state.status === 'saving'}>
           <div>

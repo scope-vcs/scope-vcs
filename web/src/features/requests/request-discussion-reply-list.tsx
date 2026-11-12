@@ -35,30 +35,24 @@ export function RequestDiscussionReplyList({
   showUnreadBoundary: boolean
 }) {
   const hydrated = useHydrated()
-  let previousCreatedAt = discussionCreatedAtUnix
-  let previousReply: RequestDiscussionReplyView | null = null
-  let unreadBoundaryRendered = false
+  const firstUnreadIndex = showUnreadBoundary
+    ? replies.findIndex((reply) => reply.position > readThroughPosition)
+    : -1
 
   return (
     <>
-      {replies.map((reply) => {
+      {replies.map((reply, index) => {
+        const previousReply = replies[index - 1] ?? null
         const startsNewDate = !sameCalendarDate(
-          previousCreatedAt,
+          previousReply?.created_at_unix ?? discussionCreatedAtUnix,
           reply.created_at_unix,
           hydrated,
         )
-        const startsUnread =
-          showUnreadBoundary &&
-          !unreadBoundaryRendered &&
-          reply.position > readThroughPosition
+        const startsUnread = index === firstUnreadIndex
         const grouped = shouldGroupReplies(previousReply, reply, {
           date: startsNewDate,
           unread: startsUnread,
         })
-
-        if (startsUnread) unreadBoundaryRendered = true
-        previousCreatedAt = reply.created_at_unix
-        previousReply = reply
 
         return (
           <div key={reply.id}>

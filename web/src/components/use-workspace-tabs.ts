@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   closeWorkspaceTab,
   emptyWorkspaceTabState,
@@ -15,10 +15,11 @@ export function useWorkspaceTabs({
     activeId ? openWorkspaceTab(emptyWorkspaceTabState, activeId, false) : emptyWorkspaceTabState,
   )
 
-  useLayoutEffect(() => {
-    if (!activeId) return
-    setState((current) => openWorkspaceTab(current, activeId, false))
-  }, [activeId])
+  const [openedActiveId, setOpenedActiveId] = useState(activeId)
+  if (activeId !== openedActiveId) {
+    setOpenedActiveId(activeId)
+    if (activeId) setState((current) => openWorkspaceTab(current, activeId, false))
+  }
 
   return {
     close(id: string, availableIds: ReadonlySet<string>) {

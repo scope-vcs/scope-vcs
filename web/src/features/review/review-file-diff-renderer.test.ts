@@ -94,12 +94,10 @@ test('bounds mixed content without returning raw transport fields', async () => 
   assert.equal(result.presentation.kind, 'mixed')
   assert.equal('old_content' in result, false)
   assert.equal('new_content' in result, false)
-  if (result.presentation.kind !== 'mixed') return
-  assert.equal(result.presentation.text[0]?.truncated, true)
-  assert.ok(
-    Buffer.byteLength(result.presentation.text[0]?.content ?? '') <=
-      REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes,
-  )
+  const [text] = result.presentation.text
+  assert.ok(text)
+  assert.equal(text.truncated, true)
+  assert.ok(Buffer.byteLength(text.content) <= REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes)
   assert.ok(
     Buffer.byteLength(JSON.stringify(result)) <
       REVIEW_FILE_DIFF_RENDERER_LIMITS.maxMixedTextBytes + 1_024,

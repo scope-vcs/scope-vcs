@@ -22,7 +22,7 @@ test('file tree normalizes, nests, sorts, and summarizes paths', () => {
     ['folder', 'docs'], ['folder', 'src'], ['file', 'README.md'],
   ])
   const src = tree.children[1]
-  assert.equal(src.type, 'folder')
+  assert.ok(src?.type === 'folder')
   assert.deepEqual(src.children.map(({ type, name }) => [type, name]), [
     ['folder', 'components'], ['file', 'zeta.ts'],
   ])

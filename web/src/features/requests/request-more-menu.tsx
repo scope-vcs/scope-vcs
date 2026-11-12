@@ -36,7 +36,7 @@ export function RequestMoreMenu({
         align={align}
         className="w-40 rounded-md p-1"
         label="More request actions"
-        panel={(close) => (
+        renderPanel={(close) => (
           <>
             {canViewActivity ? (
               <button
@@ -67,7 +67,7 @@ export function RequestMoreMenu({
             ) : null}
           </>
         )}
-        trigger={({ onClick, ref, ...props }) => (
+        renderTrigger={({ onClick, ref, ...props }) => (
           <Button
             aria-label="More request actions"
             onClick={(event) => {

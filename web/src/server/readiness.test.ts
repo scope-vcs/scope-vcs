@@ -16,9 +16,9 @@ test('reports ready after an unauthenticated internal API readiness check', asyn
   const response = await readinessResponse(async (input, init) => {
     assert.equal(input, 'http://scope-api.railway.internal:8080/readyz')
     assert.equal(init?.method, 'GET')
-    assert.equal(init?.redirect, 'error')
-    assert.equal(new Headers(init?.headers).has('authorization'), false)
-    assert.ok(init?.signal)
+    assert.equal(init.redirect, 'error')
+    assert.equal(new Headers(init.headers).has('authorization'), false)
+    assert.ok(init.signal)
     return Response.json({ status: 'ok' })
   })
 
@@ -66,7 +66,7 @@ test('bounds an API readiness check that does not complete', async () => {
     (_resolve, reject) => {
       init?.signal?.addEventListener(
         'abort',
-        () => reject(init.signal?.reason),
+        () => reject(new Error('readiness check aborted')),
         { once: true },
       )
     },

@@ -46,5 +46,6 @@ function resourceAttributes(runtime: RuntimeEnvironment) {
 }
 
 function trimmed(value: string | undefined) {
-  return value?.trim() || null
+  const result = value?.trim()
+  return result === undefined || result === '' ? null : result
 }

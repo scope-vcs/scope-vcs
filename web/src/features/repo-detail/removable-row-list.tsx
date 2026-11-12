@@ -17,7 +17,7 @@ export function RemovableRowList<Item>({
   itemId,
   items,
   onRemove,
-  row,
+  renderRow,
   rowClassName,
 }: {
   confirm: {
@@ -30,7 +30,7 @@ export function RemovableRowList<Item>({
   itemId: (item: Item) => string
   items: readonly Item[]
   onRemove: (item: Item) => Promise<unknown>
-  row: (item: Item, actions: RowActions) => ReactNode
+  renderRow: (item: Item, actions: RowActions) => ReactNode
   rowClassName: string
 }) {
   const [error, setError] = useState<string | null>(null)
@@ -64,7 +64,7 @@ export function RemovableRowList<Item>({
           const id = itemId(item)
           return (
             <li className={rowClassName} key={id}>
-              {row(item, {
+              {renderRow(item, {
                 pending: pending.has(id),
                 remove: () => setConfirmTarget(item),
                 run: (action) => void run(item, action),

@@ -8,7 +8,7 @@ type ReviewRequestCommentDraft = {
 export function reviewRequestCommentDraft(draft: string, saved: string | null): ReviewRequestCommentDraft {
   const text = draft.trim()
   return {
-    tooLong: [...text].length > REVIEW_REQUEST_COMMENT_MAX_CHARS,
+    tooLong: Array.from(text).length > REVIEW_REQUEST_COMMENT_MAX_CHARS,
     changed: text !== (saved ?? ''),
   }
 }

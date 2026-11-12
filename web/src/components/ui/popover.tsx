@@ -20,14 +20,14 @@ export function Popover({
   align = 'end',
   className,
   label,
-  panel,
-  trigger,
+  renderPanel,
+  renderTrigger,
 }: {
   align?: keyof typeof ALIGN_CLASS | 'auto'
   className?: string
   label: string
-  panel: (close: () => void) => ReactNode
-  trigger: (props: PopoverTriggerProps) => ReactNode
+  renderPanel: (close: () => void) => ReactNode
+  renderTrigger: (props: PopoverTriggerProps) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const [autoOffset, setAutoOffset] = useState(0)
@@ -93,7 +93,7 @@ export function Popover({
       }}
       ref={rootRef}
     >
-      {trigger({
+      {renderTrigger({
         'aria-controls': panelId,
         'aria-expanded': open,
         'aria-haspopup': 'dialog',
@@ -113,7 +113,7 @@ export function Popover({
           ref={panelRef}
           style={align === 'auto' ? { left: autoOffset } : undefined}
         >
-          {panel(close)}
+          {renderPanel(close)}
         </dialog>
       )}
     </div>

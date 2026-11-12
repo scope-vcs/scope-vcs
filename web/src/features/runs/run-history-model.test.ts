@@ -13,7 +13,7 @@ test('reload preserves an exhausted cursor after older runs are loaded', async (
   )
 
   assert.equal(result?.next_cursor, null)
-  assert.deepEqual(result?.runs.map((run) => run.id), ['new', 'old'])
+  assert.deepEqual(result.runs.map((run) => run.id), ['new', 'old'])
 })
 
 test('reload refreshes only the number of pages the user loaded', async () => {
@@ -33,7 +33,7 @@ test('reload refreshes only the number of pages the user loaded', async () => {
     refreshed?.runs.map((run) => run.id),
     ['new-1', 'new-2', 'new-3', 'old-1'],
   )
-  assert.equal(refreshed?.next_cursor, 'new-page-3')
+  assert.equal(refreshed.next_cursor, 'new-page-3')
 })
 
 test('reload rejects repeated cursors across loaded pages', async () => {

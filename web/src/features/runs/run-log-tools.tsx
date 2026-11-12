@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import { Search } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { toast } from 'sonner'
 import type { LogLine } from './run-log-lines'
 import { findLogMatches, type LogMatch } from './run-log-search'
 import type { RunLogFocus } from './run-log-text'
@@ -24,7 +25,7 @@ export function useRunLogSearch(lines: readonly LogLine[]) {
     return grouped
   }, [matches])
   const position = matches.length === 0 ? -1 : Math.min(index, matches.length - 1)
-  const current = position === -1 ? null : matches[position]!
+  const current = matches[position] ?? null
   const currentLine = focused ? current?.line ?? null : null
   const focus = useMemo<RunLogFocus | null>(
     () => (currentLine === null ? null : { line: currentLine }),
@@ -146,8 +147,11 @@ function CopyButton({ text }: { text: string }) {
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(text)
-      setCopied(true)
-    } catch {}
+    } catch {
+      toast.error('Copy failed')
+      return
+    }
+    setCopied(true)
   }
 
   return (

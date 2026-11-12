@@ -239,7 +239,7 @@ export function RequestDetailPage(props: RequestDetailPageProps) {
                 Details
               </Button>
               {canClaim ? (
-                <Button onClick={workspace?.claim} size="sm" type="button" variant="secondary">
+                <Button onClick={workspace.claim} size="sm" type="button" variant="secondary">
                   <UserRound />
                   I’ll take this
                 </Button>

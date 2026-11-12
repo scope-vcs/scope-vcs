@@ -12,6 +12,7 @@ import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
 import { BatchSpanProcessor, TracerProvider } from '@opentelemetry/sdk-trace'
+import { serverLog } from './log'
 import { AllowedAttributesExporter } from './telemetry-allowed-attributes'
 import { getTelemetryConfig, INJECTED_OTLP_VARIABLES_MESSAGE } from './telemetry-config'
 import { requestSpanRoute } from './request-span-route'
@@ -86,5 +87,5 @@ if (config.enabled) {
     await Promise.allSettled([tracerProvider.shutdown(), loggerProvider.shutdown()])
   })
 } else if (config.reason === 'injected-otlp-variables') {
-  console.error(INJECTED_OTLP_VARIABLES_MESSAGE)
+  serverLog('error', INJECTED_OTLP_VARIABLES_MESSAGE)
 }

@@ -257,12 +257,10 @@ function knownDraftKeys() {
   const keys = new Set(entries.keys())
   const storage = browserSessionStorage()
   if (storage) {
-    try {
-      for (let index = 0; index < storage.length; index += 1) {
-        const storageKey = storage.key(index)
-        if (storageKey?.startsWith(STORAGE_PREFIX)) keys.add(storageKey.slice(STORAGE_PREFIX.length))
-      }
-    } catch {}
+    for (let index = 0; index < storage.length; index += 1) {
+      const storageKey = storage.key(index)
+      if (storageKey?.startsWith(STORAGE_PREFIX)) keys.add(storageKey.slice(STORAGE_PREFIX.length))
+    }
   }
   return keys
 }
@@ -272,9 +270,7 @@ function discardDraftKey(key: string) {
   const entry = entries.get(key)
   for (const attachment of entry?.draft.attachments ?? []) revokePreviewUrl(attachment.previewUrl)
   entries.delete(key)
-  try {
-    browserSessionStorage()?.removeItem(`${STORAGE_PREFIX}${key}`)
-  } catch {}
+  browserSessionStorage()?.removeItem(`${STORAGE_PREFIX}${key}`)
 }
 
 export function requestAttachmentMarkdownReference(attachmentId: string) {
@@ -336,13 +332,16 @@ function emptyDraft(): RequestAttachmentDraft {
   return { attachments: [], baseText: null, initialized: false, pending: false, submission: null, text: '' }
 }
 
+function isDraftKeyParts(value: unknown): value is [string, string, string, string, string] {
+  return Array.isArray(value) && value.length === 5 && value.every((part: unknown) => typeof part === 'string')
+}
+
 function parseDraftKey(key: string) {
   try {
-    const value: unknown = JSON.parse(key)
-    if (!Array.isArray(value) || value.length !== 5) return null
-    const [viewerId, repoId, requestId, accessScope, target] = value
-    if ([viewerId, repoId, requestId, accessScope, target].some((part) => typeof part !== 'string')) return null
-    return { accessScope, repoId, requestId, target, viewerId } as RequestAttachmentDraftScope
+    const parts: unknown = JSON.parse(key)
+    if (!isDraftKeyParts(parts)) return null
+    const [viewerId, repoId, , accessScope] = parts
+    return { accessScope, repoId, viewerId }
   } catch {
     return null
   }
@@ -390,7 +389,9 @@ function persist(key: string, draft: RequestAttachmentDraft) {
       submission: draft.submission,
       text: draft.text,
     }))
-  } catch {}
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'QuotaExceededError')) throw error
+  }
 }
 
 function restore(key: string): RequestAttachmentDraft {

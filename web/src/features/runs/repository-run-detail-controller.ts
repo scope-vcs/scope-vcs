@@ -67,6 +67,30 @@ type DetailViewState = {
   showGraph: boolean
 }
 
+function reconcileDetailView(
+  current: DetailViewState,
+  detail: RepositoryRunDetailResponse,
+  generation: number,
+): DetailViewState {
+  const reconciledAction = current.reconciliationGeneration !== null &&
+    generation >= current.reconciliationGeneration
+  const selectionStillValid = current.selection !== null && selectionExists(current.selection, detail.jobs)
+  const initialView = current.manualSelection ? null : openingView(detail, current.link)
+  const selection = selectionStillValid ? current.selection
+    : current.manualSelection ? null : initialView?.selection ?? null
+  return {
+    ...current,
+    attemptOverrides: reconcileAttemptOverrides(current.attemptOverrides, detail.jobs),
+    pendingAction: reconciledAction ? null : current.pendingAction,
+    reconciliationGeneration: reconciledAction ? null : current.reconciliationGeneration,
+    selectedJobKey: selection ? selection.jobKey
+      : current.manualSelection
+        ? jobExists(current.selectedJobKey, detail.jobs) ? current.selectedJobKey : null
+        : initialView?.selectedJobKey ?? null,
+    selection,
+  }
+}
+
 function createDetailViewState(detail: RepositoryRunDetailResponse): DetailViewState {
   const initialView = openingView(detail)
   return {
@@ -120,27 +144,15 @@ export function useRepositoryRunDetailController({
   const selectionRef = useRef(view.selection)
   useEffect(() => { selectionRef.current = view.selection }, [view.selection])
 
-  useEffect(() => {
-    updateView((current) => {
-      const reconciledAction = current.reconciliationGeneration !== null &&
-        (detailSnapshot.value?.generation ?? 0) >= current.reconciliationGeneration
-      const selectionStillValid = current.selection !== null && selectionExists(current.selection, detail.jobs)
-      const initialView = current.manualSelection ? null : openingView(detail, current.link)
-      const selection = selectionStillValid ? current.selection
-        : current.manualSelection ? null : initialView?.selection ?? null
-      return {
-        ...current,
-        attemptOverrides: reconcileAttemptOverrides(current.attemptOverrides, detail.jobs),
-        pendingAction: reconciledAction ? null : current.pendingAction,
-        reconciliationGeneration: reconciledAction ? null : current.reconciliationGeneration,
-        selectedJobKey: selection ? selection.jobKey
-          : current.manualSelection
-            ? jobExists(current.selectedJobKey, detail.jobs) ? current.selectedJobKey : null
-            : initialView?.selectedJobKey ?? null,
-        selection,
-      }
-    })
-  }, [detail, detailSnapshot.value?.generation])
+  const generation = detailSnapshot.value?.generation ?? 0
+  const [reconciledWith, setReconciledWith] = useState<{
+    detail: RepositoryRunDetailResponse
+    generation: number
+  } | null>(null)
+  if (reconciledWith?.detail !== detail || reconciledWith.generation !== generation) {
+    setReconciledWith({ detail, generation })
+    updateView((current) => reconcileDetailView(current, detail, generation))
+  }
 
   useRunJobHash((hash) => {
     const link = runJobLinkForHash(detail.jobs.map(({ job }) => job.key), hash)
@@ -252,7 +264,13 @@ export function useRepositoryRunDetailController({
     }))
     try {
       await refreshDetail(true)
-    } catch {}
+    } catch {
+      updateView((current) => ({
+        ...current,
+        pendingAction: null,
+        reconciliationGeneration: null,
+      }))
+    }
   }, [key, refreshDetail])
 
   function showJob(jobDetail: RepositoryRunJobDetailResponse) {

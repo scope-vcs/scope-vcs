@@ -53,7 +53,7 @@ export function useReviewFileDiffResource({
     version: budget,
   })
   const start = useCallback(() => {
-    if (identity) startFullReviewFileDiff(resource, identity, load)
+    if (identity) void startFullReviewFileDiff(resource, identity, load)
   }, [identity, load, resource])
 
   return {

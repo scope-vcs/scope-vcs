@@ -80,7 +80,7 @@ test('decodes a real compressed upstream response without stale transport header
       { body: payload, method: 'POST' },
     ), config, {
       fetchUpstream: (input, init) => {
-        assert.equal(input.toString(), 'https://us.i.posthog.com/e/')
+        assert.equal(input, 'https://us.i.posthog.com/e/')
         return fetch(stubUrl, init)
       },
       observeDelivery: ignoreDelivery,

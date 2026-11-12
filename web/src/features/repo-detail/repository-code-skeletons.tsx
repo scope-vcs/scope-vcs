@@ -1,5 +1,4 @@
 import { FileSystemTreeSkeleton } from '@/components/file-system-tree'
-import { BlockSkeleton } from '@/components/ui/block-skeleton'
 import { LineSkeleton, type LineSkeletonLength } from '@/components/ui/line-skeleton'
 import { TextSkeleton } from '@/components/ui/text-skeleton'
 

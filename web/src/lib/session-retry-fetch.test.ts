@@ -42,7 +42,7 @@ test('a request sent before the session was ready is sent once more after it bec
   session.becomeReady()
   assert.equal(await pending, approved)
   assert.equal(send.mock.callCount(), 2)
-  assert.deepEqual(send.mock.calls[1].arguments, [input, init])
+  assert.deepEqual(send.mock.calls.at(1)?.arguments, [input, init])
   assert.deepEqual(session.whenReady.mock.calls.map((call) => call.arguments), [[SESSION_READY_BOUND_MS]])
 })
 

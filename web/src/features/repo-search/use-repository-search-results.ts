@@ -32,9 +32,9 @@ export function useRepositorySearchResults({
   scope: string | null
   view: ViewId
 }) {
-  const search = query || null
+  const search = query === '' ? null : query
   const sections = useMemo(
-    () => REQUEST_QUEUE_SECTION_ORDER.filter((section) => search || section !== 'done'),
+    () => REQUEST_QUEUE_SECTION_ORDER.filter((section) => search !== null || section !== 'done'),
     [search],
   )
   const queueIdentity = scope

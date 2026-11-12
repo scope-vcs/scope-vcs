@@ -27,8 +27,7 @@ export function repoViews(definitions: readonly ViewDefinition[]): RepoViews {
     if (cached) return cached
     const reached = new Set<ViewId>()
     const pending = byId.has(view) ? [view] : []
-    while (pending.length > 0) {
-      const id = pending.pop()!
+    for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
       if (reached.has(id)) continue
       const definition = byId.get(id)
       if (!definition) continue

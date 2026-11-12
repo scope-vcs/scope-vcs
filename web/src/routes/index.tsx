@@ -15,10 +15,8 @@ const loadIndex = createServerFn({ method: 'GET' }).handler(async () => {
 
   const account = await loadAuthenticatedAccountForRequest()
   const handle = account.user?.handle
-  if (!handle) {
-    throw new Error('Signed-in account is missing a Scope handle.')
-  }
-  throw redirect({ params: { owner: handle }, to: '/$owner' })
+  if (handle) redirect({ params: { owner: handle }, throw: true, to: '/$owner' })
+  throw new Error('Signed-in account is missing a Scope handle.')
 })
 
 export const Route = createFileRoute('/')({

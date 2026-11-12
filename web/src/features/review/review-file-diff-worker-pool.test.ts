@@ -43,10 +43,8 @@ test('reuses idle workers and rejects overload without a queue', async (t) => {
   assert.equal(workers.length, 2)
   assert.equal(a.kind, 'html')
   assert.equal(reused.kind, 'html')
-  if (a.kind === 'html' && reused.kind === 'html') {
-    assert.equal(a.html.split(':')[0], reused.html.split(':')[0])
-    assert.ok(reused.html.endsWith(':2'))
-  }
+  assert.equal(a.html.split(':')[0], reused.html.split(':')[0])
+  assert.ok(reused.html.endsWith(':2'))
 })
 
 test('terminates timed out, canceled and failed tasks and replaces their workers', async (t) => {

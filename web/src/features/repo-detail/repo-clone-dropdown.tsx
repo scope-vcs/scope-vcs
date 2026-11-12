@@ -30,7 +30,7 @@ export function RepoCloneDropdown({
     <Popover
       className="mt-2 w-[min(420px,calc(100vw-2rem))] border-[var(--border-strong)]"
       label={`Clone the ${viewName} view`}
-      panel={() => (
+      renderPanel={() => (
         <div className="grid grid-cols-1 gap-3">
           <p className="truncate text-xs text-muted-foreground">Cloning the {viewName} view</p>
           {commands.map((command) => (
@@ -41,7 +41,7 @@ export function RepoCloneDropdown({
           ))}
         </div>
       )}
-      trigger={(props) => (
+      renderTrigger={(props) => (
         <Button size="sm" type="button" variant="secondary" {...props}>
           <Code2 className="size-3.5" />
           <span>Clone</span>

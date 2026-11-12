@@ -45,7 +45,14 @@ import { GitCommit } from 'lucide-react'
 import { useAuth } from '@clerk/tanstack-react-start'
 import { auth } from '@clerk/tanstack-react-start/server'
 import { useCallback, useEffect, useMemo } from 'react'
+import { serverLog } from '@/server/log'
 
+function failureAttributes(error: unknown) {
+  if (error instanceof Error) {
+    return { 'exception.type': error.name, 'exception.message': error.message, 'exception.stacktrace': error.stack ?? '' }
+  }
+  return { 'exception.message': String(error) }
+}
 
 const loadChangesPage = createServerFn({ method: 'GET' })
   .validator(parseLoadRequestRevisionsInput)
@@ -53,7 +60,7 @@ const loadChangesPage = createServerFn({ method: 'GET' })
     const [{ userId }, revisions] = await Promise.all([
       auth(),
       loadRequestRevisionsForRequest(data).catch((error: unknown) => {
-        console.error('Loading request revisions failed', error)
+        serverLog('error', 'Loading request revisions failed', failureAttributes(error))
         return null
       }),
     ])
@@ -61,7 +68,7 @@ const loadChangesPage = createServerFn({ method: 'GET' })
     const page = query
       ? await loadDiscussionReferencePage(query.input, loadRequestDiscussionsForRequest)
         .catch((error: unknown) => {
-          console.error('Loading request discussion references failed', error)
+          serverLog('error', 'Loading request discussion references failed', failureAttributes(error))
           return null
         })
       : null

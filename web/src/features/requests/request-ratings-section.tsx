@@ -7,7 +7,7 @@ import type { RateRequestInput } from '@/api/requests'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { resourceErrorMessage } from '@/lib/use-cached-resource'
-import { type FormEvent, useReducer } from 'react'
+import { type SubmitEvent, useReducer } from 'react'
 
 type FormState = {
   error: string | null
@@ -55,7 +55,7 @@ export function RequestRatingsSection({
   )
   const { eligible_subject: eligibleSubject, ratings } = initial
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!eligibleSubject || submitting) return
     dispatch({ type: 'submission_started' })
@@ -95,7 +95,7 @@ export function RequestRatingsSection({
       )}
 
       {eligibleSubject ? (
-        <form className="mt-4 grid gap-3 border-t border-border pt-4" onSubmit={submit}>
+        <form className="mt-4 grid gap-3 border-t border-border pt-4" onSubmit={(event) => void submit(event)}>
           <label className="grid gap-1 text-xs font-medium">
             Rating for @{eligibleSubject.handle}
             <Select

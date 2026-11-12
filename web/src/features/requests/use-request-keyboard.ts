@@ -35,14 +35,14 @@ export function useRequestKeyboard({
       const focusedIndex = links.findIndex((link) => focusedRow?.contains(link))
 
       if (event.key === 'j' || event.key === 'k') {
-        if (!links.length) return
-        event.preventDefault()
         const step = event.key === 'j' ? 1 : -1
         const next =
           focusedIndex === -1
             ? links.findIndex((link) => link.getAttribute('aria-current') === 'page') + (step === 1 ? 1 : -1)
             : focusedIndex + step
         const target = links[Math.min(links.length - 1, Math.max(0, next))]
+        if (!target) return
+        event.preventDefault()
         target.focus({ preventScroll: true })
         target.scrollIntoView({ block: 'nearest' })
         return

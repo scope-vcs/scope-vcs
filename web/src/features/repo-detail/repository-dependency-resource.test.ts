@@ -40,7 +40,7 @@ function pollScheduler() {
   let canceled = 0
   const delays: number[] = []
   return {
-    schedule(poll: () => void, delayMs: number) {
+    schedule: (poll: () => void, delayMs: number) => {
       delays.push(delayMs)
       scheduled = poll
       return () => {
@@ -140,7 +140,9 @@ test('polls durable job failures less often than active checks', async () => {
   }))
 
   assert.equal(scheduler.delays.length, 2)
-  assert.equal(scheduler.delays[1] > scheduler.delays[0], true)
+  const [firstDelay, secondDelay] = scheduler.delays
+  assert.ok(firstDelay !== undefined && secondDelay !== undefined)
+  assert.ok(secondDelay > firstDelay)
 })
 
 test('a viewer change cancels polls so a returning viewer schedules fresh ones', async () => {
@@ -163,7 +165,9 @@ test('a viewer change cancels polls so a returning viewer schedules fresh ones',
   }))
   assert.equal(scheduler.pending, true)
   assert.equal(scheduler.delays.length, 2)
-  assert.equal(scheduler.delays[1] < scheduler.delays[0], true)
+  const [firstDelay, secondDelay] = scheduler.delays
+  assert.ok(firstDelay !== undefined && secondDelay !== undefined)
+  assert.ok(secondDelay < firstDelay)
 })
 
 test('hides public access and isolates changes in viewer or maintainer access', () => {
