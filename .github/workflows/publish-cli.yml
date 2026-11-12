@@ -89,7 +89,7 @@ jobs:
           SCOPE_DEPLOYMENT_SOURCE_SHA: ${{ github.sha }}
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-        run: bash .github/scripts/prepare-railway-artifact.sh cli-downloads .railway-cli prepared-cli-release.json
+        run: bash deploy/scripts/prepare-railway-artifact.sh cli-downloads .railway-cli prepared-cli-release.json
 
       - uses: ./.github/actions/install-railway-cli
 
@@ -113,7 +113,7 @@ jobs:
           railway variable set --project "$RAILWAY_PROJECT_ID" \
             --environment "$SCOPE_RAILWAY_ENVIRONMENT_ID" --service "$service_id" \
             --skip-deploys "SCOPE_CLI_PUBLIC_URL=$public_origin"
-          bash .github/scripts/deploy-railway.sh "$service_id"
+          bash deploy/scripts/deploy-railway.sh "$service_id"
 
       - name: Record successful Railway deployment
         if: always()
@@ -122,6 +122,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node .github/scripts/production-deployment-progress.mjs record-file \
+          node deploy/scripts/production-deployment-progress.mjs record-file \
             --file production-deployments.ndjson \
             --log-url "$LOG_URL"

@@ -9,13 +9,13 @@ usage() {
   cat <<'EOF'
 usage: ./dev/check [all|guardrails|rust|contract|cli|web|ops|smoke]
 
-  all         run every non-browser check group (default)
-  guardrails  check source size, crate boundaries, and replicated toolchain pins
+  all         run every non-browser check group this checkout includes (default)
+  guardrails  check source rules, crate boundaries, and developer tooling
   rust        format, test, and lint the main Rust workspace
   contract    compare the generated API TypeScript contract with the checked-in files
   cli         format, test, and lint the CLI workspace, then build and check its bundle
   web         test, check, and build the web application
-  ops         test deployment orchestration and benchmark scripts
+  ops         test deployment orchestration, CI structure, and benchmark scripts; needs deploy/
   smoke       run the browser component suite, then the browser smoke suite against an already running local stack
 EOF
 }
@@ -25,7 +25,15 @@ rust() { ./dev/checks/backend; }
 contract() { ./dev/checks/contract; }
 cli() { ./dev/checks/cli; ./dev/checks/cli-bundle; }
 web() { ./dev/checks/web; }
-ops() { ./dev/checks/ops; }
+includes_operations() { [[ -d "$ROOT/deploy/scripts" ]]; }
+
+ops() {
+  if ! includes_operations; then
+    echo "operations checks need deploy/, which this checkout does not include" >&2
+    return 1
+  fi
+  ./dev/checks/ops
+}
 
 smoke() {
   local smoke_repo="${SCOPE_SMOKE_REPO:-}"
@@ -49,7 +57,11 @@ case "$COMMAND" in
     contract
     cli
     web
-    ops
+    if includes_operations; then
+      ops
+    else
+      echo "Skipped operations checks: this checkout does not include deploy/."
+    fi
     ;;
   guardrails) guardrails ;;
   rust) rust ;;

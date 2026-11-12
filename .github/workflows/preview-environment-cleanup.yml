@@ -46,7 +46,7 @@ jobs:
         id: recheck
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node .github/scripts/preview-pull-request.mjs cleanup "$PULL_REQUEST"
+        run: node deploy/scripts/preview-pull-request.mjs cleanup "$PULL_REQUEST"
 
       - name: Delete the pull request environment
         id: delete
@@ -55,7 +55,7 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          result="$(node .github/scripts/preview-environment.mjs delete "$PULL_REQUEST")"
+          result="$(node deploy/scripts/preview-environment.mjs delete "$PULL_REQUEST")"
           echo "$result"
           deleted="$(jq -er '.deleted | tostring' <<< "$result")"
           name="$(jq -er '.name' <<< "$result")"
@@ -74,4 +74,4 @@ jobs:
           ENVIRONMENT: ${{ steps.delete.outputs.name }}
         run: |
           body="$(printf '**Preview environment** `%s`\n\nDeleted.' "$ENVIRONMENT")"
-          bash .github/scripts/preview-comment.sh "$body"
+          bash deploy/scripts/preview-comment.sh "$body"

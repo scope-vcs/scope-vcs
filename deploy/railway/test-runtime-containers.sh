@@ -33,7 +33,7 @@ git init --bare --template= "$scratch/repository"
 git --git-dir="$scratch/repository" hash-object -w --stdin < .scope/git-segments/probe
 SH
 chmod 755 "$context/bin/scope-worker"
-cp "$repo_root/deploy/railway/install-git.sh" "$context/install-git.sh"
+cp "$repo_root/dev/install-git.sh" "$context/install-git.sh"
 git_version="$(jq -er '.git.version' "$repo_root/dev/tool-versions.json")"
 git_source_sha256="$(jq -er '.git.sourceSha256' "$repo_root/dev/tool-versions.json")"
 

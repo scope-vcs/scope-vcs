@@ -56,7 +56,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-        run: bash .github/scripts/publish-maintenance-runtime.sh
+        run: bash deploy/scripts/publish-maintenance-runtime.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: maintenance-runtime
@@ -87,8 +87,8 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: |
-          node .github/scripts/deploy-maintenance-runtime.mjs staging maintenance-runtime.json
-          bash .github/scripts/verify-maintenance-runtime.sh staging maintenance-runtime.json
+          node deploy/scripts/deploy-maintenance-runtime.mjs staging maintenance-runtime.json
+          bash deploy/scripts/verify-maintenance-runtime.sh staging maintenance-runtime.json
 
   production:
     needs: staging
@@ -113,5 +113,5 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: |
-          node .github/scripts/deploy-maintenance-runtime.mjs production maintenance-runtime.json
-          bash .github/scripts/verify-maintenance-runtime.sh production maintenance-runtime.json
+          node deploy/scripts/deploy-maintenance-runtime.mjs production maintenance-runtime.json
+          bash deploy/scripts/verify-maintenance-runtime.sh production maintenance-runtime.json

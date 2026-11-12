@@ -97,7 +97,7 @@ jobs:
           ROLLBACK: ${{ inputs.rollback }}
           ROLLBACK_TO: ${{ inputs.rollback_to }}
           SCHEDULE_INTENT: ${{ inputs.schedule_intent }}
-        run: node .github/scripts/release-selection.mjs
+        run: node deploy/scripts/release-selection.mjs
 
       - name: Report the daily release pause after a rollback
         if: steps.release.outputs.paused_after_rollback_of != ''
@@ -145,7 +145,7 @@ jobs:
         id: progress
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node .github/scripts/production-deployment-progress.mjs read
+        run: node deploy/scripts/production-deployment-progress.mjs read
 
       - name: Select affected components
         if: steps.release.outputs.prepared_run_id == '' && steps.release.outputs.paused_after_rollback_of == ''
@@ -156,7 +156,7 @@ jobs:
           REQUESTED_SCOPE: ${{ inputs.scope }}
           DEPLOYED_REVISIONS: ${{ steps.progress.outputs.revisions }}
         run: >-
-          node .github/scripts/plan-production-deployment.mjs
+          node deploy/scripts/plan-production-deployment.mjs
           --manifest .github/deployment-services.json
           --head "$HEAD_SHA"
           --scope "$REQUESTED_SCOPE"
@@ -263,7 +263,7 @@ jobs:
             "media-api":${{ needs.plan.outputs.media }},"api":${{ needs.plan.outputs.api }},
             "web":${{ needs.plan.outputs.web }},"cli-downloads":${{ needs.plan.outputs.cli }}}
           SCOPE_REQUESTED_SCOPE: ${{ inputs.scope }}
-        run: bash .github/scripts/production-readiness-preflight.sh
+        run: bash deploy/scripts/production-readiness-preflight.sh
 
   release-preparation:
     name: Prepare Railway artifacts
@@ -324,7 +324,7 @@ jobs:
         env:
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-        run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
+        run: bash deploy/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
       - uses: ./.github/actions/install-railway-cli
       - name: Validate production baseline schema and migration plan
         env:
@@ -338,7 +338,7 @@ jobs:
             exit 1
           }
           SCOPE_PREPARED_RELEASE_PATH=prepared-release.json \
-            bash .github/scripts/railway-private-maintenance.sh \
+            bash deploy/scripts/railway-private-maintenance.sh \
               "$(jq -er '.environments.production.environmentId' "$manifest")" preflight > production-migration-plan.json \
             || { [[ "$ROLLBACK" == true ]] && rollback_refused; exit 1; }
           jq -e . production-migration-plan.json >/dev/null
@@ -490,7 +490,7 @@ jobs:
         id: progress
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node .github/scripts/production-deployment-progress.mjs read
+        run: node deploy/scripts/production-deployment-progress.mjs read
 
       - uses: ./.github/actions/install-railway-cli
         if: needs.plan.outputs.backend_selected == 'true' || needs.plan.outputs.web == 'true'
@@ -513,7 +513,7 @@ jobs:
           )"
           SCOPE_DEPLOYMENT_MANIFEST_JSON="$(jq -c . "$manifest")" \
             SCOPE_RAILWAY_SERVICES_JSON="$services_json" \
-            node .github/scripts/railway-service-health.mjs
+            node deploy/scripts/railway-service-health.mjs
 
       - name: Record successful release
         env:
@@ -528,6 +528,6 @@ jobs:
             "git-router":${{ needs.plan.outputs.router }},"media-api":${{ needs.plan.outputs.media }},
             "api":${{ needs.plan.outputs.api }},"web":${{ needs.plan.outputs.web }},"cli-downloads":${{ needs.plan.outputs.cli }}}
         run: >-
-          node .github/scripts/production-deployment-progress.mjs record-release
+          node deploy/scripts/production-deployment-progress.mjs record-release
           --source-sha "$SOURCE_SHA" --log-url "$LOG_URL" --components "$RELEASE_COMPONENTS" --warning "$MAINTENANCE_WARNING"
           --rollback-of "$ROLLBACK_OF"

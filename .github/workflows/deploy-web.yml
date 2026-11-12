@@ -57,7 +57,7 @@ jobs:
           SCOPE_RAILWAY_ENVIRONMENT_ID="$(jq -r '.environments.production.environmentId' "$manifest")"
           export RAILWAY_PROJECT_ID SCOPE_RAILWAY_ENVIRONMENT_ID
           service_id="$(jq -r '.services.web.id' "$manifest")"
-          bash .github/scripts/deploy-monitored-railway.sh web env -u RAILWAY_API_TOKEN bash .github/scripts/deploy-railway.sh "$service_id"
+          bash deploy/scripts/deploy-monitored-railway.sh web env -u RAILWAY_API_TOKEN bash deploy/scripts/deploy-railway.sh "$service_id"
 
       - name: Record successful Railway deployment
         if: steps.transition.outcome == 'success'
@@ -66,7 +66,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node .github/scripts/production-deployment-progress.mjs record-file \
+          node deploy/scripts/production-deployment-progress.mjs record-file \
             --file production-deployments.ndjson \
             --log-url "$LOG_URL"
 

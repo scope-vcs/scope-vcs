@@ -7,7 +7,7 @@ on:
       - .github/actions/install-reviewed-git/**
       - .github/workflows/reviewed-git-cache.yml
       - .github/scripts/use-ubuntu-apt-sources.sh
-      - deploy/railway/install-git.sh
+      - dev/install-git.sh
       - dev/tool-versions.json
   schedule:
     - cron: '29 6 * * *'

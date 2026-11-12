@@ -20,7 +20,7 @@ RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
     && if [ -f /tmp/apt-sources.list ]; then mv /tmp/apt-sources.list /etc/apt/sources.list; fi \
     && rm -rf /var/lib/apt/lists/*
 
-COPY deploy/railway/install-git.sh /tmp/install-git.sh
+COPY dev/install-git.sh /tmp/install-git.sh
 RUN bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
 
 FROM --platform=linux/amd64 rust:1.98.1-slim-bookworm@sha256:dacc9e51f252243eb59d2fb4cb4ad8b0d3f607b6a82c398cf8a321e59ff778a7 AS chef

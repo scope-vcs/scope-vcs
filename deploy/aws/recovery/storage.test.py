@@ -91,7 +91,7 @@ class RecoveryStorageContracts(unittest.TestCase):
         self.assertEqual(schedule['jobs']['capture']['secrets']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], '${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}')
         for step in job['steps']:
             self.assertNotIn('upload-artifact', step.get('uses', ''))
-        capture = next(s for s in job['steps'] if s.get('run') == 'python .github/scripts/recovery-run.py')
+        capture = next(s for s in job['steps'] if s.get('run') == 'python deploy/scripts/recovery-run.py')
         self.assertEqual(capture['env']['RAILWAY_TOKEN'], '${{ secrets.RAILWAY_TOKEN }}')
         self.assertEqual(capture['env']['SCOPE_RAILWAY_SSH_PRIVATE_KEY'], '${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}')
         failure = job['steps'][-1]

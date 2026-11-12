@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+component="${1:?usage: prepare-railway-artifact.sh <component> <context-root> <manifest-path>}"
+context_root="${2:?context-root is required}"
+release_path="${3:?manifest-path is required}"
+source_sha="${SCOPE_DEPLOYMENT_SOURCE_SHA:-${GITHUB_SHA:-}}"
+[[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || { echo 'A full source revision is required.' >&2; exit 2; }
+: "${SCOPE_RAILWAY_REGISTRY_USERNAME:?Private image preparation requires durable registry username}"
+: "${SCOPE_RAILWAY_REGISTRY_PASSWORD:?Private image preparation requires durable registry password}"
+: "${GITHUB_TOKEN:?Private image preparation requires publishing token for visibility verification}"
+manifest="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
+service_id="$(jq -er --arg component "$component" '.services[$component].id' "$manifest")" || {
+  echo "Unknown release component $component" >&2
+  exit 2
+}
+definition="$(node deploy/scripts/deployment-components.mjs describe "$component")"
+dockerfile="$(jq -er '.artifact.dockerfile' <<< "$definition")"
+install_git="$(jq -r 'if .artifact.installGit then 1 else 0 end' <<< "$definition")"
+binary="$(jq -r '.artifact.binary // ""' <<< "$definition")"
+image_repository="$(node deploy/scripts/railway-artifact.mjs image-repository "$component")"
+image_tag="$image_repository:$component-$source_sha-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+metadata="$(mktemp)"
+pull_config="$(mktemp -d)"
+trap 'rm -f "$metadata"; rm -rf "$pull_config"' EXIT
+
+if [[ "$(jq -r '.artifact.kind' <<< "$definition")" == web ]]; then
+  test -s "$context_root/.output/server/index.mjs"
+  test -s "$context_root/.output/server/_instrumentation/instrumentation.mjs"
+elif [[ -z "$binary" ]]; then
+  echo "Release component $component has no prebuilt binary to package." >&2
+  exit 2
+else
+  test -x "$context_root/bin/$binary"
+fi
+if [[ "$component" == cli-downloads ]]; then
+  while IFS= read -r artifact; do
+    test -s "$context_root/dist/$artifact"
+    (cd "$context_root/dist" && sha256sum --check "$artifact.sha256")
+  done < <(jq -er '.targets[].artifact' cli/distribution/targets.json)
+fi
+if [[ "$component" == api ]]; then
+  : "${SCOPE_MAINTENANCE_BINARY:?API preparation requires the original maintenance binary}"
+  test -f "$context_root/bin/scope-maintenance"
+  test ! -L "$context_root/bin/scope-maintenance"
+  cmp -- "$SCOPE_MAINTENANCE_BINARY" "$context_root/bin/scope-maintenance" || {
+    echo 'API image maintenance binary differs from the prepared release binary.' >&2
+    exit 1
+  }
+fi
+printf '%s\n' "$source_sha" > "$context_root/.scope-deployment-sha"
+cp dev/install-git.sh "$context_root/install-git.sh"
+git_version="$(jq -er '.git.version' dev/tool-versions.json)"
+git_source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
+dependency_epoch="${SCOPE_IMAGE_DEPENDENCY_EPOCH:-$(date -u +%G-W%V)}"
+cache_ref="$image_repository:buildcache"
+cache_args=(--cache-from "type=registry,ref=$cache_ref" \
+  --cache-to "type=registry,ref=$cache_ref,mode=max,image-manifest=true,oci-mediatypes=true")
+if [[ "$install_git" == 1 && -n "${SCOPE_GIT_BUILD_CACHE_REF:-}" ]]; then
+  cache_args+=(--cache-from "type=registry,ref=$SCOPE_GIT_BUILD_CACHE_REF")
+fi
+docker buildx build --platform linux/amd64 --provenance=false --push \
+  --file "$dockerfile" --tag "$image_tag" --metadata-file "$metadata" \
+  "${cache_args[@]}" \
+  --label "org.opencontainers.image.revision=$source_sha" \
+  --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+  --build-arg "INSTALL_GIT=$install_git" --build-arg "BINARY=$binary" \
+  --build-arg "GIT_VERSION=$git_version" --build-arg "GIT_SOURCE_SHA256=$git_source_sha256" \
+  --build-arg "IMAGE_DEPENDENCY_EPOCH=$dependency_epoch" \
+  --build-arg "SCOPE_ANALYTICS_RELEASE=$source_sha" "$context_root"
+digest="$(jq -er '."containerimage.digest"' "$metadata")"
+[[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo 'Build did not publish an immutable image digest.' >&2; exit 1; }
+image="$image_repository@$digest"
+
+for attempt in 1 2 3; do
+  printf '%s' "$SCOPE_RAILWAY_REGISTRY_PASSWORD" |
+    DOCKER_CONFIG="$pull_config" docker login "${image_repository%%/*}" \
+      --username "$SCOPE_RAILWAY_REGISTRY_USERNAME" --password-stdin >/dev/null && break
+  if ((attempt == 3)); then
+    echo "Registry login failed after 3 attempts: ${image_repository%%/*}" >&2
+    exit 1
+  fi
+  echo "Registry login failed; retrying ($attempt/3)." >&2
+  sleep $((attempt * 5))
+done
+DOCKER_CONFIG="$pull_config" docker manifest inspect "$image" >/dev/null || {
+  echo 'Prepared private image is not pullable with the durable Railway registry credentials.' >&2
+  exit 1
+}
+node deploy/scripts/railway-artifact.mjs verify-private-package "$component"
+node deploy/scripts/railway-artifact.mjs record "$release_path" "$component" "$image" "$source_sha" "$service_id"
