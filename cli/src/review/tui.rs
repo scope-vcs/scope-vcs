@@ -18,13 +18,13 @@ use std::{io, time::Duration};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TuiOutcome {
+pub(super) enum TuiOutcome {
     Exit,
     Cancel,
     ContinuePush,
 }
 
-pub fn run_review_tui(
+pub(super) fn run_review_tui(
     mut state: ReviewState,
     mut analysis_job: Option<AnalysisJob>,
     mut save_config: impl FnMut(&RepoConfig) -> anyhow::Result<()>,

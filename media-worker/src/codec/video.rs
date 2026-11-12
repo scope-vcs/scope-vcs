@@ -19,7 +19,7 @@ const PLAYBACK_AUDIO: [&str; 6] = ["-c:a", "aac", "-b:a", "128k", "-ac", "2"];
 const REMUX_BITSTREAM_FILTERS: &str = "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1:video_full_range_flag=0,filter_units=remove_types=6";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PlaybackConversion {
+pub(crate) enum PlaybackConversion {
     Remux,
     Transcode,
 }

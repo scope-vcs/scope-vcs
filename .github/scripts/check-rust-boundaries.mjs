@@ -99,6 +99,32 @@ export function validateStandaloneManifests(manifests) {
   return errors
 }
 
+function lintTable(contents, prefix, group) {
+  const header = `[${prefix}lints.${group}]`
+  const start = contents.indexOf(`${header}\n`)
+  if (start === -1) return null
+  const body = contents.slice(start + header.length + 1)
+  const end = body.search(/^\[/m)
+  return (end === -1 ? body : body.slice(0, end)).trim()
+}
+
+export function validateLintTables(workspaceManifest, standaloneManifests) {
+  const errors = []
+  for (const group of ['rust', 'clippy']) {
+    const expected = lintTable(workspaceManifest, 'workspace.', group)
+    if (!expected) {
+      errors.push(`Cargo.toml: missing [workspace.lints.${group}]`)
+      continue
+    }
+    for (const [name, contents] of Object.entries(standaloneManifests)) {
+      if (lintTable(contents, '', group) !== expected) {
+        errors.push(`${name}: [lints.${group}] must match [workspace.lints.${group}] in Cargo.toml`)
+      }
+    }
+  }
+  return errors
+}
+
 async function cargoMetadata(root, manifestPath) {
   const { stdout } = await execFileAsync(
     'cargo',
@@ -119,10 +145,12 @@ async function main() {
     ['scope-api-contract', path.join(root, 'crates', 'scope-api-contract', 'Cargo.toml')],
     ['scope-dependency-analyzer', path.join(root, 'crates', 'scope-dependency-analyzer', 'Cargo.toml')],
     ['scope-domain', path.join(root, 'crates', 'scope-domain', 'Cargo.toml')],
+    ['scope-cli', path.join(cliRoot, 'Cargo.toml')],
   ].map(async ([name, manifest]) => [name, await readFile(manifest, 'utf8')])))
   await access(path.join(cliRoot, 'Cargo.lock'))
   const result = validateRustBoundaries(mainMetadata, cliMetadata, cliRoot)
   result.errors.push(...validateStandaloneManifests(standaloneManifests))
+  result.errors.push(...validateLintTables(await readFile(path.join(root, 'Cargo.toml'), 'utf8'), standaloneManifests))
   if (result.errors.length > 0) {
     console.error(`Rust dependency boundary check failed:\n- ${result.errors.join('\n- ')}`)
     process.exitCode = 1

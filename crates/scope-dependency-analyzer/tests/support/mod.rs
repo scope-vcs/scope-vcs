@@ -10,17 +10,17 @@ use std::{
 };
 use tempfile::TempDir;
 
-pub fn fixture(name: &str) -> PathBuf {
+pub(crate) fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
         .join(name)
 }
 
-pub fn analyze(root: &Path) -> AnalyzerOutput {
+pub(crate) fn analyze(root: &Path) -> AnalyzerOutput {
     analyze_snapshot(root)
 }
 
-pub fn write_files(root: &Path, files: &[(&str, &str)]) {
+pub(crate) fn write_files(root: &Path, files: &[(&str, &str)]) {
     for (path, contents) in files {
         let path = root.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -28,13 +28,17 @@ pub fn write_files(root: &Path, files: &[(&str, &str)]) {
     }
 }
 
-pub fn repository(files: &[(&str, &str)]) -> TempDir {
+pub(crate) fn repository(files: &[(&str, &str)]) -> TempDir {
     let root = TempDir::new().unwrap();
     write_files(root.path(), files);
     root
 }
 
-pub fn edge(source_path: &str, target_path: &str, kind: DependencyEdgeKind) -> DependencyEdge {
+pub(crate) fn edge(
+    source_path: &str,
+    target_path: &str,
+    kind: DependencyEdgeKind,
+) -> DependencyEdge {
     DependencyEdge {
         source_path: source_path.into(),
         target_path: target_path.into(),
@@ -42,14 +46,14 @@ pub fn edge(source_path: &str, target_path: &str, kind: DependencyEdgeKind) -> D
     }
 }
 
-pub fn gap(path: &str, reason: &str) -> DependencyGap {
+pub(crate) fn gap(path: &str, reason: &str) -> DependencyGap {
     DependencyGap {
         path: path.into(),
         reason: reason.into(),
     }
 }
 
-pub fn targets_from(output: &AnalyzerOutput, source: &str) -> Vec<String> {
+pub(crate) fn targets_from(output: &AnalyzerOutput, source: &str) -> Vec<String> {
     output
         .edges
         .iter()
@@ -58,7 +62,7 @@ pub fn targets_from(output: &AnalyzerOutput, source: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn has_gap(output: &AnalyzerOutput, path: &str, reason: impl Fn(&str) -> bool) -> bool {
+pub(crate) fn has_gap(output: &AnalyzerOutput, path: &str, reason: impl Fn(&str) -> bool) -> bool {
     output
         .gaps
         .iter()

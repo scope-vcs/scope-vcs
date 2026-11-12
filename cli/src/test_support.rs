@@ -7,10 +7,10 @@ use std::{
     process::{Command, Output},
 };
 
-pub struct TempDir(tempfile::TempDir);
+pub(crate) struct TempDir(tempfile::TempDir);
 
 impl TempDir {
-    pub fn new(label: &str) -> Self {
+    pub(crate) fn new(label: &str) -> Self {
         Self(
             tempfile::Builder::new()
                 .prefix(&format!("scope-cli-{label}-"))
@@ -19,22 +19,22 @@ impl TempDir {
         )
     }
 
-    pub fn git_repo(label: &str, branch: &str) -> Self {
+    pub(crate) fn git_repo(label: &str, branch: &str) -> Self {
         let dir = Self::new(label);
         dir.run_git(["init", "--quiet", "-b", branch]);
         dir
     }
 
-    pub fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         self.0.path()
     }
 
-    pub fn run_git<const N: usize>(&self, args: [&str; N]) -> Output {
+    pub(crate) fn run_git<const N: usize>(&self, args: [&str; N]) -> Output {
         run_git(self.path(), args)
     }
 }
 
-pub fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
+pub(crate) fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
     let output = Command::new("git")
         .current_dir(cwd)
         .args(args)
@@ -49,7 +49,7 @@ pub fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
     output
 }
 
-pub fn commit_all(cwd: &Path, message: &str) -> String {
+pub(crate) fn commit_all(cwd: &Path, message: &str) -> String {
     run_git(cwd, ["add", "-A"]);
     run_git(
         cwd,
@@ -120,7 +120,7 @@ pub(crate) fn read_http_request(stream: &mut std::net::TcpStream) -> std::io::Re
     String::from_utf8(request).map_err(std::io::Error::other)
 }
 
-pub fn repository_response(overrides: Value) -> Value {
+pub(crate) fn repository_response(overrides: Value) -> Value {
     let mut repo = serde_json::to_value(RepoSummaryResponse {
         description: None,
         website_url: None,

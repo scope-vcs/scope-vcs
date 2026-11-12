@@ -18,7 +18,7 @@ use std::{
 const CONTROL_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
-pub struct RuntimeClient {
+pub(crate) struct RuntimeClient {
     client: Client,
     api_url: String,
     attempt_id: String,
@@ -26,7 +26,7 @@ pub struct RuntimeClient {
 }
 
 impl RuntimeClient {
-    pub fn new(settings: &RuntimeSettings) -> anyhow::Result<Self> {
+    pub(crate) fn new(settings: &RuntimeSettings) -> anyhow::Result<Self> {
         Ok(Self {
             client: Client::builder()
                 .connect_timeout(Duration::from_secs(20))

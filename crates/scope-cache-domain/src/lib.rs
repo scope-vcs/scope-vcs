@@ -1,5 +1,3 @@
-#![warn(unreachable_pub)]
-
 mod decisions;
 mod error;
 mod policy;

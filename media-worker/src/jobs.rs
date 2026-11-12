@@ -29,7 +29,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 use tracing::Instrument as _;
 
-pub async fn run_processing_loop(
+pub(crate) async fn run_processing_loop(
     lane: RequestAttachmentProcessingLane,
     metadata: MetadataStore,
     storage: MediaStorage,

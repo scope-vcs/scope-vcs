@@ -4,3 +4,12 @@ unmaintained = "workspace"
 unsound = "all"
 unused-ignored-advisory = "deny"
 ignore = []
+
+[bans]
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = ["https://github.com/transact-rs/sqlx"]

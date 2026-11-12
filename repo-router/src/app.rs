@@ -10,7 +10,7 @@ pub(crate) struct RouterState {
     pub(crate) replay: crate::replay::ReplayBuffer,
 }
 
-pub fn router(config: RouterConfig) -> anyhow::Result<Router> {
+pub(crate) fn router(config: RouterConfig) -> anyhow::Result<Router> {
     let discovery = BackendDiscovery::new(
         &config.backend_authority,
         config.dns_refresh,

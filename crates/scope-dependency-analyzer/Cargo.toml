@@ -1,5 +1,6 @@
 [package]
 name = "scope-dependency-analyzer"
+publish = false
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
@@ -26,3 +27,24 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 
 [dev-dependencies]
 tempfile = "3.23.0"
+
+[lints.rust]
+unreachable_pub = "warn"
+unsafe_code = "warn"
+
+[lints.clippy]
+allow_attributes = "warn"
+dbg_macro = "warn"
+let_underscore_must_use = "warn"
+match_same_arms = "warn"
+redundant_clone = "warn"
+todo = "warn"
+unimplemented = "warn"
+unnecessary_wraps = "warn"
+unused_async = "warn"
+unused_self = "warn"
+unwrap_used = "warn"
+wildcard_enum_match_arm = "warn"
+
+[package.metadata.cargo-shear]
+ignored-paths = ["tests/fixtures/**"]

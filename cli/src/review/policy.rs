@@ -6,7 +6,7 @@ use scope_domain::{
 
 use scope_domain::repo_visibility::ReviewLabel;
 
-pub fn toggle_node_visibility(
+pub(crate) fn toggle_node_visibility(
     config: &mut RepoConfig,
     tree: &ReviewTree,
     node_id: usize,
@@ -14,7 +14,7 @@ pub fn toggle_node_visibility(
     repo_visibility::toggle_visibility_target(config, target_for_node(tree, node_id))
 }
 
-pub fn tree_visibilities(config: &RepoConfig, tree: &ReviewTree) -> Vec<ReviewLabel> {
+pub(crate) fn tree_visibilities(config: &RepoConfig, tree: &ReviewTree) -> Vec<ReviewLabel> {
     let mut visibilities = vec![ReviewLabel::Mixed; tree.nodes().len()];
     for node in tree.nodes().iter().rev() {
         let children = if node.kind == ReviewNodeKind::File {
@@ -36,7 +36,7 @@ pub fn tree_visibilities(config: &RepoConfig, tree: &ReviewTree) -> Vec<ReviewLa
     visibilities
 }
 
-pub fn rule_label(config: &RepoConfig, node: &ReviewNode) -> String {
+pub(crate) fn rule_label(config: &RepoConfig, node: &ReviewNode) -> String {
     repo_visibility::rule_label(config, &target_for_review_node(node, Vec::new()))
 }
 

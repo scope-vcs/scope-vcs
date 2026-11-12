@@ -2,10 +2,10 @@ use scope_domain::requests::attachments::RequestAttachmentLimits;
 use scope_storage::config::required_env;
 use std::{path::PathBuf, time::Duration};
 
-pub const DEFAULT_HEALTH_PORT: u16 = 8080;
+pub(crate) const DEFAULT_HEALTH_PORT: u16 = 8080;
 
 #[derive(Clone, Debug)]
-pub struct CodecLimits {
+pub(crate) struct CodecLimits {
     pub max_source_bytes: u64,
     pub max_image_source_bytes: u64,
     pub max_video_source_bytes: u64,
@@ -41,7 +41,7 @@ impl Default for CodecLimits {
 }
 
 #[derive(Clone, Debug)]
-pub struct CodecPrograms {
+pub(crate) struct CodecPrograms {
     pub ffmpeg: PathBuf,
     pub ffprobe: PathBuf,
     pub heif_convert: PathBuf,
@@ -49,7 +49,7 @@ pub struct CodecPrograms {
 }
 
 impl CodecPrograms {
-    pub fn from_env() -> Self {
+    pub(crate) fn from_env() -> Self {
         Self {
             ffmpeg: env_path("SCOPE_MEDIA_FFMPEG", "ffmpeg"),
             ffprobe: env_path("SCOPE_MEDIA_FFPROBE", "ffprobe"),
@@ -60,7 +60,7 @@ impl CodecPrograms {
 }
 
 #[derive(Clone, Debug)]
-pub struct WorkerSettings {
+pub(crate) struct WorkerSettings {
     pub database_url: String,
     pub health_port: u16,
     pub scratch_root: PathBuf,
@@ -71,7 +71,7 @@ pub struct WorkerSettings {
 }
 
 impl WorkerSettings {
-    pub fn from_env() -> anyhow::Result<Self> {
+    pub(crate) fn from_env() -> anyhow::Result<Self> {
         let database_url = required_env("DATABASE_URL")?;
         let scratch_root = env_path("SCOPE_MEDIA_SCRATCH_DIR", "/tmp/scope-media-worker");
         let health_port = env_parse("PORT", DEFAULT_HEALTH_PORT)?;

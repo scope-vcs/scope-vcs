@@ -14,13 +14,13 @@ use std::collections::BTreeSet;
 mod dependencies;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReviewMode {
+pub(super) enum ReviewMode {
     Standalone,
     Push,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum ChangeListKind {
+pub(super) enum ChangeListKind {
     Added,
     Deleted,
 }
@@ -37,7 +37,7 @@ enum ReviewItem {
 }
 
 #[derive(Clone, Debug)]
-pub struct ReviewState {
+pub(super) struct ReviewState {
     tree: ReviewTree,
     config: RepoConfig,
     visibilities: Vec<ReviewLabel>,
@@ -58,13 +58,13 @@ pub struct ReviewState {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DependencyPathSide {
+pub(super) enum DependencyPathSide {
     PublicSource,
     PrivateTarget,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ReviewRow {
+pub(super) enum ReviewRow {
     DependencySummary(DependencySummary),
     DependencyFinding {
         source_path: String,
@@ -99,7 +99,7 @@ pub enum ReviewRow {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReviewInput {
+pub(super) enum ReviewInput {
     Up,
     Down,
     Left,
@@ -118,7 +118,7 @@ pub enum ReviewInput {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReviewStateAction {
+pub(super) enum ReviewStateAction {
     None,
     Save,
     ContinuePush,
@@ -127,11 +127,11 @@ pub enum ReviewStateAction {
 }
 
 impl ReviewState {
-    pub fn new(tree: ReviewTree, config: RepoConfig, mode: ReviewMode) -> Self {
+    pub(super) fn new(tree: ReviewTree, config: RepoConfig, mode: ReviewMode) -> Self {
         Self::build(tree, config, mode, &[], DependencyReview::hidden())
     }
 
-    pub fn new_push(
+    pub(super) fn new_push(
         tree: ReviewTree,
         config: RepoConfig,
         changed_paths: &[GitChangedPath],
@@ -189,40 +189,40 @@ impl ReviewState {
         state
     }
 
-    pub fn config(&self) -> &RepoConfig {
+    pub(super) fn config(&self) -> &RepoConfig {
         &self.config
     }
 
-    pub fn is_dirty(&self) -> bool {
+    pub(super) fn is_dirty(&self) -> bool {
         self.config != self.original_config
     }
 
-    pub fn mark_saved(&mut self) {
+    pub(super) fn mark_saved(&mut self) {
         self.original_config = self.config.clone();
         self.message = "Saved Scope repo config".to_string();
     }
 
-    pub fn message(&self) -> &str {
+    pub(super) fn message(&self) -> &str {
         &self.message
     }
 
-    pub fn filter(&self) -> &str {
+    pub(super) fn filter(&self) -> &str {
         &self.filter
     }
 
-    pub fn editing_filter(&self) -> bool {
+    pub(super) fn editing_filter(&self) -> bool {
         self.editing_filter
     }
 
-    pub fn mode(&self) -> ReviewMode {
+    pub(super) fn mode(&self) -> ReviewMode {
         self.mode
     }
 
-    pub fn history_rewrite_count(&self) -> usize {
+    pub(super) fn history_rewrite_count(&self) -> usize {
         self.config.history.rewrites.len()
     }
 
-    pub fn history_rewrite_summaries(&self) -> Vec<String> {
+    pub(super) fn history_rewrite_summaries(&self) -> Vec<String> {
         self.config
             .history
             .rewrites
@@ -237,19 +237,19 @@ impl ReviewState {
             .collect()
     }
 
-    pub fn cursor(&self) -> usize {
+    pub(super) fn cursor(&self) -> usize {
         self.cursor
     }
 
-    pub fn scroll(&self) -> usize {
+    pub(super) fn scroll(&self) -> usize {
         self.scroll
     }
 
-    pub fn visible_row_count(&self) -> usize {
+    pub(super) fn visible_row_count(&self) -> usize {
         self.visible_items.len()
     }
 
-    pub fn visible_rows(&self, offset: usize, limit: usize) -> Vec<ReviewRow> {
+    pub(super) fn visible_rows(&self, offset: usize, limit: usize) -> Vec<ReviewRow> {
         self.visible_items
             .iter()
             .skip(offset)
@@ -259,7 +259,7 @@ impl ReviewState {
             .collect()
     }
 
-    pub fn adjust_scroll(&mut self, viewport_height: usize) {
+    pub(super) fn adjust_scroll(&mut self, viewport_height: usize) {
         if self.cursor < self.scroll {
             self.scroll = self.cursor;
         }
@@ -268,7 +268,7 @@ impl ReviewState {
         }
     }
 
-    pub fn handle_input(&mut self, input: ReviewInput) -> ReviewStateAction {
+    pub(super) fn handle_input(&mut self, input: ReviewInput) -> ReviewStateAction {
         if input == ReviewInput::Cancel {
             return ReviewStateAction::Cancel;
         }

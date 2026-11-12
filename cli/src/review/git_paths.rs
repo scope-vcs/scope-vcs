@@ -4,12 +4,12 @@ use crate::git_repo::{
 
 use super::tree::ReviewTree;
 
-pub fn worktree_review_tree(repo: &GitRepo) -> anyhow::Result<ReviewTree> {
+pub(crate) fn worktree_review_tree(repo: &GitRepo) -> anyhow::Result<ReviewTree> {
     let paths = worktree_file_paths(repo)?;
     Ok(ReviewTree::from_paths(&paths, &[]))
 }
 
-pub fn committed_review_tree(
+pub(crate) fn committed_review_tree(
     repo: &GitRepo,
     commit_oid: &str,
     changed_paths: &[GitChangedPath],

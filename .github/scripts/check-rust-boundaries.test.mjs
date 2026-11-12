@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   validateRustBoundaries,
+  validateLintTables,
   validateStandaloneManifests,
 } from './check-rust-boundaries.mjs'
 
@@ -112,5 +113,19 @@ test('keeps CLI-staged dependency manifests self-contained', () => {
   }), [
     'scope-domain: manifest must stay self-contained for standalone CLI staging',
     'scope-api-contract: manifest must stay self-contained for standalone CLI staging',
+  ])
+})
+
+test('keeps standalone lint tables identical to the workspace table', () => {
+  const workspace = '[workspace.lints.rust]\nunsafe_code = "warn"\n\n[workspace.lints.clippy]\nunwrap_used = "warn"\n\n[profile.dev]\n'
+  const matching = '[package]\nname = "a"\n\n[lints.rust]\nunsafe_code = "warn"\n\n[lints.clippy]\nunwrap_used = "warn"\n'
+  assert.deepEqual(validateLintTables(workspace, { a: matching }), [])
+  assert.deepEqual(validateLintTables(workspace, {
+    drifted: matching.replace('unwrap_used = "warn"', 'unwrap_used = "allow"'),
+    missing: '[package]\nname = "b"\n',
+  }), [
+    'missing: [lints.rust] must match [workspace.lints.rust] in Cargo.toml',
+    'drifted: [lints.clippy] must match [workspace.lints.clippy] in Cargo.toml',
+    'missing: [lints.clippy] must match [workspace.lints.clippy] in Cargo.toml',
   ])
 })

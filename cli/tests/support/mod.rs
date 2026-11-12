@@ -11,7 +11,7 @@ mod test_support;
 #[allow(unused_imports)]
 pub(crate) use test_support::{TempDir, commit_all, repository_response, run_git};
 
-pub fn scope_command(cwd: &Path) -> Command {
+pub(crate) fn scope_command(cwd: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_scope"));
     command.current_dir(cwd);
     command.env(
@@ -22,7 +22,7 @@ pub fn scope_command(cwd: &Path) -> Command {
 }
 
 #[allow(dead_code)]
-pub fn scope_failure<const N: usize>(cwd: &Path, args: [&str; N], expected: &str) -> String {
+pub(crate) fn scope_failure<const N: usize>(cwd: &Path, args: [&str; N], expected: &str) -> String {
     let output = scope_command(cwd).args(args).output().unwrap();
     assert_failure(&output, "scope command");
     let stderr = String::from_utf8(output.stderr).unwrap();
@@ -32,13 +32,13 @@ pub fn scope_failure<const N: usize>(cwd: &Path, args: [&str; N], expected: &str
 }
 
 #[allow(dead_code)]
-pub fn create_repo_with_head(cwd: &Path) {
+pub(crate) fn create_repo_with_head(cwd: &Path) {
     run_git(cwd, ["-c", "init.defaultBranch=main", "init"]);
     fs::write(cwd.join("README.md"), "initial\n").unwrap();
     commit_all(cwd, "initial");
 }
 
-pub fn assert_failure(output: &Output, action: &str) {
+pub(crate) fn assert_failure(output: &Output, action: &str) {
     assert!(
         !output.status.success(),
         "{action} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
@@ -55,7 +55,7 @@ fn unix_nanos() -> u128 {
 }
 
 #[allow(dead_code)]
-pub struct TestServer {
+pub(crate) struct TestServer {
     pub api_url: String,
     pub config: TempDir,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
@@ -64,11 +64,11 @@ pub struct TestServer {
 
 #[allow(dead_code)]
 impl TestServer {
-    pub fn new(router: axum::Router) -> Self {
+    pub(crate) fn new(router: axum::Router) -> Self {
         Self::with_url(|_| router)
     }
 
-    pub fn with_url(router: impl FnOnce(&str) -> axum::Router) -> Self {
+    pub(crate) fn with_url(router: impl FnOnce(&str) -> axum::Router) -> Self {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let api_url = format!("http://{}", listener.local_addr().unwrap());
@@ -102,7 +102,7 @@ impl TestServer {
         }
     }
 
-    pub fn command(&self, cwd: &Path) -> Command {
+    pub(crate) fn command(&self, cwd: &Path) -> Command {
         let mut command = scope_command(cwd);
         command
             .env("SCOPE_API_URL", &self.api_url)
@@ -122,7 +122,7 @@ impl Drop for TestServer {
 }
 
 #[allow(dead_code)]
-pub fn assert_success(output: &Output, action: &str) {
+pub(crate) fn assert_success(output: &Output, action: &str) {
     assert!(
         output.status.success(),
         "{action} failed\nstdout:\n{}\nstderr:\n{}",
@@ -132,7 +132,7 @@ pub fn assert_success(output: &Output, action: &str) {
 }
 
 #[allow(dead_code)]
-pub fn git_stdout(
+pub(crate) fn git_stdout(
     cwd: &Path,
     args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
 ) -> String {
@@ -146,7 +146,7 @@ pub fn git_stdout(
 }
 
 #[allow(dead_code)]
-pub fn session_response(id: &str, handle: &str, email: &str) -> serde_json::Value {
+pub(crate) fn session_response(id: &str, handle: &str, email: &str) -> serde_json::Value {
     serde_json::to_value(scope_api_contract::AccountSessionResponse {
         identity: None,
         user: Some(scope_api_contract::UserResponse {

@@ -32,7 +32,7 @@ pub(super) struct DependencySummary {
 }
 
 impl DependencyReview {
-    pub fn hidden() -> Self {
+    pub(super) fn hidden() -> Self {
         Self {
             expected_commit_oid: None,
             analysis: None,
@@ -41,7 +41,7 @@ impl DependencyReview {
         }
     }
 
-    pub fn pending(expected_commit_oid: impl Into<String>) -> Self {
+    pub(super) fn pending(expected_commit_oid: impl Into<String>) -> Self {
         Self {
             expected_commit_oid: Some(expected_commit_oid.into()),
             analysis: None,
@@ -50,11 +50,11 @@ impl DependencyReview {
         }
     }
 
-    pub fn is_visible(&self) -> bool {
+    pub(super) fn is_visible(&self) -> bool {
         !matches!(self.status, DependencyStatus::Hidden)
     }
 
-    pub fn complete(
+    pub(super) fn complete(
         &mut self,
         result: Result<StoredDependencyAnalysis, String>,
         config: &RepoConfig,
@@ -72,7 +72,7 @@ impl DependencyReview {
         self.reevaluate(config);
     }
 
-    pub fn reevaluate(&mut self, config: &RepoConfig) {
+    pub(super) fn reevaluate(&mut self, config: &RepoConfig) {
         let Some(analysis) = &self.analysis else {
             return;
         };
@@ -89,19 +89,19 @@ impl DependencyReview {
         };
     }
 
-    pub fn toggle_expanded(&mut self) {
+    pub(super) fn toggle_expanded(&mut self) {
         if self.report().is_some() {
             self.expanded = !self.expanded;
         }
     }
 
-    pub fn expand(&mut self) {
+    pub(super) fn expand(&mut self) {
         if self.report().is_some() {
             self.expanded = true;
         }
     }
 
-    pub fn collapse(&mut self) -> bool {
+    pub(super) fn collapse(&mut self) -> bool {
         if self.expanded {
             self.expanded = false;
             true
@@ -110,18 +110,18 @@ impl DependencyReview {
         }
     }
 
-    pub fn expanded(&self) -> bool {
+    pub(super) fn expanded(&self) -> bool {
         self.expanded
     }
 
-    pub fn report(&self) -> Option<&DependencyReport> {
+    pub(super) fn report(&self) -> Option<&DependencyReport> {
         match &self.status {
             DependencyStatus::Report(report) => Some(report),
             _ => None,
         }
     }
 
-    pub fn summary(&self) -> Option<DependencySummary> {
+    pub(super) fn summary(&self) -> Option<DependencySummary> {
         let (label, meta, expandable, warning) = match &self.status {
             DependencyStatus::Hidden => return None,
             DependencyStatus::Pending => (
