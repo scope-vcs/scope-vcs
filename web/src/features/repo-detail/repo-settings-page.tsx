@@ -146,7 +146,6 @@ export function RepoSettingsPage({
         message: resourceErrorMessage(error, 'Repository deletion failed.'),
         type: 'deleteFailed',
       })
-      throw error
     }
   }
 
