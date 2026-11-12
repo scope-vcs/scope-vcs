@@ -187,13 +187,21 @@ jobs:
           CARGO_TARGET_DIR: target/cargo-install
         run: cargo install cross --version 0.2.5 --locked
 
-      - name: Build scope
+      - name: Build scope and the native installer service
         shell: bash
         run: |
+          service=
+          if [ "${{ matrix.smoke }}" = "true" ]; then
+            cargo build -p scope-cli-downloads --release --locked --target "${{ matrix.target }}" &
+            service=$!
+          fi
           if [ "${{ matrix.builder }}" = "cross" ]; then
             cross build --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked --target "${{ matrix.target }}" --bin scope
           else
             cargo build --manifest-path cli/Cargo.toml --profile "${{ matrix.profile }}" --locked --target "${{ matrix.target }}" --bin scope
+          fi
+          if [ -n "$service" ]; then
+            wait "$service"
           fi
 
       - name: Build native test binaries
@@ -222,13 +230,6 @@ jobs:
         shell: bash
         run: |
           cargo test -p scope-cli-downloads --release --locked --target "${{ matrix.target }}" --bin scope-cli-service installers::tests::powershell_origin_assignment_is_literal_data -- --exact
-
-      - name: Build native installer service
-        if: matrix.smoke
-        shell: bash
-        run: >
-          cargo build -p scope-cli-downloads --release --locked
-          --target "${{ matrix.target }}"
 
       - name: Verify release identity
         working-directory: cli

@@ -274,7 +274,7 @@ test('bundle packaging rejects missing and stale release identities after all bu
     .split('      - name: Package CLI\n')[0];
   const script = identityStep.split('        run: |\n')[1].replace(/^          /gm, '');
   assert.ok(
-    workflow.indexOf('      - name: Build native installer service\n')
+    workflow.indexOf('      - name: Build scope and the native installer service\n')
       < workflow.indexOf('      - name: Verify release identity\n'),
     'identity must be checked after Cargo finishes building release binaries',
   );

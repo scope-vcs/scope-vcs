@@ -65,6 +65,8 @@ COPY worker ./worker
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
+COPY --from=planner /scope/recipe.json recipe.json
+RUN cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
 ARG APT_VERSION
 RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
     && if [ -f /etc/apt/sources.list ]; then mv /etc/apt/sources.list /tmp/apt-sources.list; fi \
@@ -97,8 +99,6 @@ RUN apt-get update \
 ENV SCOPE_MEDIA_HEIF_CONVERT=/opt/libheif/bin/heif-convert \
     SCOPE_MEDIA_HEIF_INFO=/opt/libheif/bin/heif-info
 
-COPY --from=planner /scope/recipe.json recipe.json
-RUN cargo chef cook --locked --release -p scope-media-worker --recipe-path recipe.json
 COPY --from=planner /scope ./
 RUN cargo build --locked --release -p scope-media-worker \
     && chmod +x media-worker/tests/*.sh \
