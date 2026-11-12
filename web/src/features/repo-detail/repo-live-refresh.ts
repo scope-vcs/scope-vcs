@@ -66,9 +66,7 @@ export function useRepoLiveRefresh(
       for (const listener of listenersRef.current) {
         try {
           listener(event)
-        } catch (error) {
-          reportError(error)
-        }
+        } catch {}
       }
     }
     const onEvent = (event: RepoChangeEvent) => {

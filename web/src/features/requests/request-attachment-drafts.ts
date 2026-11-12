@@ -257,10 +257,12 @@ function knownDraftKeys() {
   const keys = new Set(entries.keys())
   const storage = browserSessionStorage()
   if (storage) {
-    for (let index = 0; index < storage.length; index += 1) {
-      const storageKey = storage.key(index)
-      if (storageKey?.startsWith(STORAGE_PREFIX)) keys.add(storageKey.slice(STORAGE_PREFIX.length))
-    }
+    try {
+      for (let index = 0; index < storage.length; index += 1) {
+        const storageKey = storage.key(index)
+        if (storageKey?.startsWith(STORAGE_PREFIX)) keys.add(storageKey.slice(STORAGE_PREFIX.length))
+      }
+    } catch {}
   }
   return keys
 }
@@ -270,7 +272,9 @@ function discardDraftKey(key: string) {
   const entry = entries.get(key)
   for (const attachment of entry?.draft.attachments ?? []) revokePreviewUrl(attachment.previewUrl)
   entries.delete(key)
-  browserSessionStorage()?.removeItem(`${STORAGE_PREFIX}${key}`)
+  try {
+    browserSessionStorage()?.removeItem(`${STORAGE_PREFIX}${key}`)
+  } catch {}
 }
 
 export function requestAttachmentMarkdownReference(attachmentId: string) {
@@ -389,9 +393,7 @@ function persist(key: string, draft: RequestAttachmentDraft) {
       submission: draft.submission,
       text: draft.text,
     }))
-  } catch (error) {
-    if (!(error instanceof DOMException && error.name === 'QuotaExceededError')) throw error
-  }
+  } catch {}
 }
 
 function restore(key: string): RequestAttachmentDraft {

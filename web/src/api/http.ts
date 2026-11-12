@@ -285,16 +285,17 @@ async function readBoundedResponse(response: Response, limit: number): Promise<s
   let bytes = 0
   let text = ''
   try {
-    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
-      bytes += chunk.value.byteLength
-      if (bytes > limit) {
-        await reader.cancel()
-        throw new ApiResponseTooLargeError(limit)
-      }
-      text += decoder.decode(chunk.value, { stream: true })
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) return text + decoder.decode()
+      bytes += value.byteLength
+      if (bytes > limit) throw new ApiResponseTooLargeError(limit)
+      text += decoder.decode(value, { stream: true })
     }
-    return text + decoder.decode()
   } finally {
+    try {
+      await reader.cancel()
+    } catch {}
     reader.releaseLock()
   }
 }

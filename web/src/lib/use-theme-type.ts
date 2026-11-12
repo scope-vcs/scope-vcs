@@ -25,18 +25,12 @@ export function useThemePreference(): ThemePreference {
 let chosenPreference: ThemePreference | null = null
 
 export function setThemePreference(preference: ThemePreference) {
-  chosenPreference = storeThemePreference(preference) ? null : preference
-  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: preference }))
-}
-
-function storeThemePreference(preference: ThemePreference) {
+  chosenPreference = preference
   try {
     if (preference === 'system') localStorage.removeItem(THEME_STORAGE_KEY)
     else localStorage.setItem(THEME_STORAGE_KEY, preference)
-    return true
-  } catch {
-    return false
-  }
+  } catch {}
+  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: preference }))
 }
 
 function subscribeToTheme(onStoreChange: () => void) {

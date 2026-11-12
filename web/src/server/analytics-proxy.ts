@@ -11,8 +11,8 @@ const MAX_RESPONSE_BYTES = 64 * 1024
 const REQUEST_TIMEOUT_MS = 5_000
 
 type FetchAnalyticsUpstream = (
-  input: string,
-  init: RequestInit,
+  input: string | URL | Request,
+  init?: RequestInit,
 ) => Promise<Response>
 
 export type AnalyticsProxyOptions = {
@@ -97,11 +97,13 @@ function observeDelivery(
   observer: AnalyticsProxyOptions['observeDelivery'],
   observation: AnalyticsDeliveryObservation,
 ) {
-  if (observer) {
-    observer(observation)
-  } else {
-    serverLog('info', '[analytics-proxy] delivery', observation)
-  }
+  try {
+    if (observer) {
+      observer(observation)
+    } else {
+      serverLog('info', '[analytics-proxy] delivery', observation)
+    }
+  } catch {}
 }
 
 function analyticsClientIp(request: Request, runtime: NonNullable<AnalyticsProxyOptions['runtime']>) {
@@ -218,18 +220,16 @@ async function readBoundedStream(
     if (signal.aborted) cancelRead()
     signal.throwIfAborted()
 
-    const readChunk = async () => {
-      const chunk = await reader.read()
+    while (true) {
+      const { done, value } = await reader.read()
       signal.throwIfAborted()
-      return chunk
-    }
-    for (let chunk = await readChunk(); !chunk.done; chunk = await readChunk()) {
-      byteLength += chunk.value.byteLength
+      if (done) break
+      byteLength += value.byteLength
       if (byteLength > maximumBytes) {
         await reader.cancel()
         return null
       }
-      chunks.push(chunk.value)
+      chunks.push(value)
     }
   } finally {
     signal.removeEventListener('abort', cancelRead)

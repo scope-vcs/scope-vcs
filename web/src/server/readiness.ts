@@ -11,7 +11,20 @@ export async function readinessResponse(
   fetchApi: Fetch = globalThis.fetch,
   timeoutMs = apiReadinessTimeoutMs,
 ) {
-  const apiReady = await apiIsReady(fetchApi, timeoutMs)
+  let apiReady = false
+  try {
+    const response = await fetchApi(
+      `${getApiConnection('checking API readiness')}/readyz`,
+      {
+        headers: { accept: 'application/json' },
+        method: 'GET',
+        redirect: 'error',
+        signal: AbortSignal.timeout(timeoutMs),
+      },
+    )
+    await response.body?.cancel()
+    apiReady = response.ok
+  } catch {}
 
   return Response.json(
     {
@@ -27,22 +40,4 @@ export async function readinessResponse(
       status: apiReady ? 200 : 503,
     },
   )
-}
-
-async function apiIsReady(fetchApi: Fetch, timeoutMs: number) {
-  try {
-    const response = await fetchApi(
-      `${getApiConnection('checking API readiness')}/readyz`,
-      {
-        headers: { accept: 'application/json' },
-        method: 'GET',
-        redirect: 'error',
-        signal: AbortSignal.timeout(timeoutMs),
-      },
-    )
-    await response.body?.cancel()
-    return response.ok
-  } catch {
-    return false
-  }
 }

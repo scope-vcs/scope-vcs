@@ -264,13 +264,7 @@ export function useRepositoryRunDetailController({
     }))
     try {
       await refreshDetail(true)
-    } catch {
-      updateView((current) => ({
-        ...current,
-        pendingAction: null,
-        reconciliationGeneration: null,
-      }))
-    }
+    } catch {}
   }, [key, refreshDetail])
 
   function showJob(jobDetail: RepositoryRunJobDetailResponse) {

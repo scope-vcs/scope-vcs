@@ -1,7 +1,6 @@
 import { cn } from '@/lib/utils'
 import { Search } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { toast } from 'sonner'
 import type { LogLine } from './run-log-lines'
 import { findLogMatches, type LogMatch } from './run-log-search'
 import type { RunLogFocus } from './run-log-text'
@@ -147,11 +146,8 @@ function CopyButton({ text }: { text: string }) {
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(text)
-    } catch {
-      toast.error('Copy failed')
-      return
-    }
-    setCopied(true)
+      setCopied(true)
+    } catch {}
   }
 
   return (

@@ -93,7 +93,7 @@ function AnalyticsRuntime({
     if (resolvedIdentityKey === null) return
 
     capturedPage.current = null
-    applyAnalyticsIdentityTransition(client, resolvedScopeUserId, eventContext)
+    safely(() => applyAnalyticsIdentityTransition(client, resolvedScopeUserId, eventContext))
     appliedKey.current = resolvedIdentityKey
     captureLatestPage()
     diagnostics.current?.flushPending()
@@ -109,7 +109,7 @@ function AnalyticsRuntime({
     const installed = installBrowserDiagnostics({
       capture: (event, properties, occurredAt) => {
         if (!identifiedViewerIsCurrent()) return false
-        client.capture(event, properties, occurredAt)
+        safely(() => client.capture(event, properties, occurredAt))
         return true
       },
       release: eventContext.release,
@@ -141,9 +141,15 @@ function captureCurrentPage(
   if (capturedPage.current === pageKey) return
   capturedPage.current = pageKey
 
-  client.capture('$pageview', pageViewProperties(route, {
+  safely(() => client.capture('$pageview', pageViewProperties(route, {
     origin: window.location.origin,
     referrer: document.referrer,
     search: window.location.search,
-  }))
+  })))
+}
+
+function safely(action: () => void) {
+  try {
+    action()
+  } catch {}
 }

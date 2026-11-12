@@ -51,7 +51,9 @@ export class BoundedDelivery {
         ? this.pending
         : [this.activePayload, ...this.pending]
       for (const payload of payloads) {
-        beacon('/e/e/', new Blob([payload], { type: 'application/json' }))
+        try {
+          beacon('/e/e/', new Blob([payload], { type: 'application/json' }))
+        } catch {}
       }
     }
     this.clear()
@@ -65,7 +67,7 @@ export class BoundedDelivery {
     if (this.sending) return
     this.sending = true
     try {
-      while (!this.closed) {
+      while (!this.closed && this.pending.length > 0) {
         const payload = this.pending.shift()
         if (payload === undefined) break
         this.activePayload = payload
@@ -81,41 +83,37 @@ export class BoundedDelivery {
     }
   }
 
-  private async deliver(payload: string) {
-    const generation = this.generation
-    for (const delay of [...RETRY_DELAYS_MS, null]) {
-      if (this.cancelled(generation)) return
-      const outcome = await this.send(payload)
-      if (outcome !== 'retry' || delay === null || this.cancelled(generation)) return
-      await new Promise(resolve => setTimeout(resolve, delay))
-    }
-  }
-
   private cancelled(generation: number) {
     return this.closed || generation !== this.generation
   }
 
-  private async send(payload: string): Promise<'delivered' | 'retry' | 'rejected'> {
-    const controller = new AbortController()
-    this.current = controller
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-    try {
-      const response = await (this.options.fetcher ?? fetch)('/e/e/', {
-        body: payload,
-        cache: 'no-store',
-        credentials: 'omit',
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-        referrerPolicy: 'no-referrer',
-        signal: controller.signal,
-      })
-      if (response.ok) return 'delivered'
-      return response.status === 429 || response.status >= 500 ? 'retry' : 'rejected'
-    } catch {
-      return 'retry'
-    } finally {
-      clearTimeout(timer)
-      if (this.current === controller) this.current = null
+  private async deliver(payload: string) {
+    const generation = this.generation
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length && !this.closed && generation === this.generation; attempt++) {
+      const controller = new AbortController()
+      this.current = controller
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+      let retry = true
+      try {
+        const response = await (this.options.fetcher ?? fetch)('/e/e/', {
+          body: payload,
+          cache: 'no-store',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          referrerPolicy: 'no-referrer',
+          signal: controller.signal,
+        })
+        if (response.ok) return
+        retry = response.status === 429 || response.status >= 500
+      } catch {
+      } finally {
+        clearTimeout(timer)
+        if (this.current === controller) this.current = null
+      }
+      if (this.cancelled(generation)) return
+      if (!retry || attempt === RETRY_DELAYS_MS.length) return
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]))
     }
   }
 }

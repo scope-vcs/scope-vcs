@@ -90,9 +90,8 @@ async function streamRunLogs({ url, tokenTemplate, getToken, cursor, onLog, sign
     }
     return { stop: false }
   } finally {
-    const cancelled = reader.cancel()
+    try { await reader.cancel() } catch {}
     reader.releaseLock()
-    await cancelled
   }
 }
 

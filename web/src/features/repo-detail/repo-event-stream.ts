@@ -145,18 +145,19 @@ export async function streamRepoEvents(
   }
   if (!response.body) return { type: 'transport' }
   if (!isEventStream(response.headers.get('content-type'))) {
-    await response.body.cancel()
+    await cancelBody(response.body)
     return { type: 'protocol-error', failureClass: 'content-type' }
   }
 
   const reader = response.body.getReader()
   try {
-    const outcome = await readRepoStream(reader, onEvent, signal)
-    if (outcome.type !== 'transport') await reader.cancel()
-    return outcome
+    return await readRepoStream(reader, onEvent, signal)
   } catch {
     return { type: 'transport' }
   } finally {
+    try {
+      await reader.cancel()
+    } catch {}
     reader.releaseLock()
   }
 }
@@ -253,6 +254,12 @@ export function takeSseMessages(buffer: string) {
     separator = rest.indexOf('\n\n')
   }
   return { messages, rest }
+}
+
+async function cancelBody(body: ReadableStream<Uint8Array>) {
+  try {
+    await body.cancel()
+  } catch {}
 }
 
 function isEventStream(contentType: string | null) {

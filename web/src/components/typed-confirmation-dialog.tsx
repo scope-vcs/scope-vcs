@@ -54,6 +54,7 @@ export function TypedConfirmationDialog({
     setBusy(true)
     try {
       await onConfirm()
+    } catch {
     } finally {
       setBusy(false)
     }
