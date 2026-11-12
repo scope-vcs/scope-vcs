@@ -101,12 +101,9 @@ impl ManualRunRequest {
                 catalog.source_change_version(),
             )
             .map_err(DomainError::invalid_input)?;
-        if let Some(error) = catalog.configuration_error() {
-            return Err(DomainError::invalid_input(error));
-        }
         let mut matches = catalog
-            .files()
-            .unwrap_or_default()
+            .contents()
+            .map_err(DomainError::invalid_input)?
             .iter()
             .filter(|file| file.path().name() == self.workflow_name);
         let file = matches.next().ok_or_else(|| {

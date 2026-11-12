@@ -125,24 +125,30 @@ pub enum ViewReaders {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Vec<ViewDefinition>", into = "Vec<ViewDefinition>")]
-pub struct Views(Vec<ViewDefinition>);
+pub struct Views {
+    definitions: Vec<ViewDefinition>,
+    full: usize,
+}
 
 impl Views {
     pub fn builtin() -> Self {
-        Self(vec![
-            ViewDefinition {
-                id: ViewId::public(),
-                name: "Public".into(),
-                includes: ViewIncludes::Some(BTreeSet::new()),
-                readers: ViewReaders::Anyone,
-            },
-            ViewDefinition {
-                id: ViewId::private(),
-                name: "Private".into(),
-                includes: ViewIncludes::All,
-                readers: ViewReaders::Assigned,
-            },
-        ])
+        Self {
+            full: 1,
+            definitions: vec![
+                ViewDefinition {
+                    id: ViewId::public(),
+                    name: "Public".into(),
+                    includes: ViewIncludes::Some(BTreeSet::new()),
+                    readers: ViewReaders::Anyone,
+                },
+                ViewDefinition {
+                    id: ViewId::private(),
+                    name: "Private".into(),
+                    includes: ViewIncludes::All,
+                    readers: ViewReaders::Assigned,
+                },
+            ],
+        }
     }
 
     pub const MAX_VIEWS: usize = 16;
@@ -231,28 +237,36 @@ impl Views {
         let mut ordered = builtin;
         ordered.sort_by_key(|definition| definition.id.is_private());
         ordered.extend(custom);
-        Ok(Self(ordered))
+        let full = ordered
+            .iter()
+            .position(|definition| definition.includes == ViewIncludes::All)
+            .ok_or_else(|| {
+                DomainError::invalid_input(
+                    "exactly one view must include all labels and its id must be private",
+                )
+            })?;
+        Ok(Self {
+            definitions: ordered,
+            full,
+        })
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &ViewDefinition> {
-        self.0.iter()
+        self.definitions.iter()
     }
 
     pub fn get(&self, id: &ViewId) -> Option<&ViewDefinition> {
-        self.0.iter().find(|definition| &definition.id == id)
+        self.definitions
+            .iter()
+            .find(|definition| &definition.id == id)
     }
 
     pub fn full(&self) -> &ViewId {
-        &self
-            .0
-            .iter()
-            .find(|definition| definition.includes == ViewIncludes::All)
-            .expect("validated views have a full view")
-            .id
+        &self.definitions[self.full].id
     }
 
     pub fn anyone(&self) -> Option<&ViewId> {
-        self.0
+        self.definitions
             .iter()
             .find(|definition| definition.readers == ViewReaders::Anyone)
             .map(|definition| &definition.id)
@@ -316,7 +330,7 @@ impl TryFrom<Vec<ViewDefinition>> for Views {
 
 impl From<Views> for Vec<ViewDefinition> {
     fn from(value: Views) -> Self {
-        value.0
+        value.definitions
     }
 }
 

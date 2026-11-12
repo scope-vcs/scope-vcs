@@ -6,7 +6,7 @@ pub const STDERR_DIAGNOSTIC_BYTES: usize = 8 * 1024;
 pub(crate) fn read_stdout(
     mut stdout: impl Read,
     max_bytes: Option<usize>,
-    limit_sender: mpsc::Sender<()>,
+    limit_sender: mpsc::Sender<usize>,
 ) -> std::io::Result<Vec<u8>> {
     let mut retained = Vec::new();
     let mut buffer = [0_u8; 8 * 1024];
@@ -24,7 +24,7 @@ pub(crate) fn read_stdout(
                     retained.extend_from_slice(&buffer[..read.min(remaining)]);
                 }
                 if retained.len() > max_bytes && !limit_reported {
-                    limit_sender.send(()).ok();
+                    limit_sender.send(max_bytes).ok();
                     limit_reported = true;
                 }
             }

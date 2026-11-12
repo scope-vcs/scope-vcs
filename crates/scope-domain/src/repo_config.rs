@@ -42,6 +42,7 @@ pub struct RepoConfig {
 
 impl RepoConfig {
     pub fn object_generation(&self) -> String {
+        #[expect(clippy::expect_used)]
         let visibility = serde_json::to_vec(&(&self.views, &self.history))
             .expect("repository views and history serialize to JSON");
         hex::encode(&Sha256::digest(visibility)[..16])

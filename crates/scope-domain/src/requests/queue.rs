@@ -432,6 +432,7 @@ pub fn apply_request_attention_action(
 pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueueClassification {
     let request_version = facts.request_activity_version;
     let revision = facts.attention.map_or(0, |attention| attention.revision);
+    #[expect(clippy::expect_used)]
     let rule = REQUEST_QUEUE_RULES
         .iter()
         .copied()
@@ -464,6 +465,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
             can_release: false,
         },
         RequestQueueRule::Waiting | RequestQueueRule::Snoozed => {
+            #[expect(clippy::expect_used)]
             let attention = facts
                 .attention
                 .expect("set-aside placement requires attention");
@@ -498,6 +500,7 @@ pub fn classify_request_queue_item(facts: RequestQueueFacts<'_>) -> RequestQueue
         | RequestQueueRule::Authored
         | RequestQueueRule::Invited
         | RequestQueueRule::Open => {
+            #[expect(clippy::expect_used)]
             let reason = match rule {
                 RequestQueueRule::ActiveAttention => {
                     facts

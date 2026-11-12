@@ -80,24 +80,25 @@ impl From<DomainSessionIdentity> for SessionIdentity {
 #[serde(try_from = "String", into = "String")]
 #[cfg_attr(feature = "ts", derive(schemars::JsonSchema, ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(type = "string"))]
-pub struct ViewId(String);
+pub struct ViewId(
+    #[cfg_attr(feature = "ts", schemars(with = "String"))] scope_domain::views::ViewId,
+);
 
 impl ViewId {
     pub fn parse(value: &str) -> Result<Self, scope_domain::error::DomainError> {
-        scope_domain::views::ViewId::parse(value)?;
-        Ok(Self(value.to_string()))
+        scope_domain::views::ViewId::parse(value).map(Self)
     }
 
     pub fn public() -> Self {
-        Self("public".into())
+        Self(scope_domain::views::ViewId::public())
     }
 
     pub fn private() -> Self {
-        Self("private".into())
+        Self(scope_domain::views::ViewId::private())
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0.as_str()
     }
 }
 
@@ -111,19 +112,19 @@ impl TryFrom<String> for ViewId {
 
 impl From<ViewId> for String {
     fn from(value: ViewId) -> Self {
-        value.0
+        value.0.into()
     }
 }
 
 impl From<scope_domain::views::ViewId> for ViewId {
     fn from(value: scope_domain::views::ViewId) -> Self {
-        Self(value.into())
+        Self(value)
     }
 }
 
 impl From<ViewId> for scope_domain::views::ViewId {
     fn from(value: ViewId) -> Self {
-        scope_domain::views::ViewId::try_from(value.0).expect("wire view ids are validated")
+        value.0
     }
 }
 wire_enum!(RepositoryActor => DomainRepositoryActor { Public, Member, Owner });

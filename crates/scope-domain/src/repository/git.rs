@@ -34,6 +34,7 @@ impl GitHead {
             head_oid: &'a str,
             push_sequence: u64,
         }
+        #[expect(clippy::expect_used)]
         let bytes = serde_json::to_vec(&CanonicalFrontierIdentity {
             version: 2,
             head_oid: &head_oid,

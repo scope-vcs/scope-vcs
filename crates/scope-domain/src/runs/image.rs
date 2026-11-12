@@ -3,12 +3,18 @@ use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct PinnedContainerImage(String);
+pub struct PinnedContainerImage {
+    image: String,
+    #[serde(skip)]
+    digest_start: usize,
+}
+
+const DIGEST_SEPARATOR: &str = "@sha256:";
 
 impl PinnedContainerImage {
     pub fn parse(image: impl Into<String>) -> Result<Self, DomainError> {
         let image = image.into();
-        let Some((repository, digest)) = image.rsplit_once("@sha256:") else {
+        let Some((repository, digest)) = image.rsplit_once(DIGEST_SEPARATOR) else {
             return Err(DomainError::invalid_input(
                 "pinned container image must end in an immutable sha256 digest",
             ));
@@ -23,20 +29,20 @@ impl PinnedContainerImage {
                 "pinned container image is invalid",
             ));
         }
-        Ok(Self(format!(
-            "{repository}@sha256:{}",
-            digest.to_ascii_lowercase()
-        )))
+        Ok(Self {
+            digest_start: repository.len() + DIGEST_SEPARATOR.len(),
+            image: format!(
+                "{repository}{DIGEST_SEPARATOR}{}",
+                digest.to_ascii_lowercase()
+            ),
+        })
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.image
     }
 
     pub fn digest(&self) -> &str {
-        self.0
-            .rsplit_once("@sha256:")
-            .map(|(_, digest)| digest)
-            .expect("validated pinned images always contain a digest")
+        &self.image[self.digest_start..]
     }
 }
