@@ -262,7 +262,7 @@ test('CLI image staging preserves all downloads and preparation rejects missing 
   const directory = mkdtempSync(join(tmpdir(), 'scope-cli-image-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const targets = JSON.parse(readFileSync(new URL('../../cli/distribution/targets.json', import.meta.url), 'utf8'));
-  for (const path of ['cli/dist', 'cli/distribution', 'artifacts', 'service', 'bin', 'dev', 'deploy/railway']) mkdirSync(join(directory, path), { recursive: true });
+  for (const path of ['cli/dist', 'cli/distribution', 'artifacts', 'service', 'bin', 'dev']) mkdirSync(join(directory, path), { recursive: true });
   cpSync(resolve('.github'), join(directory, '.github'), { recursive: true });
   cpSync(resolve('deploy/scripts'), join(directory, 'deploy/scripts'), { recursive: true });
   cpSync(resolve('dev/tool-versions.json'), join(directory, 'dev/tool-versions.json'));

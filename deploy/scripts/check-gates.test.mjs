@@ -125,7 +125,7 @@ test('local and GitHub callers use the shared inventory', () => {
 });
 
 const publicGates = ['policy', 'backend', 'contract', 'cli', 'cli-bundle', 'web'];
-const operationsInput = /(?:^|[\s"'=])(?:deploy|bench)\/|\.github\/(?:deployment-services|railway-experiments|main-protection)\.json/;
+const operationsInput = /(?:^|[\s"'=])(?:\.\/)?(?:deploy|bench)\/|\.github\/(?:deployment-services|railway-experiments|main-protection)\.json/;
 
 test('the gates a checkout without deploy/ runs name no operations file', () => {
   for (const gate of publicGates) {
