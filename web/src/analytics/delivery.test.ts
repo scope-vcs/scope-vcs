@@ -5,7 +5,7 @@ import { BoundedDelivery } from './delivery'
 const event = { event: '$pageview', properties: { distinct_id: 'anonymous' } }
 
 test('queue and payload limits drop excess capture without waiting for delivery', () => {
-  const delivery = new BoundedDelivery({ beacon: () => true, fetcher: async () => new Promise<Response>(() => {}) })
+  const delivery = new BoundedDelivery({ fetcher: async () => new Promise<Response>(() => {}) })
   for (let index = 0; index < 65; index++) assert.equal(delivery.enqueue(event), true)
   assert.equal(delivery.enqueue(event), false)
   assert.equal(delivery.enqueue({ value: 'x'.repeat(16 * 1024) }), false)

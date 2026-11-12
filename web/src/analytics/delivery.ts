@@ -45,7 +45,7 @@ export class BoundedDelivery {
     this.current?.abort()
     const beacon = this.options.beacon ?? (typeof navigator === 'undefined'
       ? undefined
-      : navigator.sendBeacon.bind(navigator))
+      : 'sendBeacon' in navigator ? navigator.sendBeacon.bind(navigator) : undefined)
     if (beacon) {
       const payloads = this.activePayload === null
         ? this.pending

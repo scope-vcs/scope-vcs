@@ -34,7 +34,6 @@ export function RequestCustomSnoozeDialog({
   const [amount, setAmount] = useState('2')
   const [unit, setUnit] = useState<(typeof DURATION_UNITS)[number]>('hours')
   const [error, setError] = useState<string | null>(null)
-  const [today] = useState(() => new Date(new Date().setHours(0, 0, 0, 0)))
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -100,7 +99,7 @@ export function RequestCustomSnoozeDialog({
                     renderPanel={(close) => (
                       <Calendar
                         defaultMonth={date}
-                        disabled={{ before: today }}
+                        disabled={{ before: startOfToday() }}
                         mode="single"
                         onSelect={(selected) => {
                           setDate(selected)
@@ -201,4 +200,8 @@ export function RequestCustomSnoozeDialog({
       </Dialog.Portal>
     </Dialog.Root>
   )
+}
+
+function startOfToday() {
+  return new Date(new Date().setHours(0, 0, 0, 0))
 }
