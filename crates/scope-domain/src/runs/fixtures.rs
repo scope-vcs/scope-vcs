@@ -1,7 +1,7 @@
 use super::{
     attempt::RunAttempt,
-    job::{RunJob, create_run_jobs},
-    run::Run,
+    job::{AttemptDispatch, RunJob, create_run_jobs},
+    run::{Run, RunRequest},
     source::{RunSource, RunTrigger},
     step::RunAttemptStep,
     workflow::{
@@ -48,20 +48,22 @@ pub(crate) fn workflow() -> WorkflowRevision {
 
 pub(crate) fn run(revision: &WorkflowRevision) -> Run {
     Run::new(
-        "run-1",
-        "manual:test",
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some("user-1".into()),
-        RunSource::ephemeral_git_bundle(SourceBlob {
-            content_ref: ContentRef::git_bundle_sha256("c".repeat(64)),
-            sha256: "c".repeat(64),
-            git_oid: "d".repeat(40),
-            git_file_mode: "100644".into(),
-            size_bytes: 42,
-        })
-        .unwrap(),
+        RunRequest {
+            id: "run-1".into(),
+            idempotency_key: "manual:test".into(),
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger: RunTrigger::Manual,
+            requested_by_user_id: Some("user-1".into()),
+            source: RunSource::ephemeral_git_bundle(SourceBlob {
+                content_ref: ContentRef::git_bundle_sha256("c".repeat(64)),
+                sha256: "c".repeat(64),
+                git_oid: "d".repeat(40),
+                git_file_mode: "100644".into(),
+                size_bytes: 42,
+            })
+            .unwrap(),
+        },
         10,
     )
     .unwrap()
@@ -93,10 +95,12 @@ pub(crate) fn dispatch(
     job.dispatch(
         run,
         definition,
-        attempt_id,
-        "b".repeat(64),
-        "runtime",
+        AttemptDispatch {
+            attempt_id: attempt_id.into(),
+            token_hash: "b".repeat(64),
+            runtime_version: "runtime".into(),
+            lease_expires_at_unix: lease,
+        },
         at,
-        lease,
     )
 }

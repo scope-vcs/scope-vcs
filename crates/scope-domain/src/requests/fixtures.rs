@@ -42,7 +42,7 @@ pub(crate) fn start_input(author_role: RequestActorRole) -> StartRequestInput {
         author_view: ViewId::public(),
         view: ViewId::public(),
         base: crate::requests::RequestBase::Main {
-            review_base_oid: "base".to_string().clone(),
+            review_base_oid: "base".to_string(),
         },
         main_ancestor_oid: "base".to_string(),
         event_id: "event_started".to_string(),

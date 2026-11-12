@@ -7,7 +7,7 @@ use scope_domain::{
     projection::{FileChange, LogicalCommit, LogicalCommitOrigin},
     repository::{RepoLifecycleState, Repository},
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
         workflow::revision::WorkflowRevision,
     },
@@ -114,13 +114,20 @@ pub(crate) fn manual_workflow(repository_id: &str) -> WorkflowRevision {
 
 pub(crate) fn manual_run(revision: &WorkflowRevision, id: &str, requester: &str) -> Run {
     Run::new(
-        id,
-        id,
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some(requester.into()),
-        RunSource::ephemeral_git_bundle(source_blob(&"d".repeat(40), &"c".repeat(64), 42)).unwrap(),
+        RunRequest {
+            id: id.into(),
+            idempotency_key: id.into(),
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger: RunTrigger::Manual,
+            requested_by_user_id: Some(requester.into()),
+            source: RunSource::ephemeral_git_bundle(source_blob(
+                &"d".repeat(40),
+                &"c".repeat(64),
+                42,
+            ))
+            .unwrap(),
+        },
         10,
     )
     .unwrap()

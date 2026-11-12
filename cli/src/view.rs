@@ -158,7 +158,7 @@ pub fn apply_view_command(mut config: RepoConfig, edit: &ViewEdit) -> Result<Rep
             "Cannot {}: the file default or a file rule still labels paths with {view}; relabel them with scope visibility edit first",
             action(edit)
         )),
-        other => CliError::usage(format!("Cannot {}: {other}", action(edit))),
+        other @ RepoConfigError::InvalidJson(_) | other @ RepoConfigError::InvalidKind | other @ RepoConfigError::InvalidVersion | other @ RepoConfigError::RelativePath | other @ RepoConfigError::InvalidSegment | other @ RepoConfigError::ReservedControlPath(_) | other @ RepoConfigError::InvalidViews(_) => CliError::usage(format!("Cannot {}: {other}", action(edit))),
     })?;
     Ok(config)
 }

@@ -7,7 +7,7 @@ use scope_domain::{
     content_ref::ContentRef,
     repository::{RepoLifecycleState, Repository},
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
         workflow::{
             definition::{
@@ -399,13 +399,15 @@ pub(super) async fn queued_runs(count: usize) -> MetadataStore {
     .unwrap();
     for id in 0..count {
         let run = Run::new(
-            format!("run-{id}"),
-            format!("manual:{id}"),
-            revision.workflow().clone(),
-            revision.digest(),
-            RunTrigger::Manual,
-            Some(owner.id.clone()),
-            source.clone(),
+            RunRequest {
+                id: format!("run-{id}"),
+                idempotency_key: format!("manual:{id}"),
+                workflow: revision.workflow().clone(),
+                workflow_revision_digest: revision.digest().to_string(),
+                trigger: RunTrigger::Manual,
+                requested_by_user_id: Some(owner.id.clone()),
+                source: source.clone(),
+            },
             crate::unix_now().unwrap(),
         )
         .unwrap();

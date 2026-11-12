@@ -23,10 +23,15 @@ pub(crate) fn validate_sha256_hash(label: &str, value: &str) -> Result<(), Domai
 }
 
 pub(super) fn required(label: &str, value: String) -> Result<String, DomainError> {
+    ensure_present(label, &value)?;
+    Ok(value)
+}
+
+pub(super) fn ensure_present(label: &str, value: &str) -> Result<(), DomainError> {
     if value.trim().is_empty() {
         Err(DomainError::invalid_input(format!("{label} is required")))
     } else {
-        Ok(value)
+        Ok(())
     }
 }
 

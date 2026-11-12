@@ -1,6 +1,7 @@
 mod config;
 mod findings;
 mod jsonc;
+#[expect(unsafe_code)]
 mod memory;
 mod paths;
 mod resolve;

@@ -107,7 +107,7 @@ impl MergeGateDecision {
                 Some(MergeGateAuthority::RequestMerge)
             }
             Self::AuthorizedMainPush => Some(MergeGateAuthority::AuthorizedMainPush),
-            _ => None,
+            Self::RequestMerge(_) | Self::MainPushDenied => None,
         }
     }
 
@@ -127,7 +127,7 @@ impl MergeGateDecision {
     pub fn request_mergeability(self) -> Option<RequestMergeability> {
         match self {
             Self::RequestMerge(decision) => Some(decision),
-            _ => None,
+            Self::AuthorizedMainPush | Self::MainPushDenied => None,
         }
     }
 }
@@ -155,7 +155,9 @@ pub fn evaluate_merge_gate(input: MergeGateInput<'_>) -> MergeGateDecision {
             views,
         } => match access.main_push_mode(repository_lifecycle, views) {
             MainPushMode::FirstPush | MainPushMode::Ready => MergeGateDecision::AuthorizedMainPush,
-            _ => MergeGateDecision::MainPushDenied,
+            MainPushMode::Denied | MainPushMode::ThroughView(_) => {
+                MergeGateDecision::MainPushDenied
+            }
         },
     }
 }
@@ -267,18 +269,15 @@ pub(super) fn evaluate_request_readiness(
             RequestMergeabilityStatus::MissingRequestBranch,
             Some("request branch has not been pushed"),
         ),
-        RequestState::Open if subject.stack_status.requires_restack() => {
-            return request_stack_mergeability(subject.stack_status).unwrap();
-        }
         RequestState::Open
-            if subject.stack_status != super::RequestStackStatus::Main
-                && !matches!(
-                    checks,
-                    RequestChecksOutcome::Failed | RequestChecksOutcome::ConfigurationError
-                )
-                && reviews != RequestReviewsOutcome::FindingsOpen =>
+            if let Some(stack_mergeability) = request_stack_mergeability(subject.stack_status)
+                && (subject.stack_status.requires_restack()
+                    || (!matches!(
+                        checks,
+                        RequestChecksOutcome::Failed | RequestChecksOutcome::ConfigurationError
+                    ) && reviews != RequestReviewsOutcome::FindingsOpen)) =>
         {
-            return request_stack_mergeability(subject.stack_status).unwrap();
+            return stack_mergeability;
         }
         RequestState::Open => match (checks, reviews) {
             (RequestChecksOutcome::Failed, _) => (
@@ -370,7 +369,9 @@ fn validate_main_landing(
                 "main must contain the merge commit of the request's pull request",
             ))
         }
-        _ => Ok(()),
+        super::MergeRequestLanding::NativeMerge
+        | super::MergeRequestLanding::ContainingMain { .. }
+        | super::MergeRequestLanding::GitHubMerge(_) => Ok(()),
     }
 }
 

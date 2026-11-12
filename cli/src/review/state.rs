@@ -12,6 +12,7 @@ use scope_domain::{
 use std::collections::BTreeSet;
 
 mod dependencies;
+mod filter;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ReviewMode {
@@ -154,7 +155,7 @@ impl ReviewState {
         dependencies: DependencyReview,
     ) -> Self {
         let mut expanded_tree_nodes = BTreeSet::new();
-        expanded_tree_nodes.insert(tree.root_id());
+        expanded_tree_nodes.insert(ReviewTree::ROOT_ID);
         let message = if config.history.rewrites.is_empty() {
             "Space toggles visibility. Right expands folders and change lists.".to_string()
         } else {
@@ -185,7 +186,7 @@ impl ReviewState {
             dependency_path_side: DependencyPathSide::PublicSource,
         };
         state.rebuild_visible_items();
-        state.move_cursor_to_item(ReviewItem::TreeNode(state.tree.root_id()));
+        state.move_cursor_to_item(ReviewItem::TreeNode(ReviewTree::ROOT_ID));
         state
     }
 
@@ -324,29 +325,6 @@ impl ReviewState {
         ReviewStateAction::None
     }
 
-    fn handle_filter_input(&mut self, input: ReviewInput) -> ReviewStateAction {
-        match input {
-            ReviewInput::Escape => {
-                self.editing_filter = false;
-                self.message = "Filter closed".to_string();
-            }
-            ReviewInput::Backspace => {
-                self.filter.pop();
-                self.rebuild_visible_items();
-            }
-            ReviewInput::Char(value) => {
-                self.filter.push(value);
-                self.rebuild_visible_items();
-            }
-            ReviewInput::Quit => {
-                self.filter.push('q');
-                self.rebuild_visible_items();
-            }
-            _ => {}
-        }
-        ReviewStateAction::None
-    }
-
     fn move_cursor_up(&mut self) {
         self.cursor = self.cursor.saturating_sub(1);
     }
@@ -394,7 +372,7 @@ impl ReviewState {
         let kind = node.kind;
         let parent = node.parent;
         if kind != ReviewNodeKind::File
-            && id != self.tree.root_id()
+            && id != ReviewTree::ROOT_ID
             && self.expanded_tree_nodes.remove(&id)
         {
             self.rebuild_visible_items();
@@ -428,9 +406,10 @@ impl ReviewState {
             ReviewItem::DependencyFinding(_) => {
                 self.dependency_path_side = DependencyPathSide::PrivateTarget;
             }
-            ReviewItem::DependencyGap(_) | ReviewItem::DependencyCoverage => {}
+            ReviewItem::DependencyGap(_)
+            | ReviewItem::DependencyCoverage
+            | ReviewItem::ChangePath(_, _) => {}
             ReviewItem::ChangeSection(kind) => self.expand_change_list_or_move_to_first_path(kind),
-            ReviewItem::ChangePath(_, _) => {}
             ReviewItem::TreeNode(id) => self.expand_tree_node_or_move_to_first_child(id),
         }
     }
@@ -546,7 +525,7 @@ impl ReviewState {
         self.collect_dependency_items(&mut items);
         self.collect_change_items(ChangeListKind::Added, &mut items);
         self.collect_change_items(ChangeListKind::Deleted, &mut items);
-        self.collect_visible_tree_items(self.tree.root_id(), &mut items);
+        self.collect_visible_tree_items(ReviewTree::ROOT_ID, &mut items);
         self.visible_items = items;
         self.clamp_cursor();
     }
@@ -576,7 +555,7 @@ impl ReviewState {
     fn collect_visible_tree_items(&self, node_id: usize, items: &mut Vec<ReviewItem>) {
         let node = self.tree.node(node_id);
         if self.filter.is_empty()
-            || node_id == self.tree.root_id()
+            || node_id == ReviewTree::ROOT_ID
             || node.path.contains(&self.filter)
             || node.name.contains(&self.filter)
         {

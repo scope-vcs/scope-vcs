@@ -1,6 +1,6 @@
 use super::*;
 use scope_domain::runs::{
-    run::Run,
+    run::{Run, RunRequest},
     source::{RunSource, RunTrigger},
 };
 use std::time::Duration;
@@ -45,13 +45,15 @@ async fn enqueue_history_run(
     .into_revision(TEST_REPO_ID.to_string())
     .unwrap();
     let run = Run::new(
-        id.to_string(),
-        format!("manual:{id}"),
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some(test_owner_id()),
-        source,
+        RunRequest {
+            id: id.to_string(),
+            idempotency_key: format!("manual:{id}"),
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger: RunTrigger::Manual,
+            requested_by_user_id: Some(test_owner_id()),
+            source,
+        },
         created_at,
     )
     .unwrap();

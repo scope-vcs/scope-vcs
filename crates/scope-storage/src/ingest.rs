@@ -153,10 +153,12 @@ impl GitSegmentStore {
             match read {
                 Ok(0) => {
                     let blocked_at = Instant::now();
-                    let _ = tokio::join!(
+                    let (local_end, remote_end) = tokio::join!(
                         local_tx.send(StreamMessage::End),
                         remote_tx.send(StreamMessage::End),
                     );
+                    local_end.ok();
+                    remote_end.ok();
                     fanout_blocked += blocked_at.elapsed();
                     break;
                 }
@@ -283,7 +285,7 @@ impl GitSegmentStore {
                         }
                     }
                     Err(error) => {
-                        let _ = sender.blocking_send(Err(error));
+                        sender.blocking_send(Err(error)).ok();
                         return;
                     }
                 }
@@ -412,7 +414,7 @@ async fn write_local(
     }
     .await;
     if result.is_err() {
-        let _ = fs::remove_file(&temp_path).await;
+        fs::remove_file(&temp_path).await.ok();
     }
     result
 }
@@ -514,7 +516,7 @@ impl PackUpload {
         while !bytes.is_empty() {
             if self.buffer.len() == self.part_bytes {
                 self.start_multipart().await?;
-                self.flush_part().await?;
+                self.flush_part()?;
             }
             if self.buffer.capacity() == 0 {
                 if self.pending.len() == 2 {
@@ -527,7 +529,7 @@ impl PackUpload {
             self.buffer.extend_from_slice(&bytes[..take]);
             bytes = &bytes[take..];
             if self.multipart.is_some() && self.buffer.len() == self.part_bytes {
-                self.flush_part().await?;
+                self.flush_part()?;
             }
         }
         Ok(())
@@ -549,7 +551,7 @@ impl PackUpload {
             return Ok((self.encrypted_bytes, 0));
         }
         if !self.buffer.is_empty() {
-            self.flush_part().await?;
+            self.flush_part()?;
         }
         while !self.pending.is_empty() {
             self.finish_part().await?;
@@ -585,7 +587,7 @@ impl PackUpload {
         Ok(())
     }
 
-    async fn flush_part(&mut self) -> Result<(), GitStorageError> {
+    fn flush_part(&mut self) -> Result<(), GitStorageError> {
         let part_number = self.next_part_number;
         self.next_part_number = part_number.checked_add(1).ok_or_else(|| {
             GitStorageError::InvalidEnvelope("multipart part count exceeds i32".into())
@@ -620,8 +622,10 @@ impl PackUpload {
 }
 
 async fn cleanup_ingest(store: &GitSegmentStore, object_key: &str, local: Option<LocalOutcome>) {
-    if let Some(local) = local {
-        let _ = fs::remove_file(local.path).await;
+    if let Some(local) = local
+        && let Err(error) = fs::remove_file(&local.path).await
+    {
+        tracing::warn!(path = %local.path.display(), %error, "Git segment ingest local rollback failed");
     }
     if let Err(error) = store.cleanup_remote_bounded(object_key).await {
         tracing::warn!(object_key, %error, "Git segment ingest rollback failed; durable recovery will retry");

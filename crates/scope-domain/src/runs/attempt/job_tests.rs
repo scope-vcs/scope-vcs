@@ -5,7 +5,7 @@ use crate::{
         fixtures::{IMAGE_DIGEST, dispatch, dispatched_attempt, run, workflow},
         job::{create_run_jobs, reconcile_run, request_run_cancellation},
         run::RunState,
-        step::{SetupFailureMessage, StepConclusion},
+        step::{SetupFailureMessage, StepCompletion, StepConclusion},
         workflow::revision::WorkflowRevision,
     },
 };
@@ -165,9 +165,11 @@ fn successful_attempt_finishes_only_after_runtime_finalization() {
             &mut job,
             &mut steps,
             &"a".repeat(64),
-            0,
-            StepConclusion::Succeeded,
-            false,
+            StepCompletion {
+                step_index: 0,
+                conclusion: StepConclusion::Succeeded,
+                logs_truncated: false,
+            },
             14,
         )
         .unwrap();
@@ -192,8 +194,10 @@ fn successful_attempt_finishes_only_after_runtime_finalization() {
             &mut canceled_job,
             &mut canceled_steps,
             &"a".repeat(64),
-            AttemptConclusion::Succeeded,
-            false,
+            AttemptCompletion {
+                conclusion: AttemptConclusion::Succeeded,
+                logs_truncated: false,
+            },
             16,
         )
         .unwrap();
@@ -214,8 +218,10 @@ fn successful_attempt_finishes_only_after_runtime_finalization() {
             &mut job,
             &mut steps,
             &"a".repeat(64),
-            AttemptConclusion::Succeeded,
-            false,
+            AttemptCompletion {
+                conclusion: AttemptConclusion::Succeeded,
+                logs_truncated: false,
+            },
             15,
         )
         .unwrap();

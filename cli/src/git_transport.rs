@@ -58,7 +58,7 @@ impl ScopeRemote {
             bail!("Scope remote must include owner and repo");
         }
         let mut origin = remote.clone();
-        let _ = origin.set_username("");
+        origin.set_username("").ok();
         origin.set_path("");
         origin.set_query(None);
         origin.set_fragment(None);
@@ -93,10 +93,10 @@ pub fn scope_path_origin(remote_url: &str) -> Option<String> {
 fn redacted_url(url: &Url) -> String {
     let mut redacted = url.clone();
     if !redacted.username().is_empty() {
-        let _ = redacted.set_username("redacted");
+        redacted.set_username("redacted").ok();
     }
     if redacted.password().is_some() {
-        let _ = redacted.set_password(Some("redacted"));
+        redacted.set_password(Some("redacted")).ok();
     }
     redacted.to_string()
 }

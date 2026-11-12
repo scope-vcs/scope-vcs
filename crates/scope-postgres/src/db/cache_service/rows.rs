@@ -1,7 +1,8 @@
 use super::{CacheObjectRecord, CacheUploadRecord, CacheUploadState};
 use crate::{db::integer_columns::i64_to_u64, error::PostgresError};
 use scope_cache_domain::{
-    CacheDigest, CacheObject, CacheReference, RepositoryId, UploadLease, UploadLeaseId,
+    CacheDigest, CacheObject, CacheReference, RepositoryId, StoredUploadLease, UploadLease,
+    UploadLeaseId,
 };
 use sea_orm::{FromQueryResult, QueryResult};
 
@@ -132,15 +133,15 @@ pub(super) fn domain_reference(
 }
 
 pub(super) fn domain_upload(record: &CacheUploadRecord) -> Result<UploadLease, PostgresError> {
-    UploadLease::restore(
-        UploadLeaseId::parse(record.upload_id.clone())?,
-        RepositoryId::parse(record.repository_id.clone())?,
-        CacheDigest::parse(record.identity_digest.clone())?,
-        CacheDigest::parse(record.compatibility_group_digest.clone())?,
-        CacheDigest::parse(record.checksum_sha256.clone())?,
-        record.size_bytes,
-        record.created_at_unix,
-        record.expires_at_unix,
-    )
+    UploadLease::restore(StoredUploadLease {
+        id: UploadLeaseId::parse(record.upload_id.clone())?,
+        repository_id: RepositoryId::parse(record.repository_id.clone())?,
+        identity_digest: CacheDigest::parse(record.identity_digest.clone())?,
+        compatibility_group_digest: CacheDigest::parse(record.compatibility_group_digest.clone())?,
+        object_digest: CacheDigest::parse(record.checksum_sha256.clone())?,
+        size_bytes: record.size_bytes,
+        issued_at_unix: record.created_at_unix,
+        expires_at_unix: record.expires_at_unix,
+    })
     .map_err(PostgresError::from)
 }

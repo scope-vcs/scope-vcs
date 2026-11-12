@@ -60,7 +60,8 @@ pub(super) fn apply_history_rewrites(
                 .iter()
                 .flat_map(|native| native.changed_paths.iter())
                 .any(&should_redact),
-            _ => false,
+            LogicalCommitOrigin::CanonicalPush { .. }
+            | LogicalCommitOrigin::PrivateRequestMerge { .. } => false,
         };
         let logical_history_matches = commit
             .changes

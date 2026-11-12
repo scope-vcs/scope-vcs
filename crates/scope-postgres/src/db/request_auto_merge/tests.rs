@@ -12,7 +12,7 @@ use scope_domain::{
         RequestRevisionGitFacts,
     },
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
     },
 };

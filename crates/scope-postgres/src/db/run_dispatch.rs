@@ -6,7 +6,7 @@ use super::{
     runs::{unique_conflict, workflow_revision_for_run},
 };
 use crate::error::PostgresError;
-use scope_domain::runs::job::reconcile_run;
+use scope_domain::runs::job::{AttemptDispatch, reconcile_run};
 #[cfg(any(test, feature = "seeding"))]
 use sea_orm::TransactionTrait;
 use sea_orm::{
@@ -240,11 +240,13 @@ impl RunStore {
             .dispatch(
                 &run_snapshot,
                 definition,
-                attempt_id,
-                token_hash,
-                runtime_version,
+                AttemptDispatch {
+                    attempt_id: attempt_id.to_string(),
+                    token_hash: token_hash.to_string(),
+                    runtime_version: runtime_version.to_string(),
+                    lease_expires_at_unix,
+                },
                 now_unix,
-                lease_expires_at_unix,
             )
             .map_err(PostgresError::from)?;
 

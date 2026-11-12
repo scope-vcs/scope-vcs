@@ -22,7 +22,7 @@ use scope_domain::{
     content_ref::ContentRef,
     repository::{RepoLifecycleState, Repository},
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
     },
     views::ViewId,
@@ -255,13 +255,15 @@ async fn dispatch_attempt(fixture: &Fixture, trigger: RunTrigger, attempt_id: &s
     let runs = fixture.state.metadata.runs();
     runs.enqueue_run(
         Run::new(
-            run_id.clone(),
-            run_id.clone(),
-            revision.workflow().clone(),
-            revision.digest(),
-            trigger,
-            Some("user_run_cache".to_string()),
-            source,
+            RunRequest {
+                id: run_id.clone(),
+                idempotency_key: run_id.clone(),
+                workflow: revision.workflow().clone(),
+                workflow_revision_digest: revision.digest().to_string(),
+                trigger,
+                requested_by_user_id: Some("user_run_cache".to_string()),
+                source,
+            },
             fixture.now,
         )
         .unwrap(),

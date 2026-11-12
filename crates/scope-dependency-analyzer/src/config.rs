@@ -436,9 +436,9 @@ impl ConfigLoader<'_> {
         let nested = join_relative(&base, "tsconfig.json");
         let with_extension = format!("{base}.json");
         let candidates = if requested.contains(".json") {
-            [base.clone(), with_extension, nested]
+            [base, with_extension, nested]
         } else {
-            [with_extension, base.clone(), nested]
+            [with_extension, base, nested]
         };
         if let Some(found) = candidates
             .into_iter()

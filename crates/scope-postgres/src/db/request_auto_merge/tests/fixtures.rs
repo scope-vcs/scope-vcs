@@ -97,13 +97,20 @@ jobs:
     .into_revision("owner/repo")
     .unwrap();
     let run = Run::new(
-        "run-check-evidence",
-        "run-check-evidence",
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some("user_owner".into()),
-        RunSource::ephemeral_git_bundle(source_blob(&"a".repeat(40), &"b".repeat(64), 1)).unwrap(),
+        RunRequest {
+            id: "run-check-evidence".into(),
+            idempotency_key: "run-check-evidence".into(),
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger: RunTrigger::Manual,
+            requested_by_user_id: Some("user_owner".into()),
+            source: RunSource::ephemeral_git_bundle(source_blob(
+                &"a".repeat(40),
+                &"b".repeat(64),
+                1,
+            ))
+            .unwrap(),
+        },
         5,
     )
     .unwrap();

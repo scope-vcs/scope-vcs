@@ -91,7 +91,26 @@ pub fn prepare_request_command(args: RequestArgs) -> anyhow::Result<PreparedRequ
         RequestCommand::Push(_) => Some(("scope request push", false)),
         RequestCommand::Checkout(_) => Some(("scope request checkout", true)),
         RequestCommand::Restack(_) => Some(("scope request restack", false)),
-        _ => None,
+        RequestCommand::Submit(_)
+        | RequestCommand::Close(_)
+        | RequestCommand::Edit(_)
+        | RequestCommand::Invite(_)
+        | RequestCommand::Uninvite(_)
+        | RequestCommand::Leave(_)
+        | RequestCommand::Merge(_)
+        | RequestCommand::Rate(_)
+        | RequestCommand::Discussion(_)
+        | RequestCommand::Show(_)
+        | RequestCommand::List(_)
+        | RequestCommand::Claim(_)
+        | RequestCommand::Release(_)
+        | RequestCommand::Wait(_)
+        | RequestCommand::Settle(_)
+        | RequestCommand::Snooze(_)
+        | RequestCommand::Restore(_)
+        | RequestCommand::Status(_)
+        | RequestCommand::Diff(_)
+        | RequestCommand::Ci(_) => None,
     };
     let git_repo = if let Some((name, clean)) = local_command {
         let repo = ensure_git_repo_ready(name)?;

@@ -5,7 +5,7 @@ use crate::{
     github_connection::{GitHubConnection, PRIVATE_REQUESTS_WITHHELD_MESSAGE},
     runs::{
         availability::NATIVE_RUNS_UNAVAILABLE,
-        run::{Run, RunState},
+        run::{Run, RunRequest, RunState},
         source::{RunSource, RunTrigger},
         validation::{validate_git_oid, validate_sha256_hash},
         workflow::revision::WorkflowRevision,
@@ -153,13 +153,15 @@ impl NativeRequestCheck {
             format!("{}\0{idempotency_key}", revision.workflow().repository_id()).as_bytes(),
         );
         Run::new(
-            format!("run_request_{}", hex::encode(digest)),
-            idempotency_key,
-            revision.workflow().clone(),
-            revision.digest(),
-            RunTrigger::Request,
-            Some(requested_by_user_id.to_string()),
-            RunSource::ephemeral_git_bundle(source.clone())?,
+            RunRequest {
+                id: format!("run_request_{}", hex::encode(digest)),
+                idempotency_key,
+                workflow: revision.workflow().clone(),
+                workflow_revision_digest: revision.digest().to_string(),
+                trigger: RunTrigger::Request,
+                requested_by_user_id: Some(requested_by_user_id.to_string()),
+                source: RunSource::ephemeral_git_bundle(source.clone())?,
+            },
             now_unix,
         )
     }

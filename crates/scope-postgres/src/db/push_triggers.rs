@@ -7,7 +7,7 @@ use crate::error::PostgresError;
 use scope_domain::{
     repository::git::GitHead,
     runs::{
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
         trigger::{
             PushTriggerCheck, PushTriggerEvaluation, PushTriggerEvaluationState, PushTriggerInput,
@@ -229,13 +229,15 @@ fn push_main_run(
     let digest = Sha256::digest(format!("{repo_id}\0{idempotency_key}").as_bytes());
     let source = RunSource::accepted_git_head(repo_id, payload.head.clone())?;
     Ok(Run::new(
-        format!("run_push_{}", hex::encode(digest)),
-        idempotency_key,
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::PushMain,
-        None,
-        source,
+        RunRequest {
+            id: format!("run_push_{}", hex::encode(digest)),
+            idempotency_key,
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger: RunTrigger::PushMain,
+            requested_by_user_id: None,
+            source,
+        },
         now_unix,
     )?)
 }

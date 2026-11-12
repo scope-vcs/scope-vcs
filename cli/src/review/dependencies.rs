@@ -117,7 +117,10 @@ impl DependencyReview {
     pub(super) fn report(&self) -> Option<&DependencyReport> {
         match &self.status {
             DependencyStatus::Report(report) => Some(report),
-            _ => None,
+            DependencyStatus::Hidden
+            | DependencyStatus::Pending
+            | DependencyStatus::Unsupported
+            | DependencyStatus::Unavailable => None,
         }
     }
 

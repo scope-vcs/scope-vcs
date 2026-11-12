@@ -5,49 +5,30 @@ use scope_domain::runs::{
     source::RunTrigger,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WorkflowAttempt<'a> {
+    pub repository_id: &'a str,
+    pub run_id: &'a str,
+    pub attempt_id: &'a str,
+    pub attempt_number: u32,
+    pub trigger: WorkflowRunTrigger,
+}
+
 impl ProductEvent {
-    pub fn workflow_attempt_started(
-        actor: ProductActor<'_>,
-        repository_id: &str,
-        run_id: &str,
-        attempt_id: &str,
-        attempt_number: u32,
-        trigger: WorkflowRunTrigger,
-    ) -> Self {
-        let mut event = Self::workflow_attempt_event(
-            "workflow:attempt_start",
-            actor,
-            repository_id,
-            run_id,
-            attempt_id,
-            attempt_number,
-            trigger,
-        );
+    pub fn workflow_attempt_started(actor: ProductActor<'_>, attempt: WorkflowAttempt<'_>) -> Self {
+        let mut event = Self::workflow_attempt_event("workflow:attempt_start", actor, attempt);
         event.insert_string("actor_type", actor.actor_type());
         event
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn workflow_attempt_completed(
         actor: ProductActor<'_>,
-        repository_id: &str,
-        run_id: &str,
-        attempt_id: &str,
-        attempt_number: u32,
-        trigger: WorkflowRunTrigger,
+        attempt: WorkflowAttempt<'_>,
         result: WorkflowAttemptResult,
         run_result: Option<WorkflowRunResult>,
         duration_ms: u64,
     ) -> Self {
-        let mut event = Self::workflow_attempt_event(
-            "workflow:attempt_complete",
-            actor,
-            repository_id,
-            run_id,
-            attempt_id,
-            attempt_number,
-            trigger,
-        );
+        let mut event = Self::workflow_attempt_event("workflow:attempt_complete", actor, attempt);
         event.insert_string("actor_type", actor.actor_type());
         event.insert_string("result", result.as_str());
         if let Some(run_result) = run_result {
@@ -60,18 +41,14 @@ impl ProductEvent {
     fn workflow_attempt_event(
         name: &'static str,
         actor: ProductActor<'_>,
-        repository_id: &str,
-        run_id: &str,
-        attempt_id: &str,
-        attempt_number: u32,
-        trigger: WorkflowRunTrigger,
+        attempt: WorkflowAttempt<'_>,
     ) -> Self {
         let mut event = Self::new(name, actor);
-        event.insert_repository_id(repository_id);
-        event.insert_string("run_id", run_id);
-        event.insert_string("attempt_id", attempt_id);
-        event.insert_number("attempt_number", attempt_number.into());
-        event.insert_string("trigger", trigger.as_str());
+        event.insert_repository_id(attempt.repository_id);
+        event.insert_string("run_id", attempt.run_id);
+        event.insert_string("attempt_id", attempt.attempt_id);
+        event.insert_number("attempt_number", attempt.attempt_number.into());
+        event.insert_string("trigger", attempt.trigger.as_str());
         event
     }
 }
@@ -88,11 +65,7 @@ impl ProductAnalytics {
         }
         self.capture(ProductEvent::workflow_attempt_started(
             workflow_actor(run),
-            repository_id,
-            &run.id,
-            &attempt.id,
-            attempt.number,
-            workflow_trigger(run.trigger),
+            workflow_attempt(repository_id, run, attempt),
         ));
     }
 
@@ -117,11 +90,7 @@ impl ProductAnalytics {
         };
         self.capture(ProductEvent::workflow_attempt_completed(
             workflow_actor(run),
-            repository_id,
-            &run.id,
-            &attempt.id,
-            attempt.number,
-            workflow_trigger(run.trigger),
+            workflow_attempt(repository_id, run, attempt),
             attempt_result,
             workflow_run_result(run.state),
             completed_at_unix
@@ -183,6 +152,20 @@ impl WorkflowRunResult {
             Self::Canceled => "canceled",
             Self::Lost => "lost",
         }
+    }
+}
+
+fn workflow_attempt<'a>(
+    repository_id: &'a str,
+    run: &'a Run,
+    attempt: &'a RunAttempt,
+) -> WorkflowAttempt<'a> {
+    WorkflowAttempt {
+        repository_id,
+        run_id: &run.id,
+        attempt_id: &attempt.id,
+        attempt_number: attempt.number,
+        trigger: workflow_trigger(run.trigger),
     }
 }
 

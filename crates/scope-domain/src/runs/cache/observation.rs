@@ -199,31 +199,20 @@ impl AttemptCacheObservation {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn restore(
-        attempt_id: impl Into<String>,
-        workflow_path: WorkflowPath,
-        job_key: WorkflowJobId,
-        cache_name: impl Into<String>,
-        identity_digest: impl Into<String>,
-        preparation: CachePreparation,
-        timing: AttemptCachePreparationTiming,
-        final_state: CacheFinalState,
-        finalize_ms: Option<u64>,
-    ) -> Result<Self, DomainError> {
+    pub fn restore(stored: Self) -> Result<Self, DomainError> {
         let mut observation = Self::prepared(
-            attempt_id,
-            workflow_path,
-            job_key,
-            cache_name,
-            identity_digest,
-            preparation,
-            timing,
+            stored.attempt_id,
+            stored.workflow_path,
+            stored.job_key,
+            stored.cache_name,
+            stored.identity_digest,
+            stored.preparation,
+            stored.timing,
         )?;
-        match (final_state, finalize_ms) {
+        match (stored.final_state, stored.finalize_ms) {
             (CacheFinalState::Pending, None) => {}
             (CacheFinalState::Ready | CacheFinalState::Evicted, Some(duration)) => {
-                observation.finalize(final_state, duration)?;
+                observation.finalize(stored.final_state, duration)?;
             }
             _ => {
                 return Err(DomainError::invalid_input(

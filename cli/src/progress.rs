@@ -155,7 +155,7 @@ impl PreparationProgress {
                     break;
                 }
                 if let Some(renderer) = renderer {
-                    let _ = renderer.join();
+                    renderer.join().ok();
                     let _guard = render_lock
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -222,7 +222,7 @@ impl PreparationProgress {
     fn stop_renderer(&mut self) {
         self.stopped.store(true, Ordering::Release);
         if let Some(supervisor) = self.cancellation_supervisor.take() {
-            let _ = supervisor.join();
+            supervisor.join().ok();
         }
         self.unregister_ctrl_c();
     }
@@ -284,8 +284,8 @@ fn render_status(stage: &str, frame: usize, elapsed: Duration) {
         .unwrap_or(80);
     let status = status_text(stage, SPINNER[frame % SPINNER.len()], elapsed, width);
     let mut stderr = io::stderr().lock();
-    let _ = write!(stderr, "\r\x1b[2K{status}");
-    let _ = stderr.flush();
+    write!(stderr, "\r\x1b[2K{status}").ok();
+    stderr.flush().ok();
 }
 
 fn status_text(stage: &str, spinner: char, elapsed: Duration, width: usize) -> String {
@@ -326,8 +326,8 @@ fn truncate_to_width(value: &str, width: usize, ellipsis: bool) -> String {
 
 fn clear_status() {
     let mut stderr = io::stderr().lock();
-    let _ = write!(stderr, "\r\x1b[2K");
-    let _ = stderr.flush();
+    write!(stderr, "\r\x1b[2K").ok();
+    stderr.flush().ok();
 }
 
 #[cfg(test)]

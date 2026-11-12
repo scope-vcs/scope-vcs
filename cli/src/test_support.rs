@@ -1,72 +1,22 @@
-use scope_api_contract::{
-    RepoLifecycleState, RepoSummaryResponse, RepositoryAccessResponse, RepositoryActor,
-};
-use serde_json::Value;
-use std::{
-    path::Path,
-    process::{Command, Output},
-};
+mod git;
+mod responses;
+mod temp_dir;
 
-pub(crate) struct TempDir(tempfile::TempDir);
+pub(crate) use git::{commit_all, run_git};
+pub(crate) use responses::repository_response;
+use std::process::Output;
+pub(crate) use temp_dir::TempDir;
 
 impl TempDir {
-    pub(crate) fn new(label: &str) -> Self {
-        Self(
-            tempfile::Builder::new()
-                .prefix(&format!("scope-cli-{label}-"))
-                .tempdir()
-                .unwrap(),
-        )
-    }
-
     pub(crate) fn git_repo(label: &str, branch: &str) -> Self {
         let dir = Self::new(label);
         dir.run_git(["init", "--quiet", "-b", branch]);
         dir
     }
 
-    pub(crate) fn path(&self) -> &Path {
-        self.0.path()
-    }
-
     pub(crate) fn run_git<const N: usize>(&self, args: [&str; N]) -> Output {
         run_git(self.path(), args)
     }
-}
-
-pub(crate) fn run_git<const N: usize>(cwd: &Path, args: [&str; N]) -> Output {
-    let output = Command::new("git")
-        .current_dir(cwd)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "git failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    output
-}
-
-pub(crate) fn commit_all(cwd: &Path, message: &str) -> String {
-    run_git(cwd, ["add", "-A"]);
-    run_git(
-        cwd,
-        [
-            "-c",
-            "user.name=Scope Test",
-            "-c",
-            "user.email=scope@example.test",
-            "commit",
-            "-qm",
-            message,
-        ],
-    );
-    String::from_utf8(run_git(cwd, ["rev-parse", "HEAD"]).stdout)
-        .unwrap()
-        .trim()
-        .to_owned()
 }
 
 pub(crate) fn read_http_request(stream: &mut std::net::TcpStream) -> std::io::Result<String> {
@@ -118,44 +68,4 @@ pub(crate) fn read_http_request(stream: &mut std::net::TcpStream) -> std::io::Re
     request.resize(header_len + content_length, 0);
     reader.read_exact(&mut request[header_len..])?;
     String::from_utf8(request).map_err(std::io::Error::other)
-}
-
-pub(crate) fn repository_response(overrides: Value) -> Value {
-    let mut repo = serde_json::to_value(RepoSummaryResponse {
-        description: None,
-        website_url: None,
-        id: "repo_one".into(),
-        owner_handle: "owner".into(),
-        name: "repo".into(),
-        git_remote_url: "https://scope.example/git/public/owner/repo".into(),
-        lifecycle_state: RepoLifecycleState::Ready,
-        change_version: 1,
-        content_version: 1,
-        access: RepositoryAccessResponse {
-            actor: RepositoryActor::Public,
-            view: scope_api_contract::ViewId::public(),
-            can_push: false,
-            can_change_file_visibility: false,
-            can_manage_members: false,
-            can_delete_repo: false,
-        },
-        views: scope_api_contract::view_definitions(&scope_domain::views::Views::builtin()),
-        open_request_count: 0,
-    })
-    .unwrap();
-    merge(&mut repo, overrides);
-    repo
-}
-
-fn merge(value: &mut Value, overrides: Value) {
-    if let (Some(value), Some(overrides)) = (value.as_object_mut(), overrides.as_object()) {
-        for (key, replacement) in overrides {
-            merge(
-                value.entry(key.clone()).or_insert(Value::Null),
-                replacement.clone(),
-            );
-        }
-    } else {
-        *value = overrides;
-    }
 }

@@ -12,7 +12,9 @@ pub(crate) fn normalize_lexically(path: &Path) -> PathBuf {
             Component::ParentDir => {
                 resolved.pop();
             }
-            other => resolved.push(other),
+            other @ Component::Prefix(_)
+            | other @ Component::RootDir
+            | other @ Component::Normal(_) => resolved.push(other),
         }
     }
     resolved

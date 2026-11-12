@@ -33,12 +33,11 @@ impl LogFlush {
         loop {
             match self.lines.try_send(request) {
                 Ok(()) => break,
-                Err(TrySendError::Disconnected(_)) => return false,
                 Err(TrySendError::Full(returned)) if Instant::now() < deadline => {
                     request = returned;
                     std::thread::sleep(Duration::from_millis(5));
                 }
-                Err(TrySendError::Full(_)) => return false,
+                Err(TrySendError::Disconnected(_) | TrySendError::Full(_)) => return false,
             }
         }
         flushed
@@ -79,21 +78,22 @@ fn write_queued_lines(output: impl Write, queued: Receiver<Queued>, dropped: &At
         for message in std::iter::once(first).chain(queued.try_iter()) {
             match message {
                 Queued::Line(line) => {
-                    let _ = output.write_all(&line);
+                    output.write_all(&line).ok();
                 }
                 Queued::Flush(done) => flushes.push(done),
             }
         }
         let skipped = dropped.swap(0, Ordering::Relaxed);
         if skipped > 0 {
-            let _ = writeln!(
+            writeln!(
                 output,
                 "scope log writer dropped {skipped} lines while its output was saturated"
-            );
+            )
+            .ok();
         }
-        let _ = output.flush();
+        output.flush().ok();
         for done in flushes.drain(..) {
-            let _ = done.send(());
+            done.send(()).ok();
         }
     }
 }

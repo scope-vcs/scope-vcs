@@ -9,7 +9,7 @@ use scope_api_contract::routes;
 use scope_domain::{
     runs::{
         log::RunLogChunk,
-        run::Run,
+        run::{Run, RunRequest},
         source::{RunSource, RunTrigger},
     },
     views::{ViewDefinition, Views},
@@ -177,13 +177,15 @@ async fn active_run(state: &AppState) -> (String, String) {
         scope_storage::content_object_for_bytes(ContentObjectKind::GitBundle, b"isolation bundle");
     source.git_oid = "b".repeat(40);
     let run = Run::new(
-        run_id.clone(),
-        format!("manual:{run_id}"),
-        revision.workflow().clone(),
-        revision.digest(),
-        RunTrigger::Manual,
-        Some(test_owner_id()),
-        RunSource::ephemeral_git_bundle(source).unwrap(),
+        RunRequest {
+            id: run_id.clone(),
+            idempotency_key: format!("manual:{run_id}"),
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger: RunTrigger::Manual,
+            requested_by_user_id: Some(test_owner_id()),
+            source: RunSource::ephemeral_git_bundle(source).unwrap(),
+        },
         1,
     )
     .unwrap();

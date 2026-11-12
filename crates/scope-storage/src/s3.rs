@@ -85,7 +85,7 @@ fn is_retryable_get_error(error: &GetObjectSdkError) -> bool {
                 || aws_sdk_s3::error::ProvideErrorMetadata::code(error.err())
                     == Some("RequestCanceled")
         }
-        _ => false,
+        SdkError::ConstructionFailure(_) | _ => false,
     }
 }
 

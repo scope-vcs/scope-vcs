@@ -1,4 +1,6 @@
 mod lifecycle;
+#[expect(unsafe_code)]
+mod posix;
 mod runner;
 mod stdio;
 

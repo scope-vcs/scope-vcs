@@ -119,7 +119,7 @@ impl AppState {
             metadata,
             run_caches: RunCacheStorage::from_env()?,
             media_grants: MediaGrantIssuer::from_env()?,
-            product_analytics: ProductAnalytics::from_env(EventSource::Api).await?,
+            product_analytics: ProductAnalytics::from_env(EventSource::Api)?,
             git_public_url,
         })
         .await?;

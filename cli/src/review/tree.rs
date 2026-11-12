@@ -28,6 +28,8 @@ pub(crate) enum ReviewNodeKind {
 }
 
 impl ReviewTree {
+    pub(crate) const ROOT_ID: usize = 0;
+
     pub(crate) fn from_paths(paths: &[String], changed_paths: &[GitChangedPath]) -> Self {
         let mut nodes = vec![ReviewNode {
             id: 0,
@@ -84,10 +86,6 @@ impl ReviewTree {
         let mut tree = Self { nodes };
         tree.sort_children(0);
         tree
-    }
-
-    pub(crate) fn root_id(&self) -> usize {
-        0
     }
 
     pub(crate) fn node(&self, id: usize) -> &ReviewNode {

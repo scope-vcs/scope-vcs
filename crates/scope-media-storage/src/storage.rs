@@ -128,7 +128,7 @@ impl MediaStorage {
         .await
     }
 
-    pub async fn read_range(
+    pub fn read_range(
         &self,
         object: &RequestMediaObject,
         range: RangeInclusive<u64>,
@@ -149,7 +149,7 @@ impl MediaStorage {
                     Ok(ControlFlow::Continue(())) => {}
                     Ok(ControlFlow::Break(())) => return,
                     Err(error) => {
-                        let _ = sender.send(Err(error)).await;
+                        sender.send(Err(error)).await.ok();
                         return;
                     }
                 }
@@ -168,9 +168,7 @@ impl MediaStorage {
     {
         let mut digest = Sha256::new();
         if object.plaintext_bytes > 0 {
-            let mut stream = self
-                .read_range(object, 0..=object.plaintext_bytes - 1)
-                .await?;
+            let mut stream = self.read_range(object, 0..=object.plaintext_bytes - 1)?;
             while let Some(bytes) = stream.next().await {
                 let bytes = bytes?;
                 digest.update(&bytes);

@@ -13,7 +13,7 @@ fn tree_sorts_folders_before_files_and_marks_workflows_as_private_control_paths(
     );
 
     let root_children = tree
-        .node(tree.root_id())
+        .node(ReviewTree::ROOT_ID)
         .children
         .iter()
         .map(|id| tree.node(*id).path.as_str())

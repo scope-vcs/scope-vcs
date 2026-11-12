@@ -22,7 +22,7 @@ async fn startup_cleanup_does_not_race_an_open_store_ingesting_a_pack() {
                         std::fs::remove_file(entry.path())?;
                     }
                 }
-                let _ = unlinked.take().unwrap().send(());
+                unlinked.take().unwrap().send(()).ok();
                 resumed.recv().unwrap();
                 std::fs::remove_dir(path)
             } else {
@@ -30,13 +30,13 @@ async fn startup_cleanup_does_not_race_an_open_store_ingesting_a_pack() {
             }
         })
     });
-    let _ = emptied.await;
+    emptied.await.ok();
     let input = b"API pack created while the worker starts";
     let staged = fixture
         .store
         .ingest(REPOSITORY_ID, &input[..], u64::MAX)
         .await;
-    let _ = resume.send(());
+    resume.send(()).ok();
     cleanup.await.unwrap().unwrap();
     assert_eq!(
         tokio::fs::read(staged.unwrap().local_pack_path())

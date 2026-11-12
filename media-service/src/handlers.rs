@@ -299,10 +299,9 @@ async fn serve_media(
         permit,
         original_filename.as_deref(),
     )
-    .await
 }
 
-async fn media_response(
+fn media_response(
     storage: &scope_media_storage::MediaStorage,
     object: &RequestMediaObject,
     requested: RequestedRange,
@@ -325,7 +324,6 @@ async fn media_response(
     } else {
         let stream = storage
             .read_range(object, start..=end.expect("nonempty media range"))
-            .await
             .map_err(media_storage_error)?;
         let permit = permit.expect("GET read permit");
         Body::from_stream(stream.map(move |bytes| {
@@ -461,7 +459,6 @@ mod tests {
             Some(permit),
             Some("recording.mov"),
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[ACCEPT_RANGES], "bytes");
@@ -488,7 +485,6 @@ mod tests {
             Some(permit),
             None,
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[CONTENT_RANGE], "bytes 3-6/10");
@@ -507,7 +503,6 @@ mod tests {
             None,
             None,
         )
-        .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(response.headers()[CONTENT_RANGE], "bytes 3-6/10");

@@ -73,8 +73,7 @@ async fn run_worker(settings: WorkerSettings, health: WorkerHealth) -> anyhow::R
     };
     let product_analytics = scope_product_analytics::ProductAnalytics::from_env(
         scope_product_analytics::EventSource::Worker,
-    )
-    .await?;
+    )?;
     let backend = object_backend_from_env(&settings.data_dir)?;
     let encryption_key = EncryptionKey::new(
         "primary",

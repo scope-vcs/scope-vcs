@@ -43,13 +43,15 @@ pub(super) async fn enqueue(
     let requested_by_user_id = matches!(trigger, RunTrigger::Manual)
         .then(|| crate::seed_user::DEV_SEED_USER_ID.to_string());
     let run = Run::new(
-        format!("run_dev_seed_{slug}"),
-        format!("dev-seed:{slug}"),
-        revision.workflow().clone(),
-        revision.digest().to_string(),
-        trigger,
-        requested_by_user_id,
-        fake_run_source(slug)?,
+        RunRequest {
+            id: format!("run_dev_seed_{slug}"),
+            idempotency_key: format!("dev-seed:{slug}"),
+            workflow: revision.workflow().clone(),
+            workflow_revision_digest: revision.digest().to_string(),
+            trigger,
+            requested_by_user_id,
+            source: fake_run_source(slug)?,
+        },
         created_at_unix,
     )
     .map_err(ApiError::internal)?;

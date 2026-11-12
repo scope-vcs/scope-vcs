@@ -179,7 +179,7 @@ fn main() -> ExitCode {
                     scope_cli::api::ErrorCode::BadRequest,
                     error.to_string()
                 ))
-                .unwrap()
+                .expect("CLI error responses serialize to JSON")
             );
             return ExitCode::from(2);
         }
@@ -196,7 +196,8 @@ fn main() -> ExitCode {
             if json {
                 eprintln!(
                     "{}",
-                    serde_json::to_string(&scope_cli::error::json_response(&error)).unwrap()
+                    serde_json::to_string(&scope_cli::error::json_response(&error))
+                        .expect("CLI error responses serialize to JSON")
                 );
             } else {
                 eprintln!("{error:#}");
