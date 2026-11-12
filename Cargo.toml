@@ -83,7 +83,6 @@ tracing-opentelemetry = "0.34"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
 ts-rs = "12.0.1"
 url = "2.5.8"
-xmlparser = "0.13.6"
 
 scope_api_contract = { package = "scope-api-contract", path = "crates/scope-api-contract" }
 scope_cache_domain = { package = "scope-cache-domain", path = "crates/scope-cache-domain" }

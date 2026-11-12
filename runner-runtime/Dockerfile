@@ -23,7 +23,7 @@ RUN mv /etc/apt/sources.list.d /tmp/apt-sources.list.d \
 COPY dev/install-git.sh /tmp/install-git.sh
 RUN bash /tmp/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
 
-FROM --platform=linux/amd64 rust:1.98.1-slim-bookworm@sha256:dacc9e51f252243eb59d2fb4cb4ad8b0d3f607b6a82c398cf8a321e59ff778a7 AS chef
+FROM --platform=linux/amd64 rust:1.100.0-slim-bookworm@sha256:476f6598b8d14a1f1bc7e58efc67af206ac8a559c37a3401ce512db2582d0ff7 AS chef
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /build
 

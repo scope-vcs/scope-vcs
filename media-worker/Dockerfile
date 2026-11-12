@@ -46,7 +46,7 @@ RUN apt-get update \
 RUN LD_LIBRARY_PATH=/opt/libheif/lib /opt/libheif/bin/heif-info --version \
     | grep --fixed-strings "$LIBHEIF_VERSION"
 
-FROM docker.io/library/rust:1.98.1-trixie@sha256:a8a5f0a1e5fe7dfe1d352591e4a1c7dd2c08fd70475cae872cf3458ba0df0546 AS chef
+FROM docker.io/library/rust:1.100.0-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS chef
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /scope
 
