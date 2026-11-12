@@ -29,6 +29,7 @@ impl GitHubUser {
     }
 }
 
+#[expect(clippy::expect_used)]
 pub(crate) fn github_account(user: Option<GitHubUser>) -> GitHubAccount {
     user.and_then(GitHubUser::into_account).unwrap_or_else(|| {
         GitHubAccount::new(GHOST_ACCOUNT_ID, GHOST_LOGIN, GitHubAccountType::User, None)

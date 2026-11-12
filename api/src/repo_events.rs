@@ -162,11 +162,24 @@ impl Default for RepoChangeBus {
 }
 
 impl RepoChangeBus {
-    fn on_log_append(&self, run_id: &str, now: Instant) -> LogNotifyAction {
-        let mut registry = self
-            .log_notifications
+    #[expect(clippy::expect_used)]
+    fn log_notifications(&self) -> std::sync::MutexGuard<'_, LogNotifyRegistry> {
+        self.log_notifications
             .lock()
-            .expect("run log notification lock must not be poisoned");
+            .expect("run log notification holders do not panic, so the lock is never poisoned")
+    }
+
+    #[expect(clippy::expect_used)]
+    fn channels(
+        &self,
+    ) -> std::sync::MutexGuard<'_, BTreeMap<String, broadcast::Sender<RepoChangeEvent>>> {
+        self.channels
+            .lock()
+            .expect("repo change bus holders do not panic, so the lock is never poisoned")
+    }
+
+    fn on_log_append(&self, run_id: &str, now: Instant) -> LogNotifyAction {
+        let mut registry = self.log_notifications();
         if now >= registry.prune_after {
             registry.windows.retain(|_, window| {
                 window.trailing_due.is_some()
@@ -187,9 +200,7 @@ impl RepoChangeBus {
     }
 
     fn on_log_deadline(&self, run_id: &str, now: Instant) -> bool {
-        self.log_notifications
-            .lock()
-            .expect("run log notification lock must not be poisoned")
+        self.log_notifications()
             .windows
             .get_mut(run_id)
             .is_some_and(|window| window.on_deadline(now))
@@ -200,10 +211,7 @@ impl RepoChangeBus {
     }
 
     pub(crate) fn subscribe(&self, repo_id: &str) -> broadcast::Receiver<RepoChangeEvent> {
-        let mut channels = self
-            .channels
-            .lock()
-            .expect("repo change bus lock must not be poisoned");
+        let mut channels = self.channels();
         let sender = channels
             .entry(repo_id.to_string())
             .or_insert_with(|| broadcast::channel(REPO_CHANGE_CHANNEL_CAPACITY).0);
@@ -211,10 +219,7 @@ impl RepoChangeBus {
     }
 
     pub(crate) fn remove_if_idle(&self, repo_id: &str) {
-        let mut channels = self
-            .channels
-            .lock()
-            .expect("repo change bus lock must not be poisoned");
+        let mut channels = self.channels();
         if channels
             .get(repo_id)
             .is_some_and(|sender| sender.receiver_count() == 0)
@@ -224,10 +229,7 @@ impl RepoChangeBus {
     }
 
     pub(crate) fn publish_event(&self, event: RepoChangeEvent) {
-        let mut channels = self
-            .channels
-            .lock()
-            .expect("repo change bus lock must not be poisoned");
+        let mut channels = self.channels();
         let Some(sender) = channels.get(&event.repo_id).cloned() else {
             return;
         };

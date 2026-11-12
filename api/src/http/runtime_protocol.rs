@@ -56,7 +56,7 @@ pub(crate) async fn claim(
         )
         .await?;
     crate::run_attempt_effects::publish_claim_status_change(&state, &claim).await;
-    let job_definition = claimed_job_definition(&claim);
+    let job_definition = claimed_job_definition(&claim)?;
     Ok(Json(ClaimRuntimeResponse {
         attempt_token,
         lease_expires_at_unix,
@@ -386,13 +386,15 @@ fn attempt_status(claim: &scope_postgres::db::DispatchClaim) -> AttemptStatusRes
     }
 }
 
-fn claimed_job_definition(claim: &scope_postgres::db::DispatchClaim) -> WorkflowJob {
+fn claimed_job_definition(
+    claim: &scope_postgres::db::DispatchClaim,
+) -> Result<WorkflowJob, ApiError> {
     claim
         .workflow_revision
         .definition()
         .job(&claim.job.key)
-        .expect("claimed run job definition must exist")
-        .into()
+        .map(Into::into)
+        .ok_or_else(|| ApiError::internal_message("claimed run job definition is missing"))
 }
 
 fn attempt_step_status(step: &RunAttemptStep) -> AttemptStepStatusResponse {

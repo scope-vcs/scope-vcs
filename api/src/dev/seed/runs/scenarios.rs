@@ -161,10 +161,9 @@ pub(super) async fn seed_canceled_run(
         &token,
         0,
         1,
-        lines(&["Running test suite", "112 of 480 tests complete"])
-            .into_iter()
-            .next()
-            .expect("single log chunk"),
+        ["Running test suite", "112 of 480 tests complete"]
+            .map(String::from)
+            .to_vec(),
         clock,
     )
     .await?;

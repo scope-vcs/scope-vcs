@@ -314,16 +314,16 @@ fn parse_request_commit_change_summaries(
     let mut current_oid = None;
     while let Some(field) = read_nul_field_bounded(&mut reader)? {
         if field.bytes.starts_with(b":") {
-            let oid = current_oid.as_ref().ok_or_else(|| {
-                ApiError::internal_message("request identity diff is missing a commit header")
-            })?;
+            let summary = current_oid
+                .as_ref()
+                .and_then(|oid| summaries.get_mut(oid))
+                .ok_or_else(|| {
+                    ApiError::internal_message("request identity diff is missing a commit header")
+                })?;
             validate_request_diff_header(&field)?;
             let path = read_nul_field_bounded(&mut reader)?.ok_or_else(|| {
                 ApiError::internal_message("request identity diff is missing a path")
             })?;
-            let summary = summaries
-                .get_mut(oid)
-                .expect("current request identity diff commit must exist");
             summary.change_count = summary.change_count.checked_add(1).ok_or_else(|| {
                 ApiError::internal_message("request identity diff change count overflowed")
             })?;

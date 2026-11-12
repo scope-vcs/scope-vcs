@@ -6,7 +6,11 @@ use crate::{
     },
     runtime_budgets::RuntimeBudgets,
 };
-use axum::{body::Body, http::StatusCode, response::Response};
+use axum::{
+    body::Body,
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
+    response::Response,
+};
 use futures_util::StreamExt;
 use std::{
     path::Path as FsPath,
@@ -270,7 +274,7 @@ impl Drop for GitProcessGroupGuard {
 
 pub(crate) struct CgiResponse {
     pub(crate) status: StatusCode,
-    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) headers: HeaderMap,
     pub(crate) body: Vec<u8>,
 }
 
@@ -282,7 +286,7 @@ impl CgiResponse {
         let (headers, body) = output.split_at(header_end.0);
         let headers = String::from_utf8_lossy(headers);
         let mut status = StatusCode::OK;
-        let mut parsed_headers = Vec::new();
+        let mut parsed_headers = HeaderMap::new();
 
         for line in headers
             .lines()
@@ -302,7 +306,11 @@ impl CgiResponse {
                     })?;
                 status = StatusCode::from_u16(code).map_err(ApiError::internal)?;
             } else {
-                parsed_headers.push((name.trim().to_string(), value.trim().to_string()));
+                let name = HeaderName::try_from(name.trim())
+                    .map_err(|_| ApiError::infrastructure_unavailable("invalid git CGI header"))?;
+                let value = HeaderValue::try_from(value.trim())
+                    .map_err(|_| ApiError::infrastructure_unavailable("invalid git CGI header"))?;
+                parsed_headers.append(name, value);
             }
         }
 
@@ -314,13 +322,10 @@ impl CgiResponse {
     }
 
     pub(crate) fn into_response(self) -> Response {
-        let mut builder = Response::builder().status(self.status);
-        for (name, value) in self.headers {
-            builder = builder.header(name, value);
-        }
-        builder
-            .body(Body::from(self.body))
-            .expect("git CGI response headers should be valid")
+        let mut response = Response::new(Body::from(self.body));
+        *response.status_mut() = self.status;
+        *response.headers_mut() = self.headers;
+        response
     }
 }
 

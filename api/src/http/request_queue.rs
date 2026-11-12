@@ -398,8 +398,7 @@ fn encode_cursor(
     getrandom::fill(&mut nonce).map_err(|error| {
         ApiError::internal_message(format!("queue cursor nonce failed: {error}"))
     })?;
-    let ciphertext = ChaCha20Poly1305::new_from_slice(&cursor_key(signing_key))
-        .expect("SHA-256 derives a 32-byte cursor key")
+    let ciphertext = ChaCha20Poly1305::new(&cursor_key(signing_key).into())
         .encrypt(
             &Nonce::from(nonce),
             Payload {
@@ -433,8 +432,7 @@ fn parse_cursor(
         return Err(invalid());
     }
     let (nonce, ciphertext) = envelope.split_at(CURSOR_NONCE_BYTES);
-    let plaintext = ChaCha20Poly1305::new_from_slice(&cursor_key(signing_key))
-        .expect("SHA-256 derives a 32-byte cursor key")
+    let plaintext = ChaCha20Poly1305::new(&cursor_key(signing_key).into())
         .decrypt(
             &Nonce::try_from(nonce).map_err(|_| invalid())?,
             Payload {
