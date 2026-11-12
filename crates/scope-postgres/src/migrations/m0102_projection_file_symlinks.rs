@@ -1,7 +1,7 @@
 use sea_orm::ConnectionTrait;
 use sea_orm_migration::{DbErr, MigrationName, MigrationTrait, SchemaManager};
 
-pub(super) struct Migration;
+pub struct Migration;
 
 impl MigrationName for Migration {
     fn name(&self) -> &str {
