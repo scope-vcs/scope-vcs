@@ -2,7 +2,7 @@ mod repo_a;
 mod seeds;
 mod write_bodies;
 
-use super::custom_views::member_bearer;
+use super::custom_views::{MEMBER_SUBJECT, member_bearer};
 use super::*;
 use futures_util::StreamExt;
 use repo_a::{OUTSIDER_EMAIL, OUTSIDER_SUBJECT, RepoA, VISIBLE_PATH, repo_a};
@@ -54,6 +54,15 @@ impl Caller {
             Caller::Outsider => Some(bearer_header_for(OUTSIDER_SUBJECT, OUTSIDER_EMAIL)),
             Caller::NarrowMember => Some(member_bearer()),
             Caller::Owner => Some(bearer_header()),
+        }
+    }
+
+    fn agent(self) -> Option<(&'static str, &'static str)> {
+        match self {
+            Caller::Anonymous => None,
+            Caller::Outsider => Some(("oat_isolation_outsider", OUTSIDER_SUBJECT)),
+            Caller::NarrowMember => Some(("oat_isolation_member", MEMBER_SUBJECT)),
+            Caller::Owner => Some(("oat_isolation_owner", TEST_CLERK_USER_ID)),
         }
     }
 }
@@ -118,6 +127,7 @@ impl Case {
 struct Observed {
     status: StatusCode,
     git_error: bool,
+    tool_error: bool,
     text: String,
 }
 
@@ -128,7 +138,7 @@ impl Observed {
         } else {
             &ACCESS_REFUSALS
         };
-        refusals.contains(&self.status) || self.git_error
+        refusals.contains(&self.status) || self.git_error || self.tool_error
     }
 }
 
@@ -162,11 +172,16 @@ async fn call(repo_a: &RepoA, case: &Case, uri: &str, caller: Caller) -> Observe
             .get(&(case.method, case.template))
             .map_or("{}", String::as_str)
     });
+    let bearer = if case.template == routes::MCP {
+        caller.agent().map(|(token, _)| format!("Bearer {token}"))
+    } else {
+        caller.bearer()
+    };
     let response = api_request(
         repo_a.app.clone(),
         case.method,
         uri,
-        caller.bearer().as_deref(),
+        bearer.as_deref(),
         body,
     )
     .await;
@@ -180,6 +195,7 @@ async fn call(repo_a: &RepoA, case: &Case, uri: &str, caller: Caller) -> Observe
     let streams = content_type.starts_with(b"text/event-stream");
     let git = content_type.starts_with(b"application/x-git-");
     let mut git_error = false;
+    let mut tool_error = false;
     if streams && status.is_success() {
         let mut events = response.into_body().into_data_stream();
         let first = events.next().await.unwrap().unwrap();
@@ -189,11 +205,15 @@ async fn call(repo_a: &RepoA, case: &Case, uri: &str, caller: Caller) -> Observe
             .await
             .unwrap();
         git_error = git && body.get(4..8) == Some(b"ERR ".as_slice());
+        tool_error = case.template == routes::MCP
+            && serde_json::from_slice::<serde_json::Value>(&body)
+                .is_ok_and(|reply| reply["result"]["isError"] == true);
         text.push_str(&String::from_utf8_lossy(&body));
     }
     Observed {
         status,
         git_error,
+        tool_error,
         text,
     }
 }

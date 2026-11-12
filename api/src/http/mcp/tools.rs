@@ -4,7 +4,7 @@ use crate::{
     http::{
         repos::{get_file_content, get_owner_repositories},
         request_checks::get_request_checks,
-        request_discussions::list_discussions,
+        request_discussions::{list_discussions, list_replies},
         request_review::{comparison::get_request_revision_file_diff, list_request_revisions},
         requests::{get_request, list_requests},
     },
@@ -26,6 +26,7 @@ pub(super) enum Operation {
     RequestDiff,
     RequestCi,
     DiscussionList,
+    DiscussionReplies,
     FileRead,
 }
 
@@ -41,13 +42,14 @@ impl From<ApiError> for ToolError {
 }
 
 impl Operation {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::RepoList,
         Self::RequestList,
         Self::RequestShow,
         Self::RequestDiff,
         Self::RequestCi,
         Self::DiscussionList,
+        Self::DiscussionReplies,
         Self::FileRead,
     ];
 
@@ -65,6 +67,7 @@ impl Operation {
             Self::RequestDiff => "request_diff",
             Self::RequestCi => "request_ci",
             Self::DiscussionList => "discussion_list",
+            Self::DiscussionReplies => "discussion_replies",
             Self::FileRead => "file_read",
         }
     }
@@ -77,6 +80,7 @@ impl Operation {
             | Self::RequestDiff
             | Self::RequestCi
             | Self::DiscussionList
+            | Self::DiscussionReplies
             | Self::FileRead => AgentScope::Read,
         }
     }
@@ -99,7 +103,10 @@ impl Operation {
                 "Show CI for a request's current revision, its review bots, and whether it can merge."
             }
             Self::DiscussionList => {
-                "List a request's discussions and their replies. Pass next_cursor back as cursor for the next page."
+                "List a request's discussions with each one's latest replies. Pass next_cursor back as cursor for the next page."
+            }
+            Self::DiscussionReplies => {
+                "Read every reply in one discussion, including those discussion_list leaves out. Pass next_before_position back as before for older replies."
             }
             Self::FileRead => {
                 "Read one file on a repository's main branch, as the view you can read shows it. Pass a request ID to read the request's version instead."
@@ -145,6 +152,16 @@ impl Operation {
                 properties["request"] = request;
                 (properties, json!(["repo", "request"]))
             }
+            Self::DiscussionReplies => (
+                json!({
+                    "repo": repo,
+                    "request": request,
+                    "discussion": { "type": "string", "description": "Discussion ID from discussion_list" },
+                    "before": { "type": "integer", "minimum": 0, "description": "next_before_position from the previous page" },
+                    "limit": { "type": "integer", "minimum": 1 },
+                }),
+                json!(["repo", "request", "discussion"]),
+            ),
             Self::FileRead => (
                 json!({
                     "repo": repo,
@@ -189,6 +206,11 @@ impl Operation {
             Self::DiscussionList => {
                 let path = Path(request_path(&args)?);
                 to_value(list_discussions(state, path, query(&args)?, viewer).await)
+            }
+            Self::DiscussionReplies => {
+                let (owner, repo, request) = request_path(&args)?;
+                let path = Path((owner, repo, request, required(&args, "discussion")?));
+                to_value(list_replies(state, path, query(&args)?, viewer).await)
             }
             Self::RequestDiff => {
                 let (owner, repo, request) = request_path(&args)?;

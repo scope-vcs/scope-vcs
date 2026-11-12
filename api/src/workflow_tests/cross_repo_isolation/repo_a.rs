@@ -1,5 +1,6 @@
 use super::super::custom_views::{custom_view, member_id, view};
 use super::super::*;
+use super::Caller;
 use super::seeds::{
     GITHUB_JOB_ID, GITHUB_JOB_NAME, GITHUB_RUN_ID, GITHUB_WORKFLOW_NAME, seed_github_run,
 };
@@ -214,9 +215,29 @@ async fn active_run(state: &AppState) -> (String, String) {
     (run_id, attempt_id)
 }
 
+fn grant_agents(state: &AppState) {
+    let resource = crate::http::origins::public_mcp_resource().unwrap();
+    let clerk = scripted_clerk(state);
+    let mut tokens = clerk.oauth_tokens.lock().unwrap();
+    for caller in [Caller::Outsider, Caller::NarrowMember, Caller::Owner] {
+        let (token, subject) = caller.agent().unwrap();
+        tokens.insert(
+            token.to_string(),
+            crate::clerk_backend::ClerkOAuthTokenCheck::Active(
+                crate::clerk_backend::ClerkOAuthAccessToken {
+                    subject: subject.to_string(),
+                    scopes: vec!["read".to_string()],
+                    audiences: vec![resource.clone()],
+                },
+            ),
+        );
+    }
+}
+
 pub(super) async fn repo_a() -> RepoA {
     let mut state = AppState::test_state();
     cache_test_jwks(&state);
+    grant_agents(&state);
     let owner_id = test_owner_id();
     let outsider = outsider_repo();
     let mut repo_a_seed = test_repo(&owner_id);
