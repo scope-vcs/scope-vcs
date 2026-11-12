@@ -129,10 +129,10 @@ impl MemoryBackend {
     }
 
     pub fn contains_bytes(&self, needle: &[u8]) -> bool {
-        self.state()
-            .objects
-            .values()
-            .any(|stored| stored.windows(needle.len()).any(|window| window == needle))
+        let stored: Vec<Bytes> = self.state().objects.values().cloned().collect();
+        stored
+            .iter()
+            .any(|bytes| bytes.windows(needle.len()).any(|window| window == needle))
     }
 
     pub fn object_count(&self) -> usize {
