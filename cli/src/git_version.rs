@@ -1,16 +1,17 @@
 use anyhow::{Context, bail};
 use std::process::Command;
 
+#[expect(clippy::expect_used)]
 fn minimum_version() -> (u32, u32, u32) {
     let contract: serde_json::Value =
         serde_json::from_str(include_str!("../../dev/tool-versions.json"))
-            .expect("valid tool version contract");
+            .expect("embedded tool version contract is valid JSON");
     parse_number(
         contract["git"]["version"]
             .as_str()
-            .expect("Git version in tool version contract"),
+            .expect("embedded tool version contract names a Git version"),
     )
-    .expect("valid Git version in tool version contract")
+    .expect("embedded Git version is a dotted version number")
 }
 
 fn parse_number(value: &str) -> Option<(u32, u32, u32)> {
