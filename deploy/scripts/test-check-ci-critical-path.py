@@ -68,6 +68,14 @@ class CriticalPathTest(unittest.TestCase):
         self.assertEqual(len(violations), 2)
         self.assertTrue(all("cli/Cargo.toml with profile release (lto=fat, codegen-units=1)" in v for v in violations))
 
+    def test_pull_request_backend_builds_with_the_shipped_lto_profile_fail(self):
+        self.edit("validate-server.yml", "distribution_mode: ${{ inputs.release && 'release' || 'pull-request' }}",
+                  "distribution_mode: release")
+        violations = self.run_violations()
+        self.assertEqual({v.split(" step ")[0] for v in violations},
+                         {f"scope-api-ci.yml:deployment-binaries ({group})" for group in ("api", "services")})
+        self.assertTrue(all("with profile distribution (lto=fat, codegen-units=1)" in v for v in violations))
+
     def test_fat_lto_reached_through_a_gate_script_fails(self):
         read = MODULE.workspace_profiles
 

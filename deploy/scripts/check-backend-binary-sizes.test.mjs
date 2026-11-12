@@ -73,7 +73,7 @@ test('a component check covers only that component binaries', t => {
   assert.match(foreign.stderr, /scope-worker has no size cap for component api/);
 });
 
-test('each backend component builds in its own cargo selection so shared crates keep its feature set', t => {
+function buildEveryComponent(t, mode) {
   const root = mkdtempSync(join(tmpdir(), 'scope-backend-build-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const builds = [];
@@ -81,13 +81,19 @@ test('each backend component builds in its own cargo selection so shared crates 
     assert.equal(program, 'cargo');
     if (args[0] === 'metadata') return JSON.stringify({ target_directory: join(root, 'target') });
     builds.push(args);
-    mkdirSync(join(root, 'target/release'), { recursive: true });
+    const built = join(root, 'target', args[args.indexOf('--profile') + 1]);
+    mkdirSync(built, { recursive: true });
     for (let index = args.indexOf('--bin'); index !== -1; index = args.indexOf('--bin', index + 1)) {
-      writeFileSync(join(root, 'target/release', args[index + 1]), args[index + 1]);
+      writeFileSync(join(built, args[index + 1]), args[index + 1]);
     }
   };
-  for (const component of backendPrebuiltComponents()) buildBackendComponent(component, join(root, 'bin'), { run, root });
-  assert.deepEqual(builds.map(args => args.filter(arg => arg !== '--bin').slice(4)), [
+  for (const component of backendPrebuiltComponents()) buildBackendComponent(component, join(root, 'bin'), mode, { run, root });
+  return { root, builds };
+}
+
+test('each backend component builds in its own cargo selection so shared crates keep its feature set', t => {
+  const { root, builds } = buildEveryComponent(t, 'pull-request');
+  assert.deepEqual(builds.map(args => args.filter(arg => arg !== '--bin').slice(5)), [
     ['worker/Cargo.toml', 'worker'],
     ['repo-router/Cargo.toml', 'scope-repo-router'],
     ['media-service/Cargo.toml', 'scope-media-service'],
@@ -97,6 +103,13 @@ test('each backend component builds in its own cargo selection so shared crates 
   assert.equal(readFileSync(join(root, 'bin/scope-vcs'), 'utf8'), 'api');
   assert.equal(statSync(join(root, 'bin/scope-worker')).mode & 0o777, 0o755);
   assert.deepEqual(readdirSync(join(root, 'bin')).sort(), backendBinaryCaps().map(({ binary }) => binary).sort());
+});
+
+test('release mode builds and collects every binary from the distribution profile', t => {
+  const { root, builds } = buildEveryComponent(t, 'release');
+  assert.deepEqual([...new Set(builds.map(args => args[args.indexOf('--profile') + 1]))], ['distribution']);
+  assert.deepEqual(readdirSync(join(root, 'bin')).sort(), backendBinaryCaps().map(({ binary }) => binary).sort());
+  assert.throws(() => buildBackendComponent('api', join(root, 'bin'), 'preview', { run: assert.fail, root }), /Unknown backend distribution mode: preview/);
 });
 
 test('caps must be positive integers', () => {

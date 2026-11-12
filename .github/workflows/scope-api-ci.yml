@@ -6,6 +6,9 @@ on:
       build_release_artifact:
         type: boolean
         default: false
+      distribution_mode:
+        type: string
+        default: pull-request
       run_checks:
         type: boolean
         default: true
@@ -60,7 +63,7 @@ jobs:
           COMPONENTS: ${{ matrix.components }}
         run: |
           for component in $COMPONENTS; do
-            node deploy/scripts/deployment-components.mjs build "$component" "artifacts/$component"
+            node deploy/scripts/deployment-components.mjs build "$component" "artifacts/$component" --mode "${{ inputs.distribution_mode }}"
             node deploy/scripts/check-backend-binary-sizes.mjs "artifacts/$component" --component "$component"
             mkdir -p artifacts/bin
             mv "artifacts/$component"/* artifacts/bin/
@@ -147,5 +150,5 @@ jobs:
         run: |
           mapfile -t components < <(node deploy/scripts/deployment-components.mjs backend-prebuilt)
           for component in "${components[@]}"; do
-            node deploy/scripts/deployment-components.mjs build "$component" artifacts/bin
+            node deploy/scripts/deployment-components.mjs build "$component" artifacts/bin --mode pull-request
           done

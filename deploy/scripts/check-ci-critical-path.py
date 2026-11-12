@@ -417,15 +417,24 @@ def profile_settings(profiles, name):
     return settings
 
 
+@functools.cache
+def backend_profile(mode):
+    selected = subprocess.run(
+        ["node", "deploy/scripts/deployment-components.mjs", "cargo-profile", mode],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
+    return selected.stdout.strip()
+
+
 def cargo_commands(text):
     for line in re.split(r"\n|&&|\|\||;", re.sub(r"\\\n", " ", text)):
-        if "deployment-components.mjs build" in line:
-            yield "Cargo.toml", "release"
-            continue
         try:
             words = shlex.split(line)
         except ValueError:
             words = line.split()
+        if "deployment-components.mjs build" in line:
+            yield "Cargo.toml", backend_profile(words[words.index("--mode") + 1])
+            continue
         for index, word in enumerate(words):
             if word in ("cargo", "cross") and index + 1 < len(words) and words[index + 1] in PROFILE_COMMANDS:
                 arguments = [part for word in words[index + 2:] for part in (

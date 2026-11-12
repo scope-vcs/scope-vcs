@@ -34,6 +34,11 @@ debug = "line-tables-only"
 [profile.release]
 strip = "symbols"
 
+[profile.distribution]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"

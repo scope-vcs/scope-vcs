@@ -37,29 +37,29 @@ export function backendPrebuiltComponents() {
   return BACKEND_COMPONENTS.filter(name => deploymentComponent(name).artifact.kind === 'binary');
 }
 
-export function cargoReleaseBuild(component) {
+const CARGO_PROFILES = { 'pull-request': 'release', release: 'distribution' };
+
+function backendCargoProfile(mode) {
+  if (!Object.hasOwn(CARGO_PROFILES, mode)) throw new Error(`Unknown backend distribution mode: ${mode}`);
+  return CARGO_PROFILES[mode];
+}
+
+export function buildBackendComponent(component, outputDirectory, mode, { run = execFileSync, root = sourceRoot } = {}) {
   const { artifact, runtimeConfig } = deploymentComponent(component);
   if (artifact.kind !== 'binary') throw new Error(`Component ${component} has no prebuilt binary.`);
+  const profile = backendCargoProfile(mode);
   const binaries = [
     { source: artifact.sourceBinary, release: artifact.binary },
     ...(artifact.maintenance ? [{ source: artifact.maintenance.binary, release: artifact.maintenance.binary }] : []),
   ];
-  return {
-    args: ['build', '--release', '--locked', '--manifest-path', `${dirname(runtimeConfig)}/Cargo.toml`,
-      ...binaries.flatMap(({ source }) => ['--bin', source])],
-    binaries,
-  };
-}
-
-export function buildBackendComponent(component, outputDirectory, { run = execFileSync, root = sourceRoot } = {}) {
-  const { args, binaries } = cargoReleaseBuild(component);
-  run('cargo', args, { cwd: root, stdio: 'inherit' });
+  run('cargo', ['build', '--profile', profile, '--locked', '--manifest-path', `${dirname(runtimeConfig)}/Cargo.toml`,
+    ...binaries.flatMap(({ source }) => ['--bin', source])], { cwd: root, stdio: 'inherit' });
   const metadata = run('cargo', ['metadata', '--locked', '--no-deps', '--format-version', '1'], { cwd: root, encoding: 'utf8' });
-  const release = resolve(JSON.parse(metadata).target_directory, 'release');
+  const built = resolve(JSON.parse(metadata).target_directory, profile);
   mkdirSync(outputDirectory, { recursive: true });
   for (const binary of binaries) {
     const destination = resolve(outputDirectory, binary.release);
-    copyFileSync(resolve(release, binary.source), destination);
+    copyFileSync(resolve(built, binary.source), destination);
     chmodSync(destination, 0o755);
   }
 }
@@ -79,14 +79,18 @@ export function serviceIds(manifest) {
 }
 
 function main() {
-  const [command, component, field] = process.argv.slice(2);
+  const [command, component, field, flag, mode] = process.argv.slice(2);
   if (command === 'backend-prebuilt') {
     console.log(backendPrebuiltComponents().join('\n'));
     return;
   }
+  if (command === 'cargo-profile') {
+    console.log(backendCargoProfile(component));
+    return;
+  }
   if (command === 'build') {
-    if (!field) throw new Error('usage: deployment-components.mjs build <component> <output-directory>');
-    buildBackendComponent(component, resolve(field));
+    if (!field || flag !== '--mode') throw new Error('usage: deployment-components.mjs build <component> <output-directory> --mode <pull-request|release>');
+    buildBackendComponent(component, resolve(field), mode);
     return;
   }
   const definition = deploymentComponent(component);
@@ -99,7 +103,7 @@ function main() {
     if (typeof value !== 'string' || !value) throw new Error(`Component ${component} has no ${field}.`);
     console.log(value);
   } else {
-    throw new Error('usage: deployment-components.mjs describe <component> | field <component> <field> | build <component> <output-directory> | backend-prebuilt');
+    throw new Error('usage: deployment-components.mjs describe <component> | field <component> <field> | build <component> <output-directory> --mode <mode> | cargo-profile <mode> | backend-prebuilt');
   }
 }
 
