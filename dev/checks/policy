@@ -19,15 +19,14 @@ node --test .github/scripts/check-test-waits.test.mjs
 node .github/scripts/check-test-waits.mjs
 node --test .github/scripts/check-rust-boundaries.test.mjs
 node .github/scripts/check-rust-boundaries.mjs
-node .github/scripts/check-rust-toolchain-sync.mjs
-node .github/scripts/check-runtime-image-sync.mjs
 node --test media-worker/check-vendor-advisories.test.mjs
-node --test .github/scripts/check-rust-toolchain-sync.test.mjs
 python3 .github/scripts/test-check-workflow-timeouts.py
 python3 .github/scripts/check-workflow-timeouts.py
-python3 .github/scripts/test-check-ci-critical-path.py
-python3 .github/scripts/check-ci-critical-path.py
-node --test .github/scripts/ci-duration.test.mjs .github/scripts/run-log-budget.test.mjs
-node .github/scripts/check-production-origins.mjs
-node --test .github/scripts/check-production-origins.test.mjs
-node --test .github/scripts/check-gates.test.mjs .github/scripts/check-apt-bootstrap.test.mjs
+node --test \
+  .github/scripts/ci-duration.test.mjs \
+  .github/scripts/scan-report.test.mjs \
+  .github/scripts/report-pr-checks.test.mjs \
+  .github/scripts/main-advisories.test.mjs
+bash -n .github/scripts/scan-image.sh .github/scripts/media-smoke-fixtures.sh dev/install-git.sh
+node --check dev/media-smoke.mjs
+python3 -m unittest dev/test_local_process.py dev/test_local_stack.py dev/test_local_identity.py

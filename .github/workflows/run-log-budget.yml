@@ -34,7 +34,7 @@ jobs:
         with:
           retries: 3
           script: |
-            const { reportRunLogBudget } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/run-log-budget.mjs`);
+            const { reportRunLogBudget } = await import(`${process.env.GITHUB_WORKSPACE}/deploy/scripts/run-log-budget.mjs`);
             await reportRunLogBudget({
               github, ...context.repo, env: process.env,
               runUrl: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,

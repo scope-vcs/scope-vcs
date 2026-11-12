@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[4]
-spec = importlib.util.spec_from_file_location("recovery_run", ROOT / ".github/scripts/recovery-run.py")
+spec = importlib.util.spec_from_file_location("recovery_run", ROOT / "deploy/scripts/recovery-run.py")
 transport = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(transport)
 IDENTITY = "12345678-1234-1234-1234-123456789abc"

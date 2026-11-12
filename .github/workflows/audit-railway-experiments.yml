@@ -28,16 +28,18 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-          sparse-checkout: .github
+          sparse-checkout: |
+            .github
+            deploy/scripts
       - name: Read Railway environment identities
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        run: bash .github/scripts/read-railway-environments.sh > "$RUNNER_TEMP/railway-environments.json"
+        run: bash deploy/scripts/read-railway-environments.sh > "$RUNNER_TEMP/railway-environments.json"
       - name: Plan cleanup from current pull requests
         id: plan
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node .github/scripts/preview-pull-request.mjs reconcile "$RUNNER_TEMP/railway-environments.json"
+        run: node deploy/scripts/preview-pull-request.mjs reconcile "$RUNNER_TEMP/railway-environments.json"
 
   cleanup:
     name: Reconcile preview environment
@@ -68,15 +70,17 @@ jobs:
         with:
           ref: main
           persist-credentials: false
-          sparse-checkout: .github
+          sparse-checkout: |
+            .github
+            deploy/scripts
       - name: Read Railway environment identities
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        run: bash .github/scripts/read-railway-environments.sh > "$RUNNER_TEMP/railway-environments.json"
+        run: bash deploy/scripts/read-railway-environments.sh > "$RUNNER_TEMP/railway-environments.json"
       - name: Read open pull requests
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: gh api --paginate --slurp "repos/$GH_REPO/pulls?state=open&per_page=100" | jq 'add | map({number, state, labels, base:{ref:.base.ref}, head:{repo:{full_name:.head.repo.full_name}}})' > "$RUNNER_TEMP/open-pull-requests.json"
       - name: Audit experiment owners and expiry
-        run: node .github/scripts/audit-railway-experiments.mjs "$RUNNER_TEMP/railway-environments.json" "$RUNNER_TEMP/open-pull-requests.json"
+        run: node deploy/scripts/audit-railway-experiments.mjs "$RUNNER_TEMP/railway-environments.json" "$RUNNER_TEMP/open-pull-requests.json"

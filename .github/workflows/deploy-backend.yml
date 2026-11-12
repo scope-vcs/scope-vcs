@@ -71,7 +71,7 @@ jobs:
         env:
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-        run: bash .github/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
+        run: bash deploy/scripts/extract-railway-maintenance.sh prepared-release.json target/release/scope-maintenance
 
       - uses: ./.github/actions/install-railway-cli
 
@@ -122,9 +122,9 @@ jobs:
           export SCOPE_RAILWAY_API_REGION_ID SCOPE_RAILWAY_WORKER_REGION_ID
           export SCOPE_RAILWAY_MEDIA_REGION_ID SCOPE_MEDIA_WORKER_IMAGE
           if [[ "$SCOPE_DEPLOY_MEDIA_WORKER" == "1" ]]; then
-            node .github/scripts/deploy-railway-image.mjs configure-registry "$SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID"
+            node deploy/scripts/deploy-railway-image.mjs configure-registry "$SCOPE_RAILWAY_MEDIA_WORKER_SERVICE_ID"
           fi
-          bash .github/scripts/deploy-monitored-railway.sh backend bash .github/scripts/deploy-backend-railway.sh
+          bash deploy/scripts/deploy-monitored-railway.sh backend bash deploy/scripts/deploy-backend-railway.sh
 
       - name: Read maintenance duration warning
         id: warning
@@ -140,7 +140,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node .github/scripts/production-deployment-progress.mjs record-file \
+          node deploy/scripts/production-deployment-progress.mjs record-file \
             --file production-deployments.ndjson \
             --log-url "$LOG_URL"
           web_activated="$(jq -s 'any(.[]; .component == "web")' production-deployments.ndjson)"

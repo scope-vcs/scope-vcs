@@ -66,7 +66,7 @@ jobs:
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           SCOPE_RECOVERY_AGE_RECIPIENT: ${{ vars.SCOPE_RECOVERY_AGE_RECIPIENT }}
           SCOPE_RECOVERY_SOURCE_SHA: ${{ github.sha }}
-        run: python .github/scripts/recovery-run.py
+        run: python deploy/scripts/recovery-run.py
       - name: Publish failed recovery heartbeat
         if: ${{ failure() && steps.credentials.outcome == 'success' }}
         run: |

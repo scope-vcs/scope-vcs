@@ -8,7 +8,7 @@ runs:
       run: |
         version="$(jq -er '.git.version' dev/tool-versions.json)"
         source_sha256="$(jq -er '.git.sourceSha256' dev/tool-versions.json)"
-        installer="$(sha256sum deploy/railway/install-git.sh | cut -c1-16)"
+        installer="$(sha256sum dev/install-git.sh | cut -c1-16)"
         echo "version=$version" >> "$GITHUB_OUTPUT"
         echo "source_sha256=$source_sha256" >> "$GITHUB_OUTPUT"
         echo "key=reviewed-git-${ImageOS:?}-${ImageVersion:?}-${RUNNER_ARCH:?}-$version-${source_sha256:0:16}-$installer" >> "$GITHUB_OUTPUT"
@@ -28,7 +28,7 @@ runs:
         GIT_SOURCE_SHA256: ${{ steps.plan.outputs.source_sha256 }}
       run: |
         sudo bash .github/scripts/use-ubuntu-apt-sources.sh
-        sudo bash deploy/railway/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
+        sudo bash dev/install-git.sh "$GIT_VERSION" "$GIT_SOURCE_SHA256"
 
     - if: steps.restore.outputs.cache-hit != 'true'
       uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0

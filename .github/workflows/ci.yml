@@ -93,7 +93,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           REQUESTED_SCOPE: changed
         run: >-
-          node .github/scripts/plan-production-deployment.mjs
+          node deploy/scripts/plan-production-deployment.mjs
           --manifest .github/deployment-services.json
           --base "$BASE_SHA"
           --head "$HEAD_SHA"

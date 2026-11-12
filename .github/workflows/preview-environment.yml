@@ -69,9 +69,9 @@ jobs:
           PREPARED: ${{ steps.artifacts.outputs.prepared }}
         run: |
           if [[ "$PREPARED" == true ]]; then
-            node .github/scripts/preview-pull-request.mjs build artifacts/prepared-release.json
+            node deploy/scripts/preview-pull-request.mjs build artifacts/prepared-release.json
           else
-            node .github/scripts/preview-pull-request.mjs build
+            node deploy/scripts/preview-pull-request.mjs build
           fi
 
       - name: Decide from the closed or unlabeled pull request
@@ -80,7 +80,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PULL_REQUEST: ${{ github.event.pull_request.number }}
-        run: node .github/scripts/preview-pull-request.mjs cleanup "$PULL_REQUEST"
+        run: node deploy/scripts/preview-pull-request.mjs cleanup "$PULL_REQUEST"
 
   deploy:
     name: Deploy preview environment
@@ -143,7 +143,7 @@ jobs:
         id: recheck
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: node .github/scripts/preview-pull-request.mjs build artifacts/prepared-release.json
+        run: node deploy/scripts/preview-pull-request.mjs build artifacts/prepared-release.json
 
       - uses: ./.github/actions/install-railway-cli
         if: steps.recheck.outputs.action == 'delete'
@@ -154,13 +154,13 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          node .github/scripts/preview-environment.mjs delete "$PULL_REQUEST"
+          node deploy/scripts/preview-environment.mjs delete "$PULL_REQUEST"
 
       - name: Extract maintenance binary
         if: steps.recheck.outputs.action == 'deploy'
         run: |
           mkdir -p artifacts/backend
-          python3 .github/scripts/extract-railway-release.py backend artifacts/backend-release.tar.gz artifacts/backend
+          python3 deploy/scripts/extract-railway-release.py backend artifacts/backend-release.tar.gz artifacts/backend
           {
             echo "SCOPE_PREPARED_RELEASE_PATH=$GITHUB_WORKSPACE/artifacts/prepared-release.json"
             echo "SCOPE_MAINTENANCE_BINARY=$GITHUB_WORKSPACE/artifacts/backend/scope-maintenance"
@@ -183,7 +183,7 @@ jobs:
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
         run: |
           unset RAILWAY_TOKEN
-          node .github/scripts/preview-environment.mjs ensure "$PULL_REQUEST" > "$RUNNER_TEMP/preview.json"
+          node deploy/scripts/preview-environment.mjs ensure "$PULL_REQUEST" > "$RUNNER_TEMP/preview.json"
           environment_id="$(jq -er '.environmentId' "$RUNNER_TEMP/preview.json")"
           {
             echo "environment_id=$environment_id"
@@ -197,13 +197,13 @@ jobs:
         if: steps.recheck.outputs.action == 'deploy'
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        run: SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID="$SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID" bash .github/scripts/railway-environment-token.sh create
+        run: SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID="$SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID" bash deploy/scripts/railway-environment-token.sh create
 
       - name: Bootstrap preview database roles
         if: steps.recheck.outputs.action == 'deploy'
         env:
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
-        run: node .github/scripts/preview-environment.mjs bootstrap "$SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID"
+        run: node deploy/scripts/preview-environment.mjs bootstrap "$SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID"
 
       - name: Stop preview writers before migration
         if: steps.recheck.outputs.action == 'deploy'
@@ -211,7 +211,7 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          bash .github/scripts/stop-railway-writers.sh
+          bash deploy/scripts/stop-railway-writers.sh
 
       - name: Migrate and deploy preview images
         if: steps.recheck.outputs.action == 'deploy'
@@ -219,7 +219,7 @@ jobs:
           SCOPE_RAILWAY_SSH_PRIVATE_KEY: ${{ secrets.SCOPE_RAILWAY_SSH_PRIVATE_KEY }}
           SCOPE_RAILWAY_REGISTRY_USERNAME: ${{ secrets.RAILWAY_REGISTRY_USERNAME }}
           SCOPE_RAILWAY_REGISTRY_PASSWORD: ${{ secrets.RAILWAY_REGISTRY_PASSWORD }}
-        run: bash .github/scripts/deploy-preview-railway.sh
+        run: bash deploy/scripts/deploy-preview-railway.sh
 
       - name: Report preview environment on the pull request
         if: always() && steps.environment.outcome == 'success'
@@ -239,7 +239,7 @@ jobs:
           fi
           body="$(printf '**Preview environment** `%s`\n\n%s\n\n- Web: %s\n- API: %s\n\nRemoving the `preview` label or closing this pull request deletes the environment.' \
             "$ENVIRONMENT" "$status" "$WEB_URL" "$API_URL")"
-          bash .github/scripts/preview-comment.sh "$body"
+          bash deploy/scripts/preview-comment.sh "$body"
 
   revoke:
     name: Revoke preview-scoped Railway token
@@ -265,7 +265,7 @@ jobs:
           unset RAILWAY_TOKEN
           SCOPE_RAILWAY_PROJECT_ID="$(jq -er '.railway.projectId' .github/deployment-services.json)" \
             SCOPE_RAILWAY_TOKEN_ENVIRONMENT_ID="$ENVIRONMENT_ID" \
-            bash .github/scripts/railway-environment-token.sh delete
+            bash deploy/scripts/railway-environment-token.sh delete
 
   delete:
     name: Delete preview environment

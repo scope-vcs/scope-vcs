@@ -168,7 +168,7 @@ jobs:
           IMAGE: ${{ steps.tags.outputs.image }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
-          bash .github/scripts/push-image-tags.sh <<< "$IMAGE"
+          bash deploy/scripts/push-image-tags.sh <<< "$IMAGE"
           digest="$(docker image inspect "$IMAGE" --format '{{json .RepoDigests}}' \
             | jq -er --arg prefix "${IMAGE%:*}@" '.[] | select(startswith($prefix)) | ltrimstr($prefix)')"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
@@ -196,7 +196,7 @@ jobs:
           LOG_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SOURCE_SHA: ${{ github.sha }}
         run: >-
-          node .github/scripts/production-deployment-progress.mjs record
+          node deploy/scripts/production-deployment-progress.mjs record
           --component runner-image
           --source-sha "$SOURCE_SHA"
           --provider ecr
