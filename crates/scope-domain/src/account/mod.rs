@@ -1,3 +1,4 @@
+pub mod agent_access;
 pub mod cli_auth;
 pub mod deletion;
 pub mod handles;

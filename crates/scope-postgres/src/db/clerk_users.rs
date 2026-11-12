@@ -35,6 +35,28 @@ impl AuthStore {
         existing_identity_user(self.db.as_ref(), identity, &verified_email).await
     }
 
+    #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "clerk_subject_user"))]
+    pub async fn clerk_subject_user(
+        &self,
+        subject: &str,
+    ) -> Result<Option<UserAccount>, PostgresError> {
+        let Some(identity) = entities::auth_identity::Entity::find_by_id((
+            CLERK_PROVIDER.to_string(),
+            subject.to_string(),
+        ))
+        .one(self.db.as_ref())
+        .await?
+        else {
+            return Ok(None);
+        };
+        Ok(
+            super::auth::load_users_by_ids(self.db.as_ref(), [identity.user_id])
+                .await?
+                .into_values()
+                .next(),
+        )
+    }
+
     #[tracing::instrument(skip_all, fields(otel.kind = "client", db.system.name = "postgresql", db.operation.name = "resolve_clerk_user"))]
     pub async fn resolve_clerk_user(
         &self,

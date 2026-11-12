@@ -148,6 +148,7 @@ test('first provisioning points every service at preview domains, buckets, and f
   assert.equal(variables[ids.api].CLERK_AUTHORIZED_PARTIES, 'https://w.up.railway.app');
   assert.equal(variables[ids.api].SCOPE_GIT_PUBLIC_URL, 'https://g.up.railway.app');
   assert.equal(variables[ids.web].CLERK_SECRET_KEY, 'sk_test_preview');
+  assert.equal(variables[ids.api].CLERK_SECRET_KEY, 'sk_test_preview');
   assert.equal(variables[ids.web].VITE_CLERK_PUBLISHABLE_KEY, clerk.publishableKey);
   assert.equal(variables[ids.api].CLERK_ISSUER, 'https://happy-otter-12.clerk.accounts.dev');
   assert.equal(variables[ids.api].CLERK_JWKS_URL, 'https://happy-otter-12.clerk.accounts.dev/.well-known/jwks.json');

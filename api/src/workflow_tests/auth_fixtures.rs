@@ -1,4 +1,5 @@
 use super::*;
+use crate::clerk_backend::{ClerkBackend, ScriptedClerkBackend};
 
 pub(super) const TEST_CLERK_ISSUER: &str = "https://clerk.test";
 pub(super) const TEST_CLERK_AUDIENCE: &str = "scope-api";
@@ -113,4 +114,11 @@ pub(super) fn api_token(user_id: &str, email: &str) -> String {
         Some(LOCAL_APP_ORIGIN),
         Some(serde_json::json!(TEST_CLERK_AUDIENCE)),
     )
+}
+
+pub(super) fn scripted_clerk(state: &AppState) -> Arc<ScriptedClerkBackend> {
+    match &state.clerk_backend {
+        ClerkBackend::Scripted(clerk) => clerk.clone(),
+        _ => unreachable!("test state scripts Clerk"),
+    }
 }

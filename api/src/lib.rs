@@ -6,7 +6,7 @@ pub mod pool_pack_recovery;
 pub mod state;
 
 pub(crate) mod auth;
-pub(crate) mod clerk_users;
+pub(crate) mod clerk_backend;
 pub(crate) mod config;
 #[cfg(any(test, feature = "local-dev"))]
 #[path = "dev/seed.rs"]

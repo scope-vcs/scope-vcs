@@ -2,7 +2,7 @@ use crate::storage_runtime::{StorageRuntime, StorageSource};
 use crate::{
     auth::clerk::ClerkVerifier,
     background_work::BackgroundWakeups,
-    clerk_users::ClerkUsers,
+    clerk_backend::ClerkBackend,
     config::{
         SCOPE_DISPATCH_BROKER_TOKEN_ENV, database_max_connections_from_env, database_url_from_env,
         git_public_url_from_env, non_empty_env,
@@ -29,7 +29,7 @@ use std::{path::PathBuf, sync::Arc};
 pub struct AppState {
     pub(crate) wakeups: Arc<BackgroundWakeups>,
     pub(crate) merge_committer: Arc<crate::use_cases::request_merge::MergeCommitter>,
-    pub(crate) clerk_users: ClerkUsers,
+    pub(crate) clerk_backend: ClerkBackend,
     pub(crate) github: Option<Arc<GitHubApp>>,
     pub(crate) invite_mailer: InviteMailer,
     pub(crate) metadata: MetadataStore,
@@ -65,7 +65,7 @@ pub(crate) struct AppServices {
 
 struct Integrations {
     clerk: ClerkVerifier,
-    clerk_users: ClerkUsers,
+    clerk_backend: ClerkBackend,
     github: Option<Arc<GitHubApp>>,
     invite_mailer: InviteMailer,
     dispatch_broker_token: Option<Arc<str>>,
@@ -76,7 +76,7 @@ impl Integrations {
     fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
             clerk: ClerkVerifier::from_env(),
-            clerk_users: ClerkUsers::from_env(),
+            clerk_backend: ClerkBackend::from_env(),
             github: GitHubApp::from_env()?.map(Arc::new),
             invite_mailer: InviteMailer::from_env(),
             dispatch_broker_token: non_empty_env(SCOPE_DISPATCH_BROKER_TOKEN_ENV).map(Arc::from),
@@ -95,7 +95,7 @@ impl Integrations {
                     audiences: vec![crate::config::DEFAULT_CLERK_AUDIENCE.to_string()],
                 },
             ),
-            clerk_users: ClerkUsers::Scripted(Default::default()),
+            clerk_backend: ClerkBackend::Scripted(Default::default()),
             github: None,
             invite_mailer: InviteMailer::Recording(Default::default()),
             dispatch_broker_token: None,
@@ -204,7 +204,7 @@ impl AppState {
         Self {
             wakeups: Arc::default(),
             merge_committer: Arc::default(),
-            clerk_users: integrations.clerk_users,
+            clerk_backend: integrations.clerk_backend,
             github: integrations.github,
             invite_mailer: integrations.invite_mailer,
             metadata,

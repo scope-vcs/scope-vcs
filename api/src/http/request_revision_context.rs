@@ -1,5 +1,5 @@
 use crate::{
-    auth::scope::require_scope_user,
+    auth::{scope::require_scope_user, viewer::Viewer},
     error::ApiError,
     git::request_refs::{
         create_request_receive_pack_staging_repo, request_revision_git_facts,
@@ -40,8 +40,14 @@ pub(crate) async fn publish(
         base: base.clone(),
         expected_parent_base_version: input.expected_parent_base_version,
     };
-    let snapshot =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    let snapshot = super::request_state::load(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo_name,
+        &request_id,
+    )
+    .await?;
     let request = &snapshot.request;
     let incarnation = snapshot.repository.incarnation();
     let event_id = generate_prefixed_id("event_request_revision_context")?;
@@ -193,8 +199,14 @@ pub(crate) async fn publish(
     {
         tracing::warn!(request_id = %request_id, error = %error.operator_diagnostic(), "request context accepted; check evaluation deferred");
     }
-    let accepted =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    let accepted = super::request_state::load(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo_name,
+        &request_id,
+    )
+    .await?;
     Ok(Json(RequestRevisionContextResponse {
         request: super::request_state::detail_response(
             &accepted,

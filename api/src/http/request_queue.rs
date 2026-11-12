@@ -5,7 +5,7 @@ use super::{
         request_actor_summary_response, request_list_item_response, request_list_row_subject,
     },
 };
-use crate::auth::scope::require_scope_user;
+use crate::auth::{scope::require_scope_user, viewer::Viewer};
 use crate::repo_events::RepoChangeReason;
 use crate::{error::ApiError, state::AppState};
 use axum::{
@@ -48,12 +48,12 @@ pub(crate) struct RequestQueueQuery {
 
 pub(crate) async fn request_queue(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name)): Path<(String, String)>,
     Query(query): Query<RequestQueueQuery>,
+    viewer: Viewer,
 ) -> Result<Json<RequestQueuePageResponse>, ApiError> {
     let (repo, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+        repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
     let request_views = match query.view.clone().map(scope_domain::views::ViewId::from) {
         Some(view) if repo.can_read_view(&view) => {
             Some(repo.views.labels(&view).into_iter().collect())
@@ -252,7 +252,13 @@ pub(crate) async fn apply_attention(
     Json(input): Json<RequestAttentionActionRequest>,
 ) -> Result<Json<RequestAttentionMutationResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    let (repo, _) = repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (repo, _) = repo_metadata_and_access(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo_name,
+    )
+    .await?;
     let (action, expected_activity_version) = match input {
         RequestAttentionActionRequest::Claim {
             expected_activity_version,
@@ -329,8 +335,14 @@ pub(crate) async fn apply_attention(
     } else {
         None
     };
-    let snapshot =
-        super::request_state::load(&state, &headers, &owner, &repo_name, &request_id).await?;
+    let snapshot = super::request_state::load(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo_name,
+        &request_id,
+    )
+    .await?;
     let checks = snapshot.checks_outcome();
     let next_step = request_queue_next_step(
         scope_domain::requests::RequestMergeSubject::new(&snapshot.request, &snapshot.view_mains),

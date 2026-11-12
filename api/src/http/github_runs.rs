@@ -6,6 +6,7 @@ use super::{
     },
 };
 use crate::{
+    auth::viewer::Viewer,
     error::ApiError,
     persistence::unix_now,
     state::AppState,
@@ -17,7 +18,7 @@ use crate::{
 use axum::{
     Json,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
 };
 use scope_domain::{
     github_connection::GitHubConnection,
@@ -27,11 +28,10 @@ use scope_postgres::db::GitHubWorkflowRunDetailRead;
 
 pub(crate) async fn get_github_workflow_run(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo, run_id)): Path<(String, String, u64)>,
+    viewer: Viewer,
 ) -> Result<Json<GitHubWorkflowRunDetailResponse>, ApiError> {
-    let OpenedRun { connection, detail } =
-        open_run(&state, &headers, &owner, &repo, run_id).await?;
+    let OpenedRun { connection, detail } = open_run(&state, &viewer, &owner, &repo, run_id).await?;
     let jobs = github_workflow_jobs::run_jobs(&state, &connection, &detail, unix_now()?).await?;
     let opening_job = github_opening_job(&jobs.jobs);
     let opening_job_log = match opening_job.filter(|job| job.is_completed()) {
@@ -55,10 +55,10 @@ pub(crate) async fn get_github_workflow_run(
 
 pub(crate) async fn get_github_workflow_job_log(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo, run_id, job_id)): Path<(String, String, u64, u64)>,
+    viewer: Viewer,
 ) -> Result<Json<GitHubWorkflowJobLogResponse>, ApiError> {
-    let OpenedRun { connection, .. } = open_run(&state, &headers, &owner, &repo, run_id).await?;
+    let OpenedRun { connection, .. } = open_run(&state, &viewer, &owner, &repo, run_id).await?;
     let job = state
         .metadata
         .repositories()
@@ -100,12 +100,12 @@ struct OpenedRun {
 
 async fn open_run(
     state: &AppState,
-    headers: &HeaderMap,
+    viewer: &Viewer,
     owner: &str,
     repo: &str,
     run_id: u64,
 ) -> Result<OpenedRun, ApiError> {
-    let (repo, viewer_user_id) = repo_metadata_and_access(state, headers, owner, repo).await?;
+    let (repo, viewer_user_id) = repo_metadata_and_access(state, viewer, owner, repo).await?;
     let not_found = || ApiError::not_found("workflow run not found");
     if state.github.is_none() {
         return Err(not_found());

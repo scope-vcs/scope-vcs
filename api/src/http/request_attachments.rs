@@ -1,5 +1,5 @@
 use crate::{
-    auth::scope::require_scope_user,
+    auth::{scope::require_scope_user, viewer::Viewer},
     error::ApiError,
     http::requests::{repo_metadata_and_access, visible_request},
     persistence::unix_now,
@@ -21,31 +21,31 @@ type AttachmentPath = (String, String, String, String);
 
 async fn request_viewer(
     state: &AppState,
-    headers: &HeaderMap,
+    viewer: &Viewer,
     owner: &str,
     repo_name: &str,
     request_id: &str,
 ) -> Result<Option<String>, ApiError> {
-    let (repo, viewer) = repo_metadata_and_access(state, headers, owner, repo_name).await?;
+    let (repo, viewer) = repo_metadata_and_access(state, viewer, owner, repo_name).await?;
     visible_request(state, &repo, viewer.as_deref(), request_id).await?;
     Ok(viewer)
 }
 
 pub(crate) async fn limits(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo, request_id)): Path<RequestPath>,
+    viewer: Viewer,
 ) -> Result<Json<RequestAttachmentLimitsResponse>, ApiError> {
-    request_viewer(&state, &headers, &owner, &repo, &request_id).await?;
+    request_viewer(&state, &viewer, &owner, &repo, &request_id).await?;
     Ok(Json(RequestAttachmentLimits::default().into()))
 }
 
 pub(crate) async fn list(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo, request_id)): Path<RequestPath>,
+    viewer: Viewer,
 ) -> Result<Json<RequestAttachmentListResponse>, ApiError> {
-    let viewer = request_viewer(&state, &headers, &owner, &repo, &request_id).await?;
+    let viewer = request_viewer(&state, &viewer, &owner, &repo, &request_id).await?;
     let attachments = state
         .metadata
         .media()
@@ -58,10 +58,10 @@ pub(crate) async fn list(
 
 pub(crate) async fn get(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo, request_id, attachment_id)): Path<AttachmentPath>,
+    viewer: Viewer,
 ) -> Result<Json<RequestAttachmentResponse>, ApiError> {
-    let viewer = request_viewer(&state, &headers, &owner, &repo, &request_id).await?;
+    let viewer = request_viewer(&state, &viewer, &owner, &repo, &request_id).await?;
     let attachment = state
         .metadata
         .media()
@@ -78,7 +78,14 @@ pub(crate) async fn prepare(
     Json(input): Json<PrepareRequestAttachmentRequest>,
 ) -> Result<Json<PrepareRequestAttachmentResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    request_viewer(&state, &headers, &owner, &repo, &request_id).await?;
+    request_viewer(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo,
+        &request_id,
+    )
+    .await?;
     let now = unix_now()?;
     let limits = RequestAttachmentLimits::default();
     let prepared = state
@@ -134,7 +141,14 @@ pub(crate) async fn finish(
     Json(input): Json<FinishRequestAttachmentRequest>,
 ) -> Result<Json<RequestAttachmentResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    request_viewer(&state, &headers, &owner, &repo, &request_id).await?;
+    request_viewer(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo,
+        &request_id,
+    )
+    .await?;
     let attachment = state
         .metadata
         .media()
@@ -157,7 +171,14 @@ pub(crate) async fn retry(
     Json(input): Json<RetryRequestAttachmentRequest>,
 ) -> Result<Json<RequestAttachmentResponse>, ApiError> {
     let user = require_scope_user(&state, &headers).await?;
-    request_viewer(&state, &headers, &owner, &repo, &request_id).await?;
+    request_viewer(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo,
+        &request_id,
+    )
+    .await?;
     let attachment = state
         .metadata
         .media()
@@ -178,7 +199,14 @@ pub(crate) async fn media_grant(
     Path((owner, repo, request_id, attachment_id)): Path<AttachmentPath>,
     Json(input): Json<CreateRequestAttachmentMediaGrantRequest>,
 ) -> Result<Json<CreateRequestAttachmentMediaGrantResponse>, ApiError> {
-    let viewer = request_viewer(&state, &headers, &owner, &repo, &request_id).await?;
+    let viewer = request_viewer(
+        &state,
+        &Viewer::resolve(&state, &headers).await?,
+        &owner,
+        &repo,
+        &request_id,
+    )
+    .await?;
     let target = match &input.target {
         RequestAttachmentMediaTarget::Original => RequestMediaObjectTarget::Original,
         RequestAttachmentMediaTarget::Derivative { derivative_id } => {

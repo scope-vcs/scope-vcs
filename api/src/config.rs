@@ -3,7 +3,6 @@ use std::path::{Path as FsPath, PathBuf};
 use scope_git::{DEFAULT_GIT_STORAGE_MAX_OBJECT_BYTES, GitStorageLimits};
 
 pub const SCOPE_APP_ORIGIN_ENV: &str = "SCOPE_APP_ORIGIN";
-#[cfg(feature = "local-dev")]
 pub const SCOPE_API_PUBLIC_URL_ENV: &str = "SCOPE_API_PUBLIC_URL";
 pub const SCOPE_GIT_PUBLIC_URL_ENV: &str = "SCOPE_GIT_PUBLIC_URL";
 pub const DATABASE_URL_ENV: &str = "DATABASE_URL";
@@ -21,7 +20,6 @@ pub const CLERK_AUDIENCE_ENV: &str = "CLERK_AUDIENCE";
 pub const CLERK_SECRET_KEY_ENV: &str = "CLERK_SECRET_KEY";
 pub const DEFAULT_CLERK_AUDIENCE: &str = "scope-api";
 pub const LOCAL_APP_ORIGIN: &str = "http://localhost:3000";
-#[cfg(any(test, feature = "local-dev"))]
 pub const LOCAL_API_ORIGIN: &str = "http://localhost:8080";
 pub const FIRST_PUSH_TOKEN_PREFIX: &str = "scope_fp_";
 pub const GIT_PUSH_TOKEN_PREFIX: &str = "scope_git_";

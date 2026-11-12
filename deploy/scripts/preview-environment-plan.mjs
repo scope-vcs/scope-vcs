@@ -107,6 +107,7 @@ export function previewVariables({ manifest, domains, current, secrets, clerk })
 
   const blobs = (name) => `\${{scope-blobs.${name}}}`;
   set('api', {
+    CLERK_SECRET_KEY: secretKey,
     CLERK_ISSUER: issuer,
     CLERK_JWKS_URL: `${issuer}/.well-known/jwks.json`,
     CLERK_AUTHORIZED_PARTIES: url('web'),

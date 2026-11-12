@@ -15,6 +15,11 @@ pub fn router(state: AppState) -> Router {
     let router = Router::new()
         .route(routes::HEALTH, get(http::account::healthz))
         .route(routes::READINESS, get(http::account::readyz))
+        .route(routes::MCP, post(http::mcp::serve))
+        .route(
+            routes::MCP_PROTECTED_RESOURCE_METADATA,
+            get(http::mcp::protected_resource_metadata),
+        )
         .route(
             routes::CLI_DEVICE_LOGIN,
             post(http::device_login::start_cli_device_login),
@@ -310,7 +315,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             routes::REPO_REQUEST_REVISION_FILE_DIFF,
-            get(http::request_review::get_request_revision_file_diff),
+            get(http::request_review::comparison::get_request_revision_file_diff),
         )
         .route(
             routes::REPO_REQUEST_REVISION_COMMIT_FILE_DIFF,

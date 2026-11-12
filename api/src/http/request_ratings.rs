@@ -1,6 +1,7 @@
 use super::requests::{actor_request, repo_metadata_and_access, visible_request};
 use crate::{
-    error::ApiError, persistence::unix_now, repo_events::RepoChangeReason, state::AppState,
+    auth::viewer::Viewer, error::ApiError, persistence::unix_now, repo_events::RepoChangeReason,
+    state::AppState,
 };
 use axum::{
     Json,
@@ -20,11 +21,11 @@ use std::collections::BTreeMap;
 
 pub(crate) async fn list_request_ratings(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
+    viewer: Viewer,
 ) -> Result<Json<RequestRatingsResponse>, ApiError> {
     let (repo, viewer_user_id) =
-        repo_metadata_and_access(&state, &headers, &owner, &repo_name).await?;
+        repo_metadata_and_access(&state, &viewer, &owner, &repo_name).await?;
     let (request, _) =
         visible_request(&state, &repo, viewer_user_id.as_deref(), &request_id).await?;
     ratings_response(&state, &request, viewer_user_id.as_deref()).await

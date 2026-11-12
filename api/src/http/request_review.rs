@@ -1,4 +1,5 @@
 use crate::{
+    auth::viewer::Viewer,
     error::ApiError,
     git::{command::run_git_output_bounded, request_refs::with_request_revision_store_repo},
     http::{
@@ -25,7 +26,6 @@ use crate::{
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::HeaderMap,
 };
 use scope_api_contract::{
     CommitFileResponse, FileLineChangesResponse, GitOid, RequestComparisonMode,
@@ -44,9 +44,8 @@ use scope_postgres::db::RepositoryReadPolicy;
 use serde::Deserialize;
 use std::{path::Path as FsPath, sync::Arc};
 
-mod comparison;
+pub(crate) mod comparison;
 mod inspection;
-pub(crate) use comparison::get_request_revision_file_diff;
 
 use inspection::{inspect_request_commit, inspect_request_commits_identity_only};
 
@@ -57,18 +56,18 @@ const MAX_IMPORTED_REQUEST_REVISIONS: usize = 5;
 
 #[derive(Deserialize)]
 pub(crate) struct RequestRevisionListRequest {
-    comparison: Option<RequestComparisonMode>,
-    revision: Option<String>,
-    commit: Option<String>,
+    pub(crate) comparison: Option<RequestComparisonMode>,
+    pub(crate) revision: Option<String>,
+    pub(crate) commit: Option<String>,
 }
 
 pub(crate) async fn list_request_revisions(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id)): Path<(String, String, String)>,
     Query(input): Query<RequestRevisionListRequest>,
+    viewer: Viewer,
 ) -> Result<Json<RequestRevisionListResponse>, ApiError> {
-    let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (repo, viewer_user_id) = repo_and_access(&state, &viewer, &owner, &repo_name).await?;
     let access = repo.context.access.clone();
     let repo = Arc::new(repo);
     let (request, _) = visible_request(
@@ -299,7 +298,6 @@ impl RequestRevisionListWorkBudget {
 
 pub(crate) async fn get_request_revision_commit_file_diff(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path((owner, repo_name, request_id, revision_id, commit_oid)): Path<(
         String,
         String,
@@ -308,8 +306,9 @@ pub(crate) async fn get_request_revision_commit_file_diff(
         String,
     )>,
     Query(input): Query<RequestFileDiffRequest>,
+    viewer: Viewer,
 ) -> Result<Json<ReviewFileDiffResponse>, ApiError> {
-    let (repo, viewer_user_id) = repo_and_access(&state, &headers, &owner, &repo_name).await?;
+    let (repo, viewer_user_id) = repo_and_access(&state, &viewer, &owner, &repo_name).await?;
     let repo = Arc::new(repo);
     let (request, _) = visible_request(
         &state,

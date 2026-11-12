@@ -5,7 +5,7 @@ use scope_domain::{
     views::{ViewDefinition, ViewIncludes, ViewReaders, Views},
 };
 
-const MEMBER_SUBJECT: &str = "user_agent_member";
+pub(super) const MEMBER_SUBJECT: &str = "user_agent_member";
 const MEMBER_EMAIL: &str = "agent-member@example.com";
 const FILES: &[(&str, &str)] = &[
     ("README.md", "readme\n"),
