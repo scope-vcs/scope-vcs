@@ -47,7 +47,7 @@ export function sourceCategory(file) {
     || basename.includes('.test.')
     || basename.endsWith('_test.rs')
     || basename.endsWith('_tests.rs')
-    || (normalized.startsWith('.github/scripts/') && basename.startsWith('test-'))
+    || (normalized.startsWith('deploy/scripts/') && basename.startsWith('test-'))
   return supportSegment || supportName ? 'test/support' : 'production'
 }
 

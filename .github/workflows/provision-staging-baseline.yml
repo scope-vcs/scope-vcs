@@ -67,7 +67,7 @@ jobs:
       - name: Create staging-scoped Railway token
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-        run: bash .github/scripts/railway-environment-token.sh create
+        run: bash deploy/scripts/railway-environment-token.sh create
 
       - name: Download the baseline run's prepared release
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -88,14 +88,14 @@ jobs:
       - name: Extract maintenance binary
         run: |
           mkdir -p target/release
-          python3 .github/scripts/extract-railway-release.py backend artifacts/backend-release.tar.gz target/release
+          python3 deploy/scripts/extract-railway-release.py backend artifacts/backend-release.tar.gz target/release
 
       - name: Close staging writers
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          bash .github/scripts/stop-railway-writers.sh
+          bash deploy/scripts/stop-railway-writers.sh
 
       - name: Set up PostgreSQL 18 clients
         uses: ./.github/actions/install-postgres-clients
@@ -108,7 +108,7 @@ jobs:
           SCOPE_MAINTENANCE_BINARY: ./target/release/scope-maintenance
           SCOPE_STAGING_BASELINE_DIR: ${{ runner.temp }}/staging-baseline
           SCOPE_STAGING_BASELINE_KEY: ${{ secrets.SCOPE_STAGING_BASELINE_KEY }}
-        run: bash .github/scripts/staging-baseline.sh provision "$ARTIFACT_ID"
+        run: bash deploy/scripts/staging-baseline.sh provision "$ARTIFACT_ID"
 
       - name: Delete staging-scoped Railway token
         if: always()
@@ -116,4 +116,4 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           unset RAILWAY_TOKEN
-          bash .github/scripts/railway-environment-token.sh delete
+          bash deploy/scripts/railway-environment-token.sh delete

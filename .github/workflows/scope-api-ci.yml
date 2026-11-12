@@ -60,8 +60,8 @@ jobs:
           COMPONENTS: ${{ matrix.components }}
         run: |
           for component in $COMPONENTS; do
-            node .github/scripts/deployment-components.mjs build "$component" "artifacts/$component"
-            node .github/scripts/check-backend-binary-sizes.mjs "artifacts/$component" --component "$component"
+            node deploy/scripts/deployment-components.mjs build "$component" "artifacts/$component"
+            node deploy/scripts/check-backend-binary-sizes.mjs "artifacts/$component" --component "$component"
             mkdir -p artifacts/bin
             mv "artifacts/$component"/* artifacts/bin/
           done
@@ -100,7 +100,7 @@ jobs:
       - name: Check deployment binary sizes
         run: |
           chmod 0755 artifacts/bin/*
-          node .github/scripts/check-backend-binary-sizes.mjs artifacts/bin
+          node deploy/scripts/check-backend-binary-sizes.mjs artifacts/bin
 
       - name: Pack deployment binaries
         run: |
@@ -145,7 +145,7 @@ jobs:
 
       - name: Build every deployment binary
         run: |
-          mapfile -t components < <(node .github/scripts/deployment-components.mjs backend-prebuilt)
+          mapfile -t components < <(node deploy/scripts/deployment-components.mjs backend-prebuilt)
           for component in "${components[@]}"; do
-            node .github/scripts/deployment-components.mjs build "$component" artifacts/bin
+            node deploy/scripts/deployment-components.mjs build "$component" artifacts/bin
           done

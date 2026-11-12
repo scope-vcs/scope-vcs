@@ -28,7 +28,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           BACKUP_METRIC_FILE: ${{ runner.temp }}/backup-health-metric.json
-        run: node .github/scripts/check-production-backups.mjs
+        run: node deploy/scripts/check-production-backups.mjs
       - name: Publish backup health heartbeat
         if: ${{ always() && steps.backup.outcome != 'skipped' }}
         env:

@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+manifest_path="${SCOPE_DEPLOYMENT_MANIFEST:-.github/deployment-services.json}"
+# shellcheck source=deploy/scripts/railway-graphql.sh
+source "$(dirname "${BASH_SOURCE[0]}")/railway-graphql.sh"
+
+if [[ -z "${RAILWAY_API_TOKEN:-}" || -n "${RAILWAY_TOKEN:-}" ]]; then
+  echo "Stopping writers requires only RAILWAY_API_TOKEN." >&2
+  exit 1
+fi
+
+project_id="$(jq -er '.railway.projectId' "$manifest_path")"
+production_environment_id="$(jq -er '.environments.production.environmentId' "$manifest_path")"
+staging_environment_id="$(jq -er '.environments.staging.environmentId' "$manifest_path")"
+worker_service="$(jq -er '.services["run-worker"].id' "$manifest_path")"
+api_service="$(jq -er '.services.api.id' "$manifest_path")"
+media_service="$(jq -er '.services["media-api"].id | strings | select(length > 0)' "$manifest_path")"
+media_worker_service="$(jq -er '.services["media-worker"].id | strings | select(length > 0)' "$manifest_path")"
+
+if [[ "$staging_environment_id" == "$production_environment_id" ]]; then
+  echo "Staging environment matches production." >&2
+  exit 1
+fi
+target_environment_id="${SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID:-$staging_environment_id}"
+if [[ "$target_environment_id" == "$production_environment_id" ]] ||
+  [[ -n "${SCOPE_RAILWAY_PREVIEW_ENVIRONMENT_ID:-}" && "$target_environment_id" == "$staging_environment_id" ]]; then
+  echo "Preview environment must differ from production and staging." >&2
+  exit 1
+fi
+
+railway_scope=(
+  --project "$project_id"
+  --environment "$target_environment_id"
+)
+
+read_railway() {
+  if [[ -n "${SCOPE_TEST_RAILWAY_READ_HELPER:-}" ]]; then
+    "$SCOPE_TEST_RAILWAY_READ_HELPER" "$@"
+  else
+    node deploy/scripts/railway-read.mjs "$@"
+  fi
+}
+
+remove_deployment() {
+  local deployment_id="$1"
+  local response
+  # shellcheck disable=SC2016
+  response="$(railway_graphql once \
+    'mutation DeploymentRemove($id: String!) { deploymentRemove(id: $id) }' \
+    "$(jq -cn --arg id "$deployment_id" '{id: $id}')")" || return $?
+  jq -e '.data.deploymentRemove == true' <<< "$response" >/dev/null
+}
+
+stop_service() {
+  local service="$1"
+  local deployments deployment_id
+  deployments="$(
+    read_railway deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json
+  )" || return $?
+  deployment_id="$(
+    jq -er '
+      first(
+        .[] | select(
+          .status != "REMOVED" and .status != "FAILED" and .status != "CRASHED" and
+          .status != "SKIPPED"
+        )
+      ).id // ""
+    ' <<< "$deployments"
+  )" || return $?
+  if [[ -n "$deployment_id" ]]; then
+    local _attempt remaining
+    for _attempt in 1 2 3; do
+      if remove_deployment "$deployment_id"; then return 0; fi
+      deployments="$(read_railway deployment list "${railway_scope[@]}" --service "$service" --limit 10 --json)" || return $?
+      remaining="$(jq -er --arg id "$deployment_id" 'map(select(.id == $id and .status != "REMOVED")) | length' <<< "$deployments")" || return $?
+      [[ "$remaining" == 0 ]] && return 0
+      sleep 2
+    done
+    echo "Could not confirm writer deployment removal." >&2
+    return 1
+  fi
+}
+
+wait_until_stopped() {
+  local service="$1"
+  local deadline=$((SECONDS + 300))
+  local stopped
+
+  while [[ "$SECONDS" -lt "$deadline" ]]; do
+    local services
+    services="$(read_railway service list "${railway_scope[@]}" --json)" || return $?
+    stopped="$(SCOPE_RAILWAY_SERVICES_JSON="$services" SCOPE_RAILWAY_SERVICE_ID="$service" \
+      node deploy/scripts/railway-service-health.mjs stopped)" || return $?
+    if [[ "$stopped" == "true" ]]; then
+      return 0
+    fi
+    sleep 5
+  done
+
+  echo "Timed out waiting for writer service $service to stop." >&2
+  return 1
+}
+
+writers=("$api_service" "$worker_service" "$media_service" "$media_worker_service")
+stops=()
+for service in "${writers[@]}"; do stop_service "$service" & stops+=("$!"); done
+stop_failed=0
+for stop in "${stops[@]}"; do wait "$stop" || stop_failed=1; done
+(( stop_failed == 0 )) || exit 1
+for service in "${writers[@]}"; do wait_until_stopped "$service"; done

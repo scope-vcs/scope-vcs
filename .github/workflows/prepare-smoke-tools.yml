@@ -59,7 +59,7 @@ jobs:
           install -m 0755 target/release/scope-smoke-seed artifacts/commands/scope-smoke-seed
           install -m 0755 cli/target/release/scope artifacts/commands/scope
           tar -czf artifacts/staging-commands.tar.gz -C artifacts/commands .
-          node .github/scripts/smoke-tools-evidence.mjs create artifacts "$SCOPE_BUILD_SHA" rust-toolchain.toml
+          node deploy/scripts/smoke-tools-evidence.mjs create artifacts "$SCOPE_BUILD_SHA" rust-toolchain.toml
 
       - name: Upload staging commands
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -95,7 +95,7 @@ jobs:
       - name: Verify source, toolchain and archive digest
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-        run: node .github/scripts/smoke-tools-evidence.mjs verify artifacts "$SOURCE_SHA" candidate/rust-toolchain.toml
+        run: node deploy/scripts/smoke-tools-evidence.mjs verify artifacts "$SOURCE_SHA" candidate/rust-toolchain.toml
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: staging-commands-${{ inputs.source_sha }}

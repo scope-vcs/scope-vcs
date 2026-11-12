@@ -2,81 +2,84 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-bash -n .github/scripts/scan-image.sh
-
-bash -n .github/scripts/deploy-preview-railway.sh .github/scripts/preview-comment.sh
-node --check .github/scripts/deploy-railway-image.mjs
-node --check dev/media-smoke.mjs
-bash -n .github/scripts/media-smoke-fixtures.sh
-python3 -m unittest dev/test_local_process.py dev/test_local_stack.py dev/test_local_identity.py
-bash -n .github/scripts/deploy-staging-railway.sh
-bash -n .github/scripts/staging-git-smoke.sh
-bash .github/scripts/test-deploy-backend-railway.sh
-bash .github/scripts/test-staging-git-smoke.sh
+bash -n deploy/scripts/deploy-preview-railway.sh deploy/scripts/preview-comment.sh
+node --check deploy/scripts/deploy-railway-image.mjs
+bash -n deploy/scripts/deploy-staging-railway.sh
+bash -n deploy/scripts/staging-git-smoke.sh
+bash deploy/scripts/test-deploy-backend-railway.sh
+bash deploy/scripts/test-staging-git-smoke.sh
 python3 deploy/aws/security-controls-contract.test.py
 python3 -m unittest discover -s deploy/aws/dispatch-broker/tests -v
-bash -n deploy/aws/apply-cloud-runner.sh deploy/aws/apply-security-controls.sh deploy/railway/install-git.sh deploy/railway/test-runtime-containers.sh
-bash -n .github/scripts/write-release-marker.sh
-bash -n .github/scripts/railway-private-command.sh .github/scripts/railway-private-maintenance.sh .github/scripts/production-readiness-preflight.sh
-bash -n .github/scripts/publish-maintenance-runtime.sh .github/scripts/verify-maintenance-runtime.sh
+bash -n deploy/aws/apply-cloud-runner.sh deploy/aws/apply-security-controls.sh deploy/railway/test-runtime-containers.sh
+bash -n deploy/scripts/write-release-marker.sh
+bash -n deploy/scripts/railway-private-command.sh deploy/scripts/railway-private-maintenance.sh deploy/scripts/production-readiness-preflight.sh
+bash -n deploy/scripts/publish-maintenance-runtime.sh deploy/scripts/verify-maintenance-runtime.sh
 
-python3 -m py_compile .github/scripts/recovery-run.py
+python3 -m py_compile deploy/scripts/recovery-run.py
 python3 deploy/aws/recovery/storage.test.py
 python3 -m unittest discover -s deploy/aws/recovery/tests -p test_transport.py
 python3 -m unittest discover -s deploy/aws/recovery/tests -p test_references.py
 bash -n deploy/aws/recovery/remote-snapshot.sh
 
+node deploy/scripts/check-rust-toolchain-sync.mjs
+node deploy/scripts/check-runtime-image-sync.mjs
+python3 deploy/scripts/test-check-ci-critical-path.py
+python3 deploy/scripts/check-ci-critical-path.py
+node deploy/scripts/check-production-origins.mjs
+
 node --test \
+  deploy/scripts/check-rust-toolchain-sync.test.mjs \
+  deploy/scripts/check-production-origins.test.mjs \
+  deploy/scripts/check-gates.test.mjs \
+  deploy/scripts/check-apt-bootstrap.test.mjs \
+  deploy/scripts/run-log-budget.test.mjs \
   .github/scripts/install-test-postgres.test.mjs \
   dev/analytics/*.test.mjs \
-  .github/scripts/scan-report.test.mjs \
-  .github/scripts/report-pr-checks.test.mjs \
-  .github/scripts/push-image-tags.test.mjs \
-  .github/scripts/audit-railway-experiments.test.mjs \
-  .github/scripts/main-advisories.test.mjs \
-  .github/scripts/check-backend-binary-sizes.test.mjs \
-  .github/scripts/check-production-backups.test.mjs \
-  .github/scripts/production-deployment-progress.test.mjs \
-  .github/scripts/plan-production-deployment.test.mjs \
-  .github/scripts/railway-deployment-history.test.mjs \
-  .github/scripts/railway-production-target.test.mjs \
-  .github/scripts/verify-staging-target.test.mjs \
-  .github/scripts/stop-railway-writers.test.mjs \
-  .github/scripts/preview-environment.test.mjs \
-  .github/scripts/preview-pull-request.test.mjs \
+  deploy/scripts/push-image-tags.test.mjs \
+  deploy/scripts/audit-railway-experiments.test.mjs \
+  deploy/scripts/check-backend-binary-sizes.test.mjs \
+  deploy/scripts/check-production-backups.test.mjs \
+  deploy/scripts/production-deployment-progress.test.mjs \
+  deploy/scripts/plan-production-deployment.test.mjs \
+  deploy/scripts/railway-deployment-history.test.mjs \
+  deploy/scripts/railway-production-target.test.mjs \
+  deploy/scripts/verify-staging-target.test.mjs \
+  deploy/scripts/stop-railway-writers.test.mjs \
+  deploy/scripts/preview-environment.test.mjs \
+  deploy/scripts/preview-pull-request.test.mjs \
   deploy/railway/reconcile-media.test.mjs \
-  .github/scripts/deploy-railway-image.test.mjs \
+  deploy/scripts/deploy-railway-image.test.mjs \
   bench/*.test.mjs \
-  .github/scripts/railway-service-health.test.mjs \
-  .github/scripts/deploy-railway.test.mjs \
+  deploy/scripts/railway-service-health.test.mjs \
+  deploy/scripts/deploy-railway.test.mjs \
   deploy/aws/cloud-runner-contract.test.mjs \
-  .github/scripts/railway-artifact.test.mjs \
-  .github/scripts/railway-read.test.mjs \
-  .github/scripts/railway-client.test.mjs \
-  .github/scripts/railway-retry.test.mjs \
-  .github/scripts/railway-environment-token.test.mjs \
-  .github/scripts/release-availability.test.mjs \
-  .github/scripts/release-cutover-journal.test.mjs \
-  .github/scripts/recovery-preparation-trust.test.mjs \
-  .github/scripts/release-selection.test.mjs \
-  .github/scripts/staging-resume.test.mjs \
-  .github/scripts/staging-smoke-seed.test.mjs \
-  .github/scripts/extract-railway-release.test.mjs \
-  .github/scripts/extract-railway-maintenance.test.mjs \
-  .github/scripts/extract-staging-web-manifest.test.mjs \
-  .github/scripts/railway-maintenance-gate.test.mjs \
-  .github/scripts/staging-baseline.test.mjs \
-  .github/scripts/staging-baseline-crypto.test.mjs \
-  .github/scripts/staging-baseline.integration.test.mjs \
+  deploy/scripts/railway-artifact.test.mjs \
+  deploy/scripts/railway-read.test.mjs \
+  deploy/scripts/railway-client.test.mjs \
+  deploy/scripts/railway-retry.test.mjs \
+  deploy/scripts/railway-environment-token.test.mjs \
+  deploy/scripts/release-availability.test.mjs \
+  deploy/scripts/release-cutover-journal.test.mjs \
+  deploy/scripts/recovery-preparation-trust.test.mjs \
+  deploy/scripts/release-selection.test.mjs \
+  deploy/scripts/staging-resume.test.mjs \
+  deploy/scripts/staging-smoke-seed.test.mjs \
+  deploy/scripts/extract-railway-release.test.mjs \
+  deploy/scripts/extract-railway-maintenance.test.mjs \
+  deploy/scripts/extract-staging-web-manifest.test.mjs \
+  deploy/scripts/railway-maintenance-gate.test.mjs \
+  deploy/scripts/staging-baseline.test.mjs \
+  deploy/scripts/staging-baseline-crypto.test.mjs \
+  deploy/scripts/staging-baseline.integration.test.mjs \
   deploy/postgres/runtime-roles.test.mjs \
-  .github/scripts/railway-private-maintenance.test.mjs \
-  .github/scripts/railway-ssh.test.mjs \
-  .github/scripts/maintenance-runtime.test.mjs \
-  .github/scripts/deploy-maintenance-runtime.test.mjs \
-  .github/scripts/smoke-tools-evidence.test.mjs \
-  .github/scripts/railway-predecessor-teardown.test.mjs \
-  .github/scripts/merge-prepared-release.test.mjs \
-  .github/scripts/run-bounded-image-builds.test.mjs \
-  .github/scripts/production-readiness-preflight.test.mjs \
-  .github/scripts/failed-web-replacement.test.mjs \
-  .github/scripts/redeployed-service-replacement.test.mjs
+  deploy/scripts/railway-private-maintenance.test.mjs \
+  deploy/scripts/railway-ssh.test.mjs \
+  deploy/scripts/maintenance-runtime.test.mjs \
+  deploy/scripts/deploy-maintenance-runtime.test.mjs \
+  deploy/scripts/smoke-tools-evidence.test.mjs \
+  deploy/scripts/railway-predecessor-teardown.test.mjs \
+  deploy/scripts/merge-prepared-release.test.mjs \
+  deploy/scripts/run-bounded-image-builds.test.mjs \
+  deploy/scripts/production-readiness-preflight.test.mjs \
+  deploy/scripts/failed-web-replacement.test.mjs \
+  deploy/scripts/redeployed-service-replacement.test.mjs

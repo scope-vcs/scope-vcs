@@ -20,7 +20,7 @@ on:
       - .github/workflows/scope-api-ci.yml
       - .github/workflows/scope-cli-build.yml
       - .github/workflows/scope-media-worker-image.yml
-      - .github/scripts/deployment-components.mjs
+      - deploy/scripts/deployment-components.mjs
       - .github/scripts/select-cli-distribution-targets.mjs
 
   schedule:

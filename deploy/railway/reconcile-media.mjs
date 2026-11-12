@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { deploymentComponent, loadComponentConfig } from "../../.github/scripts/deployment-components.mjs";
+import { deploymentComponent, loadComponentConfig } from "../../deploy/scripts/deployment-components.mjs";
 
 const IMAGE_DIGEST = /^ghcr\.io\/scope-vcs\/scope-media-worker@sha256:[0-9a-f]{64}$/;
 const HOSTNAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
