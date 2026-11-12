@@ -569,6 +569,66 @@ Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc.git",
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
 
 ==============================================================================
+@oxlint-tsgolint/darwin-arm64 7.0.2005
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@oxlint-tsgolint/darwin-arm64/-/darwin-arm64-7.0.2005.tgz
+
+Published author metadata: "auvred <aauvred@gmail.com>"
+Repository: {"type": "git", "url": "github:oxc-project/tsgolint"}
+LICENSE: text e31b9c21e599d1041f0a544fbc969af1c3b5a491a3362b0809b5cb8c672ac223
+
+==============================================================================
+@oxlint-tsgolint/darwin-x64 7.0.2005
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@oxlint-tsgolint/darwin-x64/-/darwin-x64-7.0.2005.tgz
+
+Published author metadata: "auvred <aauvred@gmail.com>"
+Repository: {"type": "git", "url": "github:oxc-project/tsgolint"}
+LICENSE: text e31b9c21e599d1041f0a544fbc969af1c3b5a491a3362b0809b5cb8c672ac223
+
+==============================================================================
+@oxlint-tsgolint/linux-arm64 7.0.2005
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@oxlint-tsgolint/linux-arm64/-/linux-arm64-7.0.2005.tgz
+
+Published author metadata: "auvred <aauvred@gmail.com>"
+Repository: {"type": "git", "url": "github:oxc-project/tsgolint"}
+LICENSE: text e31b9c21e599d1041f0a544fbc969af1c3b5a491a3362b0809b5cb8c672ac223
+
+==============================================================================
+@oxlint-tsgolint/linux-x64 7.0.2005
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@oxlint-tsgolint/linux-x64/-/linux-x64-7.0.2005.tgz
+
+Published author metadata: "auvred <aauvred@gmail.com>"
+Repository: {"type": "git", "url": "github:oxc-project/tsgolint"}
+LICENSE: text e31b9c21e599d1041f0a544fbc969af1c3b5a491a3362b0809b5cb8c672ac223
+
+==============================================================================
+@oxlint-tsgolint/win32-arm64 7.0.2005
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@oxlint-tsgolint/win32-arm64/-/win32-arm64-7.0.2005.tgz
+
+Published author metadata: "auvred <aauvred@gmail.com>"
+Repository: {"type": "git", "url": "github:oxc-project/tsgolint"}
+LICENSE: text e31b9c21e599d1041f0a544fbc969af1c3b5a491a3362b0809b5cb8c672ac223
+
+==============================================================================
+@oxlint-tsgolint/win32-x64 7.0.2005
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/@oxlint-tsgolint/win32-x64/-/win32-x64-7.0.2005.tgz
+
+Published author metadata: "auvred <aauvred@gmail.com>"
+Repository: {"type": "git", "url": "github:oxc-project/tsgolint"}
+LICENSE: text e31b9c21e599d1041f0a544fbc969af1c3b5a491a3362b0809b5cb8c672ac223
+
+==============================================================================
 @oxlint/binding-android-arm-eabi 1.87.0
 Declared license: MIT
 Selected license: MIT
@@ -4092,6 +4152,16 @@ Source: https://registry.npmjs.org/oxlint/-/oxlint-1.87.0.tgz
 Published author metadata: "Boshen and oxc contributors"
 Repository: {"type": "git", "url": "git+https://github.com/oxc-project/oxc", "directory": "npm/oxlint"}
 LICENSE: text 5b0650b078309ba2772569bb419e40e6883874af64d21bd9c27b44cc1a8e46ff
+
+==============================================================================
+oxlint-tsgolint 7.0.2005
+Declared license: MIT
+Selected license: MIT
+Source: https://registry.npmjs.org/oxlint-tsgolint/-/oxlint-tsgolint-7.0.2005.tgz
+
+Published author metadata: "auvred <aauvred@gmail.com>"
+Repository: {"type": "git", "url": "github:oxc-project/tsgolint"}
+LICENSE: text e31b9c21e599d1041f0a544fbc969af1c3b5a491a3362b0809b5cb8c672ac223
 
 ==============================================================================
 parse-entities 4.0.2
@@ -10126,6 +10196,14 @@ Copyright (c) 2017 Victor Felder <victor@draft.li>
 (The MIT License)
 
 Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
+
+[Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
+
+--- text e31b9c21e599d1041f0a544fbc969af1c3b5a491a3362b0809b5cb8c672ac223 ---
+MIT License
+
+Copyright (c) 2025 July-present VoidZero Inc. & Contributors
+Copyright (c) 2025 July typescript-eslint and other contributors
 
 [Shared terms fe2a9817987f862eaced948f0468c7f51d2fedfc48c5c505b246a49a3870e9a5]
 

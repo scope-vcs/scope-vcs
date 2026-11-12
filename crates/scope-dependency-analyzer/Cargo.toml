@@ -45,6 +45,3 @@ unused_async = "warn"
 unused_self = "warn"
 unwrap_used = "warn"
 wildcard_enum_match_arm = "warn"
-
-[package.metadata.cargo-shear]
-ignored-paths = ["tests/fixtures/**"]
