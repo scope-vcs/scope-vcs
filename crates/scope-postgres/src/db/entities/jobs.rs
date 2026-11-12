@@ -190,16 +190,16 @@ pub(crate) mod repo_storage_cleanup_job {
             })
         }
 
-        pub(crate) fn into_domain(self) -> RepoStorageCleanup {
-            RepoStorageCleanup {
+        pub(crate) fn try_into_domain(self) -> Result<RepoStorageCleanup, PostgresError> {
+            Ok(RepoStorageCleanup {
                 owner_handle: self.owner_handle,
                 repo_name: self.repo_name,
                 incarnation: scope_domain::repository::RepositoryIncarnation::new(
                     self.repo_id,
                     self.incarnation_id,
                 )
-                .expect("persisted cleanup identity is nonempty"),
-            }
+                .map_err(PostgresError::internal)?,
+            })
         }
     }
 }

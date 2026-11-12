@@ -20,19 +20,24 @@ struct MemoryUpload {
     parts: HashMap<i32, Bytes>,
 }
 
+impl MemoryBackend {
+    #[expect(clippy::expect_used)]
+    fn state(&self) -> std::sync::MutexGuard<'_, MemoryState> {
+        self.state
+            .lock()
+            .expect("memory backend state is never poisoned because no holder panics")
+    }
+}
+
 #[async_trait]
 impl ObjectBackend for MemoryBackend {
     async fn put(&self, key: &str, bytes: Bytes) -> Result<(), BackendError> {
-        self.state
-            .lock()
-            .expect("memory multipart store lock")
-            .objects
-            .insert(key.to_string(), bytes);
+        self.state().objects.insert(key.to_string(), bytes);
         Ok(())
     }
 
     async fn begin(&self, key: &str) -> Result<MultipartUpload, BackendError> {
-        let mut state = self.state.lock().expect("memory multipart store lock");
+        let mut state = self.state();
         state.next_upload_id += 1;
         let upload_id = state.next_upload_id.to_string();
         state.uploads.insert(
@@ -54,7 +59,7 @@ impl ObjectBackend for MemoryBackend {
         part_number: i32,
         bytes: Bytes,
     ) -> Result<UploadedPart, BackendError> {
-        let mut state = self.state.lock().expect("memory multipart store lock");
+        let mut state = self.state();
         let pending = state
             .uploads
             .get_mut(&upload.upload_id)
@@ -74,7 +79,7 @@ impl ObjectBackend for MemoryBackend {
         upload: MultipartUpload,
         parts: Vec<UploadedPart>,
     ) -> Result<(), BackendError> {
-        let mut state = self.state.lock().expect("memory multipart store lock");
+        let mut state = self.state();
         let mut pending = state
             .uploads
             .remove(&upload.upload_id)
@@ -92,28 +97,18 @@ impl ObjectBackend for MemoryBackend {
     }
 
     async fn abort(&self, upload: MultipartUpload) -> Result<(), BackendError> {
-        self.state
-            .lock()
-            .expect("memory multipart store lock")
-            .uploads
-            .remove(&upload.upload_id);
+        self.state().uploads.remove(&upload.upload_id);
         Ok(())
     }
 
     async fn abort_incomplete(&self, key: &str) -> Result<(), BackendError> {
-        self.state
-            .lock()
-            .expect("memory multipart store lock")
-            .uploads
-            .retain(|_, upload| upload.key != key);
+        self.state().uploads.retain(|_, upload| upload.key != key);
         Ok(())
     }
 
     async fn read(&self, key: &str) -> Result<RemoteReader, BackendError> {
         let bytes = self
-            .state
-            .lock()
-            .expect("memory multipart store lock")
+            .state()
             .objects
             .get(key)
             .cloned()
@@ -122,11 +117,7 @@ impl ObjectBackend for MemoryBackend {
     }
 
     async fn delete(&self, key: &str) -> Result<(), BackendError> {
-        self.state
-            .lock()
-            .expect("memory multipart store lock")
-            .objects
-            .remove(key);
+        self.state().objects.remove(key);
         Ok(())
     }
 }
@@ -134,28 +125,17 @@ impl ObjectBackend for MemoryBackend {
 #[cfg(any(test, feature = "test-support"))]
 impl MemoryBackend {
     pub fn object(&self, key: &str) -> Option<Bytes> {
-        self.state
-            .lock()
-            .expect("memory multipart store lock")
-            .objects
-            .get(key)
-            .cloned()
+        self.state().objects.get(key).cloned()
     }
 
     pub fn contains_bytes(&self, needle: &[u8]) -> bool {
-        self.state
-            .lock()
-            .expect("memory multipart store lock")
+        self.state()
             .objects
             .values()
             .any(|stored| stored.windows(needle.len()).any(|window| window == needle))
     }
 
     pub fn object_count(&self) -> usize {
-        self.state
-            .lock()
-            .expect("memory multipart store lock")
-            .objects
-            .len()
+        self.state().objects.len()
     }
 }

@@ -26,14 +26,16 @@ pub async fn serve(port: u16, router: Router, service: &str) -> anyhow::Result<(
 
 pub async fn shutdown_signal() {
     let ctrl_c = async {
+        #[expect(clippy::expect_used)]
         tokio::signal::ctrl_c()
             .await
-            .expect("failed to install Ctrl+C handler");
+            .expect("a service must be able to install its Ctrl+C handler");
     };
     #[cfg(unix)]
     let terminate = async {
+        #[expect(clippy::expect_used)]
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install termination handler")
+            .expect("a service must be able to install its termination handler")
             .recv()
             .await;
     };

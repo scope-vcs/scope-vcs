@@ -98,10 +98,11 @@ impl ServiceError {
         error
             .headers
             .push((ACCEPT_RANGES, HeaderValue::from_static("bytes")));
+        #[expect(clippy::expect_used)]
         error.headers.push((
             CONTENT_RANGE,
             HeaderValue::from_str(&format!("bytes */{size_bytes}"))
-                .expect("byte counts are printable"),
+                .expect("a decimal byte count is a valid header value"),
         ));
         error
     }

@@ -67,6 +67,14 @@ impl RepositoryStore {
     }
 }
 
+#[expect(clippy::expect_used)]
+pub(super) fn advisory_lock_key(name: String) -> i64 {
+    sea_orm::sqlx::postgres::PgAdvisoryLock::new(name)
+        .key()
+        .as_bigint()
+        .expect("string-derived advisory locks use one bigint key")
+}
+
 pub(super) async fn acquire_content_ref_fence(
     db: &DatabaseConnection,
     postgres_database_url: Option<&str>,
@@ -82,14 +90,7 @@ pub(super) async fn acquire_content_ref_fence(
 
     let keys = encoded
         .into_iter()
-        .map(|content_ref| {
-            sea_orm::sqlx::postgres::PgAdvisoryLock::new(format!(
-                "scope:content-ref:{schema}:{content_ref}"
-            ))
-            .key()
-            .as_bigint()
-            .expect("string-derived advisory locks use one bigint key")
-        })
+        .map(|content_ref| advisory_lock_key(format!("scope:content-ref:{schema}:{content_ref}")))
         .collect::<Vec<_>>();
     let connection = dedicated_fence_connection(postgres_database_url, &schema).await?;
     let mut fence = ContentRefFence { connection, keys };

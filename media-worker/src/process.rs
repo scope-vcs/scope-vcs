@@ -69,8 +69,16 @@ pub(crate) async fn run_bounded(
         program: program_label.clone(),
         source,
     })?;
-    let stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
+    #[expect(clippy::expect_used)]
+    let stdout = child
+        .stdout
+        .take()
+        .expect("the codec command configures stdout as piped");
+    #[expect(clippy::expect_used)]
+    let stderr = child
+        .stderr
+        .take()
+        .expect("the codec command configures stderr as piped");
     let capture_limit = limits.captured_output_bytes;
     let stdout_task = tokio::spawn(read_capped(stdout, capture_limit));
     let stderr_task = tokio::spawn(read_capped(stderr, capture_limit));

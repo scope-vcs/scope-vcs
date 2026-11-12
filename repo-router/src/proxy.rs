@@ -214,7 +214,7 @@ fn upstream_response(upstream: reqwest::Response) -> Response {
     let mut response = proxied_response(upstream);
     response.headers_mut().insert(
         ROUTER_RESPONSE_HEADER,
-        "1".parse().expect("static header value"),
+        axum::http::HeaderValue::from_static("1"),
     );
     response
 }

@@ -23,6 +23,7 @@ pub(crate) struct DistributionManifest {
 }
 
 impl DistributionManifest {
+    #[expect(clippy::expect_used)]
     pub(crate) fn bundled() -> &'static Self {
         static MANIFEST: OnceLock<DistributionManifest> = OnceLock::new();
         MANIFEST.get_or_init(|| {

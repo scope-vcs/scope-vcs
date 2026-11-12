@@ -287,7 +287,9 @@ fn object_id_input(object_ids: &BTreeSet<ObjectId>) -> Vec<u8> {
     for object_id in object_ids {
         let start = input.len();
         input.resize(start + 40, 0);
-        hex::encode_to_slice(object_id, &mut input[start..]).expect("SHA-1 output size is fixed");
+        #[expect(clippy::expect_used)]
+        hex::encode_to_slice(object_id, &mut input[start..])
+            .expect("a 20-byte object id encodes into exactly 40 hex bytes");
         input.push(b'\n');
     }
     input

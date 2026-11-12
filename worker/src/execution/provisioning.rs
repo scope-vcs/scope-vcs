@@ -18,12 +18,10 @@ impl Provisioning {
     }
 
     pub(super) async fn wait_for_slot(&mut self) -> anyhow::Result<()> {
-        if self.tasks.len() >= self.limit {
-            self.tasks
-                .join_next()
-                .await
-                .expect("a full provisioning set contains a task")
-                .context("cloud provisioning task panicked")??;
+        if self.tasks.len() >= self.limit
+            && let Some(finished) = self.tasks.join_next().await
+        {
+            finished.context("cloud provisioning task panicked")??;
         }
         Ok(())
     }

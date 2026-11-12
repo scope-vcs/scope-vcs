@@ -122,11 +122,13 @@ where
         ))
         .await?;
     }
-    for attachment_id in existing_ids.symmetric_difference(&referenced) {
-        let attachment = attachments
-            .iter()
-            .find(|attachment| &attachment.id == attachment_id)
-            .expect("binding attachments were loaded and locked");
+    let changed_ids = existing_ids
+        .symmetric_difference(&referenced)
+        .collect::<BTreeSet<_>>();
+    for attachment in attachments
+        .iter()
+        .filter(|attachment| changed_ids.contains(&attachment.id))
+    {
         super::processing::notify_attachment_change(conn, attachment).await?;
     }
     Ok(())
