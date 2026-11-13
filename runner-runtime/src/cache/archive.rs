@@ -36,7 +36,15 @@ pub(super) fn extract_archive(
     source_root: Option<&Path>,
 ) -> anyhow::Result<RestoredArchive> {
     let file = fs::File::open(archive)?;
-    let mut decoder = zstd::Decoder::new(file).context("open compressed cache")?;
+    let decoder = zstd::Decoder::new(file).context("open compressed cache")?;
+    extract_reader(decoder, destination, source_root)
+}
+
+pub(super) fn extract_reader(
+    mut decoder: impl Read,
+    destination: &Path,
+    source_root: Option<&Path>,
+) -> anyhow::Result<RestoredArchive> {
     let mut length = [0_u8; 8];
     decoder.read_exact(&mut length)?;
     let length = u64::from_be_bytes(length);
