@@ -447,6 +447,22 @@ fn job_check_names_expand_matrices_or_defer_to_runtime() {
             &["build"],
         ),
         (
+            "matrix larger than GitHub allows",
+            matrix_job(None, {
+                let values = (0..10).map(|value| value.to_string()).collect::<Vec<_>>();
+                let values = values.iter().map(String::as_str).collect::<Vec<_>>();
+                let axes = (0..10)
+                    .map(|axis| format!("axis{axis}"))
+                    .collect::<Vec<_>>();
+                map(&axes
+                    .iter()
+                    .map(|axis| (axis.as_str(), strs(&values)))
+                    .collect::<Vec<_>>())
+            }),
+            &[],
+            &["build"],
+        ),
+        (
             "context in name",
             map(&[("name", s("Deploy ${{ github.ref_name }}"))]),
             &[],

@@ -1,6 +1,7 @@
 use super::{GitHubWorkflowFile, WorkflowValue};
 
 const REUSABLE_WORKFLOW_DEPTH_LIMIT: usize = 4;
+const GITHUB_MATRIX_JOB_LIMIT: usize = 256;
 const EXPRESSION_OPEN: &str = "${{";
 const EXPRESSION_CLOSE: &str = "}}";
 
@@ -124,13 +125,19 @@ fn combinations(matrix: &WorkflowValue) -> Option<Vec<Combination>> {
     }
     match (dimensions.is_empty(), include) {
         (false, Some(_)) => None,
-        (true, Some(include)) => entry_list(include),
+        (true, Some(include)) => {
+            entry_list(include).filter(|entries| entries.len() <= GITHUB_MATRIX_JOB_LIMIT)
+        }
         (true, None) => Some(vec![Vec::new()]),
         (false, None) => {
             let excluded = match exclude {
                 Some(exclude) => entry_list(exclude)?,
                 None => Vec::new(),
             };
+            dimensions
+                .iter()
+                .try_fold(1_usize, |size, (_, values)| size.checked_mul(values.len()))
+                .filter(|size| *size <= GITHUB_MATRIX_JOB_LIMIT)?;
             let product =
                 dimensions
                     .iter()
