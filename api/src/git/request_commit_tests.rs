@@ -281,3 +281,39 @@ fn exhausted_request_deadline_stops_further_commit_inspection() {
     assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
     assert!(started.elapsed() < std::time::Duration::from_secs(2));
 }
+
+#[test]
+fn a_retired_control_file_stays_readable_in_history_but_cannot_be_pushed_again() {
+    let repo = init_repo();
+    fs::create_dir_all(repo.path().join(".scope/runs")).unwrap();
+    fs::write(
+        repo.path().join(".scope/runs/checks.yml"),
+        b"name: Checks\n",
+    )
+    .unwrap();
+    git(repo.path(), &["add", "."]);
+    let added_tree = git(repo.path(), &["write-tree"]);
+    let added = git(repo.path(), &["commit-tree", &added_tree, "-m", "add"]);
+    git(repo.path(), &["rm", "--quiet", "-r", "-f", ".scope"]);
+    fs::write(repo.path().join("README.md"), b"readme\n").unwrap();
+    git(repo.path(), &["add", "."]);
+    let removed_tree = git(repo.path(), &["write-tree"]);
+    let removed = git(
+        repo.path(),
+        &["commit-tree", &removed_tree, "-p", &added, "-m", "remove"],
+    );
+
+    for (oid, paths) in [
+        (&added, &[".scope/runs/checks.yml"][..]),
+        (&removed, &[".scope/runs/checks.yml", "README.md"][..]),
+    ] {
+        let commit = native(repo.path(), oid.clone(), paths);
+        let details =
+            inspect_native_request_commit(repo.path(), &labels(), &commit, deadline()).unwrap();
+        assert_eq!(details.changes.len(), paths.len());
+    }
+    crate::git::import::validate_pushed_commit_range(repo.path(), Some(&added), &removed).unwrap();
+    let refused =
+        crate::git::import::validate_pushed_commit_range(repo.path(), None, &added).unwrap_err();
+    assert_eq!(refused.status(), axum::http::StatusCode::BAD_REQUEST);
+}

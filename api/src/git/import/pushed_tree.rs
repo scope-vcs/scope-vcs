@@ -70,7 +70,7 @@ fn git_tree_entries_for_path(
         let size = fields
             .next()
             .ok_or_else(|| ApiError::internal_message("tree entry is missing size"))?;
-        let path = validate_pushed_file_path(path)?;
+        let path = parse_pushed_file_path(path)?;
         if !is_supported_git_file_mode(mode) {
             return Err(ApiError::bad_request(format!(
                 "unsupported Git file mode {path}: {mode}"
@@ -100,12 +100,16 @@ pub(crate) fn git_changed_tree_entries(
     base_oid: Option<&str>,
     head_oid: &str,
 ) -> Result<Vec<(ScopePath, Option<GitTreeFile>)>, ApiError> {
-    git_changed_tree_entries_until(
+    let entries = git_changed_tree_entries_until(
         staging_repo,
         base_oid,
         head_oid,
         Instant::now() + RuntimeBudgets::default_git_command_timeout(),
-    )
+    )?;
+    for entry in entries.iter().filter_map(|(_, entry)| entry.as_ref()) {
+        ensure_supported_control_file(&entry.path)?;
+    }
+    Ok(entries)
 }
 
 pub(crate) fn git_changed_tree_entries_until(
@@ -175,11 +179,11 @@ fn raw_delta_record(
     let new_mode = values[1];
     let new_oid = values[3];
     let status = values[4];
-    if status == "D" {
-        return Ok((parse_pushed_file_path(path)?.to_scope_path(), None));
-    }
-    let path = validate_pushed_file_path(path)?;
+    let path = parse_pushed_file_path(path)?;
     let scope_path = path.to_scope_path();
+    if status == "D" {
+        return Ok((scope_path, None));
+    }
     if !is_supported_git_file_mode(new_mode) {
         return Err(ApiError::bad_request(format!(
             "unsupported Git file mode {path}: {new_mode}"
@@ -222,6 +226,9 @@ fn unique_added_blobs(
             return Err(ApiError::internal_message("Git delta is missing a path"));
         };
         let record = raw_delta_record(header, path)?;
+        if let Some(entry) = &record.1 {
+            ensure_supported_control_file(&entry.path)?;
+        }
         if record
             .1
             .as_ref()
@@ -284,7 +291,9 @@ fn fill_blob_sizes(
 }
 
 pub(crate) fn validate_pushed_tree(staging_repo: &FsPath, head_oid: &str) -> Result<(), ApiError> {
-    git_tree_entries(staging_repo, head_oid)?;
+    for entry in git_tree_entries(staging_repo, head_oid)? {
+        ensure_supported_control_file(&entry.path)?;
+    }
     Ok(())
 }
 
@@ -353,38 +362,19 @@ fn parse_pushed_file_path(path: &str) -> Result<GitTreePath, ApiError> {
     GitTreePath::parse(path).map_err(ApiError::bad_request)
 }
 
-pub(crate) fn validate_pushed_file_path(path: &str) -> Result<GitTreePath, ApiError> {
-    let path = parse_pushed_file_path(path)?;
+fn ensure_supported_control_file(path: &GitTreePath) -> Result<(), ApiError> {
     if is_private_control_path(&path.to_scope_path()) {
         return Err(ApiError::bad_request(format!(
             "Scope control path {:?} is not a supported tracked control file",
             path.as_str()
         )));
     }
-
-    Ok(path)
+    Ok(())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_push_may_delete_but_not_keep_an_unsupported_control_file() {
-        let oid = "a".repeat(40);
-        let zero = "0".repeat(40);
-        let path = b".scope/runs/checks.yml";
-        let (deleted, entry) =
-            raw_delta_record(format!(":100644 000000 {oid} {zero} D").as_bytes(), path).unwrap();
-        assert_eq!(deleted.as_str(), "/.scope/runs/checks.yml");
-        assert!(entry.is_none());
-        for status in ["A", "M"] {
-            let error = raw_delta_record(
-                format!(":100644 100644 {oid} {oid} {status}").as_bytes(),
-                path,
-            )
-            .unwrap_err();
-            assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
-        }
-    }
+pub(crate) fn validate_pushed_file_path(path: &str) -> Result<GitTreePath, ApiError> {
+    let path = parse_pushed_file_path(path)?;
+    ensure_supported_control_file(&path)?;
+    Ok(path)
 }
