@@ -58,7 +58,8 @@ impl MigrationTrait for Migration {
             ALTER TABLE scope_request_check_evaluations
                 DROP CONSTRAINT scope_request_check_evaluation_values;
             DELETE FROM scope_request_check_evaluations
-                WHERE checks @? '$[*] ? (@.provider != "github")';
+                WHERE checks @? '$[*] ? (@.provider != "github")'
+                   OR (state = 'configuration-error' AND github_repository_id IS NULL);
             UPDATE scope_request_check_evaluations SET checks = (
                 SELECT COALESCE(jsonb_agg(jsonb_build_object('name', check_entry->'name') ORDER BY position), '[]'::jsonb)
                 FROM jsonb_array_elements(checks) WITH ORDINALITY AS entries(check_entry, position)

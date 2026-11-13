@@ -33,9 +33,11 @@ async fn removing_native_runs_releases_their_sources_and_reevaluates_their_reque
     )
     .await
     .unwrap();
-    for (request_id, checks) in [
+    for (request_id, state, github_repository_id, checks) in [
         (
             "native",
+            "started",
+            None,
             serde_json::json!([{
                 "provider": "native",
                 "workflow_path": "/.scope/runs/checks.yml",
@@ -45,11 +47,25 @@ async fn removing_native_runs_releases_their_sources_and_reevaluates_their_reque
             }]),
         ),
         (
+            "invalid",
+            "configuration-error",
+            None,
+            serde_json::json!([]),
+        ),
+        (
             "github",
+            "started",
+            Some(42_i64),
             serde_json::json!([
                 {"provider": "github", "name": "ci / test"},
                 {"provider": "github", "name": "ci / lint"},
             ]),
+        ),
+        (
+            "conflict",
+            "configuration-error",
+            Some(42_i64),
+            serde_json::json!([{"provider": "github", "name": "ci / test"}]),
         ),
     ] {
         for (sql, values) in [
@@ -73,10 +89,15 @@ async fn removing_native_runs_releases_their_sources_and_reevaluates_their_reque
             (
                 "INSERT INTO scope_request_check_evaluations (id, revision_id, base_version,
                     review_base_oid, request_id, head_oid, tested_oid, state, message, checks,
-                    created_at_unix, updated_at_unix)
-                 VALUES ($1, $1, 1, repeat('e',40), $1, repeat('b',40), repeat('b',40), 'started',
-                    NULL, $2, 2, 2)",
-                vec![request_id.into(), checks.clone().into()],
+                    github_repository_id, created_at_unix, updated_at_unix)
+                 VALUES ($1, $1, 1, repeat('e',40), $1, repeat('b',40), repeat('b',40), $2,
+                    CASE WHEN $2 = 'configuration-error' THEN 'cannot run' END, $3, $4, 2, 2)",
+                vec![
+                    request_id.into(),
+                    state.into(),
+                    checks.clone().into(),
+                    github_repository_id.into(),
+                ],
             ),
             (
                 "UPDATE scope_requests SET current_check_evaluation_id = $1 WHERE id = $1",
@@ -139,10 +160,16 @@ async fn removing_native_runs_releases_their_sources_and_reevaluates_their_reque
         requests,
         [
             (
+                "conflict".to_string(),
+                Some("conflict".to_string()),
+                Some(serde_json::json!([{"name": "ci / test"}])),
+            ),
+            (
                 "github".to_string(),
                 Some("github".to_string()),
                 Some(serde_json::json!([{"name": "ci / test"}, {"name": "ci / lint"}])),
             ),
+            ("invalid".to_string(), None, None),
             ("native".to_string(), None, None),
         ]
     );
