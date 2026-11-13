@@ -296,7 +296,6 @@ fn concurrent_builds_coalesce_in_every_cache_namespace() {
         leader_started_rx.recv().unwrap();
         let follower = {
             let coordinator = coordinator.clone();
-            let ready = ready.clone();
             thread::spawn(move || {
                 coordinator.materialize(
                     namespace,

@@ -99,10 +99,7 @@ fn revision(name: &str) -> WorkflowRevision {
 fn evaluation_preserves_actor_policy_and_ordered_run_identity() {
     let revisions = [revision("test"), revision("lint")];
     for view in [ViewId::public(), ViewId::private()] {
-        let request = Request {
-            view: view.clone(),
-            ..request()
-        };
+        let request = Request { view, ..request() };
         for maintainer in [false, true] {
             let plan = RequestCheckPlan::evaluate(
                 &request,

@@ -1,5 +1,3 @@
-#![expect(clippy::unwrap_used)]
-
 #[path = "cli/support/command.rs"]
 mod command;
 #[path = "../src/test_support/temp_dir.rs"]
