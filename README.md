@@ -20,7 +20,6 @@ merges, but ratings do not grant permissions or control submission.
 - `worker/` owns durable background work, cloud execution, cleanup, and Git
   compaction.
 - `cache-service/` serves workflow-cache metadata and signed object transfers.
-- `runner-runtime/` executes isolated workflow jobs.
 - `cli/` is the independently built and released command-line client.
 - `web/` contains the browser application and generated API contract.
 - `crates/` contains domain code, wire contracts, and infrastructure adapters.
